@@ -220,6 +220,7 @@ export const keys = {
   externalSigningEnvelopes: (id: string) => ['acts', id, 'external-signing', 'envelopes'] as const,
   externalSignerInvites: (id: string) => ['acts', id, 'signature', 'external-invites'] as const,
   signatureProviders: ['signature', 'providers'] as const,
+  citizenCardBridge: ['signature', 'cc', 'bridge'] as const,
   templates: (family?: EntityFamily, stage?: LifecycleStage) =>
     ['templates', { family: family ?? null, stage: stage ?? null }] as const,
   templateSpec: (id: string) => ['templates', 'spec', id] as const,
@@ -1757,6 +1758,23 @@ export function useCmdConfirmSignature(id: string) {
       void qc.invalidateQueries({ queryKey: ['ledger'] });
       void qc.invalidateQueries({ queryKey: keys.dashboard });
     },
+  });
+}
+
+/** Sanitized status of the desktop-local Citizen Card bridge. */
+export function useCitizenCardBridgeStatus(enabled = true) {
+  return useQuery({
+    queryKey: keys.citizenCardBridge,
+    queryFn: () => api.getCitizenCardBridgeStatus(),
+    enabled,
+    retry: false,
+  });
+}
+
+/** Exercise the local card over one bodyless, ephemeral, non-document challenge. */
+export function useTestCitizenCardBridge() {
+  return useMutation({
+    mutationFn: () => api.testCitizenCardBridge(),
   });
 }
 

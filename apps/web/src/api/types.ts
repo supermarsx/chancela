@@ -6846,6 +6846,63 @@ export interface CcSignBody {
 /** The CC sign response — the produced qualified signature's metadata (same shape as CMD). */
 export type CcSignResult = CmdConfirmResult;
 
+/** One sanitized, non-secret local smartcard bridge diagnostic. */
+export interface CitizenCardBridgeCheck {
+  status: 'ready' | 'unavailable' | 'error' | 'not_checked' | 'injected' | string;
+  code?: string;
+  detail?: string;
+}
+
+/** `GET /v1/signature/cc/bridge/status` — no reader names, certificate identities, paths, or PIN. */
+export interface CitizenCardBridgeStatus {
+  transport: string;
+  local_desktop: boolean;
+  checked_at: string;
+  diagnostic_source: string;
+  middleware: CitizenCardBridgeCheck;
+  pcsc: CitizenCardBridgeCheck;
+  readers: CitizenCardBridgeCheck;
+  reader_count: number | null;
+  card: CitizenCardBridgeCheck;
+  signing_certificate: CitizenCardBridgeCheck;
+  issuer: CitizenCardBridgeCheck;
+  ready: boolean;
+  probe_supported: boolean;
+  document_signed: false;
+  persisted: false;
+  ledger_event_written: false;
+  qualified_status_claimed: false;
+}
+
+/** Sanitized error from an ephemeral Citizen Card signing-key probe. */
+export interface CitizenCardBridgeProbeError {
+  code: string;
+  detail: string;
+}
+
+/**
+ * `POST /v1/signature/cc/bridge/test` — an ephemeral challenge result, never a document or legal
+ * status. The request carries no body and accepts no PIN.
+ */
+export interface CitizenCardBridgeProbe {
+  outcome: 'passed' | 'failed';
+  signature_verified: boolean;
+  algorithm?: string;
+  signing_certificate_present: boolean;
+  issuer_resolved: boolean;
+  tested_at: string;
+  error?: CitizenCardBridgeProbeError;
+  document_signed: false;
+  persisted: false;
+  /** This diagnostic never appends an event to a book/document chain. */
+  document_ledger_event_written: false;
+  /** A fail-closed security intent event was recorded before the key was exercised. */
+  security_audit_intent_recorded: true;
+  /** A fail-closed sanitized outcome event was recorded before this response returned. */
+  security_audit_outcome_recorded: true;
+  qualified_status_claimed: false;
+}
+
 // --- In-app Cartão de Cidadão batch signing (§ t67, desktop / co-located) ---------
 //
 // `POST /v1/signature/cc/batch-sign` signs a set of already-sealed acts with the Cartão de

@@ -10,7 +10,7 @@
 
 use time::OffsetDateTime;
 
-use chancela_cades::{assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{assemble_cades_b, signed_attributes_digest, validate_cades_b};
 use chancela_pades::archive_timestamp::add_doc_timestamp_revision_with;
 use chancela_pades::renewal::{LtvRenewalExecution, execute_ltv_renewal};
 use chancela_pades::{
@@ -63,7 +63,21 @@ pub fn sign_detached_cades(
     let signed_attrs_digest =
         signed_attributes_digest(content_digest, &cert_der, signing_time).map_err(cades_err)?;
     let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
-    assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)
+    if raw.signing_cert_der != cert_der {
+        return Err(SigningError::Cades(
+            "provider changed signing certificate during detached CAdES signing".to_owned(),
+        ));
+    }
+    let cms = assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)?;
+    if provider.requires_cms_post_validation() {
+        let verified = validate_cades_b(&cms, content_digest).map_err(cades_err)?;
+        if verified.signer_cert_der != cert_der {
+            return Err(SigningError::Cades(
+                "provider changed signing certificate during detached CAdES signing".to_owned(),
+            ));
+        }
+    }
+    Ok(cms)
 }
 
 /// Produce a bounded ASiC-S/CAdES container over one payload.

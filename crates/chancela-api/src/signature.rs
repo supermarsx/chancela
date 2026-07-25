@@ -58,25 +58,32 @@ use chancela_signing::pipeline::attach_pdf_dss_with_validation_time;
 use chancela_signing::{
     CMD_PROVIDER_ID, CcSignedPdf, CmdInitiate, CmdRemoteSource, CmdSignSession,
     RemoteBatchAuthMode, RemoteBatchInitiateReport, RemoteBatchPreparedDocument, RemoteInitiate,
-    RemoteSignSession, RemoteSigningSource, SignerProvider, SmartcardProvider,
+    RemoteSignSession, RemoteSigningSource, SignatureAlgorithm, SignerProvider, SmartcardProvider,
     TimestampTrustDecision, TimestampTrustPolicy, TimestampTrustReport, TrustPolicy,
     TrustedListStatus, TslTrustPolicy, attach_pdf_dss, attach_pdf_revocation_evidence, cmd_confirm,
-    cmd_initiate, initiate_remote_prepared_batch_repeated_sessions, validate_timestamp_trust,
+    cmd_initiate, initiate_remote_prepared_batch_repeated_sessions, probe_cc_provider,
+    validate_timestamp_trust,
 };
 use chancela_signing::{Pkcs12IdentitySelector, Pkcs12SigningSource, SoftCertificateError};
-use chancela_smartcard::Pkcs11Token;
+use chancela_smartcard::{
+    CryptoToken, Pkcs11Token, SmartcardError, detect, select_signature_certificate,
+};
 use chancela_store::{PendingCmdSession, StoreError, StoredDocument, StoredSignedDocument};
-use chancela_tsl::{FileTslSource, TslClient, TslError, TslSource};
+use chancela_tsl::{
+    FileTslSource, PathBuildOptions, TslClient, TslError, TslSource, TslTrustStore, build_path,
+};
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock, TryLockError};
 use std::time::Duration as StdDuration;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
+use x509_cert::der::Decode;
+use x509_cert::ext::pkix::{AuthorityKeyIdentifier, SubjectKeyIdentifier};
 use zeroize::Zeroizing;
 
 use chancela_authz::{Permission, Scope};
@@ -101,6 +108,7 @@ use crate::secretstore_persist::{
     FIELD_HTTP_BASIC_USERNAME,
 };
 use crate::settings::{RuntimeTsaProvider, RuntimeTslSource};
+use crate::trust::load_live_trust_store;
 use crate::{CredentialMode, ProviderCredentialError, ProviderCredentialStore};
 
 /// The signing family this module produces (v1 is CMD-only; t57 ruling 2).
@@ -140,6 +148,14 @@ const EVIDENCE_LEVEL_UNSIGNED: &str = "Unsigned";
 const EVIDENCE_LEVEL_B_B: &str = "B-B";
 const EVIDENCE_LEVEL_B_T: &str = "B-T";
 const EVIDENCE_LEVEL_B_LT_LOCAL: &str = "B-LT-local";
+/// Application-ledger scope for the bodyless Citizen Card private-key diagnostic.
+///
+/// The events below are security audit records only: they never attach to a book, act, or
+/// document chain, and their payloads carry no reader, card, certificate, provider, or challenge
+/// identifier.
+const CC_BRIDGE_AUDIT_SCOPE: &str = "signature/cc-bridge";
+const CC_BRIDGE_PROBE_REQUESTED_EVENT: &str = "signature.cc_bridge.probe_requested";
+const CC_BRIDGE_PROBED_EVENT: &str = "signature.cc_bridge.probed";
 const EVIDENCE_LEVEL_B_LTA_LOCAL: &str = "B-LTA-local";
 const DSS_INSPECTION_NOT_APPLICABLE: &str = "not_applicable";
 const DSS_INSPECTION_INSPECTED: &str = "inspected_from_signed_pdf";
@@ -2029,6 +2045,92 @@ pub struct CcSignResponse {
     pub signer_capacity_evidence: Option<SignerCapacityEvidence>,
 }
 
+/// One sanitized, non-secret Cartão de Cidadão bridge diagnostic.
+///
+/// `detail` is selected from fixed operator-facing messages. Raw PKCS#11/PC/SC loader text, file
+/// paths, certificate identities, reader names, and provider strings never cross this DTO.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CcBridgeCheck {
+    /// `ready`, `unavailable`, `error`, `not_checked`, or `injected`.
+    pub status: &'static str,
+    /// Stable machine-readable diagnostic code, when the check is not ready.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<&'static str>,
+    /// Sanitized operator-facing detail, when useful.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<&'static str>,
+}
+
+/// Read-only status of the user-local Cartão de Cidadão bridge.
+///
+/// This response contains capability booleans and sanitized checks only. It carries no PIN field,
+/// certificate bytes/subject/serial, reader name, filesystem path, or provider credential.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CcBridgeStatusResponse {
+    /// The bridge is the desktop's same-origin embedded loopback API, never a remote card relay.
+    pub transport: &'static str,
+    /// Whether the API process was started by the desktop shell on the user's machine.
+    pub local_desktop: bool,
+    /// RFC 3339 instant at which this non-persistent snapshot was taken.
+    pub checked_at: String,
+    /// `real` for local PC/SC + PKCS#11, `injected` for the existing offline test seam, or
+    /// `not_checked` when this is not the desktop-local API.
+    pub diagnostic_source: &'static str,
+    pub middleware: CcBridgeCheck,
+    pub pcsc: CcBridgeCheck,
+    pub readers: CcBridgeCheck,
+    /// Reader count only; reader names are intentionally not exposed.
+    pub reader_count: Option<usize>,
+    pub card: CcBridgeCheck,
+    pub signing_certificate: CcBridgeCheck,
+    pub issuer: CcBridgeCheck,
+    /// True only when every production prerequisite, including verified TSL/LOTL issuer
+    /// resolution, was observed. An injected provider is ready when its leaf and issuer are present.
+    pub ready: bool,
+    /// A probe signs only an ephemeral domain-separated challenge and verifies it locally.
+    pub probe_supported: bool,
+    /// Explicit non-mutation/legal guardrails for consumers and regression tests.
+    pub document_signed: bool,
+    pub persisted: bool,
+    pub ledger_event_written: bool,
+    pub qualified_status_claimed: bool,
+}
+
+/// Sanitized failure returned inside a provider probe result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CcBridgeProbeError {
+    pub code: &'static str,
+    pub detail: &'static str,
+}
+
+/// Result of one Cartão de Cidadão bridge provider test.
+///
+/// Success means only that the selected signature key signed a fresh in-memory challenge and that
+/// the signature verified against the advertised leaf certificate. It is not a document
+/// signature, a trusted-list decision, or a qualified/legal claim.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CcBridgeProbeResponse {
+    /// `passed` or `failed`.
+    pub outcome: &'static str,
+    pub signature_verified: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub algorithm: Option<&'static str>,
+    pub signing_certificate_present: bool,
+    pub issuer_resolved: bool,
+    pub tested_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<CcBridgeProbeError>,
+    pub document_signed: bool,
+    pub persisted: bool,
+    /// No event is appended to a book/document ledger by this diagnostic.
+    pub document_ledger_event_written: bool,
+    /// The fail-closed security intent event was durably recorded before key use.
+    pub security_audit_intent_recorded: bool,
+    /// The fail-closed security outcome event was durably recorded before this response returned.
+    pub security_audit_outcome_recorded: bool,
+    pub qualified_status_claimed: bool,
+}
+
 /// Body of `POST /v1/acts/{id}/signature/dss/attach`.
 ///
 /// All entries are caller-supplied DER bytes encoded as base64. This endpoint does not fetch,
@@ -2265,6 +2367,165 @@ pub async fn sign_cc_signature(
         finalization: "em_assinatura",
         signer_capacity_evidence,
     }))
+}
+
+/// `GET /v1/signature/cc/bridge/status` — read-only diagnostics for the user-local CC bridge.
+///
+/// The desktop embedded loopback API is the bridge: no remote relay is introduced. The handler
+/// requires global `signing.configure`, performs all PC/SC/PKCS#11 work on a blocking worker, and
+/// returns only fixed/sanitized status values. It never prompts for a signature, accepts no body,
+/// and performs no persistence or ledger mutation.
+pub async fn get_cc_bridge_status(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<CcBridgeStatusResponse>, ApiError> {
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
+
+    let local_desktop = state.local_signing;
+    let provider_factory = state.cc_provider.clone();
+    let uses_real_hardware = local_desktop && provider_factory.is_none();
+    let data_dir = state.data_dir();
+    let checked_at = OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let status = tokio::task::spawn_blocking(move || {
+        if uses_real_hardware {
+            with_cc_hardware_gate(|| {
+                inspect_cc_bridge(local_desktop, provider_factory, data_dir, checked_at)
+            })
+        } else {
+            Ok(inspect_cc_bridge(
+                local_desktop,
+                provider_factory,
+                data_dir,
+                checked_at,
+            ))
+        }
+    })
+    .await
+    .map_err(|e| ApiError::Internal(format!("cc bridge status task failed: {e}")))??;
+
+    Ok(Json(status))
+}
+
+/// `POST /v1/signature/cc/bridge/test` — sign and locally verify one ephemeral challenge.
+///
+/// The request body MUST be empty. Requiring both global `signing.configure` and
+/// `signing.perform` makes the action available only to an operator allowed to configure the
+/// provider and to exercise a signing key. The challenge is domain-separated, includes 32 bytes
+/// of fresh OS randomness, exists only in memory, and is never persisted. A fail-closed security
+/// intent event is durably recorded before the card is touched and a sanitized outcome event is
+/// recorded afterwards. Neither event belongs to a book/document chain; the response explicitly
+/// says that no document or qualified/legal status was produced.
+pub async fn test_cc_bridge(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    body: Bytes,
+) -> Result<Json<CcBridgeProbeResponse>, ApiError> {
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
+    require_permission(&state, &actor, Permission::SigningPerform, Scope::Global).await?;
+
+    // Explicit anti-secret/anti-mutation boundary: this action has no request DTO. Reject even an
+    // empty JSON object so a future caller cannot accidentally begin sending a PIN, provider
+    // credential, document, actor override, or persistence flag here.
+    if !body.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "o teste do Cartão de Cidadão não aceita corpo nem credenciais".to_owned(),
+        ));
+    }
+    if !state.local_signing {
+        return Err(ApiError::Conflict(
+            "o teste do Cartão de Cidadão só está disponível na aplicação de secretária".to_owned(),
+        ));
+    }
+
+    // Fail closed before loading middleware, opening a card session, or exercising a private key.
+    // The payload describes only the fixed operation boundary; actor attribution lives in the
+    // ledger envelope and no card/certificate/reader/challenge identifier is recorded.
+    record_cc_bridge_probe_audit(
+        &state,
+        &actor,
+        &attestor,
+        CC_BRIDGE_PROBE_REQUESTED_EVENT,
+        json!({
+            "operation": "ephemeral_challenge_signature",
+            "private_key_operation_requested": true,
+            "document_supplied": false,
+            "document_signature_requested": false,
+            "persistence_requested": false,
+            "qualified_status_requested": false,
+        }),
+    )
+    .await?;
+
+    let provider_factory = state.cc_provider.clone();
+    let uses_real_hardware = provider_factory.is_none();
+    let data_dir = state.data_dir();
+    let tested_at = OffsetDateTime::now_utc()
+        .replace_nanosecond(0)
+        .unwrap_or_else(|_| OffsetDateTime::now_utc());
+    let operation = tokio::task::spawn_blocking(move || {
+        if uses_real_hardware {
+            with_cc_hardware_gate(|| run_cc_bridge_probe(provider_factory, data_dir, tested_at))
+        } else {
+            Ok(run_cc_bridge_probe(provider_factory, data_dir, tested_at))
+        }
+    })
+    .await
+    .map_err(|_| ApiError::Internal("cc bridge probe task failed".to_owned()))
+    .and_then(std::convert::identity);
+
+    match operation {
+        Ok(mut response) => {
+            record_cc_bridge_probe_audit(
+                &state,
+                &actor,
+                &attestor,
+                CC_BRIDGE_PROBED_EVENT,
+                json!({
+                    "operation": "ephemeral_challenge_signature",
+                    "outcome": response.outcome,
+                    "signature_verified": response.signature_verified,
+                    "algorithm": response.algorithm,
+                    "signing_certificate_present": response.signing_certificate_present,
+                    "issuer_resolved": response.issuer_resolved,
+                    "error_code": response.error.as_ref().map(|error| error.code),
+                    "document_signed": false,
+                    "document_persisted": false,
+                    "document_ledger_event_written": false,
+                    "qualified_status_claimed": false,
+                }),
+            )
+            .await?;
+            response.security_audit_intent_recorded = true;
+            response.security_audit_outcome_recorded = true;
+            Ok(Json(response))
+        }
+        Err(error) => {
+            // Hardware-gate and worker failures have no response DTO, but still receive a fixed,
+            // identifier-free outcome event. If that event cannot be persisted, its audit failure
+            // wins and the key-operation error is not returned as though it were fully audited.
+            record_cc_bridge_probe_audit(
+                &state,
+                &actor,
+                &attestor,
+                CC_BRIDGE_PROBED_EVENT,
+                json!({
+                    "operation": "ephemeral_challenge_signature",
+                    "outcome": "failed",
+                    "signature_verified": false,
+                    "error_code": cc_bridge_operation_error_code(&error),
+                    "document_signed": false,
+                    "document_persisted": false,
+                    "document_ledger_event_written": false,
+                    "qualified_status_claimed": false,
+                }),
+            )
+            .await?;
+            Err(error)
+        }
+    }
 }
 
 /// `POST /v1/acts/{id}/signature/dss/attach` — append caller-supplied local DSS/VRI evidence to an
@@ -2609,25 +2870,32 @@ async fn run_cc_sign(
 ) -> Result<CcSignedPdf, ApiError> {
     let policy_factory = state.cmd_trust_policy.clone();
     let provider_factory = state.cc_provider.clone();
+    let data_dir = state.data_dir();
     tokio::task::spawn_blocking(move || {
         let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
-        let provider: Box<dyn SignerProvider> = match provider_factory {
-            Some(factory) => factory().map_err(map_cc_signing_error)?,
-            None => Box::new(build_pkcs11_cc_provider()?),
+        let mut sign = |provider: Box<dyn SignerProvider>| {
+            // The transient PIN (borrowed, never copied) is presented to `C_Login` when `Some`;
+            // `None` is exactly the protected-authentication path. It is dropped/zeroized when this
+            // task ends. The optional visible seal is baked into the prepared revision.
+            chancela_signing::cc::sign_pdf_cc_with_appearance(
+                provider.as_ref(),
+                &pdf,
+                signing_time,
+                &opts,
+                Some(policy.as_mut()),
+                pin.as_ref(),
+                appearance.as_ref(),
+            )
+            .map_err(map_cc_signing_error)
         };
-        // The transient PIN (borrowed, never copied) is presented to `C_Login` when `Some`; `None`
-        // is exactly the protected-authentication path. It is dropped/zeroized when this task ends.
-        // The optional visible seal (t67-e9) is baked into the prepared revision by the CC seam.
-        chancela_signing::cc::sign_pdf_cc_with_appearance(
-            provider.as_ref(),
-            &pdf,
-            signing_time,
-            &opts,
-            Some(policy.as_mut()),
-            pin.as_ref(),
-            appearance.as_ref(),
-        )
-        .map_err(map_cc_signing_error)
+        match provider_factory {
+            Some(factory) => sign(factory().map_err(map_cc_signing_error)?),
+            None => with_cc_hardware_gate(|| {
+                let provider: Box<dyn SignerProvider> =
+                    Box::new(build_pkcs11_cc_provider(data_dir, signing_time)?);
+                sign(provider)
+            })?,
+        }
     })
     .await
     .map_err(|e| ApiError::Internal(format!("cc sign task failed: {e}")))?
@@ -2664,28 +2932,35 @@ pub(crate) async fn run_cc_batch_sign(
 ) -> Result<chancela_signing::BatchReport, ApiError> {
     let policy_factory = state.cmd_trust_policy.clone();
     let provider_factory = state.cc_provider.clone();
+    let data_dir = state.data_dir();
     tokio::task::spawn_blocking(move || {
         let mut policy = build_trust_policy(policy_factory.clone(), tsl_source.clone())?;
-        let provider: Box<dyn SignerProvider> = match provider_factory {
-            Some(factory) => factory().map_err(map_cc_signing_error)?,
-            None => Box::new(build_pkcs11_cc_provider()?),
+        let sign = |provider: Box<dyn SignerProvider>| {
+            let batch_docs: Vec<chancela_signing::BatchPdfDocument<'_>> = documents
+                .iter()
+                .map(|doc| chancela_signing::BatchPdfDocument {
+                    id: doc.act_id.to_string(),
+                    pdf: &doc.pdf,
+                    options: doc.options.clone(),
+                    appearance: None,
+                })
+                .collect();
+            Ok::<_, ApiError>(chancela_signing::sign_pdf_batch(
+                provider.as_ref(),
+                &batch_docs,
+                signing_time,
+                Some(policy.as_mut()),
+                pin,
+            ))
         };
-        let batch_docs: Vec<chancela_signing::BatchPdfDocument<'_>> = documents
-            .iter()
-            .map(|doc| chancela_signing::BatchPdfDocument {
-                id: doc.act_id.to_string(),
-                pdf: &doc.pdf,
-                options: doc.options.clone(),
-                appearance: None,
-            })
-            .collect();
-        Ok::<_, ApiError>(chancela_signing::sign_pdf_batch(
-            provider.as_ref(),
-            &batch_docs,
-            signing_time,
-            Some(policy.as_mut()),
-            pin,
-        ))
+        match provider_factory {
+            Some(factory) => sign(factory().map_err(map_cc_signing_error)?),
+            None => with_cc_hardware_gate(|| {
+                let provider: Box<dyn SignerProvider> =
+                    Box::new(build_pkcs11_cc_provider(data_dir, signing_time)?);
+                sign(provider)
+            })?,
+        }
     })
     .await
     .map_err(|e| ApiError::Internal(format!("cc batch sign task failed: {e}")))?
@@ -2696,20 +2971,755 @@ pub(crate) async fn run_cc_batch_sign(
 /// FFI) — only call inside `spawn_blocking`. A missing reader / absent middleware / no card is a
 /// clean typed error surfaced as an honest 422, never a panic.
 ///
-/// **CC-E (hardware-acceptance path, no CI coverage without a physical card):** the card exposes only
-/// the signature leaf; the issuing-CA certificate for the trusted-list gate must be resolved
-/// out-of-band (the leaf AKI against the TSL) and supplied via
-/// [`SmartcardProvider::with_issuer_certificate`]. Until that resolution is wired the qualified gate
-/// fails **closed** with `MissingIssuerCertificate` rather than trusting an unresolved issuer — the
-/// safe default. Mock/CI runs inject `cc_provider` (issuer set) instead of taking this path.
-fn build_pkcs11_cc_provider() -> Result<SmartcardProvider<Pkcs11Token>, ApiError> {
-    let token = Pkcs11Token::open().map_err(|e| {
-        ApiError::Unprocessable(format!(
-            "não foi possível aceder ao Cartão de Cidadão (verifique o leitor e a aplicação \
-             Autenticação.gov): {e}"
-        ))
-    })?;
-    Ok(SmartcardProvider::new(token))
+/// The card exposes only the signature leaf. We resolve its immediate issuer exclusively from the
+/// live TSL trust store promoted by the verified LOTL flow: the leaf AKI must match an anchor SKI,
+/// and the existing strict certificate-path builder must verify name, validity, CA constraints,
+/// key usage, and the leaf signature. Only then is the issuer attached through
+/// [`SmartcardProvider::with_issuer_certificate`]. Any unavailable/unauthenticated/stale/no-path
+/// condition leaves the issuer absent, preserving the downstream
+/// `SigningError::MissingIssuerCertificate` fail-closed gate.
+fn build_pkcs11_cc_provider(
+    data_dir: Option<std::path::PathBuf>,
+    validation_time: OffsetDateTime,
+) -> Result<SmartcardProvider<Pkcs11Token>, ApiError> {
+    open_pkcs11_cc_provider(data_dir, validation_time)
+        .map(|opened| opened.provider)
+        .map_err(map_pkcs11_cc_open_error)
+}
+
+fn map_pkcs11_cc_open_error(error: SmartcardError) -> ApiError {
+    let detail = sanitize_smartcard_probe_error(&error).detail;
+    ApiError::Unprocessable(format!(
+        "não foi possível aceder ao Cartão de Cidadão: {detail}"
+    ))
+}
+
+/// Existing injected CC provider factory shape, named here so status/probe helpers can use the
+/// exact production test seam without adding state or a second mock boundary.
+type CcProviderFactory =
+    Arc<dyn Fn() -> Result<Box<dyn SignerProvider>, chancela_signing::SigningError> + Send + Sync>;
+
+/// Process-wide, non-blocking lease over the one user-local smartcard/middleware stack.
+///
+/// PKCS#11/PC/SC calls are synchronous and some middleware waits indefinitely for user/card input.
+/// Serializing every real CC operation prevents diagnostics from racing an act/batch signature and
+/// bounds a wedged native call to one blocking worker. Injected providers do not touch hardware and
+/// deliberately bypass this gate so isolated tests remain parallel.
+static CC_HARDWARE_GATE: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn with_cc_hardware_gate<T>(operation: impl FnOnce() -> T) -> Result<T, ApiError> {
+    let gate = CC_HARDWARE_GATE.get_or_init(|| Mutex::new(()));
+    let _guard = match gate.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::WouldBlock) => {
+            return Err(ApiError::Conflict(
+                "o Cartão de Cidadão está a ser utilizado por outra operação local".to_owned(),
+            ));
+        }
+        Err(TryLockError::Poisoned(_)) => {
+            return Err(ApiError::Internal(
+                "o controlo de acesso ao Cartão de Cidadão ficou indisponível".to_owned(),
+            ));
+        }
+    };
+    Ok(operation())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CcIssuerResolution {
+    Resolved(Vec<u8>),
+    NoVerifiedTrustStore,
+    UnauthenticatedTrustStore,
+    StaleTrustStore,
+    InvalidLeafCertificate,
+    MissingAuthorityKeyIdentifier,
+    NoMatchingVerifiedIssuer,
+}
+
+impl CcIssuerResolution {
+    fn issuer_der(&self) -> Option<Vec<u8>> {
+        match self {
+            Self::Resolved(der) => Some(der.clone()),
+            _ => None,
+        }
+    }
+
+    fn is_resolved(&self) -> bool {
+        matches!(self, Self::Resolved(_))
+    }
+
+    fn check(&self) -> CcBridgeCheck {
+        match self {
+            Self::Resolved(_) => cc_check("ready", None, None),
+            Self::NoVerifiedTrustStore => cc_check(
+                "unavailable",
+                Some("verified_trust_store_unavailable"),
+                Some("Atualize e autentique a Lista de Confiança antes de assinar."),
+            ),
+            Self::UnauthenticatedTrustStore => cc_check(
+                "error",
+                Some("trust_store_unauthenticated"),
+                Some("A Lista de Confiança disponível não foi autenticada pelo LOTL."),
+            ),
+            Self::StaleTrustStore => cc_check(
+                "error",
+                Some("trust_store_stale"),
+                Some("A Lista de Confiança autenticada está desatualizada."),
+            ),
+            Self::InvalidLeafCertificate => cc_check(
+                "error",
+                Some("invalid_signing_certificate"),
+                Some("O certificado de assinatura do cartão não pôde ser validado."),
+            ),
+            Self::MissingAuthorityKeyIdentifier => cc_check(
+                "error",
+                Some("issuer_identifier_missing"),
+                Some("O certificado do cartão não identifica de forma segura o emissor."),
+            ),
+            Self::NoMatchingVerifiedIssuer => cc_check(
+                "unavailable",
+                Some("verified_issuer_not_found"),
+                Some(
+                    "O emissor do certificado não foi encontrado na Lista de Confiança autenticada.",
+                ),
+            ),
+        }
+    }
+}
+
+struct OpenedPkcs11CcProvider {
+    provider: SmartcardProvider<Pkcs11Token>,
+    issuer_resolution: CcIssuerResolution,
+}
+
+/// Open the real token, select the signature leaf, resolve its verified TSL issuer, and attach that
+/// issuer to the provider. This remains blocking and is called only from `spawn_blocking` workers.
+fn open_pkcs11_cc_provider(
+    data_dir: Option<std::path::PathBuf>,
+    validation_time: OffsetDateTime,
+) -> Result<OpenedPkcs11CcProvider, SmartcardError> {
+    let token = Pkcs11Token::open()?;
+    let certificates = token.list_certificates()?;
+    let signing_certificate = select_signature_certificate(&certificates)
+        .ok_or_else(|| {
+            SmartcardError::CertificateNotFound("CITIZEN SIGNATURE CERTIFICATE".to_owned())
+        })?
+        .clone();
+    let issuer_resolution =
+        resolve_cc_issuer_from_live_store(&signing_certificate.cert_der, data_dir, validation_time);
+    let provider = SmartcardProvider::new(token)
+        .with_signing_certificate(signing_certificate)
+        .with_issuer_certificate(issuer_resolution.issuer_der());
+    Ok(OpenedPkcs11CcProvider {
+        provider,
+        issuer_resolution,
+    })
+}
+
+fn resolve_cc_issuer_from_live_store(
+    leaf_der: &[u8],
+    data_dir: Option<std::path::PathBuf>,
+    validation_time: OffsetDateTime,
+) -> CcIssuerResolution {
+    let Some(live) = load_live_trust_store(data_dir, validation_time) else {
+        return CcIssuerResolution::NoVerifiedTrustStore;
+    };
+    resolve_cc_issuer_from_trust_store(leaf_der, &live.store, validation_time)
+}
+
+/// Resolve the direct issuer of a CC leaf from an already-promoted TSL trust store.
+///
+/// AKI/SKI narrows the candidate set before the strict path build, preventing a same-subject CA
+/// from being selected merely because its name resembles the leaf issuer. `build_path` then proves
+/// the actual leaf signature and CA/validity/key-usage constraints. No unverified or stale store can
+/// produce a result.
+fn resolve_cc_issuer_from_trust_store(
+    leaf_der: &[u8],
+    store: &TslTrustStore,
+    validation_time: OffsetDateTime,
+) -> CcIssuerResolution {
+    if !store.authenticated {
+        return CcIssuerResolution::UnauthenticatedTrustStore;
+    }
+    if store.stale {
+        return CcIssuerResolution::StaleTrustStore;
+    }
+
+    let Ok(leaf) = x509_cert::Certificate::from_der(leaf_der) else {
+        return CcIssuerResolution::InvalidLeafCertificate;
+    };
+    let leaf_aki = leaf
+        .tbs_certificate
+        .get::<AuthorityKeyIdentifier>()
+        .ok()
+        .flatten()
+        .and_then(|(_, aki)| aki.key_identifier.map(|id| id.as_bytes().to_vec()));
+    let Some(leaf_aki) = leaf_aki else {
+        return CcIssuerResolution::MissingAuthorityKeyIdentifier;
+    };
+
+    let candidates = store
+        .qc_anchors
+        .iter()
+        .filter(|candidate_der| {
+            let Ok(candidate) = x509_cert::Certificate::from_der(candidate_der) else {
+                return false;
+            };
+            candidate
+                .tbs_certificate
+                .get::<SubjectKeyIdentifier>()
+                .ok()
+                .flatten()
+                .is_some_and(|(_, ski)| ski.0.as_bytes() == leaf_aki.as_slice())
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return CcIssuerResolution::NoMatchingVerifiedIssuer;
+    }
+
+    let Ok(path) = build_path(
+        leaf_der,
+        &[],
+        &candidates,
+        &PathBuildOptions::at(validation_time),
+    ) else {
+        return CcIssuerResolution::NoMatchingVerifiedIssuer;
+    };
+    if path.len() < 2 {
+        return CcIssuerResolution::NoMatchingVerifiedIssuer;
+    }
+    CcIssuerResolution::Resolved(path.signer_issuer().to_vec())
+}
+
+fn cc_check(
+    status: &'static str,
+    code: Option<&'static str>,
+    detail: Option<&'static str>,
+) -> CcBridgeCheck {
+    CcBridgeCheck {
+        status,
+        code,
+        detail,
+    }
+}
+
+fn not_checked(code: &'static str, detail: &'static str) -> CcBridgeCheck {
+    cc_check("not_checked", Some(code), Some(detail))
+}
+
+fn inspect_cc_bridge(
+    local_desktop: bool,
+    provider_factory: Option<CcProviderFactory>,
+    data_dir: Option<std::path::PathBuf>,
+    validation_time: OffsetDateTime,
+) -> CcBridgeStatusResponse {
+    if !local_desktop {
+        let local_only = not_checked(
+            "not_local_desktop",
+            "O Cartão de Cidadão só pode ser usado pela aplicação de secretária local.",
+        );
+        return CcBridgeStatusResponse {
+            transport: "embedded_loopback",
+            local_desktop: false,
+            checked_at: rfc3339(validation_time),
+            diagnostic_source: "not_checked",
+            middleware: local_only.clone(),
+            pcsc: local_only.clone(),
+            readers: local_only.clone(),
+            reader_count: None,
+            card: local_only.clone(),
+            signing_certificate: local_only.clone(),
+            issuer: local_only,
+            ready: false,
+            probe_supported: false,
+            document_signed: false,
+            persisted: false,
+            ledger_event_written: false,
+            qualified_status_claimed: false,
+        };
+    }
+
+    if let Some(factory) = provider_factory {
+        return inspect_injected_cc_bridge(factory, validation_time);
+    }
+
+    let (pcsc, readers, reader_count, readers_ready) = match detect() {
+        Ok(found) if found.is_empty() => (
+            cc_check("ready", None, None),
+            cc_check(
+                "unavailable",
+                Some("no_reader"),
+                Some("Não foi detetado nenhum leitor de cartões."),
+            ),
+            Some(0),
+            false,
+        ),
+        Ok(found) => (
+            cc_check("ready", None, None),
+            cc_check("ready", None, None),
+            Some(found.len()),
+            true,
+        ),
+        Err(SmartcardError::PcscUnavailable(_)) => (
+            cc_check(
+                "unavailable",
+                Some("pcsc_unavailable"),
+                Some("O serviço de cartões inteligentes não está disponível."),
+            ),
+            not_checked(
+                "reader_check_unavailable",
+                "Não foi possível enumerar os leitores.",
+            ),
+            None,
+            false,
+        ),
+        Err(_) => (
+            cc_check(
+                "error",
+                Some("pcsc_error"),
+                Some("Falhou a verificação do serviço de cartões inteligentes."),
+            ),
+            not_checked(
+                "reader_check_failed",
+                "Não foi possível enumerar os leitores.",
+            ),
+            None,
+            false,
+        ),
+    };
+
+    match open_pkcs11_cc_provider(data_dir, validation_time) {
+        Ok(opened) => {
+            let issuer = opened.issuer_resolution.check();
+            let issuer_resolved = opened.issuer_resolution.is_resolved();
+            CcBridgeStatusResponse {
+                transport: "embedded_loopback",
+                local_desktop: true,
+                checked_at: rfc3339(validation_time),
+                diagnostic_source: "real",
+                middleware: cc_check("ready", None, None),
+                pcsc,
+                readers,
+                reader_count,
+                card: cc_check("ready", None, None),
+                signing_certificate: cc_check("ready", None, None),
+                issuer,
+                ready: readers_ready && issuer_resolved,
+                probe_supported: true,
+                document_signed: false,
+                persisted: false,
+                ledger_event_written: false,
+                qualified_status_claimed: false,
+            }
+        }
+        Err(error) => {
+            real_cc_status_from_open_error(error, pcsc, readers, reader_count, validation_time)
+        }
+    }
+}
+
+fn inspect_injected_cc_bridge(
+    factory: CcProviderFactory,
+    validation_time: OffsetDateTime,
+) -> CcBridgeStatusResponse {
+    let injected = cc_check(
+        "injected",
+        None,
+        Some("Diagnóstico executado pelo prestador de teste injetado."),
+    );
+    let hardware_not_checked = not_checked(
+        "hardware_bypassed_by_test_seam",
+        "PC/SC e leitores reais não são consultados no modo de teste.",
+    );
+    let provider = match factory() {
+        Ok(provider) => provider,
+        Err(_) => {
+            return CcBridgeStatusResponse {
+                transport: "embedded_loopback",
+                local_desktop: true,
+                checked_at: rfc3339(validation_time),
+                diagnostic_source: "injected",
+                middleware: injected.clone(),
+                pcsc: hardware_not_checked.clone(),
+                readers: hardware_not_checked,
+                reader_count: None,
+                card: cc_check(
+                    "error",
+                    Some("provider_unavailable"),
+                    Some("O prestador de teste não pôde ser inicializado."),
+                ),
+                signing_certificate: not_checked(
+                    "provider_unavailable",
+                    "O certificado de assinatura não pôde ser consultado.",
+                ),
+                issuer: not_checked("provider_unavailable", "O emissor não pôde ser consultado."),
+                ready: false,
+                probe_supported: false,
+                document_signed: false,
+                persisted: false,
+                ledger_event_written: false,
+                qualified_status_claimed: false,
+            };
+        }
+    };
+
+    let certificate_present = provider
+        .signing_certificate_der()
+        .is_ok_and(|der| !der.is_empty());
+    let issuer_resolved = provider
+        .issuer_certificate_der()
+        .is_ok_and(|issuer| issuer.is_some_and(|der| !der.is_empty()));
+    CcBridgeStatusResponse {
+        transport: "embedded_loopback",
+        local_desktop: true,
+        checked_at: rfc3339(validation_time),
+        diagnostic_source: "injected",
+        middleware: injected.clone(),
+        pcsc: hardware_not_checked.clone(),
+        readers: hardware_not_checked,
+        reader_count: None,
+        card: injected,
+        signing_certificate: if certificate_present {
+            cc_check("ready", None, None)
+        } else {
+            cc_check(
+                "unavailable",
+                Some("signing_certificate_unavailable"),
+                Some("O cartão não apresentou um certificado de assinatura."),
+            )
+        },
+        issuer: if issuer_resolved {
+            cc_check("ready", None, None)
+        } else {
+            cc_check(
+                "unavailable",
+                Some("verified_issuer_not_found"),
+                Some("O prestador não apresentou um emissor verificável."),
+            )
+        },
+        ready: certificate_present && issuer_resolved,
+        probe_supported: certificate_present,
+        document_signed: false,
+        persisted: false,
+        ledger_event_written: false,
+        qualified_status_claimed: false,
+    }
+}
+
+fn real_cc_status_from_open_error(
+    error: SmartcardError,
+    pcsc: CcBridgeCheck,
+    readers: CcBridgeCheck,
+    reader_count: Option<usize>,
+    validation_time: OffsetDateTime,
+) -> CcBridgeStatusResponse {
+    let (middleware, card, signing_certificate) = match error {
+        SmartcardError::ModuleLoad { .. } => (
+            cc_check(
+                "unavailable",
+                Some("middleware_unavailable"),
+                Some("A aplicação Autenticação.gov ou o módulo PKCS#11 não está disponível."),
+            ),
+            not_checked(
+                "middleware_unavailable",
+                "O cartão não pode ser consultado sem o middleware.",
+            ),
+            not_checked(
+                "middleware_unavailable",
+                "O certificado não pode ser consultado sem o middleware.",
+            ),
+        ),
+        SmartcardError::NoCardPresent => (
+            cc_check("ready", None, None),
+            cc_check(
+                "unavailable",
+                Some("card_absent"),
+                Some("Insira o Cartão de Cidadão no leitor."),
+            ),
+            not_checked(
+                "card_absent",
+                "O certificado não pode ser consultado sem o cartão.",
+            ),
+        ),
+        SmartcardError::CertificateNotFound(_) => (
+            cc_check("ready", None, None),
+            cc_check("ready", None, None),
+            cc_check(
+                "unavailable",
+                Some("signing_certificate_unavailable"),
+                Some("O cartão não apresentou o certificado de assinatura qualificada."),
+            ),
+        ),
+        _ => (
+            cc_check(
+                "error",
+                Some("middleware_or_card_error"),
+                Some("O middleware não conseguiu consultar o Cartão de Cidadão."),
+            ),
+            cc_check(
+                "error",
+                Some("card_check_failed"),
+                Some("Não foi possível confirmar o estado do cartão."),
+            ),
+            not_checked(
+                "card_check_failed",
+                "O certificado de assinatura não pôde ser consultado.",
+            ),
+        ),
+    };
+    CcBridgeStatusResponse {
+        transport: "embedded_loopback",
+        local_desktop: true,
+        checked_at: rfc3339(validation_time),
+        diagnostic_source: "real",
+        middleware,
+        pcsc,
+        readers,
+        reader_count,
+        card,
+        signing_certificate,
+        issuer: not_checked(
+            "signing_certificate_unavailable",
+            "O emissor não pode ser resolvido sem o certificado de assinatura.",
+        ),
+        ready: false,
+        probe_supported: false,
+        document_signed: false,
+        persisted: false,
+        ledger_event_written: false,
+        qualified_status_claimed: false,
+    }
+}
+
+const CC_BRIDGE_PROBE_DOMAIN: &[u8] = b"chancela:cartao-cidadao:provider-probe:v1\0";
+
+/// Append and durably persist one identifier-free Citizen Card bridge security event.
+///
+/// This intentionally mirrors the provider-credential probe's fail-closed audit path: callers
+/// invoke it once before the private-key operation and once after its outcome. Attestation remains
+/// best-effort, matching every other application-ledger write.
+async fn record_cc_bridge_probe_audit(
+    state: &AppState,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+    kind: &str,
+    payload: serde_json::Value,
+) -> Result<(), ApiError> {
+    let actor_label = actor.resolve("system");
+    let bytes = serde_json::to_vec(&payload)?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        &actor_label,
+        CC_BRIDGE_AUDIT_SCOPE,
+        kind,
+        None,
+        &bytes,
+    )?;
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
+fn cc_bridge_operation_error_code(error: &ApiError) -> &'static str {
+    match error {
+        ApiError::Conflict(_) => "bridge_busy",
+        ApiError::Internal(_) => "probe_worker_failed",
+        _ => "probe_operation_failed",
+    }
+}
+
+fn run_cc_bridge_probe(
+    provider_factory: Option<CcProviderFactory>,
+    data_dir: Option<std::path::PathBuf>,
+    tested_at: OffsetDateTime,
+) -> CcBridgeProbeResponse {
+    let (provider, issuer_resolved): (Box<dyn SignerProvider>, bool) =
+        if let Some(factory) = provider_factory {
+            let provider = match factory() {
+                Ok(provider) => provider,
+                Err(error) => {
+                    return failed_cc_probe(
+                        tested_at,
+                        false,
+                        false,
+                        sanitize_signing_probe_error(&error),
+                    );
+                }
+            };
+            let issuer_resolved = provider
+                .issuer_certificate_der()
+                .is_ok_and(|issuer| issuer.is_some_and(|der| !der.is_empty()));
+            (provider, issuer_resolved)
+        } else {
+            match open_pkcs11_cc_provider(data_dir, tested_at) {
+                Ok(opened) => {
+                    let issuer_resolved = opened.issuer_resolution.is_resolved();
+                    (Box::new(opened.provider), issuer_resolved)
+                }
+                Err(error) => {
+                    return failed_cc_probe(
+                        tested_at,
+                        false,
+                        false,
+                        sanitize_smartcard_probe_error(&error),
+                    );
+                }
+            }
+        };
+
+    let signing_certificate_present = match provider.signing_certificate_der() {
+        Ok(der) if !der.is_empty() => true,
+        Ok(_) => {
+            return failed_cc_probe(
+                tested_at,
+                false,
+                issuer_resolved,
+                CcBridgeProbeError {
+                    code: "signing_certificate_unavailable",
+                    detail: "O cartão não apresentou um certificado de assinatura.",
+                },
+            );
+        }
+        Err(error) => {
+            return failed_cc_probe(
+                tested_at,
+                false,
+                issuer_resolved,
+                sanitize_signing_probe_error(&error),
+            );
+        }
+    };
+
+    let mut nonce = [0_u8; 32];
+    rand_core::OsRng.fill_bytes(&mut nonce);
+    let mut challenge = Sha256::new();
+    challenge.update(CC_BRIDGE_PROBE_DOMAIN);
+    challenge.update(nonce);
+    challenge.update(tested_at.unix_timestamp_nanos().to_le_bytes());
+    let challenge_digest: [u8; 32] = challenge.finalize().into();
+
+    match probe_cc_provider(provider.as_ref(), &challenge_digest, tested_at) {
+        Ok(probe) => CcBridgeProbeResponse {
+            outcome: "passed",
+            signature_verified: true,
+            algorithm: Some(cc_algorithm_label(probe.algorithm)),
+            signing_certificate_present,
+            issuer_resolved,
+            tested_at: rfc3339(tested_at),
+            error: None,
+            document_signed: false,
+            persisted: false,
+            document_ledger_event_written: false,
+            security_audit_intent_recorded: false,
+            security_audit_outcome_recorded: false,
+            qualified_status_claimed: false,
+        },
+        Err(error) => failed_cc_probe(
+            tested_at,
+            signing_certificate_present,
+            issuer_resolved,
+            sanitize_signing_probe_error(&error),
+        ),
+    }
+}
+
+fn failed_cc_probe(
+    tested_at: OffsetDateTime,
+    signing_certificate_present: bool,
+    issuer_resolved: bool,
+    error: CcBridgeProbeError,
+) -> CcBridgeProbeResponse {
+    CcBridgeProbeResponse {
+        outcome: "failed",
+        signature_verified: false,
+        algorithm: None,
+        signing_certificate_present,
+        issuer_resolved,
+        tested_at: rfc3339(tested_at),
+        error: Some(error),
+        document_signed: false,
+        persisted: false,
+        document_ledger_event_written: false,
+        security_audit_intent_recorded: false,
+        security_audit_outcome_recorded: false,
+        qualified_status_claimed: false,
+    }
+}
+
+fn cc_algorithm_label(algorithm: SignatureAlgorithm) -> &'static str {
+    match algorithm {
+        SignatureAlgorithm::RsaPkcs1Sha256 => "rsa_pkcs1_sha256",
+        SignatureAlgorithm::EcdsaP256Sha256 => "ecdsa_p256_sha256",
+        _ => "unsupported",
+    }
+}
+
+fn sanitize_smartcard_probe_error(error: &SmartcardError) -> CcBridgeProbeError {
+    match error {
+        SmartcardError::ModuleLoad { .. } => CcBridgeProbeError {
+            code: "middleware_unavailable",
+            detail: "A aplicação Autenticação.gov ou o módulo PKCS#11 não está disponível.",
+        },
+        SmartcardError::NoCardPresent => CcBridgeProbeError {
+            code: "card_absent",
+            detail: "Insira o Cartão de Cidadão no leitor.",
+        },
+        SmartcardError::CertificateNotFound(_) => CcBridgeProbeError {
+            code: "signing_certificate_unavailable",
+            detail: "O cartão não apresentou o certificado de assinatura qualificada.",
+        },
+        SmartcardError::PinBlocked => CcBridgeProbeError {
+            code: "authentication_blocked",
+            detail: "A autenticação do cartão está bloqueada; utilize a aplicação Autenticação.gov.",
+        },
+        SmartcardError::WrongPin { .. } => CcBridgeProbeError {
+            code: "authentication_rejected",
+            detail: "A autenticação protegida do cartão foi rejeitada.",
+        },
+        SmartcardError::PcscUnavailable(_) => CcBridgeProbeError {
+            code: "pcsc_unavailable",
+            detail: "O serviço de cartões inteligentes não está disponível.",
+        },
+        _ => CcBridgeProbeError {
+            code: "card_operation_failed",
+            detail: "O Cartão de Cidadão não conseguiu concluir e verificar o desafio.",
+        },
+    }
+}
+
+fn sanitize_signing_probe_error(error: &chancela_signing::SigningError) -> CcBridgeProbeError {
+    use chancela_signing::SigningError as S;
+    match error {
+        S::FamilyMismatch { .. } => CcBridgeProbeError {
+            code: "wrong_provider_family",
+            detail: "O prestador selecionado não é de Cartão de Cidadão.",
+        },
+        S::Provider(message)
+            if message.contains("no CITIZEN SIGNATURE CERTIFICATE")
+                || message.contains("certificate not found") =>
+        {
+            CcBridgeProbeError {
+                code: "signing_certificate_unavailable",
+                detail: "O cartão não apresentou o certificado de assinatura qualificada.",
+            }
+        }
+        S::Provider(_) => CcBridgeProbeError {
+            code: "provider_operation_failed",
+            detail: "O prestador não conseguiu concluir e verificar o desafio.",
+        },
+        S::Cades(_) => CcBridgeProbeError {
+            code: "signature_verification_failed",
+            detail: "A assinatura de teste produzida não foi validada localmente.",
+        },
+        _ => CcBridgeProbeError {
+            code: "provider_test_failed",
+            detail: "O teste do prestador de Cartão de Cidadão falhou.",
+        },
+    }
 }
 
 /// Map a [`chancela_signing::SigningError`] from the **CC** path to an [`ApiError`] with honest PT
@@ -8147,7 +9157,31 @@ pub(crate) fn rfc3339(t: OffsetDateTime) -> String {
 mod tests {
     use super::*;
     use crate::settings::RuntimeTrustLocation;
+    use der::Encode;
+    use der::asn1::{Any, BitString, ObjectIdentifier, OctetString};
+    use rsa::rand_core::OsRng;
+    use spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
     use std::path::PathBuf;
+    use std::str::FromStr;
+    use std::time::Duration as StdDuration;
+    use x509_cert::certificate::{Certificate, TbsCertificate, Version};
+    use x509_cert::ext::Extension;
+    use x509_cert::ext::pkix::{BasicConstraints, KeyUsage, KeyUsages};
+    use x509_cert::name::Name;
+    use x509_cert::serial_number::SerialNumber;
+    use x509_cert::time::Validity;
+
+    const TEST_SHA256_WITH_RSA: ObjectIdentifier =
+        ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
+    const TEST_BASIC_CONSTRAINTS: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.19");
+    const TEST_KEY_USAGE: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.15");
+    const TEST_SUBJECT_KEY_IDENTIFIER: ObjectIdentifier = ObjectIdentifier::new_unwrap("2.5.29.14");
+    const TEST_AUTHORITY_KEY_IDENTIFIER: ObjectIdentifier =
+        ObjectIdentifier::new_unwrap("2.5.29.35");
+    const TEST_SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+        0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01,
+        0x05, 0x00, 0x04, 0x20,
+    ];
 
     struct TempDir(PathBuf);
 
@@ -8167,6 +9201,388 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn test_rsa_algorithm() -> AlgorithmIdentifierOwned {
+        AlgorithmIdentifierOwned {
+            oid: TEST_SHA256_WITH_RSA,
+            parameters: Some(Any::null()),
+        }
+    }
+
+    fn test_rsa_sign(key: &rsa::RsaPrivateKey, message: &[u8]) -> Vec<u8> {
+        let mut digest_info = TEST_SHA256_DIGEST_INFO_PREFIX.to_vec();
+        digest_info.extend_from_slice(&Sha256::digest(message));
+        key.sign(rsa::Pkcs1v15Sign::new_unprefixed(), &digest_info)
+            .expect("RSA signature")
+    }
+
+    fn test_extension(oid: ObjectIdentifier, critical: bool, value_der: Vec<u8>) -> Extension {
+        Extension {
+            extn_id: oid,
+            critical,
+            extn_value: OctetString::new(value_der).expect("extension value"),
+        }
+    }
+
+    struct TestCcIssuer {
+        key: rsa::RsaPrivateKey,
+        name: Name,
+        ski: Vec<u8>,
+        der: Vec<u8>,
+    }
+
+    fn test_cc_issuer() -> TestCcIssuer {
+        let key = rsa::RsaPrivateKey::new(&mut OsRng, 2048).expect("issuer key");
+        let name = Name::from_str("CN=Chancela CC Test Issuer").expect("issuer name");
+        let ski = Sha256::digest(
+            SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(&key))
+                .expect("issuer SPKI")
+                .to_der()
+                .expect("issuer SPKI DER"),
+        )[..20]
+            .to_vec();
+        let extensions = vec![
+            test_extension(
+                TEST_BASIC_CONSTRAINTS,
+                true,
+                BasicConstraints {
+                    ca: true,
+                    path_len_constraint: None,
+                }
+                .to_der()
+                .expect("basic constraints"),
+            ),
+            test_extension(
+                TEST_KEY_USAGE,
+                true,
+                KeyUsage(KeyUsages::KeyCertSign.into())
+                    .to_der()
+                    .expect("key usage"),
+            ),
+            test_extension(
+                TEST_SUBJECT_KEY_IDENTIFIER,
+                false,
+                SubjectKeyIdentifier(
+                    OctetString::new(ski.clone()).expect("subject key identifier"),
+                )
+                .to_der()
+                .expect("SKI DER"),
+            ),
+        ];
+        let tbs = TbsCertificate {
+            version: Version::V3,
+            serial_number: SerialNumber::new(&[1]).expect("serial"),
+            signature: test_rsa_algorithm(),
+            issuer: name.clone(),
+            validity: Validity::from_now(StdDuration::from_secs(24 * 60 * 60)).expect("validity"),
+            subject: name.clone(),
+            subject_public_key_info: SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(
+                &key,
+            ))
+            .expect("issuer SPKI"),
+            issuer_unique_id: None,
+            subject_unique_id: None,
+            extensions: Some(extensions),
+        };
+        let signature = test_rsa_sign(&key, &tbs.to_der().expect("issuer TBS DER"));
+        let der = Certificate {
+            tbs_certificate: tbs,
+            signature_algorithm: test_rsa_algorithm(),
+            signature: BitString::from_bytes(&signature).expect("signature bits"),
+        }
+        .to_der()
+        .expect("issuer certificate DER");
+        TestCcIssuer {
+            key,
+            name,
+            ski,
+            der,
+        }
+    }
+
+    fn test_cc_leaf(issuer: &TestCcIssuer, aki: &[u8]) -> Vec<u8> {
+        let key = rsa::RsaPrivateKey::new(&mut OsRng, 2048).expect("leaf key");
+        let name = Name::from_str("CN=Chancela CC Test Citizen").expect("leaf name");
+        let authority_key_identifier = AuthorityKeyIdentifier {
+            key_identifier: Some(OctetString::new(aki.to_vec()).expect("AKI")),
+            authority_cert_issuer: None,
+            authority_cert_serial_number: None,
+        };
+        let tbs = TbsCertificate {
+            version: Version::V3,
+            serial_number: SerialNumber::new(&[2]).expect("serial"),
+            signature: test_rsa_algorithm(),
+            issuer: issuer.name.clone(),
+            validity: Validity::from_now(StdDuration::from_secs(24 * 60 * 60)).expect("validity"),
+            subject: name,
+            subject_public_key_info: SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(
+                &key,
+            ))
+            .expect("leaf SPKI"),
+            issuer_unique_id: None,
+            subject_unique_id: None,
+            extensions: Some(vec![test_extension(
+                TEST_AUTHORITY_KEY_IDENTIFIER,
+                false,
+                authority_key_identifier.to_der().expect("AKI DER"),
+            )]),
+        };
+        let signature = test_rsa_sign(&issuer.key, &tbs.to_der().expect("leaf TBS DER"));
+        Certificate {
+            tbs_certificate: tbs,
+            signature_algorithm: test_rsa_algorithm(),
+            signature: BitString::from_bytes(&signature).expect("signature bits"),
+        }
+        .to_der()
+        .expect("leaf certificate DER")
+    }
+
+    #[test]
+    fn cc_issuer_resolution_requires_authenticated_fresh_aki_matching_path() {
+        let issuer = test_cc_issuer();
+        let leaf = test_cc_leaf(&issuer, &issuer.ski);
+        let when = OffsetDateTime::now_utc();
+        let mut authenticated = TslTrustStore::default();
+        authenticated.qc_anchors = vec![issuer.der.clone()];
+        authenticated.authenticated = true;
+
+        let resolved = resolve_cc_issuer_from_trust_store(&leaf, &authenticated, when);
+        assert_eq!(resolved, CcIssuerResolution::Resolved(issuer.der.clone()));
+
+        let mut unauthenticated = authenticated.clone();
+        unauthenticated.authenticated = false;
+        assert_eq!(
+            resolve_cc_issuer_from_trust_store(&leaf, &unauthenticated, when),
+            CcIssuerResolution::UnauthenticatedTrustStore
+        );
+
+        let mut stale = authenticated.clone();
+        stale.stale = true;
+        assert_eq!(
+            resolve_cc_issuer_from_trust_store(&leaf, &stale, when),
+            CcIssuerResolution::StaleTrustStore
+        );
+
+        let wrong_aki_leaf = test_cc_leaf(&issuer, &[0xA5; 20]);
+        assert_eq!(
+            resolve_cc_issuer_from_trust_store(&wrong_aki_leaf, &authenticated, when),
+            CcIssuerResolution::NoMatchingVerifiedIssuer
+        );
+    }
+
+    #[test]
+    fn cc_bridge_nonlocal_status_is_read_only_and_does_not_touch_provider() {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let calls_for_factory = calls.clone();
+        let factory: CcProviderFactory = Arc::new(move || {
+            calls_for_factory.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Err(chancela_signing::SigningError::Provider(
+                "must not run".to_owned(),
+            ))
+        });
+        let when = OffsetDateTime::now_utc()
+            .replace_nanosecond(0)
+            .expect("whole seconds");
+
+        let status = inspect_cc_bridge(false, Some(factory), None, when);
+
+        assert!(!status.local_desktop);
+        assert!(!status.ready);
+        assert!(!status.probe_supported);
+        assert!(!status.document_signed);
+        assert!(!status.persisted);
+        assert!(!status.ledger_event_written);
+        assert!(!status.qualified_status_claimed);
+        assert_eq!(status.checked_at, rfc3339(when));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn cc_bridge_errors_are_sanitized_and_dtos_have_no_secret_or_identity_fields() {
+        let raw_path = r"C:\Users\Example\secret\pteidpkcs11.dll";
+        let error = SmartcardError::ModuleLoad {
+            path: raw_path.to_owned(),
+            reason: "loader secret".to_owned(),
+        };
+        let sanitized = sanitize_smartcard_probe_error(&error);
+        let json = serde_json::to_string(&sanitized).expect("serialize");
+        assert_eq!(sanitized.code, "middleware_unavailable");
+        assert!(!json.contains(raw_path));
+        assert!(!json.contains("loader secret"));
+        assert!(!json.to_ascii_lowercase().contains("\"pin\""));
+        assert!(!json.contains("reader_name"));
+        assert!(!json.contains("certificate_der"));
+        assert!(!json.contains("certificate_subject"));
+    }
+
+    #[test]
+    fn cc_bridge_probe_failure_guardrails_never_claim_or_persist_a_document() {
+        let response = failed_cc_probe(
+            OffsetDateTime::UNIX_EPOCH,
+            true,
+            false,
+            CcBridgeProbeError {
+                code: "signature_verification_failed",
+                detail: "A assinatura de teste produzida não foi validada localmente.",
+            },
+        );
+
+        assert_eq!(response.outcome, "failed");
+        assert!(!response.signature_verified);
+        assert!(response.signing_certificate_present);
+        assert!(!response.document_signed);
+        assert!(!response.persisted);
+        assert!(!response.document_ledger_event_written);
+        assert!(!response.security_audit_intent_recorded);
+        assert!(!response.security_audit_outcome_recorded);
+        assert!(!response.qualified_status_claimed);
+        assert!(response.algorithm.is_none());
+    }
+
+    #[test]
+    fn cc_bridge_probe_uses_injected_seam_and_verifies_without_mutation() {
+        let identity = test_cc_issuer();
+        let key = Arc::new(identity.key);
+        let certificate = identity.der;
+        let factory: CcProviderFactory = Arc::new(move || {
+            let signer = key.clone();
+            Ok(Box::new(chancela_signing::MockProvider::new(
+                chancela_signing::SigningFamily::CartaoDeCidadao,
+                chancela_signing::EvidentiaryLevel::Qualified,
+                SignatureAlgorithm::RsaPkcs1Sha256,
+                certificate.clone(),
+                move |digest| {
+                    let mut digest_info = TEST_SHA256_DIGEST_INFO_PREFIX.to_vec();
+                    digest_info.extend_from_slice(digest);
+                    signer
+                        .sign(rsa::Pkcs1v15Sign::new_unprefixed(), &digest_info)
+                        .map_err(|error| {
+                            chancela_signing::SigningError::Provider(error.to_string())
+                        })
+                },
+            )))
+        });
+        let when = OffsetDateTime::now_utc()
+            .replace_nanosecond(0)
+            .expect("whole seconds");
+
+        let response = run_cc_bridge_probe(Some(factory), None, when);
+
+        assert_eq!(response.outcome, "passed");
+        assert!(response.signature_verified);
+        assert_eq!(response.algorithm, Some("rsa_pkcs1_sha256"));
+        assert!(response.signing_certificate_present);
+        assert!(response.issuer_resolved);
+        assert_eq!(response.tested_at, rfc3339(when));
+        assert!(!response.document_signed);
+        assert!(!response.persisted);
+        assert!(!response.document_ledger_event_written);
+        assert!(!response.security_audit_intent_recorded);
+        assert!(!response.security_audit_outcome_recorded);
+        assert!(!response.qualified_status_claimed);
+    }
+
+    #[tokio::test]
+    async fn cc_bridge_probe_security_audit_is_two_phase_sanitized_and_not_book_scoped() {
+        let state = AppState::default();
+        let actor = CurrentActor::default();
+        let attestor = CurrentAttestor::default();
+        let intent = json!({
+            "operation": "ephemeral_challenge_signature",
+            "private_key_operation_requested": true,
+            "document_supplied": false,
+            "document_signature_requested": false,
+            "persistence_requested": false,
+            "qualified_status_requested": false,
+        });
+        let outcome = json!({
+            "operation": "ephemeral_challenge_signature",
+            "outcome": "passed",
+            "signature_verified": true,
+            "algorithm": "rsa_pkcs1_sha256",
+            "signing_certificate_present": true,
+            "issuer_resolved": true,
+            "error_code": serde_json::Value::Null,
+            "document_signed": false,
+            "document_persisted": false,
+            "document_ledger_event_written": false,
+            "qualified_status_claimed": false,
+        });
+
+        record_cc_bridge_probe_audit(
+            &state,
+            &actor,
+            &attestor,
+            CC_BRIDGE_PROBE_REQUESTED_EVENT,
+            intent.clone(),
+        )
+        .await
+        .expect("intent audit");
+        record_cc_bridge_probe_audit(
+            &state,
+            &actor,
+            &attestor,
+            CC_BRIDGE_PROBED_EVENT,
+            outcome.clone(),
+        )
+        .await
+        .expect("outcome audit");
+
+        let ledger = state.ledger.read().await;
+        let events = ledger.events();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].kind, CC_BRIDGE_PROBE_REQUESTED_EVENT);
+        assert_eq!(events[1].kind, CC_BRIDGE_PROBED_EVENT);
+        for event in events {
+            assert_eq!(event.scope, CC_BRIDGE_AUDIT_SCOPE);
+            assert!(
+                event
+                    .links
+                    .iter()
+                    .all(|link| !matches!(&link.chain, chancela_ledger::ChainId::Book(_))),
+                "a bridge probe security event must not join a book chain"
+            );
+        }
+        assert_eq!(
+            events[0].payload_digest,
+            chancela_ledger::digest(&serde_json::to_vec(&intent).expect("intent JSON"))
+        );
+        assert_eq!(
+            events[1].payload_digest,
+            chancela_ledger::digest(&serde_json::to_vec(&outcome).expect("outcome JSON"))
+        );
+
+        let audit_contract = format!("{intent}{outcome}");
+        for forbidden in [
+            "reader_name",
+            "card_id",
+            "certificate_der",
+            "certificate_subject",
+            "certificate_serial",
+            "challenge_id",
+            "challenge_digest",
+            "challenge_nonce",
+            "provider_id",
+            "entry_id",
+        ] {
+            assert!(
+                !audit_contract.contains(forbidden),
+                "audit payload must not contain {forbidden}"
+            );
+        }
+    }
+
+    #[test]
+    fn cc_hardware_gate_returns_busy_instead_of_overlapping_operations() {
+        let gate = CC_HARDWARE_GATE.get_or_init(|| Mutex::new(()));
+        let held = gate.lock().expect("hardware gate");
+
+        let error = with_cc_hardware_gate(|| panic!("busy operation must not run"))
+            .expect_err("a second CC hardware operation must be refused");
+
+        assert!(matches!(error, ApiError::Conflict(message) if message.contains("outra operação")));
+        drop(held);
     }
 
     fn runtime_tsa_provider(

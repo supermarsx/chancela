@@ -179,6 +179,7 @@ export const routeModuleLoaders = {
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
   providerCredential: () => import('../features/settings/ProviderCredentialPage'),
+  citizenCardBridge: () => import('../features/signing/CitizenCardBridgePage'),
   admin: () => import('../features/admin/AdminPage'),
   tools: () => import('../features/tools/ToolsPage'),
   settings: () => import('../features/settings/SettingsPage'),
@@ -327,6 +328,10 @@ export const router = createBrowserRouter([
       {
         path: 'admin/signing/providers/:mode/:providerId/:entryId/edit',
         element: lazyRoute(routeModuleLoaders.providerCredential, 'ProviderCredentialPage'),
+      },
+      {
+        path: 'admin/signing/citizen-card',
+        element: lazyRoute(routeModuleLoaders.citizenCardBridge, 'CitizenCardBridgePage'),
       },
       {
         path: 'admin/:sub?/:detail?',

@@ -31,6 +31,7 @@ describe('route error fallback', () => {
   it('keeps every lazy route chunk importable', async () => {
     expect(routeModuleLoaders).toHaveProperty('admin');
     expect(routeModuleLoaders).toHaveProperty('providerCredential');
+    expect(routeModuleLoaders).toHaveProperty('citizenCardBridge');
     const modules = await Promise.all(Object.values(routeModuleLoaders).map((load) => load()));
 
     expect(modules).toHaveLength(Object.keys(routeModuleLoaders).length);
@@ -48,6 +49,11 @@ describe('route error fallback', () => {
     expect(edit?.at(-1)?.route.path).toBe(
       'admin/signing/providers/:mode/:providerId/:entryId/edit',
     );
+  });
+
+  it('ranks the Citizen Card bridge page ahead of the generic admin route', () => {
+    const matches = matchRoutes(router.routes, '/admin/signing/citizen-card');
+    expect(matches?.at(-1)?.route.path).toBe('admin/signing/citizen-card');
   });
 
   it('renders CrashScreen for a lazy route rejection instead of React Router default UI', async () => {

@@ -2470,6 +2470,10 @@ mod live_signer_trust_tests {
             provenance: TrustStoreProvenance {
                 authenticated,
                 stale: false,
+                member_tsl_sha256: {
+                    let digest: [u8; 32] = sha2::Sha256::digest(BUNDLED_PT_TSL).into();
+                    crate::hex::hex(&digest)
+                },
                 refreshed_at: String::new(),
                 territory: "PT".to_owned(),
                 lotl_url: None,

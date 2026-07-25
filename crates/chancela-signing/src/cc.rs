@@ -28,7 +28,9 @@
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use chancela_cades::{assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{
+    SignatureAlgorithm, assemble_cades_b, signed_attributes_digest, validate_cades_b,
+};
 use chancela_pades::{
     SealAppearance, SignOptions, embed_signature, prepare_signature_with_appearance,
     validate_pdf_signature,
@@ -36,7 +38,7 @@ use chancela_pades::{
 
 use crate::policy::TrustPolicy;
 use crate::provider::SignerProvider;
-use crate::{SigningError, TrustedListStatus};
+use crate::{SigningError, SigningFamily, TrustedListStatus};
 
 /// The result of a synchronous Cartão de Cidadão PAdES signature ([`sign_pdf_cc`]).
 ///
@@ -57,6 +59,75 @@ pub struct CcSignedPdf {
     /// was consulted. Only [`TrustedListStatus::Granted`] passes the gate, so whenever a policy was
     /// supplied this is `Some(TrustedListStatus::Granted)`; `None` when no policy was supplied.
     pub trusted_list_status: Option<TrustedListStatus>,
+}
+
+/// Result of a Cartão de Cidadão provider self-test over an ephemeral challenge.
+///
+/// This is deliberately much narrower than a document signature: no document bytes are supplied,
+/// no trust or qualified-status decision is made, and the generated detached CAdES object is kept
+/// only long enough to verify the provider's signature locally. Callers should generate a fresh,
+/// domain-separated random [`challenge_digest`](probe_cc_provider) for every invocation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CcProviderProbe {
+    /// The card-generation signing algorithm that successfully signed and verified.
+    pub algorithm: SignatureAlgorithm,
+}
+
+/// Sign and locally verify a short-lived, domain-separated random challenge with a CC provider.
+///
+/// `challenge_digest` is the SHA-256 digest of caller-generated challenge bytes. The API uses the
+/// domain `chancela:cartao-cidadao:provider-probe:v1` plus fresh OS randomness and the current
+/// instant; this function then wraps that digest in normal CAdES signed attributes, asks the
+/// provider to sign once through its protected-authentication path, assembles a detached in-memory
+/// CAdES object, and verifies it cryptographically before returning.
+///
+/// Safety boundaries:
+///
+/// - no document is accepted or signed;
+/// - no PIN or other secret is accepted;
+/// - no trust-list or qualified/legal status is asserted;
+/// - no artifact is persisted or returned;
+/// - a provider for any family other than Cartão de Cidadão is rejected before signing.
+pub fn probe_cc_provider(
+    provider: &dyn SignerProvider,
+    challenge_digest: &[u8; 32],
+    signing_time: OffsetDateTime,
+) -> Result<CcProviderProbe, SigningError> {
+    if provider.family() != SigningFamily::CartaoDeCidadao {
+        return Err(SigningError::FamilyMismatch {
+            requested: SigningFamily::CartaoDeCidadao,
+            provided: provider.family(),
+        });
+    }
+
+    let signing_cert_der = provider.signing_certificate_der()?;
+    let signed_attrs_digest =
+        signed_attributes_digest(challenge_digest, &signing_cert_der, signing_time)
+            .map_err(cades_err)?;
+    // Deliberately use the no-secret/protected-authentication path. A desktop IPC/native PIN
+    // broker is not part of this seam, and accepting an HTTP PIN would turn a diagnostic into a
+    // credential-bearing endpoint.
+    let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
+    if raw.signing_cert_der != signing_cert_der {
+        return Err(SigningError::Cades(
+            "provider changed signing certificate during challenge".to_owned(),
+        ));
+    }
+    let algorithm = raw.algorithm;
+    let cms = assemble_cades_b(&raw, challenge_digest, signing_time).map_err(cades_err)?;
+    let verified = validate_cades_b(&cms, challenge_digest).map_err(cades_err)?;
+
+    // `validate_cades_b` verifies the raw signature against the certificate embedded by the
+    // provider. Also require that certificate to be the one the provider advertised before the
+    // challenge was constructed, so a provider cannot silently switch identities mid-probe.
+    if verified.signer_cert_der != signing_cert_der {
+        return Err(SigningError::Cades(
+            "provider changed signing certificate during challenge".to_owned(),
+        ));
+    }
+
+    Ok(CcProviderProbe { algorithm })
 }
 
 /// Sign `pdf` with a Cartão de Cidadão in a single synchronous call (t58 F-CC — the frozen CC seam).
@@ -142,6 +213,10 @@ pub fn sign_pdf_cc_with_appearance(
     pin: Option<&Zeroizing<String>>,
     appearance: Option<&SealAppearance>,
 ) -> Result<CcSignedPdf, SigningError> {
+    // Pin the leaf before the trust decision. Providers may internally re-read a removable token;
+    // every later signature is required to use this exact DER identity.
+    let signing_cert_der = provider.signing_certificate_der()?;
+
     // 1. Trusted-list gate on the CC issuer (SIG-11/23), fail-closed — identical semantics to
     //    `cmd_initiate` and `sign_slot`: a qualified signature must not be trusted, nor even
     //    started at the reader, unless its issuer is currently granted.
@@ -159,10 +234,6 @@ pub fn sign_pdf_cc_with_appearance(
         None => None,
     };
 
-    // The selected qualified-signature leaf (by CKA_LABEL, never the auth cert — SIG-02). Needed to
-    // build the signed attributes, and recorded in the outcome as signer evidence.
-    let signing_cert_der = provider.signing_certificate_der()?;
-
     // 2. Prepare (with the optional visible seal) → card sign_digest → assemble CAdES-B → embed (the
     //    t57-S2 F5 seam, reused). No two-phase suspend is needed: CC is a single blocking call.
     let prepared =
@@ -173,6 +244,14 @@ pub fn sign_pdf_cc_with_appearance(
     // The card signs here; a card/PIN/activation failure surfaces as `SigningError::Provider`. When
     // an in-app PIN is supplied it is presented to `C_Login`; otherwise the protected-auth path runs.
     let raw = provider.sign_signed_attributes_with_pin(&signed_attrs_digest, pin)?;
+    // The issuer gate and signed attributes both applied to `signing_cert_der`. A provider must not
+    // switch to another card/certificate after that decision: even a cryptographically valid
+    // signature from the replacement identity is not authorized by the issuer decision above.
+    if raw.signing_cert_der != signing_cert_der {
+        return Err(SigningError::Cades(
+            "provider changed signing certificate after issuer trust decision".to_owned(),
+        ));
+    }
     let cms =
         assemble_cades_b(&raw, prepared.byterange_digest(), signing_time).map_err(cades_err)?;
     let signed_pdf = embed_signature(&prepared, &cms).map_err(pades_err)?;

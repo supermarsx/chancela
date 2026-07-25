@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use chancela_cades::{assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{assemble_cades_b, signed_attributes_digest, validate_cades_b};
 use chancela_pades::{
     PreparedSignature, SealAppearance, SignOptions, embed_signature,
     prepare_signature_with_appearance, validate_pdf_signature,
@@ -704,19 +704,32 @@ fn sign_one_pdf(
 
     // From here the signer's device/service is contacted — one signing invocation (one
     // context-specific authentication).
-    let result = sign_prepared_pdf(provider, &prepared, &signed_attrs_digest, signing_time, pin);
+    let result = sign_prepared_pdf(
+        provider,
+        signing_cert_der,
+        &prepared,
+        &signed_attrs_digest,
+        signing_time,
+        pin,
+    );
     (true, result)
 }
 
 /// Complete a prepared PDF signature: card/service sign → assemble CAdES-B → embed → validate.
 fn sign_prepared_pdf(
     provider: &dyn SignerProvider,
+    signing_cert_der: &[u8],
     prepared: &chancela_pades::PreparedSignature,
     signed_attrs_digest: &[u8; 32],
     signing_time: OffsetDateTime,
     pin: Option<&Zeroizing<String>>,
 ) -> Result<Vec<u8>, SigningError> {
     let raw = provider.sign_signed_attributes_with_pin(signed_attrs_digest, pin)?;
+    if raw.signing_cert_der != signing_cert_der {
+        return Err(SigningError::Cades(
+            "provider changed signing certificate after batch issuer trust decision".to_owned(),
+        ));
+    }
     let cms =
         assemble_cades_b(&raw, prepared.byterange_digest(), signing_time).map_err(cades_err)?;
     let signed_pdf = embed_signature(prepared, &cms).map_err(pades_err)?;
@@ -737,7 +750,21 @@ fn sign_one_cades(
         signed_attributes_digest(content_digest, signing_cert_der, signing_time)
             .map_err(cades_err)?;
     let raw = provider.sign_signed_attributes_with_pin(&signed_attrs_digest, pin)?;
-    assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)
+    if raw.signing_cert_der != signing_cert_der {
+        return Err(SigningError::Cades(
+            "provider changed signing certificate after batch issuer trust decision".to_owned(),
+        ));
+    }
+    let cms = assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)?;
+    if provider.requires_cms_post_validation() {
+        let verified = validate_cades_b(&cms, content_digest).map_err(cades_err)?;
+        if verified.signer_cert_der != signing_cert_der {
+            return Err(SigningError::Cades(
+                "provider changed signing certificate after batch issuer trust decision".to_owned(),
+            ));
+        }
+    }
+    Ok(cms)
 }
 
 fn cades_err(e: chancela_cades::CadesError) -> SigningError {

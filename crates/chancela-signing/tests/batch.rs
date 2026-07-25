@@ -286,6 +286,10 @@ impl SignerProvider for CountingProvider<'_> {
         self.inner.evidentiary_level()
     }
 
+    fn requires_cms_post_validation(&self) -> bool {
+        self.inner.requires_cms_post_validation()
+    }
+
     fn signing_certificate_der(&self) -> Result<Vec<u8>, SigningError> {
         self.inner.signing_certificate_der()
     }
@@ -650,11 +654,129 @@ fn cc_provider(card: KeyCard) -> SmartcardProvider<KeyCard> {
     SmartcardProvider::new(card).with_issuer_certificate(Some(vec![0u8; 4]))
 }
 
+struct SwitchingBatchProvider {
+    advertised_certificate: Vec<u8>,
+    signer: EphemeralRsaSigner,
+}
+
+struct ForgedIdentityBatchProvider {
+    advertised_certificate: Vec<u8>,
+    signer: EphemeralRsaSigner,
+}
+
+impl SignerProvider for ForgedIdentityBatchProvider {
+    fn family(&self) -> SigningFamily {
+        SigningFamily::CartaoDeCidadao
+    }
+
+    fn evidentiary_level(&self) -> EvidentiaryLevel {
+        EvidentiaryLevel::Qualified
+    }
+
+    fn requires_cms_post_validation(&self) -> bool {
+        true
+    }
+
+    fn signing_certificate_der(&self) -> Result<Vec<u8>, SigningError> {
+        Ok(self.advertised_certificate.clone())
+    }
+
+    fn issuer_certificate_der(&self) -> Result<Option<Vec<u8>>, SigningError> {
+        Ok(None)
+    }
+
+    fn sign_signed_attributes(
+        &self,
+        signed_attrs_digest: &[u8; 32],
+    ) -> Result<RawSignature, SigningError> {
+        Ok(RawSignature::new(
+            SignatureAlgorithm::RsaPkcs1Sha256,
+            self.signer.sign_digest(signed_attrs_digest),
+            self.advertised_certificate.clone(),
+            Vec::new(),
+        ))
+    }
+}
+
+impl SignerProvider for SwitchingBatchProvider {
+    fn family(&self) -> SigningFamily {
+        SigningFamily::CartaoDeCidadao
+    }
+
+    fn evidentiary_level(&self) -> EvidentiaryLevel {
+        EvidentiaryLevel::Qualified
+    }
+
+    fn signing_certificate_der(&self) -> Result<Vec<u8>, SigningError> {
+        Ok(self.advertised_certificate.clone())
+    }
+
+    fn issuer_certificate_der(&self) -> Result<Option<Vec<u8>>, SigningError> {
+        Ok(None)
+    }
+
+    fn sign_signed_attributes(
+        &self,
+        signed_attrs_digest: &[u8; 32],
+    ) -> Result<RawSignature, SigningError> {
+        Ok(RawSignature::new(
+            SignatureAlgorithm::RsaPkcs1Sha256,
+            self.signer.sign_digest(signed_attrs_digest),
+            self.signer.cert_der.clone(),
+            Vec::new(),
+        ))
+    }
+}
+
 fn contains(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.windows(needle.len()).any(|w| w == needle)
 }
 
 // --- The proofs -----------------------------------------------------------------------------------
+
+#[test]
+fn batch_rejects_certificate_switch_for_every_document() {
+    let advertised = EphemeralRsaSigner::new("Amélia Marques (cartão A)", 31);
+    let signer = EphemeralRsaSigner::new("Outra identidade (cartão B)", 32);
+    let provider = SwitchingBatchProvider {
+        advertised_certificate: advertised.cert_der,
+        signer,
+    };
+    let pdf = base_pdf();
+    let docs = [pdf_doc("ata-identity-switch", &pdf, None)];
+
+    let report = sign_pdf_batch(&provider, &docs, fixed_time(), None, None);
+
+    assert_eq!(report.ok_count(), 0);
+    assert_eq!(report.failed_count(), 1);
+    assert!(matches!(
+        &report.results[0].result,
+        Err(SigningError::Cades(message)) if message.contains("changed signing certificate")
+    ));
+}
+
+#[test]
+fn detached_cades_batch_rejects_forged_advertised_identity() {
+    let advertised = EphemeralRsaSigner::new("Amélia Marques (cartão A)", 33);
+    let signer = EphemeralRsaSigner::new("Outra identidade (cartão B)", 34);
+    let provider = ForgedIdentityBatchProvider {
+        advertised_certificate: advertised.cert_der,
+        signer,
+    };
+    let docs = [BatchCadesDocument {
+        id: "ata-forged-identity".to_owned(),
+        content_digest: [0xD4; 32],
+    }];
+
+    let report = sign_detached_cades_batch(&provider, &docs, fixed_time(), None, None);
+
+    assert_eq!(report.ok_count(), 0);
+    assert_eq!(report.failed_count(), 1);
+    assert!(matches!(
+        &report.results[0].result,
+        Err(SigningError::Cades(_))
+    ));
+}
 
 /// One session, one in-app PIN: the batch reuses a single provider and replays the one PIN to every
 /// document's login, so a batch of N is honestly `SingleAuth` and every signature validates.

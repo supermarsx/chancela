@@ -24,9 +24,10 @@ use chancela_tsa::mock::{
 use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
 use chancela_tsl::{
     AuthenticatedList, DEFAULT_LOTL_URL, DEFAULT_PT_TSL_URL, DigitalIdentity, ENV_LOTL_URL,
-    LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService, TrustServiceProvider,
-    TrustedList, TslError, TslTrustAnchors, TslTrustStore, ingest_lotl, ingest_member_tsl,
-    member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl, validate_tsl_signature,
+    FALLBACK_TTL, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
+    TrustServiceProvider, TrustedList, TslError, TslTrustAnchors, TslTrustStore, ingest_lotl,
+    ingest_member_tsl, member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl,
+    validate_tsl_signature,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -906,6 +907,11 @@ fn import_tsl_to_cache(
 pub(crate) struct TrustStoreProvenance {
     pub authenticated: bool,
     pub stale: bool,
+    /// SHA-256 of the exact authenticated member-state TSL bytes promoted to `tsl.xml`.
+    ///
+    /// This binds the sidecar's authentication result to the cache. A legacy sidecar without this
+    /// required field, or a cache modified/replaced after promotion, cannot produce a live store.
+    pub member_tsl_sha256: String,
     pub refreshed_at: String,
     pub territory: String,
     pub lotl_url: Option<String>,
@@ -1085,6 +1091,7 @@ fn import_tsl_via_lotl(
             let provenance = TrustStoreProvenance {
                 authenticated: store.authenticated,
                 stale: store.stale,
+                member_tsl_sha256: cert_fingerprint(&member_bytes),
                 refreshed_at: format_time(now),
                 territory: territory.clone(),
                 lotl_url: Some(lotl_url),
@@ -1195,9 +1202,31 @@ pub(crate) fn load_live_trust_store(
     let provenance = read_trust_store_provenance(&dir.join(TRUST_STORE_PROVENANCE_FILE))?;
     let cached = find_cached_tsl(Some(dir))?;
     let xml = std::fs::read(&cached).ok()?;
+    if cert_fingerprint(&xml) != provenance.member_tsl_sha256 {
+        return None;
+    }
     let list = parse_tsl(&xml).ok()?;
-    let store = TslTrustStore::from_list(&list, provenance.authenticated, provenance.stale, now);
+    let expired = trust_store_cache_expired(&list, &provenance, now);
+    let store = TslTrustStore::from_list(
+        &list,
+        provenance.authenticated,
+        provenance.stale || expired,
+        now,
+    );
     Some(LiveTrustStore { store, provenance })
+}
+
+fn trust_store_cache_expired(
+    list: &TrustedList,
+    provenance: &TrustStoreProvenance,
+    now: OffsetDateTime,
+) -> bool {
+    match list.next_update {
+        Some(next_update) => now >= next_update,
+        None => OffsetDateTime::parse(&provenance.refreshed_at, &Rfc3339)
+            .ok()
+            .is_none_or(|refreshed_at| now >= refreshed_at + FALLBACK_TTL),
+    }
 }
 
 fn read_bounded_tsl_file(path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
@@ -3123,6 +3152,7 @@ mod tests {
         let provenance = TrustStoreProvenance {
             authenticated: true,
             stale: false,
+            member_tsl_sha256: cert_fingerprint(BUNDLED_PT_TSL),
             refreshed_at: format_time(NOW),
             territory: "PT".to_owned(),
             lotl_url: Some("https://example.test/eu-lotl.xml".to_owned()),
@@ -3143,6 +3173,78 @@ mod tests {
     }
 
     #[test]
+    fn live_trust_store_rejects_cache_not_bound_to_authenticated_digest() {
+        let tmp = TempDir::new();
+        std::fs::write(tmp.0.join(TRUST_CACHE_FILE), BUNDLED_PT_TSL).expect("cache");
+        let list = parse_tsl(BUNDLED_PT_TSL).expect("fixture parses");
+        let store = TslTrustStore::from_list(&list, true, false, NOW);
+        let provenance = TrustStoreProvenance {
+            authenticated: true,
+            stale: false,
+            member_tsl_sha256: cert_fingerprint(BUNDLED_PT_TSL),
+            refreshed_at: format_time(NOW),
+            territory: "PT".to_owned(),
+            lotl_url: Some("https://example.test/eu-lotl.xml".to_owned()),
+            member_url: Some("https://example.test/pt-tsl.xml".to_owned()),
+            qc_anchor_count: store.qc_anchors.len(),
+            qtst_anchor_count: store.qtst_anchors.len(),
+        };
+        persist_trust_store_provenance(&tmp.0.join(TRUST_STORE_PROVENANCE_FILE), &provenance)
+            .expect("persist provenance");
+
+        let mut replaced = BUNDLED_PT_TSL.to_vec();
+        replaced.extend_from_slice(b"\n<!-- modified after authentication -->\n");
+        std::fs::write(tmp.0.join(TRUST_CACHE_FILE), replaced).expect("replace cache");
+
+        assert!(
+            load_live_trust_store(Some(tmp.0.clone()), NOW).is_none(),
+            "a provenance sidecar must never authenticate different XML bytes"
+        );
+    }
+
+    #[test]
+    fn live_trust_store_recomputes_next_update_and_fallback_ttl_staleness() {
+        let mut list = parse_tsl(BUNDLED_PT_TSL).expect("fixture parses");
+        let provenance = TrustStoreProvenance {
+            authenticated: true,
+            stale: false,
+            member_tsl_sha256: cert_fingerprint(BUNDLED_PT_TSL),
+            refreshed_at: format_time(NOW),
+            territory: "PT".to_owned(),
+            lotl_url: None,
+            member_url: None,
+            qc_anchor_count: 1,
+            qtst_anchor_count: 0,
+        };
+
+        assert!(!trust_store_cache_expired(&list, &provenance, NOW));
+        assert!(trust_store_cache_expired(
+            &list,
+            &provenance,
+            datetime!(2026-07-15 0:00:00 UTC)
+        ));
+
+        list.next_update = None;
+        assert!(!trust_store_cache_expired(
+            &list,
+            &provenance,
+            NOW + FALLBACK_TTL - time::Duration::seconds(1)
+        ));
+        assert!(trust_store_cache_expired(
+            &list,
+            &provenance,
+            NOW + FALLBACK_TTL
+        ));
+
+        let mut malformed = provenance;
+        malformed.refreshed_at = "not-rfc3339".to_owned();
+        assert!(
+            trust_store_cache_expired(&list, &malformed, NOW),
+            "an unreadable refresh instant must fail closed"
+        );
+    }
+
+    #[test]
     fn load_live_trust_store_is_none_without_provenance() {
         // Fail-closed: a cached TSL with no provenance sidecar (e.g. a legacy national import) yields
         // no live trust store — trust material is only reconstructed for a promoted LOTL bootstrap.
@@ -3158,6 +3260,7 @@ mod tests {
         let provenance = TrustStoreProvenance {
             authenticated: true,
             stale: false,
+            member_tsl_sha256: cert_fingerprint(BUNDLED_PT_TSL),
             refreshed_at: format_time(NOW),
             territory: "PT".to_owned(),
             lotl_url: None,

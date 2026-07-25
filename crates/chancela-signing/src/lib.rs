@@ -73,7 +73,7 @@ pub use batch::{
     confirm_remote_pdf_batch_repeated_sessions, initiate_remote_pdf_batch_repeated_sessions,
     initiate_remote_prepared_batch_repeated_sessions, sign_detached_cades_batch, sign_pdf_batch,
 };
-pub use cc::{CcSignedPdf, sign_pdf_cc};
+pub use cc::{CcProviderProbe, CcSignedPdf, probe_cc_provider, sign_pdf_cc};
 pub use cmd_session::{
     CMD_PROVIDER_ID, CmdInitiate, CmdRemoteSource, CmdSignSession, cmd_confirm, cmd_initiate,
 };

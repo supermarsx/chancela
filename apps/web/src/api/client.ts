@@ -168,6 +168,8 @@ import type {
   CmdConfirmResult,
   CcSignBody,
   CcSignResult,
+  CitizenCardBridgeProbe,
+  CitizenCardBridgeStatus,
   CcBatchSignBody,
   CcBatchSignResponse,
   LocalPkcs12SignBody,
@@ -1351,6 +1353,9 @@ export const api = {
   // PT message is surfaced verbatim.
   ccSignSignature: (id: string, body: CcSignBody = {}) =>
     post<CcSignResult>(`/v1/acts/${id}/signature/cc/sign`, body),
+  // Sanitized desktop-local bridge diagnostics and an explicitly bodyless ephemeral key test.
+  getCitizenCardBridgeStatus: () => get<CitizenCardBridgeStatus>('/v1/signature/cc/bridge/status'),
+  testCitizenCardBridge: () => post<CitizenCardBridgeProbe>('/v1/signature/cc/bridge/test'),
   // In-app Cartão de Cidadão BATCH signing (§ t67) — signs many sealed acts under one signer
   // authentication where the card allows it. The optional PIN rides only in this request body; the
   // response and every per-document result are PIN-free. Not act-scoped (the batch spans acts).

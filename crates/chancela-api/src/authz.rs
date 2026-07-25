@@ -732,6 +732,8 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/acts/{id}/signature/cmd/initiate", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cmd/confirm", RouteClass::Gated), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/cc/sign", RouteClass::Gated), // POST signing.perform@Book (co-located)
+    ("/v1/signature/cc/bridge/status", RouteClass::Gated), // GET signing.configure@Global (sanitized local diagnostics)
+    ("/v1/signature/cc/bridge/test", RouteClass::Gated), // POST signing.configure+signing.perform@Global (bodyless ephemeral challenge)
     ("/v1/signature/cc/batch-sign", RouteClass::Gated), // POST signing.perform@Book(each requested act) / co-located permission checks
     (
         "/v1/acts/{id}/signature/local/pkcs12/sign",

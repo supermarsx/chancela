@@ -5749,7 +5749,7 @@ describe('SettingsPage', () => {
     expect(screen.getByRole('button', { name: 'Ajuda sobre a coluna Ações' })).toBeTruthy();
   });
 
-  it('deep-links each configurable mode and leaves Cartão de Cidadão a note, not a button', async () => {
+  it('deep-links credential modes and exposes the Cartão de Cidadão local bridge', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -5770,20 +5770,19 @@ describe('SettingsPage', () => {
       ['/admin/signing/trust-services'],
     );
 
-    // The three configurable modes each expose a "Configurar" control; CC does not.
+    // The three stored-credential modes expose "Configurar"; CC has its own local bridge action.
     expect(await screen.findByRole('button', { name: 'Configurar o modo CMD/SCMD' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Configurar o modo CSC/QTSP' })).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Configurar o modo PKCS#12 local' })).toBeTruthy();
 
-    // Cartão de Cidadão is configured on the operator's own machine — a muted note, no route.
-    expect(screen.getByText('Configurado na máquina do operador')).toBeTruthy();
+    // Cartão de Cidadão stays local but now has a reachable diagnostics/test page.
+    expect(screen.getByRole('button', { name: 'Verificar ponte local' })).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: 'Configurar o modo Cartão de Cidadão' }),
     ).toBeNull();
 
-    // Clicking one navigates to the dedicated credential-create page.
-    fireEvent.click(screen.getByRole('button', { name: 'Configurar o modo CSC/QTSP' }));
-    expect(seen).toContain('/admin/signing/providers/new?mode=csc');
+    fireEvent.click(screen.getByRole('button', { name: 'Verificar ponte local' }));
+    expect(seen).toContain('/admin/signing/citizen-card');
   });
 
   it('explains what each signing mode is for below the table', async () => {

@@ -68,6 +68,35 @@ fn key_label_for(cert_label: &str) -> String {
     cert_label.replace("CERTIFICATE", "KEY")
 }
 
+#[derive(Debug, PartialEq, Eq)]
+enum CertificateBinding {
+    Id(Vec<u8>),
+    LabelOnly,
+}
+
+/// Resolve a pinned certificate against the live token objects.
+///
+/// A CKA_LABEL identifies the *purpose* of a CC object, not one immutable card identity. Therefore
+/// a same-label object is not accepted unless its live CKA_VALUE is byte-for-byte equal to the DER
+/// selected before the trust decision. When the matching object exposes CKA_ID, that ID is used to
+/// bind the private key exactly; label fallback is retained only for middleware that omits CKA_ID.
+fn select_exact_certificate_binding(
+    pinned_cert_der: &[u8],
+    candidates: &[(Vec<u8>, Option<Vec<u8>>)],
+) -> Option<CertificateBinding> {
+    let mut exact_without_id = false;
+    for (cert_der, id) in candidates {
+        if cert_der != pinned_cert_der {
+            continue;
+        }
+        if let Some(id) = id.as_ref().filter(|id| !id.is_empty()) {
+            return Some(CertificateBinding::Id(id.clone()));
+        }
+        exact_without_id = true;
+    }
+    exact_without_id.then_some(CertificateBinding::LabelOnly)
+}
+
 fn pkcs11_err(e: CryptokiError) -> SmartcardError {
     SmartcardError::Pkcs11(e.to_string())
 }
@@ -140,36 +169,47 @@ impl Pkcs11Token {
     }
 
     /// Locate the private-key object backing `cert`: match by CKA_ID (the robust
-    /// path), falling back to the mapped key label.
+    /// path), falling back to the mapped key label only when the exact live certificate object
+    /// omits CKA_ID.
     fn find_key(
         session: &Session,
         cert: &TokenCertificate,
     ) -> Result<ObjectHandle, SmartcardError> {
-        let cert_handle = session
+        let cert_handles = session
             .find_objects(&[
                 Attribute::Class(ObjectClass::CERTIFICATE),
                 Attribute::Label(cert.label.clone().into_bytes()),
             ])
-            .map_err(pkcs11_err)?
-            .into_iter()
-            .next()
+            .map_err(pkcs11_err)?;
+
+        let mut candidates = Vec::with_capacity(cert_handles.len());
+        for cert_handle in cert_handles {
+            let attrs = session
+                .get_attributes(cert_handle, &[AttributeType::Value, AttributeType::Id])
+                .map_err(pkcs11_err)?;
+            let mut value = None;
+            let mut id = None;
+            for attr in attrs {
+                match attr {
+                    Attribute::Value(bytes) => value = Some(bytes),
+                    Attribute::Id(bytes) => id = Some(bytes),
+                    _ => {}
+                }
+            }
+            if let Some(value) = value {
+                candidates.push((value, id));
+            }
+        }
+
+        let binding = select_exact_certificate_binding(&cert.cert_der, &candidates)
             .ok_or_else(|| SmartcardError::CertificateNotFound(cert.label.clone()))?;
 
-        let ck_id = session
-            .get_attributes(cert_handle, &[AttributeType::Id])
-            .map_err(pkcs11_err)?
-            .into_iter()
-            .find_map(|a| match a {
-                Attribute::Id(bytes) => Some(bytes),
-                _ => None,
-            });
-
-        let key_template = match ck_id {
-            Some(id) => vec![
+        let key_template = match binding {
+            CertificateBinding::Id(id) => vec![
                 Attribute::Class(ObjectClass::PRIVATE_KEY),
                 Attribute::Id(id),
             ],
-            None => vec![
+            CertificateBinding::LabelOnly => vec![
                 Attribute::Class(ObjectClass::PRIVATE_KEY),
                 Attribute::Label(key_label_for(&cert.label).into_bytes()),
             ],
@@ -335,6 +375,36 @@ mod tests {
         assert_eq!(
             key_label_for("CITIZEN AUTHENTICATION CERTIFICATE"),
             "CITIZEN AUTHENTICATION KEY"
+        );
+    }
+
+    #[test]
+    fn exact_certificate_binding_rejects_same_label_replacement_identity() {
+        let candidates = vec![(b"replacement-card-der".to_vec(), Some(vec![0x02]))];
+        assert_eq!(
+            select_exact_certificate_binding(b"pinned-card-der", &candidates),
+            None
+        );
+    }
+
+    #[test]
+    fn exact_certificate_binding_prefers_matching_der_cka_id() {
+        let candidates = vec![
+            (b"pinned-card-der".to_vec(), None),
+            (b"pinned-card-der".to_vec(), Some(vec![0x11, 0x22])),
+        ];
+        assert_eq!(
+            select_exact_certificate_binding(b"pinned-card-der", &candidates),
+            Some(CertificateBinding::Id(vec![0x11, 0x22]))
+        );
+    }
+
+    #[test]
+    fn exact_certificate_binding_falls_back_only_for_exact_der_without_id() {
+        let candidates = vec![(b"pinned-card-der".to_vec(), None)];
+        assert_eq!(
+            select_exact_certificate_binding(b"pinned-card-der", &candidates),
+            Some(CertificateBinding::LabelOnly)
         );
     }
 

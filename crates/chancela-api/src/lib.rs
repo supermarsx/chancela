@@ -2335,6 +2335,14 @@ pub fn router(state: AppState) -> Router {
             post(signature::sign_cc_signature),
         )
         .route(
+            "/v1/signature/cc/bridge/status",
+            get(signature::get_cc_bridge_status),
+        )
+        .route(
+            "/v1/signature/cc/bridge/test",
+            post(signature::test_cc_bridge).layer(DefaultBodyLimit::max(0)),
+        )
+        .route(
             "/v1/signature/cc/batch-sign",
             post(batch_signing::sign_cc_batch),
         )
@@ -4272,6 +4280,36 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::OK, "{body}");
+    }
+
+    #[tokio::test]
+    async fn citizen_card_bridge_routes_require_auth_and_keep_the_probe_bodyless() {
+        let mut state = AppState::default();
+        state.local_signing = false;
+        let status_uri = "/v1/signature/cc/bridge/status";
+        let test_uri = "/v1/signature/cc/bridge/test";
+
+        assert_eq!(
+            send_status(state.clone(), get(status_uri)).await,
+            StatusCode::UNAUTHORIZED
+        );
+
+        let token = auth_token(&state).await;
+        assert_eq!(
+            send_status(
+                state.clone(),
+                with_session(post_raw(test_uri, b"{}".to_vec()), &token),
+            )
+            .await,
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "the route rejects a body before the handler can allocate or interpret it"
+        );
+
+        assert_eq!(
+            send_status(state, with_session(post_raw(test_uri, Vec::new()), &token),).await,
+            StatusCode::CONFLICT,
+            "an empty body reaches the handler and is then refused off the desktop"
+        );
     }
 
     #[tokio::test]

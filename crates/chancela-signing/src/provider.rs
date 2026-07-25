@@ -62,6 +62,14 @@ pub trait SignerProvider {
         let _ = pin;
         self.sign_signed_attributes(signed_attrs_digest)
     }
+
+    /// Whether callers must cryptographically validate an assembled CMS before returning it.
+    ///
+    /// Real smartcards require this fail-closed gate because PKCS#11 key-object lookup is a live
+    /// removable-token boundary. Shape-only test providers retain the historical default.
+    fn requires_cms_post_validation(&self) -> bool {
+        false
+    }
 }
 
 /// The evidentiary label of the CMD OTP confirmation *step* (SIG-02). Exposed so callers/logs can
@@ -81,6 +89,11 @@ pub const OTP_STEP_LEVEL: EvidentiaryLevel = EvidentiaryLevel::OtpConfirmation;
 /// `Ok(None)` and a configured TSL gate will fail with [`SigningError::MissingIssuerCertificate`].
 pub struct SmartcardProvider<T: CryptoToken> {
     token: T,
+    /// Exact qualified-signature leaf selected when the token was opened. Production CC flows pin
+    /// this before resolving the issuer so a removed/replaced card cannot make the trust decision
+    /// apply to one identity while another identity signs. `None` preserves the lazy enumeration
+    /// used by older callers and isolated token tests.
+    signing_certificate: Option<TokenCertificate>,
     issuer_certificate_der: Option<Vec<u8>>,
 }
 
@@ -89,8 +102,20 @@ impl<T: CryptoToken> SmartcardProvider<T> {
     pub fn new(token: T) -> Self {
         Self {
             token,
+            signing_certificate: None,
             issuer_certificate_der: None,
         }
+    }
+
+    /// Pin the exact qualified-signature certificate selected from the opened token.
+    ///
+    /// The issuer attached with [`Self::with_issuer_certificate`] must have been resolved for this
+    /// leaf. Subsequent certificate reads and signing requests keep using this value; if the card is
+    /// replaced, the token operation either fails to find the pinned object or produces a signature
+    /// that the post-sign identity check rejects.
+    pub fn with_signing_certificate(mut self, signing_certificate: TokenCertificate) -> Self {
+        self.signing_certificate = Some(signing_certificate);
+        self
     }
 
     /// Supply the issuing-CA certificate (DER) out-of-band (t41-e4 M2).
@@ -111,6 +136,9 @@ impl<T: CryptoToken> SmartcardProvider<T> {
 
     /// Enumerate the card and select the qualified-signature certificate (by CKA_LABEL).
     fn signature_certificate(&self) -> Result<TokenCertificate, SigningError> {
+        if let Some(certificate) = &self.signing_certificate {
+            return Ok(certificate.clone());
+        }
         let certs = self
             .token
             .list_certificates()
@@ -132,6 +160,10 @@ impl<T: CryptoToken> SignerProvider for SmartcardProvider<T> {
 
     fn evidentiary_level(&self) -> EvidentiaryLevel {
         EvidentiaryLevel::Qualified
+    }
+
+    fn requires_cms_post_validation(&self) -> bool {
+        true
     }
 
     fn signing_certificate_der(&self) -> Result<Vec<u8>, SigningError> {
@@ -164,9 +196,16 @@ impl<T: CryptoToken> SignerProvider for SmartcardProvider<T> {
         // maps a rejected/locked PIN to typed `WrongPin`/`PinBlocked`; those cross this seam
         // as `SigningError::Provider(_)` carrying the PIN-free message (the api resolves the
         // finer distinction, t67-e8). The token layer never puts the PIN in that message.
-        self.token
+        let raw = self
+            .token
             .sign_digest_with_pin(&cert, signed_attrs_digest, pin.map(|p| p.as_str()))
-            .map_err(|e| SigningError::Provider(e.to_string()))
+            .map_err(|e| SigningError::Provider(e.to_string()))?;
+        if raw.signing_cert_der != cert.cert_der {
+            return Err(SigningError::Provider(
+                "smartcard token changed signing certificate during operation".to_owned(),
+            ));
+        }
+        Ok(raw)
     }
 }
 

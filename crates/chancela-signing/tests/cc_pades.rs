@@ -34,8 +34,8 @@ use chancela_cades::{
 };
 use chancela_pades::{SignOptions, embed_signature, prepare_signature, validate_pdf_signature};
 use chancela_signing::{
-    SignerProvider, SigningError, SmartcardProvider, StaticTrustPolicy, TrustedListStatus,
-    sign_pdf_cc,
+    EvidentiaryLevel, SignerProvider, SigningError, SigningFamily, SmartcardProvider,
+    StaticTrustPolicy, TrustedListStatus, sign_pdf_cc,
 };
 use chancela_smartcard::token::{LABEL_AUTH_CERT, LABEL_SIGNATURE_CERT};
 use chancela_smartcard::{
@@ -272,6 +272,55 @@ fn build_self_signed(
     cert.to_der().expect("cert der")
 }
 
+struct SwitchingProvider {
+    advertised_certificate: Vec<u8>,
+    signer: EphemeralSigner,
+}
+
+impl SignerProvider for SwitchingProvider {
+    fn family(&self) -> SigningFamily {
+        SigningFamily::CartaoDeCidadao
+    }
+
+    fn evidentiary_level(&self) -> EvidentiaryLevel {
+        EvidentiaryLevel::Qualified
+    }
+
+    fn signing_certificate_der(&self) -> Result<Vec<u8>, SigningError> {
+        Ok(self.advertised_certificate.clone())
+    }
+
+    fn issuer_certificate_der(&self) -> Result<Option<Vec<u8>>, SigningError> {
+        Ok(None)
+    }
+
+    fn sign_signed_attributes(
+        &self,
+        signed_attrs_digest: &[u8; 32],
+    ) -> Result<RawSignature, SigningError> {
+        let signature = match &self.signer.key {
+            SignerKey::Rsa(key) => sign_rsa_digest_info(key, signed_attrs_digest),
+            SignerKey::Ecdsa(key) => {
+                use p256::ecdsa::signature::hazmat::PrehashSigner;
+                let signature: p256::ecdsa::Signature = key
+                    .sign_prehash(signed_attrs_digest)
+                    .map_err(|error| SigningError::Provider(error.to_string()))?;
+                signature.to_der().as_bytes().to_vec()
+            }
+        };
+        let algorithm = match &self.signer.key {
+            SignerKey::Rsa(_) => SignatureAlgorithm::RsaPkcs1Sha256,
+            SignerKey::Ecdsa(_) => SignatureAlgorithm::EcdsaP256Sha256,
+        };
+        Ok(RawSignature::new(
+            algorithm,
+            signature,
+            self.signer.cert_der.clone(),
+            Vec::new(),
+        ))
+    }
+}
+
 // --- Minimal base PDF (classic cross-reference table, mirrors chancela-pades tests) ---------------
 
 fn assemble_pdf(objects: &[(u32, &str)], root: u32) -> Vec<u8> {
@@ -326,6 +375,23 @@ fn sign_opts() -> SignOptions {
 }
 
 // --- The proofs -----------------------------------------------------------------------------------
+
+#[test]
+fn cc_document_signing_rejects_certificate_switch_before_cades_assembly() {
+    let advertised = EphemeralSigner::new_rsa("Amélia Marques (cartão A)", 21);
+    let signer = EphemeralSigner::new_rsa("Outra identidade (cartão B)", 22);
+    let provider = SwitchingProvider {
+        advertised_certificate: advertised.cert_der,
+        signer,
+    };
+
+    let error = sign_pdf_cc(&provider, &base_pdf(), fixed_time(), &sign_opts(), None)
+        .expect_err("a replacement signing identity must fail closed");
+
+    assert!(
+        matches!(error, SigningError::Cades(message) if message.contains("changed signing certificate"))
+    );
+}
 
 /// The whole-seam round trip, per card generation: `sign_pdf_cc` gates the issuer, drives the card,
 /// and returns a signed PDF that validates cryptographically.

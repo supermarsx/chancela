@@ -106,6 +106,7 @@ import { McpSection } from './McpSection';
 import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
+import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
 import { useCan } from '../session/permissions';
 import {
   Badge,
@@ -928,9 +929,9 @@ function providerModeLabel(provider: SigningProviderMetadata, t: ReturnType<type
 }
 
 /** The `providers` sub-tab credential mode a table row's "Configurar" action deep-links to,
- *  or `null` when the mode has no in-app configuration. Cartão de Cidadão is configured on the
- *  operator's own machine (a card reader plus the Autenticação.gov middleware), so its row
- *  carries a muted note rather than a navigating control — there is no route to invent. The
+ *  or `null` when the mode has no stored-credential form. Cartão de Cidadão is configured on the
+ *  operator's own machine (a card reader plus the Autenticação.gov middleware), and its row links
+ *  to the dedicated local-bridge diagnostics rather than pretending it has remote credentials. The
  *  `configure` value is the URL contract consumed by the dedicated credential-create page:
  *  `/admin/signing/providers/new?mode=<mode>` since create/edit left the provider list,
  *  mode ∈ {cmd, csc, pkcs12}. */
@@ -1229,6 +1230,7 @@ export interface SettingsPageProps {
 
 export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const t = useT();
+  const ccBridgeT = useCitizenCardBridgeT();
   // The "Ambiente do servidor" sub-tab label is the one strip entry whose copy lives in the
   // serverEnvFallback module rather than the frozen catalog (t14) — resolved here for the strip.
   const st = useServerEnvT();
@@ -2450,7 +2452,16 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                             </td>
                             <td data-label={t('settings.signing.table.notes')}>{provider.note}</td>
                             <td data-label={t('settings.signing.table.actions')}>
-                              {configure ? (
+                              {provider.mode === 'CC' ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  icon={<Icon.Check />}
+                                  onClick={() => navigate('/admin/signing/citizen-card')}
+                                >
+                                  {ccBridgeT('ccBridge.open')}
+                                </Button>
+                              ) : configure ? (
                                 <Button
                                   type="button"
                                   variant="secondary"
@@ -2463,9 +2474,6 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                                   {t('settings.signing.providers.action.configure')}
                                 </Button>
                               ) : (
-                                // Cartão de Cidadão has no in-app configuration target — it is set
-                                // up on the operator's own machine. A muted note plus a help glyph,
-                                // never a dead button pointing at a route that does not exist.
                                 <span className="row-wrap muted">
                                   {t('settings.signing.providers.action.unavailable')}
                                   <FieldHelp
