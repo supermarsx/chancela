@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_core::{
-    Book, BookId, BookKind, EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento,
+    Book, BookId, BookKind, BookState, EntityId, LegalHold, TermoDeAbertura, TermoDeEncerramento,
     open_and_seal_book,
 };
 use serde::{Deserialize, Serialize};
@@ -24,6 +24,7 @@ use chancela_authz::Permission;
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, forbidden, require_permission, scope_of_book, scope_of_entity};
+use crate::collection_page::{CollectionPage, CollectionPageQuery};
 use crate::dto::{
     ActView, BookView, BooksQuery, CloseBook, CreateBook, normalize_termo_signatories,
     read_redaction_for_actor,
@@ -375,6 +376,97 @@ pub async fn list_books(
         .map(|b| BookView::build(b, redaction))
         .collect();
     Ok(Json(views))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BooksPageQuery {
+    q: Option<String>,
+    #[serde(default)]
+    offset: usize,
+    limit: Option<usize>,
+    sort: Option<String>,
+    order: Option<String>,
+    entity_id: Option<Uuid>,
+    kind: Option<BookKind>,
+    state: Option<BookState>,
+}
+
+impl BooksPageQuery {
+    fn page(&self) -> CollectionPageQuery {
+        CollectionPageQuery {
+            q: self.q.clone(),
+            offset: self.offset,
+            limit: self.limit,
+            sort: self.sort.clone(),
+            order: self.order.clone(),
+        }
+    }
+}
+
+/// Bounded, searchable companion to [`list_books`]. The response deliberately carries no total
+/// count: pagination is over the caller-visible set after RBAC filtering.
+pub async fn list_books_page(
+    State(state): State<AppState>,
+    Query(query): Query<BooksPageQuery>,
+    actor: CurrentActor,
+) -> Result<Json<CollectionPage<BookView>>, ApiError> {
+    let authz = authorizer(&state, &actor).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
+    let page_query = query.page();
+    let descending = page_query.descending()?;
+    let sort = page_query.sort.as_deref().unwrap_or("id");
+    if !matches!(sort, "id" | "kind" | "state") {
+        return Err(ApiError::Unprocessable(format!(
+            "unknown book sort {sort:?}: expected \"id\", \"kind\" or \"state\""
+        )));
+    }
+    let search = page_query.normalized_search();
+    let limit = page_query.limit();
+    let filter = query.entity_id.map(EntityId);
+    let books = state.books.read().await;
+    let mut visible: Vec<_> = books
+        .values()
+        .filter(|book| filter.is_none_or(|entity_id| book.entity_id == entity_id))
+        .filter(|book| query.kind.is_none_or(|kind| book.kind == kind))
+        .filter(|book| query.state.is_none_or(|state| book.state == state))
+        .filter(|book| authz.permits(Permission::BookRead, scope_of_book(book.id)))
+        .filter(|book| {
+            search.as_ref().is_none_or(|needle| {
+                book.id.to_string().to_lowercase().contains(needle)
+                    || book.entity_id.to_string().to_lowercase().contains(needle)
+                    || format!("{:?}", book.kind).to_lowercase().contains(needle)
+                    || book
+                        .kind_label
+                        .as_deref()
+                        .is_some_and(|label| label.to_lowercase().contains(needle))
+            })
+        })
+        .collect();
+    visible.sort_by(|left, right| {
+        let ordering = match sort {
+            "kind" => format!("{:?}", left.kind)
+                .cmp(&format!("{:?}", right.kind))
+                .then(left.id.0.cmp(&right.id.0)),
+            "state" => format!("{:?}", left.state)
+                .cmp(&format!("{:?}", right.state))
+                .then(left.id.0.cmp(&right.id.0)),
+            _ => left.id.0.cmp(&right.id.0),
+        };
+        if descending {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+    let views = visible
+        .into_iter()
+        .map(|book| BookView::build(book, redaction))
+        .collect();
+    Ok(Json(CollectionPage::from_sorted(
+        views,
+        page_query.offset,
+        limit,
+    )))
 }
 
 /// `GET /v1/books/{id}` — one book, or `404`. RBAC (t64-E3): `book.read` scoped to the book.

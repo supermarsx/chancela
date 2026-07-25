@@ -37,7 +37,7 @@ use chancela_authz::{
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::authz::{authorizer, forbidden, scope_relations};
+use crate::authz::{ScopeRelations, authorizer, forbidden, scope_relations};
 use crate::error::ApiError;
 use crate::session::{RoleAssignmentView, ScopeView};
 use crate::users::{User, UserId};
@@ -511,6 +511,37 @@ pub async fn effective_permissions_for(
     principal: UserId,
     now: OffsetDateTime,
 ) -> ScopedPermissionSet {
+    let relations = scope_relations(state).await;
+    effective_permissions_for_with_relations(state, principal, now, &relations).await
+}
+
+/// Resolve a principal against a scope graph already snapshotted by the caller.
+///
+/// Request authorization needs both the effective grants and this graph. Accepting it here avoids
+/// rebuilding the complete entity/book/act relation twice on every request.
+pub(crate) async fn effective_permissions_for_with_relations(
+    state: &AppState,
+    principal: UserId,
+    now: OffsetDateTime,
+    relations: &ScopeRelations,
+) -> ScopedPermissionSet {
+    // Only delegations addressed to this principal can contribute. Filtering before touching the
+    // user directory means grantor revalidation performs O(relevant grantors) keyed lookups rather
+    // than cloning role assignments for every active account.
+    let stored_delegations: Vec<Delegation> = {
+        let table = state.delegations.read().await;
+        table
+            .values()
+            .map(|delegation| delegation.authz())
+            .filter(|delegation| delegation.to.0 == principal.0)
+            .cloned()
+            .collect()
+    };
+    let grantor_ids: BTreeSet<_> = stored_delegations
+        .iter()
+        .map(|delegation| delegation.from)
+        .collect();
+
     // The principal's role assignments, or an empty authority for an unknown / inactive user.
     let (assignments, grantor_assignments): (
         Vec<RoleAssignment>,
@@ -521,20 +552,18 @@ pub async fn effective_permissions_for(
             Some(u) if u.active => u.role_assignments.clone(),
             _ => return ScopedPermissionSet::new(),
         };
-        let grantor_assignments = users
-            .values()
-            .filter(|u| u.active)
-            .map(|u| (AuthzUserId(u.id.0), u.role_assignments.clone()))
+        let grantor_assignments = grantor_ids
+            .into_iter()
+            .filter_map(|grantor| {
+                users
+                    .get(&UserId(grantor.0))
+                    .filter(|user| user.active)
+                    .map(|user| (grantor, user.role_assignments.clone()))
+            })
             .collect();
         (assignments, grantor_assignments)
     };
 
-    let stored_delegations: Vec<Delegation> = {
-        let table = state.delegations.read().await;
-        table.values().map(|d| d.authz().clone()).collect()
-    };
-
-    let relations = scope_relations(state).await;
     let roles = state.roles.read().await;
     let grantor_role_authority: HashMap<AuthzUserId, ScopedPermissionSet> = grantor_assignments
         .iter()
@@ -565,7 +594,7 @@ pub async fn effective_permissions_for(
             let mut retained: Vec<Permission> = d
                 .granted_permissions(&roles)
                 .into_iter()
-                .filter(|&p| eff.has_via_role(p, scope, &relations))
+                .filter(|&p| eff.has_via_role(p, scope, relations))
                 .collect();
             if retained.is_empty() {
                 return None;
@@ -607,6 +636,13 @@ pub async fn resolve_principal_id(
         .session_username()
         .ok_or_else(|| ApiError::Unauthorized("sessão requerida".to_owned()))?;
     let users = state.users.read().await;
+    if let Some(user_id) = actor.session_user_id() {
+        return users
+            .get(&user_id)
+            .filter(|user| user.active && user.username == username)
+            .map(|user| user.id)
+            .ok_or_else(|| ApiError::Forbidden("sessão sem utilizador ativo".to_owned()));
+    }
     users
         .values()
         .find(|u| u.active && u.username == username)
@@ -920,10 +956,6 @@ pub(crate) fn assignment_views(assignments: &[RoleAssignment]) -> Vec<RoleAssign
 
 /// Persist the user directory after a role-assignment change (mirrors `users::persist`, which is
 /// private). wp16 P3b: routes to the active source (Postgres `users` table, else `users.json`).
-async fn persist_users(state: &AppState) -> Result<(), ApiError> {
-    crate::sidecar_store::persist_users(state).await
-}
-
 /// Append a chained `role.*` audit event (honest actor, never any secret material). Mirrors the
 /// standard append + write-through + attest discipline.
 ///
@@ -1270,15 +1302,15 @@ pub async fn assign_role(
     }
 
     let assignment = RoleAssignment::new(role_id, scope);
-    let assignments = {
+    let (assignments, changed_user) = {
         let mut users = state.users.write().await;
         let user = users.get_mut(&target_uid).ok_or(ApiError::NotFound)?;
         if !user.role_assignments.contains(&assignment) {
             user.role_assignments.push(assignment);
         }
-        user.role_assignments.clone()
+        (user.role_assignments.clone(), user.clone())
     };
-    persist_users(&state).await?;
+    crate::sidecar_store::persist_user(&state, &changed_user).await?;
 
     let payload = AssignmentEvent {
         user_id: target_uid.to_string(),
@@ -1319,7 +1351,7 @@ pub async fn unassign_role(
     authz.require(Permission::RoleAssign, scope)?;
 
     let assignment = RoleAssignment::new(role_id, scope);
-    let assignments = {
+    let (assignments, changed_user) = {
         let mut users = state.users.write().await;
         let holds = users
             .get(&target_uid)
@@ -1343,9 +1375,9 @@ pub async fn unassign_role(
         }
         let user = users.get_mut(&target_uid).ok_or(ApiError::NotFound)?;
         user.role_assignments.retain(|a| a != &assignment);
-        user.role_assignments.clone()
+        (user.role_assignments.clone(), user.clone())
     };
-    persist_users(&state).await?;
+    crate::sidecar_store::persist_user(&state, &changed_user).await?;
 
     let payload = AssignmentEvent {
         user_id: target_uid.to_string(),

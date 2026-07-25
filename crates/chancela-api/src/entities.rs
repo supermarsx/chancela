@@ -5,11 +5,11 @@ use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{
-    Book, BookId, BookState, DEFAULT_TENANT_ID, Entity, EntityId, EntityKind, Nipc,
+    Book, BookId, BookState, DEFAULT_TENANT_ID, Entity, EntityFamily, EntityId, EntityKind, Nipc,
     StatuteOverrides, TenantId,
 };
 use chancela_ledger::{ChainId, Event};
@@ -22,6 +22,7 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{
     authorizer, require_permission, scope_of_book, scope_of_entity, scope_of_tenant,
 };
+use crate::collection_page::{CollectionPage, CollectionPageQuery};
 use crate::dto::{
     BookStateCountsView, BookView, EntityActivitySummaryView, EntityListItemView,
     EntityRegistrySummaryView, EntityView, LedgerEventView, read_redaction_for_actor,
@@ -276,6 +277,139 @@ pub async fn list_entities(
     Ok(Json(out))
 }
 
+/// Bounded, searchable companion to [`list_entities`].
+///
+/// The legacy route intentionally remains a bare array. This opt-in route omits a total count so an
+/// RBAC-filtered caller learns only about rows they can read; `offset` and `has_more` are computed
+/// after authorization and search filtering.
+#[derive(Debug, Deserialize)]
+pub struct EntityPageQuery {
+    q: Option<String>,
+    #[serde(default)]
+    offset: usize,
+    limit: Option<usize>,
+    sort: Option<String>,
+    order: Option<String>,
+    tenant_id: Option<Uuid>,
+    group_id: Option<Uuid>,
+    family: Option<EntityFamily>,
+    kind: Option<EntityKind>,
+}
+
+impl EntityPageQuery {
+    fn page(&self) -> CollectionPageQuery {
+        CollectionPageQuery {
+            q: self.q.clone(),
+            offset: self.offset,
+            limit: self.limit,
+            sort: self.sort.clone(),
+            order: self.order.clone(),
+        }
+    }
+}
+
+pub async fn list_entities_page(
+    State(state): State<AppState>,
+    Query(query): Query<EntityPageQuery>,
+    actor: CurrentActor,
+) -> Result<Json<CollectionPage<EntityListItemView>>, ApiError> {
+    let authz = crate::authz::authorizer(&state, &actor).await?;
+    let redaction = read_redaction_for_actor(&state, &actor).await?;
+    let page_query = query.page();
+    let descending = page_query.descending()?;
+    let sort = page_query.sort.as_deref().unwrap_or("name");
+    if !matches!(sort, "name" | "nipc" | "family" | "kind" | "id") {
+        return Err(ApiError::Unprocessable(format!(
+            "unknown entity sort {sort:?}: expected \"name\", \"nipc\", \"family\", \"kind\" or \"id\""
+        )));
+    }
+    let search = page_query.normalized_search();
+    let limit = page_query.limit();
+
+    let entities = state.entities.read().await;
+    let mut visible: Vec<_> = entities
+        .values()
+        .filter(|entity| authz.permits(Permission::EntityRead, scope_of_entity(entity.id)))
+        .filter(|entity| {
+            query
+                .tenant_id
+                .is_none_or(|tenant_id| entity.tenant_id.0 == tenant_id)
+        })
+        .filter(|entity| {
+            query
+                .group_id
+                .is_none_or(|group_id| entity.group_id.is_some_and(|id| id.0 == group_id))
+        })
+        .filter(|entity| query.family.is_none_or(|family| entity.family == family))
+        .filter(|entity| query.kind.is_none_or(|kind| entity.kind == kind))
+        .filter(|entity| {
+            search.as_ref().is_none_or(|needle| {
+                entity.name.to_lowercase().contains(needle)
+                    || entity.nipc.to_string().to_lowercase().contains(needle)
+                    || entity.seat.to_lowercase().contains(needle)
+            })
+        })
+        .collect();
+    visible.sort_by(|left, right| {
+        let ordering = match sort {
+            "nipc" => left
+                .nipc
+                .to_string()
+                .cmp(&right.nipc.to_string())
+                .then(left.id.0.cmp(&right.id.0)),
+            "id" => left.id.0.cmp(&right.id.0),
+            "family" => format!("{:?}", left.family)
+                .cmp(&format!("{:?}", right.family))
+                .then(left.id.0.cmp(&right.id.0)),
+            "kind" => format!("{:?}", left.kind)
+                .cmp(&format!("{:?}", right.kind))
+                .then(left.id.0.cmp(&right.id.0)),
+            _ => left
+                .name
+                .to_lowercase()
+                .cmp(&right.name.to_lowercase())
+                .then(left.id.0.cmp(&right.id.0)),
+        };
+        if descending {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+
+    let page = CollectionPage::from_sorted(visible, page_query.offset, limit);
+    let page_ids: HashSet<_> = page.items.iter().map(|entity| entity.id).collect();
+    let books = state.books.read().await;
+    let readable_books: Vec<_> = books
+        .values()
+        .filter(|book| page_ids.contains(&book.entity_id))
+        .filter(|book| authz.permits(Permission::BookRead, scope_of_book(book.id)))
+        .collect();
+    let registry_extracts = state.registry_extracts.read().await;
+    let cae = state.cae.read().await;
+    let today = time::OffsetDateTime::now_utc().date();
+    let ledger = if authz.permits(Permission::LedgerRead, Scope::Global) {
+        Some(state.ledger.read().await)
+    } else {
+        None
+    };
+    let events = ledger.as_ref().map(|ledger| ledger.events());
+    let mut summaries =
+        entity_activity_summaries(&page_ids, readable_books.iter().copied(), events);
+
+    Ok(Json(page.map(|entity| {
+        EntityListItemView {
+            entity: EntityView::build(entity, redaction),
+            activity_summary: summaries
+                .remove(&entity.id)
+                .unwrap_or_else(empty_activity_summary),
+            registry_summary: registry_extracts
+                .get(&entity.id)
+                .map(|extract| EntityRegistrySummaryView::build(extract, &cae, today)),
+        }
+    })))
+}
+
 struct EntityActivitySummaryBuilder<'book, 'event> {
     last_book: Option<&'book Book>,
     book_state_counts: BookStateCountsView,
@@ -318,16 +452,22 @@ fn entity_activity_summaries<'book, 'event>(
     }
 
     if let Some(events) = events {
-        for event in events {
+        // The ledger is append ordered. Walk newest-first and stop as soon as every requested
+        // entity has a last-change event; a bounded page with recent activity normally examines only
+        // a small tail instead of rescanning the complete historical chain.
+        let mut unresolved = summaries.len();
+        for event in events.iter().rev() {
             for entity_id in collect_event_entity_ids(event, entity_ids, &book_entity_ids) {
                 let Some(summary) = summaries.get_mut(&entity_id) else {
                     continue;
                 };
-                if summary.last_change.is_none_or(|current| {
-                    compare_event_recency(event, current) == Ordering::Greater
-                }) {
+                if summary.last_change.is_none() {
                     summary.last_change = Some(event);
+                    unresolved = unresolved.saturating_sub(1);
                 }
+            }
+            if unresolved == 0 {
+                break;
             }
         }
     }
@@ -375,13 +515,6 @@ const fn book_state_rank(state: BookState) -> u8 {
         BookState::Created => 1,
         BookState::Closed => 0,
     }
-}
-
-fn compare_event_recency(candidate: &Event, current: &Event) -> Ordering {
-    candidate
-        .timestamp
-        .cmp(&current.timestamp)
-        .then_with(|| candidate.seq.cmp(&current.seq))
 }
 
 fn collect_event_entity_ids(
@@ -498,7 +631,12 @@ mod tests {
         let value = if bytes.is_empty() {
             Value::Null
         } else {
-            serde_json::from_slice(&bytes).expect("body is JSON")
+            serde_json::from_slice(&bytes).unwrap_or_else(|error| {
+                panic!(
+                    "body is JSON ({error}); raw={:?}",
+                    String::from_utf8_lossy(&bytes)
+                )
+            })
         };
         (status, value)
     }
@@ -1024,5 +1162,50 @@ mod tests {
         assert_eq!(summary["last_change"]["kind"], "book.closed");
         assert_eq!(summary["last_change"]["scope"], closed_scope);
         assert_eq!(summary["last_change"]["seq"], close_seq);
+    }
+
+    #[tokio::test]
+    async fn entity_page_is_bounded_and_filters_before_offsetting() {
+        let state = AppState::default();
+        let token = token_for_role(&state, "owner.page", OWNER_ROLE_ID).await;
+        let alpha = Entity::new(
+            "Alpha Holdings",
+            Nipc::unvalidated("alpha-nipc"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        let beta = Entity::new(
+            "Beta Holdings",
+            Nipc::unvalidated("beta-nipc"),
+            "Porto",
+            EntityKind::SociedadePorQuotas,
+        );
+        let unrelated = Entity::new(
+            "Unrelated",
+            Nipc::unvalidated("other-nipc"),
+            "Braga",
+            EntityKind::SociedadePorQuotas,
+        );
+        state
+            .entities
+            .write()
+            .await
+            .extend([alpha, beta, unrelated].map(|entity| (entity.id, entity)));
+
+        let (status, body) = send_raw(
+            state,
+            with_session(
+                get("/v1/entities/page?q=holdings&sort=name&limit=1&offset=1"),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["items"].as_array().unwrap().len(), 1);
+        assert_eq!(body["items"][0]["name"], "Beta Holdings");
+        assert_eq!(body["offset"], 1);
+        assert_eq!(body["limit"], 1);
+        assert_eq!(body["has_more"], false);
+        assert!(body.get("total").is_none(), "RBAC page exposes no total");
     }
 }

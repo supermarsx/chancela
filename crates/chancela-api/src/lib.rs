@@ -111,6 +111,7 @@ mod bundles;
 mod cache;
 mod cae;
 mod chronology;
+mod collection_page;
 mod connector_jobs;
 mod cors;
 pub use connector_jobs::{ConnectorTargetMap, ConnectorTargetRecord};
@@ -1918,6 +1919,7 @@ pub fn router(state: AppState) -> Router {
             "/v1/entities",
             get(entities::list_entities).post(entities::create_entity),
         )
+        .route("/v1/entities/page", get(entities::list_entities_page))
         .route(
             "/v1/entities/{id}",
             get(entities::get_entity).patch(entities::patch_entity),
@@ -2042,6 +2044,7 @@ pub fn router(state: AppState) -> Router {
             get(registry::registry_auto_update_due_plan).post(registry::registry_lookup),
         )
         .route("/v1/books", get(books::list_books).post(books::create_book))
+        .route("/v1/books/page", get(books::list_books_page))
         .route("/v1/books/{id}", get(books::get_book))
         .route("/v1/books/{id}/close", post(books::close_book))
         .route("/v1/books/{id}/acts", get(books::list_book_acts))
@@ -2689,6 +2692,7 @@ pub fn router(state: AppState) -> Router {
             get(law::get_law_pdf).delete(law::delete_law_pdf),
         )
         .route("/v1/users", get(users::list_users).post(users::create_user))
+        .route("/v1/users/page", get(users::list_users_page))
         .route(
             "/v1/users/{id}",
             get(users::get_user).patch(users::patch_user),

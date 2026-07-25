@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use axum::Json;
-use axum::extract::{Path as AxumPath, State};
+use axum::extract::{Path as AxumPath, Query, State};
 use axum::http::StatusCode;
 use serde::{Deserialize, Serialize};
 use time::format_description::well_known::Rfc3339;
@@ -37,6 +37,7 @@ use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor, resolve_session_actor};
 use crate::attestation::{self, AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LEN, verify_secret};
 use crate::authz::require_permission;
+use crate::collection_page::{CollectionPage, CollectionPageQuery};
 use crate::error::ApiError;
 use crate::session::{Backoff, backoff_secs};
 use crate::settings::Locale;
@@ -571,10 +572,10 @@ fn tmp_path(path: &Path) -> PathBuf {
     path.with_file_name(name)
 }
 
-async fn persist(state: &AppState) -> Result<(), ApiError> {
-    // wp16 P3b: route to the active source (Postgres `users` table, else `users.json`). File behaviour
-    // on SQLite/single-node is unchanged.
-    crate::sidecar_store::persist_users(state).await
+async fn persist(state: &AppState, user: &User) -> Result<(), ApiError> {
+    // Row-backed deployments update only the changed user; the legacy single-file backend keeps its
+    // atomic whole-document compatibility path.
+    crate::sidecar_store::persist_user(state, user).await
 }
 
 /// `POST /v1/users` — create a profile. **Bootstrap (t41):** on a genuinely uninitialised instance
@@ -731,7 +732,7 @@ pub async fn create_user(
         user
     };
 
-    persist(&state).await?;
+    persist(&state, &user).await?;
 
     // t88: the payload is the [`UserView`], never the full [`User`] — the discipline every other
     // user handler already follows (see `record_user_event`, and the note on `patch_user`). This
@@ -1193,7 +1194,7 @@ async fn record_user_event(
     actor: &CurrentActor,
     attestor: &CurrentAttestor,
 ) -> Result<(), ApiError> {
-    persist(state).await?;
+    persist(state, user).await?;
     let payload = serde_json::to_vec(&UserView::from(user))?;
     let actor = actor.resolve("api");
     let mut ledger = state.ledger.write().await;
@@ -1633,6 +1634,102 @@ pub async fn list_users(
     let mut list: Vec<&User> = users.values().collect();
     list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
     Ok(Json(list.into_iter().map(UserView::from).collect()))
+}
+
+/// Bounded, searchable companion to [`list_users`]. No total count is returned, keeping the
+/// contract suitable for future tenant/scoped user directories without creating an enumeration
+/// side channel.
+#[derive(Debug, Deserialize)]
+pub struct UserPageQuery {
+    q: Option<String>,
+    #[serde(default)]
+    offset: usize,
+    limit: Option<usize>,
+    sort: Option<String>,
+    order: Option<String>,
+    active: Option<bool>,
+    role_id: Option<Uuid>,
+}
+
+impl UserPageQuery {
+    fn page(&self) -> CollectionPageQuery {
+        CollectionPageQuery {
+            q: self.q.clone(),
+            offset: self.offset,
+            limit: self.limit,
+            sort: self.sort.clone(),
+            order: self.order.clone(),
+        }
+    }
+}
+
+pub async fn list_users_page(
+    State(state): State<AppState>,
+    Query(query): Query<UserPageQuery>,
+    actor: CurrentActor,
+) -> Result<Json<CollectionPage<UserView>>, ApiError> {
+    require_permission(&state, &actor, Permission::UserRead, Scope::Global).await?;
+    let page_query = query.page();
+    let descending = page_query.descending()?;
+    let sort = page_query.sort.as_deref().unwrap_or("username");
+    if !matches!(sort, "username" | "display_name" | "created_at" | "id") {
+        return Err(ApiError::Unprocessable(format!(
+            "unknown user sort {sort:?}: expected \"username\", \"display_name\", \"created_at\" or \"id\""
+        )));
+    }
+    let search = page_query.normalized_search();
+    let limit = page_query.limit();
+    let users = state.users.read().await;
+    let mut visible: Vec<_> = users
+        .values()
+        .filter(|user| query.active.is_none_or(|active| user.active == active))
+        .filter(|user| {
+            query.role_id.is_none_or(|role_id| {
+                user.role_assignments
+                    .iter()
+                    .any(|assignment| assignment.role_id.0 == role_id)
+            })
+        })
+        .filter(|user| {
+            search.as_ref().is_none_or(|needle| {
+                user.username.to_lowercase().contains(needle)
+                    || user.display_name.to_lowercase().contains(needle)
+                    || user
+                        .email
+                        .as_deref()
+                        .is_some_and(|email| email.to_lowercase().contains(needle))
+            })
+        })
+        .collect();
+    visible.sort_by(|left, right| {
+        let ordering = match sort {
+            "display_name" => left
+                .display_name
+                .to_lowercase()
+                .cmp(&right.display_name.to_lowercase())
+                .then(left.id.0.cmp(&right.id.0)),
+            "created_at" => left
+                .created_at
+                .cmp(&right.created_at)
+                .then(left.id.0.cmp(&right.id.0)),
+            "id" => left.id.0.cmp(&right.id.0),
+            _ => left
+                .username
+                .cmp(&right.username)
+                .then(left.id.0.cmp(&right.id.0)),
+        };
+        if descending {
+            ordering.reverse()
+        } else {
+            ordering
+        }
+    });
+    let views = visible.into_iter().map(UserView::from).collect();
+    Ok(Json(CollectionPage::from_sorted(
+        views,
+        page_query.offset,
+        limit,
+    )))
 }
 
 /// `GET /v1/users/{id}` — one profile, or `404`. RBAC (t64-E3): `user.read` at Global.

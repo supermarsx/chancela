@@ -183,6 +183,32 @@ pub(crate) async fn persist_users(state: &AppState) -> Result<(), ApiError> {
     Ok(())
 }
 
+/// Persist one already-mutated user without reconciling the complete directory.
+///
+/// Postgres is the large-directory path: one mutation becomes one indexed primary-key upsert. The
+/// embedded file format remains a single JSON document for compatibility, so that backend falls
+/// back to its existing atomic whole-file writer until the sidecar is migrated to row storage.
+pub(crate) async fn persist_user(state: &AppState, user: &User) -> Result<(), ApiError> {
+    if state.sidecars_db_backed {
+        let Some(store) = state.store.as_ref() else {
+            return Ok(());
+        };
+        let id = user.id.0.to_string();
+        let json = serde_json::to_string(user).map_err(|e| serialize_error("user", e))?;
+        store
+            .persist_blocking_async(move |tx| tx.upsert_user(&id, &json))
+            .await
+            .map_err(|e| AppState::map_store_write_error("failed to persist user", e))?;
+        return Ok(());
+    }
+    if let Some(path) = &state.users_path {
+        let users = state.users.read().await;
+        crate::users::write_users_atomic(path, &users)
+            .map_err(|e| ApiError::Internal(format!("failed to persist users: {e}")))?;
+    }
+    Ok(())
+}
+
 /// Persist the live role catalog to the active source (Postgres `roles` table, else `roles.json`).
 pub(crate) async fn persist_roles(state: &AppState) -> Result<(), ApiError> {
     if state.sidecars_db_backed {
@@ -510,6 +536,46 @@ mod tests {
         ] {
             let _copy = table; // Copy + used, so an added variant forces this array to be updated.
         }
+    }
+
+    #[tokio::test]
+    async fn row_backed_user_update_does_not_reconcile_unrelated_users() {
+        let dir = std::env::temp_dir().join(format!("chancela-user-row-{}", Uuid::new_v4()));
+        let store = Store::open(&dir).expect("open sqlite fixture store");
+        let first = sample_user("first.user");
+        let second = sample_user("second.user");
+        let first_id = first.id.0.to_string();
+        let second_id = second.id.0.to_string();
+        let first_json = serde_json::to_string(&first).unwrap();
+        let second_json = serde_json::to_string(&second).unwrap();
+        store
+            .persist(|tx| {
+                tx.upsert_user(&first_id, &first_json)?;
+                tx.upsert_user(&second_id, &second_json)
+            })
+            .unwrap();
+
+        let mut changed = first.clone();
+        changed.display_name = "Changed First".to_owned();
+        let state = AppState {
+            store: Some(store.clone()),
+            sidecars_db_backed: true,
+            ..AppState::default()
+        };
+        persist_user(&state, &changed)
+            .await
+            .expect("persist one user row");
+
+        let rows: HashMap<_, _> = store.users().unwrap().into_iter().collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows.get(&second_id), Some(&second_json));
+        assert_eq!(
+            serde_json::from_str::<User>(rows.get(&first_id).unwrap())
+                .unwrap()
+                .display_name,
+            "Changed First"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// SQLite / single-node keeps the byte-identical file path: `sidecars_db_backed` is `false` and a

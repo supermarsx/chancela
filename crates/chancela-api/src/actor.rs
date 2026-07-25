@@ -58,8 +58,13 @@ pub struct CurrentActor {
 
 #[derive(Debug, Clone)]
 enum ActorCredential {
-    Session { username: String },
-    ApiKey { principal: RequestPrincipal },
+    Session {
+        username: String,
+        user_id: Option<UserId>,
+    },
+    ApiKey {
+        principal: RequestPrincipal,
+    },
 }
 
 impl CurrentActor {
@@ -67,7 +72,7 @@ impl CurrentActor {
     /// otherwise `request_actor` (which already carries its own default, e.g. `"api"`).
     pub fn resolve(&self, request_actor: &str) -> String {
         match &self.credential {
-            Some(ActorCredential::Session { username }) => username.clone(),
+            Some(ActorCredential::Session { username, .. }) => username.clone(),
             Some(ActorCredential::ApiKey { principal }) => principal.actor_label.clone(),
             None => request_actor.to_owned(),
         }
@@ -76,7 +81,14 @@ impl CurrentActor {
     /// The session `username`, if a valid session was presented.
     pub fn session_username(&self) -> Option<&str> {
         match &self.credential {
-            Some(ActorCredential::Session { username }) => Some(username),
+            Some(ActorCredential::Session { username, .. }) => Some(username),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn session_user_id(&self) -> Option<UserId> {
+        match &self.credential {
+            Some(ActorCredential::Session { user_id, .. }) => *user_id,
             _ => None,
         }
     }
@@ -100,7 +112,10 @@ impl CurrentActor {
     /// present (t64-E3).
     pub(crate) fn from_session_username(username: Option<String>) -> Self {
         CurrentActor {
-            credential: username.map(|username| ActorCredential::Session { username }),
+            credential: username.map(|username| ActorCredential::Session {
+                username,
+                user_id: None,
+            }),
         }
     }
 }
@@ -121,9 +136,12 @@ impl FromRequestParts<AppState> for CurrentActor {
         }
 
         if let Some(token) = session_token {
-            return match resolve_session_actor(state, token).await? {
-                Some(username) => Ok(CurrentActor {
-                    credential: Some(ActorCredential::Session { username }),
+            return match resolve_session_identity(state, token).await? {
+                Some((user_id, username)) => Ok(CurrentActor {
+                    credential: Some(ActorCredential::Session {
+                        username,
+                        user_id: Some(user_id),
+                    }),
                 }),
                 None => Err(ApiError::Unauthorized("sessão inválida".to_owned())),
             };
@@ -153,7 +171,18 @@ pub async fn resolve_session_actor(
     state: &AppState,
     token: &str,
 ) -> Result<Option<String>, ApiError> {
-    resolve_session_actor_at(state, token, OffsetDateTime::now_utc()).await
+    Ok(
+        resolve_session_identity_at(state, token, OffsetDateTime::now_utc())
+            .await?
+            .map(|(_, username)| username),
+    )
+}
+
+async fn resolve_session_identity(
+    state: &AppState,
+    token: &str,
+) -> Result<Option<(UserId, String)>, ApiError> {
+    resolve_session_identity_at(state, token, OffsetDateTime::now_utc()).await
 }
 
 /// [`resolve_session_actor`] with the wall clock supplied explicitly.
@@ -164,11 +193,22 @@ pub async fn resolve_session_actor(
 /// neither be reached from a request nor from configuration, and it cannot relax a bound — passing a
 /// different `now` moves both the sliding idle window and the absolute cap together, exactly as real
 /// elapsed time does.
+#[cfg(test)]
 pub(crate) async fn resolve_session_actor_at(
     state: &AppState,
     token: &str,
     now: OffsetDateTime,
 ) -> Result<Option<String>, ApiError> {
+    Ok(resolve_session_identity_at(state, token, now)
+        .await?
+        .map(|(_, username)| username))
+}
+
+async fn resolve_session_identity_at(
+    state: &AppState,
+    token: &str,
+    now: OffsetDateTime,
+) -> Result<Option<(UserId, String)>, ApiError> {
     let std_ttl = std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64);
     let new_expires_at = now + time::Duration::seconds(SESSION_TTL_SECS);
 
@@ -292,7 +332,7 @@ pub(crate) async fn resolve_session_actor_at(
     if username.is_none() {
         evict_session(state, token).await;
     }
-    Ok(username)
+    Ok(username.map(|username| (user_id, username)))
 }
 
 /// Whether a session has exceeded its absolute lifetime cap (wp25-sec).

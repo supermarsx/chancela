@@ -47,7 +47,7 @@ use chancela_core::{ActId, BookId, EntityId, TemplateLibraryId};
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::error::ApiError;
-use crate::roles::effective_permissions_for_actor;
+use crate::roles::{effective_permissions_for_with_relations, resolve_principal_id};
 use crate::users::UserId;
 
 /// The single, honest, generic refusal for a missing permission. It never names the permission, the
@@ -371,11 +371,13 @@ pub async fn authorizer(state: &AppState, actor: &CurrentActor) -> Result<Author
     }
 
     let now = OffsetDateTime::now_utc();
-    let (principal, eff) = effective_permissions_for_actor(state, actor, now).await?;
+    let principal = resolve_principal_id(state, actor).await?;
+    let relations = scope_relations(state).await;
+    let eff = effective_permissions_for_with_relations(state, principal, now, &relations).await;
     Ok(Authorizer {
         principal: Some(principal),
         eff,
-        relations: scope_relations(state).await,
+        relations,
     })
 }
 
@@ -529,6 +531,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/auth/invites", RouteClass::Gated), // POST user.invite@scope (+ role.assign@scope for a named role)
     // --- Entities -------------------------------------------------------------------------------
     ("/v1/entities", RouteClass::Gated), // GET entity.read@Global · POST entity.create@Global
+    ("/v1/entities/page", RouteClass::Gated), // GET entity.read per visible row
     ("/v1/entities/{id}", RouteClass::Gated), // GET entity.read@Entity · PATCH entity.update@Entity
     ("/v1/entities/import-from-registry", RouteClass::Gated), // POST entity.create@Global
     ("/v1/entities/{id}/registry", RouteClass::Gated), // GET entity.read@Entity
@@ -612,6 +615,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ), // data.export@Archive + book.export@Book + step-up
     // --- Books ----------------------------------------------------------------------------------
     ("/v1/books", RouteClass::Gated), // GET book.read@Global · POST book.open@Entity
+    ("/v1/books/page", RouteClass::Gated), // GET book.read per visible row
     ("/v1/books/{id}", RouteClass::Gated), // GET book.read@Book
     ("/v1/books/{id}/close", RouteClass::Gated), // POST book.close@Book
     ("/v1/books/{id}/acts", RouteClass::Gated), // GET book.read@Book
@@ -917,6 +921,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/law/{id}/pdf", RouteClass::Gated),  // GET law.read@Global · DELETE law.manage@Global
     // --- Users ----------------------------------------------------------------------------------
     ("/v1/users", RouteClass::Gated), // GET user.read@Global · POST user.manage@Global (bootstrap exempt)
+    ("/v1/users/page", RouteClass::Gated), // GET user.read@Global
     ("/v1/users/{id}", RouteClass::Gated), // GET user.read@Global · PATCH user.manage@Global
     ("/v1/users/{id}/secret", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
     ("/v1/users/{id}/attestation-key", RouteClass::Gated), // self OR user.manage@Global (+ t51 proof)
