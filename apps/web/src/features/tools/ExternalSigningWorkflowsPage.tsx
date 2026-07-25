@@ -4,14 +4,24 @@ import type {
   ActView,
   BookView,
   Entity,
+  ExternalSignatureNoticeDismissal,
   ExternalSignerInvitePublicView,
   ExternalSignerInviteStatus,
   ExternalSignerInviteView,
+  Settings,
 } from '../../api/types';
 import { api } from '../../api/client';
-import { keys, useBooks, useEntities } from '../../api/hooks';
+import {
+  keys,
+  useBooks,
+  useEntities,
+  useSettings,
+  useUpdateExternalSignatureNoticeDismissal,
+  useUserPreferences,
+} from '../../api/hooks';
 import { openExternal } from '../../desktop/openExternal';
 import { useT, type TFunction } from '../../i18n';
+import { useExternalSigningNoticeT } from '../../i18n/externalSigningNoticeFallback';
 import { formatTimestamp } from '../../format';
 import {
   Badge,
@@ -53,6 +63,25 @@ const STATUS_ORDER: Record<ExternalSignerInviteStatus, number> = {
   expired: 3,
   revoked: 4,
 };
+
+export const DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS = 90;
+
+export function informationalNoticeHideDays(settings: Settings | undefined): number {
+  const configured = settings?.ui.external_signature_notice_snooze_days;
+  return Number.isInteger(configured) && configured !== undefined && configured > 0
+    ? configured
+    : DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS;
+}
+
+export function informationalNoticeIsHidden(
+  dismissal: ExternalSignatureNoticeDismissal | null | undefined,
+  now = Date.now(),
+): boolean {
+  if (!dismissal) return false;
+  if (dismissal.mode === 'permanent') return true;
+  const until = Date.parse(dismissal.until);
+  return Number.isFinite(until) && until > now;
+}
 
 export function externalSignerInviteLink(token: string, origin?: string): string | null {
   const trimmed = token.trim();
@@ -178,13 +207,21 @@ function EnvelopeDetails({ envelope }: { envelope: ExternalSignerInvitePublicVie
 
 export function ExternalSigningWorkflowsPage() {
   const t = useT();
+  const noticeT = useExternalSigningNoticeT();
   const toast = useToast();
   const can = useCan();
   const entities = useEntities();
   const books = useBooks();
+  const settings = useSettings();
+  const preferences = useUserPreferences();
+  const updateNoticeDismissal = useUpdateExternalSignatureNoticeDismissal();
   const [token, setToken] = useState('');
   const link = externalSignerInviteLink(token);
   const canUseToken = !!link;
+  const temporaryHideDays = informationalNoticeHideDays(settings.data);
+  const noticeHidden = informationalNoticeIsHidden(
+    preferences.data?.external_signature_notice_dismissal,
+  );
 
   const entityById = useMemo(() => {
     const map = new Map<string, Entity>();
@@ -285,8 +322,30 @@ export function ExternalSigningWorkflowsPage() {
     for (const query of inviteQueries) void query.refetch();
   }
 
+  function hideNotice(mode: ExternalSignatureNoticeDismissal['mode']) {
+    const dismissal: ExternalSignatureNoticeDismissal =
+      mode === 'permanent'
+        ? { mode }
+        : {
+            mode: 'snoozed',
+            until: new Date(Date.now() + temporaryHideDays * 24 * 60 * 60 * 1000).toISOString(),
+          };
+
+    updateNoticeDismissal.mutate(dismissal, {
+      onSuccess: () =>
+        toast.success(
+          mode === 'permanent'
+            ? noticeT('externalSigning.notice.hiddenPermanent')
+            : noticeT('externalSigning.notice.hiddenTemporary', {
+                days: temporaryHideDays,
+              }),
+        ),
+      onError: (error) => toast.error(error),
+    });
+  }
+
   return (
-    <div className="stack">
+    <div className="stack external-signing-workflows">
       <Card
         title={t('externalSigning.title')}
         actions={
@@ -302,9 +361,37 @@ export function ExternalSigningWorkflowsPage() {
         }
       >
         <div className="stack--tight">
-          <InlineWarning tone="info" title={t('externalSigning.notice.title')}>
-            {t('externalSigning.notice.body')}
-          </InlineWarning>
+          {!preferences.isLoading && !noticeHidden ? (
+            <InlineWarning tone="info" title={t('externalSigning.notice.title')}>
+              <p>{t('externalSigning.notice.body')}</p>
+              {preferences.isSuccess ? (
+                <div
+                  className="external-signing-notice__actions"
+                  role="group"
+                  aria-label={noticeT('externalSigning.notice.dismissActions')}
+                >
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={updateNoticeDismissal.isPending}
+                    onClick={() => hideNotice('snoozed')}
+                  >
+                    {noticeT('externalSigning.notice.hideTemporary', {
+                      days: temporaryHideDays,
+                    })}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={updateNoticeDismissal.isPending}
+                    onClick={() => hideNotice('permanent')}
+                  >
+                    {noticeT('externalSigning.notice.hidePermanent')}
+                  </Button>
+                </div>
+              ) : null}
+            </InlineWarning>
+          ) : null}
           <dl className="deflist external-signing-summary">
             <div>
               <dt>{t('externalSigning.summary.total')}</dt>

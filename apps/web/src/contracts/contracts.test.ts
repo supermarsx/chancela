@@ -4836,11 +4836,19 @@ describe('contract fixtures parse through the real client', () => {
     inEnum(NUMBERING_SCHEMES, documents.numbering_scheme_default, 'numbering_scheme_default');
     const ui = assertExactKeys<UiSettings>(
       settings.ui,
-      { registered_entity_columns: true },
+      {
+        registered_entity_columns: true,
+        external_signature_notice_snooze_days: true,
+        phone_pairing_share_email_enabled: true,
+        phone_pairing_share_whatsapp_enabled: true,
+      },
       'Settings.ui',
     );
     expect(Array.isArray(ui.registered_entity_columns)).toBe(true);
     expect(ui.registered_entity_columns).toContain('Actions');
+    expect(ui.external_signature_notice_snooze_days).toBe(90);
+    expect(typeof ui.phone_pairing_share_email_enabled).toBe('boolean');
+    expect(typeof ui.phone_pairing_share_whatsapp_enabled).toBe('boolean');
     // Catalog section — legacy single URL + the strict fidelity-gated source chain (t23).
     const catalog = assertExactKeys<CatalogSettings>(
       settings.catalog,

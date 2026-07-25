@@ -99,6 +99,7 @@ import type {
   SealActBody,
   Settings,
   UserPreferences,
+  ExternalSignatureNoticeDismissal,
   TableColumnPreferences,
   SessionResult,
   CompleteChallengeBody,
@@ -3705,7 +3706,7 @@ function mergeTableColumns(
   const next: TableColumnPreferences = { ...(current?.table_columns ?? {}) };
   if (columns === null) delete next[table];
   else next[table] = columns;
-  return { table_columns: next };
+  return { ...current, table_columns: next };
 }
 
 /**
@@ -3742,6 +3743,53 @@ export function useUpdateTableColumns() {
       return { previous };
     },
     onError: (_err, _vars, context) => {
+      if (context?.previous) qc.setQueryData(keys.mePreferences, context.previous);
+    },
+    onSuccess: (stored) => {
+      qc.setQueryData(keys.mePreferences, stored);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.mePreferences });
+    },
+  });
+}
+
+/**
+ * Persist the External Signatures notice dismissal through the existing self-scoped preferences
+ * document. This preserves table-column choices because `/v1/me/preferences` is whole-document
+ * PUT. `null` restores the notice; an omitted field on older stored rows means visible.
+ */
+export function useUpdateExternalSignatureNoticeDismissal() {
+  const qc = useQueryClient();
+
+  const merge = (
+    current: UserPreferences | undefined,
+    dismissal: ExternalSignatureNoticeDismissal | null,
+  ): UserPreferences => ({
+    ...current,
+    table_columns: current?.table_columns ?? {},
+    external_signature_notice_dismissal: dismissal,
+  });
+
+  return useMutation({
+    mutationFn: (dismissal: ExternalSignatureNoticeDismissal | null) => {
+      const current = qc.getQueryData<UserPreferences>(keys.mePreferences);
+      if (!current) {
+        throw new Error(
+          'User preferences must be loaded before replacing the whole preferences document',
+        );
+      }
+      return api.putMePreferences(merge(current, dismissal));
+    },
+    onMutate: async (dismissal) => {
+      await qc.cancelQueries({ queryKey: keys.mePreferences });
+      const previous = qc.getQueryData<UserPreferences>(keys.mePreferences);
+      if (previous) {
+        qc.setQueryData<UserPreferences>(keys.mePreferences, merge(previous, dismissal));
+      }
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
       if (context?.previous) qc.setQueryData(keys.mePreferences, context.previous);
     },
     onSuccess: (stored) => {

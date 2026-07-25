@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import {
+  DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
   ExternalSigningWorkflowsPage,
   externalSignerInviteLink,
+  informationalNoticeIsHidden,
 } from './ExternalSigningWorkflowsPage';
 import type {
   ActView,
@@ -12,6 +14,7 @@ import type {
   ExternalSignerInvitePublicView,
   ExternalSignerInviteStatus,
   ExternalSignerInviteView,
+  UserPreferences,
 } from '../../api/types';
 
 const openExternalMock = vi.hoisted(() => vi.fn());
@@ -156,10 +159,41 @@ function envelopeFixture(
   };
 }
 
-function externalSigningFetch(requests: { url: string; init?: RequestInit }[] = []): typeof fetch {
+interface ExternalSigningFetchOptions {
+  preferences?: UserPreferences;
+  preferencesError?: boolean;
+  temporaryHideDays?: number;
+}
+
+function externalSigningFetch(
+  requests: { url: string; init?: RequestInit }[] = [],
+  options: ExternalSigningFetchOptions = {},
+): typeof fetch {
+  let preferences = options.preferences ?? { table_columns: {} };
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     requests.push({ url, init });
+    const method = (init?.method ?? 'GET').toUpperCase();
+    if (url.includes('/v1/me/preferences')) {
+      if (method === 'GET' && options.preferencesError) {
+        return Promise.resolve(jsonResponse({ error: 'preferences unavailable' }, 503));
+      }
+      if (method === 'PUT') preferences = JSON.parse(String(init?.body ?? '{}'));
+      return Promise.resolve(jsonResponse(preferences));
+    }
+    if (url.includes('/v1/settings')) {
+      return Promise.resolve(
+        jsonResponse({
+          ui: {
+            registered_entity_columns: [],
+            external_signature_notice_snooze_days:
+              options.temporaryHideDays ?? DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS,
+            phone_pairing_share_email_enabled: true,
+            phone_pairing_share_whatsapp_enabled: true,
+          },
+        }),
+      );
+    }
     if (url.includes('/v1/books/book-1/acts')) return Promise.resolve(jsonResponse(ACTS));
     if (url.includes('/v1/acts/act-1/signature/external-invites')) {
       return Promise.resolve(jsonResponse(INVITES['act-1']));
@@ -183,6 +217,125 @@ afterEach(() => {
 });
 
 describe('ExternalSigningWorkflowsPage', () => {
+  it('persists the configured temporary notice dismissal and keeps it hidden after remount', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const now = Date.parse('2026-07-25T12:00:00Z');
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const fetcher = externalSigningFetch(requests, {
+      temporaryHideDays: 30,
+      preferences: { table_columns: { books: ['Kind', 'Actions'] } },
+    });
+    vi.stubGlobal('fetch', fetcher);
+    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools/external-signing']);
+
+    const actions = await screen.findByRole('group', {
+      name: 'Opções para ocultar este aviso',
+    });
+    const temporary = within(actions).getByRole('button', {
+      name: 'Ocultar durante 30 dias',
+    });
+    expect(within(actions).getByRole('button', { name: 'Ocultar permanentemente' })).toBeTruthy();
+    fireEvent.click(temporary);
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.url.includes('/v1/me/preferences') &&
+            (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+        ),
+      ).toBe(true),
+    );
+    const put = requests.find(
+      (request) =>
+        request.url.includes('/v1/me/preferences') &&
+        (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+    );
+    expect(JSON.parse(String(put?.init?.body))).toEqual({
+      table_columns: { books: ['Kind', 'Actions'] },
+      external_signature_notice_dismissal: {
+        mode: 'snoozed',
+        until: '2026-08-24T12:00:00.000Z',
+      },
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull(),
+    );
+
+    cleanup();
+    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools/external-signing']);
+    await screen.findByText('Maria Pending');
+    expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull();
+  });
+
+  it('persists permanent notice dismissal as an explicit durable preference', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', externalSigningFetch(requests));
+    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools/external-signing']);
+
+    const actions = await screen.findByRole('group', {
+      name: 'Opções para ocultar este aviso',
+    });
+    fireEvent.click(within(actions).getByRole('button', { name: 'Ocultar permanentemente' }));
+
+    await waitFor(() => {
+      const put = requests.find(
+        (request) =>
+          request.url.includes('/v1/me/preferences') &&
+          (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+      );
+      expect(JSON.parse(String(put?.init?.body))).toEqual({
+        table_columns: {},
+        external_signature_notice_dismissal: { mode: 'permanent' },
+      });
+    });
+  });
+
+  it('keeps the notice visible but exposes no replacement PUT when preferences fail to load', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', externalSigningFetch(requests, { preferencesError: true }));
+    renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools/external-signing']);
+
+    expect(await screen.findByText(/não conclui uma assinatura qualificada/i)).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ocultar durante/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ocultar permanentemente' })).toBeNull();
+    expect(
+      requests.some(
+        (request) =>
+          request.url.includes('/v1/me/preferences') &&
+          (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+      ),
+    ).toBe(false);
+  });
+
+  it('treats only future temporary and permanent dismissals as hidden', () => {
+    const now = Date.parse('2026-07-25T12:00:00Z');
+    expect(
+      informationalNoticeIsHidden({ mode: 'snoozed', until: '2026-07-26T12:00:00Z' }, now),
+    ).toBe(true);
+    expect(
+      informationalNoticeIsHidden({ mode: 'snoozed', until: '2026-07-24T12:00:00Z' }, now),
+    ).toBe(false);
+    expect(informationalNoticeIsHidden({ mode: 'permanent' }, now)).toBe(true);
+  });
+
+  it('normalizes the two External Signatures cards and notice action spacing in scoped CSS', async () => {
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    const css = readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+
+    expect(css).toMatch(/\.external-signing-workflows\s*>\s*\.panel\s*\{[^}]*margin-block:\s*0;/s);
+    expect(css).toMatch(
+      /\.external-signing-workflows\s*>\s*\.panel\s*\+\s*\.panel\s*\{[^}]*margin-top:\s*1rem;/s,
+    );
+    expect(css).toMatch(
+      /\.external-signing-notice__actions\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.55rem;[^}]*margin-top:\s*0\.75rem;/s,
+    );
+  });
+
   it('lists external invite statuses with technical-only workflow limits', async () => {
     vi.stubGlobal('fetch', externalSigningFetch());
     renderWithProviders(<ExternalSigningWorkflowsPage />, ['/tools?tool=external-signing']);

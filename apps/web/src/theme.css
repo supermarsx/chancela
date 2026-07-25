@@ -234,9 +234,43 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
+/* The two External Signatures cards share one deliberate rhythm. Card bodies own their padding;
+   nested stack/form helpers therefore start and end flush instead of contributing stray margins. */
+.external-signing-workflows > .panel {
+  margin-block: 0;
+}
+
+.external-signing-workflows > .panel + .panel {
+  margin-top: 1rem;
+}
+
+.external-signing-workflows .panel__body > .stack--tight,
+.external-signing-workflows .panel__body > .form {
+  margin-block: 0;
+}
+
+.external-signing-notice__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  margin-top: 0.75rem;
+}
+
+.external-signing-notice__actions .btn {
+  min-width: min(100%, 11rem);
+}
+
+.external-signing-workflows .inline-warning__body > p {
+  margin: 0;
+}
+
 @media (max-width: 620px) {
   .external-signature-deflist {
     grid-template-columns: 1fr;
+  }
+
+  .external-signing-notice__actions .btn {
+    width: 100%;
   }
 }
 
@@ -6472,6 +6506,53 @@ a.btn--primary {
   grid-template-columns: 1fr;
   gap: 1.15rem;
   align-items: start;
+}
+
+/* TSA field/value diagnostics keep a readable, stable label track on table-sized viewports.
+   At phone width each row stacks label over value, so the desktop width never creates overflow. */
+.trust-tsa .trust-fact-table .table {
+  table-layout: fixed;
+}
+
+.trust-tsa .trust-fact-table .table th,
+.trust-tsa .trust-fact-table .table td {
+  padding: 0.65rem 0.8rem;
+}
+
+.trust-tsa .trust-fact-table .table th:first-child {
+  width: 12rem;
+  min-width: 12rem;
+}
+
+@media (max-width: 620px) {
+  .trust-tsa .trust-fact-table .table,
+  .trust-tsa .trust-fact-table .table tbody,
+  .trust-tsa .trust-fact-table .table tr {
+    display: block;
+  }
+
+  .trust-tsa .trust-fact-table .table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .trust-tsa .trust-fact-table .table tbody tr {
+    padding-block: 0.45rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .trust-tsa .trust-fact-table .table tbody th,
+  .trust-tsa .trust-fact-table .table tbody td {
+    display: block;
+    width: auto;
+    min-width: 0;
+    border-bottom: 0;
+    padding: 0.2rem 0.5rem;
+  }
 }
 
 /* Trust diagnostics are one continuous reading column in both the TSL and TSA tabs. The

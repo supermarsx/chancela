@@ -7665,6 +7665,12 @@ export type RegisteredEntityColumn = (typeof REGISTERED_ENTITY_COLUMNS)[number];
 
 export interface UiSettings {
   registered_entity_columns: RegisteredEntityColumn[];
+  /** Configured duration for the External Signatures notice's temporary snooze action. */
+  external_signature_notice_snooze_days: number;
+  /** Whether phone pairing may offer the configured email client as a share target. */
+  phone_pairing_share_email_enabled: boolean;
+  /** Whether phone pairing may offer WhatsApp as a share target. */
+  phone_pairing_share_whatsapp_enabled: boolean;
 }
 
 /**
@@ -7692,8 +7698,16 @@ export interface TableColumnPreferences {
   templates?: string[];
 }
 
+/**
+ * A self-scoped, durable dismissal for the External Signatures informational notice. A snooze
+ * carries the exact RFC 3339 expiry; permanent dismissal needs no synthetic date.
+ */
+export type ExternalSignatureNoticeDismissal =
+  { mode: 'snoozed'; until: string } | { mode: 'permanent' };
+
 export interface UserPreferences {
   table_columns: TableColumnPreferences;
+  external_signature_notice_dismissal?: ExternalSignatureNoticeDismissal | null;
 }
 
 /**
@@ -8096,6 +8110,9 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   ui: {
     registered_entity_columns: ['Name', 'Nipc', 'Type', 'LastActivity', 'Actions'],
+    external_signature_notice_snooze_days: 90,
+    phone_pairing_share_email_enabled: true,
+    phone_pairing_share_whatsapp_enabled: true,
   },
   onboarding: { completed: false, completed_at: null },
   ai: { enabled: false },

@@ -161,7 +161,10 @@
       "Type",
       "LastActivity",
       "Actions"
-    ]
+    ],
+    "external_signature_notice_snooze_days": 90,
+    "phone_pairing_share_email_enabled": true,
+    "phone_pairing_share_whatsapp_enabled": true
   },
   "onboarding": {
     "completed": false,

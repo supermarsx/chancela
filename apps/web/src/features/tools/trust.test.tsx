@@ -593,6 +593,26 @@ describe('Ferramentas — TSL trust catalog', () => {
     expect(css.match(/\.trust-explorer\s*\{/g)).toHaveLength(1);
   });
 
+  it('gives TSA fact labels a stable desktop width and releases it in the mobile stack', async () => {
+    const css = await themeSource();
+    const firstColumn =
+      css.match(/\.trust-tsa\s+\.trust-fact-table\s+\.table\s+th:first-child\s*\{([^}]*)\}/)?.[1] ??
+      '';
+    const mobileCells =
+      css.match(
+        /\.trust-tsa\s+\.trust-fact-table\s+\.table\s+tbody\s+th,\s*\.trust-tsa\s+\.trust-fact-table\s+\.table\s+tbody\s+td\s*\{([^}]*)\}/,
+      )?.[1] ?? '';
+
+    expect(firstColumn).toMatch(/width:\s*12rem;/);
+    expect(firstColumn).toMatch(/min-width:\s*12rem;/);
+    expect(css).toMatch(
+      /\.trust-tsa\s+\.trust-fact-table\s+\.table\s+th,\s*\.trust-tsa\s+\.trust-fact-table\s+\.table\s+td\s*\{[^}]*padding:\s*0\.65rem\s+0\.8rem;/s,
+    );
+    expect(mobileCells).toMatch(/display:\s*block;/);
+    expect(mobileCells).toMatch(/width:\s*auto;/);
+    expect(mobileCells).toMatch(/min-width:\s*0;/);
+  });
+
   it('splits the trust surface into TSL and TSA sub-tabs', async () => {
     vi.stubGlobal('fetch', trustFetch());
     renderWithProviders(<ToolsPage />, ['/tools/trust']);
