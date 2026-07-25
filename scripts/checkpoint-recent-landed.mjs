@@ -4024,13 +4024,78 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/settings/ProviderCredentialsSection.test.tsx",
-    "renders provider groups, entries in priority order, and configured field badges",
-    "web provider credentials priority/configured-field coverage",
+    "renders a metadata-only provider table and navigates create/edit to dedicated pages",
+    "web provider credentials metadata/dedicated-page coverage",
   );
   assertFileContains(
-    "apps/web/src/features/settings/ProviderCredentialsSection.test.tsx",
-    "sends a write-only create body with the secret in `set`",
-    "web provider credentials write-only create coverage",
+    "apps/web/src/features/settings/ProviderCredentialPage.test.tsx",
+    "creates CSC and SCAP entries with trimmed metadata and write-only provider secrets",
+    "web dedicated provider page write-only create coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/ProviderCredentialPage.test.tsx",
+    "requires signing.perform and explicit confirmation before a PKCS#12 key operation",
+    "web dedicated provider page private-key confirmation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/provider_credentials_write.rs",
+    "credential_bearing_probes_refuse_plain_http_before_sending_secrets",
+    "provider credential probe HTTPS fail-closed coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/provider_credentials_write.rs",
+    "changing_endpoint_origin_requires_replacing_every_stored_field",
+    "provider credential endpoint-origin secret-binding coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/provider_credentials_write.rs",
+    "pkcs12_probe_requires_perform_permission_and_explicit_confirmation",
+    "provider credential PKCS#12 permission/confirmation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "template_document_markdown_preview_renders_block_authored_catalog_template",
+    "complete block-authored template Markdown preview coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateMarkdownPreview.test.tsx",
+    "renders and copies the complete server-generated document, including block-authored prose",
+    "web complete template Markdown preview coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/lib.rs",
+    "citizen_card_bridge_routes_require_auth_and_keep_the_probe_bodyless",
+    "Citizen Card bridge authenticated/bodyless route coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "cc_bridge_errors_are_sanitized_and_dtos_have_no_secret_or_identity_fields",
+    "Citizen Card bridge sanitized diagnostic coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "cc_bridge_probe_failure_guardrails_never_claim_or_persist_a_document",
+    "Citizen Card bridge non-document/no-claim guardrail coverage",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/cc_provider_probe.rs",
+    "cc_provider_probe_rejects_certificate_switch_after_challenge_construction",
+    "Citizen Card bridge certificate-switch refusal coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/citizenCardBridge.test.tsx",
+    "sends the private-key probe with no request body",
+    "Citizen Card bridge client bodyless probe coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/signing/CitizenCardBridgePage.test.tsx",
+    "runs the parameterless key probe only after confirmation and closes on success",
+    "Citizen Card bridge confirmed user probe coverage",
+  );
+  assertFileContains(
+    "apps/web/src/api/labels.test.ts",
+    "distinguishes probe requests from recorded outcomes without claiming success",
+    "provider and Citizen Card probe ledger-label distinction coverage",
   );
   assertFileContains(
     "crates/chancela-api/tests/cmd_signing.rs",
@@ -11013,12 +11078,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-24 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `95e593d`",
+    "Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `0fab02e`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `95e593d`",
+    "Focused Gate Snapshot Through `0fab02e`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11698,7 +11763,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `95e593d`",
+    "Current checkpoint metadata/static checks through `0fab02e`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12288,12 +12353,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `95e593da5139cfd8fe7eb21153df292e3f28e60a`",
+    "implementation snapshot `0fab02e4058994e6667d5942badc98e2e7c70584`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `95e593d` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
+    "Current `0fab02e` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
     "spec coverage erasure workflow current checkpoint marker",
   );
   assertFileContains(
@@ -12328,7 +12393,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `95e593d` snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `0fab02e` snapshot",
     "CI checkpoints signing validation snapshot marker",
   );
   assertFileContains(
@@ -12378,7 +12443,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `95e593d`",
+    "Current checkpoint metadata/static checks through `0fab02e`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
