@@ -10049,6 +10049,21 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docker/Dockerfile.server",
+    "COPY --from=rust-build /runtime-libs/ /usr/local/lib/",
+    "server Docker PC/SC libraries copied into distroless runtime",
+  );
+  assertFileContains(
+    "Dockerfile.hardened",
+    "COPY --from=rust-build /runtime-libs/ /usr/local/lib/",
+    "hardened Docker PC/SC libraries copied into distroless runtime",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "it does not validate a physical Citizen Card,\nreader, live `pcscd` host-socket mount, or live signing.",
+    "Docker PC/SC runtime no-live-hardware claim marker",
+  );
+  assertFileContains(
+    "docker/Dockerfile.server",
     'ARG CARGO_FEATURES="chancela-server/sqlcipher"',
     "Docker SQLCipher server build default",
   );
@@ -11078,12 +11093,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `f460859`",
+    "Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `b557cfbb`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `f460859`",
+    "Focused Gate Snapshot Through `b557cfbb`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11763,7 +11778,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `f460859`",
+    "Current checkpoint metadata/static checks through `b557cfb`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12353,12 +12368,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `f460859985bcde1e518e60a539a2d3508ae83164`",
+    "implementation snapshot `b557cfbbd61364ef782a73983385a7941d6c55b9`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `f460859` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
+    "Current `b557cfb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
     "spec coverage erasure workflow current checkpoint marker",
   );
   assertFileContains(
@@ -12393,7 +12408,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `f460859` snapshot",
+    "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `b557cfbb` snapshot",
     "CI checkpoints signing validation snapshot marker",
   );
   assertFileContains(
@@ -12443,7 +12458,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `f460859`",
+    "Current checkpoint metadata/static checks through `b557cfb`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
