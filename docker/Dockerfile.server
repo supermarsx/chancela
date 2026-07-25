@@ -38,7 +38,7 @@ ARG CARGO_FEATURES="chancela-server/sqlcipher"
 # tells it the answer up front. Install behaviour is unchanged.
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        pkg-config libpcsclite-dev perl make \
+        pkg-config libpcsclite-dev libpcsclite1 perl make \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the whole workspace (see .dockerignore for what is excluded: target,
@@ -52,7 +52,11 @@ COPY . .
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
     cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
-    && cp target/release/chancela-server /chancela-server
+    && cp target/release/chancela-server /chancela-server \
+    && mkdir /runtime-libs \
+    && cp /usr/lib/*-linux-gnu/libpcsclite.so.1 \
+        /usr/lib/*-linux-gnu/libpcsclite_real.so.1 \
+        /runtime-libs/
 
 ########################  Stage 2: Web build  ########################
 FROM node:24.18.0-trixie-slim@sha256:ae91dcc111a68c9d2d81ff2a17bda61be126426176fde6fe7d08ab13b7f50573 AS web-build
@@ -99,6 +103,13 @@ FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264
 # has a tiny HTTP client. No other utilities are added.
 COPY --from=busybox:1.37.0-uclibc@sha256:39e0df8c4d65953b55c344f017e1ff2e0031a7454b3c24e6b76d402f207e315a /bin/busybox /usr/bin/busybox
 
+# `chancela-server` links PC/SC for Cartao de Cidadao signing. Debian 13
+# splits libpcsclite into a loader shim and the real implementation, so the
+# distroless runtime needs both files. They are copied to an immutable path
+# searched explicitly below. pcscd remains a host-side service and requires an
+# operator-provided socket mount when container-local card access is enabled.
+COPY --from=rust-build /runtime-libs/ /usr/local/lib/
+
 COPY --from=rust-build /chancela-server /usr/local/bin/chancela-server
 COPY --from=web-build /app/apps/web/dist /srv/web
 COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/.keep
@@ -112,6 +123,9 @@ ENV CHANCELA_DATA_DIR=/var/lib/chancela
 # auto-detect this path, but setting it explicitly makes the container's intent clear and
 # avoids any dependence on the working directory.
 ENV CHANCELA_WEB_DIST=/srv/web
+# `/usr/local/lib` is root-owned and the runtime filesystem is read-only under
+# Compose, so unprivileged processes cannot influence dynamic library loading.
+ENV LD_LIBRARY_PATH=/usr/local/lib
 EXPOSE 8080
 
 USER nonroot

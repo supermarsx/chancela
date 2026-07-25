@@ -89,6 +89,31 @@ function checkDockerBuild() {
       /cargo build --release -p chancela-server --locked --features "\$\{CARGO_FEATURES\}"/,
       `${relativePath} server build consumes CARGO_FEATURES`,
     );
+    assertContains(
+      dockerfile,
+      "libpcsclite1",
+      `${relativePath} Citizen Card runtime package`,
+    );
+    assertContains(
+      dockerfile,
+      "libpcsclite.so.1",
+      `${relativePath} PC/SC loader shim`,
+    );
+    assertContains(
+      dockerfile,
+      "libpcsclite_real.so.1",
+      `${relativePath} PC/SC runtime implementation`,
+    );
+    assertContains(
+      dockerfile,
+      "ENV LD_LIBRARY_PATH=/usr/local/lib",
+      `${relativePath} distroless runtime library path`,
+    );
+    assertContains(
+      dockerfile,
+      "COPY --from=rust-build /runtime-libs/ /usr/local/lib/",
+      `${relativePath} PC/SC libraries copied into distroless runtime`,
+    );
   }
 
   for (const relativePath of [
