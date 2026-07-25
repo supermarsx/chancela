@@ -1081,7 +1081,8 @@ jobs:
             e2e/smoke.spec.ts \
             e2e/session.spec.ts \
             e2e/first-launch-onboarding.spec.ts \
-            e2e/journey.spec.ts
+            e2e/journey.spec.ts \
+            e2e/template-pdf-preview.spec.ts
 
       - name: Upload Playwright artifacts
         if: failure()

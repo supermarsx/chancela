@@ -7,8 +7,21 @@ const pdfjsMock = vi.hoisted(() => ({
   getDocument: vi.fn(),
 }));
 
-vi.mock('pdfjs-dist', () => pdfjsMock);
-vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({ default: '/pdf.worker.mjs' }));
+// Keep the modern entry point deliberately unusable: the supported compatibility boundary is the
+// legacy engine/worker pair, and a regression to the package default must fail this suite.
+vi.mock('pdfjs-dist', () => ({
+  GlobalWorkerOptions: { workerSrc: '' },
+  getDocument: vi.fn(() => {
+    throw new TypeError('Map.prototype.getOrInsertComputed is unavailable');
+  }),
+}));
+vi.mock('pdfjs-dist/build/pdf.worker.min.mjs?url', () => ({
+  default: '/pdf.worker.modern.mjs',
+}));
+vi.mock('pdfjs-dist/legacy/build/pdf.mjs', () => pdfjsMock);
+vi.mock('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url', () => ({
+  default: '/pdf.worker.legacy.mjs',
+}));
 
 import { usePdfPage } from './usePdfPage';
 
@@ -91,43 +104,60 @@ describe('usePdfPage', () => {
     expect(pdfjsMock.getDocument).not.toHaveBeenCalled();
   });
 
-  it('loads copied bytes, clamps the page, renders at device scale, and exposes geometry', async () => {
-    const fixture = pdfFixture();
-    const { canvas, ref } = canvasRef();
-    const source = new Uint8Array([1, 2, 3, 4]).buffer;
-    const { result, unmount } = renderHook(() =>
-      usePdfPage({ data: source, pageIndex: 99, targetWidth: 396, canvasRef: ref }),
-    );
-
-    await waitFor(() => expect(result.current.geometry).not.toBeNull());
-
-    expect(pdfjsMock.GlobalWorkerOptions.workerSrc).toBe('/pdf.worker.mjs');
-    const loadedBytes = pdfjsMock.getDocument.mock.calls[0][0].data as Uint8Array;
-    expect([...loadedBytes]).toEqual([1, 2, 3, 4]);
-    expect(loadedBytes.buffer).not.toBe(source);
-    expect(fixture.doc.getPage).toHaveBeenCalledWith(2);
-    expect(fixture.page.getViewport).toHaveBeenNthCalledWith(1, { scale: 1 });
-    expect(fixture.page.getViewport).toHaveBeenNthCalledWith(2, { scale: 0.5 });
-    expect(fixture.page.render).toHaveBeenCalledWith(
-      expect.objectContaining({
-        canvas,
-        transform: [2, 0, 0, 2, 0, 0],
-      }),
-    );
-    expect(canvas.width).toBe(792);
-    expect(canvas.height).toBe(612);
-    expect(canvas.style.width).toBe('396px');
-    expect(canvas.style.height).toBe('306px');
-    expect(result.current).toEqual({
-      status: 'ready',
-      pageCount: 2,
-      geometry: { widthPt: 612, heightPt: 792, rotation: 90, scale: 0.5 },
-      error: null,
+  it('uses the compatibility build when Map.getOrInsertComputed is unavailable', async () => {
+    const mapPrototype = Map.prototype as typeof Map.prototype & {
+      getOrInsertComputed?: unknown;
+    };
+    const nativeDescriptor = Object.getOwnPropertyDescriptor(mapPrototype, 'getOrInsertComputed');
+    Object.defineProperty(mapPrototype, 'getOrInsertComputed', {
+      configurable: true,
+      value: undefined,
     });
 
-    unmount();
-    expect(fixture.task.destroy).toHaveBeenCalledTimes(1);
-    expect(fixture.renderTask.cancel).toHaveBeenCalledTimes(1);
+    try {
+      const fixture = pdfFixture();
+      const { canvas, ref } = canvasRef();
+      const source = new Uint8Array([1, 2, 3, 4]).buffer;
+      const { result, unmount } = renderHook(() =>
+        usePdfPage({ data: source, pageIndex: 99, targetWidth: 396, canvasRef: ref }),
+      );
+
+      await waitFor(() => expect(result.current.geometry).not.toBeNull());
+
+      expect(pdfjsMock.GlobalWorkerOptions.workerSrc).toBe('/pdf.worker.legacy.mjs');
+      const loadedBytes = pdfjsMock.getDocument.mock.calls[0][0].data as Uint8Array;
+      expect([...loadedBytes]).toEqual([1, 2, 3, 4]);
+      expect(loadedBytes.buffer).not.toBe(source);
+      expect(fixture.doc.getPage).toHaveBeenCalledWith(2);
+      expect(fixture.page.getViewport).toHaveBeenNthCalledWith(1, { scale: 1 });
+      expect(fixture.page.getViewport).toHaveBeenNthCalledWith(2, { scale: 0.5 });
+      expect(fixture.page.render).toHaveBeenCalledWith(
+        expect.objectContaining({
+          canvas,
+          transform: [2, 0, 0, 2, 0, 0],
+        }),
+      );
+      expect(canvas.width).toBe(792);
+      expect(canvas.height).toBe(612);
+      expect(canvas.style.width).toBe('396px');
+      expect(canvas.style.height).toBe('306px');
+      expect(result.current).toEqual({
+        status: 'ready',
+        pageCount: 2,
+        geometry: { widthPt: 612, heightPt: 792, rotation: 90, scale: 0.5 },
+        error: null,
+      });
+
+      unmount();
+      expect(fixture.task.destroy).toHaveBeenCalledTimes(1);
+      expect(fixture.renderTask.cancel).toHaveBeenCalledTimes(1);
+    } finally {
+      if (nativeDescriptor) {
+        Object.defineProperty(mapPrototype, 'getOrInsertComputed', nativeDescriptor);
+      } else {
+        delete mapPrototype.getOrInsertComputed;
+      }
+    }
   });
 
   it('uses a one-to-one render transform when devicePixelRatio is unavailable', async () => {

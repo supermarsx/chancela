@@ -7,7 +7,11 @@
  * mounts this hook can be unit-tested by mocking the hook without pulling pdf.js into jsdom.
  *
  * The worker is wired with Vite's `?url` asset import (`GlobalWorkerOptions.workerSrc`), the
- * documented pattern that makes the pdf.js worker bundle cleanly under `vite build`.
+ * documented pattern that makes the pdf.js worker bundle cleanly under `vite build`. Both imports
+ * deliberately use pdf.js's legacy build: pdf.js 6's modern build requires
+ * `Map.prototype.getOrInsertComputed`, which is not yet present in every Chromium/WebView runtime
+ * Chancela supports. The official legacy build carries the matching core-js compatibility layer,
+ * avoiding an app-maintained prototype patch.
  *
  * The hook renders the selected page into the caller's `<canvas>` at a scale chosen to fit a
  * target CSS width, and reports the {@link PageGeometry} (unrotated MediaBox dimensions, display
@@ -30,8 +34,8 @@ let pdfjsPromise: Promise<PdfjsLib> | null = null;
 async function loadPdfjs(): Promise<PdfjsLib> {
   if (!pdfjsPromise) {
     pdfjsPromise = (async () => {
-      const pdfjs = await import('pdfjs-dist');
-      const workerUrl = (await import('pdfjs-dist/build/pdf.worker.min.mjs?url')).default;
+      const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
+      const workerUrl = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
       return pdfjs;
     })();
