@@ -65,9 +65,11 @@ The simplest way to run Chancela is the self-hosted single-node image:
 docker compose --profile single-node up --build
 ```
 
-Chancela publishes no images to any registry — `--build` compiles
-`chancela-server` from this repository, which takes a few minutes the first
-time. There is nothing to `docker compose pull`.
+Every successful `main` CI run publishes the tested commit to GHCR as
+`ghcr.io/<owner>/chancela-server` and `ghcr.io/<owner>/chancela-worker`, with immutable
+`sha-<full-commit>` tags plus `latest`. Repository package visibility still applies. The
+images carry BuildKit provenance and SBOM attestations but are not cosign-signed. The
+`--build` command above deliberately compiles the local source tree.
 
 Then open <http://127.0.0.1:8080>. The container binds `0.0.0.0:8080` and stores durable
 state on the `chancela-data` volume; `GET /health` should report `persistent: true` and

@@ -6,9 +6,10 @@ name: Release signing (opt-in)
 # signing ONLY when the operator supplies the credentials documented in
 # docs/release-signing.md, and the recorded releaseTrust reflects exactly what ran.
 #
-# It is deliberately a SEPARATE workflow from ci.yml / release.yml: those pipelines
-# are guarded to always record unsigned-dev / local-ci and must never carry signing
-# commands. This workflow is the single place where signing is activated.
+# It is deliberately a SEPARATE workflow from ci.yml / release.yml: the release
+# packages remain unsigned-dev, the Docker smoke is local-ci, and normal GHCR
+# publication is recorded as published-unsigned. Those paths must never carry
+# signing commands. This workflow is the single place where signing is activated.
 
 on:
   workflow_dispatch:

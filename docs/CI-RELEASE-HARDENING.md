@@ -46,6 +46,14 @@ status artifact records concrete evidence.
   `node scripts/check-release-trust.mjs docker --expect-mode local-ci`. The
   check fails if the local CI image claims push, signing, notarization, or
   attestation work that did not happen.
+- The final `publish-ghcr` job depends on every required CI job and runs only for
+  a push to `main`, so publication cannot begin before the normal CI graph
+  succeeds. It uses `GITHUB_TOKEN` (`packages: write`) to publish server and
+  worker images with immutable `sha-<full-commit>` tags plus `latest`.
+- Both published images are pinned to `linux/amd64` and carry maximum BuildKit
+  provenance plus SBOM attestations. Their machine-readable status is validated
+  as `published-unsigned`; publication and attestations do not imply a cosign
+  signature.
 
 ## Report-Only by Default
 
@@ -82,7 +90,8 @@ a production trust claim.
 This checkpoint pins workflow wiring, documentation, and truthful status
 artifacts only. It does not prove production signing success, secret
 availability, package trust certification, registry publication, or completed
-notarization.
+notarization. Those outcomes still require concrete hosted-run evidence; no
+automatically published image is claimed to be signed.
 
 ## Not Yet Enforced or Claimed
 
@@ -92,16 +101,16 @@ notarization.
   package signing and notarization remain unvalidated unless the separate
   opt-in workflow runs with configured credentials and emits signed/notarized
   status evidence.
-- The normal Docker CI lane is local-only. The opt-in signing workflow can push,
-  sign, and attest a target image when explicitly configured, but this checkpoint
-  has no production registry push/signature/attestation proof.
+- The normal Docker smoke lane remains local-only. After every required CI job
+  succeeds on a `main` push, `publish-ghcr` automatically pushes server and
+  worker images with BuildKit provenance and SBOM attestations. The images remain
+  unsigned. The opt-in signing workflow can separately push, sign, and attest a
+  target image when explicitly configured.
 - The Docker security artifact includes
   `chancela-server-signing-status.json`, which records that no signing or
   notarization was performed.
-- Actual production package or image publication should be claimed only after
-  the registry, signing identity, notarization flow, provenance policy, and
-  secret handling are configured and a workflow run emits concrete evidence
-  anchors such as certificate fingerprints, attestation digests, workflow run
-  URLs, or notarization ticket references. Only then should the relevant
-  `scripts/check-release-trust.mjs` call move from `unsigned-dev` or `local-ci`
-  to `production`.
+- Actual production package signing or image signing should be claimed only
+  after the signing identity, notarization flow, provenance policy, and secret
+  handling are configured and a workflow run emits concrete evidence anchors.
+  Automatic GHCR publication uses `published-unsigned`; only a genuinely signed
+  workflow result may move image trust to `production`.

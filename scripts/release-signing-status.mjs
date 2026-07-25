@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Emit a TRUTHFUL release signing status document for the opt-in signing
-// pipeline (.github/workflows/release-signing.yml).
+// Emit a TRUTHFUL release signing status document for the automatic unsigned
+// image publisher and the opt-in signing pipeline.
 //
 // This helper exists so the signing workflow can never accidentally claim that
 // an artifact was signed, pushed, notarized, or attested unless the concrete
@@ -88,13 +88,22 @@ function buildContainerStatus({ options, flags }) {
     if (!nonEmpty(signer)) fail("--signed requires --signer");
   }
   if (attested) {
-    if (!signed) fail("--attested requires --signed");
+    if (!pushed) fail("--attested requires --pushed");
     if (!nonEmpty(predicateType)) fail("--attested requires --predicate-type");
   }
 
-  const mode = pushed && signed && attested ? "production" : "local-ci";
-  if (mode === "local-ci" && (pushed || signed || attested)) {
-    fail("partial signing state cannot be represented honestly; enable push+sign+attest together");
+  const mode =
+    pushed && signed && attested
+      ? "production"
+      : pushed && !signed && attested
+        ? "published-unsigned"
+        : !pushed && !signed && !attested
+          ? "local-ci"
+          : null;
+  if (mode === null) {
+    fail(
+      "partial container trust state cannot be represented honestly; use local-only, pushed+attested+unsigned, or pushed+signed+attested",
+    );
   }
 
   const imagePublication = pushed
@@ -111,7 +120,7 @@ function buildContainerStatus({ options, flags }) {
         status: "not_pushed",
         reason:
           options.get("reason-not-pushed") ??
-          "No container registry or signing identity is configured; the image was not pushed.",
+          "No container registry publication was performed.",
       };
 
   const signing = signed
@@ -145,7 +154,7 @@ function buildContainerStatus({ options, flags }) {
         status: "not_attested",
         reason:
           options.get("reason-not-attested") ??
-          "No container attestation was produced because signing is not configured.",
+          "No container provenance or SBOM attestation was produced.",
       };
 
   return {
@@ -166,7 +175,7 @@ function buildContainerStatus({ options, flags }) {
     },
     note:
       "Emitted by scripts/release-signing-status.mjs. Positive claims are backed by " +
-      "the evidence anchors recorded above; absent signing identity yields an honest unsigned document.",
+      "the evidence anchors recorded above; registry publication and build attestations never imply a signature.",
   };
 }
 
@@ -322,6 +331,30 @@ function runSelfTest() {
   });
   if (signedContainer.releaseTrust.mode !== "production") throw new Error("expected production mode");
 
+  // Normal main-branch CI publishes with BuildKit provenance/SBOM but no signing identity.
+  const publishedUnsignedContainer = buildContainerStatus({
+    options: new Map([
+      ["image", `ghcr.io/example/chancela-server@${digest}`],
+      ["digest", digest],
+      ["run-url", runUrl],
+      ["predicate-type", "https://slsa.dev/provenance/v1"],
+      ["registry", "ghcr.io"],
+      ["repository", "example/chancela-server"],
+      ["reason-unsigned", "No container signing identity was used by normal CI."],
+    ]),
+    flags: new Set(["pushed", "attested"]),
+  });
+  if (publishedUnsignedContainer.releaseTrust.mode !== "published-unsigned") {
+    throw new Error("expected published-unsigned mode");
+  }
+  if (publishedUnsignedContainer.imagePushed !== true) throw new Error("expected imagePushed true");
+  if (publishedUnsignedContainer.signingPerformed !== false) {
+    throw new Error("expected signingPerformed false");
+  }
+  if (publishedUnsignedContainer.attestationPerformed !== true) {
+    throw new Error("expected attestationPerformed true");
+  }
+
   // Signed without evidence must be refused.
   expectFail(
     () =>
@@ -343,6 +376,17 @@ function runSelfTest() {
         flags: new Set(["signed"]),
       }),
     "--signed requires --pushed",
+  );
+  expectFail(
+    () =>
+      buildContainerStatus({
+        options: new Map([
+          ["image", "chancela-server:x"],
+          ["predicate-type", "https://slsa.dev/provenance/v1"],
+        ]),
+        flags: new Set(["attested"]),
+      }),
+    "--attested requires --pushed",
   );
 
   // Desktop: unsigned Windows document.

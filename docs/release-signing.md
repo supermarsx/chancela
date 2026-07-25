@@ -8,13 +8,21 @@ The pipeline lives in
 [`.github/workflows/release-signing.yml`](https://github.com/supermarsx/chancela/blob/main/.github/workflows/release-signing.yml)
 and is deliberately **separate** from the default `ci.yml` and `release.yml`
 pipelines. Those two build and package artifacts but never sign them; they always
-record an honest `unsigned-dev` / `local-ci` trust status. This workflow is the
-single place where signing is activated.
+record an honest `unsigned-dev` / `local-ci` trust status. The final `publish-ghcr`
+job in `ci.yml` publishes the exact commit that passed every required CI job and
+records `published-unsigned`: BuildKit provenance and SBOM attestations are
+present, but no signature is claimed. `release-signing.yml` remains the single
+place where signing is activated.
 
 ## Current default state
 
-**By default, nothing is signed.** With no signing identity configured, the
-signing workflow:
+**By default, nothing is signed.** After a successful push to `main`, normal CI
+publishes `chancela-server` and `chancela-worker` to GHCR using `GITHUB_TOKEN`.
+Each image receives an immutable `sha-<full-commit>` tag and `latest`, with
+BuildKit provenance and SBOM attestations. Its trust declaration remains
+explicitly `published-unsigned`.
+
+Separately, with no signing identity configured, the opt-in signing workflow:
 
 - does **not** push the container image to any registry,
 - does **not** sign the image or produce an attestation,
@@ -22,7 +30,7 @@ signing workflow:
 - records an honest `unsigned` / `not_pushed` / `not_attested` / `not_notarized`
   status for every artifact.
 
-Signing happens **only** when you supply the real credentials below, and the
+Cosign signing happens **only** when you supply the real credentials below, and the
 recorded `releaseTrust` reflects exactly what actually ran — it never claims an
 artifact is signed, pushed, notarized, or attested unless the concrete evidence
 (image digest, signing identity, attestation predicate, notarization ticket,
@@ -43,6 +51,10 @@ Configure these under **Settings → Secrets and variables → Actions**. Reposi
 **variables** are non-secret toggles/names; **secrets** are sensitive material.
 
 ### 1. Container image signing + SBOM attestation (cosign)
+
+Normal `main` publication needs no repository secret or variable: it uses
+`GITHUB_TOKEN` with `packages: write` and does not invoke cosign. The settings
+below apply only to the separate opt-in workflow when a signed image is needed.
 
 Signs the pushed image with [cosign](https://github.com/sigstore/cosign) and
 attaches a CycloneDX SBOM attestation. The `docker/build-push-action` build also
@@ -67,8 +79,9 @@ target:
   (and `COSIGN_PASSWORD` if encrypted). Generate a key pair with
   `cosign generate-key-pair`.
 
-If neither mode is configured, the image is not pushed and the container status
-is recorded as `unsigned` / `not_pushed` / `not_attested`.
+If neither mode is configured, the opt-in workflow does not push another image
+and records `unsigned` / `not_pushed` / `not_attested`. This does not upgrade the
+independently published normal-CI images to signed images.
 
 ### 2. Desktop / binary code signing
 
@@ -169,14 +182,21 @@ Each run also uploads machine-readable status documents
 workflow artifacts. They record the trust state and the evidence anchors behind
 any positive claim.
 
+Normal CI also uploads server and worker publication-status documents. Both
+declare `releaseTrust.mode=published-unsigned`; publication and BuildKit
+attestations must never be read as evidence of a cosign signature.
+
 ---
 
 ## Design notes
 
 - The default `ci.yml` (Docker build + smoke) and `release.yml` (packaging) jobs
   intentionally carry **no** signing commands and always record an honest
-  unsigned status; this is enforced by a static guard in
-  `scripts/check-release-trust.mjs`. Signing is isolated to this opt-in workflow.
+  unsigned status. The final `publish-ghcr` job depends on every required CI job
+  and runs only for a successful `main` push. It publishes both images with
+  `published-unsigned` declarations. These contracts are enforced by a static
+  guard in `scripts/check-release-trust.mjs`; signing remains isolated to the
+  opt-in workflow.
 - Action versions are pinned (`sigstore/cosign-installer@v4.1.2`,
   `docker/build-push-action@v7.3.0`, `docker/login-action@v4.4.0`,
   `anchore/syft:v1.9.0`, and the `actions/*@v4` set).

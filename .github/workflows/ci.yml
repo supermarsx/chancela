@@ -1369,3 +1369,167 @@ jobs:
             apps/desktop/src-tauri/target/release/*.pdb
           if-no-files-found: ignore
           retention-days: 7
+
+  # Final normal-CI job: every required main-push job above must succeed before
+  # either image is published. BuildKit attaches provenance and an SBOM, but
+  # these images are intentionally not signed.
+  publish-ghcr:
+    name: Publish server + worker images to GHCR
+    needs:
+      - metadata
+      - supply-chain
+      - rust
+      - rust-coverage
+      - pdfua-external
+      - sqlcipher
+      - postgres
+      - web
+      - recent-landed
+      - docker
+      - e2e
+      - browser-server-build
+      - browser-core
+      - browser-full
+      - live-seams
+      - desktop-check
+      - desktop
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      STATUS_DIR: dist/ghcr-publication
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Resolve image metadata
+        id: image
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          {
+            echo "server=ghcr.io/$owner/chancela-server"
+            echo "worker=ghcr.io/$owner/chancela-worker"
+            echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build and publish server image
+        id: server
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.server
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ steps.image.outputs.server }}:sha-${{ github.sha }}
+            ${{ steps.image.outputs.server }}:latest
+          labels: |
+            org.opencontainers.image.created=${{ steps.image.outputs.created }}
+            org.opencontainers.image.title=Chancela Server
+            org.opencontainers.image.description=Self-hostable ledger-backed livro de atas server
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=sha-${{ github.sha }}
+            org.opencontainers.image.licenses=LicenseRef-Chancela-NonCommercial
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and publish worker image
+        id: worker
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.worker
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ steps.image.outputs.worker }}:sha-${{ github.sha }}
+            ${{ steps.image.outputs.worker }}:latest
+          labels: |
+            org.opencontainers.image.created=${{ steps.image.outputs.created }}
+            org.opencontainers.image.title=Chancela Worker
+            org.opencontainers.image.description=Dedicated background worker for Chancela
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=sha-${{ github.sha }}
+            org.opencontainers.image.licenses=LicenseRef-Chancela-NonCommercial
+          cache-from: type=gha,scope=worker
+          cache-to: type=gha,mode=max,scope=worker
+
+      - name: Record honest unsigned publication status
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$STATUS_DIR"
+          node scripts/release-signing-status.mjs container \
+            --output "$STATUS_DIR/chancela-server-signing-status.json" \
+            --image "${{ steps.image.outputs.server }}@${{ steps.server.outputs.digest }}" \
+            --pushed --attested \
+            --digest "${{ steps.server.outputs.digest }}" \
+            --run-url "$RUN_URL" \
+            --predicate-type "https://slsa.dev/provenance/v1" \
+            --registry "ghcr.io" \
+            --repository "${{ steps.image.outputs.server }}" \
+            --reason-unsigned "Normal CI publication does not use a container signing identity."
+          node scripts/release-signing-status.mjs container \
+            --output "$STATUS_DIR/chancela-worker-signing-status.json" \
+            --image "${{ steps.image.outputs.worker }}@${{ steps.worker.outputs.digest }}" \
+            --pushed --attested \
+            --digest "${{ steps.worker.outputs.digest }}" \
+            --run-url "$RUN_URL" \
+            --predicate-type "https://slsa.dev/provenance/v1" \
+            --registry "ghcr.io" \
+            --repository "${{ steps.image.outputs.worker }}" \
+            --reason-unsigned "Normal CI publication does not use a container signing identity."
+
+      - name: Validate publication trust declarations
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/check-release-trust.mjs docker \
+            --input "$STATUS_DIR/chancela-server-signing-status.json" \
+            --expect-mode published-unsigned
+          node scripts/check-release-trust.mjs docker \
+            --input "$STATUS_DIR/chancela-worker-signing-status.json" \
+            --expect-mode published-unsigned
+          {
+            echo "### GHCR images published"
+            echo
+            echo "- Server: \`${{ steps.image.outputs.server }}:sha-${{ github.sha }}\` and \`:latest\`"
+            echo "- Worker: \`${{ steps.image.outputs.worker }}:sha-${{ github.sha }}\` and \`:latest\`"
+            echo "- Trust: BuildKit provenance and SBOM attestations are attached; these images are **not cosign-signed**."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload publication trust declarations
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ghcr-publication-trust-${{ github.sha }}
+          path: dist/ghcr-publication/
+          if-no-files-found: ignore
+          retention-days: 30

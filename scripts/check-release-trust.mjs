@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
@@ -10,7 +11,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 function usage() {
   console.error(`Usage:
   node scripts/check-release-trust.mjs package --input <release-artifact.json> [--manifest <manifest.json>] [--package <tarball>] [--expect-mode <unsigned-dev|production>]
-  node scripts/check-release-trust.mjs docker --input <signing-status.json> [--expect-mode <local-ci|production>]
+  node scripts/check-release-trust.mjs docker --input <signing-status.json> [--expect-mode <local-ci|published-unsigned|production>]
   node scripts/check-release-trust.mjs self-test`);
 }
 
@@ -325,8 +326,8 @@ function validatePublication(claim, { label, mode }) {
     requireReason(claim, label);
   }
 
-  if (mode === "production" && status !== "pushed") {
-    fail(`${label}.status must be pushed in production mode`);
+  if ((mode === "production" || mode === "published-unsigned") && status !== "pushed") {
+    fail(`${label}.status must be pushed in ${mode} mode`);
   }
   if (mode === "local-ci" && status !== "not_pushed") {
     fail(`${label}.status must be not_pushed in local-ci mode`);
@@ -467,7 +468,7 @@ function validateDockerStatus(status, { expectedMode }) {
   const trust = requireRecord(status.releaseTrust, "docker signing status.releaseTrust");
   const mode = requireEnum(
     trust.mode,
-    ["local-ci", "production"],
+    ["local-ci", "published-unsigned", "production"],
     "docker signing status.releaseTrust.mode",
   );
   if (expectedMode && mode !== expectedMode) {
@@ -481,7 +482,7 @@ function validateDockerStatus(status, { expectedMode }) {
   const signingStatus = validateCodeSigning(trust.signing, {
     label: "docker signing status.releaseTrust.signing",
     mode,
-    allowUnsignedMode: "local-ci",
+    allowUnsignedMode: mode === "published-unsigned" ? "published-unsigned" : "local-ci",
   });
   const notarizationStatus = validateNotarization(trust.notarization, {
     label: "docker signing status.releaseTrust.notarization",
@@ -501,6 +502,21 @@ function validateDockerStatus(status, { expectedMode }) {
       "docker signing status.releaseTrust.imagePublication",
     );
     requireDockerProductionSigning(trust.signing, "docker signing status.releaseTrust.signing");
+    requireDockerProductionAttestation(
+      trust.attestation,
+      "docker signing status.releaseTrust.attestation",
+    );
+  }
+  if (mode === "published-unsigned") {
+    requireDockerProductionImagePublication(
+      trust.imagePublication,
+      "docker signing status.releaseTrust.imagePublication",
+    );
+    if (signingStatus !== "unsigned") {
+      fail(
+        "docker signing status.releaseTrust.signing.status must be unsigned in published-unsigned mode",
+      );
+    }
     requireDockerProductionAttestation(
       trust.attestation,
       "docker signing status.releaseTrust.attestation",
@@ -673,6 +689,17 @@ function productionDockerFixture() {
   };
 }
 
+function publishedUnsignedDockerFixture() {
+  const fixture = productionDockerFixture();
+  fixture.signingPerformed = false;
+  fixture.releaseTrust.mode = "published-unsigned";
+  fixture.releaseTrust.signing = {
+    status: "unsigned",
+    reason: "Normal CI published provenance/SBOM without a container signing identity.",
+  };
+  return fixture;
+}
+
 function expectFail(fn, expectedSubstring) {
   try {
     fn();
@@ -763,6 +790,11 @@ function workflowJobBlock(workflowText, workflowPath, jobName) {
   return workflowText.slice(start, end);
 }
 
+function workflowWithoutJob(workflowText, workflowPath, jobName) {
+  const job = workflowJobBlock(workflowText, workflowPath, jobName);
+  return workflowText.replace(job, "");
+}
+
 function requireWorkflowCommand(block, pattern, message) {
   requireTextMatches(block, pattern, message);
 }
@@ -850,6 +882,102 @@ function guardCiDockerWorkflow(ciText) {
     dockerJob,
     /node\s+scripts\/check-release-trust\.mjs\s+docker\s+--input\s+dist\/docker-security\/chancela-server-signing-status\.json\s+--expect-mode\s+local-ci\b/,
     ".github/workflows/ci.yml jobs.docker must validate Docker trust metadata in local-ci mode",
+  );
+}
+
+function guardCiGhcrPublishWorkflow(ciText) {
+  const workflowPath = ".github/workflows/ci.yml";
+  const publishJob = workflowJobBlock(ciText, workflowPath, "publish-ghcr");
+  const jobsMatch = /^jobs:\s*$/mu.exec(ciText);
+  if (!jobsMatch) fail(`${workflowPath} must declare a jobs block`);
+  const expectedNeeds = [
+    ...ciText.slice(jobsMatch.index).matchAll(/^  ([A-Za-z0-9_-]+):\s*(?:#.*)?$/gmu),
+  ]
+    .map((match) => match[1])
+    .filter((jobName) => jobName !== "publish-ghcr")
+    .sort();
+  const needsBlock = /^    needs:\s*\n((?:      - [A-Za-z0-9_-]+\s*\n)+)/mu.exec(publishJob);
+  if (!needsBlock) {
+    fail(`${workflowPath} jobs.publish-ghcr must declare a block-list needs dependency`);
+  }
+  const actualNeeds = needsBlock[1]
+    .trim()
+    .split(/\r?\n/u)
+    .map((line) => line.replace(/^\s*-\s*/u, "").trim())
+    .sort();
+  assert.deepEqual(
+    actualNeeds,
+    expectedNeeds,
+    `${workflowPath} jobs.publish-ghcr must depend on every required CI job`,
+  );
+
+  for (const marker of [
+    "github.event_name == 'push'",
+    "github.ref == 'refs/heads/main'",
+    "contents: read",
+    "packages: write",
+    "uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0",
+    "registry: ghcr.io",
+    "password: ${{ github.token }}",
+    "ghcr.io/$owner/chancela-server",
+    "ghcr.io/$owner/chancela-worker",
+    ":sha-${{ github.sha }}",
+    ":latest",
+    "platforms: linux/amd64",
+    "provenance: mode=max",
+    "sbom: true",
+    "org.opencontainers.image.title=Chancela Server",
+    "org.opencontainers.image.description=Self-hostable ledger-backed livro de atas server",
+    "org.opencontainers.image.title=Chancela Worker",
+    "org.opencontainers.image.description=Dedicated background worker for Chancela",
+    "--expect-mode published-unsigned",
+  ]) {
+    requireTextIncludes(
+      publishJob,
+      marker,
+      `${workflowPath} jobs.publish-ghcr is missing ${marker}`,
+    );
+  }
+
+  assert.equal(
+    [...publishJob.matchAll(/^\s+push:\s*true\s*$/gmu)].length,
+    2,
+    `${workflowPath} jobs.publish-ghcr must push exactly server and worker images`,
+  );
+  assert.equal(
+    [
+      ...publishJob.matchAll(
+        /uses:\s+docker\/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a\s+#\s+v7\.3\.0/gmu,
+      ),
+    ].length,
+    2,
+    `${workflowPath} jobs.publish-ghcr must use the pinned build action twice`,
+  );
+  for (const [pattern, message] of [
+    [/^\s+platforms:\s*linux\/amd64\s*$/gmu, "pin both images to linux/amd64"],
+    [/^\s+provenance:\s*mode=max\s*$/gmu, "enable maximum provenance twice"],
+    [/^\s+sbom:\s*true\s*$/gmu, "enable SBOM attestations twice"],
+    [
+      /^\s+org\.opencontainers\.image\.licenses=LicenseRef-Chancela-NonCommercial\s*$/gmu,
+      "declare the repository license on both images",
+    ],
+    [/--expect-mode\s+published-unsigned\b/gmu, "validate both unsigned declarations"],
+  ]) {
+    assert.equal(
+      [...publishJob.matchAll(pattern)].length,
+      2,
+      `${workflowPath} jobs.publish-ghcr must ${message}`,
+    );
+  }
+  requireTextNotMatches(
+    publishJob,
+    /\b(?:cosign\s+(?:sign|attest)|--signed|signingPerformed["']?\s*:\s*true)\b/iu,
+    `${workflowPath} jobs.publish-ghcr must not claim or perform container signing`,
+  );
+  requireTextNotMatches(
+    publishJob,
+    /^\s+(?:id-token|attestations):\s*write\s*$/gmu,
+    `${workflowPath} jobs.publish-ghcr must not request signing permissions`,
   );
 }
 
@@ -951,9 +1079,13 @@ function guardWorkflowWiring() {
 
   guardCiMetadataWorkflow(ciText);
   guardCiDockerWorkflow(ciText);
+  guardCiGhcrPublishWorkflow(ciText);
   guardReleaseWorkflow(releaseText);
   guardNoProductionReleaseClaims([
-    { path: ".github/workflows/ci.yml", text: ciText },
+    {
+      path: ".github/workflows/ci.yml excluding jobs.publish-ghcr",
+      text: workflowWithoutJob(ciText, ".github/workflows/ci.yml", "publish-ghcr"),
+    },
     { path: ".github/workflows/release.yml", text: releaseText },
   ]);
 }
@@ -965,6 +1097,9 @@ function runSelfTest() {
     expectedMode: "unsigned-dev",
   });
   validateDockerStatus(localDockerFixture(), { expectedMode: "local-ci" });
+  validateDockerStatus(publishedUnsignedDockerFixture(), {
+    expectedMode: "published-unsigned",
+  });
   validateDockerStatus(productionDockerFixture(), { expectedMode: "production" });
   guardWorkflowWiring();
 
