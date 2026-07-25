@@ -7191,6 +7191,14 @@ a.btn--primary {
   overscroll-behavior: contain;
   font-family: var(--font-sans);
   font-size: 0.8rem;
+  /* A portaled fixed element has no useful static position. Keep its initial commit out of
+     the visible paint until NotificationBell's layout measurement supplies anchor-relative
+     coordinates and adds `.is-positioned`; otherwise the browser may expose one frame at 0,0. */
+  visibility: hidden;
+}
+
+.notification-center__popup.is-positioned {
+  visibility: visible;
 }
 
 .notification-center__popup .panel {
@@ -10346,20 +10354,87 @@ input[type='radio']:disabled {
 
 /* --- Auth-gate boot / retry panel ----------------------------------------- */
 .gate-boot {
-  min-height: calc(100vh - var(--titlebar-h, 0) - 3rem);
+  min-height: calc(100vh - var(--titlebar-h, 0));
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem 1.25rem;
+  padding: clamp(2rem, 8vh, 5rem) 1.25rem;
 }
 
 .gate-boot__inner {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.9rem;
+  width: min(22rem, calc(100vw - 3rem));
+  gap: 1.25rem;
   color: var(--text-muted);
   font-family: var(--font-sans);
+}
+
+.gate-boot__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.8rem;
+  color: var(--accent);
+}
+
+.gate-boot__crest {
+  display: grid;
+  place-items: center;
+  width: 3rem;
+  height: 3rem;
+  border: 1px solid var(--accent-strong);
+  border-radius: 50%;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.gate-boot__wordmark {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: clamp(1.8rem, 6vw, 2.4rem);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+
+.gate-boot__progress {
+  position: relative;
+  width: min(15rem, 70vw);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 18%, var(--surface));
+}
+
+.gate-boot__progress-bar {
+  position: absolute;
+  inset-block: 0;
+  left: 0;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: gate-boot-progress 1.25s var(--motion-ease-glide) infinite;
+}
+
+@keyframes gate-boot-progress {
+  from {
+    transform: translateX(-115%);
+  }
+  to {
+    transform: translateX(340%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gate-boot__progress-bar {
+    left: 29%;
+    animation: none;
+    transform: none;
+  }
 }
 
 .gate-boot__error {

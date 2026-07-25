@@ -25,6 +25,12 @@ const POPUP_LIMIT = 5;
 const POPUP_GAP = 8;
 const POPUP_MARGIN = 12;
 
+interface PopupPosition {
+  left: number;
+  top: number;
+  maxHeight: number;
+}
+
 function compactCount(count: number): string {
   return count > 99 ? '99+' : String(count);
 }
@@ -38,7 +44,7 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
-  const [popupPosition, setPopupPosition] = useState({ left: 0, top: 0, maxHeight: 0 });
+  const [popupPosition, setPopupPosition] = useState<PopupPosition | null>(null);
   const { data, isLoading, error } = useDashboard();
   const triage = useNotificationTriage();
   const notifications = useMemo(
@@ -54,7 +60,21 @@ export function NotificationBell() {
       ? t('notifications.bell.labelWithCount', { count: actionableCount })
       : t('notifications.bell.label');
   const viewAllLabel = t('notifications.viewAll');
-  const closePopup = useCallback(() => setOpen(false), []);
+  const closePopup = useCallback(() => {
+    setOpen(false);
+    setPopupPosition(null);
+  }, []);
+  const togglePopup = useCallback(() => {
+    if (open) {
+      closePopup();
+      return;
+    }
+    // Every open begins unresolved. The portaled panel remains visibility-hidden until the
+    // layout effect measures the current anchor and commits viewport-safe coordinates, so a
+    // stale or default (0, 0) frame can never paint.
+    setPopupPosition(null);
+    setOpen(true);
+  }, [open, closePopup]);
 
   const repositionPopup = useCallback(() => {
     const anchor = anchorRef.current;
@@ -72,7 +92,7 @@ export function NotificationBell() {
     const maxHeight = Math.max(0, viewportHeight - top - POPUP_MARGIN);
 
     setPopupPosition((prev) =>
-      prev.left === left && prev.top === top && prev.maxHeight === maxHeight
+      prev && prev.left === left && prev.top === top && prev.maxHeight === maxHeight
         ? prev
         : { left, top, maxHeight },
     );
@@ -110,18 +130,20 @@ export function NotificationBell() {
     };
   }, [open, repositionPopup, isLoading, error, triage.isLoading, triage.error, topItems.length]);
 
-  const popupStyle: CSSProperties = {
-    left: popupPosition.left,
-    top: popupPosition.top,
-  };
-  if (popupPosition.maxHeight > 0) popupStyle.maxHeight = popupPosition.maxHeight;
+  const popupStyle: CSSProperties = popupPosition
+    ? {
+        left: popupPosition.left,
+        top: popupPosition.top,
+        ...(popupPosition.maxHeight > 0 ? { maxHeight: popupPosition.maxHeight } : {}),
+      }
+    : {};
 
   const popup = open ? (
     <>
       <div className="notification-center__backdrop" aria-hidden="true" onClick={closePopup} />
       <div
         ref={popupRef}
-        className="notification-center__popup"
+        className={`notification-center__popup${popupPosition ? ' is-positioned' : ''}`}
         role="dialog"
         aria-label={t('notifications.title')}
         style={popupStyle}
@@ -182,7 +204,7 @@ export function NotificationBell() {
           aria-label={label}
           aria-haspopup="dialog"
           aria-expanded={open}
-          onClick={() => setOpen((value) => !value)}
+          onClick={togglePopup}
         >
           <span className="btn__icon notification-bell__icon">
             <Icon.Bell />

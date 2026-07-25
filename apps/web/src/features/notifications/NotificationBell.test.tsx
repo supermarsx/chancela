@@ -335,6 +335,10 @@ describe('NotificationBell', () => {
     expect(countRule).toMatch(/pointer-events:\s*none;/);
     expect(backdropZ).toBeGreaterThan(topbarZ);
     expect(popupZ).toBeGreaterThan(backdropZ);
+    expect(cssRule(css, '.notification-center__popup')).toMatch(/visibility:\s*hidden;/);
+    expect(cssRule(css, '.notification-center__popup.is-positioned')).toMatch(
+      /visibility:\s*visible;/,
+    );
   });
 
   it('marks an alert read through persisted triage and removes it from the bell count', async () => {
@@ -454,7 +458,7 @@ describe('NotificationBell', () => {
     expect(dialog.className).toContain('notification-center__popup');
   });
 
-  it('positions the fixed popup from the bell viewport rect', async () => {
+  it('makes the first visible popup frame anchor-positioned instead of exposing 0,0', async () => {
     vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard() }]));
 
     const originalWidth = window.innerWidth;
@@ -473,12 +477,47 @@ describe('NotificationBell', () => {
       fireEvent.click(bell);
 
       const dialog = await screen.findByRole('dialog', { name: 'Centro de Ações' });
+      expect(dialog.className).toContain('is-positioned');
       expect(dialog.style.left).toBe('596px');
       expect(dialog.style.top).toBe('64px');
       expect(dialog.style.maxHeight).toBe('624px');
+      expect(dialog.style.left).not.toBe('0px');
+      expect(dialog.style.top).not.toBe('0px');
     } finally {
       Object.defineProperty(window, 'innerWidth', { configurable: true, value: originalWidth });
       Object.defineProperty(window, 'innerHeight', { configurable: true, value: originalHeight });
     }
+  });
+
+  it('resets and remeasures the popup on reopen while preserving Escape dismissal', async () => {
+    vi.stubGlobal('fetch', fetchTable([{ match: '/v1/dashboard', body: dashboard() }]));
+
+    renderWithProviders(<NotificationBell />, ['/']);
+
+    const bell = await screen.findByRole('button', { name: 'Centro de Ações' });
+    const center = bell.closest('.notification-center') as HTMLElement;
+    center.getBoundingClientRect = () =>
+      rect({ left: 948, right: 980, top: 24, bottom: 56, width: 32, height: 32 });
+
+    fireEvent.click(bell);
+    const first = await screen.findByRole('dialog', { name: 'Centro de Ações' });
+    expect(first.style.left).toBe('596px');
+    expect(first.style.top).toBe('64px');
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => {
+      expect(screen.queryByRole('dialog', { name: 'Centro de Ações' })).toBeNull();
+    });
+    expect(bell.getAttribute('aria-expanded')).toBe('false');
+
+    center.getBoundingClientRect = () =>
+      rect({ left: 468, right: 500, top: 80, bottom: 112, width: 32, height: 32 });
+    fireEvent.click(bell);
+
+    const reopened = await screen.findByRole('dialog', { name: 'Centro de Ações' });
+    expect(reopened.className).toContain('is-positioned');
+    expect(reopened.style.left).toBe('116px');
+    expect(reopened.style.top).toBe('120px');
+    expect(reopened.style.left).not.toBe(first.style.left);
   });
 });

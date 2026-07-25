@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useSession, useSessionRoster } from '../../api/hooks';
 import { useT } from '../../i18n';
-import { Button, Skeleton } from '../../ui';
+import { Button } from '../../ui';
 import { RequiredActionGate } from './RequiredActionGate';
 import { SignIn } from './SignIn';
 
@@ -44,18 +44,25 @@ export function AuthGate({ children }: { children: ReactNode }) {
     return <>{children}</>;
   }
 
-  // Still resolving who we are — hold a quiet boot screen rather than flashing sign-in.
-  // Even at boot the shape is known: this panel resolves into either the retry message or
-  // the sign-in card, both a short centred stack. So it skeletons that stack. `GateBoot` is
-  // itself the `role="status"` element and the announcement rides in it as visually-hidden
-  // text — no visible caption, and no silence for a screen reader either.
+  // Still resolving who we are — hold a stable branded boot screen rather than flashing
+  // sign-in. This is the one full-application loading fallback; route/content skeletons remain
+  // local to the surfaces whose shape they describe.
   if (session.isLoading || roster.isLoading) {
     return (
       <GateBoot busy>
+        <div className="gate-boot__brand" aria-hidden="true">
+          <span className="gate-boot__crest">C</span>
+          <span className="gate-boot__wordmark">{t('common.brand')}</span>
+        </div>
         <span className="sr-only">{t('common.loading')}</span>
-        <Skeleton height="1.4rem" width="11rem" />
-        <Skeleton height="0.85rem" width="16rem" />
-        <Skeleton height="2.4rem" width="13rem" />
+        <div
+          className="gate-boot__progress"
+          role="progressbar"
+          aria-label={t('common.loading')}
+          aria-valuetext={t('common.loading')}
+        >
+          <span className="gate-boot__progress-bar" aria-hidden="true" />
+        </div>
       </GateBoot>
     );
   }

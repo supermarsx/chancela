@@ -86,7 +86,13 @@ describe('AuthGate', () => {
     renderGate();
 
     expect(await screen.findByText('A carregar…')).toBeTruthy();
-    expect(screen.getByRole('status')).toBeTruthy();
+    const status = screen.getByRole('status');
+    expect(status.getAttribute('aria-busy')).toBe('true');
+    expect(screen.getByText('Chancela')).toBeTruthy();
+    const progress = screen.getByRole('progressbar', { name: 'A carregar…' });
+    expect(progress.getAttribute('aria-valuenow')).toBeNull();
+    expect(progress.querySelector('.gate-boot__progress-bar')).toBeTruthy();
+    expect(status.querySelector('.skeleton')).toBeNull();
     expect(screen.queryByText('APP CHROME')).toBeNull();
     expect(screen.queryByText('Iniciar sessão')).toBeNull();
   });
