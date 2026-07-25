@@ -14,7 +14,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
-import { readFileSync } from 'node:fs';
 import { renderWithProviders } from '../../test/utils';
 import { AuthGate } from './AuthGate';
 import { clearSessionToken } from '../../api/session';
@@ -71,7 +70,11 @@ function renderGate() {
   );
 }
 
-function themeCss(): string {
+async function themeCss(): Promise<string> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
   return readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
 }
 
@@ -109,8 +112,8 @@ describe('AuthGate', () => {
     expect(screen.queryByText('Iniciar sessão')).toBeNull();
   });
 
-  it('keeps the boot identity compact, balanced and responsive without weakening progress motion', () => {
-    const css = themeCss();
+  it('keeps the boot identity compact, balanced and responsive without weakening progress motion', async () => {
+    const css = await themeCss();
     const inner = cssRule(css, '.gate-boot__inner');
     const brand = cssRule(css, '.gate-boot__brand');
     const crest = cssRule(css, '.gate-boot__crest');
