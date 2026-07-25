@@ -4,9 +4,9 @@
  * its own dedicated route (`/entities/new`, `/entities/import`) — so the list is no
  * longer squeezed by an always-visible aside form (t13 items 1–2).
  */
-import { useDeferredValue, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useBooks, useEntities, useSettings } from '../../api/hooks';
+import { useEntitiesPage, useSettings } from '../../api/hooks';
 import {
   bookKindLabels,
   bookStateLabels,
@@ -18,6 +18,7 @@ import {
 import {
   BOOK_KINDS,
   DEFAULT_SETTINGS,
+  ENTITY_KINDS,
   REGISTERED_ENTITY_COLUMNS,
   type BookKind,
   type BookState,
@@ -30,7 +31,13 @@ import {
   type LedgerEventView,
   type RegisteredEntityColumn,
 } from '../../api/types';
-import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
+import {
+  LABELLED_LEDGER_EVENT_KINDS,
+  t as translateNow,
+  useT,
+  type MessageKey,
+  type TFunction,
+} from '../../i18n';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
 import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
@@ -54,6 +61,12 @@ import {
   Truncate,
 } from '../../ui';
 import { GateButtonLink } from '../session/permissions';
+import {
+  CollectionPageCount,
+  CollectionPager,
+  useCollectionNavigation,
+  useDebouncedValue,
+} from '../common/CollectionPager';
 import { NipcBadge } from './NipcBadge';
 
 type BookFilter = 'all' | 'open' | 'created' | 'closed' | 'no-open' | 'none';
@@ -66,13 +79,11 @@ type RegistryFreshnessFilter = 'all' | 'fresh' | 'expired' | 'no-expiry';
 
 interface EnrichedEntityRow {
   entity: Entity;
-  books: BookView[];
   lastBook: BookView | null;
   bookStateCounts: Record<BookState, number>;
   activity: LedgerEventView | null;
   registry: EntityRegistrySummary | null;
   hasActivitySummary: boolean;
-  searchText: string;
 }
 
 const BOOK_FILTER_OPTIONS: { value: BookFilter; labelKey: MessageKey }[] = [
@@ -156,13 +167,6 @@ const COMPACT_ENTITY_KIND_LABELS: Partial<Record<EntityKind, string>> = {
   SociedadeEmComanditaSimples: 'S.C.S.',
   SociedadeEmComanditaPorAcoes: 'S.C.A.',
 };
-
-function normalizeSearch(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
 
 function displayFiscalYearEnd(value: string | null | undefined, t: TFunction): string {
   return value ? value : t('entities.fiscalYearEnd.default');
@@ -378,65 +382,6 @@ function entityTemplateFamily(entity: Entity): string {
   return entityProfile(entity)?.template_family ?? '';
 }
 
-function entityAllowedChannels(entity: Entity): string[] {
-  return entityProfile(entity)?.allowed_channels ?? [];
-}
-
-function buildSearchText(
-  entity: Entity,
-  books: BookView[],
-  lastBook: BookView | null,
-  stateCounts: Record<BookState, number>,
-  activity: LedgerEventView | null,
-  registry: EntityRegistrySummary | null,
-  locale: string,
-  t: TFunction,
-): string {
-  const searchableBooks =
-    lastBook && !books.some((book) => book.id === lastBook.id) ? [lastBook, ...books] : books;
-  return normalizeSearch(
-    [
-      locale,
-      entity.name,
-      entity.nipc,
-      entity.seat,
-      entityKindLabels[entity.kind],
-      entityFamilyLabels[entity.family],
-      displayFiscalYearEnd(entity.fiscal_year_end, t),
-      entityRulePack(entity),
-      entityTemplateFamily(entity),
-      entity.nipc_validated ? 'NIPC validado' : 'NIPC por validar',
-      ...entityAllowedChannels(entity),
-      ...searchableBooks.flatMap((book) => [
-        book.id,
-        bookKindLabels[book.kind],
-        bookStateLabels[book.state],
-        book.purpose ?? '',
-        book.opening_date ?? '',
-        book.closing_date ?? '',
-        book.closing_reason ? closingReasonLabels[book.closing_reason] : '',
-        String(book.last_ata_number || ''),
-      ]),
-      bookStateSummary(stateCounts),
-      activity ? activityLabel(activity.kind) : '',
-      activity?.kind ?? '',
-      activity?.actor ?? '',
-      activity?.scope ?? '',
-      registry ? 'registo importado' : 'registo não importado',
-      registry?.matricula ?? '',
-      registry?.data_constituicao ?? '',
-      registry?.capital ?? '',
-      registry?.retrieved_at ?? '',
-      registry?.valid_until ?? '',
-      registry ? registryFreshnessLabel(registry) : '',
-      ...(registry?.cae.flatMap((cae) => [cae.code, cae.role, cae.designation ?? '']) ?? []),
-      registry?.last_registry_change?.label ?? '',
-      registry?.last_registry_change?.date ?? '',
-      registry?.last_registry_change?.reference ?? '',
-    ].join(' '),
-  );
-}
-
 export function entityMatchesBookFilter(
   counts: Record<BookState, number>,
   filter: BookFilter,
@@ -517,41 +462,34 @@ function optionLabels<T extends string>(
   }));
 }
 
-function familyFilterOptions(
-  entities: Entity[] | undefined,
-  t: TFunction,
-): { value: string; label: string }[] {
-  const seen = new Set<EntityFamily>();
-  for (const entity of entities ?? []) seen.add(entity.family);
+function familyFilterOptions(t: TFunction): { value: string; label: string }[] {
+  const families: EntityFamily[] = [
+    'CommercialCompany',
+    'Condominium',
+    'Association',
+    'Foundation',
+    'Cooperative',
+  ];
   return [
     { value: 'all', label: t('entities.filters.family.all') },
-    ...Array.from(seen).map((value) => ({ value, label: entityFamilyLabels[value] })),
+    ...families.map((value) => ({ value, label: entityFamilyLabels[value] })),
   ];
 }
 
-function kindFilterOptions(
-  entities: Entity[] | undefined,
-  t: TFunction,
-): { value: string; label: string }[] {
-  const seen = new Set<EntityKind>();
-  for (const entity of entities ?? []) seen.add(entity.kind);
+function kindFilterOptions(t: TFunction): { value: string; label: string }[] {
   return [
     { value: 'all', label: t('entities.filters.kind.all') },
-    ...Array.from(seen).map((value) => ({ value, label: entityKindLabels[value] })),
+    ...ENTITY_KINDS.map((value) => ({ value, label: entityKindLabels[value] })),
   ];
 }
 
-function activityKindFilterOptions(
-  rows: EnrichedEntityRow[],
-  t: TFunction,
-): { value: string; label: string }[] {
-  const kinds = new Set<string>();
-  for (const row of rows) {
-    if (row.activity) kinds.add(row.activity.kind);
-  }
+function activityKindFilterOptions(t: TFunction): { value: string; label: string }[] {
+  const kinds = [...LABELLED_LEDGER_EVENT_KINDS].filter(
+    (kind) => activityCategory(kind) !== 'other',
+  );
   return [
     { value: 'all', label: t('entities.filters.activityKind.all') },
-    ...Array.from(kinds)
+    ...kinds
       .sort((a, b) => activityLabel(a).localeCompare(activityLabel(b)))
       .map((kind) => ({ value: kind, label: activityLabel(kind) })),
     { value: 'none', label: t('entities.filters.activityKind.none') },
@@ -882,13 +820,10 @@ function EntityColumnCell({
 export function EntitiesPage() {
   const t = useT();
   const ct = useTableColumnsT();
-  const locale = useLocale();
   const navigate = useNavigate();
-  const { data, isLoading, error } = useEntities();
   const settings = useSettings();
-  const books = useBooks();
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
+  const debouncedSearch = useDebouncedValue(search);
   const [family, setFamily] = useState<'all' | EntityFamily>('all');
   const [kind, setKind] = useState<'all' | EntityKind>('all');
   const [validationFilter, setValidationFilter] = useState<ValidationFilter>('all');
@@ -901,84 +836,55 @@ export function EntitiesPage() {
   const [registryFreshnessFilter, setRegistryFreshnessFilter] =
     useState<RegistryFreshnessFilter>('all');
 
+  const filters = {
+    q: debouncedSearch.trim() || undefined,
+    family: family === 'all' ? undefined : family,
+    kind: kind === 'all' ? undefined : kind,
+    nipc_validated: validationFilter === 'all' ? undefined : validationFilter === 'validated',
+    registry_import: registryImportFilter === 'all' ? undefined : registryImportFilter,
+    registry_freshness: registryFreshnessFilter === 'all' ? undefined : registryFreshnessFilter,
+    books: bookFilter === 'all' ? undefined : bookFilter,
+    book_kind: bookKindFilter === 'all' ? undefined : bookKindFilter,
+    last_book: lastBookFilter === 'all' ? undefined : lastBookFilter,
+    activity: activityFilter === 'all' ? undefined : activityFilter,
+    activity_kind: activityKindFilter === 'all' ? undefined : activityKindFilter,
+    limit: 50,
+    sort: 'name',
+    order: 'asc' as const,
+  };
+  const navigation = useCollectionNavigation(JSON.stringify(filters));
+  const entities = useEntitiesPage({ ...filters, ...navigation.position });
+  const { data: page, isLoading, error } = entities;
+  // Keep controls mounted while the new key loads, but do not render the old key's placeholder
+  // rows or let them select the empty-state copy for the current filters.
+  const data = entities.isPlaceholderData ? undefined : page?.items;
+
   const enrichedRows = useMemo<EnrichedEntityRow[]>(() => {
     const entities = data ?? [];
-    const booksByEntity = indexBooksByEntity(books.data);
 
     return entities.map((entity) => {
-      const entityBooks = booksByEntity.get(entity.id) ?? [];
       const summary = entity.activity_summary;
-      const lastBook = summary?.last_book ?? selectLastBook(entityBooks);
+      const lastBook = summary?.last_book ?? null;
       const stateCounts = summary
         ? bookStateCountsFromSummary(summary.book_state_counts)
-        : bookStateCounts(entityBooks);
+        : emptyBookStateCounts();
       const activity = summary?.last_change ?? null;
       const registry = entity.registry_summary ?? null;
       return {
         entity,
-        books: entityBooks,
         lastBook,
         bookStateCounts: stateCounts,
         activity,
         registry,
         hasActivitySummary: !!summary,
-        searchText: buildSearchText(
-          entity,
-          entityBooks,
-          lastBook,
-          stateCounts,
-          activity,
-          registry,
-          locale,
-          t,
-        ),
       };
     });
-  }, [books.data, data, locale, t]);
+  }, [data]);
 
-  const query = normalizeSearch(deferredSearch.trim());
-  const rows = useMemo(() => {
-    return enrichedRows.filter(
-      ({
-        entity,
-        books: entityBooks,
-        lastBook,
-        bookStateCounts,
-        activity,
-        registry,
-        searchText,
-      }) => {
-        if (family !== 'all' && entity.family !== family) return false;
-        if (kind !== 'all' && entity.kind !== kind) return false;
-        if (!entityMatchesValidationFilter(entity, validationFilter)) return false;
-        if (!entityMatchesRegistryImportFilter(registry, registryImportFilter)) return false;
-        if (!entityMatchesRegistryFreshnessFilter(registry, registryFreshnessFilter)) return false;
-        if (!entityMatchesBookFilter(bookStateCounts, bookFilter)) return false;
-        if (!entityMatchesBookKindFilter(entityBooks, bookKindFilter)) return false;
-        if (!entityMatchesLastBookFilter(lastBook, lastBookFilter)) return false;
-        if (!entityMatchesActivityFilter(activity, activityFilter)) return false;
-        if (!entityMatchesActivityKindFilter(activity, activityKindFilter)) return false;
-        return query === '' || searchText.includes(query);
-      },
-    );
-  }, [
-    activityFilter,
-    activityKindFilter,
-    bookFilter,
-    bookKindFilter,
-    enrichedRows,
-    family,
-    kind,
-    lastBookFilter,
-    query,
-    registryFreshnessFilter,
-    registryImportFilter,
-    validationFilter,
-  ]);
-
-  const familyOptions = familyFilterOptions(data, t);
-  const kindOptions = kindFilterOptions(data, t);
-  const activityKindOptions = activityKindFilterOptions(enrichedRows, t);
+  const rows = enrichedRows;
+  const familyOptions = familyFilterOptions(t);
+  const kindOptions = kindFilterOptions(t);
+  const activityKindOptions = activityKindFilterOptions(t);
   const validationFilterOptions = optionLabels(VALIDATION_FILTER_OPTIONS, t);
   const registryImportFilterOptions = optionLabels(REGISTRY_IMPORT_FILTER_OPTIONS, t);
   const registryFreshnessFilterOptions = optionLabels(REGISTRY_FRESHNESS_FILTER_OPTIONS, t);
@@ -1059,20 +965,7 @@ export function EntitiesPage() {
 
       <Card
         title={t('entities.registeredCard')}
-        actions={
-          data && data.length > 0 ? (
-            <span
-              aria-label={t('entities.filters.count.aria', {
-                shown: rows.length,
-                total: data.length,
-              })}
-            >
-              <Badge>
-                {t('entities.filters.count', { shown: rows.length, total: data.length })}
-              </Badge>
-            </span>
-          ) : null
-        }
+        actions={<CollectionPageCount count={data?.length ?? 0} />}
       >
         {isLoading ? (
           <SkeletonRegion>
@@ -1080,7 +973,7 @@ export function EntitiesPage() {
           </SkeletonRegion>
         ) : error ? (
           <ErrorNote error={error} />
-        ) : !data || data.length === 0 ? (
+        ) : !entities.isPlaceholderData && (!data || data.length === 0) && !hasFilters ? (
           <EmptyState title={t('entities.empty.title')}>
             <p>
               {t('entities.emptyBody.before')}
@@ -1235,7 +1128,11 @@ export function EntitiesPage() {
               columnLabel={(column) => t(ENTITY_COLUMN_LABEL_KEYS[column])}
             />
 
-            {rows.length === 0 ? (
+            {entities.isPlaceholderData ? (
+              <SkeletonRegion>
+                <SkeletonTable cols={12} />
+              </SkeletonRegion>
+            ) : rows.length === 0 ? (
               <EmptyState title={t('entities.filters.empty.title')}>
                 <p>{t('entities.filters.empty.body')}</p>
               </EmptyState>
@@ -1279,8 +1176,8 @@ export function EntitiesPage() {
                             lastBook={lastBook}
                             stateCounts={stateCounts}
                             activity={activity}
-                            loadingBooks={!hasActivitySummary && books.isLoading}
-                            booksError={hasActivitySummary ? null : books.error}
+                            loadingBooks={false}
+                            booksError={hasActivitySummary ? null : undefined}
                             onOpen={() => navigate(`/entities/${ent.id}`)}
                             openLabel={t('common.open')}
                             t={t}
@@ -1292,6 +1189,23 @@ export function EntitiesPage() {
                 </Table>
               </div>
             )}
+            {!entities.isPlaceholderData ? (
+              <CollectionPager
+                offset={navigation.displayOffset}
+                count={rows.length}
+                hasPrevious={navigation.hasPrevious}
+                hasNext={page?.has_more ?? false}
+                disabled={entities.isFetching}
+                onPrevious={navigation.previous}
+                onNext={() =>
+                  navigation.next(
+                    page?.next_offset ?? null,
+                    page?.next_cursor,
+                    navigation.displayOffset + rows.length,
+                  )
+                }
+              />
+            ) : null}
           </div>
         )}
       </Card>

@@ -289,6 +289,56 @@ describe('api client', () => {
     expect(fetchMock.mock.calls[1][0]).toBe('/v1/books');
   });
 
+  it('sends bounded registry filters to page endpoints and serializes booleans', async () => {
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          items: [],
+          offset: 0,
+          limit: 50,
+          has_more: false,
+          next_offset: null,
+        }),
+      ),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await api.listEntitiesPage({
+      q: 'encosto',
+      cursor: 'entity-cursor',
+      limit: 50,
+      family: 'CommercialCompany',
+      nipc_validated: false,
+      registry_import: 'not-imported',
+      books: 'no-open',
+      activity_kind: 'entity.created',
+    });
+    await api.listBooksPage({
+      offset: 50,
+      limit: 50,
+      kind: 'Condominio',
+      activity: 'has-acts',
+      lineage: 'successor',
+      opened_from: '2026-01-01',
+    });
+    await api.listUsersPage({
+      q: 'amelia',
+      limit: 50,
+      active: true,
+      roleless: false,
+      access: 'key',
+      scope: 'global',
+      email: 'with',
+      created_days: 30,
+    });
+
+    expect(fetchMock.mock.calls.map((call) => call[0])).toEqual([
+      '/v1/entities/page?q=encosto&cursor=entity-cursor&limit=50&family=CommercialCompany&nipc_validated=false&registry_import=not-imported&books=no-open&activity_kind=entity.created',
+      '/v1/books/page?offset=50&limit=50&kind=Condominio&activity=has-acts&lineage=successor&opened_from=2026-01-01',
+      '/v1/users/page?q=amelia&limit=50&active=true&roleless=false&access=key&scope=global&email=with&created_days=30',
+    ]);
+  });
+
   it('records AI human-review decisions on the act-scoped endpoint', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ id: 'act-1' }));
     vi.stubGlobal('fetch', fetchMock);

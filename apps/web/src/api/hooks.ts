@@ -35,6 +35,9 @@ import type {
   DraftActBody,
   PreviewActBody,
   EntityFamily,
+  EntityPageParams,
+  BookPageParams,
+  UserPageParams,
   LifecycleStage,
   CmdInitiateBody,
   CmdConfirmBody,
@@ -188,11 +191,13 @@ import { clearSessionToken, getSessionToken, onSessionCleared, setSessionToken }
 
 export const keys = {
   entities: ['entities'] as const,
+  entitiesPage: (params: EntityPageParams) => ['entities', 'page', params] as const,
   entity: (id: string) => ['entities', id] as const,
   entityChronology: (id: string) => ['entities', id, 'chronology'] as const,
   entityRegistry: (id: string) => ['entities', id, 'registry'] as const,
   registryAutoUpdatePlan: ['registry', 'auto-update', 'due-plan'] as const,
   books: (entityId?: string) => ['books', { entityId: entityId ?? null }] as const,
+  booksPage: (params: BookPageParams) => ['books', 'page', params] as const,
   book: (id: string) => ['books', id] as const,
   bookLegalHold: (id: string) => ['books', id, 'legal-hold'] as const,
   bookActs: (id: string) => ['books', id, 'acts'] as const,
@@ -277,6 +282,7 @@ export const keys = {
   lawDiploma: (diploma: string) => ['law', 'corpus', diploma] as const,
   lawSearch: (q: string) => ['law', 'corpus', 'search', q] as const,
   users: ['users'] as const,
+  usersPage: (params: UserPageParams) => ['users', 'page', params] as const,
   user: (id: string) => ['users', id] as const,
   userDsrRequests: (id: string) => ['users', id, 'dsr-requests'] as const,
   userTwoFactor: (id: string) => ['users', id, 'two-factor'] as const,
@@ -325,6 +331,14 @@ export const keys = {
 
 export function useEntities() {
   return useQuery({ queryKey: keys.entities, queryFn: () => api.listEntities() });
+}
+
+export function useEntitiesPage(params: EntityPageParams) {
+  return useQuery({
+    queryKey: keys.entitiesPage(params),
+    queryFn: () => api.listEntitiesPage(params),
+    placeholderData: (previous) => previous,
+  });
 }
 
 export function useEntity(id: string) {
@@ -467,6 +481,14 @@ export function useBooks(entityId?: string, enabled = true) {
     queryKey: keys.books(entityId),
     queryFn: () => api.listBooks(entityId),
     enabled,
+  });
+}
+
+export function useBooksPage(params: BookPageParams) {
+  return useQuery({
+    queryKey: keys.booksPage(params),
+    queryFn: () => api.listBooksPage(params),
+    placeholderData: (previous) => previous,
   });
 }
 
@@ -2635,6 +2657,14 @@ export function useResolveLawCitations() {
 
 export function useUsers() {
   return useQuery({ queryKey: keys.users, queryFn: () => api.listUsers() });
+}
+
+export function useUsersPage(params: UserPageParams) {
+  return useQuery({
+    queryKey: keys.usersPage(params),
+    queryFn: () => api.listUsersPage(params),
+    placeholderData: (previous) => previous,
+  });
 }
 
 /**

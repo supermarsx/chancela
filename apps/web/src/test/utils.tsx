@@ -139,11 +139,148 @@ export function fetchTable(
     const hit = table.find((t) => url.includes(t.match));
     if (!hit) return Promise.reject(new Error(`no stub for ${url}`));
     const status = hit.status ?? 200;
+    const body =
+      Array.isArray(hit.body) && /^\/v1\/(entities|books|users)\/page(?:\?|$)/.test(url)
+        ? collectionPageFixture(url, hit.body)
+        : hit.body;
     return Promise.resolve(
-      new Response(JSON.stringify(hit.body), {
+      new Response(JSON.stringify(body), {
         status,
         headers: { 'Content-Type': 'application/json' },
       }),
     );
   }) as typeof fetch;
 }
+
+function folded(value: unknown): string {
+  return String(value ?? '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/** Server-like filtering for list-page fixtures. Production behavior remains covered in Rust. */
+/* eslint-disable @typescript-eslint/no-explicit-any -- heterogeneous wire fixtures are inspected dynamically */
+export function collectionPageFixture(url: string, input: unknown[]) {
+  const parsed = new URL(url, 'http://test.invalid');
+  const p = parsed.searchParams;
+  const resource = parsed.pathname.split('/')[2];
+  let items = [...input] as Record<string, any>[];
+  const q = folded(p.get('q'));
+  if (q) items = items.filter((item) => folded(JSON.stringify(item)).includes(q));
+
+  if (resource === 'books') {
+    if (p.has('state')) items = items.filter((item) => item.state === p.get('state'));
+    if (p.has('kind')) items = items.filter((item) => item.kind === p.get('kind'));
+    if (p.get('activity') === 'has-acts') items = items.filter((item) => item.last_ata_number > 0);
+    if (p.get('activity') === 'no-acts') items = items.filter((item) => item.last_ata_number <= 0);
+    if (p.get('lineage') === 'successor') items = items.filter((item) => !!item.predecessor);
+    if (p.get('lineage') === 'origin') items = items.filter((item) => !item.predecessor);
+    if (p.has('opened_from'))
+      items = items.filter(
+        (item) => !!item.opening_date && item.opening_date >= p.get('opened_from')!,
+      );
+    if (p.has('opened_to'))
+      items = items.filter(
+        (item) => !!item.opening_date && item.opening_date <= p.get('opened_to')!,
+      );
+  } else if (resource === 'entities') {
+    if (p.has('family')) items = items.filter((item) => item.family === p.get('family'));
+    if (p.has('kind')) items = items.filter((item) => item.kind === p.get('kind'));
+    if (p.has('nipc_validated'))
+      items = items.filter((item) => String(item.nipc_validated) === p.get('nipc_validated'));
+    if (p.has('registry_import'))
+      items = items.filter((item) =>
+        p.get('registry_import') === 'imported' ? !!item.registry_summary : !item.registry_summary,
+      );
+    if (p.has('registry_freshness'))
+      items = items.filter((item) => {
+        const registry = item.registry_summary;
+        if (p.get('registry_freshness') === 'fresh') return registry?.expired === false;
+        if (p.get('registry_freshness') === 'expired') return registry?.expired === true;
+        return !registry || registry.valid_until == null || registry.expired == null;
+      });
+    const summary = (item: Record<string, any>) => item.activity_summary;
+    if (p.has('books'))
+      items = items.filter((item) => {
+        const counts = summary(item)?.book_state_counts ?? { created: 0, open: 0, closed: 0 };
+        if (p.get('books') === 'none') return counts.created + counts.open + counts.closed === 0;
+        if (p.get('books') === 'no-open') return counts.open === 0;
+        return counts[p.get('books')!] > 0;
+      });
+    if (p.has('book_kind'))
+      items = items.filter((item) =>
+        (item._test_book_kinds ?? [summary(item)?.last_book?.kind]).includes(p.get('book_kind')),
+      );
+    if (p.has('last_book'))
+      items = items.filter((item) =>
+        p.get('last_book') === 'none'
+          ? !summary(item)?.last_book
+          : summary(item)?.last_book?.state === p.get('last_book'),
+      );
+    if (p.has('activity_kind'))
+      items = items.filter((item) =>
+        p.get('activity_kind') === 'none'
+          ? !summary(item)?.last_change
+          : summary(item)?.last_change?.kind === p.get('activity_kind'),
+      );
+    if (p.has('activity'))
+      items = items.filter((item) => {
+        const kind = summary(item)?.last_change?.kind;
+        const filter = p.get('activity');
+        if (filter === 'none') return !kind;
+        if (!kind) return false;
+        if (filter === 'registry') return kind === 'registry.imported';
+        if (filter === 'act') return kind.startsWith('act.') || kind.startsWith('convening.');
+        if (filter === 'document')
+          return kind.startsWith('document.') || kind.startsWith('signature.');
+        return kind.startsWith(`${filter}.`);
+      });
+  } else if (resource === 'users') {
+    if (p.has('active')) items = items.filter((item) => String(item.active) === p.get('active'));
+    if (p.has('role_id'))
+      items = items.filter((item) =>
+        item.role_assignments?.some(
+          (assignment: Record<string, any>) => assignment.role_id === p.get('role_id'),
+        ),
+      );
+    if (p.get('roleless') === 'true')
+      items = items.filter((item) => item.role_assignments?.length === 0);
+    if (p.has('access'))
+      items = items.filter((item) => {
+        if (p.get('access') === 'key') return item.has_attestation_key;
+        if (p.get('access') === 'no-key') return !item.has_attestation_key;
+        if (p.get('access') === 'no-password') return !item.has_secret;
+        return item.has_recovery_phrase;
+      });
+    if (p.has('scope'))
+      items = items.filter((item) => {
+        const assignments = item.role_assignments ?? [];
+        const global = assignments.some(
+          (assignment: Record<string, any>) => assignment.scope?.kind === 'global',
+        );
+        return p.get('scope') === 'global' ? global : !global && assignments.length > 0;
+      });
+    if (p.has('email'))
+      items = items.filter((item) =>
+        p.get('email') === 'with' ? !!item.email?.trim() : !item.email?.trim(),
+      );
+    if (p.has('created_days')) {
+      const cutoff = Date.now() - Number(p.get('created_days')) * 86_400_000;
+      items = items.filter((item) => Date.parse(item.created_at) >= cutoff);
+    }
+  }
+
+  const offset = Number(p.get('offset') ?? 0);
+  const limit = Number(p.get('limit') ?? 50);
+  const pageItems = items.slice(offset, offset + limit);
+  const hasMore = offset + pageItems.length < items.length;
+  return {
+    items: pageItems,
+    offset,
+    limit,
+    has_more: hasMore,
+    next_offset: hasMore ? offset + pageItems.length : null,
+  };
+}
+/* eslint-enable @typescript-eslint/no-explicit-any */

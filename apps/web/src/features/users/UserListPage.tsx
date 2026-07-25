@@ -77,7 +77,7 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useRoles, useUpdateUser, useUsers } from '../../api/hooks';
+import { useRoles, useUpdateUser, useUsersPage } from '../../api/hooks';
 import { roleNameLabel } from '../../api/labels';
 import { useT } from '../../i18n';
 import {
@@ -96,6 +96,11 @@ import {
   useToast,
 } from '../../ui';
 import { GateButtonLink, GateIconButton } from '../session/permissions';
+import {
+  CollectionPageCount,
+  CollectionPager,
+  useCollectionNavigation,
+} from '../common/CollectionPager';
 import { editUserPath, editUserSectionPath, NEW_USER_PATH, USERS_LIST_PATH } from './paths';
 
 /** The edit screen's access tab (t103). Was the '#acesso' anchor before the screen was tabbed. */
@@ -246,41 +251,6 @@ function paramsSignature(params: URLSearchParams): string {
   return filterParams(readFilters(params)).signature;
 }
 
-function normalizeSearch(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-function matchesStatus(user: UserView, filter: StatusFilter): boolean {
-  if (filter === 'active') return user.active;
-  if (filter === 'inactive') return !user.active;
-  return true;
-}
-
-function matchesAccess(user: UserView, filter: AccessFilter): boolean {
-  switch (filter) {
-    case 'key':
-      return user.has_attestation_key;
-    case 'no-key':
-      return !user.has_attestation_key;
-    case 'no-password':
-      return !user.has_secret;
-    case 'recovery':
-      return user.has_recovery_phrase;
-    default:
-      return true;
-  }
-}
-
-function matchesQuery(user: UserView, folded: string): boolean {
-  if (folded === '') return true;
-  return normalizeSearch([user.username, user.display_name, user.email ?? ''].join(' ')).includes(
-    folded,
-  );
-}
-
 /**
  * Match on the role **id** (t103). Never on the rendered name: names are translatable, an
  * operator-authored role may share a name with a seeded one, and a retired id still resolves to a
@@ -401,7 +371,6 @@ function UserRow({ user }: { user: UserView }) {
  */
 export function UsersList() {
   const t = useT();
-  const users = useUsers();
   // The role filter's options. A second cached read of a small, rarely-changing list — it costs
   // no per-row request, which is the property that made the função filter shippable at all.
   const roles = useRoles();
@@ -422,9 +391,9 @@ export function UsersList() {
   const [filters, setFilters] = useState<Filters>(() => readFilters(params));
   const { status, role, access, scope, email, created } = filters;
 
-  // The box holds what is being typed; `filters.q` is what the URL and the table see. No request
-  // is issued per keystroke — the list is already loaded and the filtering is local — but an
-  // un-debounced box would still rewrite the address on every character.
+  // The box holds what is being typed; `filters.q` is the debounced value mirrored to the URL and
+  // sent to the bounded server query. Keeping the raw term separate prevents both a request and an
+  // address rewrite per keystroke.
   const [term, setTerm] = useState(filters.q);
   useEffect(() => {
     const timer = window.setTimeout(
@@ -529,25 +498,27 @@ export function UsersList() {
     [t],
   );
 
-  const loaded = users.data;
+  const pageFilters = {
+    q: filters.q.trim() || undefined,
+    active: status === 'all' ? undefined : status === 'active',
+    role_id: role === ROLE_FILTER_ALL || role === ROLE_FILTER_NONE ? undefined : role,
+    roleless: role === ROLE_FILTER_NONE ? true : undefined,
+    access: access === 'all' ? undefined : access,
+    scope: scope === 'all' ? undefined : scope,
+    email: email === 'all' ? undefined : email,
+    created_days: created === 'all' ? undefined : (Number(created) as 7 | 30 | 90),
+    limit: 50,
+    sort: 'username',
+    order: 'asc' as const,
+  };
+  const navigation = useCollectionNavigation(JSON.stringify(pageFilters));
+  const users = useUsersPage({ ...pageFilters, ...navigation.position });
+  // React Query intentionally retains the prior response during a key transition so this card's
+  // controls do not unmount. Hide those stale rows until the current filter/page resolves.
+  const loaded = users.isPlaceholderData ? undefined : users.data?.items;
   const all = useMemo(() => loaded ?? [], [loaded]);
-  const folded = normalizeSearch(filters.q.trim());
-  // One instant for the whole pass, so two rows near a window boundary are judged consistently.
-  const now = Date.now();
-  const visible = useMemo(
-    () =>
-      all.filter(
-        (u) =>
-          matchesQuery(u, folded) &&
-          matchesStatus(u, status) &&
-          matchesRole(u, role) &&
-          matchesAccess(u, access) &&
-          matchesScope(u, scope) &&
-          matchesEmail(u, email) &&
-          matchesCreated(u, created, now),
-      ),
-    [all, folded, status, role, access, scope, email, created, now],
-  );
+  const folded = filters.q.trim();
+  const visible = all;
 
   const advancedValues = filterParams(filters).values;
   const hasAdvanced = ADVANCED_PARAMS.some((name) => advancedValues[name] !== '');
@@ -573,18 +544,7 @@ export function UsersList() {
       title={t('users.list.cardTitle')}
       actions={
         <>
-          {all.length > 0 ? (
-            <span
-              aria-label={t('users.filters.count.aria', {
-                shown: visible.length,
-                total: all.length,
-              })}
-            >
-              <Badge>
-                {t('users.filters.count', { shown: visible.length, total: all.length })}
-              </Badge>
-            </span>
-          ) : null}
+          <CollectionPageCount count={all.length} />
           <GateButtonLink
             perm="user.manage"
             to={NEW_USER_PATH}
@@ -602,7 +562,7 @@ export function UsersList() {
         </SkeletonRegion>
       ) : users.error ? (
         <ErrorNote error={users.error} />
-      ) : all.length === 0 ? (
+      ) : !users.isPlaceholderData && all.length === 0 && !hasFilters ? (
         <EmptyState title={t('users.list.emptyTitle')}>
           <p>{t('users.list.emptyBody')}</p>
         </EmptyState>
@@ -724,7 +684,11 @@ export function UsersList() {
             </details>
           </div>
 
-          {visible.length === 0 ? (
+          {users.isPlaceholderData ? (
+            <SkeletonRegion>
+              <SkeletonTable cols={5} />
+            </SkeletonRegion>
+          ) : visible.length === 0 ? (
             roleFilterRetired ? (
               <EmptyState title={t('users.filters.retiredRole.title')}>
                 <p>{t('users.filters.retiredRole.body')}</p>
@@ -751,6 +715,23 @@ export function UsersList() {
               ))}
             </Table>
           )}
+          {!users.isPlaceholderData ? (
+            <CollectionPager
+              offset={navigation.displayOffset}
+              count={visible.length}
+              hasPrevious={navigation.hasPrevious}
+              hasNext={users.data?.has_more ?? false}
+              disabled={users.isFetching}
+              onPrevious={navigation.previous}
+              onNext={() =>
+                navigation.next(
+                  users.data?.next_offset ?? null,
+                  users.data?.next_cursor,
+                  navigation.displayOffset + visible.length,
+                )
+              }
+            />
+          ) : null}
         </div>
       )}
     </Card>

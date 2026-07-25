@@ -3,7 +3,13 @@
  */
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { BOOK_COLUMNS, type BookColumn, type BookView, type Entity } from '../../api/types';
+import {
+  BOOK_COLUMNS,
+  type BookColumn,
+  type BookListItem,
+  type BookView,
+  type Entity,
+} from '../../api/types';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import { useT } from '../../i18n';
 import { Badge, EmptyState, Icon, Table, Tooltip, Truncate } from '../../ui';
@@ -53,7 +59,7 @@ function BookEntityRef({
   entitiesById,
   loading,
 }: {
-  book: BookView;
+  book: BookView | BookListItem;
   entitiesById?: Map<string, Entity>;
   loading: boolean;
 }) {
@@ -70,6 +76,17 @@ function BookEntityRef({
         </Link>
         {!entity.nipc_validated ? <NipcBadge /> : null}
       </span>
+    );
+  }
+  if ('entity_name' in book && book.entity_name) {
+    return (
+      <Link
+        className="truncate books-table__entity-link"
+        to={`/entities/${book.entity_id}`}
+        title={book.entity_name}
+      >
+        {book.entity_name}
+      </Link>
     );
   }
   if (loading) {

@@ -227,6 +227,64 @@ export type CaeRevision = (typeof CAE_REVISIONS)[number];
 
 // --- Resource DTOs (§2.3–§2.7) --------------------------------------------------
 
+/**
+ * A bounded collection page. The current server accepts an offset for compatibility and may also
+ * return an opaque cursor. Consumers must treat the cursor as opaque and must not invent a total:
+ * RBAC filtering deliberately makes the full collection size unavailable.
+ */
+export interface CollectionPage<T> {
+  items: T[];
+  offset: number;
+  limit: number;
+  has_more: boolean;
+  next_offset?: number | null;
+  next_cursor?: string | null;
+}
+
+export interface CollectionPageParams {
+  q?: string;
+  cursor?: string;
+  offset?: number;
+  limit?: number;
+  sort?: string;
+  order?: 'asc' | 'desc';
+}
+
+export interface EntityPageParams extends CollectionPageParams {
+  tenant_id?: string;
+  group_id?: string;
+  family?: EntityFamily;
+  kind?: EntityKind;
+  nipc_validated?: boolean;
+  registry_import?: 'imported' | 'not-imported';
+  registry_freshness?: 'fresh' | 'expired' | 'no-expiry';
+  books?: 'open' | 'created' | 'closed' | 'no-open' | 'none';
+  book_kind?: BookKind;
+  last_book?: BookState | 'none';
+  activity?: 'registry' | 'entity' | 'book' | 'act' | 'document' | 'none';
+  activity_kind?: string;
+}
+
+export interface BookPageParams extends CollectionPageParams {
+  entity_id?: string;
+  kind?: BookKind;
+  state?: BookState;
+  activity?: 'has-acts' | 'no-acts';
+  lineage?: 'successor' | 'origin';
+  opened_from?: string;
+  opened_to?: string;
+}
+
+export interface UserPageParams extends CollectionPageParams {
+  active?: boolean;
+  role_id?: string;
+  roleless?: boolean;
+  access?: 'key' | 'no-key' | 'no-password' | 'recovery';
+  scope?: 'global' | 'scoped';
+  email?: 'with' | 'without';
+  created_days?: 7 | 30 | 90;
+}
+
 // The per-family compliance profile the server derives from an entity's kind
 // (plan t31 §2.2, `profile_for`). Read-only: computed server-side, surfaced on the
 // entity wire so the UI can label the rule pack, allowed channels, and calendar
@@ -486,6 +544,12 @@ export interface BookView {
   pages_reserved?: number;
   remaining_pages?: number | null;
   capacity_exhausted?: boolean;
+}
+
+/** Page-only book row enriched with an entity name only when the caller may read that entity. */
+export interface BookListItem extends BookView {
+  entity_name?: string;
+  kind_label?: string;
 }
 
 export interface BookTermoSignatory {

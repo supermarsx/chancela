@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { renderWithProviders } from '../../test/utils';
+import { collectionPageFixture, renderWithProviders } from '../../test/utils';
 
 const saveFileMock = vi.hoisted(() => ({
   saveBlobAs: vi.fn(),
@@ -123,7 +123,7 @@ describe('username validation', () => {
 
 describe('UsersList (Configurações → Utilizadores)', () => {
   it('lists users with their state', async () => {
-    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    const { fn } = recordingFetch((r) => rosterJson(r.url, [AMELIA]));
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<UsersList />, ['/settings/users']);
@@ -136,7 +136,7 @@ describe('UsersList (Configurações → Utilizadores)', () => {
   });
 
   it('exposes icon-only row actions via their accessible names', async () => {
-    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    const { fn } = recordingFetch((r) => rosterJson(r.url, [AMELIA]));
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<UsersList />, ['/settings/users']);
@@ -149,7 +149,7 @@ describe('UsersList (Configurações → Utilizadores)', () => {
   });
 
   it('sends the row actions to the dedicated screens, never to an inline panel', async () => {
-    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    const { fn } = recordingFetch((r) => rosterJson(r.url, [AMELIA]));
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(
@@ -175,7 +175,7 @@ describe('UsersList (Configurações → Utilizadores)', () => {
   });
 
   it('sends the access action to the edit screen anchored at its access section', async () => {
-    const { fn } = recordingFetch(() => jsonResponse([AMELIA]));
+    const { fn } = recordingFetch((r) => rosterJson(r.url, [AMELIA]));
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(
@@ -199,7 +199,9 @@ describe('UsersList (Configurações → Utilizadores)', () => {
 
   it('toggles a user active/inactive via PATCH', async () => {
     const { fn, calls } = recordingFetch((r) =>
-      r.method === 'PATCH' ? jsonResponse({ ...AMELIA, active: false }) : jsonResponse([AMELIA]),
+      r.method === 'PATCH'
+        ? jsonResponse({ ...AMELIA, active: false })
+        : rosterJson(r.url, [AMELIA]),
     );
     vi.stubGlobal('fetch', fn);
 
@@ -267,6 +269,12 @@ const ROLES = [
   { id: ROLE_CUSTOM, name: 'Gerente da filial', permissions: [], protected: false },
 ];
 
+function rosterJson(url: string, users: UserView[]): Response {
+  if (url.includes('/v1/roles')) return jsonResponse(ROLES);
+  if (url.includes('/v1/users/page')) return jsonResponse(collectionPageFixture(url, users));
+  return jsonResponse(users);
+}
+
 /** Amélia holds the seeded Owner role globally; Bruno an authored role scoped to one entity. */
 const AMELIA_OWNER: UserView = {
   ...AMELIA,
@@ -284,9 +292,7 @@ function renderRoster(entries: string[]) {
   // not merely untidy — every live role id would then be a user id, so the "this role was merged"
   // empty state would fire on a perfectly good filter.
   const { fn } = recordingFetch((call) =>
-    call.url.includes('/v1/roles')
-      ? jsonResponse(ROLES)
-      : jsonResponse([AMELIA_OWNER, BRUNO_SCOPED, CLARA_RECOVERY]),
+    rosterJson(call.url, [AMELIA_OWNER, BRUNO_SCOPED, CLARA_RECOVERY]),
   );
   vi.stubGlobal('fetch', fn);
   return renderWithProviders(
@@ -334,7 +340,7 @@ describe('UsersList filters (t89) — Arquivo idiom, state carried in the URL', 
 
     fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: 'AMÉLIA marques' } });
     await waitFor(() => expect(screen.queryByText('clara.nunes')).toBeNull());
-    expect(screen.getByText('amelia.marques')).toBeTruthy();
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
   });
 
   it('applies a filtered URL on first paint, so the view survives a reload and a Back', async () => {
@@ -409,7 +415,7 @@ describe('UsersList filters (t103) — função, and the advanced disclosure', (
     fireEvent.change(role, { target: { value: ROLE_OWNER } });
 
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
-    expect(screen.queryByText('bruno.dias')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('bruno.dias')).toBeNull());
     expect(screen.queryByText('clara.nunes')).toBeNull();
     // The address carries the stable id, which is what makes the link survive a role rename.
     expect(screen.getByLabelText('location').textContent).toBe(
@@ -515,7 +521,7 @@ describe('UsersList filters (t103) — função, and the advanced disclosure', (
     await waitFor(() =>
       expect(screen.getByLabelText('location').textContent).toBe('/settings/users'),
     );
-    expect(screen.getByText('amelia.marques')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('amelia.marques')).toBeTruthy());
     expect(screen.getByText('clara.nunes')).toBeTruthy();
   });
 });

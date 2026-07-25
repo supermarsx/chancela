@@ -1,0 +1,23 @@
+.collection-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-sans);
+  font-size: 0.82rem;
+}
+
+.collection-pagination__actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.35rem;
+}
+
+@media (max-width: 720px) {
+  .collection-pagination {
+    align-items: stretch;
+  }
+}

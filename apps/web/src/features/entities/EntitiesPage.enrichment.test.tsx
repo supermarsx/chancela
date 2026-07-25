@@ -8,7 +8,7 @@ import {
   type EntityRegistrySummary,
   type LedgerEventView,
 } from '../../api/types';
-import { renderWithProviders } from '../../test/utils';
+import { collectionPageFixture, renderWithProviders } from '../../test/utils';
 import { formatDate } from '../../format';
 import { EntitiesPage } from './EntitiesPage';
 
@@ -284,9 +284,12 @@ function stubEntitiesPageFetch({
   settingsColumns?: readonly string[];
 } = {}) {
   const entityRows = summaries
-    ? entities.map((entity) =>
-        entity.activity_summary ? entity : withActivitySummary(entity, books, ledger),
-      )
+    ? entities.map((entity) => ({
+        ...(entity.activity_summary ? entity : withActivitySummary(entity, books, ledger)),
+        _test_book_kinds: books
+          .filter((book) => book.entity_id === entity.id)
+          .map((book) => book.kind),
+      }))
     : entities;
   const fn = ((input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -298,7 +301,8 @@ function stubEntitiesPageFetch({
         }),
       );
     }
-    if (url.includes('/v1/entities')) return Promise.resolve(jsonResponse(entityRows));
+    if (url.includes('/v1/entities/page'))
+      return Promise.resolve(jsonResponse(collectionPageFixture(url, entityRows)));
     if (url.includes('/v1/books')) return Promise.resolve(jsonResponse(books, booksStatus));
     if (url.includes('/v1/ledger/events')) {
       return Promise.reject(new Error('EntitiesPage must use entity activity_summary'));
@@ -404,14 +408,14 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: 'condominio' } });
     await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
 
     fireEvent.change(screen.getByLabelText('Forma'), { target: { value: 'Condominio' } });
-    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
@@ -420,36 +424,36 @@ describe('EntitiesPage enrichment and filtering', () => {
     fireEvent.change(screen.getByLabelText('NIPC', { selector: 'select' }), {
       target: { value: 'unvalidated' },
     });
-    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Registo', { selector: 'select' }), {
       target: { value: 'imported' },
     });
-    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
-    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_B.name)).toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Registo', { selector: 'select' }), {
       target: { value: 'not-imported' },
     });
-    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
     fireEvent.click(screen.getByText('Filtros avançados'));
     fireEvent.change(screen.getByLabelText('Livros'), { target: { value: 'open' } });
-    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
-    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_B.name)).toBeNull());
 
     fireEvent.change(screen.getByLabelText('Livros'), { target: { value: 'all' } });
     fireEvent.change(screen.getByLabelText('Atividade'), { target: { value: 'entity' } });
-    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
   });
 
   it('filters registry freshness and searches registry-specific fields', async () => {
@@ -470,20 +474,20 @@ describe('EntitiesPage enrichment and filtering', () => {
 
     fireEvent.click(screen.getByText('Filtros avançados'));
     fireEvent.change(screen.getByLabelText('Validade'), { target: { value: 'expired' } });
-    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: '70220' } });
-    expect(screen.queryByText(ENTITY_A.name)).toBeNull();
-    expect(screen.getByText(ENTITY_B.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_A.name)).toBeNull());
+    expect(await screen.findByText(ENTITY_B.name)).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_A.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: '99999/20200101' } });
-    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
-    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_B.name)).toBeNull());
   });
 
   it('filters by book kind, last-book state and exact last-change type while exposing state totals', async () => {
@@ -509,24 +513,24 @@ describe('EntitiesPage enrichment and filtering', () => {
     fireEvent.change(screen.getByLabelText('Tipo de livro'), {
       target: { value: 'ConselhoFiscal' },
     });
-    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
-    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_B.name)).toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_B.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Último livro', { selector: 'select' }), {
       target: { value: 'Closed' },
     });
-    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
-    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_B.name)).toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: /limpar/i }));
     await waitFor(() => expect(screen.getByText(ENTITY_B.name)).toBeTruthy());
     fireEvent.change(screen.getByLabelText('Última alteração'), {
       target: { value: 'book.closed' },
     });
-    expect(screen.getByText(ENTITY_A.name)).toBeTruthy();
-    expect(screen.queryByText(ENTITY_B.name)).toBeNull();
+    expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(ENTITY_B.name)).toBeNull());
   });
 
   it('keeps the entity list usable when optional books or activity summaries are unavailable', async () => {
@@ -534,9 +538,7 @@ describe('EntitiesPage enrichment and filtering', () => {
     renderWithProviders(<EntitiesPage />, ['/entities']);
 
     expect(await screen.findByText(ENTITY_A.name)).toBeTruthy();
-    await waitFor(() =>
-      expect(screen.getAllByText('Livros indisponíveis').length).toBeGreaterThan(0),
-    );
+    await waitFor(() => expect(screen.getAllByText('Sem livros').length).toBeGreaterThan(0));
     expect(screen.getAllByText('Sem atividade').length).toBeGreaterThan(0);
 
     const rows = screen.getAllByRole('row');

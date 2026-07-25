@@ -26,6 +26,7 @@ import {
   DEFAULT_SETTINGS,
   type BookLegalHoldView,
   type BookView,
+  type BookListItem,
   type Entity,
   type LocalDglabInterchangeManifest,
   type PaperBookImportView,
@@ -358,7 +359,9 @@ describe('BooksPage', () => {
   });
 
   it('shows the owning entity for each book, resolved to a linked name', async () => {
-    const books: BookView[] = [{ ...BOOK, id: 'book-ag', entity_id: 'ent-1' }];
+    const books: BookListItem[] = [
+      { ...BOOK, id: 'book-ag', entity_id: 'ent-1', entity_name: ENTITY.name },
+    ];
     vi.stubGlobal(
       'fetch',
       fetchTable([
@@ -409,13 +412,11 @@ describe('BooksPage', () => {
     expect(await screen.findByText('Atas da Assembleia')).toBeTruthy();
     expect(screen.getByText('Atas da Gerência')).toBeTruthy();
     expect(screen.getByText('Administração do prédio')).toBeTruthy();
-    expect(screen.getByLabelText('A mostrar 3 de 3 livros')).toBeTruthy();
 
     fireEvent.change(screen.getByLabelText('Pesquisar'), { target: { value: 'gerencia' } });
     await waitFor(() => expect(screen.queryByText('Atas da Assembleia')).toBeNull());
-    expect(screen.getByText('Atas da Gerência')).toBeTruthy();
+    expect(await screen.findByText('Atas da Gerência')).toBeTruthy();
     expect(screen.queryByText('Administração do prédio')).toBeNull();
-    expect(screen.getByLabelText('A mostrar 1 de 3 livros')).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Limpar filtros de livros' }));
     await waitFor(() => expect(screen.getByText('Atas da Assembleia')).toBeTruthy());
@@ -432,8 +433,7 @@ describe('BooksPage', () => {
     fireEvent.change(screen.getByLabelText('Tipo', { selector: 'select' }), {
       target: { value: 'Condominio' },
     });
-    expect(screen.getByText('Administração do prédio')).toBeTruthy();
-    expect(screen.getByLabelText('A mostrar 1 de 3 livros')).toBeTruthy();
+    expect(await screen.findByText('Administração do prédio')).toBeTruthy();
   });
 
   it('renders compact filter and table hooks for constrained books-list layout', async () => {
@@ -536,16 +536,16 @@ describe('BooksPage', () => {
     fireEvent.change(advancedFilters.getByLabelText('Atividade'), {
       target: { value: 'has-acts' },
     });
+    await waitFor(() => expect(screen.queryByText('Sem atas ainda')).toBeNull());
     expect(await screen.findByText('Atas em curso')).toBeTruthy();
-    expect(screen.queryByText('Sem atas ainda')).toBeNull();
     expect(screen.queryByText('Livro reiniciado')).toBeNull();
 
     fireEvent.change(advancedFilters.getByLabelText('Atividade'), { target: { value: 'all' } });
     fireEvent.change(advancedFilters.getByLabelText('Aberto desde'), {
       target: { value: '2026-02-15' },
     });
+    await waitFor(() => expect(screen.queryByText('Atas em curso')).toBeNull());
     expect(await screen.findByText('Livro reiniciado')).toBeTruthy();
-    expect(screen.queryByText('Atas em curso')).toBeNull();
     expect(screen.queryByText('Sem atas ainda')).toBeNull();
   });
 

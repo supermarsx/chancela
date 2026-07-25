@@ -74,6 +74,7 @@ import type {
   DpiaTemplateView,
   DsrRequestView,
   Entity,
+  EntityPageParams,
   EntityChronologyView,
   EntityFamily,
   LifecycleStage,
@@ -234,6 +235,7 @@ import type {
   UpdateActBody,
   UpdateUserBody,
   UserView,
+  UserPageParams,
   VerifyAiHumanReviewBody,
   RoleView,
   SeededRoleReconciliationView,
@@ -262,6 +264,9 @@ import type {
   DelegationView,
   GrantDelegationBody,
   BookView,
+  BookListItem,
+  BookPageParams,
+  CollectionPage,
   BookArchivePackageParams,
   BookLegalHoldView,
   ClearBookLegalHoldBody,
@@ -811,6 +816,14 @@ function query(params: Record<string, string | number | undefined>): string {
   return s ? `?${s}` : '';
 }
 
+function pageQuery(params: object): Record<string, string | number | undefined> {
+  return Object.fromEntries(
+    Object.entries(params as Record<string, string | number | boolean | undefined>).map(
+      ([name, value]) => [name, typeof value === 'boolean' ? String(value) : value],
+    ),
+  );
+}
+
 function trustSearchQuery(
   params: TslCatalogSearchParams | string,
   limit?: number,
@@ -918,6 +931,8 @@ export const api = {
 
   // Entities (§2.3)
   listEntities: () => get<Entity[]>('/v1/entities'),
+  listEntitiesPage: (params: EntityPageParams = {}) =>
+    get<CollectionPage<Entity>>(`/v1/entities/page${query(pageQuery(params))}`),
   getEntity: (id: string) => get<Entity>(`/v1/entities/${id}`),
   getEntityChronology: (id: string) => get<EntityChronologyView>(`/v1/entities/${id}/chronology`),
   createEntity: (body: CreateEntityBody) => post<Entity>('/v1/entities', body),
@@ -1102,6 +1117,8 @@ export const api = {
 
   // Books (§2.4)
   listBooks: (entityId?: string) => get<BookView[]>(`/v1/books${query({ entity_id: entityId })}`),
+  listBooksPage: (params: BookPageParams = {}) =>
+    get<CollectionPage<BookListItem>>(`/v1/books/page${query(pageQuery(params))}`),
   getBook: (id: string) => get<BookView>(`/v1/books/${id}`),
   openBook: (body: OpenBookBody) => post<BookView>('/v1/books', body),
   closeBook: (id: string, body: CloseBookBody) => post<BookView>(`/v1/books/${id}/close`, body),
@@ -1525,6 +1542,8 @@ export const api = {
   // Users + session (§2.8, plan t14). The session token is stored in memory (see
   // `./session`) and sent as `X-Chancela-Session` on every request by `request`.
   listUsers: () => get<UserView[]>('/v1/users'),
+  listUsersPage: (params: UserPageParams = {}) =>
+    get<CollectionPage<UserView>>(`/v1/users/page${query(pageQuery(params))}`),
   getUser: (id: string) => get<UserView>(`/v1/users/${id}`),
   createUser: (body: CreateUserBody) => post<UserView>('/v1/users', body),
   updateUser: (id: string, body: UpdateUserBody) => patch<UserView>(`/v1/users/${id}`, body),

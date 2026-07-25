@@ -3,8 +3,8 @@
  * behind a neat "Abrir livro" button in the panel header, which opens the dedicated
  * open-book route (`/books/new`) rather than an always-visible aside form (t13 item 7).
  */
-import { useDeferredValue, useMemo, useState } from 'react';
-import { useBooks, useEntities } from '../../api/hooks';
+import { useState } from 'react';
+import { useBooksPage } from '../../api/hooks';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
 import {
   BOOK_COLUMNS,
@@ -12,15 +12,12 @@ import {
   type BookColumn,
   type BookKind,
   type BookState,
-  type BookView,
-  type Entity,
 } from '../../api/types';
 import { useT, type MessageKey } from '../../i18n';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
 import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
 import {
-  Badge,
   Card,
   EmptyState,
   ErrorNote,
@@ -34,6 +31,12 @@ import {
   SkeletonRegion,
 } from '../../ui';
 import { GateButtonLink } from '../session/permissions';
+import {
+  CollectionPageCount,
+  CollectionPager,
+  useCollectionNavigation,
+  useDebouncedValue,
+} from '../common/CollectionPager';
 import { BooksTable } from './BooksTable';
 
 type BookStateFilter = 'all' | BookState;
@@ -81,91 +84,36 @@ const ADVANCED_FILTER_OPTIONS: { value: AdvancedFilter; labelKey: MessageKey }[]
   { value: 'origin', labelKey: 'books.filters.activity.origin' },
 ];
 
-function normalizeSearch(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-}
-
-function dateRank(value: string | null): number {
-  if (!value) return 0;
-  const time = new Date(value).getTime();
-  return Number.isNaN(time) ? 0 : time;
-}
-
-function bookSignatorySearchParts(book: BookView): string[] {
-  const records = [
-    ...(book.required_signatory_records_abertura ?? []),
-    ...(book.required_signatory_records_encerramento ?? []),
-  ];
-  if (records.length > 0) {
-    return records.flatMap((signatory) => [
-      signatory.name,
-      signatory.capacity ?? '',
-      signatory.email ?? '',
-    ]);
-  }
-  return [
-    ...(book.required_signatories_abertura ?? []),
-    ...(book.required_signatories_encerramento ?? []),
-  ];
-}
-
-function bookSearchText(book: BookView): string {
-  return normalizeSearch(
-    [
-      book.id,
-      book.entity_id,
-      bookKindLabels[book.kind],
-      bookStateLabels[book.state],
-      book.purpose ?? '',
-      book.opening_date ?? '',
-      book.closing_date ?? '',
-      book.predecessor ?? '',
-      String(book.last_ata_number || ''),
-      ...bookSignatorySearchParts(book),
-    ].join(' '),
-  );
-}
-
 export function BooksPage() {
   const t = useT();
   const ct = useTableColumnsT();
   const columns = useTableColumns(BOOKS_COLUMN_SPEC);
-  const books = useBooks();
-  const entities = useEntities();
-  const entitiesById = useMemo(() => {
-    const map = new Map<string, Entity>();
-    for (const entity of entities.data ?? []) map.set(entity.id, entity);
-    return map;
-  }, [entities.data]);
   const [search, setSearch] = useState('');
-  const deferredSearch = useDeferredValue(search);
+  const debouncedSearch = useDebouncedValue(search);
   const [stateFilter, setStateFilter] = useState<BookStateFilter>('all');
   const [kindFilter, setKindFilter] = useState<BookKindFilter>('all');
   const [advancedFilter, setAdvancedFilter] = useState<AdvancedFilter>('all');
   const [openedFrom, setOpenedFrom] = useState('');
   const [openedTo, setOpenedTo] = useState('');
-
-  const visibleBooks = useMemo(() => {
-    const query = normalizeSearch(deferredSearch.trim());
-    const fromRank = dateRank(openedFrom || null);
-    const toRank = dateRank(openedTo || null);
-
-    return (books.data ?? []).filter((book) => {
-      if (stateFilter !== 'all' && book.state !== stateFilter) return false;
-      if (kindFilter !== 'all' && book.kind !== kindFilter) return false;
-      if (advancedFilter === 'has-acts' && book.last_ata_number <= 0) return false;
-      if (advancedFilter === 'no-acts' && book.last_ata_number > 0) return false;
-      if (advancedFilter === 'successor' && !book.predecessor) return false;
-      if (advancedFilter === 'origin' && book.predecessor) return false;
-      const openedRank = dateRank(book.opening_date);
-      if (fromRank > 0 && (openedRank === 0 || openedRank < fromRank)) return false;
-      if (toRank > 0 && (openedRank === 0 || openedRank > toRank)) return false;
-      return query === '' || bookSearchText(book).includes(query);
-    });
-  }, [advancedFilter, books.data, deferredSearch, kindFilter, openedFrom, openedTo, stateFilter]);
+  const filters = {
+    q: debouncedSearch.trim() || undefined,
+    state: stateFilter === 'all' ? undefined : stateFilter,
+    kind: kindFilter === 'all' ? undefined : kindFilter,
+    activity:
+      advancedFilter === 'has-acts' || advancedFilter === 'no-acts' ? advancedFilter : undefined,
+    lineage:
+      advancedFilter === 'successor' || advancedFilter === 'origin' ? advancedFilter : undefined,
+    opened_from: openedFrom || undefined,
+    opened_to: openedTo || undefined,
+    limit: 50,
+    sort: 'id',
+    order: 'asc' as const,
+  };
+  const navigation = useCollectionNavigation(JSON.stringify(filters));
+  const books = useBooksPage({ ...filters, ...navigation.position });
+  // Placeholder data keeps the filter controls mounted during a query-key transition, but rows
+  // from the previous filter/page must never masquerade as results for the current one.
+  const visibleBooks = books.isPlaceholderData ? [] : (books.data?.items ?? []);
 
   const hasFilters =
     search.trim() !== '' ||
@@ -221,20 +169,7 @@ export function BooksPage() {
 
       <Card
         title={t('books.allBooks')}
-        actions={
-          books.data && books.data.length > 0 ? (
-            <span
-              aria-label={t('books.filters.count.aria', {
-                shown: visibleBooks.length,
-                total: books.data.length,
-              })}
-            >
-              <Badge>
-                {t('books.filters.count', { shown: visibleBooks.length, total: books.data.length })}
-              </Badge>
-            </span>
-          ) : null
-        }
+        actions={<CollectionPageCount count={visibleBooks.length} />}
       >
         {books.isLoading ? (
           <SkeletonRegion>
@@ -242,7 +177,8 @@ export function BooksPage() {
           </SkeletonRegion>
         ) : books.error ? (
           <ErrorNote error={books.error} />
-        ) : !books.data || books.data.length === 0 ? (
+        ) : !books.data ||
+          (!books.isPlaceholderData && visibleBooks.length === 0 && !hasFilters) ? (
           <EmptyState title={t('books.empty')} />
         ) : (
           <div className="stack">
@@ -328,19 +264,34 @@ export function BooksPage() {
               columnLabel={(column) => t(BOOK_COLUMN_LABEL_KEYS[column])}
             />
 
-            {visibleBooks.length === 0 ? (
+            {books.isPlaceholderData ? (
+              <SkeletonRegion>
+                <SkeletonTable cols={5} />
+              </SkeletonRegion>
+            ) : visibleBooks.length === 0 ? (
               <EmptyState title={t('books.filters.empty.title')}>
                 <p>{t('books.filters.empty.body')}</p>
               </EmptyState>
             ) : (
-              <BooksTable
-                books={visibleBooks}
-                showEntity
-                entitiesById={entitiesById}
-                entitiesLoading={entities.isLoading}
-                visibleColumns={columns.visible}
-              />
+              <BooksTable books={visibleBooks} showEntity visibleColumns={columns.visible} />
             )}
+            {!books.isPlaceholderData ? (
+              <CollectionPager
+                offset={navigation.displayOffset}
+                count={visibleBooks.length}
+                hasPrevious={navigation.hasPrevious}
+                hasNext={books.data?.has_more ?? false}
+                disabled={books.isFetching}
+                onPrevious={navigation.previous}
+                onNext={() =>
+                  navigation.next(
+                    books.data?.next_offset ?? null,
+                    books.data?.next_cursor,
+                    navigation.displayOffset + visibleBooks.length,
+                  )
+                }
+              />
+            ) : null}
           </div>
         )}
       </Card>

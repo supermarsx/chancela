@@ -13,7 +13,7 @@ import {
   type RetentionDisposalAction,
   type RetentionDueCandidatesReport,
 } from '../../api/types';
-import { renderWithProviders } from '../../test/utils';
+import { collectionPageFixture, renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
 import { colorStore } from '../../theme/colorStore';
 import { grainStore } from '../../theme/grainStore';
@@ -3771,12 +3771,15 @@ describe('SettingsPage', () => {
         has_totp: false,
         two_factor_required: false,
         language: 'auto',
+        role_assignments: [],
       },
     ];
     const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
-      if (url.includes('/v1/users')) return Promise.resolve(jsonResponse(users));
+      if (url.includes('/v1/users/page'))
+        return Promise.resolve(jsonResponse(collectionPageFixture(url, users)));
+      if (url.includes('/v1/roles')) return Promise.resolve(jsonResponse([]));
       if (url.includes('/v1/settings')) {
         if (method === 'PUT') return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
         return Promise.resolve(jsonResponse(DEFAULT_SETTINGS));
