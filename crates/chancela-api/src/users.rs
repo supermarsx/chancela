@@ -37,7 +37,10 @@ use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor, resolve_session_actor};
 use crate::attestation::{self, AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LEN, verify_secret};
 use crate::authz::require_permission;
-use crate::collection_page::{CollectionPage, CollectionPageQuery};
+use crate::collection_page::{
+    CollectionPage, CollectionPageQuery, CursorPosition, apply_keyset, fold_search,
+    query_fingerprint,
+};
 use crate::error::ApiError;
 use crate::session::{Backoff, backoff_secs};
 use crate::settings::Locale;
@@ -1644,11 +1647,18 @@ pub struct UserPageQuery {
     q: Option<String>,
     #[serde(default)]
     offset: usize,
+    cursor: Option<String>,
     limit: Option<usize>,
     sort: Option<String>,
     order: Option<String>,
     active: Option<bool>,
     role_id: Option<Uuid>,
+    #[serde(default)]
+    roleless: bool,
+    access: Option<String>,
+    scope: Option<String>,
+    email: Option<String>,
+    created_days: Option<u16>,
 }
 
 impl UserPageQuery {
@@ -1656,11 +1666,22 @@ impl UserPageQuery {
         CollectionPageQuery {
             q: self.q.clone(),
             offset: self.offset,
+            cursor: self.cursor.clone(),
             limit: self.limit,
             sort: self.sort.clone(),
             order: self.order.clone(),
         }
     }
+}
+
+fn user_page_position(user: &User, sort: &str) -> CursorPosition {
+    let key = match sort {
+        "display_name" => user.display_name.to_lowercase(),
+        "created_at" => user.created_at.clone(),
+        "id" => user.id.to_string(),
+        _ => user.username.clone(),
+    };
+    CursorPosition::new(key, user.id.to_string())
 }
 
 pub async fn list_users_page(
@@ -1679,6 +1700,68 @@ pub async fn list_users_page(
     }
     let search = page_query.normalized_search();
     let limit = page_query.limit();
+    if query.roleless && query.role_id.is_some() {
+        return Err(ApiError::Unprocessable(
+            "role_id and roleless=true are mutually exclusive".to_owned(),
+        ));
+    }
+    if !matches!(
+        query.access.as_deref(),
+        None | Some("key" | "no-key" | "no-password" | "recovery")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown user access filter".to_owned(),
+        ));
+    }
+    if !matches!(query.scope.as_deref(), None | Some("global" | "scoped")) {
+        return Err(ApiError::Unprocessable(
+            "unknown user scope filter".to_owned(),
+        ));
+    }
+    if !matches!(query.email.as_deref(), None | Some("with" | "without")) {
+        return Err(ApiError::Unprocessable(
+            "unknown user email filter".to_owned(),
+        ));
+    }
+    if query
+        .created_days
+        .is_some_and(|days| !matches!(days, 7 | 30 | 90))
+    {
+        return Err(ApiError::Unprocessable(
+            "created_days must be 7, 30 or 90".to_owned(),
+        ));
+    }
+    let created_cutoff = query
+        .created_days
+        .map(|days| OffsetDateTime::now_utc() - Duration::days(i64::from(days)));
+    let fingerprint = query_fingerprint([
+        ("q", search.clone().unwrap_or_default()),
+        ("sort", sort.to_owned()),
+        ("order", if descending { "desc" } else { "asc" }.to_owned()),
+        (
+            "active",
+            query
+                .active
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "role_id",
+            query.role_id.map(|id| id.to_string()).unwrap_or_default(),
+        ),
+        ("roleless", query.roleless.to_string()),
+        ("access", query.access.clone().unwrap_or_default()),
+        ("scope", query.scope.clone().unwrap_or_default()),
+        ("email", query.email.clone().unwrap_or_default()),
+        (
+            "created_days",
+            query
+                .created_days
+                .map(|days| days.to_string())
+                .unwrap_or_default(),
+        ),
+    ]);
+    let cursor = page_query.cursor("users", &fingerprint)?;
     let users = state.users.read().await;
     let mut visible: Vec<_> = users
         .values()
@@ -1690,14 +1773,53 @@ pub async fn list_users_page(
                     .any(|assignment| assignment.role_id.0 == role_id)
             })
         })
+        .filter(|user| !query.roleless || user.role_assignments.is_empty())
+        .filter(|user| match query.access.as_deref() {
+            Some("key") => user.attestation_key.is_some(),
+            Some("no-key") => user.attestation_key.is_none(),
+            Some("no-password") => user.password_hash.is_none(),
+            Some("recovery") => user.recovery_hash.is_some(),
+            _ => true,
+        })
+        .filter(|user| match query.scope.as_deref() {
+            Some("global") => user
+                .role_assignments
+                .iter()
+                .any(|assignment| assignment.scope.is_global()),
+            Some("scoped") => {
+                !user.role_assignments.is_empty()
+                    && !user
+                        .role_assignments
+                        .iter()
+                        .any(|assignment| assignment.scope.is_global())
+            }
+            _ => true,
+        })
+        .filter(|user| match query.email.as_deref() {
+            Some("with") => user
+                .email
+                .as_deref()
+                .is_some_and(|email| !email.trim().is_empty()),
+            Some("without") => user
+                .email
+                .as_deref()
+                .is_none_or(|email| email.trim().is_empty()),
+            _ => true,
+        })
+        .filter(|user| {
+            created_cutoff.is_none_or(|cutoff| {
+                OffsetDateTime::parse(&user.created_at, &Rfc3339)
+                    .is_ok_and(|created| created >= cutoff)
+            })
+        })
         .filter(|user| {
             search.as_ref().is_none_or(|needle| {
-                user.username.to_lowercase().contains(needle)
-                    || user.display_name.to_lowercase().contains(needle)
+                fold_search(&user.username).contains(needle)
+                    || fold_search(&user.display_name).contains(needle)
                     || user
                         .email
                         .as_deref()
-                        .is_some_and(|email| email.to_lowercase().contains(needle))
+                        .is_some_and(|email| fold_search(email).contains(needle))
             })
         })
         .collect();
@@ -1724,12 +1846,21 @@ pub async fn list_users_page(
             ordering
         }
     });
-    let views = visible.into_iter().map(UserView::from).collect();
-    Ok(Json(CollectionPage::from_sorted(
-        views,
-        page_query.offset,
-        limit,
-    )))
+    apply_keyset(&mut visible, cursor.as_ref(), descending, |user| {
+        user_page_position(user, sort)
+    });
+    Ok(Json(
+        CollectionPage::from_keyset_sorted(
+            visible,
+            page_query.offset,
+            limit,
+            cursor.is_some(),
+            "users",
+            &fingerprint,
+            |user| user_page_position(user, sort),
+        )
+        .map(UserView::from),
+    ))
 }
 
 /// `GET /v1/users/{id}` — one profile, or `404`. RBAC (t64-E3): `user.read` at Global.

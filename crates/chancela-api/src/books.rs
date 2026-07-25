@@ -24,10 +24,13 @@ use chancela_authz::Permission;
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{authorizer, forbidden, require_permission, scope_of_book, scope_of_entity};
-use crate::collection_page::{CollectionPage, CollectionPageQuery};
+use crate::collection_page::{
+    CollectionPage, CollectionPageQuery, CursorPosition, apply_keyset, fold_search,
+    query_fingerprint,
+};
 use crate::dto::{
-    ActView, BookView, BooksQuery, CloseBook, CreateBook, normalize_termo_signatories,
-    read_redaction_for_actor,
+    ActView, BookView, BooksQuery, CloseBook, CreateBook, EntityView, normalize_termo_signatories,
+    parse_date, read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -383,12 +386,17 @@ pub struct BooksPageQuery {
     q: Option<String>,
     #[serde(default)]
     offset: usize,
+    cursor: Option<String>,
     limit: Option<usize>,
     sort: Option<String>,
     order: Option<String>,
     entity_id: Option<Uuid>,
     kind: Option<BookKind>,
     state: Option<BookState>,
+    activity: Option<String>,
+    lineage: Option<String>,
+    opened_from: Option<String>,
+    opened_to: Option<String>,
 }
 
 impl BooksPageQuery {
@@ -396,10 +404,50 @@ impl BooksPageQuery {
         CollectionPageQuery {
             q: self.q.clone(),
             offset: self.offset,
+            cursor: self.cursor.clone(),
             limit: self.limit,
             sort: self.sort.clone(),
             order: self.order.clone(),
         }
+    }
+}
+
+#[derive(Serialize)]
+pub struct BookPageItemView {
+    #[serde(flatten)]
+    book: BookView,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entity_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    kind_label: Option<String>,
+}
+
+fn book_page_position(book: &BookPageItemView, sort: &str) -> CursorPosition {
+    let key = match sort {
+        "kind" => format!("{:?}", book.book.kind),
+        "state" => format!("{:?}", book.book.state),
+        _ => book.book.id.clone(),
+    };
+    CursorPosition::new(key, book.book.id.clone())
+}
+
+fn book_kind_search_labels(kind: BookKind) -> &'static str {
+    match kind {
+        BookKind::AssembleiaGeral => "Assembleia Geral General Meeting",
+        BookKind::GerenciaAdministracao => {
+            "Gerência Administração Gerencia Administracao Management Administration"
+        }
+        BookKind::ConselhoFiscal => "Conselho Fiscal Audit Board",
+        BookKind::Condominio => "Condomínio Condominio Condominium",
+        BookKind::Other => "Outro Other",
+    }
+}
+
+fn book_state_search_labels(state: BookState) -> &'static str {
+    match state {
+        BookState::Created => "Criado Created",
+        BookState::Open => "Aberto Open",
+        BookState::Closed => "Encerrado Closed",
     }
 }
 
@@ -409,7 +457,7 @@ pub async fn list_books_page(
     State(state): State<AppState>,
     Query(query): Query<BooksPageQuery>,
     actor: CurrentActor,
-) -> Result<Json<CollectionPage<BookView>>, ApiError> {
+) -> Result<Json<CollectionPage<BookPageItemView>>, ApiError> {
     let authz = authorizer(&state, &actor).await?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
     let page_query = query.page();
@@ -423,34 +471,147 @@ pub async fn list_books_page(
     let search = page_query.normalized_search();
     let limit = page_query.limit();
     let filter = query.entity_id.map(EntityId);
+    if !matches!(
+        query.activity.as_deref(),
+        None | Some("has-acts" | "no-acts")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown book activity filter: expected \"has-acts\" or \"no-acts\"".to_owned(),
+        ));
+    }
+    if !matches!(
+        query.lineage.as_deref(),
+        None | Some("successor" | "origin")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown book lineage filter: expected \"successor\" or \"origin\"".to_owned(),
+        ));
+    }
+    let opened_from = query.opened_from.as_deref().map(parse_date).transpose()?;
+    let opened_to = query.opened_to.as_deref().map(parse_date).transpose()?;
+    let fingerprint = query_fingerprint([
+        ("q", search.clone().unwrap_or_default()),
+        ("sort", sort.to_owned()),
+        ("order", if descending { "desc" } else { "asc" }.to_owned()),
+        (
+            "entity_id",
+            query.entity_id.map(|id| id.to_string()).unwrap_or_default(),
+        ),
+        (
+            "kind",
+            query
+                .kind
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_default(),
+        ),
+        (
+            "state",
+            query
+                .state
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_default(),
+        ),
+        ("activity", query.activity.clone().unwrap_or_default()),
+        ("lineage", query.lineage.clone().unwrap_or_default()),
+        ("opened_from", query.opened_from.clone().unwrap_or_default()),
+        ("opened_to", query.opened_to.clone().unwrap_or_default()),
+    ]);
+    let cursor = page_query.cursor("books", &fingerprint)?;
     let books = state.books.read().await;
+    let entities = state.entities.read().await;
     let mut visible: Vec<_> = books
         .values()
         .filter(|book| filter.is_none_or(|entity_id| book.entity_id == entity_id))
         .filter(|book| query.kind.is_none_or(|kind| book.kind == kind))
         .filter(|book| query.state.is_none_or(|state| book.state == state))
-        .filter(|book| authz.permits(Permission::BookRead, scope_of_book(book.id)))
+        .filter(|book| match query.activity.as_deref() {
+            Some("has-acts") => book.last_ata_number > 0,
+            Some("no-acts") => book.last_ata_number == 0,
+            _ => true,
+        })
+        .filter(|book| match query.lineage.as_deref() {
+            Some("successor") => book.predecessor.is_some(),
+            Some("origin") => book.predecessor.is_none(),
+            _ => true,
+        })
         .filter(|book| {
+            let opening_date = book.termo_abertura.as_ref().map(|termo| termo.opening_date);
+            opened_from.is_none_or(|from| opening_date.is_some_and(|date| date >= from))
+                && opened_to.is_none_or(|to| opening_date.is_some_and(|date| date <= to))
+        })
+        .filter(|book| authz.permits(Permission::BookRead, scope_of_book(book.id)))
+        .map(|book| {
+            let entity_name = entities
+                .get(&book.entity_id)
+                .filter(|entity| authz.permits(Permission::EntityRead, scope_of_entity(entity.id)))
+                .map(|entity| EntityView::build(entity, redaction).name);
+            BookPageItemView {
+                book: BookView::build(book, redaction),
+                entity_name,
+                kind_label: book.kind_label.clone(),
+            }
+        })
+        .filter(|row| {
             search.as_ref().is_none_or(|needle| {
-                book.id.to_string().to_lowercase().contains(needle)
-                    || book.entity_id.to_string().to_lowercase().contains(needle)
-                    || format!("{:?}", book.kind).to_lowercase().contains(needle)
-                    || book
-                        .kind_label
-                        .as_deref()
-                        .is_some_and(|label| label.to_lowercase().contains(needle))
+                let signatories = row
+                    .book
+                    .required_signatory_records_abertura
+                    .iter()
+                    .chain(row.book.required_signatory_records_encerramento.iter())
+                    .flatten()
+                    .flat_map(|record| {
+                        [
+                            record.name.clone(),
+                            record
+                                .capacity
+                                .as_ref()
+                                .map(|capacity| format!("{capacity:?}"))
+                                .unwrap_or_default(),
+                            record.email.clone().unwrap_or_default(),
+                        ]
+                    })
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .chain(
+                        row.book
+                            .required_signatories_abertura
+                            .iter()
+                            .chain(row.book.required_signatories_encerramento.iter())
+                            .flatten()
+                            .cloned(),
+                    )
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let search_text = [
+                    row.book.id.as_str(),
+                    row.book.entity_id.as_str(),
+                    row.entity_name.as_deref().unwrap_or(""),
+                    &format!("{:?}", row.book.kind),
+                    &format!("{:?}", row.book.state),
+                    book_kind_search_labels(row.book.kind),
+                    book_state_search_labels(row.book.state),
+                    row.kind_label.as_deref().unwrap_or(""),
+                    row.book.purpose.as_deref().unwrap_or(""),
+                    row.book.opening_date.as_deref().unwrap_or(""),
+                    row.book.closing_date.as_deref().unwrap_or(""),
+                    row.book.predecessor.as_deref().unwrap_or(""),
+                    &row.book.last_ata_number.to_string(),
+                    &signatories,
+                ]
+                .join(" ");
+                fold_search(&search_text).contains(needle)
             })
         })
         .collect();
     visible.sort_by(|left, right| {
         let ordering = match sort {
-            "kind" => format!("{:?}", left.kind)
-                .cmp(&format!("{:?}", right.kind))
-                .then(left.id.0.cmp(&right.id.0)),
-            "state" => format!("{:?}", left.state)
-                .cmp(&format!("{:?}", right.state))
-                .then(left.id.0.cmp(&right.id.0)),
-            _ => left.id.0.cmp(&right.id.0),
+            "kind" => format!("{:?}", left.book.kind)
+                .cmp(&format!("{:?}", right.book.kind))
+                .then(left.book.id.cmp(&right.book.id)),
+            "state" => format!("{:?}", left.book.state)
+                .cmp(&format!("{:?}", right.book.state))
+                .then(left.book.id.cmp(&right.book.id)),
+            _ => left.book.id.cmp(&right.book.id),
         };
         if descending {
             ordering.reverse()
@@ -458,14 +619,17 @@ pub async fn list_books_page(
             ordering
         }
     });
-    let views = visible
-        .into_iter()
-        .map(|book| BookView::build(book, redaction))
-        .collect();
-    Ok(Json(CollectionPage::from_sorted(
-        views,
+    apply_keyset(&mut visible, cursor.as_ref(), descending, |book| {
+        book_page_position(book, sort)
+    });
+    Ok(Json(CollectionPage::from_keyset_sorted(
+        visible,
         page_query.offset,
         limit,
+        cursor.is_some(),
+        "books",
+        &fingerprint,
+        |book| book_page_position(book, sort),
     )))
 }
 

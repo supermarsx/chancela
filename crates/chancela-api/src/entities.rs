@@ -22,10 +22,14 @@ use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{
     authorizer, require_permission, scope_of_book, scope_of_entity, scope_of_tenant,
 };
-use crate::collection_page::{CollectionPage, CollectionPageQuery};
+use crate::collection_page::{
+    CollectionPage, CollectionPageQuery, CursorPosition, apply_keyset, fold_search,
+    query_fingerprint,
+};
 use crate::dto::{
     BookStateCountsView, BookView, EntityActivitySummaryView, EntityListItemView,
-    EntityRegistrySummaryView, EntityView, LedgerEventView, read_redaction_for_actor,
+    EntityRegistrySummaryView, EntityView, LedgerEventView, compute_expired,
+    read_redaction_for_actor,
 };
 use crate::error::ApiError;
 
@@ -287,6 +291,7 @@ pub struct EntityPageQuery {
     q: Option<String>,
     #[serde(default)]
     offset: usize,
+    cursor: Option<String>,
     limit: Option<usize>,
     sort: Option<String>,
     order: Option<String>,
@@ -294,6 +299,14 @@ pub struct EntityPageQuery {
     group_id: Option<Uuid>,
     family: Option<EntityFamily>,
     kind: Option<EntityKind>,
+    nipc_validated: Option<bool>,
+    registry_import: Option<String>,
+    registry_freshness: Option<String>,
+    books: Option<String>,
+    book_kind: Option<chancela_core::BookKind>,
+    last_book: Option<String>,
+    activity: Option<String>,
+    activity_kind: Option<String>,
 }
 
 impl EntityPageQuery {
@@ -301,10 +314,38 @@ impl EntityPageQuery {
         CollectionPageQuery {
             q: self.q.clone(),
             offset: self.offset,
+            cursor: self.cursor.clone(),
             limit: self.limit,
             sort: self.sort.clone(),
             order: self.order.clone(),
         }
+    }
+}
+
+fn entity_page_position(entity: &Entity, sort: &str) -> CursorPosition {
+    let key = match sort {
+        "nipc" => entity.nipc.to_string(),
+        "id" => entity.id.to_string(),
+        "family" => format!("{:?}", entity.family),
+        "kind" => format!("{:?}", entity.kind),
+        _ => entity.name.to_lowercase(),
+    };
+    CursorPosition::new(key, entity.id.to_string())
+}
+
+fn activity_category(kind: &str) -> &'static str {
+    if kind == "registry.imported" {
+        "registry"
+    } else if kind.starts_with("entity.") {
+        "entity"
+    } else if kind.starts_with("book.") {
+        "book"
+    } else if kind.starts_with("act.") || kind.starts_with("convening.") {
+        "act"
+    } else if kind.starts_with("document.") || kind.starts_with("signature.") {
+        "document"
+    } else {
+        "other"
     }
 }
 
@@ -325,6 +366,103 @@ pub async fn list_entities_page(
     }
     let search = page_query.normalized_search();
     let limit = page_query.limit();
+    if !matches!(
+        query.registry_import.as_deref(),
+        None | Some("imported" | "not-imported")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown registry_import filter".to_owned(),
+        ));
+    }
+    if !matches!(
+        query.registry_freshness.as_deref(),
+        None | Some("fresh" | "expired" | "no-expiry")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown registry_freshness filter".to_owned(),
+        ));
+    }
+    if !matches!(
+        query.books.as_deref(),
+        None | Some("open" | "created" | "closed" | "no-open" | "none")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown entity books filter".to_owned(),
+        ));
+    }
+    if !matches!(
+        query.last_book.as_deref(),
+        None | Some("Open" | "Created" | "Closed" | "none")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown last_book filter".to_owned(),
+        ));
+    }
+    if !matches!(
+        query.activity.as_deref(),
+        None | Some("registry" | "entity" | "book" | "act" | "document" | "none")
+    ) {
+        return Err(ApiError::Unprocessable(
+            "unknown entity activity filter".to_owned(),
+        ));
+    }
+    let fingerprint = query_fingerprint([
+        ("q", search.clone().unwrap_or_default()),
+        ("sort", sort.to_owned()),
+        ("order", if descending { "desc" } else { "asc" }.to_owned()),
+        (
+            "tenant_id",
+            query.tenant_id.map(|id| id.to_string()).unwrap_or_default(),
+        ),
+        (
+            "group_id",
+            query.group_id.map(|id| id.to_string()).unwrap_or_default(),
+        ),
+        (
+            "family",
+            query
+                .family
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_default(),
+        ),
+        (
+            "kind",
+            query
+                .kind
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_default(),
+        ),
+        (
+            "nipc_validated",
+            query
+                .nipc_validated
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+        ),
+        (
+            "registry_import",
+            query.registry_import.clone().unwrap_or_default(),
+        ),
+        (
+            "registry_freshness",
+            query.registry_freshness.clone().unwrap_or_default(),
+        ),
+        ("books", query.books.clone().unwrap_or_default()),
+        (
+            "book_kind",
+            query
+                .book_kind
+                .map(|value| format!("{value:?}"))
+                .unwrap_or_default(),
+        ),
+        ("last_book", query.last_book.clone().unwrap_or_default()),
+        ("activity", query.activity.clone().unwrap_or_default()),
+        (
+            "activity_kind",
+            query.activity_kind.clone().unwrap_or_default(),
+        ),
+    ]);
+    let cursor = page_query.cursor("entities", &fingerprint)?;
 
     let entities = state.entities.read().await;
     let mut visible: Vec<_> = entities
@@ -343,13 +481,135 @@ pub async fn list_entities_page(
         .filter(|entity| query.family.is_none_or(|family| entity.family == family))
         .filter(|entity| query.kind.is_none_or(|kind| entity.kind == kind))
         .filter(|entity| {
-            search.as_ref().is_none_or(|needle| {
-                entity.name.to_lowercase().contains(needle)
-                    || entity.nipc.to_string().to_lowercase().contains(needle)
-                    || entity.seat.to_lowercase().contains(needle)
-            })
+            query
+                .nipc_validated
+                .is_none_or(|validated| entity.nipc.is_validated() == validated)
         })
         .collect();
+
+    let visible_ids: HashSet<_> = visible.iter().map(|entity| entity.id).collect();
+    let books = state.books.read().await;
+    let readable_books: Vec<_> = books
+        .values()
+        .filter(|book| visible_ids.contains(&book.entity_id))
+        .filter(|book| authz.permits(Permission::BookRead, scope_of_book(book.id)))
+        .collect();
+    let mut books_by_entity: HashMap<EntityId, Vec<&Book>> = HashMap::new();
+    for book in &readable_books {
+        books_by_entity
+            .entry(book.entity_id)
+            .or_default()
+            .push(*book);
+    }
+    let registry_extracts = state.registry_extracts.read().await;
+    let cae = state.cae.read().await;
+    let today = time::OffsetDateTime::now_utc().date();
+    let ledger = if authz.permits(Permission::LedgerRead, Scope::Global) {
+        Some(state.ledger.read().await)
+    } else {
+        None
+    };
+    let events = ledger.as_ref().map(|ledger| ledger.events());
+    let mut book_entity_ids = HashMap::new();
+    for book in &readable_books {
+        book_entity_ids.insert(book.id, book.entity_id);
+    }
+    let mut last_activity: HashMap<EntityId, &Event> = HashMap::new();
+    if let Some(events) = events {
+        for event in events.iter().rev() {
+            for entity_id in collect_event_entity_ids(event, &visible_ids, &book_entity_ids) {
+                last_activity.entry(entity_id).or_insert(event);
+            }
+            if last_activity.len() == visible_ids.len() {
+                break;
+            }
+        }
+    }
+    visible.retain(|entity| {
+        let entity_books = books_by_entity
+            .get(&entity.id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let last_book = entity_books
+            .iter()
+            .copied()
+            .max_by(|left, right| compare_last_book(left, right));
+        let extract = registry_extracts.get(&entity.id);
+        let activity = last_activity.get(&entity.id).copied();
+        let state_count = |state| {
+            entity_books
+                .iter()
+                .filter(|book| book.state == state)
+                .count()
+        };
+        let registry_matches = match query.registry_import.as_deref() {
+            Some("imported") => extract.is_some(),
+            Some("not-imported") => extract.is_none(),
+            _ => true,
+        };
+        let freshness_matches = match query.registry_freshness.as_deref() {
+            Some("fresh") => extract.is_some_and(|extract| {
+                compute_expired(extract.provenance.valid_until.as_deref(), today) == Some(false)
+            }),
+            Some("expired") => extract.is_some_and(|extract| {
+                compute_expired(extract.provenance.valid_until.as_deref(), today) == Some(true)
+            }),
+            Some("no-expiry") => extract.is_none_or(|extract| {
+                compute_expired(extract.provenance.valid_until.as_deref(), today).is_none()
+            }),
+            _ => true,
+        };
+        let books_match = match query.books.as_deref() {
+            Some("open") => state_count(BookState::Open) > 0,
+            Some("created") => state_count(BookState::Created) > 0,
+            Some("closed") => state_count(BookState::Closed) > 0,
+            Some("no-open") => state_count(BookState::Open) == 0,
+            Some("none") => entity_books.is_empty(),
+            _ => true,
+        };
+        let kind_matches = query
+            .book_kind
+            .is_none_or(|kind| entity_books.iter().any(|book| book.kind == kind));
+        let last_book_matches = match query.last_book.as_deref() {
+            Some("Open") => last_book.is_some_and(|book| book.state == BookState::Open),
+            Some("Created") => last_book.is_some_and(|book| book.state == BookState::Created),
+            Some("Closed") => last_book.is_some_and(|book| book.state == BookState::Closed),
+            Some("none") => last_book.is_none(),
+            _ => true,
+        };
+        let activity_matches = match query.activity.as_deref() {
+            Some("none") => activity.is_none(),
+            Some(category) => {
+                activity.is_some_and(|event| activity_category(&event.kind) == category)
+            }
+            None => true,
+        };
+        let activity_kind_matches = match query.activity_kind.as_deref() {
+            Some("none") => activity.is_none(),
+            Some(kind) => activity.is_some_and(|event| event.kind == kind),
+            None => true,
+        };
+        let search_matches = search.as_ref().is_none_or(|needle| {
+            let entity_view = EntityView::build(entity, redaction);
+            let book_views: Vec<_> = entity_books
+                .iter()
+                .map(|book| BookView::build(book, redaction))
+                .collect();
+            let registry_view =
+                extract.map(|extract| EntityRegistrySummaryView::build(extract, &cae, today));
+            let activity_view = activity.map(LedgerEventView::from);
+            serde_json::to_string(&(entity_view, book_views, registry_view, activity_view))
+                .is_ok_and(|text| fold_search(&text).contains(needle))
+        });
+        registry_matches
+            && freshness_matches
+            && books_match
+            && kind_matches
+            && last_book_matches
+            && activity_matches
+            && activity_kind_matches
+            && search_matches
+    });
     visible.sort_by(|left, right| {
         let ordering = match sort {
             "nipc" => left
@@ -377,25 +637,27 @@ pub async fn list_entities_page(
         }
     });
 
-    let page = CollectionPage::from_sorted(visible, page_query.offset, limit);
+    apply_keyset(&mut visible, cursor.as_ref(), descending, |entity| {
+        entity_page_position(entity, sort)
+    });
+    let page = CollectionPage::from_keyset_sorted(
+        visible,
+        page_query.offset,
+        limit,
+        cursor.is_some(),
+        "entities",
+        &fingerprint,
+        |entity| entity_page_position(entity, sort),
+    );
     let page_ids: HashSet<_> = page.items.iter().map(|entity| entity.id).collect();
-    let books = state.books.read().await;
-    let readable_books: Vec<_> = books
-        .values()
-        .filter(|book| page_ids.contains(&book.entity_id))
-        .filter(|book| authz.permits(Permission::BookRead, scope_of_book(book.id)))
-        .collect();
-    let registry_extracts = state.registry_extracts.read().await;
-    let cae = state.cae.read().await;
-    let today = time::OffsetDateTime::now_utc().date();
-    let ledger = if authz.permits(Permission::LedgerRead, Scope::Global) {
-        Some(state.ledger.read().await)
-    } else {
-        None
-    };
-    let events = ledger.as_ref().map(|ledger| ledger.events());
-    let mut summaries =
-        entity_activity_summaries(&page_ids, readable_books.iter().copied(), events);
+    let mut summaries = entity_activity_summaries(
+        &page_ids,
+        readable_books
+            .iter()
+            .copied()
+            .filter(|book| page_ids.contains(&book.entity_id)),
+        events,
+    );
 
     Ok(Json(page.map(|entity| {
         EntityListItemView {
@@ -755,6 +1017,34 @@ mod tests {
         assert!(
             books_list.contains("authz.permits(Permission::BookRead, scope_of_book("),
             "list_books lost its per-row book.read tenant filter — cross-tenant leak risk"
+        );
+
+        let entities_page = ENTITIES_SRC
+            .split_once("pub async fn list_entities_page")
+            .expect("list_entities_page exists")
+            .1;
+        let entities_page = &entities_page[..entities_page
+            .find("\npub async fn ")
+            .unwrap_or(entities_page.len())];
+        assert!(
+            entities_page.contains("authz.permits(Permission::EntityRead, scope_of_entity("),
+            "list_entities_page lost its per-row entity.read tenant filter"
+        );
+        assert!(
+            entities_page.contains("authz.permits(Permission::BookRead, scope_of_book("),
+            "list_entities_page lost its per-row book.read tenant filter"
+        );
+
+        let books_page = BOOKS_SRC
+            .split_once("pub async fn list_books_page")
+            .expect("list_books_page exists")
+            .1;
+        let books_page = &books_page[..books_page
+            .find("\npub async fn ")
+            .unwrap_or(books_page.len())];
+        assert!(
+            books_page.contains("authz.permits(Permission::BookRead, scope_of_book("),
+            "list_books_page lost its per-row book.read tenant filter"
         );
     }
 
