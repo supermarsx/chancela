@@ -10,13 +10,13 @@
 import { useMemo, type ReactNode } from 'react';
 import type { TemplateSpec } from '../../api/types';
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
-import { InlineWarning } from '../../ui';
 import {
   TemplateBlocksEditor,
   parseTemplateBlocksText,
   type NarrativeBodyPlacement,
 } from './TemplateBlocksEditor';
 import { TemplateBodyEditor, TemplateBodyPreview, placesNarrativeBody } from './TemplateBodyEditor';
+import { TemplatePreviewNotice } from './TemplatePreviewNotice';
 
 export function TemplateDocumentEditor({
   spec,
@@ -83,7 +83,11 @@ export function TemplateDocumentEditor({
     <section className="stack template-document-editor">
       <header className="stack--tight">
         <h3 className="panel__title">{bt('templates.editor.document.title')}</h3>
-        <p className="field__hint">{bt('templates.editor.document.hint')}</p>
+        <TemplatePreviewNotice
+          label={bt('templates.editor.preview.notice.structural')}
+          details={bt('templates.editor.document.hint')}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
       </header>
 
       <div className="template-document-editor__canvas">
@@ -115,9 +119,13 @@ export function TemplateDocumentEditor({
             idPrefix={`${idPrefix}-preview`}
           />
         ) : (
-          <InlineWarning tone="warn" title={bt('templates.editor.blocks.raw.invalidJson')}>
-            <p>{bt('templates.editor.preview.pausedInvalidBlocks')}</p>
-          </InlineWarning>
+          <TemplatePreviewNotice
+            tone="warn"
+            role="alert"
+            label={bt('templates.editor.blocks.raw.invalidJson')}
+            details={bt('templates.editor.preview.pausedInvalidBlocks')}
+            detailsLabel={bt('templates.editor.preview.notice.details')}
+          />
         )}
       </div>
     </section>

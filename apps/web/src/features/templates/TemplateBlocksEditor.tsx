@@ -53,11 +53,11 @@ interface PendingKindChange {
   toKind: BlockKind;
 }
 
-type ReorderAction = 'up' | 'down';
+type BlockFocusTarget = 'up' | 'down' | 'insert' | 'duplicate' | 'kind';
 
-interface PendingReorderFocus {
+interface PendingBlockFocus {
   index: number;
-  preferredAction: ReorderAction;
+  preferredAction: BlockFocusTarget;
   expectedValue: string;
 }
 
@@ -484,6 +484,302 @@ function BlockFields({
   }
 }
 
+function DocumentBlockInspector({
+  block,
+  index,
+  idPrefix,
+  kindOptions,
+  onKindChange,
+  children,
+}: {
+  block: TemplateBlockSpec;
+  index: number;
+  idPrefix: string;
+  kindOptions: readonly { value: string; label: string }[];
+  onKindChange: (kind: BlockKind) => void;
+  children?: ReactNode;
+}) {
+  const bt = useTemplatesEditorT();
+  return (
+    <details className="template-document-block__inspector">
+      <summary>{bt('templates.editor.blocks.inspector')}</summary>
+      <div className="form template-document-block__inspector-fields">
+        <Field label={bt('templates.editor.blocks.kind')} htmlFor={`${idPrefix}-${index}-kind`}>
+          <Select
+            id={`${idPrefix}-${index}-kind`}
+            value={block.kind}
+            options={kindOptions}
+            data-template-block-action="kind"
+            onChange={(event) => onKindChange(event.target.value as BlockKind)}
+          />
+        </Field>
+        {children}
+      </div>
+    </details>
+  );
+}
+
+/**
+ * Document mode keeps prose-like values on the paper and moves implementation details into one
+ * compact disclosure. This is still the exact BlockSpec — no preview-only shadow model exists.
+ */
+function DocumentBlockFields({
+  block,
+  index,
+  idPrefix,
+  kindOptions,
+  onChange,
+  onKindChange,
+}: {
+  block: TemplateBlockSpec;
+  index: number;
+  idPrefix: string;
+  kindOptions: readonly { value: string; label: string }[];
+  onChange: (next: TemplateBlockSpec) => void;
+  onKindChange: (kind: BlockKind) => void;
+}) {
+  const bt = useTemplatesEditorT();
+  const prefix = `template-document-block-${index}`;
+  const inspector = (children?: ReactNode) => (
+    <DocumentBlockInspector
+      block={block}
+      index={index}
+      idPrefix={idPrefix}
+      kindOptions={kindOptions}
+      onKindChange={onKindChange}
+    >
+      {children}
+    </DocumentBlockInspector>
+  );
+
+  switch (block.kind) {
+    case 'Heading':
+      return (
+        <>
+          <TextArea
+            id={`${prefix}-template`}
+            className="template-document-block__direct-text template-document-block__direct-text--heading"
+            aria-label={bt('templates.editor.blocks.field.template')}
+            rows={2}
+            value={block.template}
+            onChange={(event) => onChange({ ...block, template: event.target.value })}
+          />
+          {inspector(
+            <Field label={bt('templates.editor.blocks.field.level')} htmlFor={`${prefix}-level`}>
+              <Select
+                id={`${prefix}-level`}
+                value={String(block.level)}
+                options={[1, 2, 3, 4, 5, 6].map((level) => ({
+                  value: String(level),
+                  label: String(level),
+                }))}
+                onChange={(event) => onChange({ ...block, level: Number(event.target.value) })}
+              />
+            </Field>,
+          )}
+        </>
+      );
+
+    case 'Paragraph':
+      return (
+        <>
+          <TextArea
+            id={`${prefix}-template`}
+            className="template-document-block__direct-text"
+            aria-label={bt('templates.editor.blocks.field.template')}
+            rows={3}
+            value={block.template}
+            onChange={(event) => onChange({ ...block, template: event.target.value })}
+          />
+          {inspector(
+            <Field label={bt('templates.editor.blocks.field.items')} htmlFor={`${prefix}-items`}>
+              <Input
+                id={`${prefix}-items`}
+                className="control mono"
+                value={block.items ?? ''}
+                onChange={(event) =>
+                  onChange(withoutBlankOptional(block, 'items', event.target.value))
+                }
+              />
+            </Field>,
+          )}
+        </>
+      );
+
+    case 'KeyValue':
+      return (
+        <>
+          <div className="template-document-block__kv-table">
+            {block.rows.map((row, rowIndex) => (
+              <div
+                key={rowIndex}
+                className="template-block-editor__kv-row"
+                role="group"
+                aria-label={`${bt('templates.editor.blocks.field.rows')} ${rowIndex + 1}`}
+              >
+                <Input
+                  aria-label={`${bt('templates.editor.blocks.field.key')} ${rowIndex + 1}`}
+                  placeholder={bt('templates.editor.blocks.field.key')}
+                  value={row.key}
+                  onChange={(event) =>
+                    onChange({
+                      ...block,
+                      rows: block.rows.map((current, currentIndex) =>
+                        currentIndex === rowIndex
+                          ? { ...current, key: event.target.value }
+                          : current,
+                      ),
+                    })
+                  }
+                />
+                <Input
+                  aria-label={`${bt('templates.editor.blocks.field.value')} ${rowIndex + 1}`}
+                  placeholder={bt('templates.editor.blocks.field.value')}
+                  value={row.value}
+                  onChange={(event) =>
+                    onChange({
+                      ...block,
+                      rows: block.rows.map((current, currentIndex) =>
+                        currentIndex === rowIndex
+                          ? { ...current, value: event.target.value }
+                          : current,
+                      ),
+                    })
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  icon={<Icon.Trash />}
+                  aria-label={`${bt('templates.editor.blocks.removeRow')} ${rowIndex + 1}`}
+                  onClick={() =>
+                    onChange({
+                      ...block,
+                      rows: block.rows.filter((_, currentIndex) => currentIndex !== rowIndex),
+                    })
+                  }
+                />
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="ghost"
+              icon={<Icon.Plus />}
+              onClick={() => onChange({ ...block, rows: [...block.rows, { key: '', value: '' }] })}
+            >
+              {bt('templates.editor.blocks.addRow')}
+            </Button>
+          </div>
+          {inspector(
+            <Field label={bt('templates.editor.blocks.field.items')} htmlFor={`${prefix}-items`}>
+              <Input
+                id={`${prefix}-items`}
+                className="control mono"
+                value={block.items ?? ''}
+                onChange={(event) =>
+                  onChange(withoutBlankOptional(block, 'items', event.target.value))
+                }
+              />
+            </Field>,
+          )}
+        </>
+      );
+
+    case 'VoteTable':
+      return (
+        <>
+          <Field label={bt('templates.editor.blocks.field.label')} htmlFor={`${prefix}-label`}>
+            <Input
+              id={`${prefix}-label`}
+              className="template-document-block__direct-input"
+              value={block.label}
+              onChange={(event) => onChange({ ...block, label: event.target.value })}
+            />
+          </Field>
+          {inspector(
+            <>
+              <Field label={bt('templates.editor.blocks.field.items')} htmlFor={`${prefix}-items`}>
+                <Input
+                  id={`${prefix}-items`}
+                  className="control mono"
+                  value={block.items}
+                  onChange={(event) => onChange({ ...block, items: event.target.value })}
+                />
+              </Field>
+              <Field
+                label={bt('templates.editor.blocks.field.voteField')}
+                htmlFor={`${prefix}-vote-field`}
+              >
+                <Input
+                  id={`${prefix}-vote-field`}
+                  className="control mono"
+                  value={block.vote_field ?? ''}
+                  onChange={(event) =>
+                    onChange(withoutBlankOptional(block, 'vote_field', event.target.value))
+                  }
+                />
+              </Field>
+              <Field
+                label={bt('templates.editor.blocks.field.unanimousTotal')}
+                htmlFor={`${prefix}-unanimous-total`}
+              >
+                <Input
+                  id={`${prefix}-unanimous-total`}
+                  value={block.unanimous_total ?? ''}
+                  onChange={(event) =>
+                    onChange(withoutBlankOptional(block, 'unanimous_total', event.target.value))
+                  }
+                />
+              </Field>
+            </>,
+          )}
+        </>
+      );
+
+    case 'SignatureBlock':
+      return (
+        <>
+          <div className="template-document-block__signature-lines">
+            <Field label={bt('templates.editor.blocks.field.role')} htmlFor={`${prefix}-role`}>
+              <Input
+                id={`${prefix}-role`}
+                value={block.role}
+                onChange={(event) => onChange({ ...block, role: event.target.value })}
+              />
+            </Field>
+            <Field label={bt('templates.editor.blocks.field.name')} htmlFor={`${prefix}-name`}>
+              <Input
+                id={`${prefix}-name`}
+                value={block.name}
+                onChange={(event) => onChange({ ...block, name: event.target.value })}
+              />
+            </Field>
+          </div>
+          {inspector(
+            <Field label={bt('templates.editor.blocks.field.source')} htmlFor={`${prefix}-source`}>
+              <Input
+                id={`${prefix}-source`}
+                className="control mono"
+                value={block.source}
+                onChange={(event) => onChange({ ...block, source: event.target.value })}
+              />
+            </Field>,
+          )}
+        </>
+      );
+
+    case 'PageBreak':
+    case 'Rule':
+    case 'NarrativeBody':
+      return (
+        <>
+          <MarkerExplanation kind={block.kind} />
+          {inspector()}
+        </>
+      );
+  }
+}
+
 export function TemplateBlocksEditor({
   value,
   onChange,
@@ -510,7 +806,7 @@ export function TemplateBlocksEditor({
   const [openBlocks, setOpenBlocks] = useState<Record<number, boolean>>({ 0: true });
   const [pendingKindChange, setPendingKindChange] = useState<PendingKindChange | null>(null);
   const [pendingRemove, setPendingRemove] = useState<number | null>(null);
-  const [pendingReorderFocus, setPendingReorderFocus] = useState<PendingReorderFocus | null>(null);
+  const [pendingBlockFocus, setPendingBlockFocus] = useState<PendingBlockFocus | null>(null);
   const editorRef = useRef<HTMLElement>(null);
   const parsed = useMemo(() => parseTemplateBlocksText(value), [value]);
   const blocks = parsed.blocks;
@@ -526,35 +822,48 @@ export function TemplateBlocksEditor({
     write(blocks.map((current, currentIndex) => (currentIndex === index ? block : current)));
   };
   useLayoutEffect(() => {
-    if (!pendingReorderFocus) return;
+    if (!pendingBlockFocus) return;
     if (disabled) {
-      setPendingReorderFocus(null);
+      setPendingBlockFocus(null);
       return;
     }
-    if (value !== pendingReorderFocus.expectedValue) return;
+    if (value !== pendingBlockFocus.expectedValue) return;
 
     const movedBlock = editorRef.current?.querySelector<HTMLElement>(
-      `[data-template-block-index="${pendingReorderFocus.index}"]`,
+      `[data-template-block-index="${pendingBlockFocus.index}"]`,
     );
-    const oppositeAction: ReorderAction =
-      pendingReorderFocus.preferredAction === 'up' ? 'down' : 'up';
     const preferred = movedBlock?.querySelector<HTMLButtonElement>(
-      `[data-template-block-action="${pendingReorderFocus.preferredAction}"]:not(:disabled)`,
+      `[data-template-block-action="${pendingBlockFocus.preferredAction}"]:not(:disabled)`,
     );
-    const fallback = movedBlock?.querySelector<HTMLButtonElement>(
-      `[data-template-block-action="${oppositeAction}"]:not(:disabled)`,
-    );
+    const oppositeAction =
+      pendingBlockFocus.preferredAction === 'up'
+        ? 'down'
+        : pendingBlockFocus.preferredAction === 'down'
+          ? 'up'
+          : null;
+    const fallback = oppositeAction
+      ? movedBlock?.querySelector<HTMLButtonElement>(
+          `[data-template-block-action="${oppositeAction}"]:not(:disabled)`,
+        )
+      : null;
     const kindSelect = movedBlock?.querySelector<HTMLSelectElement>('select:not(:disabled)');
     (preferred ?? fallback ?? kindSelect)?.focus();
-    setPendingReorderFocus(null);
-  }, [disabled, pendingReorderFocus, value]);
+    setPendingBlockFocus(null);
+  }, [disabled, pendingBlockFocus, value]);
 
-  const swap = (index: number, target: number, preferredAction: ReorderAction) => {
+  const writeWithFocus = (
+    next: TemplateBlockSpec[],
+    index: number,
+    preferredAction: BlockFocusTarget,
+  ) => {
+    const expectedValue = JSON.stringify(next, null, 2);
+    setPendingBlockFocus({ index, preferredAction, expectedValue });
+    onChange(expectedValue);
+  };
+  const swap = (index: number, target: number, preferredAction: BlockFocusTarget) => {
     if (!blocks || target < 0 || target >= blocks.length) return;
     const next = blocks.slice();
     [next[index], next[target]] = [next[target], next[index]];
-    const expectedValue = JSON.stringify(next, null, 2);
-    setPendingReorderFocus({ index: target, preferredAction, expectedValue });
     if (presentation === 'cards') {
       setOpenBlocks((current) => ({
         ...current,
@@ -562,7 +871,22 @@ export function TemplateBlocksEditor({
         [target]: current[index] ?? false,
       }));
     }
-    onChange(expectedValue);
+    writeWithFocus(next, target, preferredAction);
+  };
+  const insertAfter = (index: number) => {
+    if (!blocks) return;
+    const next = blocks.slice();
+    // Inline insertion is intentionally predictable: prose is the common connective tissue in a
+    // document. The append control below remains the place to choose any specialised block kind.
+    next.splice(index + 1, 0, newTemplateBlock('Paragraph'));
+    writeWithFocus(next, index + 1, 'insert');
+  };
+  const duplicate = (index: number) => {
+    if (!blocks) return;
+    const duplicateBlock = JSON.parse(JSON.stringify(blocks[index])) as TemplateBlockSpec;
+    const next = blocks.slice();
+    next.splice(index + 1, 0, duplicateBlock);
+    writeWithFocus(next, index + 1, 'duplicate');
   };
   const changeKind = (index: number, block: TemplateBlockSpec, toKind: BlockKind) => {
     if (block.kind === toKind) return;
@@ -585,16 +909,20 @@ export function TemplateBlocksEditor({
       )}`}
     >
       <div className="template-document-block__gutter">
-        <strong>{bt('templates.editor.blocks.item', { number: index + 1 })}</strong>
-        <Field label={bt('templates.editor.blocks.kind')} htmlFor={`${idPrefix}-${index}-kind`}>
-          <Select
-            id={`${idPrefix}-${index}-kind`}
-            value={block.kind}
-            options={kindOptions}
-            onChange={(event) => changeKind(index, block, event.target.value as BlockKind)}
-          />
-        </Field>
+        <span className="template-document-block__number" aria-hidden="true">
+          {String(index + 1).padStart(2, '0')}
+        </span>
+        <span className="sr-only">{bt('templates.editor.blocks.item', { number: index + 1 })}</span>
+        <strong className="template-document-block__kind">{bt(kindCopyKey[block.kind])}</strong>
         <div className="template-block-editor__actions">
+          <Button
+            type="button"
+            variant="ghost"
+            icon={<Icon.Plus />}
+            data-template-block-action="insert"
+            aria-label={`${bt('templates.editor.blocks.insertAfter')} ${index + 1}`}
+            onClick={() => insertAfter(index)}
+          />
           <Button
             type="button"
             variant="ghost"
@@ -616,6 +944,14 @@ export function TemplateBlocksEditor({
           <Button
             type="button"
             variant="ghost"
+            icon={<Icon.Copy />}
+            data-template-block-action="duplicate"
+            aria-label={`${bt('templates.editor.blocks.duplicate')} ${index + 1}`}
+            onClick={() => duplicate(index)}
+          />
+          <Button
+            type="button"
+            variant="ghost"
             icon={<Icon.Trash />}
             disabled={blockCount === 1}
             aria-label={`${bt('templates.editor.blocks.remove')} ${index + 1}`}
@@ -625,15 +961,29 @@ export function TemplateBlocksEditor({
       </div>
       <div className="template-document-block__content">
         {block.kind === 'NarrativeBody' && renderNarrativeBody ? (
-          renderNarrativeBody({
-            index,
-            occurrence: narrativeBodyIndexes.indexOf(index) + 1,
-            primary: index === narrativeBodyIndex,
-          })
+          <>
+            <DocumentBlockInspector
+              block={block}
+              index={index}
+              idPrefix={idPrefix}
+              kindOptions={kindOptions}
+              onKindChange={(kind) => changeKind(index, block, kind)}
+            />
+            {renderNarrativeBody({
+              index,
+              occurrence: narrativeBodyIndexes.indexOf(index) + 1,
+              primary: index === narrativeBodyIndex,
+            })}
+          </>
         ) : (
-          <div className="form template-document-block__fields">
-            <BlockFields block={block} index={index} onChange={(next) => update(index, next)} />
-          </div>
+          <DocumentBlockFields
+            block={block}
+            index={index}
+            idPrefix={idPrefix}
+            kindOptions={kindOptions}
+            onChange={(next) => update(index, next)}
+            onKindChange={(kind) => changeKind(index, block, kind)}
+          />
         )}
       </div>
     </div>
@@ -722,6 +1072,14 @@ export function TemplateBlocksEditor({
                         <Button
                           type="button"
                           variant="ghost"
+                          icon={<Icon.Plus />}
+                          data-template-block-action="insert"
+                          aria-label={`${bt('templates.editor.blocks.insertAfter')} ${index + 1}`}
+                          onClick={() => insertAfter(index)}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
                           icon={<Icon.ArrowUp />}
                           disabled={index === 0}
                           data-template-block-action="up"
@@ -736,6 +1094,14 @@ export function TemplateBlocksEditor({
                           data-template-block-action="down"
                           aria-label={`${bt('templates.editor.blocks.moveDown')} ${index + 1}`}
                           onClick={() => swap(index, index + 1, 'down')}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          icon={<Icon.Copy />}
+                          data-template-block-action="duplicate"
+                          aria-label={`${bt('templates.editor.blocks.duplicate')} ${index + 1}`}
+                          onClick={() => duplicate(index)}
                         />
                         <Button
                           type="button"

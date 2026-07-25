@@ -85,6 +85,8 @@ describe('TemplatePdfPreview', () => {
       name: /Página 1 de 3 da pré-visualização PDF\/A estrutural/,
     });
     expect(canvas).toBeTruthy();
+    expect(screen.getAllByText('Pré-visualização PDF/A estrutural')).toHaveLength(1);
+    expect(screen.getByText('Pré-visualização estrutural, com campos por resolver')).toBeTruthy();
     const open = await screen.findByRole('link', { name: 'Abrir PDF' });
     const download = screen.getByRole('link', { name: 'Descarregar PDF' });
     expect(open.getAttribute('href')).toBe('blob:template-proof-1');
@@ -152,7 +154,10 @@ describe('TemplatePdfPreview', () => {
       </Wrapper>,
     );
 
-    expect((await screen.findByRole('alert')).textContent).toContain('preview unavailable');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('preview unavailable');
+    expect(alert.classList.contains('template-preview-notice')).toBe(true);
+    expect((alert.querySelector('details') as HTMLDetailsElement).open).toBe(false);
     expect(screen.getByRole('img')).toBeTruthy();
     expect(screen.getByRole('status').textContent).toContain('última pré-visualização válida');
 

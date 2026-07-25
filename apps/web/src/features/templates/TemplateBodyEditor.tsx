@@ -24,6 +24,7 @@ import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import { Button, Icon, InlineWarning } from '../../ui';
 import { TemplateMarkdownPreview } from './TemplateMarkdownPreview';
 import { TemplatePdfPreview } from './TemplatePdfPreview';
+import { TemplatePreviewNotice } from './TemplatePreviewNotice';
 
 /** The narrative-body byte ceiling — the server's cap for a template body seed (mirrors the ata). */
 export const MAX_TEMPLATE_BODY_BYTES = 64 * 1024;
@@ -207,7 +208,11 @@ export function TemplateBodyPreview({
           <h3 className="panel__title" id={`${previewId}-title`}>
             {bt('templates.editor.preview.title')}
           </h3>
-          <p className="field__hint">{bt('templates.editor.preview.hint')}</p>
+          <TemplatePreviewNotice
+            label={bt('templates.editor.preview.notice.structural')}
+            details={bt('templates.editor.preview.hint')}
+            detailsLabel={bt('templates.editor.preview.notice.details')}
+          />
         </div>
         <div
           className="template-preview__tabs"

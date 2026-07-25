@@ -17,9 +17,11 @@ import type {
 } from '../../api/types';
 import { useTemplateDocumentPdfPreview } from '../../api/hooks';
 import { useTemplatesPdfPreviewT } from '../../i18n/templatesPdfPreviewFallback';
-import { Button, Icon, InlineWarning, Skeleton, SkeletonRegion } from '../../ui';
+import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
+import { Button, Icon, Skeleton, SkeletonRegion } from '../../ui';
 import { usePdfPage } from '../signing/seal-designer/usePdfPage';
 import './templatePdfPreview.css';
+import { TemplatePreviewNotice } from './TemplatePreviewNotice';
 
 type PreviewPhase = 'idle' | 'loading' | 'updating' | 'ready' | 'error';
 
@@ -57,6 +59,7 @@ export function TemplatePdfPreview({
   idPrefix = 'template-pdf-preview',
 }: TemplatePdfPreviewProps) {
   const pt = useTemplatesPdfPreviewT();
+  const bt = useTemplatesEditorT();
   const requestPdf = useTemplateDocumentPdfPreview();
   const mutateAsync = requestPdf.mutateAsync;
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -163,31 +166,49 @@ export function TemplatePdfPreview({
         <p className="card__label" id={`${idPrefix}-title`}>
           {pt('templates.pdfPreview.title')}
         </p>
-        <p className="field__hint" id={canvasDescriptionId}>
+        <span className="sr-only" id={canvasDescriptionId}>
           {pt('templates.pdfPreview.description')}
-        </p>
+        </span>
+        <TemplatePreviewNotice
+          label={bt('templates.editor.preview.notice.structural')}
+          details={pt('templates.pdfPreview.description')}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
       </header>
 
-      <div className="template-pdf-preview__status" role="status" aria-live="polite">
-        {phase === 'loading'
-          ? pt('templates.pdfPreview.loading')
-          : phase === 'updating'
-            ? pt('templates.pdfPreview.updating')
-            : null}
-        {(phase === 'updating' || phase === 'error') && lastGood
-          ? ` ${pt('templates.pdfPreview.lastGood')}`
-          : null}
-      </div>
+      {phase === 'loading' || phase === 'updating' || (phase === 'error' && lastGood) ? (
+        <TemplatePreviewNotice
+          role="status"
+          live="polite"
+          label={
+            phase === 'loading'
+              ? pt('templates.pdfPreview.loading')
+              : phase === 'updating'
+                ? pt('templates.pdfPreview.updating')
+                : pt('templates.pdfPreview.lastGood')
+          }
+          details={
+            (phase === 'updating' || phase === 'error') && lastGood
+              ? pt('templates.pdfPreview.lastGood')
+              : undefined
+          }
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
+      ) : null}
 
       {requestError ? (
-        <div role="alert">
-          <InlineWarning tone="error" title={pt('templates.pdfPreview.error.title')}>
-            <p>{errorMessage(requestError)}</p>
+        <TemplatePreviewNotice
+          tone="error"
+          role="alert"
+          label={pt('templates.pdfPreview.error.title')}
+          details={errorMessage(requestError)}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+          actions={
             <Button type="button" variant="secondary" onClick={() => setRetryVersion((n) => n + 1)}>
               {pt('templates.pdfPreview.retry')}
             </Button>
-          </InlineWarning>
-        </div>
+          }
+        />
       ) : null}
 
       {!lastGood && phase === 'loading' ? (
@@ -197,7 +218,10 @@ export function TemplatePdfPreview({
       ) : null}
 
       {!lastGood && phase === 'idle' ? (
-        <p className="muted">{pt('templates.pdfPreview.empty')}</p>
+        <TemplatePreviewNotice
+          label={pt('templates.pdfPreview.empty')}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
       ) : null}
 
       {lastGood ? (
@@ -269,11 +293,13 @@ export function TemplatePdfPreview({
           </div>
 
           {pdf.status === 'error' ? (
-            <div role="alert">
-              <InlineWarning tone="error" title={pt('templates.pdfPreview.error.title')}>
-                <p>{errorMessage(pdf.error)}</p>
-              </InlineWarning>
-            </div>
+            <TemplatePreviewNotice
+              tone="error"
+              role="alert"
+              label={pt('templates.pdfPreview.error.title')}
+              details={errorMessage(pdf.error)}
+              detailsLabel={bt('templates.editor.preview.notice.details')}
+            />
           ) : null}
         </>
       ) : null}

@@ -301,7 +301,7 @@ export function TemplateEditPage() {
         }
         title={name}
         actions={
-          <ButtonLink to={backToTemplate} variant="ghost" icon={<Icon.ArrowRight />}>
+          <ButtonLink to={backToTemplate} variant="secondary" icon={<Icon.Close />}>
             {t('templates.actions.cancel')}
           </ButtonLink>
         }

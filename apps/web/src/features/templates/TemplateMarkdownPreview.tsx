@@ -15,7 +15,8 @@ import type {
   TemplateDocumentPreviewRequest,
 } from '../../api/types';
 import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
-import { Button, Icon, InlineWarning, Skeleton, SkeletonRegion } from '../../ui';
+import { Button, Icon, Skeleton, SkeletonRegion } from '../../ui';
+import { TemplatePreviewNotice } from './TemplatePreviewNotice';
 
 type PreviewPhase = 'idle' | 'loading' | 'updating' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'failed';
@@ -107,21 +108,12 @@ export function TemplateMarkdownPreview({
   return (
     <section className="stack--tight" aria-labelledby={`${idPrefix}-title`} aria-busy={isWorking}>
       <div className="template-preview__markdown-head">
-        <div>
-          <p className="field__hint" id={`${idPrefix}-title`}>
-            {bt('templates.editor.preview.markdown.note')}
-          </p>
-          <div role="status" aria-live="polite">
-            {phase === 'loading'
-              ? bt('templates.editor.preview.markdown.loading')
-              : phase === 'updating'
-                ? bt('templates.editor.preview.markdown.updating')
-                : null}
-            {(phase === 'updating' || phase === 'error') && lastGood
-              ? ` ${bt('templates.editor.preview.markdown.lastGood')}`
-              : null}
-          </div>
-        </div>
+        <TemplatePreviewNotice
+          id={`${idPrefix}-title`}
+          label={bt('templates.editor.preview.notice.markdown')}
+          details={bt('templates.editor.preview.markdown.note')}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
         {lastGood ? (
           <Button
             type="button"
@@ -140,15 +132,39 @@ export function TemplateMarkdownPreview({
         ) : null}
       </div>
 
+      {phase === 'loading' || phase === 'updating' || (phase === 'error' && lastGood) ? (
+        <TemplatePreviewNotice
+          role="status"
+          live="polite"
+          label={
+            phase === 'loading'
+              ? bt('templates.editor.preview.markdown.loading')
+              : phase === 'updating'
+                ? bt('templates.editor.preview.markdown.updating')
+                : bt('templates.editor.preview.markdown.lastGood')
+          }
+          details={
+            (phase === 'updating' || phase === 'error') && lastGood
+              ? bt('templates.editor.preview.markdown.lastGood')
+              : undefined
+          }
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
+      ) : null}
+
       {requestError ? (
-        <div role="alert">
-          <InlineWarning tone="error" title={bt('templates.editor.preview.markdown.error.title')}>
-            <p>{errorMessage(requestError)}</p>
+        <TemplatePreviewNotice
+          tone="error"
+          role="alert"
+          label={bt('templates.editor.preview.markdown.error.title')}
+          details={errorMessage(requestError)}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+          actions={
             <Button type="button" variant="secondary" onClick={() => setRetryVersion((n) => n + 1)}>
               {bt('templates.editor.preview.markdown.retry')}
             </Button>
-          </InlineWarning>
-        </div>
+          }
+        />
       ) : null}
 
       {!lastGood && phase === 'loading' ? (
@@ -158,7 +174,10 @@ export function TemplateMarkdownPreview({
       ) : null}
 
       {!lastGood && phase === 'idle' ? (
-        <p className="muted">{bt('templates.editor.preview.empty')}</p>
+        <TemplatePreviewNotice
+          label={bt('templates.editor.preview.empty')}
+          detailsLabel={bt('templates.editor.preview.notice.details')}
+        />
       ) : null}
 
       {lastGood ? (

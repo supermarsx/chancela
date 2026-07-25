@@ -121,6 +121,46 @@ describe('TemplateBlocksEditor', () => {
     expect(currentBlocks()).toEqual(ALL_BLOCKS);
   });
 
+  it('keeps document blocks compact while inserting and duplicating losslessly with focus recovery', async () => {
+    const initial: TemplateBlockSpec[] = [
+      { kind: 'Heading', level: 2, template: 'Título {{ ata_number }}' },
+      {
+        kind: 'KeyValue',
+        rows: [{ key: 'NIPC', value: '{{ entity.nipc }}' }],
+      },
+    ];
+    const { container } = renderWithProviders(
+      <Harness initial={initial} presentation="document" />,
+    );
+
+    const firstBlock = container.querySelector('[data-template-block-index="0"]');
+    expect(firstBlock?.querySelector('.template-document-block__kind')?.textContent).toBe('Título');
+    expect(firstBlock?.querySelector('.template-document-block__direct-text')).toBeTruthy();
+    const inspector = firstBlock?.querySelector(
+      '.template-document-block__inspector',
+    ) as HTMLDetailsElement;
+    expect(inspector.open).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Duplicar bloco 1' }));
+    expect(currentBlocks()).toEqual([initial[0], initial[0], initial[1]]);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Duplicar bloco 2' })),
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Inserir parágrafo depois do bloco 2' }));
+    expect(currentBlocks()).toEqual([
+      initial[0],
+      initial[0],
+      { kind: 'Paragraph', template: '' },
+      initial[1],
+    ]);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Inserir parágrafo depois do bloco 3' }),
+      ),
+    );
+  });
+
   it('renders later narrative placements as explicit read-only mirrors of the editable source', () => {
     const { container } = renderWithProviders(
       <Harness

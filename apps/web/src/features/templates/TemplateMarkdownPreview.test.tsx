@@ -119,7 +119,10 @@ describe('TemplateMarkdownPreview', () => {
       </Wrapper>,
     );
 
-    expect((await screen.findByRole('alert')).textContent).toContain('preview unavailable');
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('preview unavailable');
+    expect(alert.classList.contains('template-preview-notice')).toBe(true);
+    expect((alert.querySelector('details') as HTMLDetailsElement).open).toBe(false);
     expect(
       screen.getByLabelText('Pré-visualização Markdown estrutural completa').textContent,
     ).toContain('Documento válido');

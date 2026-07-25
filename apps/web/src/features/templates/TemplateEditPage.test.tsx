@@ -240,6 +240,19 @@ describe('TemplateEditPage', () => {
     expect(container.querySelector('.wide-page')).toBeTruthy();
   });
 
+  it('keeps the header cancel action visibly text-labelled', async () => {
+    const { fn } = stubFetch([USER_TEMPLATE]);
+    vi.stubGlobal('fetch', fn);
+
+    renderEdit(USER_TEMPLATE.id);
+
+    const cancel = await screen.findByRole('link', { name: 'Cancelar' });
+    expect(cancel.textContent?.trim()).toBe('Cancelar');
+    expect(cancel.getAttribute('href')).toBe(`/templates/${encodeURIComponent(USER_TEMPLATE.id)}`);
+    expect(cancel.classList.contains('btn--secondary')).toBe(true);
+    expect(cancel.querySelector('svg')).toBeTruthy();
+  });
+
   it('loads the body, keeps the id locked, and PUTs the edited spec', async () => {
     const { fn, calls } = stubFetch([USER_TEMPLATE]);
     vi.stubGlobal('fetch', fn);

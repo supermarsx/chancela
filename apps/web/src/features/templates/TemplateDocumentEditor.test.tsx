@@ -127,15 +127,27 @@ describe('TemplateDocumentEditor', () => {
       { kind: 'Heading' as const, level: 2 as const, template: 'Repaired heading' },
       { kind: 'NarrativeBody' as const },
     ];
-    renderWithProviders(<DocumentHarness initialBlocks={currentBlocks} />);
+    const { container } = renderWithProviders(<DocumentHarness initialBlocks={currentBlocks} />);
 
     expect(screen.getByTestId('pdf-proof').textContent).toBe(JSON.stringify(currentBlocks));
     expect(screen.getByTestId('pdf-proof').textContent).not.toBe(JSON.stringify(SPEC.blocks));
+    const semiPreviewNotice = container.querySelector(
+      '.template-document-editor > header .template-preview-notice details',
+    ) as HTMLDetailsElement;
+    expect(semiPreviewNotice.open).toBe(false);
+    expect(semiPreviewNotice.querySelector('summary')?.textContent).toContain(
+      'Pré-visualização estrutural',
+    );
 
     fireEvent.change(screen.getByLabelText('JSON avançado'), { target: { value: '{' } });
 
     expect(screen.queryByTestId('pdf-proof')).toBeNull();
     expect(screen.queryByTestId('markdown-proof')).toBeNull();
+    expect(
+      screen
+        .getAllByRole('alert')
+        .some((alert) => alert.classList.contains('template-preview-notice')),
+    ).toBe(true);
     expect(
       screen.getByText(
         'A pré-visualização PDF e Markdown fica em pausa até que o JSON avançado dos blocos seja válido.',
