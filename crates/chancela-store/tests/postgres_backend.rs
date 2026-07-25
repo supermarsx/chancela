@@ -332,6 +332,7 @@ fn runtime_reads_and_writes_roundtrip_on_postgres() {
         created_at: ts(1_770_000_000),
         pdf_bytes: b"%PDF-1.7 fake".to_vec(),
         template_spec_json: None,
+        document_layout_json: None,
     };
     store.persist(|tx| tx.upsert_document(&doc)).unwrap();
     assert_eq!(store.document_for_act(act_id).unwrap().as_ref(), Some(&doc));
@@ -745,6 +746,7 @@ fn sample_document(act_id: ActId, tag: &str) -> StoredDocument {
         created_at: ts(1_770_000_000),
         pdf_bytes: format!("%PDF-1.7 {tag}").into_bytes(),
         template_spec_json: None,
+        document_layout_json: None,
     }
 }
 

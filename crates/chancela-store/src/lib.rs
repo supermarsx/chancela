@@ -1139,6 +1139,13 @@ pub struct StoredDocument {
     /// spec body; that is a legitimate historical state and nothing backfills a fabricated one.
     /// Verification must therefore report *unbound*, not *mismatch*, for these.
     pub template_spec_json: Option<String>,
+    /// The canonical serialization of the fully-resolved document layout policy that produced
+    /// this document (schema v28).
+    ///
+    /// **`None` means "written before this existed", never "use today's defaults".** A historical
+    /// row cannot honestly be rebound to settings that may have changed after its bytes were
+    /// produced.
+    pub document_layout_json: Option<String>,
 }
 
 /// One outbound message **attempt** and how it ended (schema v25, t108).
@@ -2603,7 +2610,7 @@ impl Store {
         }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json, document_layout_json \
              FROM documents WHERE act_id = ?1 ORDER BY created_at DESC, rowid DESC LIMIT 1",
         )?;
         stmt.query_row(params![act_id.to_string()], row_to_document)
@@ -2621,7 +2628,7 @@ impl Store {
         }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json, document_layout_json \
              FROM documents WHERE act_id = ?1 ORDER BY created_at ASC, rowid ASC",
         )?;
         let rows = stmt.query_map(params![act_id.to_string()], row_to_document)?;
@@ -2640,7 +2647,7 @@ impl Store {
         }
         let guard = self.locked_conn()?;
         let mut stmt = guard.prepare(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json, document_layout_json \
              FROM documents WHERE id = ?1",
         )?;
         stmt.query_row(params![id], row_to_document)
@@ -4337,8 +4344,8 @@ impl Tx<'_> {
                 self.raw()?.execute(
                     "INSERT OR REPLACE INTO documents \
                      (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, \
-                      template_spec_json) \
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                      template_spec_json, document_layout_json) \
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                     params![
                         doc.id,
                         doc.act_id.to_string(),
@@ -4348,6 +4355,7 @@ impl Tx<'_> {
                         created_at,
                         doc.pdf_bytes,
                         doc.template_spec_json,
+                        doc.document_layout_json,
                     ],
                 )?;
             }
@@ -4358,13 +4366,14 @@ impl Tx<'_> {
                 cell.borrow_mut().execute(
                     "INSERT INTO documents \
                      (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, \
-                      template_spec_json) \
-                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+                      template_spec_json, document_layout_json) \
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
                      ON CONFLICT (id) DO UPDATE SET act_id = EXCLUDED.act_id, \
                      template_id = EXCLUDED.template_id, pdf_digest = EXCLUDED.pdf_digest, \
                      profile = EXCLUDED.profile, created_at = EXCLUDED.created_at, \
                      pdf_bytes = EXCLUDED.pdf_bytes, \
-                     template_spec_json = EXCLUDED.template_spec_json",
+                     template_spec_json = EXCLUDED.template_spec_json, \
+                     document_layout_json = EXCLUDED.document_layout_json",
                     &[
                         &doc.id,
                         &act_id,
@@ -4374,6 +4383,7 @@ impl Tx<'_> {
                         &created_at,
                         &pdf_bytes,
                         &doc.template_spec_json,
+                        &doc.document_layout_json,
                     ],
                 )?;
             }
@@ -6777,6 +6787,8 @@ fn row_to_document(
     // NULL for rows written before schema v24 — read as `None`, meaning "no spec was recorded",
     // never as an empty or fabricated body.
     let template_spec_json: Option<String> = row.get(7)?;
+    // NULL for rows written before schema v28 — never rebound to mutable current settings.
+    let document_layout_json: Option<String> = row.get(8)?;
     Ok((|| {
         Ok(StoredDocument {
             id,
@@ -6787,6 +6799,7 @@ fn row_to_document(
             created_at: parse_rfc3339(&created_at_raw)?,
             pdf_bytes,
             template_spec_json,
+            document_layout_json,
         })
     })())
 }
@@ -7858,6 +7871,11 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
     // rows legitimately have none, and nothing backfills a fabricated value.
     if !table_has_column(conn, "documents", "template_spec_json")? {
         conn.execute_batch("ALTER TABLE documents ADD COLUMN template_spec_json TEXT;")?;
+    }
+    // Layout snapshots are nullable for the same reason as template snapshots: a pre-v28 row did
+    // not record one, and migration must not manufacture a historical claim from current settings.
+    if !table_has_column(conn, "documents", "document_layout_json")? {
+        conn.execute_batch("ALTER TABLE documents ADD COLUMN document_layout_json TEXT;")?;
     }
 
     if !table_has_column(conn, "signed_documents", "timestamp_trust_report_json")? {

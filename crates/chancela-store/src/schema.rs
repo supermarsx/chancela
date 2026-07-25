@@ -165,7 +165,12 @@
 ///   `default_body`), an optional operator-friendly name, and audit attribution. The parent
 ///   `user_templates` row remains the current value; deleting it cascades to its history.
 ///   Retention is enforced transactionally by the writer, not by destructive migration.
-pub const SCHEMA_VERSION: i64 = 27;
+/// - **v28** — adds nullable `documents.document_layout_json`: the concrete, fully-resolved page
+///   and typography policy that produced the preserved PDF/A bytes. Template identity alone cannot
+///   reconstruct instance, entity, and book overrides, so new documents pin this policy beside the
+///   producing template. Historical rows remain `NULL` and are reported as unbound; no migration
+///   fabricates settings that were never recorded.
+pub const SCHEMA_VERSION: i64 = 28;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -256,6 +261,8 @@ CREATE TABLE IF NOT EXISTS registry_extracts (
 /// - `template_spec_json` — (v24) the canonical serialization of the template spec that produced
 ///   this row, so the producing template is recoverable even if the catalog is later edited.
 ///   **NULL for rows written before v24** — a legitimate historical state, never backfilled.
+/// - `document_layout_json` — (v28) the canonical concrete layout policy that produced the PDF.
+///   **NULL for rows written before v28** — a legitimate historical state, never backfilled.
 pub const CREATE_DOCUMENTS: &str = "\
 CREATE TABLE IF NOT EXISTS documents (
     id          TEXT PRIMARY KEY,
@@ -265,7 +272,8 @@ CREATE TABLE IF NOT EXISTS documents (
     profile     TEXT NOT NULL,
     created_at  TEXT NOT NULL,
     pdf_bytes   BLOB NOT NULL,
-    template_spec_json TEXT
+    template_spec_json TEXT,
+    document_layout_json TEXT
 ) STRICT;";
 
 /// Index over `documents.act_id` — feeds the by-act document retrieval (one act → its documents).

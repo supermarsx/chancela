@@ -114,6 +114,10 @@ pub(crate) const ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN: &str
 /// existed" and "written wrong".
 pub(crate) const ADD_DOCUMENTS_TEMPLATE_SPEC_COLUMN: &str =
     "ALTER TABLE documents ADD COLUMN IF NOT EXISTS template_spec_json TEXT;";
+/// v28: the concrete resolved layout beside the produced bytes. Nullable with no default so old
+/// rows remain honestly unbound instead of inheriting a value invented during migration.
+pub(crate) const ADD_DOCUMENTS_LAYOUT_COLUMN: &str =
+    "ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_layout_json TEXT;";
 
 /// wp16 P1 change-feed tail query. Kept as a named contract so tests can pin the ordering and
 /// strict `seq > after_seq` semantics the follower's fail-closed delta seam depends on.
@@ -237,6 +241,7 @@ impl PostgresBackend {
         writer.batch_execute(ADD_IMPORTED_DOCUMENTS_GUARDRAIL_ACK_COLUMN)?;
         writer.batch_execute(ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN)?;
         writer.batch_execute(ADD_DOCUMENTS_TEMPLATE_SPEC_COLUMN)?;
+        writer.batch_execute(ADD_DOCUMENTS_LAYOUT_COLUMN)?;
         Ok(())
     }
 
@@ -497,7 +502,7 @@ impl PostgresBackend {
     ) -> Result<Option<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json, document_layout_json \
              FROM documents WHERE act_id = $1 ORDER BY created_at DESC, ctid DESC LIMIT 1",
             &[&act_id.to_string()],
         )?;
@@ -510,7 +515,7 @@ impl PostgresBackend {
     ) -> Result<Vec<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let rows = client.query(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json, document_layout_json \
              FROM documents WHERE act_id = $1 ORDER BY created_at ASC, ctid ASC",
             &[&act_id.to_string()],
         )?;
@@ -520,7 +525,7 @@ impl PostgresBackend {
     pub(crate) fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
-            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json \
+            "SELECT id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json, document_layout_json \
              FROM documents WHERE id = $1",
             &[&id],
         )?;
@@ -1405,6 +1410,8 @@ pub(crate) fn row_to_document(row: &Row) -> Result<StoredDocument, StoreError> {
         pdf_bytes: row.get(6),
         // NULL for rows written before schema v24 — `None` means "no spec was recorded".
         template_spec_json: row.get(7),
+        // NULL for rows written before schema v28 — never substitute mutable current settings.
+        document_layout_json: row.get(8),
     })
 }
 
@@ -1777,6 +1784,29 @@ mod tests {
         assert!(
             ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN.contains(column),
             "additive guard must add the same column contract: {ADD_IMPORTED_DOCUMENTS_TECHNICAL_VALIDATION_REPORT_COLUMN}"
+        );
+    }
+
+    #[test]
+    fn document_layout_snapshot_is_nullable_in_fresh_and_additive_ddl() {
+        let column = "document_layout_json TEXT";
+        let fresh_pg = crate::dialect::sqlite_ddl_to_pg(crate::schema::CREATE_DOCUMENTS);
+
+        assert!(
+            fresh_pg.contains(column),
+            "fresh Postgres documents DDL must include the resolved layout snapshot: {fresh_pg}"
+        );
+        assert!(
+            ADD_DOCUMENTS_LAYOUT_COLUMN.contains("ADD COLUMN IF NOT EXISTS"),
+            "additive guard must be idempotent: {ADD_DOCUMENTS_LAYOUT_COLUMN}"
+        );
+        assert!(
+            ADD_DOCUMENTS_LAYOUT_COLUMN.contains(column),
+            "additive guard must add the same nullable column: {ADD_DOCUMENTS_LAYOUT_COLUMN}"
+        );
+        assert!(
+            !ADD_DOCUMENTS_LAYOUT_COLUMN.contains("DEFAULT"),
+            "historical rows must stay unbound: {ADD_DOCUMENTS_LAYOUT_COLUMN}"
         );
     }
 

@@ -124,6 +124,7 @@ fn sample_document(id: &str, act_id: ActId, bytes: &[u8]) -> StoredDocument {
         created_at: OffsetDateTime::from_unix_timestamp(1_770_000_000).unwrap(),
         pdf_bytes: bytes.to_vec(),
         template_spec_json: None,
+        document_layout_json: None,
     }
 }
 
@@ -1672,9 +1673,11 @@ fn schema_version_is_current() {
     // of the only real mail the product sends is queryable rather than a discarded `Result`) landed
     // as schema v25; the draft persistence for the termo de abertura/encerramento as a first-class
     // signable instrument (termo_instruments — t23, finishing t8-A's undelivered store leg) landed as
-    // schema v26; bounded user-template save history (user_template_versions) landed as schema v27.
+    // schema v26; bounded user-template save history (user_template_versions) landed as schema v27;
+    // the concrete resolved document layout snapshot (`documents.document_layout_json`) landed as
+    // schema v28.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 27);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 28);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
@@ -1762,6 +1765,15 @@ fn schema_version_is_current() {
         )
         .unwrap();
     assert_eq!(ocr_conversion_execution_artifact_unique_index, 1);
+    let document_layout_columns: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('documents') \
+             WHERE name = 'document_layout_json'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(document_layout_columns, 1);
 }
 
 #[test]
@@ -1775,7 +1787,11 @@ fn upsert_document_round_trips_bytes_and_metadata() {
     let entity = sample_entity("Encosto Estrategico Lda");
     let book = Book::new(entity.id, BookKind::AssembleiaGeral);
     let act = Act::draft(book.id, "Ata n.o 1", MeetingChannel::Physical);
-    let doc = sample_document("doc-1", act.id, FAKE_PDF);
+    let mut doc = sample_document("doc-1", act.id, FAKE_PDF);
+    doc.document_layout_json = Some(
+        r#"{"page":{"size":"A4","orientation":"Portrait","margins_mm":{"top":20,"right":20,"bottom":20,"left":20}}}"#
+            .to_owned(),
+    );
 
     let sealed = ledger
         .append("amelia.marques", "act:1", "act.sealed", None, b"act")
@@ -1988,6 +2004,47 @@ fn an_older_schema_version_upgrades_forward_cleanly() {
     let doc = sample_document("doc-1", act.id, FAKE_PDF);
     store.persist(|tx| tx.upsert_document(&doc)).unwrap();
     assert_eq!(store.document_by_id("doc-1").unwrap().unwrap(), doc);
+}
+
+#[test]
+fn schema_v27_document_rows_gain_a_nullable_layout_snapshot_without_backfill() {
+    let dir = TempDir::new();
+    let act_id = ActId(uuid::Uuid::new_v4());
+    {
+        let _store = Store::open(dir.path()).expect("open current");
+        let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+        raw.execute_batch(
+            "ALTER TABLE documents DROP COLUMN document_layout_json;
+             UPDATE meta SET value = '27' WHERE key = 'schema_version';",
+        )
+        .unwrap();
+        raw.execute(
+            "INSERT INTO documents \
+             (id, act_id, template_id, pdf_digest, profile, created_at, pdf_bytes, template_spec_json) \
+             VALUES (?1, ?2, 'csc-ata-ag/v1', 'legacy-digest', 'csc/sq', \
+                     '2026-02-03T00:00:00Z', X'25504446', NULL)",
+            rusqlite::params!["legacy-doc", act_id.to_string()],
+        )
+        .unwrap();
+    }
+
+    let store = Store::open(dir.path()).expect("migrate v27 to v28");
+    let legacy = store
+        .document_by_id("legacy-doc")
+        .expect("read migrated row")
+        .expect("legacy row preserved");
+    assert_eq!(legacy.document_layout_json, None);
+
+    let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();
+    let layout_columns: i64 = raw
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('documents') \
+             WHERE name = 'document_layout_json'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(layout_columns, 1);
 }
 
 // --- follow-ups table (schema v6) ---------------------------------------------------------------
