@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `18a346e` (2026-07-26). It records the
+The current substantive checkpoint is `4f19ae3` (2026-07-26). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -90,6 +90,24 @@ following bounded concern groups in this guard:
   Capacity/soak evidence is proof-eligible only with the committed complete SLO
   policy, stable topology/resource evidence, an exact clean source identity,
   and the dedicated runner labels; PR smoke is always non-proof.
+- `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
+  workflow's harness self-test, with a source-order regression. This supplies
+  the Linux build/runtime dependency needed by the generated-PFX loader test;
+  it does not touch a reader, use a Citizen Card, or prove live PC/SC signing.
+- `97e2e7a2` confines a bounded five-second, 20 ms-backoff retry to the ignored
+  live-PostgreSQL promotion regression after dropping its synchronous leader
+  client. It polls the existing non-blocking election primitive and fails
+  immediately on store errors. This accounts for asynchronous server-side
+  advisory-lock release in test teardown; it does not add production retries,
+  alter promotion semantics, or prove HA/failover.
+- `4f19ae3a` serializes only the process-local reserve-port -> spawn ->
+  successful `/health` plus child-alive handoff for composed-server test
+  startup and restart, releasing the guard before journeys execute. A focused
+  regression starts two servers concurrently and requires their bootstrap
+  users to remain isolated. The affected five-test binary passed 35/35 across
+  seven runs, and the exact full composed-server command passed 37/37. This is
+  local harness-determinism evidence, not production readiness, cross-process
+  port ownership, HA, hosted-CI success, or deployment certification.
 - `54529fb3` hardens normal, cluster, and hardened projector deployment with
   split secret exposure, backend-only data services, explicit
   dedicated-database acknowledgement, atomic no-clobber secret publication,

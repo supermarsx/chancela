@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `18a346e` (2026-07-26)",
+    "The current substantive checkpoint is `4f19ae3` (2026-07-26)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `18a346e`",
+    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `4f19ae3`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `18a346e`",
+    "Focused Gate Snapshot Through `4f19ae3`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `18a346e`",
+    "Current checkpoint metadata/static checks through `4f19ae3`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `18a346ee3e7f26af90703352fc583e4ae322f36f`",
+    "implementation snapshot `4f19ae3abb72d6221fa9c5ce2563921f45c02f9a`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `18a346e`",
+    "Current checkpoint metadata/static checks through `4f19ae3`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16764,8 +16764,63 @@ function assertCheckpointMap() {
     "release trust signer secret-isolation mutation guard marker",
   );
   assertFileContains(
+    ".github/workflows/performance.yml",
+    "sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd",
+    "performance workflow PCSC dependency marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_harness.py",
+    "test_harness_self_test_installs_pcsc_before_running_the_python_suite",
+    "performance workflow PCSC dependency-order regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/search.rs",
+    "fn promote_after_postgres_leader_drop(store: &chancela_store::Store)",
+    "Postgres advisory-lock handoff retry helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/search.rs",
+    "const TIMEOUT: StdDuration = StdDuration::from_secs(5);",
+    "Postgres advisory-lock handoff bounded timeout marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/search.rs",
+    "const RETRY_BACKOFF: StdDuration = StdDuration::from_millis(20);",
+    "Postgres advisory-lock handoff bounded backoff marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/common/mod.rs",
+    "static SERVER_STARTUP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());",
+    "composed-server process-local startup handoff guard marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/common/mod.rs",
+    'try_wait().expect("try_wait after readiness")',
+    "composed-server child-alive readiness handoff marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_act_document_persistence.rs",
+    "concurrent_server_startups_keep_identical_bootstrap_users_isolated",
+    "composed-server concurrent startup isolation regression marker",
+  );
+  assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "Current `18a346e` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "This supplies the Linux build/runtime dependency needed by the generated-PFX loader test; it does not touch a reader, use a Citizen Card, or prove live PC/SC signing",
+    "spec coverage performance PCSC dependency no-live-signing boundary",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "This accounts for asynchronous server-side advisory-lock release in test teardown; it does not add production retries, alter promotion semantics, or prove HA/failover",
+    "CI checkpoints Postgres test-only advisory-lock handoff boundary",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "This is local harness-determinism evidence, not production readiness, cross-process port ownership, HA, hosted-CI success, or deployment certification",
+    "CI/E2E startup-handoff no-production-readiness boundary",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `4f19ae3` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -16860,7 +16915,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `18a346e` (2026-07-26)",
+    "The current substantive checkpoint is `4f19ae3` (2026-07-26)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

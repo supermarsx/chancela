@@ -1,11 +1,12 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-26 from current implementation snapshot `18a346ee3e7f26af90703352fc583e4ae322f36f`,
+*Updated 2026-07-26 from current implementation snapshot `4f19ae3abb72d6221fa9c5ce2563921f45c02f9a`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
 exact-volume performance harness with fail-closed local-signing timestamp
-isolation and actual runtime-loader signing coverage; and the inherited
+isolation and actual runtime-loader signing coverage; bounded CI dependency,
+PostgreSQL advisory-lock, and composed-server startup-handoff determinism; and the inherited
 document-layout model, renderer, settings policy, stored resolved-layout
 snapshot, and web editors,
 plus committed packaging and release-trust contract evidence and
@@ -331,7 +332,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `18a346e` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `4f19ae3` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -380,6 +381,23 @@ Implementation checkpoints covered here:
   runtime-compatibility safeguards, not recorded capacity, latency, soak,
   10,000 cryptographic-signature, public-TSA, live-provider, composed-API, or
   hosted-CI results.
+
+  `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
+  workflow's harness self-test, with a source-order regression. This supplies
+  the Linux build/runtime dependency needed by the generated-PFX loader test;
+  it does not touch a reader, use a Citizen Card, or prove live PC/SC signing.
+  `97e2e7a2` confines a bounded five-second, 20 ms-backoff retry to the ignored
+  live-PostgreSQL promotion regression after dropping its synchronous leader
+  client, polling the existing non-blocking election primitive and failing
+  immediately on store errors. This accounts for asynchronous server-side
+  advisory-lock release in test teardown; it does not add production retries,
+  alter promotion semantics, or prove HA/failover. `4f19ae3a` serializes only
+  the process-local reserve-port -> spawn -> successful `/health` plus
+  child-alive handoff for composed-server test startup and restart, releasing
+  the guard before journeys execute. Its regression starts two servers
+  concurrently and requires their bootstrap users to remain isolated. This is
+  harness determinism evidence, not production readiness, cross-process port
+  ownership, HA, or hosted-CI proof.
 
   The inherited document-layout lane resolves the concrete instance ->
   template -> entity -> book cascade before render/page counting, atomically

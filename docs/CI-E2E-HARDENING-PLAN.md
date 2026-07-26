@@ -1,11 +1,12 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-26 from the current CI configuration and reachable
-implementation snapshot `18a346e`,
+implementation snapshot `4f19ae3`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
-runtime-loader signing coverage, inherited document layouts, committed
+runtime-loader signing coverage, bounded CI dependency, PostgreSQL
+advisory-lock, and composed-server startup-handoff determinism, inherited document layouts, committed
 packaging and release contracts, and the earlier official pdfjs legacy main/worker
 compatibility path, the blocking core template PDF preview proof, the
 continuous template document editor, and the mobile companion foundation docs/scripts,
@@ -1003,11 +1004,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `18a346e`
+## Focused Gate Snapshot Through `4f19ae3`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-26 for current implementation head `18a346e`.
+metadata-refreshed on 2026-07-26 for current implementation head `4f19ae3`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1016,7 +1017,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `18a346e` cover the accessible
+- Current landed-slice markers through `4f19ae3` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1054,6 +1055,25 @@ above still apply.
   boundary. The selected fail-fast web matrix includes
   `AtaEditorStructured.test.tsx`. This is deterministic test-harness evidence,
   not a runtime editor behavior change or interactive browser proof.
+
+  `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
+  workflow's harness self-test, with a source-order regression. This supplies
+  the Linux build/runtime dependency needed by the generated-PFX loader test;
+  it does not touch a reader, use a Citizen Card, or prove live PC/SC signing.
+  `97e2e7a2` confines a bounded five-second, 20 ms-backoff retry to the ignored
+  live-PostgreSQL promotion regression after dropping its synchronous leader
+  client, polling the existing non-blocking election primitive and failing
+  immediately on store errors. This accounts for asynchronous server-side
+  advisory-lock release in test teardown; it does not add production retries,
+  alter promotion semantics, or prove HA/failover. `4f19ae3a` serializes only
+  the process-local reserve-port -> spawn -> successful `/health` plus
+  child-alive handoff for composed-server test startup and restart, releasing
+  the guard before journeys execute. A focused regression starts two servers
+  concurrently and requires their bootstrap users to remain isolated. The
+  affected five-test binary passed 35/35 across seven runs, and the exact full
+  composed-server command passed 37/37 in 141.5 seconds. This is local
+  harness-determinism evidence, not production readiness, cross-process port
+  ownership, HA, hosted-CI success, or deployment certification.
 
   Focused current validation passed 46 web tests (drawer/search/search
   settings), 30 API preview tests, 1 API search-source mutation-guard
@@ -2590,7 +2610,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `18a346e`
+- Current checkpoint metadata/static checks through `4f19ae3`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
