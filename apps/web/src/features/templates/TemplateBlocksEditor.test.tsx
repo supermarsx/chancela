@@ -143,14 +143,17 @@ describe('TemplateBlocksEditor', () => {
     const firstBlock = container.querySelector('[data-template-block-index="0"]');
     expect(firstBlock?.querySelector('.template-document-block__kind')?.textContent).toBe('Título');
     expect(firstBlock?.querySelector('.template-document-block__direct-text')).toBeTruthy();
-    const inspector = firstBlock?.querySelector(
-      '.template-document-block__inspector',
-    ) as HTMLDetailsElement;
-    expect(inspector.open).toBe(false);
-    expect(inspector.querySelector('.field-table')).toBeTruthy();
-    expect(firstBlock?.querySelector('.template-document-block__action-label')?.textContent).toBe(
-      'Inserir parágrafo depois do bloco',
-    );
+    expect(firstBlock?.querySelector('.template-document-block__inspector')).toBeNull();
+    expect(screen.queryByRole('dialog', { name: /Definições do bloco/ })).toBeNull();
+    const configure = screen.getByRole('button', { name: 'Configurar bloco 1' });
+    expect(configure.textContent?.trim()).toBe('');
+    expect(configure.getAttribute('aria-describedby')).toBeTruthy();
+    const directText = firstBlock?.querySelector(
+      '.template-document-block__direct-text',
+    ) as HTMLTextAreaElement;
+    Object.defineProperty(directText, 'scrollHeight', { configurable: true, value: 180 });
+    fireEvent.input(directText);
+    expect(directText.style.height).toBe('180px');
 
     fireEvent.click(screen.getByRole('button', { name: 'Duplicar bloco 1' }));
     expect(currentBlocks()).toEqual([initial[0], initial[0], initial[1]]);
@@ -168,6 +171,78 @@ describe('TemplateBlocksEditor', () => {
     await waitFor(() =>
       expect(document.activeElement).toBe(
         screen.getByRole('button', { name: 'Inserir parágrafo depois do bloco 3' }),
+      ),
+    );
+  });
+
+  it('opens block settings only in an accessible right-side drawer and restores focus on Escape', async () => {
+    const original = { kind: 'Heading', level: 2, template: 'Título' } as const;
+    const { container } = renderWithProviders(
+      <Harness initial={[original]} presentation="document" />,
+    );
+
+    expect(screen.queryByLabelText('Nível do título')).toBeNull();
+    expect(container.querySelector('.template-document-block__inspector')).toBeNull();
+
+    const configure = screen.getByRole('button', { name: 'Configurar bloco 1' });
+    configure.focus();
+    fireEvent.click(configure);
+
+    const drawer = screen.getByRole('dialog', { name: 'Definições do bloco · Título' });
+    expect(drawer.getAttribute('aria-modal')).toBe('true');
+    expect(within(drawer).getByLabelText('Tipo de bloco')).toBeTruthy();
+    expect(within(drawer).getByLabelText('Nível do título')).toBeTruthy();
+    expect(within(drawer).getAllByRole('button', { name: 'Fechar definições' })).toHaveLength(2);
+    expect(drawer.contains(document.activeElement)).toBe(true);
+
+    fireEvent.change(within(drawer).getByLabelText('Nível do título'), {
+      target: { value: '3' },
+    });
+    expect(currentBlocks()).toEqual([{ ...original, level: 3 }]);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Definições do bloco · Título' })).toBeNull(),
+    );
+    expect(document.activeElement).toBe(configure);
+  });
+
+  it('offers every block kind in the split Add menu and inserts at the invoked position', async () => {
+    renderWithProviders(
+      <Harness
+        initial={[
+          { kind: 'Heading', level: 1, template: 'Primeiro' },
+          { kind: 'Paragraph', template: 'Segundo' },
+        ]}
+        presentation="document"
+      />,
+    );
+
+    const trigger = screen.getByRole('button', { name: 'Escolher tipo de bloco 1' });
+    trigger.focus();
+    fireEvent.keyDown(trigger, { key: 'ArrowDown' });
+    const menu = screen.getByRole('menu', { name: 'Escolher tipo de bloco 1' });
+    expect(within(menu).getAllByRole('menuitem')).toHaveLength(8);
+    expect(document.activeElement).toBe(within(menu).getByRole('menuitem', { name: 'Título' }));
+
+    fireEvent.keyDown(menu, { key: 'End' });
+    expect(document.activeElement).toBe(
+      within(menu).getByRole('menuitem', { name: 'Corpo narrativo' }),
+    );
+    fireEvent.keyDown(menu, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menu')).toBeNull());
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    fireEvent.click(
+      within(screen.getByRole('menu', { name: 'Escolher tipo de bloco 1' })).getByRole('menuitem', {
+        name: 'Linha horizontal',
+      }),
+    );
+    expect(currentBlocks().map((block) => block.kind)).toEqual(['Heading', 'Rule', 'Paragraph']);
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Inserir parágrafo depois do bloco 2' }),
       ),
     );
   });
@@ -204,10 +279,17 @@ describe('TemplateBlocksEditor', () => {
       />,
     );
 
-    expect(screen.getAllByLabelText('Tipo de bloco')[0].matches(':disabled')).toBe(true);
     expect(screen.getAllByLabelText('Texto do modelo')[0].matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Configurar bloco 1' }).matches(':disabled')).toBe(
+      true,
+    );
     expect(screen.getByRole('button', { name: 'Descer bloco 1' }).matches(':disabled')).toBe(true);
-    expect(screen.getByLabelText('Tipo do novo bloco').matches(':disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Adicionar bloco' }).matches(':disabled')).toBe(true);
+    expect(
+      screen
+        .getAllByRole('button', { name: /Escolher tipo de bloco/ })
+        .every((button) => button.matches(':disabled')),
+    ).toBe(true);
     expect(screen.getByLabelText('JSON avançado').matches(':disabled')).toBe(true);
     expect(currentBlocks()).toEqual([
       { kind: 'Heading', level: 1, template: 'Título' },
@@ -338,10 +420,12 @@ describe('TemplateBlocksEditor', () => {
     fireEvent.click(within(dialog).getByRole('button', { name: 'Remover bloco' }));
     expect(currentBlocks().map((block) => block.kind)).toEqual(['Paragraph']);
 
-    fireEvent.change(screen.getByLabelText('Tipo do novo bloco'), {
-      target: { value: 'NarrativeBody' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar bloco' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Escolher tipo de bloco' }));
+    fireEvent.click(
+      within(screen.getByRole('menu', { name: 'Escolher tipo de bloco' })).getByRole('menuitem', {
+        name: 'Corpo narrativo',
+      }),
+    );
     expect(currentBlocks()).toEqual([
       { kind: 'Paragraph', template: 'Segundo' },
       { kind: 'NarrativeBody' },

@@ -93,11 +93,66 @@
 }
 
 .template-block-editor__add {
-  align-items: end;
+  display: flex;
+  align-items: center;
 }
 
-.template-block-editor__add > .field {
-  min-width: min(100%, 17rem);
+.template-block-add {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  min-width: min(100%, 11rem);
+}
+
+.template-block-add__main {
+  flex: 1;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.template-block-add > .tooltip {
+  display: flex;
+}
+
+.template-block-add__trigger {
+  min-width: 2.25rem;
+  margin-inline-start: -1px;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+}
+
+.template-block-add__menu {
+  position: absolute;
+  top: calc(100% + 0.3rem);
+  left: 0;
+  z-index: 40;
+  display: grid;
+  width: max(100%, 14rem);
+  max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.3rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 0.9rem 2.2rem color-mix(in srgb, #000 28%, transparent);
+}
+
+.template-block-add__menu-item {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font: 600 0.78rem/1.25 var(--font-sans);
+  text-align: start;
+}
+
+.template-block-add__menu-item:hover,
+.template-block-add__menu-item:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--accent) 11%, var(--surface));
+  color: var(--accent);
 }
 
 .template-block-editor__raw {
@@ -259,7 +314,8 @@
 .template-document-block--paragraph textarea {
   min-height: 4.25rem;
   padding: 0.45rem 0.5rem;
-  resize: vertical;
+  overflow-y: hidden;
+  resize: none;
   border-color: transparent;
   border-radius: 2px;
   background: transparent;
@@ -470,31 +526,41 @@
 }
 
 .template-document-block__gutter .template-block-editor__actions {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
   gap: 0.18rem;
   margin-top: 0.2rem;
 }
 
-.template-document-block__gutter .template-block-editor__actions .btn {
-  justify-content: flex-start;
+.template-document-block__gutter .template-block-editor__actions > .tooltip {
+  display: flex;
   min-width: 0;
-  min-height: 1.9rem;
-  padding: 0.3rem 0.45rem;
-  font-size: 0.66rem;
-  letter-spacing: 0.035em;
-  text-align: start;
 }
 
-.template-document-block__action-label {
+.template-document-block__gutter .template-block-editor__actions .btn {
+  justify-content: center;
+  width: 100%;
   min-width: 0;
-  overflow-wrap: anywhere;
+  min-height: 2rem;
+  padding: 0.35rem;
+}
+
+.template-document-block__gutter .template-block-add {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-width: 0;
+}
+
+.template-document-block__gutter .template-block-add__main {
+  justify-content: flex-start;
+  font-size: 0.68rem;
 }
 
 .template-document-block__content {
   display: grid;
   gap: 0.35rem;
+  overflow: visible;
   padding: 0;
 }
 
@@ -502,7 +568,8 @@
   width: 100%;
   min-height: 3.25rem;
   padding: 0.35rem 0.4rem;
-  resize: vertical;
+  overflow-y: hidden;
+  resize: none;
   border-color: transparent;
   border-radius: 2px;
   background: transparent;
@@ -533,48 +600,10 @@
   font-weight: 650;
 }
 
-.template-document-block__inspector {
-  width: fit-content;
-  max-width: 100%;
-  color: var(--muted);
-  font-family: var(--font-sans);
-}
-
-.template-document-block__inspector > summary {
-  width: fit-content;
-  padding: 0.22rem 0;
-  cursor: pointer;
-  font-size: 0.66rem;
-  font-weight: 650;
-}
-
-.template-document-block__inspector[open] {
-  width: 100%;
-  padding-top: 0.25rem;
-}
-
-.template-document-block__inspector-fields {
-  width: 100%;
-}
-
-.template-document-block__inspector-fields .field {
-  gap: 0.3rem 0.75rem;
-}
-
-.template-document-block__inspector-fields .field__label {
-  margin: 0;
-  font-size: 0.68rem;
-}
-
-.template-document-block__inspector-fields .control {
-  min-height: 2rem;
-  padding: 0.3rem 0.4rem;
-  font-size: 0.76rem;
-}
-
 .template-document-block__kv-table {
   display: grid;
   gap: 0.2rem;
+  overflow: visible;
 }
 
 .template-document-block__kv-table .template-block-editor__kv-row {
@@ -601,10 +630,95 @@
 }
 
 .template-block-editor--document .template-block-editor__add {
+  justify-content: center;
   padding: 0.45rem 0;
   border-block: 1px solid var(--border);
   border-radius: 0;
   background: transparent;
+}
+
+.template-block-editor--document .template-block-editor__add .template-block-add {
+  width: min(100%, 15rem);
+}
+
+/* Explicit, hidden-by-default block configuration drawer. It is portalled to the body, so the
+   document canvas keeps its full width and no block grows a nested settings/scroll region. */
+.template-block-inspector__backdrop {
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+  overflow: hidden;
+  background: color-mix(in srgb, #000 42%, transparent);
+}
+
+.template-block-inspector {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  width: min(31rem, calc(100vw - 2rem));
+  height: 100%;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: -1rem 0 2.8rem color-mix(in srgb, #000 34%, transparent);
+  animation: template-block-inspector-in var(--motion-panel-duration) var(--motion-ease-enter) both;
+}
+
+@keyframes template-block-inspector-in {
+  from {
+    opacity: 0;
+    transform: translate3d(1.25rem, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.template-block-inspector__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.template-block-inspector__head .card__label {
+  margin: 0 0 0.25rem;
+}
+
+.template-block-inspector__head h2 {
+  margin: 0;
+  font: 700 1.05rem/1.25 var(--font-display);
+}
+
+.template-block-inspector__body {
+  min-height: 0;
+  padding: 1rem 1.1rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.template-block-inspector__fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.template-block-inspector__body .field-table {
+  width: 100%;
+}
+
+.template-block-inspector__body .template-block-editor__kv-row {
+  grid-template-columns: minmax(7rem, 0.75fr) minmax(9rem, 1.25fr) auto;
+}
+
+.template-block-inspector__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.8rem 1.1rem;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 90%, var(--bg));
 }
 
 .template-document-editor__recovery {
@@ -1004,10 +1118,6 @@
     padding: 0.35rem;
   }
 
-  .template-document-block__action-label {
-    display: none;
-  }
-
   .template-document-block--heading .template-document-block__fields,
   .template-document-block--votetable .template-document-block__fields,
   .template-document-block--signatureblock .template-document-block__fields {
@@ -1015,10 +1125,6 @@
   }
 
   .template-document-block__signature-lines {
-    grid-template-columns: 1fr;
-  }
-
-  .template-document-block__inspector-fields > .field {
     grid-template-columns: 1fr;
   }
 
@@ -1032,6 +1138,21 @@
   }
 
   .template-editor__save-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .template-block-inspector {
+    width: 100%;
+    border-left: 0;
+  }
+
+  .template-block-inspector__head,
+  .template-block-inspector__body,
+  .template-block-inspector__foot {
+    padding-inline: 0.8rem;
+  }
+
+  .template-block-inspector__body .template-block-editor__kv-row {
     grid-template-columns: 1fr;
   }
 
