@@ -4890,19 +4890,55 @@ mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn bounded_snapshot_releases_request_facing_lock_between_clone_chunks() {
         #[derive(Debug)]
-        struct SlowClone(Arc<std::sync::atomic::AtomicUsize>);
-        impl Clone for SlowClone {
+        struct CloneBoundary {
+            clones: std::sync::atomic::AtomicUsize,
+            reached: tokio::sync::Notify,
+            released: std::sync::Mutex<bool>,
+            release: std::sync::Condvar,
+        }
+
+        impl CloneBoundary {
+            fn release(&self) {
+                *self.released.lock().unwrap() = true;
+                self.release.notify_one();
+            }
+        }
+
+        struct ReleaseOnDrop(Arc<CloneBoundary>);
+
+        impl Drop for ReleaseOnDrop {
+            fn drop(&mut self) {
+                self.0.release();
+            }
+        }
+
+        #[derive(Debug)]
+        struct ControlledClone(Arc<CloneBoundary>);
+
+        impl Clone for ControlledClone {
             fn clone(&self) -> Self {
-                self.0.fetch_add(1, Ordering::AcqRel);
-                std::thread::sleep(StdDuration::from_millis(1));
+                let clone_number = self.0.clones.fetch_add(1, Ordering::AcqRel) + 1;
+                if clone_number == SOURCE_SNAPSHOT_BATCH_SIZE {
+                    let mut released = self.0.released.lock().unwrap();
+                    self.0.reached.notify_one();
+                    while !*released {
+                        released = self.0.release.wait(released).unwrap();
+                    }
+                }
                 Self(self.0.clone())
             }
         }
 
-        let clones = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let boundary = Arc::new(CloneBoundary {
+            clones: std::sync::atomic::AtomicUsize::new(0),
+            reached: tokio::sync::Notify::new(),
+            released: std::sync::Mutex::new(false),
+            release: std::sync::Condvar::new(),
+        });
+        let release_on_drop = ReleaseOnDrop(boundary.clone());
         let source = Arc::new(tokio::sync::RwLock::new(
             (0..600)
-                .map(|id| (id, SlowClone(clones.clone())))
+                .map(|id| (id, ControlledClone(boundary.clone())))
                 .collect::<HashMap<_, _>>(),
         ));
         let shutdown = Arc::new(AtomicBool::new(false));
@@ -4911,18 +4947,26 @@ mod tests {
         let snapshot = tokio::spawn(async move {
             snapshot_map_bounded(&snapshot_source, &snapshot_shutdown).await
         });
-        while clones.load(Ordering::Acquire) == 0 {
-            tokio::task::yield_now().await;
+        boundary.reached.notified().await;
+
+        let mut writer = Box::pin(source.write());
+        {
+            let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+            assert!(
+                std::future::Future::poll(writer.as_mut(), &mut context).is_pending(),
+                "the writer must queue while the first bounded read lock is held"
+            );
         }
 
-        let writer_guard = tokio::time::timeout(StdDuration::from_millis(450), source.write())
-            .await
-            .expect("writer acquires between bounded clone chunks");
-        assert!(
-            clones.load(Ordering::Acquire) < 600,
-            "the request-facing lock was not retained for the whole deep snapshot"
+        boundary.release();
+        let writer_guard = writer.await;
+        assert_eq!(
+            boundary.clones.load(Ordering::Acquire),
+            SOURCE_SNAPSHOT_BATCH_SIZE,
+            "the queued writer must acquire before the next deep-clone chunk"
         );
         drop(writer_guard);
+        drop(release_on_drop);
         assert_eq!(snapshot.await.unwrap().unwrap().len(), 600);
     }
 
