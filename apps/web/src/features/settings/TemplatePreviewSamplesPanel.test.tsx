@@ -100,6 +100,87 @@ describe('TemplatePreviewSamplesPanel', () => {
     );
   });
 
+  it('edits the agenda and convening tabs through typed nested controls', async () => {
+    const onChange = vi.fn();
+    renderWithProviders(<PanelHarness onChange={onChange} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ordem de trabalhos' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar a Pontos da ordem de trabalhos' }));
+    const agendaDialog = screen.getByRole('dialog', {
+      name: 'Adicionar a Pontos da ordem de trabalhos',
+    });
+    fireEvent.change(within(agendaDialog).getByLabelText('Texto'), {
+      target: { value: 'Novo ponto fictício' },
+    });
+    fireEvent.click(within(agendaDialog).getByRole('button', { name: 'Aplicar' }));
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('table', { name: 'Pontos da ordem de trabalhos' })).getByText(
+          'Novo ponto fictício',
+        ),
+      ).toBeTruthy(),
+    );
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        agenda: expect.arrayContaining([
+          expect.objectContaining({
+            number: DEFAULT_TEMPLATE_PREVIEW_SAMPLES.agenda.length + 1,
+            text: 'Novo ponto fictício',
+          }),
+        ]),
+      }),
+    );
+
+    fireEvent.change(await screen.findByLabelText('Resumo'), {
+      target: { value: 'Deliberações fictícias revistas' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        deliberations: expect.objectContaining({
+          summary: 'Deliberações fictícias revistas',
+        }),
+      }),
+    );
+    expect(screen.getByRole('table', { name: 'Pontos da ordem de trabalhos' })).toBeTruthy();
+    expect(screen.getByRole('table', { name: 'Deliberações estruturadas' })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Convocatória' }));
+    fireEvent.change(await screen.findByLabelText('Convocante'), {
+      target: { value: 'Conselho fictício renovado' },
+    });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        convening: expect.objectContaining({
+          convener: 'Conselho fictício renovado',
+        }),
+      }),
+    );
+
+    const reducedQuorum = screen.getByRole('switch', { name: 'Quórum reduzido' });
+    fireEvent.click(reducedQuorum);
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        convening: expect.objectContaining({
+          second_call: expect.objectContaining({
+            reduced_quorum:
+              !DEFAULT_TEMPLATE_PREVIEW_SAMPLES.convening.second_call.reduced_quorum,
+          }),
+        }),
+      }),
+    );
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Todos concordaram em reunir' }));
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        convening_waiver: expect.objectContaining({
+          all_agreed_to_meet:
+            !DEFAULT_TEMPLATE_PREVIEW_SAMPLES.convening_waiver.all_agreed_to_meet,
+        }),
+      }),
+    );
+    expect(screen.getByRole('table', { name: 'Destinatários' })).toBeTruthy();
+  });
+
   it('adds, reorders and removes repeatable rows through icon-only accessible actions', async () => {
     const onChange = vi.fn();
     renderWithProviders(<PanelHarness onChange={onChange} />);
