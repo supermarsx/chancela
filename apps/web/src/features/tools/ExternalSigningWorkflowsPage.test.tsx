@@ -253,9 +253,11 @@ describe('ExternalSigningWorkflowsPage', () => {
     );
     expect(JSON.parse(String(put?.init?.body))).toEqual({
       table_columns: { books: ['Kind', 'Actions'] },
-      external_signature_notice_dismissal: {
-        mode: 'snoozed',
-        until: '2026-08-24T12:00:00.000Z',
+      notice_dismissals: {
+        external_signing: {
+          mode: 'snoozed',
+          until: '2026-08-24T12:00:00.000Z',
+        },
       },
     });
     await waitFor(() =>
@@ -286,7 +288,9 @@ describe('ExternalSigningWorkflowsPage', () => {
       );
       expect(JSON.parse(String(put?.init?.body))).toEqual({
         table_columns: {},
-        external_signature_notice_dismissal: { mode: 'permanent' },
+        notice_dismissals: {
+          external_signing: { mode: 'permanent' },
+        },
       });
     });
   });

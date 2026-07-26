@@ -1,6 +1,6 @@
 //! Per-user, **non-ledger** UI preferences (t37): configurable table columns for the entities,
-//! books and templates tables, persisted server-side so a choice follows the operator across
-//! devices.
+//! books and templates tables plus a bounded registry of informational-notice dismissals,
+//! persisted server-side so a choice follows the operator across devices.
 //!
 //! ## Why this is its own sidecar, and deliberately not the ledger
 //!
@@ -135,11 +135,14 @@ impl UserPreferencesStore {
 pub struct UserPreferences {
     /// Per-table visible-column choices.
     pub table_columns: TableColumnPreferences,
-    /// This user's dismissal of the external-signature information notice. `None` means visible;
-    /// clearing/restoring the notice is therefore an ordinary whole-document PUT with this omitted
-    /// or `null`.
+    /// This user's dismissals, keyed by the finite set of product notices. An empty map means all
+    /// notices are visible; removing one key restores only that notice.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub notice_dismissals: BTreeMap<NoticeKey, NoticeDismissal>,
+    /// Legacy pre-registry field. Accepted on read/PUT and maintained as a compatibility mirror of
+    /// `notice_dismissals.external_signing` so deployed clients keep receiving their dismissal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub external_signature_notice_dismissal: Option<ExternalSignatureNoticeDismissal>,
+    pub external_signature_notice_dismissal: Option<NoticeDismissal>,
 }
 
 impl UserPreferences {
@@ -147,15 +150,11 @@ impl UserPreferences {
     /// request is refused (`422`) rather than silently trimmed.
     fn validate(&self) -> Result<(), ApiError> {
         self.table_columns.validate()?;
-        if let Some(ExternalSignatureNoticeDismissal::Snoozed { until }) =
-            &self.external_signature_notice_dismissal
-        {
-            OffsetDateTime::parse(until, &Rfc3339).map_err(|_| {
-                ApiError::Unprocessable(
-                    "external_signature_notice_dismissal.until must be an RFC 3339 timestamp"
-                        .to_owned(),
-                )
-            })?;
+        for (key, dismissal) in &self.notice_dismissals {
+            dismissal.validate_deadline(&format!("notice_dismissals.{key}.until"))?;
+        }
+        if let Some(dismissal) = &self.external_signature_notice_dismissal {
+            dismissal.validate_deadline("external_signature_notice_dismissal.until")?;
         }
         Ok(())
     }
@@ -163,21 +162,52 @@ impl UserPreferences {
     /// A defensively cleaned copy: each present table's ids trimmed, bad ids dropped, duplicates
     /// collapsed, count capped, and an emptied table folded back to "no override" (`None`).
     fn sanitized(&self) -> Self {
-        UserPreferences {
-            table_columns: self.table_columns.sanitized(),
-            external_signature_notice_dismissal: self
+        let mut notice_dismissals = self
+            .notice_dismissals
+            .iter()
+            .filter(|(_, dismissal)| dismissal.is_well_formed())
+            .map(|(key, dismissal)| (*key, dismissal.clone()))
+            .collect::<BTreeMap<_, _>>();
+        if !notice_dismissals.contains_key(&NoticeKey::ExternalSigning)
+            && let Some(dismissal) = self
                 .external_signature_notice_dismissal
                 .as_ref()
                 .filter(|dismissal| dismissal.is_well_formed())
-                .cloned(),
+        {
+            notice_dismissals.insert(NoticeKey::ExternalSigning, dismissal.clone());
+        }
+        let external_signature_notice_dismissal =
+            notice_dismissals.get(&NoticeKey::ExternalSigning).cloned();
+        UserPreferences {
+            table_columns: self.table_columns.sanitized(),
+            notice_dismissals,
+            external_signature_notice_dismissal,
         }
     }
 }
 
-/// Durable personal state for the external-signature information notice.
+/// Finite product notices that may be dismissed. Enum deserialisation rejects arbitrary keys, so a
+/// hostile preferences document cannot grow an unbounded map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NoticeKey {
+    ExternalSigning,
+    PlatformLogScope,
+}
+
+impl std::fmt::Display for NoticeKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(match self {
+            Self::ExternalSigning => "external_signing",
+            Self::PlatformLogScope => "platform_log_scope",
+        })
+    }
+}
+
+/// Durable personal state for one allowlisted informational notice.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
-pub enum ExternalSignatureNoticeDismissal {
+pub enum NoticeDismissal {
     /// Hide until an absolute instant. Elapsed deadlines remain stored evidence of the user's last
     /// choice but are interpreted by the client as visible.
     Snoozed { until: String },
@@ -185,7 +215,16 @@ pub enum ExternalSignatureNoticeDismissal {
     Permanent,
 }
 
-impl ExternalSignatureNoticeDismissal {
+impl NoticeDismissal {
+    fn validate_deadline(&self, field: &str) -> Result<(), ApiError> {
+        if let Self::Snoozed { until } = self {
+            OffsetDateTime::parse(until, &Rfc3339).map_err(|_| {
+                ApiError::Unprocessable(format!("{field} must be an RFC 3339 timestamp"))
+            })?;
+        }
+        Ok(())
+    }
+
     fn is_well_formed(&self) -> bool {
         match self {
             Self::Snoozed { until } => OffsetDateTime::parse(until, &Rfc3339).is_ok(),
@@ -412,8 +451,28 @@ pub async fn put_me_preferences(
     body: Bytes,
 ) -> Result<Json<UserPreferences>, ApiError> {
     let user_id = resolve_self(&state, &actor).await?;
-    let incoming: UserPreferences = serde_json::from_slice(&body)
+    let raw: serde_json::Value = serde_json::from_slice(&body)
         .map_err(|e| ApiError::Unprocessable(format!("invalid preferences document: {e}")))?;
+    let legacy_field_present = raw
+        .as_object()
+        .is_some_and(|document| document.contains_key("external_signature_notice_dismissal"));
+    let mut incoming: UserPreferences = serde_json::from_value(raw)
+        .map_err(|e| ApiError::Unprocessable(format!("invalid preferences document: {e}")))?;
+    // Deployed clients replace only the legacy field after reading a response that contains both
+    // shapes. Field presence is therefore authoritative: a value overwrites the keyed entry and an
+    // explicit null restores the notice even when the echoed map is stale. If omitted, new clients'
+    // keyed registry governs.
+    if legacy_field_present {
+        if let Some(dismissal) = incoming.external_signature_notice_dismissal.clone() {
+            incoming
+                .notice_dismissals
+                .insert(NoticeKey::ExternalSigning, dismissal);
+        } else {
+            incoming
+                .notice_dismissals
+                .remove(&NoticeKey::ExternalSigning);
+        }
+    }
     incoming.validate()?;
     // Validation already proved the ids well-formed and duplicate-free; sanitise only folds an
     // explicitly-empty table (`[]`) back to "no override" so it stores identically to omitting it.
@@ -460,6 +519,7 @@ mod tests {
                 books: to_vec(books),
                 templates: None,
             },
+            notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
         }
     }
@@ -549,6 +609,7 @@ mod tests {
                 books: None,
                 templates: None,
             },
+            notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
         };
         assert!(over.validate().is_err());
@@ -575,6 +636,7 @@ mod tests {
                 books: Some(vec![]),
                 templates: None,
             },
+            notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
         };
         let clean = raw.sanitized();
@@ -731,10 +793,18 @@ mod tests {
         .expect("dismissal stores")
         .0;
         assert_eq!(
-            stored.external_signature_notice_dismissal,
-            Some(ExternalSignatureNoticeDismissal::Snoozed {
+            stored.notice_dismissals.get(&NoticeKey::ExternalSigning),
+            Some(&NoticeDismissal::Snoozed {
                 until: "2027-01-02T03:04:05Z".to_owned()
             })
+        );
+        assert_eq!(
+            stored.external_signature_notice_dismissal,
+            stored
+                .notice_dismissals
+                .get(&NoticeKey::ExternalSigning)
+                .cloned(),
+            "legacy PUT must return both the legacy and keyed read shapes"
         );
         assert_eq!(
             get_me_preferences(State(state.clone()), actor.clone())
@@ -782,14 +852,145 @@ mod tests {
         assert!(state.user_preferences.read().await.users.is_empty());
     }
 
+    #[tokio::test]
+    async fn keyed_notice_registry_round_trips_two_independent_allowlisted_notices() {
+        let state = AppState::default();
+        seed_user(&state, "notice.registry").await;
+        let actor = CurrentActor::from_session_username(Some("notice.registry".to_owned()));
+        let body = serde_json::json!({
+            "notice_dismissals": {
+                "external_signing": { "mode": "permanent" },
+                "platform_log_scope": {
+                    "mode": "snoozed",
+                    "until": "2027-03-04T05:06:07Z"
+                }
+            }
+        });
+        let stored = put_me_preferences(
+            State(state.clone()),
+            actor.clone(),
+            serde_json::to_vec(&body).unwrap().into(),
+        )
+        .await
+        .expect("keyed dismissals store")
+        .0;
+
+        assert_eq!(
+            stored.notice_dismissals.get(&NoticeKey::ExternalSigning),
+            Some(&NoticeDismissal::Permanent)
+        );
+        assert_eq!(
+            stored.external_signature_notice_dismissal,
+            Some(NoticeDismissal::Permanent),
+            "keyed PUT must keep the deployed-client compatibility mirror"
+        );
+        assert_eq!(
+            stored.notice_dismissals.get(&NoticeKey::PlatformLogScope),
+            Some(&NoticeDismissal::Snoozed {
+                until: "2027-03-04T05:06:07Z".to_owned()
+            })
+        );
+        assert_eq!(
+            get_me_preferences(State(state), actor).await.unwrap().0,
+            stored
+        );
+    }
+
+    #[tokio::test]
+    async fn notice_registry_rejects_unknown_keys_without_mutation() {
+        let state = AppState::default();
+        seed_user(&state, "notice.unknown").await;
+        let actor = CurrentActor::from_session_username(Some("notice.unknown".to_owned()));
+        let body = serde_json::json!({
+            "notice_dismissals": {
+                "operator_supplied_unbounded_key": { "mode": "permanent" }
+            }
+        });
+        let error = put_me_preferences(
+            State(state.clone()),
+            actor,
+            serde_json::to_vec(&body).unwrap().into(),
+        )
+        .await
+        .expect_err("unknown notice key refused");
+        assert!(matches!(error, ApiError::Unprocessable(_)));
+        assert!(state.user_preferences.read().await.users.is_empty());
+    }
+
+    #[tokio::test]
+    async fn legacy_field_change_overwrites_the_echoed_keyed_value() {
+        let state = AppState::default();
+        seed_user(&state, "notice.old-client-change").await;
+        let actor =
+            CurrentActor::from_session_username(Some("notice.old-client-change".to_owned()));
+        let body = serde_json::json!({
+            "notice_dismissals": {
+                "external_signing": { "mode": "permanent" }
+            },
+            "external_signature_notice_dismissal": {
+                "mode": "snoozed",
+                "until": "2027-05-06T07:08:09Z"
+            }
+        });
+        let stored = put_me_preferences(
+            State(state),
+            actor,
+            serde_json::to_vec(&body).unwrap().into(),
+        )
+        .await
+        .expect("old-client change stores")
+        .0;
+        let expected = NoticeDismissal::Snoozed {
+            until: "2027-05-06T07:08:09Z".to_owned(),
+        };
+        assert_eq!(
+            stored.notice_dismissals.get(&NoticeKey::ExternalSigning),
+            Some(&expected)
+        );
+        assert_eq!(stored.external_signature_notice_dismissal, Some(expected));
+    }
+
+    #[tokio::test]
+    async fn explicit_legacy_null_restores_notice_despite_stale_echoed_map() {
+        let state = AppState::default();
+        seed_user(&state, "notice.old-client-restore").await;
+        let actor =
+            CurrentActor::from_session_username(Some("notice.old-client-restore".to_owned()));
+        let body = serde_json::json!({
+            "notice_dismissals": {
+                "external_signing": { "mode": "permanent" },
+                "platform_log_scope": { "mode": "permanent" }
+            },
+            "external_signature_notice_dismissal": null
+        });
+        let stored = put_me_preferences(
+            State(state),
+            actor,
+            serde_json::to_vec(&body).unwrap().into(),
+        )
+        .await
+        .expect("old-client restore stores")
+        .0;
+        assert!(
+            !stored
+                .notice_dismissals
+                .contains_key(&NoticeKey::ExternalSigning)
+        );
+        assert_eq!(stored.external_signature_notice_dismissal, None);
+        assert_eq!(
+            stored.notice_dismissals.get(&NoticeKey::PlatformLogScope),
+            Some(&NoticeDismissal::Permanent),
+            "restoring the legacy notice must not affect an independent notice"
+        );
+    }
+
     #[test]
     fn permanent_notice_dismissal_has_the_stable_tagged_shape() {
-        let value =
-            serde_json::to_value(ExternalSignatureNoticeDismissal::Permanent).expect("serialize");
+        let value = serde_json::to_value(NoticeDismissal::Permanent).expect("serialize");
         assert_eq!(value, serde_json::json!({ "mode": "permanent" }));
         assert_eq!(
-            serde_json::from_value::<ExternalSignatureNoticeDismissal>(value).unwrap(),
-            ExternalSignatureNoticeDismissal::Permanent
+            serde_json::from_value::<NoticeDismissal>(value).unwrap(),
+            NoticeDismissal::Permanent
         );
     }
 }

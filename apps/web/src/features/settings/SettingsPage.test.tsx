@@ -12,6 +12,7 @@ import {
   type RetentionCandidateResolutionRecord,
   type RetentionDisposalAction,
   type RetentionDueCandidatesReport,
+  type UserPreferences,
 } from '../../api/types';
 import { collectionPageFixture, renderWithProviders } from '../../test/utils';
 import { StaticPermissionsProvider, permissionsValue } from '../session/permissions';
@@ -1057,6 +1058,7 @@ function settingsFetch(
   options: {
     platformLogs?: readonly unknown[];
     platformLogLimitations?: string[];
+    preferences?: UserPreferences;
   } = {},
 ): {
   fn: typeof fetch;
@@ -1067,6 +1069,7 @@ function settingsFetch(
   let platformLogs = cloneJson(options.platformLogs ?? PLATFORM_LOG_FIXTURE) as Array<
     Record<string, unknown>
   >;
+  let preferences = cloneJson(options.preferences ?? { table_columns: {} }) as UserPreferences;
   const platformLogLimitations = options.platformLogLimitations ?? PLATFORM_LOG_LIMITATIONS;
   const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
@@ -1103,6 +1106,10 @@ function settingsFetch(
           limitations: platformLogLimitations,
         }),
       );
+    }
+    if (url.includes('/v1/me/preferences')) {
+      if (method === 'PUT') preferences = JSON.parse(String(init?.body ?? '{}'));
+      return Promise.resolve(jsonResponse(preferences));
     }
 
     if (url.includes('/v1/platform/services')) {
@@ -3329,6 +3336,70 @@ describe('SettingsPage', () => {
     const minimalRow = screen.getByText('MCP supervisor handoff recorded').closest('tr');
     expect(minimalRow).toBeTruthy();
     expect(within(minimalRow!).getByText('Sem contexto')).toBeTruthy();
+  });
+
+  it('persists and restores the independent log-scope notice without clobbering other notices', async () => {
+    const now = Date.parse('2026-07-26T12:00:00Z');
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const { fn, calls } = settingsFetch(DEFAULT_SETTINGS, {
+      preferences: {
+        table_columns: { books: ['Kind', 'Actions'] },
+        notice_dismissals: {
+          external_signing: { mode: 'permanent' },
+        },
+      },
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
+
+    const actions = await screen.findByRole('group', {
+      name: 'Opções para ocultar o aviso sobre o âmbito dos logs',
+    });
+    fireEvent.click(within(actions).getByRole('button', { name: 'Ocultar durante 90 dias' }));
+
+    await waitFor(() => {
+      const put = calls.find(
+        (call) => call.url.includes('/v1/me/preferences') && call.method === 'PUT',
+      );
+      expect(JSON.parse(String(put?.body))).toEqual({
+        table_columns: { books: ['Kind', 'Actions'] },
+        notice_dismissals: {
+          external_signing: { mode: 'permanent' },
+          platform_log_scope: {
+            mode: 'snoozed',
+            until: '2026-10-24T12:00:00.000Z',
+          },
+        },
+      });
+    });
+    expect(
+      await screen.findByRole('button', { name: 'Repor aviso sobre o âmbito dos logs' }),
+    ).toBeTruthy();
+    expect(screen.queryByText('Âmbito dos logs')).toBeNull();
+
+    cleanup();
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
+    const restore = await screen.findByRole('button', {
+      name: 'Repor aviso sobre o âmbito dos logs',
+    });
+    expect(screen.queryByText('Âmbito dos logs')).toBeNull();
+    fireEvent.click(restore);
+
+    await waitFor(() => {
+      const puts = calls.filter(
+        (call) => call.url.includes('/v1/me/preferences') && call.method === 'PUT',
+      );
+      expect(JSON.parse(String(puts.at(-1)?.body))).toEqual({
+        table_columns: { books: ['Kind', 'Actions'] },
+        notice_dismissals: {
+          external_signing: { mode: 'permanent' },
+        },
+      });
+    });
+    expect(await screen.findByText('Âmbito dos logs')).toBeTruthy();
   });
 
   it('refetches platform logs with selected filters and manual refresh', async () => {

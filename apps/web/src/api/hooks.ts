@@ -102,7 +102,8 @@ import type {
   SealActBody,
   Settings,
   UserPreferences,
-  ExternalSignatureNoticeDismissal,
+  NoticeDismissal,
+  NoticeKey,
   TableColumnPreferences,
   SessionResult,
   CompleteChallengeBody,
@@ -1688,11 +1689,11 @@ export function useTemplateBodyPreview() {
 }
 
 /**
- * Produce an ephemeral, context-free PDF/A proof from an unsaved draft or catalog template.
+ * Produce an ephemeral, sample-resolved PDF/A preview from an unsaved draft or catalog template.
  *
  * This is a mutation only because the request carries the current draft in its POST body. The
  * server is stateless/read-only; callers own debounce and stale-response suppression so typing can
- * never replace a newer proof with an older response.
+ * never replace a newer preview with an older response.
  */
 export function useTemplateDocumentPdfPreview() {
   return useMutation({
@@ -1701,7 +1702,7 @@ export function useTemplateDocumentPdfPreview() {
   });
 }
 
-/** Produce the complete Markdown representation from the PDF preview's unresolved model. */
+/** Produce the complete Markdown representation from the PDF preview's sample-resolved model. */
 export function useTemplateDocumentMarkdownPreview() {
   return useMutation({
     mutationFn: (request: TemplateDocumentPreviewRequest) =>
@@ -3805,24 +3806,39 @@ export function useUpdateTableColumns() {
 }
 
 /**
- * Persist the External Signatures notice dismissal through the existing self-scoped preferences
- * document. This preserves table-column choices because `/v1/me/preferences` is whole-document
- * PUT. `null` restores the notice; an omitted field on older stored rows means visible.
+ * Persist one allowlisted informational-notice dismissal through the existing self-scoped
+ * preferences document. This preserves table-column choices and other notices because
+ * `/v1/me/preferences` is whole-document PUT. `null` restores only the selected notice.
+ *
+ * The legacy external-signature field is folded into the registry on the next write so existing
+ * users keep their choice without coupling that notice to newer notices.
  */
-export function useUpdateExternalSignatureNoticeDismissal() {
+export function useUpdateNoticeDismissal(notice: NoticeKey) {
   const qc = useQueryClient();
 
   const merge = (
     current: UserPreferences | undefined,
-    dismissal: ExternalSignatureNoticeDismissal | null,
-  ): UserPreferences => ({
-    ...current,
-    table_columns: current?.table_columns ?? {},
-    external_signature_notice_dismissal: dismissal,
-  });
+    dismissal: NoticeDismissal | null,
+  ): UserPreferences => {
+    const notice_dismissals = { ...current?.notice_dismissals };
+    if (
+      current?.external_signature_notice_dismissal &&
+      notice_dismissals.external_signing === undefined
+    ) {
+      notice_dismissals.external_signing = current.external_signature_notice_dismissal;
+    }
+    if (dismissal) notice_dismissals[notice] = dismissal;
+    else delete notice_dismissals[notice];
+    return {
+      ...current,
+      table_columns: current?.table_columns ?? {},
+      notice_dismissals,
+      external_signature_notice_dismissal: undefined,
+    };
+  };
 
   return useMutation({
-    mutationFn: (dismissal: ExternalSignatureNoticeDismissal | null) => {
+    mutationFn: (dismissal: NoticeDismissal | null) => {
       const current = qc.getQueryData<UserPreferences>(keys.mePreferences);
       if (!current) {
         throw new Error(
@@ -3849,6 +3865,11 @@ export function useUpdateExternalSignatureNoticeDismissal() {
       void qc.invalidateQueries({ queryKey: keys.mePreferences });
     },
   });
+}
+
+/** Compatibility wrapper for existing External Signatures callers. */
+export function useUpdateExternalSignatureNoticeDismissal() {
+  return useUpdateNoticeDismissal('external_signing');
 }
 
 /** Outbound-email status (`GET /v1/settings/email/status`): whether a relay password is stored and

@@ -1474,11 +1474,10 @@ export interface TemplateBundleInput {
 }
 
 /**
- * Input to the stateless structural PDF/A proof (`POST /v1/templates/document/preview`).
+ * Input to the stateless PDF/A/Markdown preview endpoints.
  *
  * `draft` previews the editor's unsaved authored halves. `catalog` resolves a shipped or durable
- * user template by id. Neither form carries an act context: placeholders and collection bindings
- * therefore remain visibly unresolved, and the returned PDF must not be described as a final ata.
+ * user template by id. Both forms render against the instance's typed sample record.
  */
 export type TemplateDocumentPreviewRequest =
   | {
@@ -1491,18 +1490,18 @@ export type TemplateDocumentPreviewRequest =
       template_id: string;
     };
 
-/** Real PDF/A bytes plus the server's explicit context-free proof classification. */
+/** Real PDF/A bytes plus the server's sample-resolution classification. */
 export interface TemplateDocumentPreviewResult {
   data: ArrayBuffer;
   content_type: string;
-  preview_kind: 'structural-unresolved' | string;
+  preview_kind: 'sample-resolved' | string;
 }
 
-/** Complete Markdown emitted from the same unresolved document model as the PDF/A proof. */
+/** Complete Markdown emitted from the same sample-resolved document model as the PDF/A preview. */
 export interface TemplateDocumentMarkdownPreviewResult {
   markdown: string;
   content_type: string;
-  preview_kind: 'structural-unresolved' | string;
+  preview_kind: 'sample-resolved' | string;
 }
 
 /**
@@ -7861,15 +7860,19 @@ export interface TableColumnPreferences {
 }
 
 /**
- * A self-scoped, durable dismissal for the External Signatures informational notice. A snooze
- * carries the exact RFC 3339 expiry; permanent dismissal needs no synthetic date.
+ * A self-scoped, durable informational-notice dismissal. A snooze carries the exact RFC 3339
+ * expiry; permanent dismissal needs no synthetic date.
  */
-export type ExternalSignatureNoticeDismissal =
-  { mode: 'snoozed'; until: string } | { mode: 'permanent' };
+export type NoticeDismissal = { mode: 'snoozed'; until: string } | { mode: 'permanent' };
+
+/** Bounded notice keys accepted by the preferences API; arbitrary user-supplied keys are refused. */
+export type NoticeKey = 'external_signing' | 'platform_log_scope';
 
 export interface UserPreferences {
   table_columns: TableColumnPreferences;
-  external_signature_notice_dismissal?: ExternalSignatureNoticeDismissal | null;
+  notice_dismissals?: Partial<Record<NoticeKey, NoticeDismissal>>;
+  /** Compatibility with preference documents stored before the keyed registry. */
+  external_signature_notice_dismissal?: NoticeDismissal | null;
 }
 
 /**

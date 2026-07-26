@@ -116,4 +116,27 @@ describe('PlatformLoggingTable', () => {
     expect(loggingSourceText(logging, 'api', t)).toBe('Overrides por serviço: Trace');
     expect(loggingSourceText({ ...logging, global: 'off' }, 'api', t)).toBe('Global: Off');
   });
+
+  it('keeps table cells and all log selects on the shared readable control rhythm', async () => {
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    const tableCss = readFileSync('src/features/settings/platformLoggingTable.css', 'utf8').replace(
+      /\r\n/g,
+      '\n',
+    );
+    const themeCss = readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
+
+    expect(tableCss).toMatch(
+      /\.platform-logging-table \.table td\s*\{[^}]*padding:\s*0\.7rem 0\.8rem;[^}]*vertical-align:\s*middle;/s,
+    );
+    expect(tableCss).toMatch(
+      /\.platform-logging-table \.control\s*\{[^}]*min-height:\s*2\.5rem;[^}]*height:\s*2\.5rem;[^}]*margin:\s*0;[^}]*padding:\s*0\.5rem 0\.65rem;/s,
+    );
+    expect(themeCss).toMatch(
+      /\.platform-log-controls \.control\s*\{[^}]*min-height:\s*2\.5rem;[^}]*height:\s*2\.5rem;[^}]*margin:\s*0;[^}]*padding:\s*0\.5rem 0\.7rem;/s,
+    );
+    expect(themeCss).toMatch(/\.platform-log-scope-notice\s*\{[^}]*margin-bottom:\s*1rem;/s);
+  });
 });

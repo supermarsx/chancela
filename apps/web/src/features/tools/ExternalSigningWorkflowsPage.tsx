@@ -4,11 +4,10 @@ import type {
   ActView,
   BookView,
   Entity,
-  ExternalSignatureNoticeDismissal,
+  NoticeDismissal,
   ExternalSignerInvitePublicView,
   ExternalSignerInviteStatus,
   ExternalSignerInviteView,
-  Settings,
 } from '../../api/types';
 import { api } from '../../api/client';
 import {
@@ -42,6 +41,21 @@ import {
   useToast,
 } from '../../ui';
 import { scopeBook, useCan } from '../session/permissions';
+import {
+  DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS,
+  createNoticeDismissal,
+  informationalNoticeHideDays,
+  informationalNoticeIsHidden,
+  noticeDismissalFromPreferences,
+} from '../notices/informationalNotice';
+
+export {
+  informationalNoticeHideDays,
+  informationalNoticeIsHidden,
+} from '../notices/informationalNotice';
+
+export const DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS =
+  DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS;
 
 interface ActContext {
   act: ActView;
@@ -63,25 +77,6 @@ const STATUS_ORDER: Record<ExternalSignerInviteStatus, number> = {
   expired: 3,
   revoked: 4,
 };
-
-export const DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS = 90;
-
-export function informationalNoticeHideDays(settings: Settings | undefined): number {
-  const configured = settings?.ui.external_signature_notice_snooze_days;
-  return Number.isInteger(configured) && configured !== undefined && configured > 0
-    ? configured
-    : DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS;
-}
-
-export function informationalNoticeIsHidden(
-  dismissal: ExternalSignatureNoticeDismissal | null | undefined,
-  now = Date.now(),
-): boolean {
-  if (!dismissal) return false;
-  if (dismissal.mode === 'permanent') return true;
-  const until = Date.parse(dismissal.until);
-  return Number.isFinite(until) && until > now;
-}
 
 export function externalSignerInviteLink(token: string, origin?: string): string | null {
   const trimmed = token.trim();
@@ -220,7 +215,7 @@ export function ExternalSigningWorkflowsPage() {
   const canUseToken = !!link;
   const temporaryHideDays = informationalNoticeHideDays(settings.data);
   const noticeHidden = informationalNoticeIsHidden(
-    preferences.data?.external_signature_notice_dismissal,
+    noticeDismissalFromPreferences(preferences.data, 'external_signing'),
   );
 
   const entityById = useMemo(() => {
@@ -322,15 +317,8 @@ export function ExternalSigningWorkflowsPage() {
     for (const query of inviteQueries) void query.refetch();
   }
 
-  function hideNotice(mode: ExternalSignatureNoticeDismissal['mode']) {
-    const dismissal: ExternalSignatureNoticeDismissal =
-      mode === 'permanent'
-        ? { mode }
-        : {
-            mode: 'snoozed',
-            until: new Date(Date.now() + temporaryHideDays * 24 * 60 * 60 * 1000).toISOString(),
-          };
-
+  function hideNotice(mode: NoticeDismissal['mode']) {
+    const dismissal = createNoticeDismissal(mode, temporaryHideDays);
     updateNoticeDismissal.mutate(dismissal, {
       onSuccess: () =>
         toast.success(
@@ -366,7 +354,7 @@ export function ExternalSigningWorkflowsPage() {
               <p>{t('externalSigning.notice.body')}</p>
               {preferences.isSuccess ? (
                 <div
-                  className="external-signing-notice__actions"
+                  className="informational-notice__actions external-signing-notice__actions"
                   role="group"
                   aria-label={noticeT('externalSigning.notice.dismissActions')}
                 >
