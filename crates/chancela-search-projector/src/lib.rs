@@ -42,6 +42,7 @@ const HEARTBEAT_PRUNE_MAX_INSPECTED: usize = 256;
 const HEARTBEAT_PRUNE_MAX_REMOVED: usize = 32;
 const HEARTBEAT_RETENTION_MILLIS: i64 = 24 * 60 * 60 * 1_000;
 const CHILD_SHUTDOWN_GRACE: Duration = Duration::from_secs(4);
+const OWNED_SHUTDOWN_RELEASE_GRACE: Duration = Duration::from_millis(500);
 /// Process-level grace after a shutdown signal before the projector supervisor is aborted.
 pub const PROCESS_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
@@ -406,9 +407,7 @@ pub async fn run_projector(
         {
             Ok(done) => {
                 if done && shutdown.load(Ordering::Acquire) {
-                    // Do not let a best-effort lease release re-block shutdown after the bounded
-                    // refresh/build unwind. The short durable TTL fences this process shortly.
-                    return finish_owned_shutdown(
+                    return finish_owned_shutdown_and_release(
                         &provider,
                         &options.runtime_dir,
                         &heartbeat,
@@ -1140,7 +1139,10 @@ async fn heartbeat_lease(
 ) {
     let mut interval = tokio::time::interval(options.heartbeat_interval);
     loop {
-        interval.tick().await;
+        tokio::select! {
+            _ = interval.tick() => {}
+            _ = wait_for_heartbeat_stop(&shutdown, &stop) => return,
+        }
         if stop.load(Ordering::Acquire) || shutdown.load(Ordering::Acquire) {
             return;
         }
@@ -1260,6 +1262,12 @@ async fn wait_for_shutdown_requested(shutdown: &AtomicBool) {
     }
 }
 
+async fn wait_for_heartbeat_stop(shutdown: &AtomicBool, stop: &AtomicBool) {
+    while !shutdown.load(Ordering::Acquire) && !stop.load(Ordering::Acquire) {
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+}
+
 async fn wait_or_shutdown(duration: Duration, shutdown: &AtomicBool) {
     let deadline = tokio::time::Instant::now() + duration;
     while !shutdown.load(Ordering::Acquire) && tokio::time::Instant::now() < deadline {
@@ -1287,6 +1295,24 @@ async fn finish_owned_shutdown(
     })
     .await?;
     Ok(lock_heartbeat(heartbeat).clone())
+}
+
+/// Publish the final owned heartbeat and surrender the durable lease without defeating the
+/// process-level five-second shutdown bound. Lease expiry remains the fallback if the store is
+/// unavailable or the bounded best-effort release cannot complete promptly.
+async fn finish_owned_shutdown_and_release(
+    provider: &StoreProvider,
+    runtime_dir: &Path,
+    heartbeat: &Arc<Mutex<ProjectorHeartbeat>>,
+    lease: &SearchProjectorLease,
+) -> Result<ProjectorHeartbeat, ProjectorError> {
+    let finished = finish_owned_shutdown(provider, runtime_dir, heartbeat, lease).await;
+    let _ = tokio::time::timeout(
+        OWNED_SHUTDOWN_RELEASE_GRACE,
+        release_lease_current(provider, lease.clone()),
+    )
+    .await;
+    finished
 }
 
 fn update_local_heartbeat(
@@ -1694,6 +1720,85 @@ mod tests {
         assert_eq!(loaded.owner, "test-owner");
         assert_eq!(loaded.lease_id, lease.lease_id);
         assert_eq!(loaded.service, SERVICE_NAME);
+    }
+
+    #[tokio::test]
+    async fn graceful_owned_shutdown_releases_lease_for_immediate_successor() {
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let provider = StoreProvider {
+            // Model the stable handle used by the PostgreSQL projector while retaining the
+            // deterministic embedded store used by unit tests.
+            stable_postgres: Some(store.clone()),
+        };
+        let lease = store
+            .try_acquire_search_projector_lease("first-owner", Duration::from_secs(60))
+            .expect("acquire first lease")
+            .expect("first lease available");
+        let heartbeat = Arc::new(Mutex::new(ProjectorHeartbeat::new(lease.owner.clone())));
+
+        let finished = finish_owned_shutdown_and_release(&provider, &dir.0, &heartbeat, &lease)
+            .await
+            .expect("finish graceful owned shutdown");
+        assert_eq!(finished.phase, ProjectorPhase::ShuttingDown);
+
+        let successor = store
+            .try_acquire_search_projector_lease("successor-owner", Duration::from_secs(60))
+            .expect("acquire successor lease")
+            .expect("successor acquires immediately without waiting for the former TTL");
+        assert_ne!(successor.lease_id, lease.lease_id);
+        assert_ne!(successor.owner, lease.owner);
+    }
+
+    #[tokio::test]
+    async fn heartbeat_worker_renews_then_stops_promptly_during_a_long_interval() {
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let provider = StoreProvider {
+            stable_postgres: Some(store.clone()),
+        };
+        let options = ProjectorOptions {
+            runtime_dir: dir.0.join("runtime"),
+            heartbeat_interval: Duration::from_secs(60),
+            health_max_age: Duration::from_secs(600),
+            owner: "heartbeat-owner".to_owned(),
+        };
+        let lease = store
+            .try_acquire_search_projector_lease(&options.owner, options.lease_ttl())
+            .expect("acquire heartbeat lease")
+            .expect("heartbeat lease available");
+        let heartbeat = Arc::new(Mutex::new(ProjectorHeartbeat::new(options.owner.clone())));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let lease_lost = Arc::new(AtomicBool::new(false));
+        let stop = Arc::new(AtomicBool::new(false));
+        let heartbeat_path = heartbeat_path(&options.runtime_dir, &lease.lease_id).unwrap();
+        let task = tokio::spawn(heartbeat_lease(
+            provider,
+            options,
+            heartbeat,
+            lease,
+            shutdown,
+            lease_lost.clone(),
+            stop.clone(),
+        ));
+
+        tokio::time::timeout(Duration::from_secs(1), async {
+            while !heartbeat_path.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("initial renewal path publishes the owned heartbeat");
+        assert!(
+            !lease_lost.load(Ordering::Acquire),
+            "the initial durable lease renewal succeeded"
+        );
+
+        stop.store(true, Ordering::Release);
+        tokio::time::timeout(Duration::from_secs(1), task)
+            .await
+            .expect("stop interrupts the long heartbeat interval")
+            .expect("heartbeat worker joins cleanly");
     }
 
     #[test]
