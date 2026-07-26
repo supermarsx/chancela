@@ -1,12 +1,13 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-26 from the current CI configuration and reachable
-implementation snapshot `4f19ae3`,
+Updated 2026-07-27 from the current CI configuration and reachable
+implementation snapshot `fdfb396`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
 runtime-loader signing coverage, bounded CI dependency, PostgreSQL
-advisory-lock, and composed-server startup-handoff determinism, inherited document layouts, committed
+advisory-lock, composed-server startup-handoff, and mock-TSA test-workspace
+determinism, inherited document layouts, committed
 packaging and release contracts, and the earlier official pdfjs legacy main/worker
 compatibility path, the blocking core template PDF preview proof, the
 continuous template document editor, and the mobile companion foundation docs/scripts,
@@ -1004,11 +1005,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `4f19ae3`
+## Focused Gate Snapshot Through `fdfb396`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-26 for current implementation head `4f19ae3`.
+metadata-refreshed on 2026-07-27 for current implementation head `fdfb396`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1017,7 +1018,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `4f19ae3` cover the accessible
+- Current landed-slice markers through `fdfb396` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1074,6 +1075,18 @@ above still apply.
   composed-server command passed 37/37 in 141.5 seconds. This is local
   harness-determinism evidence, not production readiness, cross-process port
   ownership, HA, hosted-CI success, or deployment certification.
+
+  `fdfb3966` isolates each API-signatures mock-TSA workspace with a
+  PID + nanosecond timestamp + process-local `AtomicU64` `Relaxed` suffix while
+  retaining drop-time cleanup. Its deterministic regression creates 32
+  concurrent directories from one identical timestamp, requires all paths to
+  be distinct, and verifies all are removed after drop. The local exact hosted
+  filter passed 9/9 and the full `api-signatures` target passed 96/96. This is
+  test-temporary-directory isolation only: it does not contact or prove a
+  production TSA/provider, exercise production signing, or establish a
+  hosted-CI fix. The capacity run started from `428127fc` was aborted and
+  quarantined after its source identity became obsolete; it is not capacity,
+  soak, or 10,000-cryptographic-signature evidence.
 
   Focused current validation passed 46 web tests (drawer/search/search
   settings), 30 API preview tests, 1 API search-source mutation-guard
@@ -2610,7 +2623,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `4f19ae3`
+- Current checkpoint metadata/static checks through `fdfb396`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

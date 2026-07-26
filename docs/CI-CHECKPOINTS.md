@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `4f19ae3` (2026-07-26). It records the
+The current substantive checkpoint is `fdfb396` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -108,6 +108,17 @@ following bounded concern groups in this guard:
   seven runs, and the exact full composed-server command passed 37/37. This is
   local harness-determinism evidence, not production readiness, cross-process
   port ownership, HA, hosted-CI success, or deployment certification.
+- `fdfb3966` isolates each API-signatures mock-TSA workspace with a
+  PID + nanosecond timestamp + process-local `AtomicU64` `Relaxed` suffix while
+  retaining drop-time cleanup. Its deterministic regression creates 32
+  concurrent directories from one identical timestamp, requires all paths to
+  be distinct, and verifies all are removed after drop. The local exact hosted
+  filter passed 9/9 and the full `api-signatures` target passed 96/96. This is
+  test-temporary-directory isolation only: it does not contact or prove a
+  production TSA/provider, exercise production signing, or establish a
+  hosted-CI fix. The capacity run started from `428127fc` was aborted and
+  quarantined after its source identity became obsolete; it is not capacity,
+  soak, or 10,000-cryptographic-signature evidence.
 - `54529fb3` hardens normal, cluster, and hardened projector deployment with
   split secret exposure, backend-only data services, explicit
   dedicated-database acknowledgement, atomic no-clobber secret publication,

@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `4f19ae3` (2026-07-26)",
+    "The current substantive checkpoint is `fdfb396` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `4f19ae3`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `fdfb396`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `4f19ae3`",
+    "Focused Gate Snapshot Through `fdfb396`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `4f19ae3`",
+    "Current checkpoint metadata/static checks through `fdfb396`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `4f19ae3abb72d6221fa9c5ce2563921f45c02f9a`",
+    "implementation snapshot `fdfb3966ee2f8edefd04f3717d0e063e221653e5`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `4f19ae3`",
+    "Current checkpoint metadata/static checks through `fdfb396`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16803,6 +16803,36 @@ function assertCheckpointMap() {
     "concurrent_server_startups_keep_identical_bootstrap_users_isolated",
     "composed-server concurrent startup isolation regression marker",
   );
+  assertFileContains(
+    "crates/chancela-api/tests/common/tsa_http.rs",
+    "static NEXT_OPENSSL_TSA_DIR_ID: AtomicU64 = AtomicU64::new(0);",
+    "mock TSA process-local directory suffix counter marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/common/tsa_http.rs",
+    '"chancela-api-mock-tsa-{}-{}-{}"',
+    "mock TSA PID timestamp counter directory shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/common/tsa_http.rs",
+    "NEXT_OPENSSL_TSA_DIR_ID.fetch_add(1, Ordering::Relaxed)",
+    "mock TSA relaxed atomic suffix allocation marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/suite_signatures.rs",
+    "openssl_tsa_dirs_with_the_same_timestamp_are_unique_and_cleaned_on_drop",
+    "mock TSA identical-timestamp concurrency regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/suite_signatures.rs",
+    "const DIR_COUNT: usize = 32;",
+    "mock TSA 32-directory concurrency marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/suite_signatures.rs",
+    "assert!(paths.iter().all(|path| !path.exists()));",
+    "mock TSA drop cleanup regression marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "This supplies the Linux build/runtime dependency needed by the generated-PFX loader test; it does not touch a reader, use a Citizen Card, or prove live PC/SC signing",
@@ -16818,9 +16848,24 @@ function assertCheckpointMap() {
     "This is local harness-determinism evidence, not production readiness, cross-process port ownership, HA, hosted-CI success, or deployment certification",
     "CI/E2E startup-handoff no-production-readiness boundary",
   );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "The local exact hosted filter passed 9/9 and the full `api-signatures` target passed 96/96",
+    "spec coverage mock TSA focused and full local evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "This is test-temporary-directory isolation only: it does not contact or prove a production TSA/provider, exercise production signing, or establish a hosted-CI fix",
+    "CI checkpoints mock TSA no-production-signing boundary",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "The capacity run started from `428127fc` was aborted and quarantined after its source identity became obsolete; it is not capacity, soak, or 10,000-cryptographic-signature evidence",
+    "CI/E2E obsolete capacity run no-claim boundary",
+  );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `4f19ae3` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `fdfb396` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -16915,7 +16960,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `4f19ae3` (2026-07-26)",
+    "The current substantive checkpoint is `fdfb396` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

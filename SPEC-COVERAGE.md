@@ -1,12 +1,13 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-26 from current implementation snapshot `4f19ae3abb72d6221fa9c5ce2563921f45c02f9a`,
+*Updated 2026-07-27 from current implementation snapshot `fdfb3966ee2f8edefd04f3717d0e063e221653e5`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
 exact-volume performance harness with fail-closed local-signing timestamp
 isolation and actual runtime-loader signing coverage; bounded CI dependency,
-PostgreSQL advisory-lock, and composed-server startup-handoff determinism; and the inherited
+PostgreSQL advisory-lock, composed-server startup-handoff, and mock-TSA
+test-workspace determinism; and the inherited
 document-layout model, renderer, settings policy, stored resolved-layout
 snapshot, and web editors,
 plus committed packaging and release-trust contract evidence and
@@ -332,7 +333,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `4f19ae3` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `fdfb396` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -398,6 +399,18 @@ Implementation checkpoints covered here:
   concurrently and requires their bootstrap users to remain isolated. This is
   harness determinism evidence, not production readiness, cross-process port
   ownership, HA, or hosted-CI proof.
+
+  `fdfb3966` isolates each API-signatures mock-TSA workspace with a
+  PID + nanosecond timestamp + process-local `AtomicU64` `Relaxed` suffix and
+  retains drop-time cleanup. Its deterministic regression creates 32
+  concurrent directories from one identical timestamp, requires all paths to
+  be distinct, and verifies that all are removed after drop. The local exact
+  hosted filter passed 9/9 and the full `api-signatures` target passed 96/96.
+  This is test-temporary-directory isolation only: it does not contact or prove
+  a production TSA/provider, exercise production signing, or establish a
+  hosted-CI fix. The capacity run started from `428127fc` was aborted and
+  quarantined after its source identity became obsolete; it is not capacity,
+  soak, or 10,000-cryptographic-signature evidence.
 
   The inherited document-layout lane resolves the concrete instance ->
   template -> entity -> book cascade before render/page counting, atomically
