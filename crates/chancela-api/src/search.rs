@@ -4019,8 +4019,10 @@ mod tests {
 
     #[tokio::test]
     async fn search_read_control_diagnostic_failure_is_stale_not_an_error_response() {
-        let mut state = AppState::default();
-        state.search_runtime = SearchRuntimeMode::QueryOnly;
+        let state = AppState {
+            search_runtime: SearchRuntimeMode::QueryOnly,
+            ..AppState::default()
+        };
         let mut response = redacted_idle_status();
         enrich_projector_diagnostics_with_control(
             &state,
