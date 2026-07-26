@@ -1,8 +1,11 @@
 # CI and E2E Hardening Plan
 
-Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,
-and implementation snapshot `16000bb`,
-including coverage notes for the official pdfjs legacy main/worker
+Updated 2026-07-26 from the current CI configuration and reachable
+implementation snapshot `c9c1b19`,
+including coverage notes for the floating block-settings drawer, external
+search projector and isolated compile/image graph, proof-governed exact-volume
+performance harness, inherited document layouts, committed packaging and
+release contracts, and the earlier official pdfjs legacy main/worker
 compatibility path, the blocking core template PDF preview proof, the
 continuous template document editor, and the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
@@ -142,7 +145,7 @@ test operating checklist for driving Chancela toward release confidence.
   hostname-verified server certificate. The runtime test uses the backend's
   secure default and the TLS test supplies `sslmode=verify-full` explicitly:
   `cargo test -p chancela-store --features postgres --locked --test
-  postgres_backend <test-name> -- --ignored --test-threads=1`. This proves the
+postgres_backend <test-name> -- --ignored --test-threads=1`. This proves the
   live store/TLS path but remains limited to the store integration test binary;
   API seed, logical restore, cluster/failover/feed, sidecar, HA, and migration
   coverage remain outside this CI lane. Historical full ignored
@@ -361,7 +364,7 @@ test operating checklist for driving Chancela toward release confidence.
   on selection, and sends `raw_report.content_base64` plus `content_type`,
   `size_bytes`, `sha256`, and safe `source_filename` only on explicit upload.
   The follow-on raw-report byte API exposes `GET
-  /v1/external-validator-reports/{case_id}/{validator_family}/raw-report` to
+/v1/external-validator-reports/{case_id}/{validator_family}/raw-report` to
   `settings.read` actors only, returns retained raw bytes with attachment
   headers, returns 404 for missing or manifest-only reports, and fails closed for
   unsafe identities, malformed sidecars, and duplicate/ambiguous identities.
@@ -554,7 +557,7 @@ test operating checklist for driving Chancela toward release confidence.
   generated template wording. It also makes no DGLAB certification or legal
   archive acceptance claim.
 - The current imported-document receipt/history slice projects a `Recibo de
-  revisão` panel and bounded technical review history from the imported-document
+revisão` panel and bounded technical review history from the imported-document
   view. Pending rows show no fake receipt, while reviewed rows show latest
   status, reviewer, time, note, required and acknowledged guardrails, ordered
   prior decisions, plus no-claim rows for OCR, conversion, canonical PDF/A
@@ -571,7 +574,7 @@ test operating checklist for driving Chancela toward release confidence.
   provider approval, external validation, qualified-status, or trust-list
   certification.
 - The current local DGLAB interchange slice exposes read-only `GET
-  /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
+/v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by
   `book.export@Book`, to derive a deterministic local
   `LocalDglabInterchangeManifest` JSON scaffold from an existing internal
   preservation `PackageManifest`. It keeps official-DGLAB/certification/approval/
@@ -583,7 +586,7 @@ test operating checklist for driving Chancela toward release confidence.
   bytes, ledger event, disposal path, legal archival certification,
   PDF/A/PAdES/PDF-UA certification, authority approval, or legal archive claim.
 - The current per-book import preflight slice exposes raw-byte `POST
-  /v1/books/import/preflight?policy=...` as a preview-only import step. It
+/v1/books/import/preflight?policy=...` as a preview-only import step. It
   checks the bundle evidence currently available before import and current
   collision state, returns operator preview fields without `import_id`, and the
   store/API tests pin no `ledger.imported`, no `imported_books`, no retained
@@ -750,7 +753,7 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - User creation and bootstrap sign-in submit the same operator password; no
   passwordless create/sign-in path is a supported browser workflow.
 - Current-user switching prompts for a password before posting `POST
-  /v1/session`.
+/v1/session`.
 - Refresh during onboarding does not skip mandatory recovery phrase display.
 - Existing users but no session routes to sign-in, not onboarding.
 - Expired or invalid sessions fail closed without exposing protected routes.
@@ -897,7 +900,7 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   Invalid act preconditions are isolated into redacted per-document error rows,
   while duplicate IDs and over-cap requests fail before provider or pending-row
   creation. Focused proof spans `cargo test -p chancela-api --test
-  remote_signing --locked`, `client.test.ts`, `SigningPanel.test.tsx`, and
+remote_signing --locked`, `client.test.ts`, `SigningPanel.test.tsx`, and
   route-stubbed `apps/web/e2e/remote-signing-pending-session.spec.ts` coverage
   for per-document pending rows without credential echo. This is not
   provider-certified remote batch, not provider-native multi-document
@@ -909,7 +912,7 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
   reload and call the matching confirm endpoint. This is reload
   adoption/routing only. Focused route-stubbed browser proof is
   `npm run test:browser --workspace apps/web --
-  e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
+e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
   remote confirm for CSC/QTSP pending sessions and dedicated CMD confirm for
   legacy CMD pending sessions after reload, with fake activation/OTP values.
   No production provider approval, live CSC readiness, trust-list/legal
@@ -999,17 +1002,78 @@ bounded core browser gate; use `test:browser:matrix` for full browser coverage.
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `16000bb`
+## Focused Gate Snapshot Through `c9c1b19`
 
 Historical focused checks from the active director loop, refreshed on
-2026-07-10 for head `3e72e08` and checkpoint-promoted on 2026-07-25 for
-current implementation head `16000bb`. This is not an exhaustive current
-green-run claim; the full-server E2E claim below is limited to local
+2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
+metadata-refreshed on 2026-07-26 for current implementation head `c9c1b19`.
+This is not an exhaustive current green-run claim; the full-server E2E claim
+below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
 Docker, desktop, production package signing/notarization, production image
 signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
+
+- Current landed-slice markers through `c9c1b19` cover the accessible
+  configure-only right drawer for block settings; permission-separated full
+  search and management UI; durable external-projector lease, health,
+  checkpoint, pause/rebuild cancellation, and query-only API contracts;
+  API-independent projection/compile crates; a slim projector image; the
+  exact-volume performance profiles plus proof-eligibility boundaries; and
+  committed split-secret, network, role/ACL, and deployment contracts. The
+  inherited-layout markers continue to pin instance -> template -> entity ->
+  book resolution, atomic inherited validation, canonical snapshot
+  persistence, separate layout-digest event binding, legacy-unbound handling,
+  scoped preview inheritance, and frozen encerramento replay. Template preview
+  markers additionally require one configured sample-resolved model shared by
+  PDF/A and Markdown, pure output without structural-proof/preview prose, and
+  matching catalog-wide preview generation, with backward-compatible defaults
+  and stale-client preservation. Search trust markers require ordinary readers
+  to fail closed without management-diagnostic leakage; the management-only
+  settings table carries command, revision, lease, and heartbeat diagnostics.
+  `6f60ed65` adds bounded graceful lease release and immediate-successor
+  coverage. `43ddb5de` commits the complete three-image SLSA v1 publication,
+  run-and-attempt-qualified evidence, digest-only opt-in signing, split-secret
+  deployment, and live smoke contracts; `5db517a` documents the external
+  topology.
+
+  Focused current validation passed 46 web tests (drawer/search/search
+  settings), 30 API preview tests, 1 API search-source mutation-guard
+  integration test, 19 projector tests with the Postgres feature, and 42
+  performance harness/topology tests. The projector dependency gate reported
+  224/230 default packages, 242/250 all-feature packages, 12/13 internal
+  packages in each graph, and zero forbidden dependencies. Docker image
+  contracts, Compose topology, projector-role contracts, split-secret
+  fixtures, and release trust/status self-tests also passed against the current
+  implementation tree. The current `cargo test --workspace --locked` gate also
+  exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's
+  per-target output. No full capacity/soak profile, 10,000 cryptographic
+  signatures, interactive visual QA, hosted CI run, GHCR publication,
+  signature, or remote-provider/hardware run is recorded by this metadata
+  refresh.
+
+  At snapshot `c9c1b19`, after `3d7cf815` aligned the stale Settings-page
+  assertions with the rendered `Lote do indexador integrado` label and
+  `c9c1b192` refreshed the exact settings-gated restore/reload mutation
+  inventory, the complete `npm run test:checkpoint:recent-landed` command
+  passed. Its web matrix recorded 24 files / 657 tests, including all 123
+  Settings-page tests; the template document-editor slice recorded 23 tests;
+  the API search-source mutation guard recorded 1 test; the external projector
+  recorded 19 tests; and the performance governance suite recorded 42 tests.
+  The dependency, Docker image, Compose, role initializer, release
+  trust/status, validator-corpus, and desktop lockfile gates also passed.
+  Final-head focused checks additionally recorded 2 tenant-scan inventory
+  tests, 1 dashboard semantic-order test, and 35
+  i18n/template-preview-sample editor tests. This focused command does not
+  replace the full repository/hosted CI or the no-claim boundaries above.
+
+  The full web coverage gate passed 189 files / 2247 tests with 90.03%
+  statements (18097/20100), 80.75% branches, 88.79% functions, and 91.92%
+  lines, without lowering thresholds. The definitive PostgreSQL projector
+  smoke also passed three generations, invalid-runtime and rolling-overlap
+  lease handling, query/freshness/clean-log assertions, graceful stop, and
+  exact cleanup.
 
 - Current template PDF/editor checks through `16000bb`: `50c255d` uses the
   official `pdfjs-dist/legacy/build/pdf.mjs` module and matching legacy worker,
@@ -1162,16 +1226,16 @@ settingsDefaults.test.ts contracts.test.ts`.
   multi-node operational certification, backup-policy/RPO/RTO certification,
   legal/DR certification, or external sync readiness.
 - Recent 2026-07-10 focused checks through `783538c`: `npm run
-  check:encrypted-build-defaults`, `cargo metadata --locked --format-version 1
-  --features "chancela-server/sqlcipher chancela-cli/sqlcipher" --no-deps`,
+check:encrypted-build-defaults`, `cargo metadata --locked --format-version 1
+--features "chancela-server/sqlcipher chancela-cli/sqlcipher" --no-deps`,
   desktop Tauri SQLCipher metadata, and Windows `cargo check -p
-  chancela-server -p chancela-cli --locked --features
-  "chancela-server/sqlcipher chancela-cli/sqlcipher"` passed with Strawberry
+chancela-server -p chancela-cli --locked --features
+"chancela-server/sqlcipher chancela-cli/sqlcipher"` passed with Strawberry
   Perl pinned.
 - Recent platform/service checks through `5a79f1e`: `cargo fmt -p
-  chancela-api -- --check`, `cargo test -p chancela-api platform_ --locked`,
+chancela-api -- --check`, `cargo test -p chancela-api platform_ --locked`,
   `cargo check -p chancela-api --locked`, and `cargo clippy -p chancela-api
-  --locked --all-targets -- -D warnings` passed.
+--locked --all-targets -- -D warnings` passed.
 - Current working-tree structured platform-log ingestion checks: focused
   `cargo test -p chancela-api --locked platform_logs_forwarded` coverage pins
   `POST /v1/platform/logs/forwarded` route behavior, write-permission auth,
@@ -1186,7 +1250,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   requests stay unaudited, accepted retained forwards still produce one accepted
   audit, and the audit payloads avoid raw body/message/context keys/parse errors/
   stdout/stderr/tokens/secrets/user strings. Focused `cargo test -p
-  chancela-authz --locked platform_log_write_is_seeded_only_to_owner_and_platform_admin`
+chancela-authz --locked platform_log_write_is_seeded_only_to_owner_and_platform_admin`
   coverage pins fresh seeded `platform.logs.write` defaults for Owner and
   Platform Administrator only, excluding API Client. This remains a bounded API
   log-tail ingress check only: no lifecycle control, stdout/stderr capture,
@@ -1196,7 +1260,7 @@ settingsDefaults.test.ts contracts.test.ts`.
 - Recent web focused checks through `3f19872`: books, notification popup/page,
   storage settings, ESLint, Prettier, `npm run check:spec-coverage`,
   `node --check scripts/checkpoint-recent-landed.mjs`, and `npm run
-  test:checkpoint:recent-landed:static` passed.
+test:checkpoint:recent-landed:static` passed.
 - Recent notification footer checks through `938b61e`: the focused
   `NotificationBell.test.tsx` coverage, Prettier, and ESLint passed for the
   icon-only popup footer action.
@@ -1770,7 +1834,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   proof, or provider approval.
 - Current working-tree raw external-validator report download checks: focused
   API/static markers pin `GET
-  /v1/external-validator-reports/{case_id}/{validator_family}/raw-report`,
+/v1/external-validator-reports/{case_id}/{validator_family}/raw-report`,
   `settings.read` gating, retained raw byte output with attachment headers,
   create/list redaction of `content_base64`, 404 for missing or manifest-only
   reports, and fail-closed unsafe identity, malformed sidecar, and
@@ -1794,7 +1858,7 @@ settingsDefaults.test.ts contracts.test.ts`.
 - Current working-tree written-resolution evidence receipt browser checks:
   focused route-stubbed Playwright proof is
   `npm run test:browser --workspace apps/web --
-  e2e/written-resolution-evidence.spec.ts`. It pins the mounted Ata editor path
+e2e/written-resolution-evidence.spec.ts`. It pins the mounted Ata editor path
   for a WrittenResolution act, local evidence receipt form fill/submit, exact
   act `PATCH` body scoped to `written_resolution_evidence`, preservation of
   existing checklist/history metadata, all proof/legal/authority claim flags
@@ -1805,7 +1869,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   finalization, signing, seal, or archive completion.
 - Current working-tree trust catalog identifier-match checks: focused
   `cargo test -p chancela-api trust --locked` and `npm run test --workspace
-  apps/web -- src/features/ferramentas/trust.test.tsx` coverage pins optional
+apps/web -- src/features/tools/trust.test.tsx` coverage pins optional
   `identifier_match` on identifier-filtered TSL/TSA rows, omission without
   identifier filters, strict complete SHA-256/SKI matching, no loose partial-hash
   inference, technical-only match explanation copy, truncated display, and full
@@ -1828,8 +1892,8 @@ settingsDefaults.test.ts contracts.test.ts`.
 - Current working-tree paper-book OCR conversion-dossier and execution-artifact
   checks, plus local OCR/canonical rehearsal report checks: focused
   `cargo test -p chancela-store --test store --locked
-  paper_book_ocr_conversion`, `cargo test -p chancela-api --test api-records
-  --locked -- paper_import::paper_book_ocr_conversion`,
+paper_book_ocr_conversion`, `cargo test -p chancela-api --test api-records
+--locked -- paper_import::paper_book_ocr_conversion`,
   `npm run test --workspace apps/web -- src/contracts/contracts.test.ts`, and
   `npm run test --workspace apps/web -- src/features/books/books.test.tsx`
   coverage pins accepted matching draft requirements, metadata-only response
@@ -1896,12 +1960,12 @@ settingsDefaults.test.ts contracts.test.ts`.
   and that non-pt locale keys do not leak Portuguese source text. The focused
   web command is
   `npm run test --workspace apps/web -- src/api/client.test.ts
-  src/contracts/contracts.test.ts
-  src/features/signing/ExternalSignerInvitePage.test.tsx
-  src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx
-  src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`; run the
+src/contracts/contracts.test.ts
+src/features/signing/ExternalSignerInvitePage.test.tsx
+src/features/tools/ExternalSigningWorkflowsPage.test.tsx
+src/features/signing/SigningPanel.test.tsx src/i18n/i18n.test.ts`; run the
   browser proof with `npm run test:browser --workspace apps/web --
-  e2e/external-signing-operator-evidence.spec.ts`. This is
+e2e/external-signing-operator-evidence.spec.ts`. This is
   invite/envelope tracking plus linked no-identity-slot technical evidence
   status and operator-supplied workflow slot evidence only; it is not provider
   signing, PIN/OTP/passphrase collection, provider calls, trust-list checks,
@@ -1909,7 +1973,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   full envelope legal completion, or public token exposure.
 - Current working-tree official signed-PDF handoff browser checks: focused
   route-stubbed Playwright proof is `npm run test:browser --workspace apps/web
-  -- e2e/official-signed-handoff.spec.ts`. It pins the sealed-act browser UI for
+-- e2e/official-signed-handoff.spec.ts`. It pins the sealed-act browser UI for
   importing a PDF already signed outside Chancela as technical signed-PDF
   evidence only, requires guardrail acknowledgement before import, asserts the
   exact official import guardrail IDs and client-declared trace context only
@@ -1923,7 +1987,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   trust-list/provider validation, qualified-signature status, legal
   validity/effect/sufficiency, act finalization, or legal signing acceptance.
 - Current working-tree ASiC inspection/decompression checks: focused `cargo
-  test -p chancela-api --test api-signatures --locked -- asic_signature_validation` coverage pins
+test -p chancela-api --test api-signatures --locked -- asic_signature_validation` coverage pins
   `POST /v1/signature/asic/inspect`, base64 ASiC ZIP envelopes with optional
   filename/declared size/declared SHA-256, fixity/base64/malformed-ZIP/
   unsafe-path refusals, profile shape, bounded profile, blockers, member paths,
@@ -1931,7 +1995,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   `technical_validation` projected from `validate_asic_container` for CAdES,
   XAdES, mixed ASiC-E signatures, and archive timestamp consistency, plus the
   legacy bounded `cades` compatibility field. Focused `cargo test -p
-  chancela-signing --test roundtrip --locked asic_` coverage pins actual
+chancela-signing --test roundtrip --locked asic_` coverage pins actual
   decompressed-size accounting for payloads, manifests, CAdES signatures, XAdES
   signatures, unsupported `META-INF`, and other non-directory members, including
   underdeclared entries that must still produce inspection blockers. This is
@@ -2002,7 +2066,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   release hardening.
 - Current working-tree backup recovery-drill receipt checks: focused
   `backup_recovery_drill` API coverage pins `POST`/`GET
-  /v1/backup/recovery-drills`, restore-preflight-only execution, durable
+/v1/backup/recovery-drills`, restore-preflight-only execution, durable
   `backup-recovery-drills.json` persistence, bounded manifest evidence,
   `isolated_restore_verified` and `isolated_restore_verification` receipt fields,
   isolated DB materialization/open/load, ledger/readback counts, sidecar
@@ -2067,10 +2131,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   ledger mutation, or production custody claim is implemented or proven.
 - Current `040ce48` all-filtered archive export checks: focused
   `cargo test -p chancela-api arquivo --locked`, `cargo test -p chancela-api
-  --lib ledger_archive_document --locked`, `npm run test --workspace apps/web
-  -- LedgerPage.test.tsx client.test.ts i18n.test.ts`, `npm run build
-  --workspace apps/web`, and `npx playwright test
-  e2e/ledger-archive-boundedness.spec.ts --project=chromium` coverage pins
+--lib ledger_archive_document --locked`, `npm run test --workspace apps/web
+-- LedgerPage.test.tsx client.test.ts i18n.test.ts`, `npm run build
+--workspace apps/web`, and `npx playwright test
+e2e/ledger-archive-boundedness.spec.ts --project=chromium` coverage pins
   explicit archive `export_scope`, default bounded current-page export,
   `all_filtered` server-side walking of filtered newest-first records in
   250-record internal chunks, streamed JSON/TXT/CSV/HTML audit/interchange
@@ -2086,9 +2150,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   expanded PDF/A/signature validity, production custody proof, legal
   acceptance, ledger mutation, or full archive completion claim.
 - Current `3a41187` workflow reminder/calendar checks: focused `cargo test -p
-  chancela-core --locked profile_calendar`, `cargo test -p chancela-api
-  --locked profile_calendar`, and `cargo test -p chancela-api --locked
-  reminder_` coverage pins `workflow.reminders` defaults
+chancela-core --locked profile_calendar`, `cargo test -p chancela-api
+--locked profile_calendar`, and `cargo test -p chancela-api --locked
+reminder_` coverage pins `workflow.reminders` defaults
   (enabled, dashboard limit 5, due-soon 45 days, attendance lookahead 45 days,
   all sources enabled), dashboard policy application to the existing
   profile-calendar, act-follow-up, and attendance-hygiene advisory reminder
@@ -2109,7 +2173,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   defaults and compact Gestão controls for the master switch, limit, due-soon
   window, attendance lookahead, and three source toggles. Web
   contracts/dashboard/notification tests plus `npm run build --workspace
-  apps/web` passed for the fixed-date condominium reminder surface. This
+apps/web` passed for the fixed-date condominium reminder surface. This
   remains local advisory policy/calendar coverage only: no legal-calendar
   authority, law-source authority, threshold verification, external
   delivery/email/ICS/CalDAV/webhook,
@@ -2117,21 +2181,21 @@ settingsDefaults.test.ts contracts.test.ts`.
   claim is implemented.
 - Current `711c7a4` dashboard annual reminder localization checks: focused
   `npm run test --workspace apps/web --
-  src/features/dashboard/DashboardPage.test.tsx` coverage pins work-queue
+src/features/dashboard/DashboardPage.test.tsx` coverage pins work-queue
   localized titles, shared annual advisory body copy, localized entity action,
   entity routes, due dates, source metadata, and raw fallback suppression for
   `csc-art376-annual`, `assoc-annual`, `fundacao-annual`, and
   `cooperativa-annual`, while preserving `condominio-annual` behavior. `npm run
-  build --workspace apps/web` passed with the existing ConfirmActionModal Rollup
+build --workspace apps/web` passed with the existing ConfirmActionModal Rollup
   warnings. This is frontend dashboard display and workflow/calendar UI coverage
   only: no backend/calendar policy, contract, provider, legal/compliance, DRE
   source-authority, external delivery/calendar-sync/webhook, workflow completion,
   or legal-effect claim is implemented.
 - Current `982cc9a` convocation-notice advisory checks: focused
   `cargo test -p chancela-core --locked convocation_notice`, `cargo test -p
-  chancela-api --locked convocation_notice`, `npm run test --workspace apps/web
-  -- DashboardPage.test.tsx notifications.test.ts`, `npm run build --workspace
-  apps/web`, `cargo fmt --check`, and `git diff --check` coverage pins local
+chancela-api --locked convocation_notice`, `npm run test --workspace apps/web
+-- DashboardPage.test.tsx notifications.test.ts`, `npm run build --workspace
+apps/web`, `cargo fmt --check`, and `git diff --check` coverage pins local
   statute/convening advisory depth only. Core compares
   `Entity.statute.convocation_notice_days` with `Act.convening`
   antecedence/dispatch metadata, warning for missing/unverifiable evidence or
@@ -2167,9 +2231,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   added.
 - Current `caae1bf` convening dispatch evidence capture checks: focused
   `npm run test --workspace apps/web -- AtaEditorStructured.test.tsx`, `npm
-  run test --workspace apps/web -- client.test.ts`, `npm run build --workspace
-  apps/web`, `cargo test -p chancela-api --locked dispatch_`, and `git diff
-  --check` coverage pins local workflow evidence capture through the existing
+run test --workspace apps/web -- client.test.ts`, `npm run build --workspace
+apps/web`, `cargo test -p chancela-api --locked dispatch_`, and `git diff
+--check` coverage pins local workflow evidence capture through the existing
   `POST /v1/acts/{id}/convening/dispatch` endpoint. The Ata editor builds the
   dispatch body from existing `act.convening` recipients, required
   `dispatched_at`, and optional channel/reference metadata, then records local
@@ -2180,7 +2244,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal/compliance completion.
 - Current `0c539ae` convening dispatch browser proof checks: focused
   route-stubbed Playwright evidence passed with `npm run test:browser
-  --workspace apps/web -- e2e/convening-dispatch-evidence.spec.ts` (1 Chromium
+--workspace apps/web -- e2e/convening-dispatch-evidence.spec.ts` (1 Chromium
   test), plus `git diff --check` and `git diff --cached --check` before commit.
   It pins the dashboard `act-convening-notice` reminder link to
   `/atas/{id}#convening-guidance`, the existing guidance/no-claim browser copy,
@@ -2191,8 +2255,8 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal/compliance completion claim is added.
 - Current `82d3554` convocation reminder guidance routing checks: focused
   `npm run test --workspace apps/web -- DashboardPage.test.tsx
-  notifications.test.ts AtaEditorStructured.test.tsx` passed 64 tests, `npm
-  run build --workspace apps/web` passed, and `git diff --check` passed. The
+notifications.test.ts AtaEditorStructured.test.tsx` passed 64 tests, `npm
+run build --workspace apps/web` passed, and `git diff --check` passed. The
   dashboard and notification actions for `open_act_convening_notice` /
   `act-convening-notice` now route to `/atas/{act-id}#convening-guidance`, and
   the Ata editor maps that stable hash to the existing convocatória/convening
@@ -2203,9 +2267,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   legal effect, or legal/compliance completion claim is added.
 - Prior `3dc31e3` missing-meeting-date convocation reminder checks: focused
   `cargo test -p chancela-api --locked convocation_notice`, `npm run test
-  --workspace apps/web -- DashboardPage.test.tsx notifications.test.ts`, `npm
-  run test --workspace apps/web -- i18n.test.ts`, `npm run build --workspace
-  apps/web`, and `git diff --check` pin the API and web behavior for a statute
+--workspace apps/web -- DashboardPage.test.tsx notifications.test.ts`, `npm
+run test --workspace apps/web -- i18n.test.ts`, `npm run build --workspace
+apps/web`, and `git diff --check` pin the API and web behavior for a statute
   convocation-notice day count when `meeting_date` is absent. The API dashboard
   now emits the same `act-convening-notice` local advisory route with blank
   `due_date`, blank `meeting_date`, blank `notice_due_date`,
@@ -2225,9 +2289,9 @@ settingsDefaults.test.ts contracts.test.ts`.
   computation, legal effect, or legal/compliance completion claim is added.
 - Current `87ec6aa` convocation act-review guidance checks: focused
   `npm run test --workspace apps/web -- AtaEditorStructured.test.tsx
-  CompliancePanel.test.tsx` passed 38 tests, `npm run build --workspace
-  apps/web` passed with the existing ConfirmActionModal warnings, and `git diff
-  --check HEAD~1 HEAD` passed. The Ata editor now shows compact local guidance
+CompliancePanel.test.tsx` passed 38 tests, `npm run build --workspace
+apps/web` passed with the existing ConfirmActionModal warnings, and `git diff
+--check HEAD~1 HEAD` passed. The Ata editor now shows compact local guidance
   when the recorded meeting date or convening dispatch/channel/antecedence/
   evidence reference is missing, and the CompliancePanel now shows next-record
   guidance for missing or below-threshold convocation-notice advisories. This is
@@ -2238,7 +2302,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   still depends on recorded `meeting_date`; missing-date dashboard reminders are
   non-computed local advisories.
 - Current imported-document review reminder checks: focused `cargo test -p
-  chancela-api --lib --locked imported_document_review_reminder` coverage pins
+chancela-api --lib --locked imported_document_review_reminder` coverage pins
   metadata-only dashboard reminder emission for act-scoped imports whose review
   status is still `operator_review_required`, `ocr_review_required`, or
   `canonical_conversion_review_required`, while skipping global/unattached and
@@ -2252,33 +2316,40 @@ settingsDefaults.test.ts contracts.test.ts`.
   mutation, raw imported bytes, filenames, digests, notes, imported-by details,
   DGLAB/legal/provider/trust/GDPR completion, or compliance-completion claim is
   implemented.
-- Current working-tree release workflow static-guard checks: `node
-  scripts/check-release-trust.mjs self-test` pins the CI metadata lane
-  release-trust self-test, SBOM package-linkage self-test, and package
-  provenance fixture checks; the Docker no-push/local-load job with `local-ci`
-  trust status, `--expect-mode local-ci`, and nested
-  `releaseTrust.imagePublication/signing/notarization/attestation.status`
-  context; and the release package job's package integrity check,
-  `--require-clean-source`, `releaseTrust.mode = unsigned-dev`,
-  `attestation.status = not_attested`, `--expect-mode unsigned-dev`, collected
-  `--package` path validation, tarball basename/SHA-256 recomputation, and SBOM
-  package linkage. Production package validation also requires `--manifest` when
-  either package mode or expected mode is `production`, with self-tests covering
-  those signals independently. `check-package-artifacts --require-clean-source`
-  fails `dirty` and `unknown` source states. This is static workflow/package
-  metadata assurance only; it does not add signing, notarization, attestation,
-  registry publishing, reproducible-build proof, or production trust claims.
-- Current `ef3270a` opt-in release-signing checks: reviewed
+- Current committed release workflow static-guard checks: `node
+scripts/check-release-trust.mjs self-test` pins package release-trust and SBOM
+  linkage as well as the normal-CI three-image publication boundary. The latter
+  gates on the declared CI jobs; builds server, worker, and search projector for
+  linux/amd64 with BuildKit SLSA v1 maximum provenance and SBOM; publishes by
+  canonical digest before reconciling the immutable full-commit tag; and
+  requires one complete `chancela-image-set.json` with exactly one runnable
+  amd64 descriptor plus linked attestation descriptors. Exact immutable digest
+  references, source/workflow-run metadata, separate published-but-unsigned
+  status records, and attestation linkage must agree. The uploaded evidence
+  name includes source SHA, run id, and run attempt and refuses missing files.
+  Package validation still recomputes the tarball basename/SHA-256, rejects
+  dirty/unknown clean-source declarations, and requires a production manifest
+  when production mode is requested. These are static validator/workflow
+  contracts; no hosted run, registry readback, reproducible-build proof,
+  signature, notarization, or production trust result is recorded here.
+- Current opt-in release-signing checks cover
   `.github/workflows/release-signing.yml`,
-  `scripts/release-signing-status.mjs`, and `docs/release-signing.md`. The
-  workflow is manual/secret-gated and inert by default, can push/sign a target
-  container image with cosign and attach a CycloneDX SBOM attestation only when
-  the required target and identity are configured, can code-sign/notarize
-  desktop artifacts only when platform credentials exist, and always uploads
-  status artifacts recording unsigned/not-pushed/not-attested/not-notarized
-  outcomes when evidence is absent. This is hook/status-artifact coverage only:
-  it does not prove production signing success, secret availability, package
-  trust certification, registry publication, or completed notarization.
+  `scripts/release-signing-status.mjs`, and `docs/release-signing.md`. Container
+  signing is now a digest-only consumer: when explicitly configured it locates
+  the newest successful normal main-CI push run for the exact source SHA,
+  downloads and validates its run-and-attempt-qualified three-image trust
+  artifact, then signs and verifies every exact server/worker/search-projector
+  digest through one mutually exclusive keyless or private-key mode.
+  Private-key secrets are scoped only to the private-key step. The workflow
+  performs no container build, digest push, tag write, replacement attestation,
+  or image-index rewrite. Without a signing identity it remains inert and
+  records unsigned/not-performed status. Its release-source SBOM checkout does
+  not persist credentials, verifies tag-to-commit identity, and runs pinned
+  Syft without a network against read-only source and isolated temporary output.
+  Desktop code-signing/notarization remains separately credential-gated. The
+  release trust and status self-tests passed locally; this does not prove
+  successful hosted signing, artifact retention, secret availability, registry
+  publication, package trust certification, or completed notarization.
 - Current `f4047b5` observability checks: focused API coverage pins `/metrics`,
   `/livez`, `/readyz`, `/api/metrics`, `/api/livez`, `/api/readyz`,
   `x-request-id` echo/replacement, Prometheus text output, and matched route
@@ -2308,7 +2379,7 @@ settingsDefaults.test.ts contracts.test.ts`.
   customized persisted role permissions. Focused RBAC UI coverage renders the
   manual-review warning and missing-permission list. Focused route-stubbed
   browser proof is `npm run test:browser --workspace apps/web --
-  e2e/seeded-role-drift.spec.ts`; it pins no initial reconciliation `POST`,
+e2e/seeded-role-drift.spec.ts`; it pins no initial reconciliation `POST`,
   explicit `Rever defaults` review `GET`, add-only/defaults UI for
   `platform.logs.write`, empty `{}` apply body, retained customized
   permissions, unchanged Owner/custom rows, and disabled review without
@@ -2376,10 +2447,10 @@ settingsDefaults.test.ts contracts.test.ts`.
   creation with password, hidden remove-password action, and E2E helpers using a
   configured operator password. Focused Playwright auth proof pins
   `settings-created users require passwords and switch current user with that
-  password` in `apps/web/e2e/session.spec.ts` and `fresh install requires strong
-  password onboarding, recovery phrase, then opens the app` in
+password` in `apps/web/e2e/session.spec.ts` and `fresh install requires strong
+password onboarding, recovery phrase, then opens the app` in
   `apps/web/e2e/first-launch-onboarding.spec.ts` via `npm run test:browser
-  --workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
+--workspace apps/web -- e2e/session.spec.ts e2e/first-launch-onboarding.spec.ts`.
   Treat the static/unit/focused markers as the pinned slice, not broad
   Playwright-browser-suite or browser-matrix proof; the browser suite is not exhaustive.
 - Current working-tree synthetic seed dataset integration checks: focused
@@ -2466,13 +2537,27 @@ settingsDefaults.test.ts contracts.test.ts`.
   production-readiness, TLS/key-custody, vulnerability-free scan, SBOM,
   signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud
   deployment readiness, or spec-completion claim is made.
-- Current checkpoint metadata/static checks through `16000bb`
+- Current `54529fb3` projector packaging checks add normal, cluster, and
+  hardened Compose contracts for backend-only search/Postgres/Redis services;
+  split secret exposure; query-only API/runtime sharing; explicit
+  dedicated-database acknowledgement before database-global PUBLIC ACL
+  revocation; password-free `psql` arguments; and fail-closed projector role,
+  ownership, membership, schema, database, and routine assertions. Secret
+  fixtures cover case-insensitive placeholders, symbolic links, stale
+  publication directories, no-clobber atomic publication, exact pair matching,
+  and split-volume permissions. Local checks passed
+  `compose-security-contracts.mjs`, `role-init-security-contracts.mjs`,
+  `preflight-secrets-fixtures.sh`, and `secrets-init-fixtures.sh`. This does not
+  substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
+  production secret custody, multi-host network policy, or deployment
+  certification.
+- Current checkpoint metadata/static checks through `c9c1b19`
   bounded slice markers passed: `node
-  --check scripts/checkpoint-recent-landed.mjs`, `npm run
-  test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
+--check scripts/checkpoint-recent-landed.mjs`, `npm run
+test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
   `git diff --check -- SPEC-COVERAGE.md docs/CI-CHECKPOINTS.md
-  docs/CI-E2E-HARDENING-PLAN.md scripts/checkpoint-recent-landed.mjs
-  scripts/check-spec-coverage.mjs`.
+docs/CI-E2E-HARDENING-PLAN.md scripts/checkpoint-recent-landed.mjs
+scripts/check-spec-coverage.mjs`.
   These pin the spec snapshot,
   hardening-plan head, LOTL/member-state bootstrap markers, mobile API base
   URL/shell-detection markers, subject DEK

@@ -51,26 +51,94 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `16000bb` (2026-07-25). It adds two
-bounded web concerns to this guard:
+The current substantive checkpoint is `c9c1b19` (2026-07-26). It records the
+following bounded concern groups in this guard:
 
-- `50c255d` uses the official pdfjs legacy main module and matching legacy
-  worker, with compatibility unit coverage, while the blocking core Playwright
-  list includes `apps/web/e2e/template-pdf-preview.spec.ts`. That focused test
-  exercises the real server PDF/A preview response through a non-empty pdf.js
-  canvas and proves PDF/Markdown exclusivity.
-- `16000bb` pins the continuous paper/page template editor, explicit
-  `PageBreak` pagination, document-like controls, first-placement WYSIWYG
-  `NarrativeBody` editing with read-only repeated placements, invalid JSON
-  proof pause, deterministic post-reorder focus for document and card views,
-  save-time mutation locking, keyboard preview tabs, and bounded mobile CSS.
+- `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
+  right-side drawer that is absent until Configure is invoked, uses an honest
+  modal/inert boundary, restores focus, becomes full-width at the mobile
+  breakpoint, and preserves block context across safe type changes and
+  destructive-change cancellation. `992fef7e` also routes PDF/A and Markdown
+  preview generation through the same sample-resolved document model; API
+  regressions require pure output, configured example-data propagation, and
+  matching previews for every catalog template without structural-proof or
+  preview-explanation paragraphs. Settings regressions keep product defaults
+  backward compatible and require stale clients to preserve configured preview
+  samples unless they explicitly replace them.
+- `cb5fa13b`/`abb2af25`/`d3aca34c` add permission-separated full search,
+  durable projector coordination, a query-only API mode, and an external
+  projector process with bounded lease, heartbeat, pause/rebuild cancellation,
+  and management diagnostics. `4ba55bfd` extracts API-independent action
+  center, runtime configuration, and search-projection crates so the projector
+  compile graph excludes API/signing/smartcard/PDF-signature dependencies;
+  `caca6d38` adds a slim projector image with a contract-checked runtime
+  boundary. Ordinary `search.read` responses fail closed on untrusted
+  projector evidence without exposing management diagnostics, while the
+  `search.manage` settings table exposes command, revision, lease, and
+  heartbeat evidence. `c9c1b192` synchronizes the exact search-source mutation
+  exception inventory with the settings-gated restore/reload helpers; the
+  checkpoint now executes the dedicated one-test
+  `search_source_mutation_guards` integration target.
+- `20008d37`/`4efd1956`/`eff9866d` govern the exact-volume performance harness
+  for 15,000 users, 10,000 entities, 50,000 books, and 10,000 unsigned
+  signature subjects. Capacity/soak evidence is proof-eligible only with the
+  committed complete SLO policy, stable topology/resource evidence, an exact
+  clean source identity, and the dedicated runner labels; PR smoke is always
+  non-proof.
+- `54529fb3` hardens normal, cluster, and hardened projector deployment with
+  split secret exposure, backend-only data services, explicit
+  dedicated-database acknowledgement, atomic no-clobber secret publication,
+  and projector-role ACL assertions. `aa43b208` keeps the resulting search
+  source workspace-lint clean. `6f60ed65` adds bounded graceful projector lease
+  release with immediate-successor regression coverage. `43ddb5de` commits the
+  complete three-image SLSA v1 publication contract, run-and-attempt-qualified
+  evidence, digest-only opt-in signing consumer, expanded split-secret Compose
+  hardening, and live SQLite/PostgreSQL projector plus hardened-PostgreSQL smoke
+  wiring; `5db517a` documents the external projector topology.
+- The inherited document-layout lane resolves concrete instance -> template ->
+  entity -> book values before rendering/page counting, validates inherited
+  updates atomically, persists and separately digests the concrete layout for
+  new documents, replays frozen encerramento output after mutable-layer
+  changes, and leaves historical pre-binding rows explicitly unbound.
 
-Recorded validation is the full web Vitest suite (176 files / 2121 tests), web
-lint (0 errors / 1 unrelated existing warning), web format check, production
-web build, and focused Chromium proof (1 passed). This checkpoint does not
-claim interactive visual QA, live WebView/device testing, exhaustive browser
-coverage, PDF/A certification, legal/template correctness, or spec completion.
-The spec matrix remains `PARTIAL=11`.
+The prior `16000bb` checkpoint recorded the full web Vitest suite (176 files /
+2121 tests), web lint (0 errors / 1 unrelated existing warning), web format
+check, production web build, and one focused Chromium template-preview proof.
+Those historical results are not re-labelled as validation of the later batch.
+For the current batch, focused local validation recorded 46 web tests across
+the block drawer, search workspace, and search settings; 30 API preview tests;
+19 external-projector tests; 42 performance harness/topology tests; the
+projector dependency and Dockerfile contract gates; Compose/role/secret-init
+packaging contracts; and release-trust/status self-tests. The definitive live
+PostgreSQL projector smoke also passed three generations, invalid-runtime and
+rolling-overlap lease handling, query/freshness/clean-log checks, graceful
+stop, and exact cleanup. Release-workflow assurance remains committed source
+and local static/mutation evidence only. No interactive
+visual QA, exhaustive browser/device coverage, full capacity/soak run, 10,000
+cryptographic signatures, PDF/A or PDF/UA certification, legal/template
+correctness, hosted CI success, GHCR publication, image/package signature, or
+spec completion is claimed. The spec matrix remains `PARTIAL=11`.
+
+At snapshot `c9c1b19`, after `3d7cf815` aligned the stale Settings-page
+assertions with the rendered `Lote do indexador integrado` label and
+`c9c1b192` refreshed the restore/reload mutation inventory, the complete
+`npm run test:checkpoint:recent-landed` command passed. Its web matrix recorded
+24 files / 657 tests, including all 123 Settings-page tests; the template
+document-editor slice recorded 23 tests; the API search-source mutation guard
+recorded 1 test; the external projector recorded 19 tests; and the performance
+governance suite recorded 42 tests. The dependency, Docker image, Compose, role
+initializer, release trust/status, validator-corpus, and desktop lockfile gates
+also passed. Final-head focused checks additionally recorded 2 tenant-scan
+inventory tests, 1 dashboard semantic-order test, and 35
+i18n/template-preview-sample editor tests. This is a focused recent-landed
+checkpoint, not a substitute for the full repository/hosted CI or the no-claim
+boundaries above.
+
+The full web coverage gate passed 189 files / 2247 tests with 90.03% statements
+(18097/20100), 80.75% branches, 88.79% functions, and 91.92% lines. The
+thresholds were not reduced. The current `cargo test --workspace --locked`
+gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from
+Cargo's per-target output.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,
@@ -357,7 +425,7 @@ It intentionally reuses existing test surfaces:
   including the direct `GET /v1/books/{id}/archive/local-dglab-interchange-manifest`
   call, `.json` save behavior, and no ZIP/export/archive mutation.
 - Web Data Management sync/handoff local JSON evidence export:
-  `npm run test --workspace apps/web -- src/features/recovery/GestaoDadosSection.test.tsx`
+  `npm run test --workspace apps/web -- src/features/recovery/DataManagementSection.test.tsx`
   includes the already-loaded `GET /v1/sync/handoff-preflight` report save path,
   `chancela-sync-handoff-preflight.json`, `application/json;charset=utf-8`,
   browser save-picker preference, no extra request, and no remote
@@ -399,12 +467,12 @@ It intentionally reuses existing test surfaces:
   verifies legal capacity.
 - Web remote batch and provider credential management unit proof:
   `npm run test --workspace apps/web -- src/api/client.test.ts
-  src/features/signing/SigningPanel.test.tsx` pins the encoded
+src/features/signing/SigningPanel.test.tsx` pins the encoded
   `POST /v1/signature/remote/{provider}/batch-initiate` client route,
   per-document pending/error rows without credential echo, stale-result
   clearing, and provider-bound credential clearing. The provider credential UI
   unit proof is `npm run test --workspace apps/web --
-  src/features/settings/ProviderCredentialsSection.test.tsx`.
+src/features/settings/ProviderCredentialsSection.test.tsx`.
 - API bounded retention execution:
   `cargo test -p chancela-api --test api-archive-privacy --locked -- privacy::retention_`
   including explicit non-destructive evidence states, due-candidate prior
@@ -414,7 +482,7 @@ It intentionally reuses existing test surfaces:
   `execute_supported` records, safe internal evidence gating, non-mutating GET
   behavior, queryable execution history without a persisted `resolved` flag, and
   review-closure coverage for `POST
-  /v1/privacy/retention-executions/{id}/review-closure`: idempotent same
+/v1/privacy/retention-executions/{id}/review-closure`: idempotent same
   closure, conflict on different closure evidence, outcome-category decision
   mapping, persistence, authorization/unknown-field/overclaim rejection, and
   due-candidate reads that stay non-mutating after closure.
@@ -540,8 +608,8 @@ It intentionally reuses existing test surfaces:
   legal proof, or public auth weakening. The spec matrix remains `PARTIAL=11`.
 - API/web condominium annual profile-calendar advisory:
   `cargo test -p chancela-core --locked profile_calendar`, `cargo test -p
-  chancela-api --locked profile_calendar`, and `cargo test -p chancela-api
-  --locked reminder_` pin the deterministic `condominio-annual` local fixed
+chancela-api --locked profile_calendar`, and `cargo test -p chancela-api
+--locked reminder_` pin the deterministic `condominio-annual` local fixed
   Jan 15 advisory date, `annual_fixed_date` due rule, `annual_fixed_month=1`,
   `annual_fixed_day=15`, supported typed profile-calendar metadata, pending
   source review, pending/unverified source status, and false legal/compliance/
@@ -750,7 +818,7 @@ It intentionally reuses existing test surfaces:
   sufficiency, cited-law correctness, or threshold correctness.
 - Web client/contract/books/dashboard/document/entity/Ferramentas/notification/recovery/settings/signing/templates/i18n/subnav
   matrix:
-  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/ferramentas/ferramentas.test.tsx src/features/ferramentas/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/GestaoDadosSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
+  `npm run test --workspace apps/web -- src/api/client.test.ts src/contracts/contracts.test.ts src/features/books/books.test.tsx src/features/dashboard/DashboardPage.test.tsx src/features/documents/ActDocumentPanel.test.tsx src/features/entities/entities.test.tsx src/features/tools/tools.test.tsx src/features/tools/trust.test.tsx src/features/notifications/NotificationBell.test.tsx src/features/notifications/NotificationsPage.test.tsx src/features/recovery/DataManagementSection.test.tsx src/features/settings/SettingsPage.test.tsx src/features/signing/SigningPanel.test.tsx src/features/templates/TemplatesCatalogPage.test.tsx src/i18n/i18n.test.ts src/ui/SubNav.test.tsx`
 - Web shell accessibility/focus unit tests:
   `npm run test --workspace apps/web -- src/app/layout.test.tsx src/app/router.test.tsx src/ui/PageHeader.test.tsx src/ui/useFocusTrap.test.ts`
   pin the skip-link `#main-content` target, pathname route-change focus to the
@@ -1303,16 +1371,21 @@ with npm and Cargo vulnerability reports under `chancela-supply-chain-reports-*`
 
 `node scripts/check-release-trust.mjs self-test` statically verifies that the CI
 metadata lane keeps release-trust, SBOM package-linkage, and package provenance
-fixture checks; that the Docker job stays no-push/local-load with `local-ci`
-trust status and `--expect-mode local-ci`; and that the release workflow runs
-package integrity, emits `releaseTrust.mode = unsigned-dev` and
-`attestation.status = not_attested`, validates `--expect-mode unsigned-dev`,
-passes the collected package path, recomputes the tarball basename and SHA-256
-against the release summary, and runs SBOM package linkage. Production package validation now requires
-`--manifest` whenever either the package mode or expected mode is `production`;
-the self-test covers both signals independently. The Docker trust JSON checks
-preserve nested path context for
-`releaseTrust.imagePublication/signing/notarization/attestation.status`.
+fixture checks; that local Docker smoke declarations stay in `local-ci`; and
+that normal main CI gates publication on the declared CI jobs and describes
+server, worker, and search-projector publication only through one complete
+image-set manifest. Each linux/amd64 BuildKit build requests SLSA v1 maximum
+provenance plus SBOM, publishes by canonical digest before reconciling the
+immutable full-commit tag, validates exactly one runnable amd64 descriptor plus
+its linked attestation descriptors, and records agreeing immutable digest,
+source, workflow-run, published-but-unsigned, and attestation evidence. The
+evidence artifact name includes the source SHA, run id, and run attempt and
+refuses missing files. Release packaging still emits
+`releaseTrust.mode = unsigned-dev` and `attestation.status = not_attested`,
+passes the collected package path, recomputes the tarball basename and SHA-256,
+and runs SBOM package linkage. Production package validation requires
+`--manifest` whenever either the package or expected mode is `production`; the
+self-test covers both signals independently.
 `node scripts/check-package-artifacts.mjs --fixture --skip-dist` is also part of
 the cheap CI metadata lane; its fixture coverage proves
 `--require-clean-source` rejects `dirty` and `unknown` source states. `npm run
@@ -1324,10 +1397,11 @@ paths. Release packaging then validates each generated
 including a source SHA cross-check against
 `manifest.sourceProvenance.commitSha` and a tarball basename/SHA-256 check
 against the actual package path. Docker CI validates
-the actual Compose profiles `single-node`, `worker`, and `postgres`, runs
+the actual Compose profiles `single-node`, `worker`, and `postgres`, builds and
+smokes server, worker, and search-projector images, runs
 `bash scripts/docker-smoke.sh --compose-profile chancela-server:ci` after the
-local image load, and validates `chancela-server-signing-status.json` in
-explicit `local-ci` mode. The Compose smoke inspects the `single-node`
+local image load, and validates each image signing-status document in explicit
+`local-ci` mode. The Compose smoke inspects the `single-node`
 Compose-created server container for read-only rootfs, `cap_drop: ALL`,
 `no-new-privileges`, non-root user, `/tmp` tmpfs, and persistent
 `/var/lib/chancela` data mount before the durable `/health` assertion; the
@@ -1336,24 +1410,31 @@ of this checkpoint the second rendered profile was `validation-worker`, a
 sidecar that ran a second copy of the server image and was never wired to any
 code; it has since been removed, and the `worker`/`postgres` profiles took its
 place in the render gate.) The
-release-trust metadata checks remain static workflow assurance only; switch
-those checks to `production` only when signing, notarization, registry
-publication, and attestation evidence are actually generated. The Compose
-smoke does not claim HA, a dedicated worker image, registry publication, image
-signing, attestation, notarization, vulnerability remediation, or production
-deployment certification.
+release-trust metadata checks remain static workflow assurance only. This
+checkpoint does not claim that the hosted image build, registry readback, GHCR
+publication, signing, notarization, vulnerability remediation, or production
+deployment certification has succeeded.
 
 The separate `Release signing (opt-in)` workflow is manual and secret-gated. It
-adds hooks for target-image push/signing, cosign SBOM attestation, source SBOM
-upload, Windows/macOS code signing, and macOS notarization, but
+does not build or push a container or write a tag. When signing is explicitly
+configured, it finds the newest successful normal main-CI push run for the
+exact requested source SHA, downloads that run-and-attempt-qualified
+three-image trust artifact, validates all exact server/worker/search-projector
+digest declarations, and signs and verifies each digest through one mutually
+exclusive keyless or private-key mode. Private-key secrets are exposed only to
+the private-key step. It retains source SBOM upload, Windows/macOS code
+signing, and macOS notarization lanes; the source SBOM checkout does not persist
+credentials, verifies the release tag resolves to the checked-out commit, and
+runs the pinned Syft image without a network, with read-only source and isolated
+temporary output. In addition,
 `scripts/release-signing-status.mjs` records positive signing, attestation, or
 notarization claims only when concrete evidence such as image digest, identity,
 predicate type, signer, certificate fingerprint, run URL, or notarization ticket
-is supplied. With missing targets or credentials it emits honest unsigned /
-not-pushed / not-attested / not-notarized status artifacts. This checkpoint pins
-workflow wiring and status-artifact behavior only: no production signing
-success, secret availability, trust certification, registry publication, or
-completed notarization is claimed.
+is supplied. Without a container identity it performs no image-set download or
+registry write and emits honest unsigned/not-performed status artifacts. This
+checkpoint pins workflow wiring and status-artifact behavior only: no hosted
+publication/signing success, artifact retention, secret availability, trust
+certification, or completed notarization is claimed.
 
 The additive hardened Docker lane is pinned as local configuration and operator
 documentation evidence only. `Dockerfile.hardened` uses digest-pinned Rust,
@@ -1371,6 +1452,16 @@ This does not claim a full image build in this checkpoint, production
 readiness, TLS/key custody, vulnerability-free status, scanner/SBOM proof,
 signature or attestation proof, HA/failover/RPO/RTO, legal/DR certification,
 cloud deployment readiness, or spec completion.
+
+The current committed packaging contracts add backend-only
+Postgres/Redis/projector networks, split least-exposure secret mounts, explicit
+dedicated-database acknowledgement before database-global PUBLIC revocation,
+password-free projector role initialization, and fail-closed role/ownership/
+membership/schema/database/routine checks. Compose, role-init, preflight, and
+split-secret fixtures passed locally, including placeholder, symlink,
+no-clobber atomic-publication, pair-matching, and permission cases. They do not
+replace the live Postgres ACL/restart smoke, hosted Docker jobs, production
+secret custody, multi-host policy, or deployment certification.
 
 After `npm run package`, run `npm run test:package-integrity` to validate the
 generated `dist/chancela-*.tar.gz` archive and staged package directory. The

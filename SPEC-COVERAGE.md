@@ -1,7 +1,13 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-25 from current implementation snapshot `16000bbe30cc2e1281a8d59b49125d85256f2627`,
-with committed evidence refreshes for the official pdfjs legacy main/worker
+*Updated 2026-07-26 from current implementation snapshot `c9c1b192d31d420d48bb0f17b641ca0ca877383d`,
+with committed evidence for the floating template-block settings drawer; the
+permissioned full-management search surface, durable external projector,
+isolated projector compile graph and slim runtime image; proof-governed
+exact-volume performance harness; and the inherited document-layout model,
+renderer, settings policy, stored resolved-layout snapshot, and web editors,
+plus committed packaging and release-trust contract evidence and
+the earlier official pdfjs legacy main/worker
 compatibility path, its blocking core browser proof, the continuous template
 document editor, mobile/keyboard behavior, and mobile API base URL indirection and
 shell detection, the mobile companion foundation docs/scripts, destructive
@@ -322,6 +328,68 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `c9c1b19` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+  **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
+  an accessible portaled drawer that exists only while a block is being
+  configured, pins to the right edge, becomes full-width on narrow screens,
+  traps the modal context with `inert`, restores focus, and retains the selected
+  block across safe type changes and destructive-change cancellation. Focused
+  Vitest covers those behaviors; this is not interactive visual QA or broad
+  browser/device proof. `992fef7e` routes PDF/A and Markdown preview endpoints
+  through one sample-resolved document model; API tests require pure preview
+  content, configured example-data propagation, and matching output across the
+  catalog without structural-proof or preview-explanation prose. This remains
+  renderer/test evidence, not PDF/A certification. Settings tests preserve
+  backward-compatible product defaults and prevent stale clients from erasing
+  configured preview samples.
+
+  `cb5fa13b`, `abb2af25`, `d3aca34c`, `4ba55bfd`, and `caca6d38` add
+  permission-separated full-management search, durable projector
+  lease/checkpoint coordination, pause/rebuild cancellation, query-only API
+  operation, an external projector process with bounded health/heartbeat
+  behavior, an API-independent projection/compile graph, and a PC/SC-free slim
+  projector image. Focused web tests, 19 projector tests, dependency-boundary
+  checks, and Dockerfile contract checks cover those local contracts. They do
+  include fail-closed reader trust behavior without management-diagnostic
+  leakage, plus management-table command/revision/lease/heartbeat evidence.
+  They do not prove production search relevance, a live multi-node deployment,
+  unattended recovery over time, hosted CI, or published-image operation.
+  `c9c1b192` synchronizes the exact search-source mutation exception inventory
+  with the settings-gated restore/reload helpers. The focused checkpoint now
+  runs the dedicated one-test `search_source_mutation_guards` integration
+  target so a renamed, added, removed, or unguarded source-map writer fails the
+  dynamic guard.
+
+  `20008d37`, `4efd1956`, and `eff9866d` define exact-volume profiles for
+  15,000 users, 10,000 entities, 50,000 books, and 10,000 unsigned signature
+  subjects, plus a separate opt-in local PKCS#12 signing path. Forty-two
+  harness/topology tests cover deterministic data, search readiness, resource
+  telemetry, complete SLO policy, runner labels, and proof eligibility. These
+  are harness and governance safeguards, not recorded capacity, latency, soak,
+  cryptographic-signature, live-provider, or hosted-CI results.
+
+  The inherited document-layout lane resolves the concrete instance ->
+  template -> entity -> book cascade before render/page counting, atomically
+  validates updates, stores the canonical concrete policy with each new
+  generated document, binds its SHA-256 digest separately from the
+  template-spec digest in `document.generated`, and replays frozen
+  encerramento bytes after mutable layers change. Historical pre-binding rows
+  remain explicitly unbound. `54529fb3` commits the initial secret
+  initialization, Compose isolation, projector role, and deployment contracts,
+  with `aa43b208` retaining workspace-lint cleanliness. `6f60ed65` adds bounded
+  graceful projector lease release and immediate-successor regression coverage;
+  the definitive PostgreSQL lifecycle smoke passed three generations,
+  rolling-overlap lease handling, query/freshness/clean-log assertions, and
+  exact cleanup. `43ddb5de` commits the complete three-image SLSA v1
+  publication contract, run-and-attempt-qualified evidence, digest-only
+  opt-in signing consumer, split-secret Compose hardening, and live SQLite,
+  PostgreSQL projector, and hardened-PostgreSQL smoke wiring; `5db517a`
+  documents the external topology. The web coverage gate also passed 189 files
+  / 2247 tests at 90.03% statements without lowering thresholds. No hosted
+  workflow result, GHCR publication, signature/attestation execution, capacity
+  run, PDF/A/PDF-UA certification, legal correctness, or legacy-layout
+  migration is claimed. Statuses remain PARTIAL=11.
 
 - Current `16000bb` keeps Template Catalog/Documents/UX/CI **PARTIAL**:
   `50c255d` moves runtime PDF rendering to the official
@@ -4939,6 +5007,10 @@ or universal PDF/UA completion.
   `evidence/index.json`, document-bundle `validation_report.evidence_index`, local PAdES renewal
   plans, caller-supplied local archive timestamp append, technical metadata projections, and
   bounded digest-verified raw external-validator report attachments.
+- Document layout: extend visual/browser regression coverage and operator-facing
+  verification of the separately recorded layout digest. Historical
+  pre-binding rows remain deliberately unbound; any future migration/backfill
+  policy must preserve byte provenance rather than inventing a snapshot.
 - Trust/signing depth: XAdES/ASiC-XAdES generation and full
   legal/trust/provider/QES/B-LT/B-LTA/eIDAS/production conformance beyond local
   `technical_validation` reports, ASiC inspection beyond the local read-only technical endpoint,
@@ -4980,6 +5052,12 @@ or universal PDF/UA completion.
   checks, and release-trust metadata-anchor guards, move Docker profiles toward production HA/ops
   where required,
   sign/notarize release packages, and sign/attest Docker images with verified publication evidence.
+- Performance/capacity assurance: execute and retain reviewed reports for the
+  exact-volume capacity and soak profiles with SLOs and resource telemetry.
+  The fixture rows named `signatures` are unsigned subjects unless the
+  separately reviewed cryptographic path is enabled; neither the harness nor
+  a smoke run proves 10,000 cryptographic, CMD, CSC/QTSP, smartcard, timestamp,
+  revocation, trust-list, or external-validator operations.
 
 ### External / provider / legal blockers
 
@@ -5026,6 +5104,22 @@ or universal PDF/UA completion.
 
 ## Do Not Overstate
 
+- The exact-volume performance profiles and CI workflow make capacity evidence
+  reproducible; they are not capacity proof until the full target profile is
+  executed successfully with reviewed SLO and resource evidence.
+- A durable external projector, query-only API mode, dependency/image
+  boundaries, and local search-management tests do not prove production
+  relevance, multi-node availability, operational recovery, or bounded load at
+  the target dataset.
+- Compose/secret/role static and fixture tests do not replace the live
+  PostgreSQL ACL/restart smoke or production secret/network validation.
+- A complete three-image digest contract and an opt-in digest-only signing
+  workflow do not prove hosted GHCR publication, signature, attestation
+  retrieval, artifact retention, or notarization.
+- Configurable document-layout inheritance, API rendering, persisted
+  defaults/overrides, stored snapshots/digests, replay guards, and editors do
+  not migrate historical artifacts, certify visual/legal correctness, or prove
+  PDF/A/PDF-UA conformance.
 - Chancela helps produce compliant evidence; it does not create legal validity or replace provider
   credentials, qualified-trust onboarding, or legal review.
 - A qualified signature artifact can be produced through configured providers, but the repository

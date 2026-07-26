@@ -7,6 +7,32 @@ import { dirname } from "node:path";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const staticOnly = process.argv.includes("--static");
+const webMatrixTestPaths = requireExistingTestPaths("apps/web", [
+  "src/api/client.test.ts",
+  "src/api/settingsDefaults.test.ts",
+  "src/contracts/contracts.test.ts",
+  "src/features/books/books.test.tsx",
+  "src/features/dashboard/DashboardPage.test.tsx",
+  "src/features/documents/ActDocumentPanel.test.tsx",
+  "src/features/entities/entities.test.tsx",
+  "src/features/notifications/NotificationBell.test.tsx",
+  "src/features/notifications/NotificationsPage.test.tsx",
+  "src/features/recovery/BookIntegritySection.test.tsx",
+  "src/features/recovery/DataManagementSection.test.tsx",
+  "src/features/settings/SearchSettingsPanel.test.tsx",
+  "src/features/settings/SettingsPage.test.tsx",
+  "src/features/signing/SigningPanel.test.tsx",
+  "src/features/signing/seal-designer/usePdfPage.test.tsx",
+  "src/features/templates/TemplateBlocksEditor.test.tsx",
+  "src/features/templates/TemplateDocumentEditor.test.tsx",
+  "src/features/templates/TemplatesCatalogPage.test.tsx",
+  "src/features/tools/ExternalSigningWorkflowsPage.test.tsx",
+  "src/features/tools/SearchPage.test.tsx",
+  "src/features/tools/tools.test.tsx",
+  "src/features/tools/trust.test.tsx",
+  "src/i18n/i18n.test.ts",
+  "src/ui/SubNav.test.tsx",
+]);
 
 const checks = [
   {
@@ -210,6 +236,13 @@ const checks = [
     ],
   },
   {
+    name: "API pure shared template preview tests",
+    command: [
+      "cargo",
+      ["test", "-p", "chancela-api", "--locked", "--lib", "preview"],
+    ],
+  },
+  {
     name: "Server condominium absent-owner generated communication persistence test",
     command: [
       "cargo",
@@ -330,7 +363,14 @@ const checks = [
     name: "API sync handoff preflight tests",
     command: [
       "cargo",
-      ["test", "-p", "chancela-api", "--locked", "--lib", "sync_handoff_preflight"],
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--locked",
+        "--lib",
+        "sync_handoff_preflight",
+      ],
     ],
   },
   {
@@ -441,29 +481,96 @@ const checks = [
       "--workspace",
       "apps/web",
       "--",
-      "src/api/client.test.ts",
-      "src/api/settingsDefaults.test.ts",
-      "src/contracts/contracts.test.ts",
-      "src/features/books/books.test.tsx",
-      "src/features/dashboard/DashboardPage.test.tsx",
-      "src/features/documents/ActDocumentPanel.test.tsx",
-      "src/features/entities/entities.test.tsx",
-      "src/features/ferramentas/ExternalSigningWorkflowsPage.test.tsx",
-      "src/features/ferramentas/ferramentas.test.tsx",
-      "src/features/ferramentas/trust.test.tsx",
-      "src/features/notifications/NotificationBell.test.tsx",
-      "src/features/notifications/NotificationsPage.test.tsx",
-      "src/features/recovery/GestaoDadosSection.test.tsx",
-      "src/features/recovery/LivrosIntegridadeSection.test.tsx",
-      "src/features/settings/SettingsPage.test.tsx",
-      "src/features/signing/SigningPanel.test.tsx",
-      "src/features/signing/seal-designer/usePdfPage.test.tsx",
-      "src/features/templates/TemplateBlocksEditor.test.tsx",
-      "src/features/templates/TemplateDocumentEditor.test.tsx",
-      "src/features/templates/TemplatesCatalogPage.test.tsx",
-      "src/i18n/i18n.test.ts",
-      "src/ui/SubNav.test.tsx",
+      ...webMatrixTestPaths,
     ]),
+  },
+  {
+    name: "API search source mutation guard",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-api",
+        "--test",
+        "search_source_mutation_guards",
+        "--locked",
+      ],
+    ],
+  },
+  {
+    name: "external search projector tests",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-search-projector",
+        "--features",
+        "postgres",
+        "--locked",
+      ],
+    ],
+  },
+  {
+    name: "search projector dependency boundary",
+    command: [
+      process.execPath,
+      ["scripts/check-search-projector-dependencies.mjs"],
+    ],
+  },
+  {
+    name: "performance harness governance tests",
+    command: pythonCommand([
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "scripts/perf/tests",
+      "-v",
+    ]),
+  },
+  {
+    name: "Docker image contract check",
+    command: [
+      process.execPath,
+      ["scripts/check-docker-image-contracts.mjs", "check"],
+    ],
+  },
+  {
+    name: "Docker image contract self-test",
+    command: [
+      process.execPath,
+      ["scripts/check-docker-image-contracts.mjs", "self-test"],
+    ],
+  },
+  {
+    name: "Compose security contracts",
+    command: [
+      process.execPath,
+      ["docker/tests/compose-security-contracts.mjs"],
+    ],
+  },
+  {
+    name: "projector role initializer security contracts",
+    command: [
+      process.execPath,
+      ["docker/tests/role-init-security-contracts.mjs"],
+    ],
+  },
+  {
+    name: "release trust self-test",
+    command: [
+      process.execPath,
+      ["scripts/check-release-trust.mjs", "self-test"],
+    ],
+  },
+  {
+    name: "release signing status self-test",
+    command: [
+      process.execPath,
+      ["scripts/release-signing-status.mjs", "self-test"],
+    ],
   },
   {
     name: "validator corpus manifest",
@@ -512,6 +619,28 @@ for (const check of checks) {
 
 function npmCommand(args) {
   return [process.execPath, [npmCliPath(), ...args]];
+}
+
+function pythonCommand(args) {
+  return [process.platform === "win32" ? "python" : "python3", args];
+}
+
+function requireExistingTestPaths(workspace, paths) {
+  assert.equal(
+    new Set(paths).size,
+    paths.length,
+    `${workspace} explicit test matrix must not contain duplicate paths`,
+  );
+
+  const missing = paths.filter(
+    (relativePath) => !existsSync(join(repoRoot, workspace, relativePath)),
+  );
+  assert.deepEqual(
+    missing,
+    [],
+    `${workspace} explicit test matrix contains missing paths`,
+  );
+  return paths;
 }
 
 function npmCliPath() {
@@ -2252,7 +2381,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-mcp/src/registry.rs",
-    "path_template: \"/external-validator-reports/{case_id}/{validator_family}\"",
+    'path_template: "/external-validator-reports/{case_id}/{validator_family}"',
     "MCP external-validator safe metadata endpoint marker",
   );
   assertFileContains(
@@ -3282,7 +3411,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Docker job stays no-push/local-load with `local-ci`",
+    "local Docker smoke declarations stay in `local-ci`",
     "CI checkpoints release-trust Docker local-ci marker",
   );
   assertFileContains(
@@ -3322,17 +3451,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "package integrity, emits `releaseTrust.mode = unsigned-dev`",
+    "Release packaging still emits\n`releaseTrust.mode = unsigned-dev`",
     "CI checkpoints release workflow unsigned-dev marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "Production package validation now requires\n`--manifest`",
+    "Production package validation requires\n`--manifest`",
     "CI checkpoints release production manifest-required marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "release-trust metadata checks remain static workflow assurance only; switch",
+    "release-trust metadata checks remain static workflow assurance only",
     "CI checkpoints release workflow static-only boundary marker",
   );
   assertFileContains(
@@ -4057,8 +4186,18 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
-    "template_document_markdown_preview_renders_block_authored_catalog_template",
-    "complete block-authored template Markdown preview coverage",
+    "template_document_preview_writes_pure_sample_resolved_pdfa_without_mutating",
+    "pure sample-resolved PDF/A template preview coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "configured_template_preview_samples_feed_the_shared_markdown_and_pdf_model",
+    "configured shared Markdown/PDF template preview model coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "every_catalog_template_has_pure_matching_pdf_and_markdown_sample_previews",
+    "catalog-wide pure matching PDF/Markdown template preview coverage",
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplateMarkdownPreview.test.tsx",
@@ -4097,8 +4236,8 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
-    "composes document mode as one paper flow and paginates only at explicit page breaks",
-    "continuous template paper and explicit PageBreak coverage",
+    "composes document mode as one continuous surface with an inline page-break marker",
+    "continuous template paper and inline PageBreak coverage",
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
@@ -4122,7 +4261,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/templates/TemplateDocumentEditor.test.tsx",
-    "uses current valid blocks for proof and pauses every proof while Advanced JSON is invalid",
+    "uses current valid blocks for preview and pauses every preview while Advanced JSON is invalid",
     "invalid Advanced JSON proof-pause coverage",
   );
   assertFileContains(
@@ -4137,7 +4276,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `16000bb` (2026-07-25)",
+    "The current substantive checkpoint is `c9c1b19` (2026-07-26)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -5572,7 +5711,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "\"privacy-dpia-review\"",
+    '"privacy-dpia-review"',
     "dashboard DPIA privacy review reminder builder marker",
   );
   assertFileContains(
@@ -5802,7 +5941,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/data_status.rs",
-    'kind: Some(UsageConcernKind::SidecarLogicalStore)',
+    "kind: Some(UsageConcernKind::SidecarLogicalStore)",
     "API data status DB-backed sidecar concern kind marker",
   );
   assertFileContains(
@@ -7065,7 +7204,7 @@ function assertCheckpointMap() {
     "Settings workflow reminder policy UI coverage",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
     "label={t('settings.reminders.enabled.label')}",
     "Settings workflow reminder master toggle i18n key marker",
   );
@@ -7075,38 +7214,38 @@ function assertCheckpointMap() {
     "Settings workflow reminder master toggle source-locale marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
     "workflow-reminders-dashboard-limit",
     "Settings workflow reminder dashboard-limit input marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
     "workflow-reminders-due-soon-days",
     "Settings workflow reminder due-soon input marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
     "workflow-reminders-attendance-lookahead-days",
     "Settings workflow reminder attendance lookahead input marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
-    "setWorkflowReminderSource('profile_calendar', checked)",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
+    "onSourceChange('profile_calendar', checked)",
     "Settings workflow reminder profile-calendar toggle marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
-    "setWorkflowReminderSource('act_follow_ups', checked)",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
+    "onSourceChange('act_follow_ups', checked)",
     "Settings workflow reminder act-follow-ups toggle marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
-    "setWorkflowReminderSource('attendance_hygiene', checked)",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
+    "onSourceChange('attendance_hygiene', checked)",
     "Settings workflow reminder attendance-hygiene toggle marker",
   );
   assertFileContains(
-    "apps/web/src/features/settings/SettingsPage.tsx",
-    "setWorkflowReminderSource('privacy_control_reviews', checked)",
+    "apps/web/src/features/settings/ReminderSettingsCard.tsx",
+    "onSourceChange('privacy_control_reviews', checked)",
     "Settings workflow reminder privacy-control-review toggle marker",
   );
   assertFileContains(
@@ -7125,12 +7264,12 @@ function assertCheckpointMap() {
     "dashboard reminder policy limit marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/dashboard.rs",
+    "crates/chancela-action-center/src/lib.rs",
     "fn dashboard_reminder_due_date_sort_key(reminder: &DashboardReminder) -> (bool, Option<Date>)",
     "dashboard reminder no-date sort-key helper marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/dashboard.rs",
+    "crates/chancela-action-center/src/lib.rs",
     "(due_date.is_none(), due_date)",
     "dashboard reminder no-date after dated sort marker",
   );
@@ -7195,7 +7334,7 @@ function assertCheckpointMap() {
     "core profile-calendar pending law-source marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/dto.rs",
+    "crates/chancela-action-center/src/lib.rs",
     "pub struct DashboardProfileCalendarPlan",
     "dashboard typed profile-calendar plan DTO marker",
   );
@@ -9507,7 +9646,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "code: \"backup.recovery.freshness_advisory\".to_owned()",
+    'code: "backup.recovery.freshness_advisory".to_owned()',
     "API dashboard backup recovery freshness advisory code marker",
   );
   assertFileContains(
@@ -9577,7 +9716,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/sync_handoff.rs",
-    "const ENDPOINT: &str = \"/v1/sync/handoff-preflight\";",
+    'const ENDPOINT: &str = "/v1/sync/handoff-preflight";',
     "API sync handoff endpoint constant marker",
   );
   assertFileContains(
@@ -10235,7 +10374,7 @@ function assertCheckpointMap() {
     "dashboard automated-review method propagation marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/dto.rs",
+    "crates/chancela-action-center/src/lib.rs",
     "pub review_method: Option<String>",
     "dashboard law reference review method DTO marker",
   );
@@ -10246,12 +10385,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/dashboard.json",
-    "\"verification\": \"automated_review\"",
+    '"verification": "automated_review"',
     "dashboard contract automated-review law ref marker",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "assert_eq!(body[\"counts\"][\"automated_review\"], 39);",
+    'assert_eq!(body["counts"]["automated_review"], 39);',
     "API law corpus automated-review count coverage marker",
   );
   assertFileContains(
@@ -10261,7 +10400,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/law.diploma.json",
-    "\"verification\": \"automated_review\"",
+    '"verification": "automated_review"',
     "law diploma contract automated-review tier marker",
   );
   assertFileContains(
@@ -10276,7 +10415,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/legislation/CorpusReader.tsx",
-    "Badge tone=\"info\"",
+    'Badge tone="info"',
     "Legislacao automated-review info badge marker",
   );
   assertFileContains(
@@ -10351,12 +10490,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.tsx",
-    "className=\"ledger-advanced-filters__summary\"",
+    'className="ledger-advanced-filters__summary"',
     "ledger archive advanced filter summary marker",
   );
   assertFileContains(
     "apps/web/src/features/ledger/LedgerPage.tsx",
-    "className=\"ledger-advanced-filters__count\"",
+    'className="ledger-advanced-filters__count"',
     "ledger archive advanced filter count marker",
   );
   assertFileContains(
@@ -10690,24 +10829,24 @@ function assertCheckpointMap() {
     "CLI database key ambiguity coverage",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     'pub const DB_KEY_SOURCE_ENV: &str = "CHANCELA_DB_KEY_SOURCE";',
-    "API database encryption key-source env marker",
+    "runtime database encryption key-source env marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "HardwareDerivedFallbackUnavailable",
-    "API database encryption hardware fallback unavailable marker",
+    "runtime database encryption hardware fallback unavailable marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     '"hardware" | "hardware_bound" | "hardware_derived" | "hardware_derived_fallback"',
-    "API database encryption hardware fallback selector marker",
+    "runtime database encryption hardware fallback selector marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "hardware_derived_fallback_request_fails_closed_without_static_key",
-    "API database encryption hardware fallback fail-closed unit coverage",
+    "runtime database encryption hardware fallback fail-closed unit coverage",
   );
   assertFileContains(
     "crates/chancela-api/src/data_status.rs",
@@ -10891,7 +11030,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/tests/data_key_ops.rs",
-    "&[initial_key, replacement_key, \"chancela.db\"]",
+    '&[initial_key, replacement_key, "chancela.db"]',
     "API data key rotation receipt no secret/path coverage",
   );
   assertFileContains(
@@ -11186,12 +11325,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-25 from the current CI configuration, clean base `d2a4df1`,\nand implementation snapshot `16000bb`",
+    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `c9c1b19`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `16000bb`",
+    "Focused Gate Snapshot Through `c9c1b19`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -11871,7 +12010,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `16000bb`",
+    "Current checkpoint metadata/static checks through `c9c1b19`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12216,32 +12355,32 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current working-tree release workflow static-guard checks",
+    "Current committed release workflow static-guard checks",
     "CI/E2E hardening plan release workflow static-guard checks marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "SBOM package-linkage self-test, and package\n  provenance fixture checks",
+    "pins package release-trust and SBOM\n  linkage as well as the normal-CI three-image publication boundary",
     "CI/E2E hardening plan release metadata lane marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`releaseTrust.imagePublication/signing/notarization/attestation.status`",
-    "CI/E2E hardening plan release nested trust path marker",
+    "requires one complete `chancela-image-set.json` with exactly one runnable\n  amd64 descriptor plus linked attestation descriptors",
+    "CI/E2E hardening plan complete image-set marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "`--require-clean-source`, `releaseTrust.mode = unsigned-dev`",
-    "CI/E2E hardening plan release unsigned-dev attestation marker",
+    "rejects\n  dirty/unknown clean-source declarations",
+    "CI/E2E hardening plan release clean-source marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Production package validation also requires `--manifest` when\n  either package mode or expected mode",
+    "requires a production manifest\n  when production mode is requested",
     "CI/E2E hardening plan release production manifest-required marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "does not add signing, notarization, attestation,\n  registry publishing, reproducible-build proof, or production trust claims",
+    "no hosted run, registry readback, reproducible-build proof,\n  signature, notarization, or production trust result is recorded here",
     "CI/E2E hardening plan release workflow static-only boundary marker",
   );
   assertFileContains(
@@ -12271,7 +12410,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "With missing targets or credentials it emits honest unsigned /\nnot-pushed / not-attested / not-notarized status artifacts",
+    "Without a container identity it performs no image-set download or\nregistry write and emits honest unsigned/not-performed status artifacts",
     "CI checkpoints opt-in release-signing honest status marker",
   );
   assertFileContainsNormalized(
@@ -12461,7 +12600,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `16000bbe30cc2e1281a8d59b49125d85256f2627`",
+    "implementation snapshot `c9c1b192d31d420d48bb0f17b641ca0ca877383d`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12551,7 +12690,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `16000bb`",
+    "Current checkpoint metadata/static checks through `c9c1b19`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -12778,7 +12917,7 @@ function assertCheckpointMap() {
   );
   assertFileDoesNotContain(
     "scripts/check-spec-coverage.mjs",
-    "\"Dockerfile.hardened\"",
+    '"Dockerfile.hardened"',
     "spec coverage checker keeps hardened Docker implementation files out of checkpoint allowlist",
   );
   assertFileContains(
@@ -12918,7 +13057,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Data Management \"Chaves e reposicao\" surface now renders the existing\n  `persistence.database_encryption` readiness object",
+    'Data Management "Chaves e reposicao" surface now renders the existing\n  `persistence.database_encryption` readiness object',
     "spec coverage key custody readiness surface marker",
   );
   assertFileContains(
@@ -13023,17 +13162,17 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "scripts/check-spec-coverage.mjs",
-    "\"scripts/checkpoint-recent-landed.mjs\"",
+    '"scripts/checkpoint-recent-landed.mjs"',
     "spec coverage checker checkpoint-only path allowlist marker",
   );
   assertFileContains(
     "scripts/check-spec-coverage.mjs",
-    "\"docs/ARCHITECTURE.md\"",
+    '"docs/ARCHITECTURE.md"',
     "spec coverage checker architecture checkpoint path allowlist marker",
   );
   assertFileContains(
     "scripts/check-spec-coverage.mjs",
-    "\"docs/comparison.md\"",
+    '"docs/comparison.md"',
     "spec coverage checker comparison docs checkpoint path allowlist marker",
   );
   assertFileContains(
@@ -13708,12 +13847,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "assert_eq!(amelia[\"contact\"], \"amelia@example.test\");",
+    'assert_eq!(amelia["contact"], "amelia@example.test");',
     "API convening dispatch preserves recipient contact coverage marker",
   );
   assertFileContains(
     "crates/chancela-api/src/lib.rs",
-    "assert_eq!(amelia[\"reference\"], \"RC123\");",
+    'assert_eq!(amelia["reference"], "RC123");',
     "API convening dispatch proof reference stamping coverage marker",
   );
   assertFileContains(
@@ -13908,32 +14047,32 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "source_rule: \"act-convening-notice\".to_owned()",
+    'source_rule: "act-convening-notice".to_owned()',
     "API dashboard convocation-notice source-rule marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "(\"notice_due_date\", notice_due_date_text)",
+    '("notice_due_date", notice_due_date_text)',
     "API dashboard convocation-notice due-date param marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "(\"notice_due_date_computable\", \"false\".to_owned())",
+    '("notice_due_date_computable", "false".to_owned())',
     "API dashboard convocation-notice missing meeting date computable false marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "(\"legal_deadline_computation_claimed\", \"false\".to_owned())",
+    '("legal_deadline_computation_claimed", "false".to_owned())',
     "API dashboard convocation-notice legal deadline no-claim marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "(\"legal_sufficiency_claimed\", \"false\".to_owned())",
+    '("legal_sufficiency_claimed", "false".to_owned())',
     "API dashboard convocation-notice legal-sufficiency no-claim marker",
   );
   assertFileContains(
     "crates/chancela-api/src/dashboard.rs",
-    "\"open_act_convening_notice\"",
+    '"open_act_convening_notice"',
     "API dashboard convocation-notice action marker",
   );
   assertFileContains(
@@ -14093,7 +14232,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/ci-assurance-waivers.json",
-    "\"id\": \"ci.coverage.thresholds.non_web_unit\"",
+    '"id": "ci.coverage.thresholds.non_web_unit"',
     "CI assurance waiver manifest marker",
   );
   assertFileContains(
@@ -14108,7 +14247,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "package.json",
-    "\"check:ci-assurance-waivers\": \"node scripts/check-ci-assurance-waivers.mjs\"",
+    '"check:ci-assurance-waivers": "node scripts/check-ci-assurance-waivers.mjs"',
     "CI assurance waiver package script marker",
   );
   assertFileContains(
@@ -14238,51 +14377,51 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/Cargo.toml",
-    "postgres = [\"chancela-store/postgres\", \"dep:postgres\"]",
+    'postgres = ["chancela-runtime-config/postgres", "chancela-store/postgres", "dep:postgres"]',
     "API postgres feature gate marker",
   );
   assertFileContains(
     "crates/chancela-server/Cargo.toml",
-    "postgres = [\"chancela-api/postgres\", \"chancela-store/postgres\"]",
+    'postgres = ["chancela-api/postgres", "chancela-store/postgres"]',
     "server postgres feature gate marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
-    "pub const DB_BACKEND_ENV: &str = \"CHANCELA_DB_BACKEND\";",
+    "crates/chancela-runtime-config/src/lib.rs",
+    'pub const DB_BACKEND_ENV: &str = "CHANCELA_DB_BACKEND";',
     "database backend selector env marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
-    "pub const DATABASE_URL_FILE_ENV: &str = \"DATABASE_URL_FILE\";",
+    "crates/chancela-runtime-config/src/lib.rs",
+    'pub const DATABASE_URL_FILE_ENV: &str = "DATABASE_URL_FILE";',
     "database URL file env marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
-    "pub(crate) fn resolve_backend_selection",
+    "crates/chancela-runtime-config/src/lib.rs",
+    "pub fn resolve_backend_selection",
     "database backend resolution function marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "StoreBackendSelection::Postgres { database_url }",
     "database backend Postgres store selection marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "requires_durability: true",
     "database backend Postgres fail-closed durability marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "fn unset_backend_defaults_to_sqlite()",
     "database backend default SQLite test marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "fn postgres_without_feature_fails_closed()",
     "database backend postgres feature gate test marker",
   );
   assertFileContains(
-    "crates/chancela-api/src/database.rs",
+    "crates/chancela-runtime-config/src/lib.rs",
     "fn postgres_ambiguous_url_sources_are_rejected()",
     "database backend ambiguous URL source test marker",
   );
@@ -14308,7 +14447,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/src/pg_backup.rs",
-    "pub const PG_BACKUP_FORMAT: &str = \"chancela-pg-logical-backup/v1\";",
+    'pub const PG_BACKUP_FORMAT: &str = "chancela-pg-logical-backup/v1";',
     "store Postgres logical backup format marker",
   );
   assertFileContains(
@@ -14411,7 +14550,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/tests/postgres_backend.rs",
-    "#[ignore = \"requires a live PostgreSQL at DATABASE_URL\"]",
+    '#[ignore = "requires a live PostgreSQL at DATABASE_URL"]',
     "store Postgres live database ignore marker",
   );
   assertFileContains(
@@ -14521,7 +14660,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-store/src/pg_cluster.rs",
-    "#[ignore = \"requires a live Postgres (set DATABASE_URL)\"]",
+    '#[ignore = "requires a live Postgres (set DATABASE_URL)"]',
     "store Postgres cluster live tests ignore marker",
   );
   assertFileContains(
@@ -15285,7 +15424,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "contracts/document.imported.json",
-    "\"canonical_conversion_preflight\"",
+    '"canonical_conversion_preflight"',
     "contract imported-document preflight fixture marker",
   );
   assertFileContains(
@@ -15700,12 +15839,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "crates/chancela-api/tests/law_reference_coverage.rs",
-    "Pending => \"Pending\"",
+    'Pending => "Pending"',
     "API law-reference corpus Pending status preservation marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/law_reference_coverage.rs",
-    "Verified => \"Verified\"",
+    'Verified => "Verified"',
     "API law-reference corpus Verified status preservation marker",
   );
   assertFileContains(
@@ -16193,6 +16332,421 @@ function assertCheckpointMap() {
     "read-only local payload telemetry only; it does not add cleanup execution,\n  deletion/retention semantics",
     "spec coverage data-status payload stats no-claim marker",
   );
+  assertFileContains(
+    "scripts/perf/profiles/capacity.json",
+    '"users": 15000',
+    "exact-volume capacity profile users marker",
+  );
+  assertFileContains(
+    "scripts/perf/profiles/capacity.json",
+    '"entities": 10000',
+    "exact-volume capacity profile entities marker",
+  );
+  assertFileContains(
+    "scripts/perf/profiles/capacity.json",
+    '"books": 50000',
+    "exact-volume capacity profile books marker",
+  );
+  assertFileContains(
+    "scripts/perf/profiles/capacity.json",
+    '"signatures": 10000',
+    "exact-volume capacity profile signature-subject marker",
+  );
+  assertFileContains(
+    "docs/performance-capacity.md",
+    "Do not call a run capacity proof unless all of the following are true",
+    "performance harness no-capacity-proof boundary",
+  );
+  assertFileContains(
+    "scripts/perf/harness.py",
+    'if profile.get("name") == "pr-smoke" and profile["proof_eligible"]',
+    "performance smoke profile cannot become proof eligible",
+  );
+  assertFileContains(
+    ".github/workflows/performance.yml",
+    "- chancela-capacity",
+    "performance exact-run dedicated runner label",
+  );
+  assertFileContains(
+    ".github/workflows/performance.yml",
+    "scripts/perf/slo.capacity.json",
+    "performance exact-run committed SLO policy",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/collection_page.rs",
+    "pub(crate) fn from_keyset_sorted(",
+    "bounded opaque collection cursor builder",
+  );
+  assertFileContains(
+    "apps/web/src/features/common/CollectionPager.tsx",
+    "an A → B → A sequence can resurrect A's old cursor",
+    "registry cursor reset regression marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/notifications/NotificationBell.tsx",
+    "className={`notification-center__popup${popupPosition ? ' is-positioned' : ''}`}",
+    "Action Center first-position flash guard",
+  );
+  assertFileContains(
+    "apps/web/src/features/session/AuthGate.tsx",
+    'className="gate-boot__progress"',
+    "branded full-app progress fallback marker",
+  );
+  assertFileContains(
+    "crates/chancela-core/src/document_layout.rs",
+    "pub fn resolve_document_layout(",
+    "document layout inheritance resolver marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "document_layout_defaults_are_concrete_and_backward_compatible",
+    "document layout settings compatibility marker",
+  );
+  assertFileContains(
+    "crates/chancela-templates/src/authoring.rs",
+    "user_template_round_trips_an_authored_document_layout_override",
+    "template document layout override authoring marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "pub document_layout_json: Option<String>",
+    "generated-document resolved layout snapshot marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/documents/DocumentLayoutEditor.tsx",
+    "export function DocumentLayoutOverridesEditor(",
+    "web document layout editor marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "effective_layout_resolver_applies_instance_template_entity_book_per_leaf",
+    "API effective document layout cascade coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "generated_document_persists_and_event_binds_concrete_layout",
+    "API generated-document layout snapshot and digest coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "layout_digest_detects_changes_and_legacy_rows_remain_unbound",
+    "API layout digest and legacy-unbound coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "encerramento_replay_uses_frozen_layout_after_mutable_layers_change",
+    "API frozen layout replay coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "structural_preview_resolves_instance_then_draft_template_layout",
+    "API structural preview layout inheritance coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "scoped_act_preview_resolves_entity_and_book_layout_layers",
+    "API scoped act preview layout inheritance coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/entities.rs",
+    "document_layout_override_validation_is_atomic_across_inherited_layers",
+    "API inherited layout validation atomicity coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
+    "opens block settings only in an accessible right-side drawer and restores focus on Escape",
+    "template block configure-only drawer coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
+    "preserves the inspector across safe kind changes and destructive confirmation cancellation",
+    "template block drawer context preservation coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/TemplateBlocksEditor.tsx",
+    'aria-modal="true"',
+    "template block drawer honest modal marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/templates/templateEditor.css",
+    ".template-block-inspector__backdrop",
+    "template block drawer right-side CSS marker",
+  );
+  assertFileContains(
+    "crates/chancela-authz/src/permission.rs",
+    '#[serde(rename = "search.read")]',
+    "search read permission marker",
+  );
+  assertFileContains(
+    "crates/chancela-authz/src/permission.rs",
+    '#[serde(rename = "search.manage")]',
+    "search manage permission marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "durable_pause_or_checkpoint_change_cancels_an_in_flight_candidate",
+    "external projector durable cancellation coverage",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "heartbeat_pruning_is_bounded_and_preserves_current_fresh_and_untrusted_paths",
+    "external projector bounded heartbeat pruning coverage",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "graceful_owned_shutdown_releases_lease_for_immediate_successor",
+    "external projector graceful lease-release successor coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/Cargo.toml",
+    'name = "search_source_mutation_guards"',
+    "API search source mutation guard integration target",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/search_source_mutation_guards.rs",
+    "every_production_search_source_map_writer_is_guarded_or_explicitly_excluded",
+    "API search source mutation inventory coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/search_source_mutation_guards.rs",
+    "reload_domain_memory_with_settings_gate_held",
+    "API settings-gated restore mutation exclusion marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/search.rs",
+    "search_read_projector_trust_is_fail_closed_without_leaking_diagnostics",
+    "ordinary search reader fail-closed projector trust coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/SearchSettingsPanel.test.tsx",
+    "shows external projector command, revision, lease and heartbeat diagnostics",
+    "search projector management diagnostics UI coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "template_preview_sample_defaults_are_backward_compatible",
+    "template preview sample settings default compatibility coverage",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/settings.rs",
+    "stale_settings_clients_carry_forward_preview_samples_but_explicit_values_replace_them",
+    "template preview samples stale-client preservation coverage",
+  );
+  assertFileContains(
+    "scripts/check-search-projector-dependencies.mjs",
+    "/^chancela-api$/",
+    "projector dependency gate API exclusion marker",
+  );
+  assertFileContains(
+    "scripts/check-search-projector-dependencies.mjs",
+    '"x86_64-unknown-linux-gnu"',
+    "projector dependency gate fixed target marker",
+  );
+  assertFileContains(
+    "scripts/check-docker-image-contracts.mjs",
+    'const canonicalSource = "https://github.com/supermarsx/chancela";',
+    "Docker image canonical source marker",
+  );
+  assertFileContains(
+    "docker/Dockerfile.search-projector",
+    'ENTRYPOINT ["/usr/local/bin/chancela-search-projector"]',
+    "slim projector image dedicated entrypoint marker",
+  );
+  assertFileDoesNotContain(
+    "docker/Dockerfile.search-projector",
+    "libpcsclite",
+    "projector runtime image remains free of PC/SC libraries",
+  );
+  assertFileContains(
+    "docker/tests/compose-security-contracts.mjs",
+    "normal backend must be internal",
+    "Compose internal backend contract marker",
+  );
+  assertFileContains(
+    "docker/tests/role-init-security-contracts.mjs",
+    "dedicated-database acknowledgement gate is missing",
+    "projector role dedicated-database guard marker",
+  );
+  assertFileContains(
+    "docker/tests/preflight-secrets-fixtures.sh",
+    'expect_fail "symbolic-link secret"',
+    "preflight symbolic-link secret refusal coverage",
+  );
+  assertFileContains(
+    "docker/tests/secrets-init-fixtures.sh",
+    "destination symlink should have failed",
+    "split secret destination-symlink refusal coverage",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "run: bash scripts/search-projector-postgres-smoke.sh",
+    "CI PostgreSQL projector lifecycle smoke wiring",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "run: bash scripts/search-projector-sqlite-input-smoke.sh",
+    "CI SQLite projector input-recovery smoke wiring",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "run: bash scripts/hardened-postgres-compose-smoke.sh",
+    "CI hardened PostgreSQL restart smoke wiring",
+  );
+  assertFileContains(
+    "scripts/search-projector-postgres-smoke.sh",
+    "restricted PostgreSQL projector graceful-stop smoke passed.",
+    "PostgreSQL projector graceful-stop smoke contract",
+  );
+  assertFileContains(
+    "scripts/search-projector-sqlite-input-smoke.sh",
+    "SQLite projector journal/unreadable-input recovery and clean-log smoke passed.",
+    "SQLite projector recovery smoke contract",
+  );
+  assertFileContains(
+    "scripts/hardened-postgres-compose-smoke.sh",
+    "hardened PostgreSQL secret/network/runtime/restart smoke passed.",
+    "hardened PostgreSQL restart smoke contract",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "Sign validated GHCR image-set digests",
+    "release signing exact image-set digest consumer marker",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "for name in server worker search-projector",
+    "release signing complete three-image loop marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "provenance: mode=max,version=v1",
+    "normal CI SLSA v1 provenance marker",
+  );
+  assertFileContains(
+    ".github/workflows/ci.yml",
+    "name: ghcr-publication-trust-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}",
+    "normal CI run-qualified GHCR evidence marker",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "ghcr-publication-trust-$source_sha-$source_run_id-$source_run_attempt",
+    "release signing exact source-run artifact marker",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "sort_by(.id, .run_attempt)",
+    "release signing newest successful source-run selection marker",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "configure exactly one container signing mode: keyless or private key, not both",
+    "release signing mutually exclusive signer mode marker",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "persist-credentials: false",
+    "release source SBOM credential-isolated checkout marker",
+  );
+  assertFileContains(
+    ".github/workflows/release-signing.yml",
+    "docker run --rm --network none",
+    "release source SBOM network-isolation marker",
+  );
+  assertFileDoesNotContain(
+    ".github/workflows/release-signing.yml",
+    "docker/build-push-action",
+    "release signing workflow must not rebuild or publish containers",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "GHCR image set must contain server, worker, and search-projector",
+    "release trust complete image-set validation marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "must require exactly one non-attestation descriptor in digest extraction and contract validation",
+    "release trust runnable descriptor validation marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "keyless step must not receive cosign private-key secrets",
+    "release trust signer secret-isolation mutation guard marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `c9c1b19` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "spec coverage current landed batch marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "These are harness and governance safeguards, not recorded capacity, latency, soak, cryptographic-signature, live-provider, or hosted-CI results",
+    "spec coverage performance no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "The inherited document-layout lane resolves the concrete instance -> template -> entity -> book cascade before render/page counting",
+    "spec coverage document layout API cascade marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "stores the canonical concrete policy with each new generated document, binds its SHA-256 digest separately from the template-spec digest in `document.generated`, and replays frozen encerramento bytes after mutable layers change",
+    "spec coverage document layout snapshot digest and freeze marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "The current substantive checkpoint is `c9c1b19` (2026-07-26)",
+    "CI checkpoints current substantive marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "No interactive visual QA, exhaustive browser/device coverage, full capacity/soak run, 10,000 cryptographic signatures, PDF/A or PDF/UA certification, legal/template correctness, hosted CI success, GHCR publication, image/package signature, or spec completion is claimed",
+    "CI checkpoints capacity no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Its web matrix recorded 24 files / 657 tests, including all 123 Settings-page tests",
+    "CI checkpoints exact web matrix evidence",
+  );
+  assertFileDoesNotContain(
+    "docs/CI-CHECKPOINTS.md",
+    "src/features/ferramentas/",
+    "CI checkpoints stale pre-rename tools test paths",
+  );
+  assertFileDoesNotContain(
+    "docs/CI-CHECKPOINTS.md",
+    "GestaoDadosSection.test.tsx",
+    "CI checkpoints stale pre-rename Data Management test path",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "The current `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output",
+    "CI checkpoints current Rust workspace evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "persists and separately digests the concrete layout for new documents, replays frozen encerramento output after mutable-layer changes, and leaves historical pre-binding rows explicitly unbound",
+    "CI checkpoints document layout snapshot digest and freeze marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "No full capacity/soak profile, 10,000 cryptographic signatures, interactive visual QA, hosted CI run, GHCR publication, signature, or remote-provider/hardware run is recorded by this metadata refresh",
+    "CI/E2E current batch no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "The current `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output",
+    "CI/E2E current Rust workspace evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Its web matrix recorded 24 files / 657 tests, including all 123 Settings-page tests",
+    "CI/E2E exact web matrix evidence",
+  );
+  assertFileDoesNotContain(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "src/features/ferramentas/",
+    "CI/E2E stale pre-rename tools test paths",
+  );
   assertFileExists(
     "docs/fixtures/validator-corpus/manifest.json",
     "validator corpus manifest",
@@ -16227,10 +16781,7 @@ function assertFileContains(relativePath, needle, label) {
   const hasMarker =
     body.includes(needle) ||
     normalizeWhitespace(body).includes(normalizeWhitespace(needle));
-  assert.ok(
-    hasMarker,
-    `${label} missing expected marker ${needle}`,
-  );
+  assert.ok(hasMarker, `${label} missing expected marker ${needle}`);
 }
 
 function assertFileContainsAny(relativePath, needles, label) {
