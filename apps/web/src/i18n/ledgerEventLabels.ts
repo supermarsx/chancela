@@ -42,6 +42,8 @@ export const ledgerEventLabelsPtPT = {
   'enum.ledgerEventKind.api_key.revoked': 'Chave de API revogada',
   'enum.ledgerEventKind.api_key.rotated': 'Chave de API rodada',
   'enum.ledgerEventKind.backup.created': 'Cópia de segurança criada',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Ensaio de recuperação da cópia de segurança registado',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Eliminação arquivística do livro registada',
   'enum.ledgerEventKind.book.closed': 'Livro encerrado',
@@ -234,6 +236,7 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API key revoked',
   'enum.ledgerEventKind.api_key.rotated': 'API key rotated',
   'enum.ledgerEventKind.backup.created': 'Backup created',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded': 'Backup recovery drill recorded',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Book archival disposal recorded',
   'enum.ledgerEventKind.book.closed': 'Book closed',
@@ -403,6 +406,8 @@ export const ledgerEventLabelsPtBR: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'Chave de API revogada',
   'enum.ledgerEventKind.api_key.rotated': 'Chave de API rotacionada',
   'enum.ledgerEventKind.backup.created': 'Cópia de segurança criada',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Teste de recuperação do backup registrado',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Eliminação arquivística do livro registrada',
   'enum.ledgerEventKind.book.closed': 'Livro encerrado',
@@ -591,6 +596,8 @@ export const ledgerEventLabelsDaDK: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API-nøgle tilbagekaldt',
   'enum.ledgerEventKind.api_key.rotated': 'API-nøgle roteret',
   'enum.ledgerEventKind.backup.created': 'Sikkerhedskopi oprettet',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Test af gendannelse fra sikkerhedskopi registreret',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Arkivmæssig kassation af bogen registreret',
   'enum.ledgerEventKind.book.closed': 'Bog lukket',
@@ -775,6 +782,8 @@ export const ledgerEventLabelsDeDE: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API-Schlüssel widerrufen',
   'enum.ledgerEventKind.api_key.rotated': 'API-Schlüssel rotiert',
   'enum.ledgerEventKind.backup.created': 'Sicherung erstellt',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Test der Wiederherstellung aus einer Sicherung aufgezeichnet',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Archivische Kassation des Buchs erfasst',
   'enum.ledgerEventKind.book.closed': 'Buch geschlossen',
@@ -967,6 +976,8 @@ export const ledgerEventLabelsEsES: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'Clave de API revocada',
   'enum.ledgerEventKind.api_key.rotated': 'Clave de API rotada',
   'enum.ledgerEventKind.backup.created': 'Copia de seguridad creada',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Simulacro de recuperación de copia de seguridad registrado',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Eliminación archivística del libro registrada',
   'enum.ledgerEventKind.book.closed': 'Libro cerrado',
@@ -1151,6 +1162,7 @@ export const ledgerEventLabelsFiFI: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API-avain peruutettu',
   'enum.ledgerEventKind.api_key.rotated': 'API-avain vaihdettu',
   'enum.ledgerEventKind.backup.created': 'Varmuuskopio luotu',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded': 'Varmuuskopion palautusharjoitus kirjattu',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Kirjan arkistollinen hävitys kirjattu',
   'enum.ledgerEventKind.book.closed': 'Kirja suljettu',
@@ -1334,6 +1346,8 @@ export const ledgerEventLabelsFrFR: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': "Clé d'API révoquée",
   'enum.ledgerEventKind.api_key.rotated': "Clé d'API renouvelée",
   'enum.ledgerEventKind.backup.created': 'Sauvegarde créée',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Exercice de restauration de sauvegarde enregistré',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Élimination archivistique du livre enregistrée',
   'enum.ledgerEventKind.book.closed': 'Livre clôturé',
@@ -1528,6 +1542,8 @@ export const ledgerEventLabelsItIT: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'Chiave API revocata',
   'enum.ledgerEventKind.api_key.rotated': 'Chiave API ruotata',
   'enum.ledgerEventKind.backup.created': 'Copia di sicurezza creata',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Esercitazione di ripristino del backup registrata',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Scarto archivistico del libro registrato',
   'enum.ledgerEventKind.book.closed': 'Libro chiuso',
@@ -1713,6 +1729,7 @@ export const ledgerEventLabelsNlNL: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API-sleutel ingetrokken',
   'enum.ledgerEventKind.api_key.rotated': 'API-sleutel geroteerd',
   'enum.ledgerEventKind.backup.created': 'Back-up gemaakt',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded': 'Hersteloefening voor back-up vastgelegd',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Archiefvernietiging van het boek vastgelegd',
   'enum.ledgerEventKind.book.closed': 'Boek gesloten',
@@ -1901,6 +1918,8 @@ export const ledgerEventLabelsPlPL: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'Klucz API unieważniony',
   'enum.ledgerEventKind.api_key.rotated': 'Klucz API rotowany',
   'enum.ledgerEventKind.backup.created': 'Kopia zapasowa utworzona',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Zarejestrowano próbę odtworzenia kopii zapasowej',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Brakowanie archiwalne księgi zapisane',
   'enum.ledgerEventKind.book.closed': 'Księga zamknięta',
@@ -2092,6 +2111,8 @@ export const ledgerEventLabelsSvFI: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API-nyckel återkallad',
   'enum.ledgerEventKind.api_key.rotated': 'API-nyckel roterad',
   'enum.ledgerEventKind.backup.created': 'Säkerhetskopia skapad',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Återställningsövning för säkerhetskopia registrerad',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Arkivgallring av boken registrerad',
   'enum.ledgerEventKind.book.closed': 'Bok avslutad',
@@ -2267,6 +2288,8 @@ export const ledgerEventLabelsSvSE: LedgerEventLabels = {
   'enum.ledgerEventKind.api_key.revoked': 'API-nyckel återkallad',
   'enum.ledgerEventKind.api_key.rotated': 'API-nyckel roterad',
   'enum.ledgerEventKind.backup.created': 'Säkerhetskopia skapad',
+  'enum.ledgerEventKind.backup.recovery_drill.recorded':
+    'Återställningsövning för säkerhetskopia registrerad',
   'enum.ledgerEventKind.book.archive.disposal.execution_recorded':
     'Arkivgallring av boken registrerad',
   'enum.ledgerEventKind.book.closed': 'Bok avslutad',
