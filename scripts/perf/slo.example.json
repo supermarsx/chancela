@@ -5,7 +5,17 @@
     "min_throughput_per_second": null
   },
   "operations": {
+    "health": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
     "entity_list": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "entity_get": {
       "p95_ms": null,
       "p99_ms": null,
       "max_error_rate": null
@@ -15,7 +25,22 @@
       "p99_ms": null,
       "max_error_rate": null
     },
+    "book_get": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
     "user_list": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "auth_login": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "entity_write": {
       "p95_ms": null,
       "p99_ms": null,
       "max_error_rate": null

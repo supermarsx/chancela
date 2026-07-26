@@ -17,8 +17,21 @@ import sys
 from typing import Any
 
 
-REQUIRED_SERVICES = ("chancela-cluster", "postgres", "redis", "perf-gateway")
+REQUIRED_SERVICES = (
+    "chancela-cluster",
+    "search-projector-postgres",
+    "postgres",
+    "redis",
+    "perf-gateway",
+)
+FORBIDDEN_CLUSTER_SERVICES = (
+    "server-postgres",
+    "server-sqlite",
+    "search-projector-sqlite",
+)
+CAPTURED_SERVICES = REQUIRED_SERVICES + FORBIDDEN_CLUSTER_SERVICES
 SERVICE_REPLICA_COUNTS = {
+    "search-projector-postgres": 1,
     "postgres": 1,
     "redis": 1,
     "perf-gateway": 1,
@@ -54,16 +67,24 @@ def parse_memory_bytes(value: Any) -> int:
         return value
     if not isinstance(value, str):
         return 0
-    match = re.fullmatch(r"\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgt]?i?b)?\s*", value, re.I)
+    match = re.fullmatch(
+        r"\s*([0-9]+(?:\.[0-9]+)?)\s*([kmgt](?:i?b)?|b)?\s*",
+        value,
+        re.I,
+    )
     if not match:
         return 0
     number = float(match.group(1))
     unit = (match.group(2) or "b").lower()
     factors = {
         "b": 1,
+        "k": 1000,
         "kb": 1000,
+        "m": 1000**2,
         "mb": 1000**2,
+        "g": 1000**3,
         "gb": 1000**3,
+        "t": 1000**4,
         "tb": 1000**4,
         "kib": 1024,
         "mib": 1024**2,
@@ -137,6 +158,7 @@ def validate_containers(
     failures: list[str] = []
     expected_counts = {
         "chancela-cluster": expected_replicas,
+        "search-projector-postgres": 1,
         "postgres": 1,
         "redis": 1,
         "perf-gateway": 1,
@@ -160,6 +182,13 @@ def validate_containers(
             if container.get("health") not in {None, "healthy"}:
                 failures.append(
                     f"{service}/{label} health is {container.get('health')}"
+                )
+    for service in FORBIDDEN_CLUSTER_SERVICES:
+        for container in containers.get(service, []):
+            if container.get("running") is True:
+                label = container.get("name") or container.get("id")
+                failures.append(
+                    f"forbidden standalone service {service}/{label} is running"
                 )
     return failures
 
@@ -303,18 +332,23 @@ def capture(
         host,
     )
     failures.extend(envelope_failures)
-    containers: dict[str, list[dict[str, Any]]] = {}
-    for service in REQUIRED_SERVICES:
+    containers: dict[str, list[dict[str, Any]]] = {
+        service: [] for service in CAPTURED_SERVICES
+    }
+    rendered_services = rendered.get("services", {})
+    for service in CAPTURED_SERVICES:
+        if service not in rendered_services:
+            continue
         identifiers = [
             item
-            for item in command([*compose, "ps", "-q", service]).splitlines()
+            for item in command(
+                [*compose, "ps", "--all", "-q", service]
+            ).splitlines()
             if item
         ]
         if identifiers:
             inspected = json.loads(command(["docker", "inspect", *identifiers]))
             containers[service] = [inspect_summary(item) for item in inspected]
-        else:
-            containers[service] = []
     failures.extend(validate_containers(containers, expected_replicas))
     rendered_canonical = json.dumps(
         rendered, sort_keys=True, separators=(",", ":")

@@ -7,17 +7,53 @@ on:
       - ".github/workflows/performance.yml"
       - "scripts/perf/**"
       - "scripts/ha-soak/**"
+      - "scripts/docker-smoke.sh"
+      - "scripts/docker-smoke.ps1"
+      - "scripts/search-projector-postgres-smoke.sh"
+      - "scripts/search-projector-sqlite-input-smoke.sh"
       - "docs/performance-capacity.md"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/chancela-api/**"
+      - "crates/chancela-runtime-config/**"
+      - "crates/chancela-search/**"
+      - "crates/chancela-search-projector/**"
+      - "crates/chancela-store/**"
       - "docker/docker-compose.yml"
       - "docker/docker-compose.cluster.yml"
+      - "docker/Dockerfile.server"
+      - "docker/Dockerfile.search-projector"
+      - "docker/preflight-secrets.sh"
+      - "docker/search-projector-role-init.sh"
+      - "docker/search-runtime-init.sh"
+      - "docker/secrets-init.sh"
+      - "docker/secrets/**"
   pull_request:
     paths:
       - ".github/workflows/performance.yml"
       - "scripts/perf/**"
       - "scripts/ha-soak/**"
+      - "scripts/docker-smoke.sh"
+      - "scripts/docker-smoke.ps1"
+      - "scripts/search-projector-postgres-smoke.sh"
+      - "scripts/search-projector-sqlite-input-smoke.sh"
       - "docs/performance-capacity.md"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/chancela-api/**"
+      - "crates/chancela-runtime-config/**"
+      - "crates/chancela-search/**"
+      - "crates/chancela-search-projector/**"
+      - "crates/chancela-store/**"
       - "docker/docker-compose.yml"
       - "docker/docker-compose.cluster.yml"
+      - "docker/Dockerfile.server"
+      - "docker/Dockerfile.search-projector"
+      - "docker/preflight-secrets.sh"
+      - "docker/search-projector-role-init.sh"
+      - "docker/search-runtime-init.sh"
+      - "docker/secrets-init.sh"
+      - "docker/secrets/**"
   schedule:
     - cron: "17 3 * * 0"
   workflow_dispatch:
@@ -85,6 +121,20 @@ jobs:
         run: |
           python -m compileall -q scripts/perf
           python -m unittest discover -s scripts/perf/tests -v
+      - name: Render the performance Compose contract without starting containers
+        shell: bash
+        run: |
+          if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+            docker compose \
+              --project-name chancela-perf-contract \
+              -f docker/docker-compose.yml \
+              -f docker/docker-compose.cluster.yml \
+              -f scripts/perf/docker-compose.perf.yml \
+              --profile postgres --profile cluster --profile performance \
+              config --format json >/dev/null
+          else
+            echo "::notice::Docker Compose is unavailable; the render-only contract check was skipped."
+          fi
       - name: Generate and verify only the tiny PR fixture
         run: |
           python scripts/perf/harness.py generate \
@@ -118,6 +168,8 @@ jobs:
       CHANCELA_CLUSTER_REPLICAS: ${{ github.event_name == 'workflow_dispatch' && inputs.app_replicas || 3 }}
       CHANCELA_PERF_APP_CPUS: ${{ github.event_name == 'workflow_dispatch' && inputs.app_cpus || '2.0' }}
       CHANCELA_PERF_APP_MEMORY: ${{ github.event_name == 'workflow_dispatch' && inputs.app_memory || '1g' }}
+      CHANCELA_PERF_SEARCH_PROJECTOR_CPUS: "1.5"
+      CHANCELA_PERF_SEARCH_PROJECTOR_MEMORY: "1g"
       CHANCELA_PERF_SEARCH_READY_TIMEOUT_SECONDS: ${{ github.event_name == 'workflow_dispatch' && inputs.search_readiness_timeout_seconds || 900 }}
       CHANCELA_PERF_JOB_TIMEOUT_SECONDS: 21600
       CHANCELA_PERF_PROJECT_NAME: chancela-perf

@@ -142,6 +142,7 @@ class FailureReportTests(unittest.TestCase):
                     {"id": "app-2"},
                     {"id": "app-3"},
                 ],
+                "search-projector-postgres": [{"id": "projector-1"}],
                 "postgres": [{"id": "postgres-1"}],
                 "redis": [{"id": "redis-1"}],
                 "perf-gateway": [{"id": "gateway-1"}],
@@ -351,22 +352,81 @@ class MetricsTests(unittest.TestCase):
         passing = {
             "schema_version": 1,
             "global": {"max_error_rate": 0.02, "min_throughput_per_second": 40},
+            "operations": {
+                "entity_list": {
+                    "p95_ms": 25,
+                    "p99_ms": 35,
+                    "max_error_rate": 0.01,
+                }
+            },
+            "resources": {
+                "max_container_memory_bytes": 2000,
+                "max_container_cpu_percent": 50,
+            },
+        }
+        result = harness.evaluate_slo(workload, resources, passing)
+        self.assertEqual(result["assessment"], "passed")
+        self.assertTrue(result["proof_ready"])
+        failing = {"schema_version": 1, "global": {"max_error_rate": 0.001}}
+        result = harness.evaluate_slo(workload, resources, failing)
+        self.assertEqual(result["assessment"], "failed")
+        self.assertFalse(result["proof_ready"])
+
+    def test_partial_capacity_policy_is_explicitly_non_proof(self):
+        workload = {
+            "error_rate": 0.0,
+            "throughput_per_second": 50,
+            "operations": {
+                "entity_list": {
+                    "p95_ms": 20,
+                    "p99_ms": 30,
+                    "error_rate": 0,
+                }
+            },
+            "phases": {"model": "explicit", "peak_plateau_complete": True},
+        }
+        resources = {
+            "available": True,
+            "containers": {
+                "app": {"max_memory_bytes": 1000, "max_cpu_percent": 20}
+            },
+            "phases": {
+                phase: {
+                    "containers": {
+                        "app": {"max_memory_bytes": 1000, "max_cpu_percent": 20}
+                    }
+                }
+                for phase in ("seed", "search_catch_up", "mixed_workload")
+            },
+        }
+        partial = {
+            "schema_version": 1,
+            "global": {
+                "max_error_rate": 0.01,
+                "min_throughput_per_second": 40,
+            },
             "operations": {"entity_list": {"p95_ms": 25}},
             "resources": {"max_container_memory_bytes": 2000},
         }
-        self.assertEqual(
-            harness.evaluate_slo(workload, resources, passing)["assessment"], "passed"
-        )
-        failing = {"schema_version": 1, "global": {"max_error_rate": 0.001}}
-        self.assertEqual(
-            harness.evaluate_slo(workload, resources, failing)["assessment"], "failed"
-        )
+        result = harness.evaluate_slo(workload, resources, partial)
+        self.assertEqual(result["assessment"], "not_configured")
+        self.assertFalse(result["proof_ready"])
+        blockers = " ".join(result["proof_blockers"])
+        self.assertIn("operations.entity_list.p99_ms", blockers)
+        self.assertIn("operations.entity_list.max_error_rate", blockers)
+        self.assertIn("resources.max_container_cpu_percent", blockers)
 
     def test_requested_crypto_without_complete_reviewed_thresholds_is_not_configured(self):
         workload = {
             "error_rate": 0.0,
             "throughput_per_second": 50,
-            "operations": {},
+            "operations": {
+                "entity_list": {
+                    "p95_ms": 10,
+                    "p99_ms": 15,
+                    "error_rate": 0,
+                }
+            },
             "phases": {"model": "explicit", "peak_plateau_complete": True},
         }
         resources = {
@@ -397,7 +457,21 @@ class MetricsTests(unittest.TestCase):
         }
         incomplete = {
             "schema_version": 1,
-            "global": {"max_error_rate": 0.01},
+            "global": {
+                "max_error_rate": 0.01,
+                "min_throughput_per_second": 40,
+            },
+            "operations": {
+                "entity_list": {
+                    "p95_ms": 20,
+                    "p99_ms": 25,
+                    "max_error_rate": 0.01,
+                }
+            },
+            "resources": {
+                "max_container_memory_bytes": 2000,
+                "max_container_cpu_percent": 30,
+            },
             "cryptographic_signing": {"min_completed": 10000},
         }
         result = harness.evaluate_slo(workload, resources, incomplete, crypto)
@@ -405,8 +479,7 @@ class MetricsTests(unittest.TestCase):
         self.assertIn("p99_ms", " ".join(result["proof_blockers"]))
 
         complete = {
-            "schema_version": 1,
-            "global": {"max_error_rate": 0.01},
+            **incomplete,
             "cryptographic_signing": {
                 "min_completed": 10000,
                 "max_error_rate": 0,
@@ -564,6 +637,7 @@ class MetricsTests(unittest.TestCase):
         def snapshot(*, passed=True, app_ids=("app-1", "app-2", "app-3")):
             containers = {
                 "chancela-cluster": [{"id": identifier} for identifier in app_ids],
+                "search-projector-postgres": [{"id": "projector-1"}],
                 "postgres": [{"id": "postgres-1"}],
                 "redis": [{"id": "redis-1"}],
                 "perf-gateway": [{"id": "gateway-1"}],

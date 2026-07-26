@@ -19,6 +19,13 @@ services:
           cpus: "${CHANCELA_PERF_APP_CPUS:-2.0}"
           memory: "${CHANCELA_PERF_APP_MEMORY:-1g}"
 
+  search-projector-postgres:
+    deploy:
+      resources:
+        limits:
+          cpus: "${CHANCELA_PERF_SEARCH_PROJECTOR_CPUS:-1.5}"
+          memory: "${CHANCELA_PERF_SEARCH_PROJECTOR_MEMORY:-1g}"
+
   perf-gateway:
     profiles: [performance]
     image: python:3.12-alpine

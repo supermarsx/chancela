@@ -91,7 +91,7 @@ python scripts/perf/harness.py validate \
 
 "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 "${COMPOSE[@]}" up -d --build --scale chancela-cluster="$REPLICAS" \
-  postgres redis chancela-cluster perf-gateway
+  postgres redis search-projector-postgres chancela-cluster perf-gateway
 
 ready=0
 for _ in $(seq 1 120); do

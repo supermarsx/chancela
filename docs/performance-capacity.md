@@ -85,21 +85,35 @@ thresholds. Pointing the workflow at that example remains `not_configured`.
 The topology is intentionally explicit:
 
 - three application replicas, one elected writer, and read followers;
+- one unscaled, socketless search projector, isolated from request-serving CPU;
 - one TLS-enabled PostgreSQL service and Redis for cluster-shared auth state;
 - an HTTP gateway on `127.0.0.1:18081`;
 - a fresh volume on every normal run;
 - a strict preflight that refuses missing replicas, unhealthy/restarted/OOM-killed
-  containers, or any app/database/cache/gateway service without positive CPU
-  and memory limits;
+  containers, or any app/projector/database/cache/gateway service without
+  positive CPU and memory limits;
+- standalone API/SQLite-projector services may remain declared but inactive in
+  rendered Compose output; the preflight captures them and fails only if one is
+  actually running alongside the cluster topology;
 - an aggregate-envelope gate: per-service limits multiplied by replica count
   must fit the captured Docker host CPU and RAM. Missing host facts or
   overcommit blocks proof; syntactically present Compose limits are not enough;
 - a default limit of 2 CPUs and 1 GiB per application replica, overridable only
   as a recorded test input with `CHANCELA_PERF_APP_CPUS` and
   `CHANCELA_PERF_APP_MEMORY`;
+- a default projector ceiling of 1.5 CPUs and 1 GiB, overridable as a recorded
+  test input with `CHANCELA_PERF_SEARCH_PROJECTOR_CPUS` and
+  `CHANCELA_PERF_SEARCH_PROJECTOR_MEMORY`;
 - configurable test-edge throttling via
   `CHANCELA_PERF_RATE_LIMIT_PER_SECOND` and
   `CHANCELA_PERF_RATE_LIMIT_BURST`.
+
+With three default application replicas, the required services request an
+aggregate **11.5 CPUs** and **5,576,000,000 bytes** of memory. Compose `g`/`m`
+resource suffixes are decimal units for this envelope calculation. Use a Docker
+host with at least **12 CPUs and 6 GiB RAM** for the default topology; larger
+hosts are appropriate when runner overhead or resource sampling headroom also
+matters.
 
 The wrapper defaults those test-edge limits to 1,000 requests/s and burst 2,000
 so exact-volume seeding is not principally a test of the default 50 requests/s
@@ -243,6 +257,14 @@ the harness exit non-zero. Dataset exactness, search readiness, topology
 preflight, completed peak plateau, and resource availability are separate
 mandatory proof prerequisites.
 
+Capacity proof requires a complete reviewed policy, not merely one passing
+threshold: both global error-rate and throughput thresholds, both container
+CPU/memory thresholds, and p95, p99, and error-rate thresholds for every
+operation measured by the workload must all be non-null. An all-null or partial
+policy remains valid evidence with `assessment: not_configured` and
+`proof_ready: false` when its configured checks pass. When cryptographic signing
+is enabled, its complete threshold set remains an additional requirement.
+
 ## Deterministic wall-clock budget
 
 Before generation or Compose startup, the wrapper writes
@@ -280,7 +302,8 @@ Do not call a run capacity proof unless all of the following are true:
 4. whole-run resource sampling was available;
 5. strict topology preflight passed and the final snapshot has no restart/OOM
    regression;
-6. reviewed, non-null thresholds were supplied;
+6. a complete reviewed, non-null latency/throughput/error/resource policy was
+   supplied for every measured operation;
 7. when cryptographic signing was requested, every required crypto threshold
    was configured and the exact requested count completed;
 8. `slo.assessment` is `passed`;

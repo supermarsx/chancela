@@ -1235,7 +1235,13 @@ def combine_topology_evidence(
             f"final: {failure}"
             for failure in final.get("failures", ["topology final check did not pass"])
         )
-    for service in ("chancela-cluster", "postgres", "redis", "perf-gateway"):
+    for service in (
+        "chancela-cluster",
+        "search-projector-postgres",
+        "postgres",
+        "redis",
+        "perf-gateway",
+    ):
         initial_ids = _topology_container_ids(initial, service)
         final_ids = _topology_container_ids(final, service)
         if initial_ids != final_ids:
@@ -1761,6 +1767,48 @@ def evaluate_slo(
         )
 
     global_slo = slo.get("global", {})
+    resource_slo = slo.get("resources", {})
+    operation_slo = slo.get("operations", {})
+    missing_capacity_thresholds = sorted(
+        path
+        for path, threshold in (
+            ("global.max_error_rate", global_slo.get("max_error_rate")),
+            (
+                "global.min_throughput_per_second",
+                global_slo.get("min_throughput_per_second"),
+            ),
+            (
+                "resources.max_container_memory_bytes",
+                resource_slo.get("max_container_memory_bytes"),
+            ),
+            (
+                "resources.max_container_cpu_percent",
+                resource_slo.get("max_container_cpu_percent"),
+            ),
+        )
+        if threshold is None
+    )
+    measured_operations = workload.get("operations", {})
+    if not isinstance(measured_operations, dict) or not measured_operations:
+        proof_blockers.append(
+            "Capacity proof requires measured operations and a complete reviewed "
+            "latency/error policy for them."
+        )
+    else:
+        for operation in sorted(measured_operations):
+            thresholds = operation_slo.get(operation, {})
+            for field in sorted(SLO_OPERATION_FIELDS):
+                if thresholds.get(field) is None:
+                    missing_capacity_thresholds.append(
+                        f"operations.{operation}.{field}"
+                    )
+    if missing_capacity_thresholds:
+        proof_blockers.append(
+            "Capacity proof requires a complete reviewed non-null "
+            "latency/throughput/error/resource policy; missing: "
+            + ", ".join(missing_capacity_thresholds)
+        )
+
     check("global.error_rate", workload.get("error_rate"), global_slo.get("max_error_rate"), "max")
     check(
         "global.throughput_per_second",
@@ -1768,7 +1816,7 @@ def evaluate_slo(
         global_slo.get("min_throughput_per_second"),
         "min",
     )
-    for operation, thresholds in slo.get("operations", {}).items():
+    for operation, thresholds in operation_slo.items():
         observed = workload.get("operations", {}).get(operation, {})
         check(f"{operation}.p95_ms", observed.get("p95_ms"), thresholds.get("p95_ms"), "max")
         check(f"{operation}.p99_ms", observed.get("p99_ms"), thresholds.get("p99_ms"), "max")
@@ -1784,7 +1832,6 @@ def evaluate_slo(
     )
     all_containers = resources.get("containers", {}).values()
     max_cpu = max((item["max_cpu_percent"] for item in all_containers), default=None)
-    resource_slo = slo.get("resources", {})
     check(
         "resources.max_container_memory_bytes",
         max_memory,
