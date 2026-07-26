@@ -1,139 +1,218 @@
 #!/bin/sh
-# Populate the `chancela-secrets` named volume for the `postgres` profile.
+# Populate per-secret named volumes for the normal `postgres` Compose profile.
 #
-# Runs as a one-shot compose service before postgres and the app start, exactly
-# like postgres-tls-init: `depends_on: { condition: service_completed_successfully }`.
-# That is possible only because the three secrets live in a NAMED VOLUME rather
-# than in host bind mounts -- compose creates named volumes on its own, whereas
-# a bind mount to a file that does not exist yet is validated (and mangled into
-# a directory) before any container can run.
-#
-# Three inputs, in priority order, per secret:
-#
-#   1. the volume already holds it   -> keep it, untouched. Never rotate.
-#   2. docker/secrets/<name> exists  -> adopt it (bind-mounted read-only at
-#                                       $host_dir). This is the migration path
-#                                       for installations created by
-#                                       preflight-secrets.sh, and the escape
-#                                       hatch for operators who manage their own.
-#   3. neither                       -> generate.
-#
-# All three secrets are write-once in practice, so step 1 is not an
-# optimisation, it is the safety property:
-#
-#   postgres_password  baked into chancela-pgdata the first time Postgres
-#                      initialises; POSTGRES_PASSWORD_FILE is ignored on every
-#                      later start. A new value locks the app out of its own
-#                      database and looks like corruption.
-#   database_url       embeds that same password inline, so it is NEVER
-#                      generated independently -- always derived from whatever
-#                      postgres_password holds, in the same run.
-#   credential_key     decrypts the stored provider credentials; a new value
-#                      makes every stored credential undecryptable.
+# Each destination volume contains exactly one secret and is mounted only into
+# the services that consume that secret. The former `chancela-secrets` combined
+# volume is mounted read-only at /legacy-secrets solely as a migration source;
+# no long-running service receives it.
 set -eu
 
-secrets_dir="${CHANCELA_SECRETS_DIR:-/secrets}"
+legacy_dir="${CHANCELA_LEGACY_SECRETS_DIR:-/legacy-secrets}"
+postgres_password_dir="${CHANCELA_POSTGRES_PASSWORD_DIR:-/postgres-password}"
+database_url_dir="${CHANCELA_DATABASE_URL_DIR:-/database-url}"
+credential_key_dir="${CHANCELA_CREDENTIAL_KEY_DIR:-/credential-key}"
+search_password_dir="${CHANCELA_SEARCH_PASSWORD_DIR:-/search-password}"
+search_url_dir="${CHANCELA_SEARCH_URL_DIR:-/search-url}"
 host_dir="${CHANCELA_HOST_SECRETS_DIR:-/host-secrets}"
 pgdata_probe="${CHANCELA_PGDATA_PROBE:-/probe/pgdata}"
 appdata_probe="${CHANCELA_APPDATA_PROBE:-/probe/app-data}"
+cluster_data_probe="${CHANCELA_CLUSTER_DATA_PROBE:-/probe/cluster-data}"
+# The Compose service intentionally leaves this at root:root. The override
+# exists only for unprivileged host-side fixture execution.
+secret_owner="${CHANCELA_SECRET_VOLUME_OWNER:-0:0}"
+db_password_min_length=32
+active_publish_dir=""
+active_publish_file=""
+case "$secret_owner" in
+  *[!0-9:]* | :* | *: | *:*:*)
+    echo "ERROR: CHANCELA_SECRET_VOLUME_OWNER must be a numeric uid:gid pair." >&2
+    exit 1
+    ;;
+esac
 
-# postgres:*-alpine runs the server as uid/gid 70; our app image runs as 65532.
-# Each secret is owned by, and readable ONLY by, the one process that needs it.
-pg_uid="${CHANCELA_PG_SERVER_UID:-70}"
-pg_gid="${CHANCELA_PG_SERVER_GID:-70}"
-app_uid="${CHANCELA_APP_UID:-65532}"
-app_gid="${CHANCELA_APP_GID:-65532}"
+cleanup_publication() {
+  if [ -n "$active_publish_file" ]; then
+    rm -f "$active_publish_file"
+  fi
+  if [ -n "$active_publish_dir" ]; then
+    rmdir "$active_publish_dir" 2>/dev/null || true
+  fi
+  active_publish_file=""
+  active_publish_dir=""
+}
+trap 'cleanup_publication' EXIT
+trap 'cleanup_publication; exit 130' HUP INT TERM
 
 pg_db="${CHANCELA_PG_DB:-chancela}"
 pg_user="${CHANCELA_PG_USER:-chancela}"
 
-pw_path="$secrets_dir/postgres_password"
-url_path="$secrets_dir/database_url"
-key_path="$secrets_dir/credential_key"
+pw_path="$postgres_password_dir/postgres_password"
+url_path="$database_url_dir/database_url"
+key_path="$credential_key_dir/credential_key"
+search_pw_path="$search_password_dir/search_database_password"
+search_url_path="$search_url_dir/search_database_url"
 
-mkdir -p "$secrets_dir"
+for directory in \
+  "$postgres_password_dir" \
+  "$database_url_dir" \
+  "$credential_key_dir" \
+  "$search_password_dir" \
+  "$search_url_dir"
+do
+  mkdir -p "$directory"
+done
 
-# Cryptographically random, URL-safe, unpadded base64 of $1 bytes.
-#
-# URL-safe matters because the password is embedded in database_url's userinfo,
-# where standard base64's "/" and "+" would need percent-encoding in one file
-# but not the other -- which is exactly how the two drift apart. The alphabet
-# here (A-Za-z0-9-_) is unreserved in a URI, so the same literal string is
-# correct in both files.
-rand_secret() {
-  raw="$(openssl rand -base64 "$1")"
-  printf '%s' "$raw" | tr -d '\n=' | tr '+/' '-_'
-}
-
-# Write $2 to $1 with no trailing newline, owned by $3:$4, mode 0400.
-#
-# umask 077 in a subshell so the file is never even briefly readable by anyone
-# else, and so the tightened umask does not leak into the rest of the script.
-write_secret() {
-  if [ -z "$2" ]; then
-    echo "ERROR: refusing to write an empty secret to $1" >&2
-    exit 1
-  fi
-  (
-    umask 077
-    : >"$1"
-    printf '%s' "$2" >"$1"
-  )
-  chown "$3:$4" "$1"
-  chmod 0400 "$1"
-}
-
-# Read a single-line secret with surrounding newlines (and Windows CRs) removed.
-# A secret file containing a newline is always a mistake -- it is the classic
-# invisible authentication failure -- so strip rather than propagate.
 read_secret() {
   tr -d '\r\n' <"$1"
 }
 
-# Copy docker/secrets/<name> into the volume if the volume does not have it.
-# Returns 0 if the secret is present afterwards, 1 if it is still absent.
-adopt_from_host() {
-  name="$1"
-  dest="$secrets_dir/$name"
-  src="$host_dir/$name"
-
-  [ -s "$dest" ] && return 0
-
-  if [ -d "$src" ]; then
-    echo "WARNING: $host_dir/$name is a DIRECTORY (debris from an older failed" >&2
-    echo "         run); ignoring it. Remove docker/secrets/$name on the host." >&2
-    return 1
+reject_unsafe_candidate() {
+  path="$1"
+  label="$2"
+  if [ -L "$path" ]; then
+    echo "ERROR: $label at $path is a symbolic link; secret links are forbidden." >&2
+    exit 1
   fi
-  [ -f "$src" ] || return 1
-  [ -s "$src" ] || {
-    echo "WARNING: docker/secrets/$name is empty; ignoring it." >&2
-    return 1
-  }
-
-  value="$(read_secret "$src")"
-  write_secret "$dest" "$value" "$2" "$3"
-  echo "adopted $name from docker/secrets/$name"
-  if grep -q 'CHANGE_ME' "$dest" 2>/dev/null; then
-    echo "WARNING: $name still contains the CHANGE_ME placeholder from the" >&2
-    echo "         committed *.example template. It is public in the repo." >&2
+  [ -e "$path" ] || return 0
+  if [ -d "$path" ]; then
+    echo "ERROR: $label at $path is a directory, expected a secret file." >&2
+    exit 1
   fi
-  return 0
+  if [ ! -f "$path" ] || [ ! -s "$path" ]; then
+    echo "ERROR: $label at $path is empty or not a regular file." >&2
+    exit 1
+  fi
+  if grep -qi 'change_me' "$path" 2>/dev/null; then
+    echo "ERROR: $label at $path contains a public CHANGE_ME placeholder (case-insensitive)." >&2
+    exit 1
+  fi
+  raw_bytes="$(wc -c <"$path" | tr -d '[:space:]')"
+  clean_bytes="$(read_secret "$path" | wc -c | tr -d '[:space:]')"
+  if [ "$raw_bytes" != "$clean_bytes" ]; then
+    echo "ERROR: $label at $path contains a CR or LF; secret files must be exact single values." >&2
+    exit 1
+  fi
 }
 
-# True when this stack already holds state that one of the secrets is the only
-# key to. Generating a fresh secret on top of that is strictly worse than
-# stopping: Postgres keeps the password baked into its data directory, and the
-# credential store cannot be decrypted with a new key.
-#
-# Both volumes are mounted read-only here purely to answer this question.
+validate_db_password_value() {
+  password_value="$1"
+  password_label="$2"
+  if [ "${#password_value}" -lt "$db_password_min_length" ]; then
+    echo "ERROR: $password_label must contain at least $db_password_min_length characters." >&2
+    exit 1
+  fi
+  case "$password_value" in
+    *[!A-Za-z0-9._~-]*)
+      echo "ERROR: $password_label contains characters outside the URI-unreserved set." >&2
+      echo "       Allowed: A-Z a-z 0-9 period underscore tilde hyphen." >&2
+      exit 1
+      ;;
+  esac
+}
+
+validate_db_password_file_if_present() {
+  password_path="$1"
+  password_label="$2"
+  [ -e "$password_path" ] || return 0
+  reject_unsafe_candidate "$password_path" "$password_label"
+  validate_db_password_value "$(read_secret "$password_path")" "$password_label"
+}
+
+validate_pair_values() {
+  password="$1"
+  actual_url="$2"
+  expected_prefix="$3"
+  expected_suffix="$4"
+  label="$5"
+  expected_url="${expected_prefix}${password}${expected_suffix}"
+  if [ "$actual_url" != "$expected_url" ]; then
+    echo "ERROR: $label password/URL pair does not match this local Compose profile." >&2
+    echo "       These helpers intentionally accept only postgres:5432 with verify-full." >&2
+    echo "       Refusing without printing either credential." >&2
+    exit 1
+  fi
+}
+
+validate_pair_files_if_complete() {
+  password_path="$1"
+  candidate_url_path="$2"
+  expected_prefix="$3"
+  expected_suffix="$4"
+  label="$5"
+  [ -s "$password_path" ] || return 0
+  [ -s "$candidate_url_path" ] || return 0
+  validate_pair_values \
+    "$(read_secret "$password_path")" \
+    "$(read_secret "$candidate_url_path")" \
+    "$expected_prefix" \
+    "$expected_suffix" \
+    "$label"
+}
+
+choose_value() {
+  for candidate in "$@"; do
+    if [ -s "$candidate" ]; then
+      read_secret "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# Cryptographically random, URL-safe, unpadded base64 of $1 bytes.
+rand_secret() {
+  raw="$(openssl rand -base64 "$1")"
+  printf '%s' "$raw" | tr -d '\r\n=' | tr '+/' '-_'
+}
+
+# Values are protected by per-secret volume attachment, not a shared Unix UID.
+# Mode 0444 lets the two intentional consumers of postgres_password/database_url
+# use different UIDs while no unrelated container receives those volumes.
+publish_secret() {
+  destination="$1"
+  value="$2"
+  if [ -z "$value" ]; then
+    echo "ERROR: refusing to write an empty secret to $destination" >&2
+    exit 1
+  fi
+  destination_dir="${destination%/*}"
+  destination_name="${destination##*/}"
+  active_publish_dir="$(
+    umask 077
+    mktemp -d "$destination_dir/.chancela-${destination_name}.publish.XXXXXX"
+  )"
+  if [ -z "$active_publish_dir" ] || [ ! -d "$active_publish_dir" ]; then
+    echo "ERROR: cannot create private publication staging directory for $destination_name." >&2
+    exit 1
+  fi
+  active_publish_file="$active_publish_dir/value"
+  (
+    umask 077
+    printf '%s' "$value" >"$active_publish_file"
+  )
+  chown "$secret_owner" "$active_publish_file"
+  chmod 0444 "$active_publish_file"
+
+  if ln "$active_publish_file" "$destination" 2>/dev/null; then
+    cleanup_publication
+    return 0
+  fi
+  cleanup_publication
+  reject_unsafe_candidate "$destination" "$destination_name"
+  if [ "$(read_secret "$destination")" != "$value" ]; then
+    echo "ERROR: $destination_name appeared concurrently with a different value; refusing." >&2
+    exit 1
+  fi
+}
+
 installation_exists() {
-  # Postgres has initialised its data directory (PG18 nests PGDATA one level
-  # below the volume root, hence the depth).
   if [ -n "$(find "$pgdata_probe" -maxdepth 4 -name PG_VERSION -type f 2>/dev/null | head -n 1)" ]; then
     return 0
   fi
-  # SQLite-era credential sidecar in the app data volume.
   if [ -s "$appdata_probe/provider-credentials.enc.json" ]; then
+    return 0
+  fi
+  if [ -s "$cluster_data_probe/provider-credentials.enc.json" ]; then
     return 0
   fi
   return 1
@@ -141,83 +220,199 @@ installation_exists() {
 
 refuse_existing_installation() {
   cat >&2 <<EOF
-ERROR: the '$1' secret is absent from the chancela-secrets volume and from
-       docker/secrets/, but this deployment already has state that only that
-       secret can unlock (an initialised chancela-pgdata and/or an existing
-       provider-credential store).
+ERROR: the '$1' secret is absent from its split volume, the legacy
+       chancela-secrets volume, and docker/secrets/, but this deployment already
+       has state that only that secret can unlock.
 
-       Generating a new value here would produce a stack that fails
-       authentication -- or a credential store nobody can decrypt -- which
-       looks like corruption rather than misconfiguration. Refusing.
-
-       Either restore the secret (drop the original file into docker/secrets/,
-       it is adopted on the next 'up'), or -- if the data is expendable --
-       discard the state and start clean:
+       Restore the original secret and rerun Compose. If the data is expendable,
+       remove the deployment volumes together with the state using:
 
          docker compose --profile postgres down -v
 EOF
   exit 1
 }
 
-# --- postgres_password + database_url are ONE unit ------------------------
-#
-# The URL carries the same password inline, so a half-generated pair is a
-# guaranteed authentication failure. The URL is always built from whatever
-# postgres_password holds on disk in this same run -- freshly generated or
-# pre-existing -- so consistency is by construction, not by convention.
+# Validate every possible source before persisting anything. A stale ignored
+# host file must not let a public placeholder linger unnoticed.
+for directory in \
+  "$postgres_password_dir" \
+  "$database_url_dir" \
+  "$credential_key_dir" \
+  "$search_password_dir" \
+  "$search_url_dir" \
+  "$legacy_dir" \
+  "$host_dir"
+do
+  for name in postgres_password database_url credential_key search_database_password search_database_url; do
+    reject_unsafe_candidate "$directory/$name" "$name"
+  done
+  validate_db_password_file_if_present \
+    "$directory/postgres_password" \
+    "postgres_password"
+  validate_db_password_file_if_present \
+    "$directory/search_database_password" \
+    "search_database_password"
+done
 
-adopt_from_host postgres_password "$pg_uid" "$pg_gid" || true
-adopt_from_host database_url "$app_uid" "$app_gid" || true
+api_prefix="postgres://$pg_user:"
+api_suffix="@postgres:5432/$pg_db?sslmode=verify-full"
+search_prefix="postgres://chancela_search_projector:"
+search_suffix="@postgres:5432/$pg_db?sslmode=verify-full"
 
-if [ ! -s "$pw_path" ]; then
-  if [ -s "$url_path" ]; then
-    cat >&2 <<'EOF'
-ERROR: database_url is present but postgres_password is not. The URL embeds the
-       password, so the password is recoverable only from that URL -- generating
-       a new one would desynchronise the pair. Refusing.
+validate_pair_files_if_complete \
+  "$legacy_dir/postgres_password" \
+  "$legacy_dir/database_url" \
+  "$api_prefix" \
+  "$api_suffix" \
+  "legacy API/Postgres"
+validate_pair_files_if_complete \
+  "$host_dir/postgres_password" \
+  "$host_dir/database_url" \
+  "$api_prefix" \
+  "$api_suffix" \
+  "host API/Postgres"
+validate_pair_files_if_complete \
+  "$host_dir/search_database_password" \
+  "$host_dir/search_database_url" \
+  "$search_prefix" \
+  "$search_suffix" \
+  "host search projector"
+validate_pair_files_if_complete \
+  "$pw_path" \
+  "$url_path" \
+  "$api_prefix" \
+  "$api_suffix" \
+  "split-volume API/Postgres"
+validate_pair_files_if_complete \
+  "$search_pw_path" \
+  "$search_url_path" \
+  "$search_prefix" \
+  "$search_suffix" \
+  "split-volume search projector"
 
-       Copy the password out of database_url (between ':' and '@') into
-       docker/secrets/postgres_password and run 'up' again.
-EOF
-    exit 1
-  fi
+pg_password=""
+if ! pg_password="$(
+  choose_value \
+    "$pw_path" \
+    "$legacy_dir/postgres_password" \
+    "$host_dir/postgres_password"
+)"; then
   installation_exists && refuse_existing_installation postgres_password
-  write_secret "$pw_path" "$(rand_secret 36)" "$pg_uid" "$pg_gid"
+  pg_password="$(rand_secret 36)"
   echo "generated postgres_password (288-bit)"
 fi
+validate_db_password_value "$pg_password" "selected postgres_password"
 
-if [ ! -s "$url_path" ]; then
-  write_secret "$url_path" \
-    "postgres://$pg_user:$(read_secret "$pw_path")@postgres:5432/$pg_db?sslmode=verify-full" \
-    "$app_uid" "$app_gid"
-  echo "generated database_url (derived from postgres_password)"
+database_url=""
+if ! database_url="$(
+  choose_value \
+    "$url_path" \
+    "$legacy_dir/database_url" \
+    "$host_dir/database_url"
+)"; then
+  database_url="${api_prefix}${pg_password}${api_suffix}"
+  echo "generated database_url from postgres_password"
 fi
+validate_pair_values "$pg_password" "$database_url" "$api_prefix" "$api_suffix" "API/Postgres"
 
-# --- credential_key -------------------------------------------------------
-
-adopt_from_host credential_key "$app_uid" "$app_gid" || true
-
-if [ ! -s "$key_path" ]; then
+credential_key=""
+if ! credential_key="$(
+  choose_value \
+    "$key_path" \
+    "$legacy_dir/credential_key" \
+    "$host_dir/credential_key"
+)"; then
   installation_exists && refuse_existing_installation credential_key
-  write_secret "$key_path" "$(rand_secret 48)" "$app_uid" "$app_gid"
+  credential_key="$(rand_secret 48)"
   echo "generated credential_key (384-bit)"
 fi
 
-# Re-assert ownership and mode on every run: a volume restored from a backup,
-# or written by an older revision of this script, may not have them.
-chmod 0755 "$secrets_dir"
-chown "$pg_uid:$pg_gid" "$pw_path"
-chown "$app_uid:$app_gid" "$url_path" "$key_path"
-chmod 0400 "$pw_path" "$url_path" "$key_path"
-
-# Anything still on the host that the volume already had is deliberately NOT
-# re-read: the volume is authoritative once populated (see the header).
-for name in postgres_password database_url credential_key; do
-  if [ -s "$host_dir/$name" ] && ! cmp -s "$host_dir/$name" "$secrets_dir/$name"; then
-    echo "NOTE: docker/secrets/$name differs from the value already in the" >&2
-    echo "      chancela-secrets volume; the VOLUME wins. Delete the volume" >&2
-    echo "      (down -v) to re-adopt the host file." >&2
+search_password=""
+if ! search_password="$(
+  choose_value \
+    "$search_pw_path" \
+    "$legacy_dir/search_database_password" \
+    "$host_dir/search_database_password"
+)"; then
+  if [ -s "$search_url_path" ] \
+    || [ -s "$legacy_dir/search_database_url" ] \
+    || [ -s "$host_dir/search_database_url" ]; then
+    echo "ERROR: search_database_url exists without its password; refusing to invent a mismatch." >&2
+    exit 1
   fi
+  search_password="$(rand_secret 36)"
+  echo "generated search_database_password (288-bit)"
+fi
+validate_db_password_value "$search_password" "selected search_database_password"
+
+search_database_url=""
+if ! search_database_url="$(
+  choose_value \
+    "$search_url_path" \
+    "$legacy_dir/search_database_url" \
+    "$host_dir/search_database_url"
+)"; then
+  search_database_url="${search_prefix}${search_password}${search_suffix}"
+  echo "generated search_database_url from search_database_password"
+fi
+validate_pair_values \
+  "$search_password" \
+  "$search_database_url" \
+  "$search_prefix" \
+  "$search_suffix" \
+  "search projector"
+
+# Strict create-if-absent publication. A same-filesystem hard link publishes
+# each fully prepared inode atomically and cannot overwrite a concurrent value.
+[ -s "$pw_path" ] || publish_secret "$pw_path" "$pg_password"
+[ -s "$url_path" ] || publish_secret "$url_path" "$database_url"
+[ -s "$key_path" ] || publish_secret "$key_path" "$credential_key"
+[ -s "$search_pw_path" ] || publish_secret "$search_pw_path" "$search_password"
+[ -s "$search_url_path" ] || publish_secret "$search_url_path" "$search_database_url"
+
+# Re-read every destination after publication. This closes the validation/use
+# gap and proves that a concurrent initializer published the exact same values
+# rather than a mismatched half-pair.
+for destination in "$pw_path" "$url_path" "$key_path" "$search_pw_path" "$search_url_path"; do
+  reject_unsafe_candidate "$destination" "${destination##*/}"
+done
+validate_db_password_file_if_present "$pw_path" "published postgres_password"
+validate_db_password_file_if_present "$search_pw_path" "published search_database_password"
+if [ "$(read_secret "$pw_path")" != "$pg_password" ] \
+  || [ "$(read_secret "$url_path")" != "$database_url" ] \
+  || [ "$(read_secret "$key_path")" != "$credential_key" ] \
+  || [ "$(read_secret "$search_pw_path")" != "$search_password" ] \
+  || [ "$(read_secret "$search_url_path")" != "$search_database_url" ]; then
+  echo "ERROR: a split secret changed during atomic publication; refusing." >&2
+  exit 1
+fi
+validate_pair_values \
+  "$(read_secret "$pw_path")" \
+  "$(read_secret "$url_path")" \
+  "$api_prefix" \
+  "$api_suffix" \
+  "published API/Postgres"
+validate_pair_values \
+  "$(read_secret "$search_pw_path")" \
+  "$(read_secret "$search_url_path")" \
+  "$search_prefix" \
+  "$search_suffix" \
+  "published search projector"
+
+for directory in \
+  "$postgres_password_dir" \
+  "$database_url_dir" \
+  "$credential_key_dir" \
+  "$search_password_dir" \
+  "$search_url_dir"
+do
+  chown "$secret_owner" "$directory"
+  chmod 0755 "$directory"
+done
+chown "$secret_owner" "$pw_path" "$url_path" "$key_path" "$search_pw_path" "$search_url_path"
+chmod 0444 "$pw_path" "$url_path" "$key_path" "$search_pw_path" "$search_url_path"
+for destination in "$pw_path" "$url_path" "$key_path" "$search_pw_path" "$search_url_path"; do
+  reject_unsafe_candidate "$destination" "${destination##*/}"
 done
 
-echo "chancela-secrets: postgres_password, database_url, credential_key ready."
+echo "split secret volumes ready; legacy combined volume is migration-only."

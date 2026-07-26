@@ -12,9 +12,9 @@ hardening posture.
 With --config-check, only validates that every Compose profile
 (single-node, worker, postgres) renders a valid config via
 `docker compose config --quiet`, and that each backend profile combined with
-the additive `worker` profile still selects exactly ONE app service — no image
-is built or started. This is the lightweight gate for the postgres profile and
-does not prove live Postgres runtime behavior.
+the additive `worker` profile still selects exactly ONE API service and ONE
+search projector — no image is built or started. This is the lightweight gate
+for the postgres profile and does not prove live Postgres runtime behavior.
 EOF
 }
 
@@ -34,17 +34,23 @@ if [ "${1:-}" = "--config-check" ]; then
   done
 
   # The backend axis (single-node | postgres) and the sidecar axis (worker) must
-  # compose. Two app services in one rendering means two containers publishing
-  # ${CHANCELA_HOST_PORT:-8080}, and the second one dies on `up`.
+  # compose. Two API services in one rendering means two containers publishing
+  # ${CHANCELA_HOST_PORT:-8080}; every backend must also select one projector.
   for backend in single-node postgres; do
     services="$(docker compose -f "$compose_file" \
       --profile "$backend" --profile worker config --services | sort)"
     app_count="$(printf '%s\n' "$services" | grep -c '^server-' || true)"
-    if [ "$app_count" -eq 1 ] && printf '%s\n' "$services" | grep -qx worker; then
-      echo "compose config OK: --profile $backend --profile worker (1 app service + worker)"
+    projector_count="$(
+      printf '%s\n' "$services" |
+        grep -Ec '^search-projector-(sqlite|postgres)$' || true
+    )"
+    if [ "$app_count" -eq 1 ] \
+      && [ "$projector_count" -eq 1 ] \
+      && printf '%s\n' "$services" | grep -qx worker; then
+      echo "compose config OK: --profile $backend --profile worker (1 API + 1 projector + worker)"
     else
       echo "compose config FAILED: --profile $backend --profile worker" >&2
-      echo "  expected exactly 1 server-* service plus worker, got: $(echo $services)" >&2
+      echo "  expected exactly 1 server-*, 1 runtime projector plus worker, got: $(echo $services)" >&2
       status=1
     fi
   done

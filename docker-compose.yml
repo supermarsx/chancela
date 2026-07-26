@@ -10,8 +10,9 @@
 #   docker compose --profile single-node --profile worker up --build
 #
 # Profiles are two axes that compose: a BACKEND (`single-node` or `postgres`,
-# each enabling exactly one app service) and additive SIDECARS (`worker`, which
-# enables no app service of its own, so it runs against either backend).
+# each enabling exactly one API and its matching unscaled search projector) and
+# additive SIDECARS (`worker`, which enables no app service of its own, so it
+# runs against either backend).
 #
 # EVERY profile works from here, with no `-f` and no special casing. The default
 # comes from COMPOSE_PROFILES=single-node in the committed `.env` next to this
@@ -27,10 +28,11 @@
 # the same command with `-f docker/docker-compose.yml` worked. Both files are
 # gone; `.env` gives the default without making any service unconditional.
 #
-# The postgres profile's three secrets need no preparation: they live in the
-# chancela-secrets volume and are created on `up` by the secrets-init service
-# (create-if-absent -- it never rotates an existing value). Files left in
-# docker/secrets/ are adopted instead. See docs/deployment.md.
+# The postgres profile's API and restricted-projector credential pairs need no
+# preparation: they live in isolated named volumes and are created on `up` by
+# the secrets-init service (create-if-absent -- it never rotates an existing
+# value). Files left in docker/secrets/ are adopted instead. See
+# docs/deployment.md.
 #
 # `include` resolves the included file's relative paths (build context `..`,
 # `./secrets`, `./secrets-init.sh`, `./postgres-tls-init.sh`) against docker/, so

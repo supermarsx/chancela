@@ -1,13 +1,18 @@
 # wp16 — multi-node (single-writer leader + read-followers) OVERLAY for the `postgres` profile.
 #
-# This is an ADDITIVE overlay: it adds one scaled app service (`chancela-cluster`) and does not touch
-# the base file's single-node `server-postgres` service (same image and features, one instance).
-# Use it together with the base compose so the shared
-# `postgres`, `redis`, secrets, and network already exist:
+# This is an ADDITIVE infrastructure overlay: it adds one scaled app service
+# (`chancela-cluster`) while explicitly moving the base file's single-node
+# `server-postgres` service behind a profile that the documented cluster command
+# does not select. Use it together with the base compose so the shared
+# `postgres`, `redis`, secrets, and network still exist:
 #
-#   docker compose \
+#   CHANCELA_PROJECTOR_DEDICATED_DATABASE=true docker compose \
 #     -f docker/docker-compose.yml -f docker/docker-compose.cluster.yml \
 #     --profile postgres --profile cluster up --build
+#
+# Set CHANCELA_PROJECTOR_DEDICATED_DATABASE=true only after confirming the
+# target database is dedicated to Chancela; the projector initializer revokes
+# database-global PUBLIC ACLs.
 #
 # The N replicas point at ONE Postgres. Exactly one is elected the writer via the advisory lock
 # (`CHANCELA_NODE_ROLE=auto`); the rest serve reads and 307-redirect writes to the leader. This is the
@@ -26,6 +31,23 @@
 # documented in docs/HA-FAILOVER.md.
 
 services:
+  # The base service shares the `postgres` profile with the database
+  # infrastructure. Replace that profile in this overlay so selecting
+  # `postgres + cluster` cannot accidentally start a fourth, non-elected API
+  # writer beside the scaled leader/follower service.
+  server-postgres:
+    profiles: !override
+      - single-node-postgres
+
+  # Extend the base initializer's state probe to the cluster API data volume.
+  # A missing credential key must never be regenerated over an existing
+  # provider-credential store merely because the single-node volume is empty.
+  secrets-init:
+    environment:
+      CHANCELA_CLUSTER_DATA_PROBE: /probe/cluster-data
+    volumes:
+      - chancela-cluster-data:/probe/cluster-data:ro
+
   chancela-cluster:
     profiles:
       - cluster
@@ -35,7 +57,8 @@ services:
       args:
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
-    # Built from source; this image is never published to a registry.
+    # Source-built by default; green main pushes also publish immutable GHCR
+    # artifacts that a production override may select explicitly.
     pull_policy: build
     # --- identical container hardening posture to the base app service ---
     user: "65532:65532"
@@ -50,11 +73,16 @@ services:
       CHANCELA_ADDR: 0.0.0.0:8080
       CHANCELA_DATA_DIR: /var/lib/chancela
       CHANCELA_DB_BACKEND: postgres
-      DATABASE_URL_FILE: /run/secrets/database_url
+      DATABASE_URL_FILE: /run/database-url/database_url
       CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
       # Redis is REQUIRED in multi-node: cluster-wide sessions + global sign-in rate-limits.
       REDIS_URL: redis://redis:6379
-      CHANCELA_CREDENTIAL_KEY_FILE: /run/secrets/credential_key
+      CHANCELA_CREDENTIAL_KEY_FILE: /run/credential-key/credential_key
+      # The unscaled search-projector-postgres service from the base postgres
+      # profile owns indexing. Every API replica remains a query/hydration node.
+      CHANCELA_SEARCH_RUNTIME: query-only
+      CHANCELA_SEARCH_RUNTIME_DIR: /run/chancela-search
+      CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS: ${CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS:-600}
       # Elect via the advisory lock: one leader, the rest followers.
       CHANCELA_NODE_ROLE: auto
       # Leader self-fence watchdog: re-verify lock+epoch every 3s and step down (fail-closed) on any
@@ -65,18 +93,26 @@ services:
       # Compose replicas share this environment, so for real 307 ingress prefer a leader-aware LB that
       # reads /health role, or run one service per node with a distinct advertised URL each.
     volumes:
+      # The cluster data root also carries any pre-singleton backup/privacy
+      # compatibility sidecars; the projector mounts this same root read-only.
       - chancela-cluster-data:/var/lib/chancela
+      - chancela-search-runtime:/run/chancela-search:ro
       - chancela-pg-tls:/run/chancela-postgres-tls:ro
-      # Same chancela-secrets volume the base file's services read, filled by
-      # the base file's `secrets-init` service. Every replica therefore sees the
-      # identical database_url and credential_key.
-      - chancela-secrets:/run/secrets:ro
+      # Per-secret volumes from the base `secrets-init` service. The cluster
+      # replicas receive only their database URL and credential-store key.
+      - chancela-database-url:/run/database-url:ro
+      - chancela-credential-key:/run/credential-key:ro
+    networks:
+      - default
+      - backend
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
       secrets-init:
+        condition: service_completed_successfully
+      search-runtime-init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
@@ -88,6 +124,40 @@ services:
       # SAFE to scale here (unlike the base single-node service): the advisory-lock election makes
       # N-1 of these followers. Raise via `--scale chancela-cluster=N`.
       replicas: ${CHANCELA_CLUSTER_REPLICAS:-3}
+
+  # The base Postgres profile waits for its single-node API before starting the
+  # role initializer. In cluster mode there must be no fourth API, so replace
+  # that dependency with the scaled API service.
+  search-projector-role-init:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      secrets-init:
+        condition: service_completed_successfully
+      search-runtime-init:
+        condition: service_completed_successfully
+      chancela-cluster:
+        condition: service_healthy
+
+  # The base Postgres projector waits for its single-node API. Replace that
+  # dependency with the scaled API service and the verified role initializer,
+  # and share the cluster's app-data volume instead.
+  search-projector-postgres:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
+      secrets-init:
+        condition: service_completed_successfully
+      search-runtime-init:
+        condition: service_completed_successfully
+      chancela-cluster:
+        condition: service_healthy
+      search-projector-role-init:
+        condition: service_completed_successfully
+    volumes:
+      # Preserve access to legacy backup/privacy fallbacks during upgrades;
+      # DB singleton documents remain authoritative when present.
+      - chancela-cluster-data:/var/lib/chancela:ro
 
 volumes:
   # Shared cache volume for the replicas. Ledger + the five sidecars are authoritative in Postgres;

@@ -4,15 +4,14 @@
 # with a tightened runtime posture and does NOT replace the existing compose.
 # Run it from the REPO ROOT (build context is the repo root):
 #
-#   Single node (SQLite, no external DB):
+#   Single node (SQLite API + isolated search projector, no external DB):
 #     docker compose -f docker-compose.hardened.yml --profile single-node up --build
 #
-#   Self-hosted Postgres durability backend + Redis cache-aside:
-#     # first create the real secret files from the committed templates:
-#     cp docker/secrets/postgres_password.example docker/secrets/postgres_password
-#     cp docker/secrets/database_url.example      docker/secrets/database_url
-#     cp docker/secrets/credential_key.example    docker/secrets/credential_key
-#     docker compose -f docker-compose.hardened.yml --profile postgres up --build
+#   Self-hosted Postgres durability backend + Redis cache-aside + projector:
+#     # Generate internally consistent, non-placeholder host secret files:
+#     sh docker/preflight-secrets.sh --generate
+#     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+#       docker compose -f docker-compose.hardened.yml --profile postgres up --build
 #
 #   Dedicated durable sync/backup worker. `worker` is ADDITIVE and enables no
 #   app service of its own, so combine it with a backend profile. It mounts the
@@ -90,14 +89,16 @@ services:
       context: .
       dockerfile: Dockerfile.hardened
     image: ${CHANCELA_SERVER_IMAGE:-chancela-server:hardened}
-    # This image is never published to a registry: chancela is self-hosted and
-    # every image is built from this repo. `build` makes `up` compile a missing
-    # image instead of attempting a registry pull that can only fail.
+    # Source-built by default. Green main pushes also publish immutable GHCR
+    # artifacts; production overrides may select one explicitly.
     pull_policy: build
     user: "65532:65532"
     environment:
       CHANCELA_ADDR: 0.0.0.0:8080
       CHANCELA_DATA_DIR: /var/lib/chancela
+      CHANCELA_SEARCH_RUNTIME: query-only
+      CHANCELA_SEARCH_RUNTIME_DIR: /var/lib/chancela/search-projector
+      CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS: ${CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS:-600}
     ports:
       - target: 8080
         published: "${CHANCELA_HOST_PORT:-8080}"
@@ -106,7 +107,8 @@ services:
       # Writable scratch with a hard size cap so /tmp cannot exhaust host memory.
       - /tmp:size=64m
     volumes:
-      # Durable SQLite store + JSON sidecars on a named volume (the only writable
+      # Durable SQLite store plus the settings audit journal and legacy
+      # backup/privacy JSON fallbacks on one named volume (the only writable
       # persistent path; the image creates it owned by UID 65532).
       - chancela-data:/var/lib/chancela
     networks: [edge]
@@ -125,6 +127,50 @@ services:
         reservations:
           memory: 256m
 
+  # Dedicated full-search projector for the SQLite profile. It shares only the
+  # durable volume, exposes no socket, and has an independent resource ceiling.
+  search-projector-sqlite:
+    <<: *app-hardening
+    profiles: [single-node]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.search-projector
+    image: ${CHANCELA_SEARCH_PROJECTOR_IMAGE:-chancela-search-projector:hardened}
+    pull_policy: build
+    network_mode: none
+    user: "65532:65532"
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=64m
+    environment:
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      CHANCELA_SEARCH_RUNTIME_DIR: /var/lib/chancela/search-projector
+      CHANCELA_SEARCH_HEARTBEAT_SECONDS: ${CHANCELA_SEARCH_HEARTBEAT_SECONDS:-15}
+      CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS: ${CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS:-600}
+      CHANCELA_SEARCH_INSTANCE_ID:
+    volumes:
+      # Same complete data root as the API so a pending settings audit journal
+      # or unreadable legacy fallback invalidates the candidate instead of
+      # being hidden by a narrower mount.
+      - chancela-data:/var/lib/chancela
+    depends_on:
+      server-sqlite:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/chancela-search-projector", "healthcheck", "--runtime-dir", "/var/lib/chancela/search-projector"]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          cpus: "${CHANCELA_SEARCH_PROJECTOR_CPUS:-1.5}"
+          memory: "${CHANCELA_SEARCH_PROJECTOR_MEMORY:-1g}"
+          pids: 128
+        reservations:
+          memory: 256m
+
   # -----------------------------------------------------------------------
   # Dedicated ARC-20 sync/backup worker. It has no listening socket, uses its
   # own durable queue volume, and is healthy only while heartbeats remain fresh.
@@ -136,7 +182,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile.worker
     image: ${CHANCELA_WORKER_IMAGE:-chancela-worker:hardened}
-    # Built from source, never pulled — see the note on `server-sqlite`.
+    # Source-built by default — see the note on `server-sqlite`.
     pull_policy: build
     user: "65532:65532"
     tmpfs:
@@ -181,6 +227,37 @@ services:
   #
   # SINGLE-WRITER by design (see header + docker/DEPLOYMENT-PROFILES.md).
   # -----------------------------------------------------------------------
+  secrets-preflight:
+    profiles: [postgres]
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 16
+    entrypoint: ["/bin/sh", "/usr/local/bin/preflight-secrets.sh"]
+    environment:
+      CHANCELA_HOST_SECRETS_DIR: /run/secrets
+      CHANCELA_PG_DB: ${CHANCELA_PG_DB:-chancela}
+      CHANCELA_PG_USER: ${CHANCELA_PG_USER:-chancela}
+    secrets:
+      - postgres_password
+      - database_url
+      - credential_key
+      - search_database_password
+      - search_database_url
+    volumes:
+      - ./docker/preflight-secrets.sh:/usr/local/bin/preflight-secrets.sh:ro
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 32m
+          pids: 16
+    restart: "no"
+
   postgres-tls-init:
     profiles: [postgres]
     image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
@@ -197,6 +274,33 @@ services:
       - chancela-pg-tls:/tls
     tmpfs:
       - /tmp:size=16m
+    restart: "no"
+
+  # Docker creates a fresh named volume root-owned, while the projector runs
+  # as UID 65532. Prepare only the heartbeat volume, without network access or
+  # broad capabilities, before the read-only API and writable projector mounts
+  # consume it.
+  search-runtime-init:
+    profiles: [postgres]
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 16
+    entrypoint: ["/bin/sh", "/usr/local/bin/search-runtime-init.sh"]
+    volumes:
+      - ./docker/search-runtime-init.sh:/usr/local/bin/search-runtime-init.sh:ro
+      - chancela-search-runtime:/runtime
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 32m
+          pids: 16
     restart: "no"
 
   postgres:
@@ -254,6 +358,8 @@ services:
         reservations:
           memory: 256m
     depends_on:
+      secrets-preflight:
+        condition: service_completed_successfully
       postgres-tls-init:
         condition: service_completed_successfully
 
@@ -298,7 +404,7 @@ services:
       args:
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:hardened-postgres}
-    # Built from source, never pulled — see the note on `server-sqlite`.
+    # Source-built by default — see the note on `server-sqlite`.
     pull_policy: build
     user: "65532:65532"
     environment:
@@ -307,6 +413,9 @@ services:
       # (provider-credentials.enc.json) + CAE/law/TSL caches + JSON sidecars.
       CHANCELA_DATA_DIR: /var/lib/chancela
       CHANCELA_DB_BACKEND: postgres
+      CHANCELA_SEARCH_RUNTIME: query-only
+      CHANCELA_SEARCH_RUNTIME_DIR: /run/chancela-search
+      CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS: ${CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS:-600}
       DATABASE_URL_FILE: /run/secrets/database_url
       CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
       REDIS_URL: redis://redis:6379
@@ -324,11 +433,14 @@ services:
       - /tmp:size=64m
     volumes:
       - chancela-app-data:/var/lib/chancela
+      - chancela-search-runtime:/run/chancela-search:ro
       - chancela-pg-tls:/run/chancela-postgres-tls:ro
     networks: [edge, backend]        # edge to publish loopback; backend to reach DB
     depends_on:
       postgres:
         condition: service_healthy
+      search-runtime-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "/usr/bin/busybox", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/health"]
       interval: 30s
@@ -346,12 +458,118 @@ services:
         reservations:
           memory: 256m
 
+  # Reassert and verify the projector's dedicated PostgreSQL role after the API
+  # owner has completed schema migrations.
+  search-projector-role-init:
+    profiles: [postgres]
+    image: postgres:18.4-alpine3.23@sha256:996d0920e4ff9df1fc19dacb904492f3c1ec0ec1cc338f0ad7123be7731c5f5e
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    entrypoint: ["/bin/sh", "/usr/local/bin/search-projector-role-init.sh"]
+    environment:
+      CHANCELA_PG_DB: ${CHANCELA_PG_DB:-chancela}
+      CHANCELA_PG_USER: ${CHANCELA_PG_USER:-chancela}
+      CHANCELA_DATABASE_URL_FILE: /run/secrets/database_url
+      CHANCELA_POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      CHANCELA_SEARCH_DATABASE_PASSWORD_FILE: /run/secrets/search_database_password
+      CHANCELA_SEARCH_DATABASE_URL_FILE: /run/secrets/search_database_url
+      CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
+      # Explicitly acknowledge the database-global PUBLIC ACL revocations.
+      CHANCELA_PROJECTOR_DEDICATED_DATABASE: ${CHANCELA_PROJECTOR_DEDICATED_DATABASE:-}
+    secrets:
+      - postgres_password
+      - database_url
+      - search_database_password
+      - search_database_url
+    volumes:
+      - ./docker/search-projector-role-init.sh:/usr/local/bin/search-projector-role-init.sh:ro
+      - chancela-pg-tls:/run/chancela-postgres-tls:ro
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      search-runtime-init:
+        condition: service_completed_successfully
+      server-postgres:
+        condition: service_healthy
+    tmpfs:
+      - /tmp:size=16m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+          pids: 64
+    restart: "no"
+
+  # One unscaled projector owns the shared Postgres search generation. API
+  # nodes query/hydrate it and never compete for projector CPU.
+  search-projector-postgres:
+    <<: *app-hardening
+    profiles: [postgres]
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.search-projector
+    image: ${CHANCELA_SEARCH_PROJECTOR_IMAGE:-chancela-search-projector:hardened}
+    pull_policy: build
+    user: "65532:65532"
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=64m
+    environment:
+      CHANCELA_DATA_DIR: /var/lib/chancela
+      CHANCELA_SEARCH_RUNTIME_DIR: /run/chancela-search
+      CHANCELA_SEARCH_HEARTBEAT_SECONDS: ${CHANCELA_SEARCH_HEARTBEAT_SECONDS:-15}
+      CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS: ${CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS:-600}
+      CHANCELA_SEARCH_INSTANCE_ID:
+      CHANCELA_DB_BACKEND: postgres
+      CHANCELA_SEARCH_DATABASE_URL_FILE: /run/secrets/search_database_url
+      CHANCELA_PG_TLS_ROOT_CERT: /run/chancela-postgres-tls/ca.crt
+      CHANCELA_NODE_ROLE: follower
+    secrets:
+      - search_database_url
+    volumes:
+      # Includes legacy backup/privacy sidecars for pre-singleton upgrades;
+      # authoritative Postgres singleton rows take precedence.
+      - chancela-app-data:/var/lib/chancela:ro
+      - chancela-search-runtime:/run/chancela-search
+      - chancela-pg-tls:/run/chancela-postgres-tls:ro
+    networks: [backend]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      search-runtime-init:
+        condition: service_completed_successfully
+      server-postgres:
+        condition: service_healthy
+      search-projector-role-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/chancela-search-projector", "healthcheck", "--runtime-dir", "/run/chancela-search"]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: "${CHANCELA_SEARCH_PROJECTOR_CPUS:-1.5}"
+          memory: "${CHANCELA_SEARCH_PROJECTOR_MEMORY:-1g}"
+          pids: 128
+        reservations:
+          memory: 256m
+
 networks:
   # App ingress network. The app publishes only 127.0.0.1:${CHANCELA_HOST_PORT}.
   edge:
     driver: bridge
   # Database/cache network with NO route to the host or the outside world.
-  # Postgres and Redis are reachable only by the app over this network.
+  # Postgres and Redis are reachable only by repository-built backend services.
   backend:
     driver: bridge
     internal: true
@@ -362,10 +580,12 @@ volumes:
   chancela-pg-tls:
   chancela-redisdata:
   chancela-app-data:
+  chancela-search-runtime:
 
 # File-based docker secrets. Real files are gitignored (see
-# docker/secrets/.gitignore); only the *.example templates are committed. The
-# password inside database_url MUST match postgres_password.
+# docker/secrets/.gitignore); only the *.example templates are committed. Each
+# database URL must match its own password file; the projector pair is
+# deliberately independent from the API/Postgres-owner pair.
 secrets:
   postgres_password:
     file: ./docker/secrets/postgres_password
@@ -373,3 +593,7 @@ secrets:
     file: ./docker/secrets/database_url
   credential_key:
     file: ./docker/secrets/credential_key
+  search_database_password:
+    file: ./docker/secrets/search_database_password
+  search_database_url:
+    file: ./docker/secrets/search_database_url

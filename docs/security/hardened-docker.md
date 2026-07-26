@@ -1,12 +1,14 @@
 # Hardened Docker images and operations
 
 This page documents the **hardened** container artifacts for `chancela-server`
-and how to run them safely:
+and the isolated `chancela-search-projector`, and how to run them safely:
 
 - [`Dockerfile.hardened`](https://github.com/supermarsx/chancela/blob/main/Dockerfile.hardened) — a security-tightened,
   digest-pinned, distroless, non-root image.
 - [`docker-compose.hardened.yml`](https://github.com/supermarsx/chancela/blob/main/docker-compose.hardened.yml) — hardened
   runtime profiles (`single-node` and `postgres`).
+- [`docker/Dockerfile.search-projector`](https://github.com/supermarsx/chancela/blob/main/docker/Dockerfile.search-projector) —
+  a socketless, distroless, non-root projector image with its own heartbeat.
 
 These are **additive** variants. They do not replace the existing
 `docker/Dockerfile.server` and `docker/docker-compose.yml`; they layer a
@@ -26,13 +28,13 @@ stricter posture on top. For the deployment-profile scope and its honest limits
 
 | Profile | CPU (min) | CPU (rec.) | RAM (min) | RAM (rec.) | Free disk |
 | ------- | --------- | ---------- | --------- | ---------- | --------- |
-| `single-node` (SQLite) | 2 cores | 4 cores | 2 GB | 4 GB | 5 GB runtime |
-| `postgres` (app + Postgres + Redis) | 4 cores | 4+ cores | 4 GB | 8 GB | 10 GB+ runtime |
+| `single-node` (API + projector + SQLite) | 4 cores | 6 cores | 3 GB | 6 GB | 5 GB runtime |
+| `postgres` (API + projector + Postgres + Redis) | 8 cores | 10 cores | 6 GB | 10 GB | 10 GB+ runtime |
 
 The per-service `deploy.resources.limits` are the ceiling, not the footprint:
-the app caps at `2.0` CPU / `1 GB`, Postgres at `2.0` CPU / `1 GB`, Redis at
-`1.0` CPU / `320 MB`. Size the host above the sum of the ceilings for the profile
-you run.
+the API caps at `2.0` CPU / `1 GB`, the search projector at `1.5` CPU /
+`1 GB`, Postgres at `2.0` CPU / `1 GB`, and Redis at `1.0` CPU / `320 MB`.
+Size the host above the sum of the ceilings for the profile you run.
 
 **Build host:** a first `--build` compiles the Rust workspace in release mode.
 Budget **8–12 GB free disk** for the BuildKit cargo/registry cache and image
@@ -51,7 +53,7 @@ of headroom and monitor it; put the Postgres data volume on **encrypted storage*
 | Linux kernel | 5.10+ | Needed for a modern seccomp/BPF filter and cgroup v2 accounting. |
 | cgroups | v2 | Required for the memory / CPU / **pids** limits to be enforced. |
 | Docker Engine | 24.0+ | BuildKit is the default builder; `docker compose up` honours `deploy.resources.limits`. |
-| Docker Compose | v2.20+ | v2 syntax; `deploy.resources.limits.pids` support. |
+| Docker Compose | v2.24.4+ | v2 syntax, `deploy.resources.limits.pids`, and the cluster overlay's safe `!override` dependency replacement. |
 | PostgreSQL | 18.4 (`postgres:18.4-alpine3.23`) | `postgres` profile only. Pinned by digest. |
 | Redis | 8.8 (`redis:8.8.0-alpine3.23`) | `postgres` profile only, cache-aside. Pinned by digest; review its RSALv2/SSPLv1/AGPLv3 licensing. |
 
@@ -80,38 +82,37 @@ CHANCELA_HOST_PORT=18080 docker compose -f docker-compose.hardened.yml --profile
 
 ### Postgres durability backend + Redis cache
 
-1. Create the real secret files from the committed templates and fill them in
-   (see [Secrets](#secrets-and-encryption-at-rest)):
+1. Generate validated, internally consistent host secret files (see
+   [Secrets](#secrets-and-encryption-at-rest)):
 
    ```sh
-   cp docker/secrets/postgres_password.example docker/secrets/postgres_password
-   cp docker/secrets/database_url.example      docker/secrets/database_url
-   cp docker/secrets/credential_key.example    docker/secrets/credential_key
-   # edit each file: strong password in BOTH postgres_password and database_url;
-   # high-entropy value in credential_key.
+   sh docker/preflight-secrets.sh --generate
    ```
 
-2. Start the profile:
+2. Confirm the target database is dedicated to Chancela, then start:
 
    ```sh
-   docker compose -f docker-compose.hardened.yml --profile postgres up --build
+   CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+     docker compose -f docker-compose.hardened.yml --profile postgres up --build
    ```
 
 ### Build the image on its own
 
-The hardened `chancela-server` / `chancela-worker` images are never published to
-a registry — they are built from this repository, which is what lets you verify
-what is inside them. `--build` above does that as part of `up`; to build
+Normal CI publishes `chancela-server`, `chancela-worker`, and
+`chancela-search-projector` to GHCR only after every required `main` check
+passes. Those images carry provenance/SBOM attestations but remain explicitly
+unsigned. `--build` still builds the reviewed checkout locally; to build
 standalone:
 
 ```sh
 docker build -f Dockerfile.hardened -t chancela-server:hardened .
+docker build -f docker/Dockerfile.search-projector -t chancela-search-projector:hardened .
 ```
 
-Both services declare `pull_policy: build`, so `up` builds a missing image
+All repository-built services declare `pull_policy: build`, so `up` builds a missing image
 rather than attempting a registry pull, and `docker compose pull` skips them and
 fetches only the digest-pinned third-party images. See
-[Deployment](../deployment.md#images-are-built-from-source).
+[Deployment](../deployment.md#published-images-and-source-builds).
 
 ### Validate the compose file without building
 
@@ -119,15 +120,14 @@ fetches only the digest-pinned third-party images. See
 docker compose -f docker-compose.hardened.yml --profile postgres config
 ```
 
-(`config` requires the secret files to exist; create them from the templates
-first, as above.)
+(`config` requires the secret files to exist; generate them first, as above.)
 
 ---
 
 ## Hardening checklist and why
 
-Each measure below maps to a concrete threat it reduces. "App" = the two
-services built from our own code (`server-sqlite`, `server-postgres`);
+Each measure below maps to a concrete threat it reduces. "App" = the API and
+projector services built from our own code (`server-*`, `search-projector-*`);
 "Infra" = the official
 `postgres` / `redis` images.
 
@@ -206,7 +206,8 @@ services built from our own code (`server-sqlite`, `server-postgres`);
 
 - [x] **Not published to the host** — Postgres (`5432`) and Redis (`6379`) are on
   an `internal: true` compose network with **no route to the host or outside
-  world**; only the app can reach them → the database and cache are never exposed.
+  world**; only the API/projector backend services can reach them → the
+  database and cache are never exposed.
 - [x] **No privilege escalation** (`no-new-privileges:true`) on top of the
   images' own privilege drop to their internal users.
 - [x] **Least-privilege capabilities.** `cap_drop: [ALL]` then add back only what
@@ -234,24 +235,86 @@ profile uses **file-based docker secrets** mounted at `/run/secrets/*`. The real
 files live under `docker/secrets/` and are **gitignored**; only `*.example`
 templates are committed.
 
+Generate them with the repository helper, which enforces the same policy as the
+normal profile: both database passwords are at least 32 URI-unreserved
+characters (`A-Z a-z 0-9 . _ ~ -`), URLs exactly target the local
+`postgres:5432` service with `sslmode=verify-full`, and symbolic links, CR/LF,
+empty values, or case-insensitive `CHANGE_ME` placeholders fail before startup.
+Those exact URL checks intentionally do not describe an external managed
+PostgreSQL deployment.
+
 | Secret file | Injected as | Purpose |
 | ----------- | ----------- | ------- |
 | `postgres_password` | `POSTGRES_PASSWORD_FILE` | Postgres user password. |
-| `database_url` | `DATABASE_URL_FILE` | Full libpq URL **including the same password**; references the `postgres` service by name. |
-| `credential_key` | `CHANCELA_CREDENTIAL_KEY_FILE` | Provider-credential store root key. **Required** on Postgres (no SQLCipher `DerivedFromDbKey` source). |
+| `database_url` | `DATABASE_URL_FILE` | Full libpq URL **including the same password**; mounted read-only into the API only and references the `postgres` service by name. |
+| `credential_key` | `CHANCELA_CREDENTIAL_KEY_FILE` | Provider-credential store root key, mounted read-only into the API only. **Required** on Postgres (no SQLCipher `DerivedFromDbKey` source); the projector cannot decrypt signing-provider credentials. |
+| `search_database_password` | role initializer only | Independent password for the fixed, restricted `chancela_search_projector` role. |
+| `search_database_url` | `CHANCELA_SEARCH_DATABASE_URL_FILE` | Projector-only URL containing that independent password. The projector fails closed rather than falling back to the API owner URL. |
 
-Generate strong values, for example:
+The normal Compose profile publishes these as five separate root-owned `0444`
+files in `0755` named-volume roots. That mode is intentionally readable by the
+different non-root UIDs of the explicitly attached consumers; confidentiality
+comes from per-secret volume attachment and read-only consumer mounts. The
+legacy combined volume is read-only and visible only to the migration
+initializer. Hardened Compose uses one file-backed Compose secret per value.
+
+The one-shot role initializer waits for the API's schema-readiness health gate,
+removes memberships in both directions and inherited/old grants, refuses an
+object-owning role, applies the exact corpus/projection column allowlist, and
+asserts the complete effective posture before committing. It then logs in as
+the restricted role and proves that database/schema/temp creation, public
+routine execution, raw PDF/import bytes, entity/event writes, authoritative
+control fields, and `provider_credentials` are denied. The long-running projector mounts only
+`search_database_url`; on Postgres its application-data mount is
+read-only and heartbeat writes go to a separate runtime volume. Its fixed
+32-connection role cap covers a rolling active/standby process overlap
+(`2 × (10 pooled reads + 1 follower writer)`) plus deployment probes without
+turning the role into an unbounded login. A networkless, root one-shot with
+only `CHOWN` capability verifies that fresh runtime volume as `65532:65532`
+mode `0700` before the API, role verifier, or projector starts.
+
+!!! danger "Dedicated PostgreSQL database required"
+
+    The role boundary depends on database-global hardening: `PUBLIC CONNECT`,
+    `CREATE`, and `TEMPORARY` are revoked on the database, `PUBLIC CREATE` is
+    revoked on schema `public`, and existing plus API-owner default routine
+    `EXECUTE` is revoked. The initializer refuses to run unless
+    `CHANCELA_PROJECTOR_DEDICATED_DATABASE=true` is supplied explicitly.
+    Never set it for a database shared with another application.
+
+The only readable `settings` columns are `id` and `json`; live ACL probes also
+deny singleton `INSERT`, `UPDATE`, and `DELETE`. Those two columns carry the
+main settings row and the fixed database-authoritative backup/privacy
+singletons. The read-only application-data mount deliberately remains the whole
+`/var/lib/chancela` root so a missing singleton can consume its legacy JSON
+fallback during an upgrade. A present database row wins over that file.
+
+SQLite gives the API and projector the same complete writable data mount so the
+projector sees `settings.json`, its `settings.pending-audit.json` commit journal,
+and every legacy backup/privacy input atomically. An existing journal or an
+unreadable/malformed settings or fallback document fails projector startup
+closed rather than publishing defaults or empty controls. CI exercises those
+failure states, stale status/heartbeat reporting, recovery after repair, and
+Postgres authority over malformed legacy fallbacks. It also starts an
+overlapping Postgres standby on the same restricted database role and runtime
+volume, then selects
+`search-projector-heartbeats/<current-durable-lease-id>.json` and proves that
+the durable lease, scoped-file set, selected owner, and API freshness stay
+unchanged before, during, and after standby shutdown.
+
+Generate the internally consistent, non-placeholder files:
 
 ```sh
-openssl rand -base64 32 > docker/secrets/postgres_password   # also paste into database_url
-openssl rand -base64 48 > docker/secrets/credential_key
+sh docker/preflight-secrets.sh --generate
 ```
 
-The password inside `database_url` **must match** `postgres_password`, or the app
-cannot authenticate. Example (fictional) `database_url`:
+The password inside `database_url` **must match** `postgres_password`, or the API
+cannot authenticate. The password inside `search_database_url` must separately
+match `search_database_password`; never put the API role in that URL. Example
+(fictional) API `database_url`:
 
 ```
-postgres://chancela:S0me-long-random-value@postgres:5432/chancela?sslmode=verify-full
+postgres://chancela:S0meLongRandomValue_0123456789abcdef@postgres:5432/chancela?sslmode=verify-full
 ```
 
 Full details: [`docker/secrets/README.md`](https://github.com/supermarsx/chancela/blob/main/docker/secrets/README.md).
@@ -375,10 +438,11 @@ profile causes hard-to-diagnose runtime failures.
 - **Read-only root filesystem.** Nothing writes to the image at runtime. If a
   future feature needs a new writable path, add a size-capped `tmpfs` (ephemeral)
   or a named volume (durable) — do **not** disable `read_only`.
-- **Backups.** On SQLite (`single-node`) the in-app backup endpoint
-  (`POST /v1/backup`, `VACUUM INTO`) applies. On Postgres it is **unsupported** —
-  use PG-native tooling (`pg_dump`/`pg_restore`, or WAL archiving + base backups
-  for PITR). Example:
+- **Backups.** On SQLite (`single-node`) the in-app backup endpoint uses
+  `VACUUM INTO`. On Postgres the same endpoint creates an application-level
+  logical bundle that recovery-drill preflight can verify. It does not replace
+  PG-native `pg_dump`/`pg_restore`, WAL archiving, or base backups for PITR.
+  Example:
 
   ```sh
   docker compose -f docker-compose.hardened.yml --profile postgres \
