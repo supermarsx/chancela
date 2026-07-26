@@ -8,6 +8,7 @@ use std::net::{TcpListener, TcpStream};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -300,23 +301,40 @@ ess_cert_id_alg = sha256
 "#
 }
 
-struct OpensslTsaDir {
+pub(crate) struct OpensslTsaDir {
     path: PathBuf,
 }
 
+static NEXT_OPENSSL_TSA_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
 impl OpensslTsaDir {
     fn new() -> std::io::Result<Self> {
+        Self::new_at_timestamp(time::OffsetDateTime::now_utc().unix_timestamp_nanos())
+    }
+
+    fn new_at_timestamp(timestamp_nanos: i128) -> std::io::Result<Self> {
         let path = std::env::temp_dir().join(format!(
-            "chancela-api-mock-tsa-{}-{}",
+            "chancela-api-mock-tsa-{}-{}-{}",
             std::process::id(),
-            time::OffsetDateTime::now_utc().unix_timestamp_nanos()
+            timestamp_nanos,
+            NEXT_OPENSSL_TSA_DIR_ID.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&path)?;
         Ok(Self { path })
     }
 
+    #[cfg(test)]
+    pub(crate) fn new_at_timestamp_for_test(timestamp_nanos: i128) -> std::io::Result<Self> {
+        Self::new_at_timestamp(timestamp_nanos)
+    }
+
     fn join(&self, name: &str) -> PathBuf {
         self.path.join(name)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn path_for_test(&self) -> &Path {
+        &self.path
     }
 }
 
