@@ -23,7 +23,7 @@ describe('useTemplateDocumentPdfPreview', () => {
     const result = {
       data: new ArrayBuffer(4),
       content_type: 'application/pdf; profile=PDF/A-2u',
-      preview_kind: 'structural-unresolved',
+      preview_kind: 'sample-resolved',
     };
     const preview = vi.spyOn(api, 'previewTemplateDocumentPdf').mockResolvedValue(result);
     const request: TemplateDocumentPreviewRequest = {
@@ -46,7 +46,7 @@ describe('useTemplateDocumentMarkdownPreview', () => {
     const result = {
       markdown: '# Ata n.º {{ ata_number }}',
       content_type: 'text/markdown; charset=utf-8',
-      preview_kind: 'structural-unresolved',
+      preview_kind: 'sample-resolved',
     };
     const preview = vi.spyOn(api, 'previewTemplateDocumentMarkdown').mockResolvedValue(result);
     const request: TemplateDocumentPreviewRequest = {

@@ -1294,7 +1294,7 @@ export const api = {
     return {
       data: response.data,
       content_type: response.headers.get('Content-Type') ?? 'application/pdf; profile=PDF/A-2u',
-      preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'structural-unresolved',
+      preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'sample-resolved',
     };
   },
   previewTemplateDocumentMarkdown: async (
@@ -1304,7 +1304,7 @@ export const api = {
     return {
       markdown: response.text,
       content_type: response.headers.get('Content-Type') ?? 'text/markdown; charset=utf-8',
-      preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'structural-unresolved',
+      preview_kind: response.headers.get('X-Chancela-Template-Preview') ?? 'sample-resolved',
     };
   },
   deleteTemplate: (id: string) => del<void>(`/v1/templates/${encodeURIComponent(id)}`),

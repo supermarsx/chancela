@@ -48,11 +48,11 @@ vi.mock('./TemplatePdfPreview', () => ({
 vi.mock('./TemplateMarkdownPreview', () => ({
   TemplateMarkdownPreview: ({ request }: { request: unknown }) => (
     <pre
-      aria-label="Pré-visualização Markdown estrutural completa"
+      aria-label="Conteúdo da pré-visualização Markdown"
       data-testid="real-template-markdown-preview"
       data-request={JSON.stringify(request)}
     >
-      # Documento estrutural completo
+      # Convocatória de Associação Horizonte
     </pre>
   ),
 }));
@@ -197,21 +197,16 @@ describe('TemplateDetailPage', () => {
     renderDetail(BUILTIN.id, 'preview');
 
     expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
-    expect(
-      screen.getByText(
-        'Escolha uma vista de cada vez: PDF e Markdown são provas estruturais completas geradas pelo servidor a partir do mesmo modelo. Os campos substituíveis permanecem por preencher.',
-      ),
-    ).toBeTruthy();
+    expect(screen.queryByText(/provas estruturais/i)).toBeNull();
+    expect(screen.queryByText(/campos substituíveis permanecem por preencher/i)).toBeNull();
     const pdf = await screen.findByTestId('real-template-pdf-preview');
     expect(JSON.parse(pdf.getAttribute('data-request') ?? '{}')).toEqual({
       source: 'catalog',
       template_id: BUILTIN.id,
     });
-    expect(pdf.getAttribute('data-download-filename')).toBe(
-      'assoc-convocatoria-ga/v1-structural-preview.pdf',
-    );
+    expect(pdf.getAttribute('data-download-filename')).toBe('assoc-convocatoria-ga/v1-preview.pdf');
     expect(screen.getByRole('tab', { name: 'PDF' }).getAttribute('aria-selected')).toBe('true');
-    expect(screen.queryByLabelText('Pré-visualização Markdown estrutural completa')).toBeNull();
+    expect(screen.queryByLabelText('Conteúdo da pré-visualização Markdown')).toBeNull();
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
   });
 
@@ -247,9 +242,9 @@ describe('TemplateDetailPage', () => {
 
     screen.getByRole('tab', { name: 'Markdown' }).click();
 
-    const source = await screen.findByLabelText('Pré-visualização Markdown estrutural completa');
+    const source = await screen.findByLabelText('Conteúdo da pré-visualização Markdown');
     expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
-    expect(source.textContent).toContain('Documento estrutural completo');
+    expect(source.textContent).toContain('Convocatória de Associação Horizonte');
     expect(JSON.parse(source.getAttribute('data-request') ?? '{}')).toEqual({
       source: 'catalog',
       template_id: BUILTIN.id,

@@ -4,7 +4,7 @@
  * Shipped ATA templates carry their real prose in `spec.blocks`; `body_markdown` is frequently
  * empty. This component therefore renders the canonical block list first and mounts the existing
  * WYSIWYG exactly where the first NarrativeBody marker occurs. It never derives one authored half
- * from the other. The editable paper is the fast semi-preview; one real server-rendered proof
+ * from the other. The editable paper is the fast semi-preview; one real server-rendered document
  * remains below it.
  */
 import { useMemo, type ReactNode } from 'react';
@@ -83,11 +83,6 @@ export function TemplateDocumentEditor({
     <section className="stack template-document-editor">
       <header className="stack--tight">
         <h3 className="panel__title">{bt('templates.editor.document.title')}</h3>
-        <TemplatePreviewNotice
-          label={bt('templates.editor.preview.notice.structural')}
-          details={bt('templates.editor.document.hint')}
-          detailsLabel={bt('templates.editor.preview.notice.details')}
-        />
       </header>
 
       <div className="template-document-editor__canvas">
@@ -109,7 +104,7 @@ export function TemplateDocumentEditor({
         </div>
       ) : null}
 
-      {/* The paper is the fast semi-preview; this is the one authoritative rendered proof. Keep it
+      {/* The paper is the fast semi-preview; this is the one authoritative rendered preview. Keep it
           full width and secondary, with its mutually exclusive PDF/Markdown tabs intact. */}
       <div className="template-document-editor__proof">
         {previewSpec ? (

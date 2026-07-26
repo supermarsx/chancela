@@ -20,13 +20,13 @@ afterEach(() => {
 });
 
 describe('template document PDF preview API', () => {
-  it('posts an unsaved draft and preserves PDF bytes plus proof metadata', async () => {
-    const bytes = new TextEncoder().encode('%PDF-1.7 structural');
+  it('posts an unsaved draft and preserves PDF bytes plus preview metadata', async () => {
+    const bytes = new TextEncoder().encode('%PDF-1.7 sample');
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(bytes, {
         headers: {
           'Content-Type': 'application/pdf; profile=PDF/A-2u',
-          'X-Chancela-Template-Preview': 'structural-unresolved',
+          'X-Chancela-Template-Preview': 'sample-resolved',
         },
       }),
     );
@@ -49,18 +49,18 @@ describe('template document PDF preview API', () => {
         }),
       }),
     );
-    expect(new TextDecoder().decode(result.data)).toBe('%PDF-1.7 structural');
+    expect(new TextDecoder().decode(result.data)).toBe('%PDF-1.7 sample');
     expect(result.content_type).toBe('application/pdf; profile=PDF/A-2u');
-    expect(result.preview_kind).toBe('structural-unresolved');
+    expect(result.preview_kind).toBe('sample-resolved');
   });
 
-  it('returns complete server Markdown with the same proof classification', async () => {
+  it('returns complete server Markdown with the same sample classification', async () => {
     const markdown = '# Ata n.º {{ ata_number }}\n\n## Ordem de trabalhos\n';
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(markdown, {
         headers: {
           'Content-Type': 'text/markdown; charset=utf-8',
-          'X-Chancela-Template-Preview': 'structural-unresolved',
+          'X-Chancela-Template-Preview': 'sample-resolved',
         },
       }),
     );
@@ -84,7 +84,7 @@ describe('template document PDF preview API', () => {
     expect(result).toEqual({
       markdown,
       content_type: 'text/markdown; charset=utf-8',
-      preview_kind: 'structural-unresolved',
+      preview_kind: 'sample-resolved',
     });
   });
 

@@ -28,7 +28,7 @@ function result(markdown: string): TemplateDocumentMarkdownPreviewResult {
   return {
     markdown,
     content_type: 'text/markdown; charset=utf-8',
-    preview_kind: 'structural-unresolved',
+    preview_kind: 'sample-resolved',
   };
 }
 
@@ -63,7 +63,7 @@ describe('TemplateMarkdownPreview', () => {
     renderWithProviders(<TemplateMarkdownPreview request={REQUEST_A} debounceMs={0} />);
 
     expect(
-      (await screen.findByLabelText('Pré-visualização Markdown estrutural completa')).textContent,
+      (await screen.findByLabelText('Conteúdo da pré-visualização Markdown')).textContent,
     ).toContain('Ordem de trabalhos');
     expect(mocks.mutateAsync).toHaveBeenCalledWith(REQUEST_A);
 
@@ -93,7 +93,7 @@ describe('TemplateMarkdownPreview', () => {
       await second.promise;
     });
     expect(
-      (await screen.findByLabelText('Pré-visualização Markdown estrutural completa')).textContent,
+      (await screen.findByLabelText('Conteúdo da pré-visualização Markdown')).textContent,
     ).toContain('Documento novo');
 
     await act(async () => {
@@ -101,7 +101,7 @@ describe('TemplateMarkdownPreview', () => {
       await first.promise;
     });
     expect(
-      screen.getByLabelText('Pré-visualização Markdown estrutural completa').textContent,
+      screen.getByLabelText('Conteúdo da pré-visualização Markdown').textContent,
     ).not.toContain('Documento antigo');
   });
 
@@ -123,16 +123,16 @@ describe('TemplateMarkdownPreview', () => {
     expect(alert.textContent).toContain('preview unavailable');
     expect(alert.classList.contains('template-preview-notice')).toBe(true);
     expect((alert.querySelector('details') as HTMLDetailsElement).open).toBe(false);
-    expect(
-      screen.getByLabelText('Pré-visualização Markdown estrutural completa').textContent,
-    ).toContain('Documento válido');
+    expect(screen.getByLabelText('Conteúdo da pré-visualização Markdown').textContent).toContain(
+      'Documento válido',
+    );
     expect(screen.getByRole('status').textContent).toContain('última pré-visualização válida');
 
     mocks.mutateAsync.mockResolvedValueOnce(result('# Documento repetido'));
     fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }));
     await waitFor(() => expect(mocks.mutateAsync).toHaveBeenCalledTimes(3));
     expect(
-      (await screen.findByLabelText('Pré-visualização Markdown estrutural completa')).textContent,
+      (await screen.findByLabelText('Conteúdo da pré-visualização Markdown')).textContent,
     ).toContain('Documento repetido');
   });
 });

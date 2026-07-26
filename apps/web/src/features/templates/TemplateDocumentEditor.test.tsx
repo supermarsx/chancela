@@ -118,7 +118,7 @@ describe('TemplateDocumentEditor', () => {
     expect(screen.queryByTestId('pdf-proof')).toBeNull();
   });
 
-  it('uses current valid blocks for proof and pauses every proof while Advanced JSON is invalid', () => {
+  it('uses current valid blocks for preview and pauses every preview while Advanced JSON is invalid', () => {
     const currentBlocks = [
       { kind: 'Paragraph' as const, template: 'Current structured prose' },
       { kind: 'NarrativeBody' as const },
@@ -127,17 +127,11 @@ describe('TemplateDocumentEditor', () => {
       { kind: 'Heading' as const, level: 2 as const, template: 'Repaired heading' },
       { kind: 'NarrativeBody' as const },
     ];
-    const { container } = renderWithProviders(<DocumentHarness initialBlocks={currentBlocks} />);
+    renderWithProviders(<DocumentHarness initialBlocks={currentBlocks} />);
 
     expect(screen.getByTestId('pdf-proof').textContent).toBe(JSON.stringify(currentBlocks));
     expect(screen.getByTestId('pdf-proof').textContent).not.toBe(JSON.stringify(SPEC.blocks));
-    const semiPreviewNotice = container.querySelector(
-      '.template-document-editor > header .template-preview-notice details',
-    ) as HTMLDetailsElement;
-    expect(semiPreviewNotice.open).toBe(false);
-    expect(semiPreviewNotice.querySelector('summary')?.textContent).toContain(
-      'Pré-visualização estrutural',
-    );
+    expect(screen.queryByText(/pré-visualização estrutural/i)).toBeNull();
 
     fireEvent.change(screen.getByLabelText('JSON avançado'), { target: { value: '{' } });
 

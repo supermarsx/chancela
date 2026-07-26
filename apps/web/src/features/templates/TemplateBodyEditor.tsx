@@ -6,9 +6,8 @@
  * still needs that explicit marker to place this prose, so older templates without it get both an
  * honest warning and a direct recovery action.
  *
- * Preview is deliberately exclusive: either the real stateless PDF/A proof or the exact stored
- * markdown source is mounted. The PDF is visibly classified as structural and unresolved; it is
- * never presented as the final context-filled ata.
+ * Preview is deliberately exclusive: either the real stateless PDF/A document or the complete
+ * server-rendered Markdown document is mounted, both resolved from the same sample record.
  */
 import { useEffect, useId, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import type { TemplateSpec } from '../../api/types';
@@ -24,7 +23,6 @@ import { useTemplatesEditorT } from '../../i18n/templatesEditorFallback';
 import { Button, Icon, InlineWarning } from '../../ui';
 import { TemplateMarkdownPreview } from './TemplateMarkdownPreview';
 import { TemplatePdfPreview } from './TemplatePdfPreview';
-import { TemplatePreviewNotice } from './TemplatePreviewNotice';
 
 /** The narrative-body byte ceiling — the server's cap for a template body seed (mirrors the ata). */
 export const MAX_TEMPLATE_BODY_BYTES = 64 * 1024;
@@ -208,11 +206,6 @@ export function TemplateBodyPreview({
           <h3 className="panel__title" id={`${previewId}-title`}>
             {bt('templates.editor.preview.title')}
           </h3>
-          <TemplatePreviewNotice
-            label={bt('templates.editor.preview.notice.structural')}
-            details={bt('templates.editor.preview.hint')}
-            detailsLabel={bt('templates.editor.preview.notice.details')}
-          />
         </div>
         <div
           className="template-preview__tabs"
@@ -252,7 +245,7 @@ export function TemplateBodyPreview({
           <TemplatePdfPreview
             request={request}
             idPrefix={`${idPrefix}-pdf`}
-            downloadFilename={`${spec.id || 'template'}-structural-preview.pdf`}
+            downloadFilename={`${spec.id || 'template'}-preview.pdf`}
           />
         </div>
       ) : (

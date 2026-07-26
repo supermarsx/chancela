@@ -56,7 +56,7 @@ vi.mock('./TemplatePdfPreview', () => ({
       data-template-id={request.spec.id}
       data-body-markdown={request.body_markdown}
     >
-      Pré-visualização PDF/A estrutural
+      Pré-visualização PDF/A
     </div>
   ),
 }));
@@ -68,7 +68,7 @@ vi.mock('./TemplateMarkdownPreview', () => ({
     request: { source: string; spec: { id: string }; body_markdown: string };
   }) => (
     <pre
-      aria-label="Pré-visualização Markdown estrutural completa"
+      aria-label="Conteúdo da pré-visualização Markdown"
       data-template-id={request.spec.id}
       data-body-markdown={request.body_markdown}
     >
@@ -476,7 +476,7 @@ describe('TemplateCreatePage', () => {
     );
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     const pdf = screen.getByTestId('real-template-pdf-preview');
-    expect(pdf.textContent).toBe('Pré-visualização PDF/A estrutural');
+    expect(pdf.textContent).toBe('Pré-visualização PDF/A');
     expect(pdf.getAttribute('data-body-markdown')).toBe('## Ata\n\nTexto {{ literal }}.');
     expect(screen.queryByRole('article')).toBeNull();
     expect(screen.queryByText('Ata n.º {{ ata_number }}')).toBeNull();
@@ -484,7 +484,7 @@ describe('TemplateCreatePage', () => {
     fireEvent.click(within(tabs).getByRole('tab', { name: 'Markdown' }));
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
-    const source = screen.getByLabelText('Pré-visualização Markdown estrutural completa');
+    const source = screen.getByLabelText('Conteúdo da pré-visualização Markdown');
     expect(source.textContent).toContain('# Documento completo');
     expect(source.textContent).toContain('## Ata\n\nTexto {{ literal }}.');
     expect(source.getAttribute('data-body-markdown')).toBe('## Ata\n\nTexto {{ literal }}.');
@@ -571,9 +571,9 @@ describe('TemplateCreatePage', () => {
       target: { value: '## Corpo compilado' },
     });
     fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
-    expect(
-      screen.getByLabelText('Pré-visualização Markdown estrutural completa').textContent,
-    ).toContain('## Corpo compilado');
+    expect(screen.getByLabelText('Conteúdo da pré-visualização Markdown').textContent).toContain(
+      '## Corpo compilado',
+    );
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));

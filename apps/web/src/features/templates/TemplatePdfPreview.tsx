@@ -1,12 +1,11 @@
 /**
- * A real, stateless PDF/A proof for an authored template.
+ * A real, stateless PDF/A preview for an authored template.
  *
  * The server receives either the current unsaved authored halves or a catalog id and writes the
- * result through the production PDF/A writer. It deliberately does not invent an act context:
- * placeholders, collection paths and signatory bindings stay unresolved and the UI says so.
+ * result through the production PDF/A writer against the instance's typed sample context.
  *
  * Requests are debounced and sequence-gated. A slow response for an older draft can therefore
- * never replace a newer proof, while the last successful PDF remains usable during an update or
+ * never replace a newer preview, while the last successful PDF remains usable during an update or
  * after a transient failure. pdf.js is reached through the existing lazy `usePdfPage` boundary,
  * keeping the heavy engine out of the eager template-editor bundle.
  */
@@ -26,7 +25,7 @@ import { TemplatePreviewNotice } from './TemplatePreviewNotice';
 type PreviewPhase = 'idle' | 'loading' | 'updating' | 'ready' | 'error';
 
 export interface TemplatePdfPreviewProps {
-  /** Unsaved draft or catalog source. `null` pauses generation and keeps the last valid proof. */
+  /** Unsaved draft or catalog source. `null` pauses generation and keeps the last valid preview. */
   request: TemplateDocumentPreviewRequest | null;
   /** Lets a parent keep the component mounted behind a preview-mode switch without issuing work. */
   enabled?: boolean;
@@ -47,7 +46,7 @@ function safePdfFilename(value: string): string {
   )
     .join('')
     .replace(/\s+/g, ' ');
-  if (!cleaned) return 'template-structural-preview.pdf';
+  if (!cleaned) return 'template-preview.pdf';
   return cleaned.toLowerCase().endsWith('.pdf') ? cleaned : `${cleaned}.pdf`;
 }
 
@@ -55,7 +54,7 @@ export function TemplatePdfPreview({
   request,
   enabled = true,
   debounceMs = 500,
-  downloadFilename = 'template-structural-preview.pdf',
+  downloadFilename = 'template-preview.pdf',
   idPrefix = 'template-pdf-preview',
 }: TemplatePdfPreviewProps) {
   const pt = useTemplatesPdfPreviewT();
@@ -153,7 +152,6 @@ export function TemplatePdfPreview({
     current: String(pageIndex + 1),
     total: String(pageCount),
   };
-  const canvasDescriptionId = `${idPrefix}-canvas-description`;
   const filename = safePdfFilename(downloadFilename);
 
   return (
@@ -166,14 +164,6 @@ export function TemplatePdfPreview({
         <p className="card__label" id={`${idPrefix}-title`}>
           {pt('templates.pdfPreview.title')}
         </p>
-        <span className="sr-only" id={canvasDescriptionId}>
-          {pt('templates.pdfPreview.description')}
-        </span>
-        <TemplatePreviewNotice
-          label={bt('templates.editor.preview.notice.structural')}
-          details={pt('templates.pdfPreview.description')}
-          detailsLabel={bt('templates.editor.preview.notice.details')}
-        />
       </header>
 
       {phase === 'loading' || phase === 'updating' || (phase === 'error' && lastGood) ? (
@@ -279,7 +269,6 @@ export function TemplatePdfPreview({
               ref={canvasRef}
               className="template-pdf-preview__canvas"
               role="img"
-              aria-describedby={canvasDescriptionId}
               aria-label={pt('templates.pdfPreview.canvas', pageParams)}
             />
             {pdf.status === 'loading' ? (

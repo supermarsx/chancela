@@ -61,7 +61,7 @@ vi.mock('./TemplatePdfPreview', () => ({
       data-template-id={request.spec.id}
       data-body-markdown={request.body_markdown}
     >
-      Pré-visualização PDF/A estrutural
+      Pré-visualização PDF/A
     </div>
   ),
 }));
@@ -73,7 +73,7 @@ vi.mock('./TemplateMarkdownPreview', () => ({
     request: { source: string; spec: { id: string }; body_markdown: string };
   }) => (
     <pre
-      aria-label="Pré-visualização Markdown estrutural completa"
+      aria-label="Conteúdo da pré-visualização Markdown"
       data-template-id={request.spec.id}
       data-body-markdown={request.body_markdown}
     >
@@ -449,14 +449,14 @@ describe('TemplateEditPage', () => {
     expect(screen.queryByText('JSON avançado')).toBeNull();
   });
 
-  it('renders one exclusive preview and sends unresolved tags to complete Markdown rendering', async () => {
+  it('renders one exclusive preview and sends the complete draft to sample-resolved rendering', async () => {
     const anchored = {
       ...BUNDLE_EXPORT,
       spec: { ...SPEC, blocks: [...SPEC.blocks, { kind: 'NarrativeBody' }] },
     };
     const { fn } = stubFetch([USER_TEMPLATE], {
       exportBody: anchored,
-      // The server compiles the body; a merge tag surfaces as literal token text (unresolved).
+      // This page-level seam only verifies that the complete draft reaches the server preview.
       previewBlocks: [{ type: 'Heading', level: 2, text: 'Ata n.º {{ ata_number }}' }],
     });
     vi.stubGlobal('fetch', fn);
@@ -466,7 +466,7 @@ describe('TemplateEditPage', () => {
     expect(await screen.findByText('Pré-visualização do modelo')).toBeTruthy();
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     const pdf = screen.getByTestId('real-template-pdf-preview');
-    expect(pdf.textContent).toBe('Pré-visualização PDF/A estrutural');
+    expect(pdf.textContent).toBe('Pré-visualização PDF/A');
     expect(pdf.getAttribute('data-template-id')).toBe(USER_TEMPLATE.id);
     expect(pdf.getAttribute('data-body-markdown')).toBe('## Corpo\n\nTexto com {{ campo }}.');
     expect(screen.queryByText('Ata n.º {{ ata_number }}')).toBeNull();
@@ -475,7 +475,7 @@ describe('TemplateEditPage', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
     expect(screen.getAllByRole('tabpanel')).toHaveLength(1);
     expect(screen.queryByTestId('real-template-pdf-preview')).toBeNull();
-    const markdown = screen.getByLabelText('Pré-visualização Markdown estrutural completa');
+    const markdown = screen.getByLabelText('Conteúdo da pré-visualização Markdown');
     expect(markdown.textContent).toContain('# Documento completo');
     expect(markdown.textContent).toContain('## Corpo\n\nTexto com {{ campo }}.');
     expect(markdown.getAttribute('data-template-id')).toBe(USER_TEMPLATE.id);
@@ -539,9 +539,9 @@ describe('TemplateEditPage', () => {
     expect(screen.getByText('Bloco 1')).toBeTruthy();
     expect(screen.queryByText('O corpo não será incluído no documento')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Markdown' }));
-    expect(
-      screen.getByLabelText('Pré-visualização Markdown estrutural completa').textContent,
-    ).toContain('## Corpo\n\nTexto com {{ campo }}.');
+    expect(screen.getByLabelText('Conteúdo da pré-visualização Markdown').textContent).toContain(
+      '## Corpo\n\nTexto com {{ campo }}.',
+    );
     expect(document.querySelector('[data-template-authored-preview]')).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: 'Propriedades' }));

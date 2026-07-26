@@ -1,8 +1,8 @@
 /**
  * Complete, stateless Markdown representation of an authored template.
  *
- * This deliberately asks the server for the same unresolved `DocumentModel` used by the PDF/A
- * proof. Shipped ATA templates frequently keep their prose in `spec.blocks` and have an empty
+ * This asks the server for the same sample-resolved `DocumentModel` used by the PDF/A preview.
+ * Shipped ATA templates frequently keep their prose in `spec.blocks` and have an empty
  * `body_markdown`; showing that source alone therefore produced a blank and misleading preview.
  *
  * Requests are debounced and sequence-gated like the PDF preview. The last successful document
@@ -22,7 +22,7 @@ type PreviewPhase = 'idle' | 'loading' | 'updating' | 'ready' | 'error';
 type CopyState = 'idle' | 'copied' | 'failed';
 
 export interface TemplateMarkdownPreviewProps {
-  /** Unsaved draft or catalog source. `null` pauses generation and keeps the last valid proof. */
+  /** Unsaved draft or catalog source. `null` pauses generation and keeps the last valid preview. */
   request: TemplateDocumentPreviewRequest | null;
   /** Lets a parent keep the component mounted behind a format switch without issuing work. */
   enabled?: boolean;
@@ -108,12 +108,9 @@ export function TemplateMarkdownPreview({
   return (
     <section className="stack--tight" aria-labelledby={`${idPrefix}-title`} aria-busy={isWorking}>
       <div className="template-preview__markdown-head">
-        <TemplatePreviewNotice
-          id={`${idPrefix}-title`}
-          label={bt('templates.editor.preview.notice.markdown')}
-          details={bt('templates.editor.preview.markdown.note')}
-          detailsLabel={bt('templates.editor.preview.notice.details')}
-        />
+        <p className="card__label" id={`${idPrefix}-title`}>
+          {bt('templates.editor.preview.notice.markdown')}
+        </p>
         {lastGood ? (
           <Button
             type="button"

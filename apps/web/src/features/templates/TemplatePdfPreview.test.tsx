@@ -33,7 +33,7 @@ function result(label: string): TemplateDocumentPreviewResult {
   return {
     data: new TextEncoder().encode(label).buffer,
     content_type: 'application/pdf; profile=PDF/A-2u',
-    preview_kind: 'structural-unresolved',
+    preview_kind: 'sample-resolved',
   };
 }
 
@@ -82,11 +82,11 @@ describe('TemplatePdfPreview', () => {
     expect(mocks.mutateAsync).not.toHaveBeenCalled();
     await waitFor(() => expect(mocks.mutateAsync).toHaveBeenCalledWith(REQUEST_A));
     const canvas = screen.getByRole('img', {
-      name: /Página 1 de 3 da pré-visualização PDF\/A estrutural/,
+      name: /Página 1 de 3 da pré-visualização PDF\/A/,
     });
     expect(canvas).toBeTruthy();
-    expect(screen.getAllByText('Pré-visualização PDF/A estrutural')).toHaveLength(1);
-    expect(screen.getByText('Pré-visualização estrutural, com campos por resolver')).toBeTruthy();
+    expect(screen.getAllByText('Pré-visualização PDF/A')).toHaveLength(1);
+    expect(screen.queryByText(/campos por resolver/i)).toBeNull();
     const open = await screen.findByRole('link', { name: 'Abrir PDF' });
     const download = screen.getByRole('link', { name: 'Descarregar PDF' });
     expect(open.getAttribute('href')).toBe('blob:template-proof-1');
@@ -96,7 +96,7 @@ describe('TemplatePdfPreview', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Página seguinte' }));
     expect(
       screen.getByRole('img', {
-        name: /Página 2 de 3 da pré-visualização PDF\/A estrutural/,
+        name: /Página 2 de 3 da pré-visualização PDF\/A/,
       }),
     ).toBeTruthy();
     expect(mocks.usePdfPage.mock.calls.at(-1)?.[0]).toEqual(

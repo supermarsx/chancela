@@ -8,7 +8,7 @@
  *
  * Five sections, in the order the questions get asked:
  *   Identificação — id, version, family, stage, channels, signature policy, rule pack, origin;
- *   Pré-visualização — the authored structure in document form, with merge fields unresolved;
+ *   Pré-visualização — the authored structure rendered with the instance sample record;
  *   Fonte legal   — the law references, in full. This is where they belong now that the
  *                   catalog table hides that column by default (`templateColumns.ts`);
  *   Blocos        — the authored block structure, in document order;
@@ -123,7 +123,7 @@ function blockSummary(block: TemplateBlockSpec): string {
   }
 }
 
-/** One read-only representation at a time: the real server PDF/A proof or exact Markdown source. */
+/** One read-only representation at a time: the real server PDF/A or exact Markdown document. */
 function TemplateDetailPreview({ template }: { template: TemplateSummary }) {
   const bt = useTemplatesEditorT();
   const [mode, setMode] = useState<'pdf' | 'markdown'>('pdf');
@@ -168,7 +168,7 @@ function TemplateDetailPreview({ template }: { template: TemplateSummary }) {
             request={{ source: 'catalog', template_id: template.id }}
             debounceMs={0}
             idPrefix={`${previewId}-catalog-pdf`}
-            downloadFilename={`${template.id}-structural-preview.pdf`}
+            downloadFilename={`${template.id}-preview.pdf`}
           />
         </div>
       ) : (
@@ -374,7 +374,6 @@ export function TemplateDetailPage() {
 
         {section === 'preview' ? (
           <Card title={ct('templates.catalog.preview.title')}>
-            <p className="field__hint">{ct('templates.catalog.preview.hint')}</p>
             <TemplateDetailPreview template={template} />
           </Card>
         ) : null}
