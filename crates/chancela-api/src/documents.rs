@@ -9830,197 +9830,29 @@ fn template_preview_sample_context(spec: &TemplateSpec) -> Value {
         })
         .collect::<Vec<_>>();
 
-    json!({
-        "title": "Ata n.º 12 — Assembleia Geral",
-        "subject": "",
-        "created_at": "2026-07-15",
-        "entity": {
-            "name": entity_name,
-            "nipc": "500000000",
-            "legal_form": legal_form,
-            "seat": "Rua da República, 10, 1000-001 Lisboa",
-            "address": "Rua da República, 10, 1000-001 Lisboa",
-            "share_capital": "100 000,00 EUR",
-            "capital": "100 000,00 EUR"
-        },
-        "book": {
-            "kind": "Assembleia geral",
-            "reference": "Livro de atas n.º 2",
-            "predecessor": book_predecessor
-        },
-        "act": {
-            "number": 12,
-            "title": "Assembleia Geral Ordinária",
-            "meeting_date": "2026-07-15",
-            "meeting_time": "10:30",
-            "place": "Sede social, Lisboa"
-        },
-        "ata_number": 12,
-        "agenda_number": 1,
-        "meeting_date": "2026-07-15",
-        "meeting_time": "10:30",
-        "place": "Sede social, Lisboa",
-        "channel": "Physical",
-        "members_present": 2,
-        "members_represented": 1,
-        "attendance_reference": "Lista de presenças anexa n.º LP-2026-12",
-        "mesa": {
-            "presidente": "Ana Martins",
-            "secretarios": ["Bruno Costa"]
-        },
-        "attendees": [
-            {
-                "name": "Ana Martins",
-                "quality": "Shareholder",
-                "quality_note": "Sócia e presidente da mesa",
-                "weight": { "Capital": "60 000,00 EUR" },
-                "presence": "InPerson",
-                "represented_by": null
-            },
-            {
-                "name": "Carlos Ferreira",
-                "quality": "Shareholder",
-                "quality_note": "Sócio",
-                "weight": { "Capital": "40 000,00 EUR" },
-                "presence": "Represented",
-                "represented_by": "Diana Lopes"
-            },
-            {
-                "name": "Eduarda Silva",
-                "quality": "CondoOwner",
-                "quality_note": "Condómina da fração C",
-                "weight": { "Permilage": 125 },
-                "presence": "Absent",
-                "represented_by": null
-            }
-        ],
-        "agenda": [
-            { "number": 1, "text": "Apreciação e aprovação das contas do exercício de 2025" },
-            { "number": 2, "text": "Aplicação do resultado líquido do exercício" }
-        ],
-        "deliberations": "As propostas constantes da ordem de trabalhos foram discutidas e votadas.",
-        "deliberation_items": [
-            {
-                "agenda_number": 1,
-                "text": "Foram aprovadas as contas do exercício de 2025.",
-                "vote": {
-                    "Recorded": { "em_favor": 2, "contra": 0, "abstencoes": 1 }
-                },
-                "statements": [
-                    {
-                        "member": "Carlos Ferreira",
-                        "text": "Declaração de voto anexada à presente ata."
-                    }
-                ]
-            },
-            {
-                "agenda_number": 2,
-                "text": "Foi aprovada a transferência do resultado para reservas livres.",
-                "vote": "Unanimous",
-                "statements": []
-            }
-        ],
-        "referenced_documents": [
-            { "label": "Relatório e contas", "reference": "RC-2025" },
-            { "label": "Lista de presenças", "reference": "LP-2026-12" }
-        ],
-        "attachments": [
-            { "kind": "Relatório e contas", "digest": "sha256:8f2c…7a11" },
-            { "kind": "Lista de presenças", "digest": "sha256:1ab4…90ef" }
-        ],
-        "signatories": [
-            { "capacity": "Chair", "role": "Presidente da mesa", "name": "Ana Martins" },
-            { "capacity": "Secretary", "role": "Secretário", "name": "Bruno Costa" }
-        ],
-        "required_signatories": [
-            { "capacity": "Chair", "role": "Presidente da mesa", "name": "Ana Martins" },
-            { "capacity": "Secretary", "role": "Secretário", "name": "Bruno Costa" }
-        ],
-        "convening": {
-            "convener": "Ana Martins",
-            "convener_capacity": "Chair",
-            "dispatch_date": "2026-06-30",
-            "antecedence_days": 15,
-            "channel": "Email",
-            "second_call": {
-                "date": "2026-07-15",
-                "time": "11:00",
-                "reduced_quorum": true
-            },
-            "recipients": [
-                {
-                    "name": "Ana Martins",
-                    "contact": "ana.martins@example.test",
-                    "channel": "Email",
-                    "reference": "CONV-2026-12-A",
-                    "dispatched_at": "2026-06-30"
-                },
-                {
-                    "name": "Carlos Ferreira",
-                    "contact": "carlos.ferreira@example.test",
-                    "channel": "RegisteredLetterAR",
-                    "reference": "CONV-2026-12-B",
-                    "dispatched_at": "2026-06-30"
-                }
-            ]
-        },
-        "convening_waiver": {
-            "basis": "AssembleiaUniversal",
-            "all_agreed_to_meet": true,
-            "all_agreed_to_agenda": true,
-            "grounds": "Todos os sócios estavam presentes ou devidamente representados.",
-            "evidence_reference": "LP-2026-12"
-        },
-        "representation": {
-            "scope": "Participação e voto em todos os pontos da ordem de trabalhos",
-            "instructions": "Votar favoravelmente as propostas apresentadas",
-            "evidence_reference": "PROC-2026-04"
-        },
-        "representative": {
-            "name": "Diana Lopes",
-            "document": "Cartão de Cidadão n.º 00000000"
-        },
-        "represented": {
-            "name": "Carlos Ferreira",
-            "unit": "Quota com o valor nominal de 40 000,00 EUR"
-        },
-        "telematic_evidence": {
-            "authenticity": "Identidade confirmada na sessão autenticada",
-            "recording": "Registo audiovisual interno REF-2026-12",
-            "security": "Ligação cifrada com controlo de acesso"
-        },
-        "law_references": law_references,
-        "opening_date": "2026-01-02",
-        "closing_date": "2026-07-15",
-        "numbering_scheme": "BoundVolume",
-        "numbering_label": "Livro encadernado com numeração sequencial",
-        "purpose": "Registo das atas da assembleia geral",
-        "ata_count": 12,
-        "reason": "BookFull",
-        "retifies": "Ata n.º 11, de 30 de junho de 2026",
-        "seal_event_seq": 124,
-        "payload_digest": "8f2c1769d9f2b47b6fa13e72e4da9db20d8f6fd5a1ff8b954cf953faa9d87a11",
-        "digest": "8f2c1769d9f2b47b6fa13e72e4da9db20d8f6fd5a1ff8b954cf953faa9d87a11",
-        "capacity": "Chair",
-        "contact": "secretaria@example.test",
-        "dispatched_at": "2026-06-30",
-        "kind": "Documento de apoio",
-        "label": "Relatório e contas",
-        "name": "Ana Martins",
-        "number": 1,
-        "quality": "Shareholder",
-        "quality_note": "Sócia",
-        "reference": "DOC-2026-12",
-        "represented_by": "Diana Lopes",
-        "role": "Presidente da mesa",
-        "statement": {
-            "agenda_number": 1,
-            "member": "Carlos Ferreira",
-            "text": "Declaração de voto anexada à presente ata."
-        },
-        "text": "Apreciação e aprovação das contas do exercício de 2025",
-        "weight": { "Capital": "60 000,00 EUR", "Permilage": 600 }
-    })
+    // Keep the large, mostly static fixture out of `json!`: serde_json's token-munching macro
+    // recurses once per entry and exceeded the default compiler recursion limit in full workspace,
+    // release and coverage builds. Parsing one checked-in JSON asset once and cloning it for each
+    // preview keeps compile depth constant while preserving the exact sample wire shape.
+    static BASE_CONTEXT: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    let mut context = BASE_CONTEXT
+        .get_or_init(|| {
+            serde_json::from_str(include_str!("template_preview_sample_context.json"))
+                .expect("embedded template preview sample context must be valid JSON")
+        })
+        .clone();
+    for (pointer, value) in [
+        ("/entity/name", Value::String(entity_name.to_owned())),
+        ("/entity/legal_form", Value::String(legal_form.to_owned())),
+        ("/book/predecessor", book_predecessor),
+        ("/law_references", Value::Array(law_references)),
+    ] {
+        let slot = context
+            .pointer_mut(pointer)
+            .unwrap_or_else(|| panic!("embedded template preview sample context misses {pointer}"));
+        *slot = value;
+    }
+    context
 }
 
 /// The PDF writer owns a visible document-title prologue. Promote the first rendered authored H1
