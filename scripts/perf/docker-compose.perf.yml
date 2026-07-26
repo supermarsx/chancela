@@ -13,6 +13,11 @@ services:
       CHANCELA_RATE_LIMIT_PER_SECOND: ${CHANCELA_PERF_RATE_LIMIT_PER_SECOND:-1000}
       CHANCELA_RATE_LIMIT_BURST: ${CHANCELA_PERF_RATE_LIMIT_BURST:-2000}
       CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR: "true"
+    deploy:
+      resources:
+        limits:
+          cpus: "${CHANCELA_PERF_APP_CPUS:-2.0}"
+          memory: "${CHANCELA_PERF_APP_MEMORY:-1g}"
 
   perf-gateway:
     profiles: [performance]

@@ -12,6 +12,10 @@
   "workload": {
     "mode": "ramp",
     "duration_seconds": 1800,
+    "warmup_seconds": 60,
+    "ramp_seconds": 600,
+    "peak_plateau_seconds": 1080,
+    "cooldown_seconds": 60,
     "clients": 64,
     "request_timeout_seconds": 30,
     "max_latency_samples_per_operation": 200000,
@@ -24,7 +28,9 @@
       "user_list": 2,
       "auth_login": 4,
       "entity_write": 5,
-      "signature_status": 20
+      "signature_status": 20,
+      "search_query": 20,
+      "search_status": 2
     }
   }
 }

@@ -46,6 +46,26 @@ on:
         required: false
         type: boolean
         default: false
+      app_replicas:
+        description: Application replicas recorded by topology preflight (1-9).
+        required: true
+        type: number
+        default: 3
+      app_cpus:
+        description: CPU limit per application replica.
+        required: true
+        type: string
+        default: "2.0"
+      app_memory:
+        description: Memory limit per application replica.
+        required: true
+        type: string
+        default: "1g"
+      search_readiness_timeout_seconds:
+        description: Maximum wait for a current searchable generation after exact seeding.
+        required: true
+        type: number
+        default: 900
 
 permissions:
   contents: read
@@ -95,6 +115,12 @@ jobs:
       CHANCELA_PERF_PASSWORD: Perf-Only-Password-2026!
       CHANCELA_PERF_PKCS12_PASSPHRASE: Ephemeral-Perf-PKCS12-2026!
       CHANCELA_PERF_KEEP: ${{ github.event_name == 'workflow_dispatch' && inputs.keep_failed_topology && '1' || '0' }}
+      CHANCELA_CLUSTER_REPLICAS: ${{ github.event_name == 'workflow_dispatch' && inputs.app_replicas || 3 }}
+      CHANCELA_PERF_APP_CPUS: ${{ github.event_name == 'workflow_dispatch' && inputs.app_cpus || '2.0' }}
+      CHANCELA_PERF_APP_MEMORY: ${{ github.event_name == 'workflow_dispatch' && inputs.app_memory || '1g' }}
+      CHANCELA_PERF_SEARCH_READY_TIMEOUT_SECONDS: ${{ github.event_name == 'workflow_dispatch' && inputs.search_readiness_timeout_seconds || 900 }}
+      CHANCELA_PERF_JOB_TIMEOUT_SECONDS: 21600
+      CHANCELA_PERF_PROJECT_NAME: chancela-perf
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - name: Select optional cryptographic workload
@@ -132,6 +158,33 @@ jobs:
         if: always() && env.PERF_SLO_PATH == ''
         run: |
           echo "::notice::No reviewed SLO file was supplied. The report must say not_configured and is not a performance pass."
+      - name: Publish proof classification
+        if: always()
+        shell: bash
+        run: |
+          report=".perf-work/$PERF_PROFILE/report/report.json"
+          if [[ -f "$report" ]]; then
+            assessment="$(jq -r '.slo.assessment // "not_evaluated"' "$report")"
+            ready="$(jq -r '.slo.proof_ready // false' "$report")"
+            blockers="$(jq -r '.slo.proof_blockers[]? // empty' "$report")"
+            {
+              echo "### Performance proof classification"
+              echo
+              echo "- Assessment: \`$assessment\`"
+              echo "- Proof ready: \`$ready\`"
+              if [[ -n "$blockers" ]]; then
+                echo "- Blockers:"
+                while IFS= read -r blocker; do
+                  echo "  - $blocker"
+                done <<< "$blockers"
+              fi
+            } >> "$GITHUB_STEP_SUMMARY"
+            if [[ "$ready" != "true" ]]; then
+              echo "::notice::Performance run produced evidence but is not capacity proof (assessment=$assessment)."
+            fi
+          else
+            echo "::warning::Performance report was not produced; inspect uploaded failure logs."
+          fi
       - name: Upload exact-volume evidence, reports, and failure logs
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -148,6 +201,7 @@ jobs:
         shell: bash
         run: |
           docker compose \
+            --project-name "$CHANCELA_PERF_PROJECT_NAME" \
             -f docker/docker-compose.yml \
             -f docker/docker-compose.cluster.yml \
             -f scripts/perf/docker-compose.perf.yml \

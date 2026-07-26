@@ -59,8 +59,46 @@ EXPECTED_SUCCESS = {
     "auth_login": {200, 201},
     "entity_write": {200, 201},
     "signature_status": {200},
+    "search_query": {200},
+    "search_status": {200},
 }
 MODES = {"steady", "ramp", "spike", "soak"}
+WORKLOAD_PHASES = (
+    "warmup_seconds",
+    "ramp_seconds",
+    "peak_plateau_seconds",
+    "cooldown_seconds",
+)
+CRYPTO_SLO_FIELDS = {
+    "min_completed",
+    "max_error_rate",
+    "min_throughput_per_second",
+    "p95_ms",
+    "p99_ms",
+    "max_duration_seconds",
+    "max_phase_memory_bytes",
+    "max_phase_cpu_percent",
+}
+SLO_TOP_LEVEL_FIELDS = {
+    "schema_version",
+    "global",
+    "operations",
+    "resources",
+    "cryptographic_signing",
+}
+SLO_GLOBAL_FIELDS = {"max_error_rate", "min_throughput_per_second"}
+SLO_OPERATION_FIELDS = {"p95_ms", "p99_ms", "max_error_rate"}
+SLO_RESOURCE_FIELDS = {
+    "max_container_memory_bytes",
+    "max_container_cpu_percent",
+}
+DURATION_BUDGET_SECONDS = {
+    "dataset_generation_and_topology_start": 900,
+    "exact_volume_seed": 3_600,
+    "cryptographic_setup": 600,
+    "cryptographic_per_signature": 0.75,
+    "cleanup_and_artifact_upload": 1_800,
+}
 DEFAULT_PASSWORD = "Perf-Only-Password-2026!"
 USER_NAMESPACE = uuid.UUID("7b0fb943-83ff-4e56-a670-0fd19fb46ee5")
 
@@ -111,6 +149,31 @@ def validate_profile(profile: dict[str, Any]) -> None:
         value = workload.get(field)
         if not isinstance(value, (int, float)) or value <= 0:
             raise HarnessError(f"workload.{field} must be positive")
+    present_phases = [field for field in WORKLOAD_PHASES if field in workload]
+    if present_phases:
+        missing_phases = [field for field in WORKLOAD_PHASES if field not in workload]
+        if missing_phases:
+            raise HarnessError(
+                "explicit workload phases require every phase field; missing "
+                + ", ".join(missing_phases)
+            )
+        for field in WORKLOAD_PHASES:
+            value = workload[field]
+            if not isinstance(value, (int, float)) or value < 0:
+                raise HarnessError(f"workload.{field} must be a non-negative number")
+        if workload["peak_plateau_seconds"] <= 0:
+            raise HarnessError("workload.peak_plateau_seconds must be positive")
+        phase_duration = sum(float(workload[field]) for field in WORKLOAD_PHASES)
+        if not math.isclose(
+            phase_duration,
+            float(workload["duration_seconds"]),
+            rel_tol=0,
+            abs_tol=0.001,
+        ):
+            raise HarnessError(
+                "workload phase durations must sum to workload.duration_seconds "
+                f"({phase_duration} != {workload['duration_seconds']})"
+            )
     weights = workload.get("weights")
     if not isinstance(weights, dict) or not weights:
         raise HarnessError("workload.weights must be a non-empty object")
@@ -121,6 +184,144 @@ def validate_profile(profile: dict[str, Any]) -> None:
         raise HarnessError("workload weights must be non-negative integers")
     if sum(weights.values()) <= 0:
         raise HarnessError("at least one workload weight must be positive")
+
+
+def _validate_object(
+    parent: dict[str, Any],
+    field: str,
+    allowed_fields: set[str],
+) -> dict[str, Any]:
+    value = parent.get(field, {})
+    if not isinstance(value, dict):
+        raise HarnessError(f"SLO {field} must be an object")
+    unknown = set(value) - allowed_fields
+    if unknown:
+        raise HarnessError(f"SLO {field} has unknown fields: {sorted(unknown)}")
+    return value
+
+
+def _validate_numeric_threshold(path: str, value: Any) -> None:
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise HarnessError(f"SLO {path} must be numeric or null")
+    if not math.isfinite(float(value)) or value < 0:
+        raise HarnessError(f"SLO {path} must be finite and non-negative")
+    if path.endswith("error_rate") and value > 1:
+        raise HarnessError(f"SLO {path} must be between 0 and 1")
+    if path == "cryptographic_signing.min_completed" and not isinstance(value, int):
+        raise HarnessError(f"SLO {path} must be an integer or null")
+
+
+def validate_slo_schema(slo: dict[str, Any]) -> None:
+    if slo.get("schema_version") != SCHEMA_VERSION:
+        raise HarnessError(f"SLO schema_version must be {SCHEMA_VERSION}")
+    unknown = set(slo) - SLO_TOP_LEVEL_FIELDS
+    if unknown:
+        raise HarnessError(f"SLO has unknown top-level fields: {sorted(unknown)}")
+    global_slo = _validate_object(slo, "global", SLO_GLOBAL_FIELDS)
+    resource_slo = _validate_object(slo, "resources", SLO_RESOURCE_FIELDS)
+    crypto_slo = _validate_object(
+        slo,
+        "cryptographic_signing",
+        CRYPTO_SLO_FIELDS,
+    )
+    operations = slo.get("operations", {})
+    if not isinstance(operations, dict):
+        raise HarnessError("SLO operations must be an object")
+    unknown_operations = set(operations) - set(EXPECTED_SUCCESS)
+    if unknown_operations:
+        raise HarnessError(
+            f"SLO operations has unknown operations: {sorted(unknown_operations)}"
+        )
+    for operation, thresholds in operations.items():
+        if not isinstance(thresholds, dict):
+            raise HarnessError(f"SLO operations.{operation} must be an object")
+        unknown_fields = set(thresholds) - SLO_OPERATION_FIELDS
+        if unknown_fields:
+            raise HarnessError(
+                f"SLO operations.{operation} has unknown fields: "
+                f"{sorted(unknown_fields)}"
+            )
+        for field, value in thresholds.items():
+            _validate_numeric_threshold(f"operations.{operation}.{field}", value)
+    for section_name, section in (
+        ("global", global_slo),
+        ("resources", resource_slo),
+        ("cryptographic_signing", crypto_slo),
+    ):
+        for field, value in section.items():
+            _validate_numeric_threshold(f"{section_name}.{field}", value)
+
+
+def duration_budget_report(
+    profile: dict[str, Any],
+    *,
+    workflow_timeout_seconds: float,
+    search_readiness_timeout_seconds: float,
+    cryptographic_config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    validate_profile(profile)
+    if (
+        isinstance(workflow_timeout_seconds, bool)
+        or not isinstance(workflow_timeout_seconds, (int, float))
+        or workflow_timeout_seconds <= 0
+    ):
+        raise HarnessError("workflow timeout must be a positive number")
+    if (
+        isinstance(search_readiness_timeout_seconds, bool)
+        or not isinstance(search_readiness_timeout_seconds, (int, float))
+        or search_readiness_timeout_seconds <= 0
+    ):
+        raise HarnessError("search readiness timeout must be a positive number")
+    crypto_count = 0
+    if cryptographic_config is not None:
+        crypto_count = cryptographic_config.get("count")
+        if (
+            isinstance(crypto_count, bool)
+            or not isinstance(crypto_count, int)
+            or crypto_count < 1
+        ):
+            raise HarnessError(
+                "duration budget cryptographic count must be a positive integer"
+            )
+        if crypto_count > int(profile["dataset"]["signatures"]):
+            raise HarnessError(
+                "duration budget cryptographic count exceeds seeded signature subjects"
+            )
+    components = {
+        "dataset_generation_and_topology_start": DURATION_BUDGET_SECONDS[
+            "dataset_generation_and_topology_start"
+        ],
+        "exact_volume_seed": DURATION_BUDGET_SECONDS["exact_volume_seed"],
+        "search_catch_up": float(search_readiness_timeout_seconds),
+        "mixed_workload": float(profile["workload"]["duration_seconds"]),
+        "cryptographic_signing": (
+            DURATION_BUDGET_SECONDS["cryptographic_setup"]
+            + crypto_count * DURATION_BUDGET_SECONDS["cryptographic_per_signature"]
+            if crypto_count
+            else 0
+        ),
+        "cleanup_and_artifact_upload": DURATION_BUDGET_SECONDS[
+            "cleanup_and_artifact_upload"
+        ],
+    }
+    required = float(sum(components.values()))
+    passed = required <= float(workflow_timeout_seconds)
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "budget_passed": passed,
+        "workflow_timeout_seconds": float(workflow_timeout_seconds),
+        "required_seconds": required,
+        "remaining_seconds": float(workflow_timeout_seconds) - required,
+        "components": components,
+        "cryptographic_signatures": crypto_count,
+        "method": (
+            "Deterministic phase allowances include exact-volume seed, configured search "
+            "timeout and workload, per-signature crypto allowance, and an explicit cleanup/"
+            "artifact-upload reserve."
+        ),
+    }
 
 
 def dataset_records(kind: str, count: int, counts: dict[str, int]) -> Iterator[dict[str, Any]]:
@@ -670,6 +871,70 @@ def active_clients(mode: str, elapsed: float, duration: float, clients: int) -> 
     raise HarnessError(f"unknown mode {mode}")
 
 
+def workload_phase_and_clients(
+    workload: dict[str, Any], elapsed: float
+) -> tuple[str, int]:
+    clients = int(workload["clients"])
+    if not all(field in workload for field in WORKLOAD_PHASES):
+        return (
+            f"legacy_{workload['mode']}",
+            active_clients(
+                workload["mode"],
+                elapsed,
+                float(workload["duration_seconds"]),
+                clients,
+            ),
+        )
+
+    warmup = float(workload["warmup_seconds"])
+    ramp = float(workload["ramp_seconds"])
+    plateau = float(workload["peak_plateau_seconds"])
+    cooldown = float(workload["cooldown_seconds"])
+    baseline = max(1, clients // 4)
+    if elapsed < warmup:
+        return "warmup", baseline
+    elapsed -= warmup
+    if elapsed < ramp:
+        progress = elapsed / max(ramp, 0.001)
+        active = baseline + int(progress * (clients - baseline))
+        return "ramp", max(baseline, min(clients, active))
+    elapsed -= ramp
+    if elapsed < plateau:
+        return "peak_plateau", clients
+    elapsed -= plateau
+    if elapsed < cooldown:
+        progress = elapsed / max(cooldown, 0.001)
+        active = clients - int(progress * (clients - baseline))
+        return "cooldown", max(baseline, min(clients, active))
+    return "complete", baseline
+
+
+def workload_phase_report(workload: dict[str, Any], elapsed: float) -> dict[str, Any]:
+    if not all(field in workload for field in WORKLOAD_PHASES):
+        return {
+            "model": "legacy",
+            "peak_plateau_complete": False,
+            "proof_boundary": (
+                "Legacy mode has no explicit sustained peak plateau and is evidence only."
+            ),
+        }
+    configured = {field: float(workload[field]) for field in WORKLOAD_PHASES}
+    plateau_start = configured["warmup_seconds"] + configured["ramp_seconds"]
+    plateau_end = plateau_start + configured["peak_plateau_seconds"]
+    observed_plateau = max(0.0, min(elapsed, plateau_end) - plateau_start)
+    complete = observed_plateau + 0.001 >= configured["peak_plateau_seconds"]
+    return {
+        "model": "explicit",
+        "configured": configured,
+        "peak_plateau_observed_seconds": observed_plateau,
+        "peak_plateau_complete": complete,
+        "proof_boundary": (
+            "Closed-loop concurrency was sustained for the recorded plateau; "
+            "this does not establish an open-loop arrival-rate ceiling."
+        ),
+    }
+
+
 def weighted_operations(weights: dict[str, int]) -> list[str]:
     operations: list[str] = []
     for name, weight in sorted(weights.items()):
@@ -696,10 +961,40 @@ def parse_size_bytes(value: str) -> float:
     return number * units[match.group(2)]
 
 
-def docker_snapshot() -> list[dict[str, Any]]:
+def docker_snapshot(project_name: str) -> list[dict[str, Any]]:
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project_name):
+        return []
     try:
+        discovered = subprocess.run(
+            [
+                "docker",
+                "ps",
+                "--filter",
+                f"label=com.docker.compose.project={project_name}",
+                "--format",
+                "{{.ID}}",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        identifiers = [
+            identifier.strip()
+            for identifier in discovered.stdout.splitlines()
+            if identifier.strip()
+        ]
+        if discovered.returncode != 0 or not identifiers:
+            return []
         completed = subprocess.run(
-            ["docker", "stats", "--no-stream", "--format", "{{json .}}"],
+            [
+                "docker",
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{json .}}",
+                *identifiers,
+            ],
             check=False,
             capture_output=True,
             text=True,
@@ -716,7 +1011,7 @@ def docker_snapshot() -> list[dict[str, Any]]:
         except json.JSONDecodeError:
             continue
         name = row.get("Name") or row.get("Container")
-        if not name or "chancela" not in name:
+        if not name:
             continue
         try:
             cpu = float(str(row.get("CPUPerc", "0")).rstrip("%"))
@@ -736,42 +1031,529 @@ def docker_snapshot() -> list[dict[str, Any]]:
 
 
 class ResourceSampler:
-    def __init__(self, interval_seconds: float = 5.0):
+    def __init__(
+        self,
+        interval_seconds: float = 5.0,
+        project_name: str | None = None,
+    ):
         self.interval_seconds = interval_seconds
+        self.project_name = project_name or os.environ.get(
+            "CHANCELA_PERF_PROJECT_NAME",
+            "chancela-perf",
+        )
         self.stop = threading.Event()
         self.samples: list[dict[str, Any]] = []
         self.thread: threading.Thread | None = None
+        self.phase = "startup"
+        self.lock = threading.Lock()
+
+    def set_phase(self, phase: str) -> None:
+        with self.lock:
+            self.phase = phase
+
+    def sample_now(self) -> None:
+        snapshots = docker_snapshot(self.project_name)
+        with self.lock:
+            phase = self.phase
+            for sample in snapshots:
+                self.samples.append({**sample, "phase": phase})
 
     def start(self) -> None:
         def loop() -> None:
             while not self.stop.is_set():
-                self.samples.extend(docker_snapshot())
+                self.sample_now()
                 self.stop.wait(self.interval_seconds)
 
         self.thread = threading.Thread(target=loop, name="resource-sampler", daemon=True)
         self.thread.start()
 
+    @staticmethod
+    def summarize(samples: list[dict[str, Any]]) -> dict[str, Any]:
+        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for sample in samples:
+            grouped[sample["container"]].append(sample)
+        containers = {}
+        for name, container_samples in grouped.items():
+            containers[name] = {
+                "samples": len(container_samples),
+                "max_cpu_percent": max(item["cpu_percent"] for item in container_samples),
+                "avg_cpu_percent": sum(
+                    item["cpu_percent"] for item in container_samples
+                )
+                / len(container_samples),
+                "max_memory_bytes": max(
+                    item["memory_bytes"] for item in container_samples
+                ),
+            }
+        return containers
+
+    def report(self) -> dict[str, Any]:
+        with self.lock:
+            samples = list(self.samples)
+        by_phase: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for sample in samples:
+            by_phase[str(sample.get("phase", "unknown"))].append(sample)
+        return {
+            "sampler": "docker stats",
+            "compose_project": self.project_name,
+            "available": bool(samples),
+            "interval_seconds": self.interval_seconds,
+            "sample_count": len(samples),
+            "containers": self.summarize(samples),
+            "phases": {
+                phase: {
+                    "sample_count": len(phase_samples),
+                    "containers": self.summarize(phase_samples),
+                }
+                for phase, phase_samples in sorted(by_phase.items())
+            },
+        }
+
     def finish(self) -> dict[str, Any]:
         self.stop.set()
         if self.thread:
             self.thread.join(timeout=self.interval_seconds + 2)
-        grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
-        for sample in self.samples:
-            grouped[sample["container"]].append(sample)
-        containers = {}
-        for name, samples in grouped.items():
-            containers[name] = {
-                "samples": len(samples),
-                "max_cpu_percent": max(item["cpu_percent"] for item in samples),
-                "avg_cpu_percent": sum(item["cpu_percent"] for item in samples) / len(samples),
-                "max_memory_bytes": max(item["memory_bytes"] for item in samples),
-            }
-        return {
-            "sampler": "docker stats",
-            "available": bool(self.samples),
-            "interval_seconds": self.interval_seconds,
-            "containers": containers,
+        return self.report()
+
+
+def phase_resource_maxima(
+    resources: dict[str, Any], phase: str
+) -> tuple[float | None, float | None]:
+    containers = (
+        resources.get("phases", {}).get(phase, {}).get("containers", {}).values()
+    )
+    containers = list(containers)
+    max_memory = max(
+        (item.get("max_memory_bytes") for item in containers),
+        default=None,
+    )
+    max_cpu = max(
+        (item.get("max_cpu_percent") for item in containers),
+        default=None,
+    )
+    return max_memory, max_cpu
+
+
+def cryptographic_exactness_blocker(
+    cryptographic_signing: dict[str, Any],
+) -> str | None:
+    if not cryptographic_signing.get("enabled"):
+        return None
+    requested = cryptographic_signing.get("requested")
+    signed = cryptographic_signing.get("signed")
+    if (
+        cryptographic_signing.get("exact") is True
+        and isinstance(requested, int)
+        and not isinstance(requested, bool)
+        and isinstance(signed, int)
+        and not isinstance(signed, bool)
+        and signed == requested
+    ):
+        return None
+    return (
+        "Cryptographic signing did not complete the exact requested volume "
+        f"(requested={requested!r}, signed={signed!r}, "
+        f"exact={cryptographic_signing.get('exact')!r})."
+    )
+
+
+def capture_final_topology(
+    initial: dict[str, Any],
+    output: pathlib.Path,
+) -> dict[str, Any]:
+    summary = initial.get("summary")
+    if not isinstance(summary, dict):
+        raise HarnessError("initial topology evidence has no summary object")
+    compose_files = summary.get("compose_files")
+    profiles = summary.get("profiles")
+    project_name = summary.get("project_name")
+    expected_replicas = summary.get("expected_app_replicas")
+    if (
+        not isinstance(compose_files, list)
+        or not compose_files
+        or any(not isinstance(item, str) or not item for item in compose_files)
+    ):
+        raise HarnessError("initial topology evidence has no valid compose-file list")
+    if not isinstance(profiles, list) or any(
+        not isinstance(item, str) or not item for item in profiles
+    ):
+        raise HarnessError("initial topology evidence has no valid profile list")
+    if not isinstance(project_name, str) or not project_name:
+        raise HarnessError("initial topology evidence has no Compose project name")
+    if (
+        isinstance(expected_replicas, bool)
+        or not isinstance(expected_replicas, int)
+        or not 1 <= expected_replicas <= 9
+    ):
+        raise HarnessError("initial topology evidence has invalid expected replicas")
+    try:
+        import topology as topology_capture
+
+        final = topology_capture.capture(
+            [pathlib.Path(item) for item in compose_files],
+            profiles,
+            expected_replicas,
+            project_name,
+        )
+        topology_capture.write_json(output, final)
+    except Exception as error:
+        if isinstance(error, HarnessError):
+            raise
+        raise HarnessError(f"final topology capture failed: {error}") from error
+    return final
+
+
+def _topology_container_ids(
+    snapshot: dict[str, Any],
+    service: str,
+) -> set[str]:
+    containers = snapshot.get("containers", {})
+    if not isinstance(containers, dict):
+        return set()
+    service_containers = containers.get(service, [])
+    if not isinstance(service_containers, list):
+        return set()
+    return {
+        str(container.get("id"))
+        for container in service_containers
+        if isinstance(container, dict) and container.get("id")
+    }
+
+
+def combine_topology_evidence(
+    initial: dict[str, Any],
+    final: dict[str, Any],
+) -> dict[str, Any]:
+    failures: list[str] = []
+    if initial.get("preflight_passed") is not True:
+        failures.extend(
+            f"initial: {failure}"
+            for failure in initial.get("failures", ["topology preflight did not pass"])
+        )
+    if final.get("preflight_passed") is not True:
+        failures.extend(
+            f"final: {failure}"
+            for failure in final.get("failures", ["topology final check did not pass"])
+        )
+    for service in ("chancela-cluster", "postgres", "redis", "perf-gateway"):
+        initial_ids = _topology_container_ids(initial, service)
+        final_ids = _topology_container_ids(final, service)
+        if initial_ids != final_ids:
+            failures.append(
+                f"{service} container set changed during the run "
+                f"(initial={sorted(initial_ids)}, final={sorted(final_ids)})"
+            )
+    return {
+        "preflight_passed": not failures,
+        "stable": not failures,
+        "failures": failures,
+        "initial": initial,
+        "final": final,
+        "summary": {
+            "project_name": initial.get("summary", {}).get("project_name"),
+            "initial_app_replicas": initial.get("summary", {}).get("app_replicas"),
+            "final_app_replicas": final.get("summary", {}).get("app_replicas"),
+            "expected_app_replicas": initial.get("summary", {}).get(
+                "expected_app_replicas"
+            ),
+            "aggregate_resource_envelope": initial.get("summary", {}).get(
+                "aggregate_resource_envelope"
+            ),
+        },
+    }
+
+
+def search_path(params: dict[str, Any]) -> str:
+    return "/v1/search?" + urllib.parse.urlencode(
+        {key: value for key, value in params.items() if value is not None}
+    )
+
+
+def known_search_probes(index: dict[str, list[str]]) -> list[dict[str, Any]]:
+    required = {"entities": "entity", "books": "book", "signatures": "act"}
+    missing = [family for family in required if not index.get(family)]
+    if missing:
+        raise HarnessError(
+            "search readiness requires seeded identifiers for " + ", ".join(missing)
+        )
+    return [
+        {
+            "family": "entities",
+            "kind": "entity",
+            "query": "Performance Entity 00000",
+            "relation_key": "entity_id",
+            "expected_id": index["entities"][0],
+        },
+        {
+            "family": "books",
+            "kind": "book",
+            "query": index["books"][0],
+            "relation_key": "book_id",
+            "expected_id": index["books"][0],
+        },
+        {
+            "family": "signatures",
+            "kind": "act",
+            "query": "Performance Signature Subject 00000",
+            "relation_key": "act_id",
+            "expected_id": index["signatures"][0],
+        },
+    ]
+
+
+def search_probe(client: ApiClient, probe: dict[str, Any]) -> dict[str, Any]:
+    result = client.request(
+        "GET",
+        search_path({"q": probe["query"], "kind": probe["kind"], "limit": 10}),
+    )
+    report: dict[str, Any] = {
+        "kind": probe["kind"],
+        "query": probe["query"],
+        "expected_id": probe["expected_id"],
+        "status": result.status,
+        "latency_ms": result.latency_ms,
+        "matched": False,
+    }
+    if result.status != 200:
+        report["error"] = result.error
+        report["body"] = result.body[:300].decode("utf-8", "replace")
+        return report
+    response = decode_json(result, f"search readiness {probe['kind']}")
+    page = response.get("page") if isinstance(response.get("page"), dict) else {}
+    hits = page.get("hits") if isinstance(page.get("hits"), list) else []
+    matching = [
+        hit
+        for hit in hits
+        if isinstance(hit, dict)
+        and hit.get(probe["relation_key"]) == probe["expected_id"]
+    ]
+    report.update(
+        {
+            "matched": bool(matching),
+            "total": page.get("total"),
+            "returned": len(hits),
+            "facets_truncated": page.get("facets_truncated"),
+            "pagination_truncated": response.get("pagination_truncated"),
+            "next_cursor": response.get("next_cursor"),
+            "generation": (
+                response.get("index", {}).get("generation")
+                if isinstance(response.get("index"), dict)
+                else None
+            ),
         }
+    )
+    return report
+
+
+def search_pagination_probe(
+    client: ApiClient,
+    expected_generation: int,
+) -> dict[str, Any]:
+    first = client.request(
+        "GET",
+        search_path({"q": "Performance", "kind": "entity,book,act", "limit": 1}),
+    )
+    if first.status != 200:
+        return {
+            "status": first.status,
+            "error": first.error,
+            "body": first.body[:300].decode("utf-8", "replace"),
+            "cursor_exercised": False,
+        }
+    first_response = decode_json(first, "search pagination first page")
+    first_page = (
+        first_response.get("page")
+        if isinstance(first_response.get("page"), dict)
+        else {}
+    )
+    cursor = first_response.get("next_cursor")
+    first_hits = (
+        first_page.get("hits") if isinstance(first_page.get("hits"), list) else []
+    )
+    first_generation = (
+        first_response.get("index", {}).get("generation")
+        if isinstance(first_response.get("index"), dict)
+        else None
+    )
+    report: dict[str, Any] = {
+        "status": first.status,
+        "latency_ms": first.latency_ms,
+        "total": first_page.get("total"),
+        "offset": first_page.get("offset"),
+        "limit": first_page.get("limit"),
+        "has_more": first_page.get("has_more"),
+        "returned": len(first_hits),
+        "generation": first_generation,
+        "facets_truncated": first_page.get("facets_truncated"),
+        "pagination_truncated": first_response.get("pagination_truncated"),
+        "next_cursor": cursor,
+        "cursor_exercised": False,
+    }
+    first_total = first_page.get("total")
+    first_offset = first_page.get("offset")
+    first_limit = first_page.get("limit")
+    first_has_more = first_page.get("has_more")
+    if not first_hits:
+        report["error"] = "broad seeded search returned an empty first page"
+        return report
+    if (
+        isinstance(first_total, bool)
+        or not isinstance(first_total, int)
+        or first_total < 2
+        or first_total < len(first_hits)
+    ):
+        report["error"] = "broad seeded search returned an incoherent first-page total"
+        return report
+    if first_offset != 0 or first_limit != 1:
+        report["error"] = "broad seeded search returned incoherent first-page bounds"
+        return report
+    if first_has_more is not True or not isinstance(cursor, str) or not cursor:
+        report["error"] = (
+            "broad seeded search must report has_more=true with a nonempty cursor"
+        )
+        return report
+    if first_generation != expected_generation:
+        report["error"] = (
+            "broad seeded search generation changed before the cursor probe "
+            f"({first_generation!r} != {expected_generation!r})"
+        )
+        return report
+    second = client.request(
+        "GET",
+        search_path(
+            {
+                "q": "Performance",
+                "kind": "entity,book,act",
+                "limit": 1,
+                "cursor": cursor,
+            }
+        ),
+    )
+    report["second_status"] = second.status
+    report["second_latency_ms"] = second.latency_ms
+    if second.status == 200:
+        second_response = decode_json(second, "search pagination second page")
+        second_page = (
+            second_response.get("page")
+            if isinstance(second_response.get("page"), dict)
+            else {}
+        )
+        second_hits = (
+            second_page.get("hits")
+            if isinstance(second_page.get("hits"), list)
+            else []
+        )
+        second_cursor = second_response.get("next_cursor")
+        second_generation = (
+            second_response.get("index", {}).get("generation")
+            if isinstance(second_response.get("index"), dict)
+            else None
+        )
+        report["second_offset"] = second_page.get("offset")
+        report["second_total"] = second_page.get("total")
+        report["second_limit"] = second_page.get("limit")
+        report["second_has_more"] = second_page.get("has_more")
+        report["second_returned"] = len(second_hits)
+        report["second_next_cursor"] = second_cursor
+        report["second_generation"] = second_generation
+        if not second_hits:
+            report["error"] = "cursor search returned an empty second page"
+            return report
+        if second_page.get("offset") != len(first_hits) or second_page.get("limit") != 1:
+            report["error"] = "cursor search returned incoherent second-page bounds"
+            return report
+        if second_page.get("total") != first_total:
+            report["error"] = "cursor search changed total between pages"
+            return report
+        if second_generation != first_generation:
+            report["error"] = "cursor search changed generation between pages"
+            return report
+        if json.dumps(first_hits[0], sort_keys=True) == json.dumps(
+            second_hits[0],
+            sort_keys=True,
+        ):
+            report["error"] = "cursor search repeated the first hit on the second page"
+            return report
+        expected_has_more = (
+            second_page["offset"] + len(second_hits) < second_page["total"]
+        )
+        if second_page.get("has_more") is not expected_has_more:
+            report["error"] = "cursor search returned incoherent second-page has_more"
+            return report
+        if expected_has_more:
+            if (
+                not isinstance(second_cursor, str)
+                or not second_cursor
+                or second_cursor == cursor
+            ):
+                report["error"] = (
+                    "cursor search must advance to a distinct nonempty next cursor"
+                )
+                return report
+        elif second_cursor is not None:
+            report["error"] = "cursor search returned a cursor when has_more=false"
+            return report
+        report["cursor_exercised"] = True
+    else:
+        report["error"] = second.error
+        report["body"] = second.body[:300].decode("utf-8", "replace")
+    return report
+
+
+def wait_for_search_ready(
+    client: ApiClient,
+    index: dict[str, list[str]],
+    expected_minimum_documents: int,
+    *,
+    timeout_seconds: float,
+    poll_seconds: float = 2.0,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    deadline = started + timeout_seconds
+    attempts = 0
+    last_status: dict[str, Any] | None = None
+    last_probes: list[dict[str, Any]] = []
+    while time.monotonic() < deadline:
+        attempts += 1
+        result = client.request("GET", "/v1/search/status")
+        if result.status == 200:
+            last_status = decode_json(result, "search readiness status")
+            ready = (
+                last_status.get("enabled") is True
+                and last_status.get("phase") == "idle"
+                and last_status.get("partial") is False
+                and last_status.get("stale") is False
+                and isinstance(last_status.get("generation"), int)
+                and last_status["generation"] > 0
+                and isinstance(last_status.get("document_count"), int)
+                and last_status["document_count"] >= expected_minimum_documents
+            )
+            if ready:
+                last_probes = [
+                    search_probe(client, probe) for probe in known_search_probes(index)
+                ]
+                generation = last_status["generation"]
+                if all(
+                    probe["matched"] and probe.get("generation") == generation
+                    for probe in last_probes
+                ):
+                    pagination = search_pagination_probe(client, generation)
+                    if pagination.get("cursor_exercised"):
+                        return {
+                            "ready": True,
+                            "attempts": attempts,
+                            "duration_seconds": time.monotonic() - started,
+                            "expected_minimum_documents": expected_minimum_documents,
+                            "status": last_status,
+                            "known_record_probes": last_probes,
+                            "pagination_probe": pagination,
+                        }
+        time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))
+    raise HarnessError(
+        "search readiness timed out after "
+        f"{timeout_seconds}s; expected at least {expected_minimum_documents} documents, "
+        f"last_status={last_status!r}, last_probes={last_probes!r}"
+    )
 
 
 def execute_operation(
@@ -817,6 +1599,21 @@ def execute_operation(
         return client.request(
             "GET", f"/v1/acts/{rng.choice(index['signatures'])}/signature"
         )
+    if name == "search_status":
+        return client.request("GET", "/v1/search/status")
+    if name == "search_query":
+        family = rng.choice(("entities", "books", "signatures"))
+        ordinal = rng.randrange(len(index[family]))
+        if family == "entities":
+            query, kind = f"Performance Entity {ordinal:05d}", "entity"
+        elif family == "books":
+            query, kind = index["books"][ordinal], "book"
+        else:
+            query, kind = f"Performance Signature Subject {ordinal:05d}", "act"
+        return client.request(
+            "GET",
+            search_path({"q": query, "kind": kind, "limit": 10}),
+        )
     raise HarnessError(f"unimplemented operation {name}")
 
 
@@ -825,6 +1622,7 @@ def run_workload(
     profile: dict[str, Any],
     index: dict[str, list[str]],
     password: str,
+    resource_sampler: ResourceSampler | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     workload = profile["workload"]
     mode = workload["mode"]
@@ -836,6 +1634,7 @@ def run_workload(
         "entity_get": "entities",
         "book_get": "books",
         "signature_status": "signatures",
+        "search_query": "entities",
     }
     missing = [
         name
@@ -856,6 +1655,7 @@ def run_workload(
     started = time.monotonic()
     write_counter = 0
     active_trace: list[dict[str, Any]] = []
+    phase_request_counts: Counter = Counter()
     trace_lock = threading.Lock()
 
     def worker(worker_id: int) -> None:
@@ -864,12 +1664,16 @@ def run_workload(
         last_trace_second = -1
         while time.monotonic() < stop_at:
             elapsed = time.monotonic() - started
-            allowed = active_clients(mode, elapsed, duration, clients)
+            phase, allowed = workload_phase_and_clients(workload, elapsed)
             second = int(elapsed)
             if worker_id == 0 and second != last_trace_second:
                 with trace_lock:
                     active_trace.append(
-                        {"elapsed_seconds": second, "active_clients": allowed}
+                        {
+                            "elapsed_seconds": second,
+                            "phase": phase,
+                            "active_clients": allowed,
+                        }
                     )
                 last_trace_second = second
             if worker_id >= allowed:
@@ -882,15 +1686,21 @@ def run_workload(
             result = execute_operation(operation, client, index, rng, password, ordinal)
             with lock:
                 stats[operation].record(result, EXPECTED_SUCCESS[operation])
+                phase_request_counts[phase] += 1
 
-    sampler = ResourceSampler()
-    sampler.start()
+    sampler = resource_sampler or ResourceSampler()
+    owns_sampler = resource_sampler is None
+    sampler.set_phase("mixed_workload")
+    if owns_sampler:
+        sampler.start()
+    else:
+        sampler.sample_now()
     with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
         futures = [executor.submit(worker, worker_id) for worker_id in range(clients)]
         for future in futures:
             future.result()
     elapsed = time.monotonic() - started
-    resources = sampler.finish()
+    resources = sampler.finish() if owns_sampler else sampler.report()
 
     operation_reports = {name: value.report() for name, value in sorted(stats.items())}
     total = sum(item["requests"] for item in operation_reports.values())
@@ -901,6 +1711,8 @@ def run_workload(
             "duration_seconds": elapsed,
             "configured_clients": clients,
             "active_client_trace": active_trace,
+            "phase_requests": dict(phase_request_counts),
+            "phases": workload_phase_report(workload, elapsed),
             "requests": total,
             "errors": errors,
             "error_rate": errors / total if total else 0.0,
@@ -915,15 +1727,20 @@ def evaluate_slo(
     workload: dict[str, Any],
     resources: dict[str, Any],
     slo: dict[str, Any] | None,
+    cryptographic_signing: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not slo:
+    if slo is None:
         return {
             "assessment": "not_configured",
             "configured_thresholds": 0,
             "checks": [],
+            "proof_ready": False,
+            "proof_blockers": ["No reviewed SLO file was supplied."],
             "message": "No SLO file supplied; measurements are evidence, not a pass.",
         }
+    validate_slo_schema(slo)
     checks: list[dict[str, Any]] = []
+    proof_blockers: list[str] = []
 
     def check(path: str, observed: float | None, threshold: Any, relation: str) -> None:
         if threshold is None:
@@ -980,19 +1797,129 @@ def evaluate_slo(
         resource_slo.get("max_container_cpu_percent"),
         "max",
     )
-    if not checks:
-        assessment = "not_configured"
-        message = "SLO file contained only null thresholds; measurements are not a pass."
-    elif all(item["passed"] for item in checks):
-        assessment = "passed"
-        message = "Every explicitly configured threshold passed."
+    cryptographic_signing = cryptographic_signing or {"enabled": False}
+    if cryptographic_signing.get("enabled"):
+        crypto_slo = slo.get("cryptographic_signing", {})
+        if not isinstance(crypto_slo, dict):
+            raise HarnessError("SLO cryptographic_signing must be an object")
+        missing_crypto_thresholds = sorted(
+            field for field in CRYPTO_SLO_FIELDS if crypto_slo.get(field) is None
+        )
+        if missing_crypto_thresholds:
+            proof_blockers.append(
+                "Cryptographic signing was requested but reviewed thresholds are missing: "
+                + ", ".join(missing_crypto_thresholds)
+            )
+        exactness_blocker = cryptographic_exactness_blocker(cryptographic_signing)
+        if exactness_blocker:
+            proof_blockers.append(exactness_blocker)
+        operation = cryptographic_signing.get("sign_operation", {})
+        crypto_memory, crypto_cpu = phase_resource_maxima(
+            resources, "cryptographic_signing"
+        )
+        check(
+            "cryptographic_signing.completed",
+            cryptographic_signing.get("signed"),
+            crypto_slo.get("min_completed"),
+            "min",
+        )
+        check(
+            "cryptographic_signing.error_rate",
+            operation.get("error_rate"),
+            crypto_slo.get("max_error_rate"),
+            "max",
+        )
+        check(
+            "cryptographic_signing.throughput_per_second",
+            cryptographic_signing.get("throughput_per_second"),
+            crypto_slo.get("min_throughput_per_second"),
+            "min",
+        )
+        check(
+            "cryptographic_signing.p95_ms",
+            operation.get("p95_ms"),
+            crypto_slo.get("p95_ms"),
+            "max",
+        )
+        check(
+            "cryptographic_signing.p99_ms",
+            operation.get("p99_ms"),
+            crypto_slo.get("p99_ms"),
+            "max",
+        )
+        check(
+            "cryptographic_signing.duration_seconds",
+            cryptographic_signing.get("duration_seconds"),
+            crypto_slo.get("max_duration_seconds"),
+            "max",
+        )
+        check(
+            "cryptographic_signing.resources.max_memory_bytes",
+            crypto_memory,
+            crypto_slo.get("max_phase_memory_bytes"),
+            "max",
+        )
+        check(
+            "cryptographic_signing.resources.max_cpu_percent",
+            crypto_cpu,
+            crypto_slo.get("max_phase_cpu_percent"),
+            "max",
+        )
+
+    resource_available = resources.get(
+        "available", bool(resources.get("containers"))
+    )
+    if not resource_available:
+        proof_blockers.append(
+            "Docker resource sampling was unavailable; the run has no bounded resource evidence."
+        )
     else:
+        required_resource_phases = {"seed", "search_catch_up", "mixed_workload"}
+        if cryptographic_signing.get("enabled"):
+            required_resource_phases.add("cryptographic_signing")
+        missing_resource_phases = sorted(
+            phase
+            for phase in required_resource_phases
+            if not resources.get("phases", {})
+            .get(phase, {})
+            .get("containers")
+        )
+        if missing_resource_phases:
+            proof_blockers.append(
+                "Resource samples are missing for phases: "
+                + ", ".join(missing_resource_phases)
+            )
+    phase_report = workload.get("phases", {})
+    if phase_report.get("model") == "explicit":
+        if not phase_report.get("peak_plateau_complete"):
+            proof_blockers.append("The configured peak concurrency plateau did not complete.")
+    else:
+        proof_blockers.append(
+            "The workload used legacy concurrency semantics without a sustained peak plateau."
+        )
+
+    failed_checks = [item for item in checks if not item["passed"]]
+    if failed_checks:
         assessment = "failed"
         message = "At least one explicitly configured threshold failed."
+    elif proof_blockers:
+        assessment = "not_configured"
+        message = (
+            "Measurements completed, but proof prerequisites remain "
+            "unconfigured or unavailable."
+        )
+    elif not checks:
+        assessment = "not_configured"
+        message = "SLO file contained only null thresholds; measurements are not a pass."
+    else:
+        assessment = "passed"
+        message = "Every explicitly configured threshold passed."
     return {
         "assessment": assessment,
         "configured_thresholds": len(checks),
         "checks": checks,
+        "proof_ready": assessment == "passed",
+        "proof_blockers": proof_blockers,
         "message": message,
     }
 
@@ -1001,6 +1928,11 @@ def markdown_report(report: dict[str, Any]) -> str:
     dataset = report["dataset"]
     seed = report["seed"]
     workload = report["workload"]
+    search_readiness = report["search_readiness"]
+    cryptographic = report["cryptographic_signing"]
+    resources = report["resources"]
+    topology = report["topology"]
+    duration_budget = report["duration_budget"]
     lines = [
         "# Chancela performance evidence",
         "",
@@ -1008,7 +1940,9 @@ def markdown_report(report: dict[str, Any]) -> str:
         f"- Profile: `{report['profile']}`",
         f"- Workload mode: `{workload['mode']}`",
         f"- SLO assessment: `{report['slo']['assessment']}`",
+        f"- Proof ready: `{report['slo'].get('proof_ready', False)}`",
         f"- Exact seed: `{seed['exact']}`",
+        f"- Search ready: `{search_readiness['ready']}`",
         f"- Requests: `{workload['requests']}`",
         f"- Error rate: `{workload['error_rate']:.6f}`",
         f"- Throughput: `{workload['throughput_per_second']:.3f} req/s`",
@@ -1045,6 +1979,47 @@ def markdown_report(report: dict[str, Any]) -> str:
             f"{operation['error_rate']:.6f} | {value('p50_ms')} | {value('p95_ms')} | "
             f"{value('p99_ms')} | {operation['latency_samples']} ({operation['latency_sampling']}) |"
         )
+    status = search_readiness["status"]
+    lines.extend(
+        [
+            "",
+            "## Search projection",
+            "",
+            f"- Generation: `{status.get('generation')}`",
+            f"- Documents: `{status.get('document_count')}`",
+            f"- Indexed characters: `{status.get('indexed_content_chars')}`",
+            f"- Content truncated: `{status.get('content_truncated')}`",
+            f"- Truncated documents: `{status.get('truncated_document_count')}`",
+            f"- Readiness duration: `{search_readiness['duration_seconds']:.3f}s`",
+            f"- Cursor exercised: `{search_readiness['pagination_probe']['cursor_exercised']}`",
+            f"- Facets truncated: `{search_readiness['pagination_probe'].get('facets_truncated')}`",
+            "",
+            "## Cryptographic signing",
+            "",
+            f"- Enabled: `{cryptographic.get('enabled', False)}`",
+            f"- Requested: `{cryptographic.get('requested', 0)}`",
+            f"- Signed: `{cryptographic.get('signed', 0)}`",
+            f"- Exact: `{cryptographic.get('exact', False)}`",
+            f"- Throughput: `{cryptographic.get('throughput_per_second', 0):.3f} signatures/s`",
+            "",
+            "## Resource and topology evidence",
+            "",
+            f"- Resource samples available: `{resources.get('available', False)}`",
+            f"- Resource phases: `{', '.join(sorted(resources.get('phases', {})))}`",
+            f"- Initial/final topology stable: `{topology.get('stable', False)}`",
+            f"- Initial app replicas: `{topology.get('summary', {}).get('initial_app_replicas')}`",
+            f"- Final app replicas: `{topology.get('summary', {}).get('final_app_replicas')}`",
+            f"- Aggregate host envelope: `{topology.get('summary', {}).get('aggregate_resource_envelope', {}).get('within_envelope')}`",
+            f"- Duration budget passed: `{duration_budget.get('budget_passed', False)}`",
+            f"- Duration budget: `{duration_budget.get('required_seconds')}` / "
+            f"`{duration_budget.get('workflow_timeout_seconds')}` seconds",
+            f"- Peak plateau complete: `{workload.get('phases', {}).get('peak_plateau_complete')}`",
+        ]
+    )
+    blockers = report["slo"].get("proof_blockers", [])
+    if blockers:
+        lines.extend(["", "## Proof blockers", ""])
+        lines.extend(f"- {blocker}" for blocker in blockers)
     lines.extend(
         [
             "",
@@ -1187,6 +2162,10 @@ def write_failure_report(
     manifest: dict[str, Any],
     validation: dict[str, Any],
     error: Exception,
+    *,
+    resources: dict[str, Any] | None = None,
+    topology: dict[str, Any] | None = None,
+    duration_budget: dict[str, Any] | None = None,
 ) -> None:
     failure = {
         "schema_version": SCHEMA_VERSION,
@@ -1196,13 +2175,20 @@ def write_failure_report(
         "dataset": manifest,
         "dataset_validation": validation,
         "seed": {"exact": False, "fatal_error": f"{type(error).__name__}: {error}"},
+        "search_readiness": {"ready": False, "status": "not_completed"},
         "cryptographic_signing": {"enabled": False, "status": "not_reached"},
         "workload": {"status": "not_run"},
-        "resources": {"available": False, "status": "not_sampled"},
+        "resources": resources
+        or {"available": False, "status": "not_sampled"},
+        "topology": topology or {"preflight_passed": False, "status": "not_supplied"},
+        "duration_budget": duration_budget
+        or {"budget_passed": False, "status": "not_supplied"},
         "slo": {
             "assessment": "not_evaluated",
             "configured_thresholds": 0,
             "checks": [],
+            "proof_ready": False,
+            "proof_blockers": ["Harness stopped before workload completion."],
             "message": "Harness stopped before workload completion.",
         },
     }
@@ -1218,6 +2204,27 @@ def write_failure_report(
     )
 
 
+def budget_command(args: argparse.Namespace) -> int:
+    profile = read_json(args.profile)
+    cryptographic_config = (
+        read_json(args.cryptographic_config) if args.cryptographic_config else None
+    )
+    report = duration_budget_report(
+        profile,
+        workflow_timeout_seconds=args.workflow_timeout_seconds,
+        search_readiness_timeout_seconds=args.search_readiness_timeout_seconds,
+        cryptographic_config=cryptographic_config,
+    )
+    write_json(args.output, report)
+    print(json.dumps(report, sort_keys=True))
+    if not report["budget_passed"]:
+        raise HarnessError(
+            "deterministic run budget exceeds workflow timeout "
+            f"({report['required_seconds']} > {report['workflow_timeout_seconds']} seconds)"
+        )
+    return 0
+
+
 def run_command(args: argparse.Namespace) -> int:
     profile = read_json(args.profile)
     validate_profile(profile)
@@ -1228,9 +2235,71 @@ def run_command(args: argparse.Namespace) -> int:
         args.base_url,
         float(profile["workload"]["request_timeout_seconds"]),
     )
+    topology_initial = (
+        read_json(args.topology_evidence)
+        if args.topology_evidence
+        else {"preflight_passed": False, "status": "not_supplied"}
+    )
+    topology: dict[str, Any] = {
+        "preflight_passed": False,
+        "stable": False,
+        "status": "final_not_captured",
+        "initial": topology_initial,
+    }
+    duration_budget = (
+        read_json(args.duration_budget_evidence)
+        if args.duration_budget_evidence
+        else {"budget_passed": False, "status": "not_supplied"}
+    )
+    project_name = (
+        topology_initial.get("summary", {}).get("project_name")
+        if isinstance(topology_initial.get("summary"), dict)
+        else None
+    )
+    sampler = ResourceSampler(project_name=project_name)
+    sampler.set_phase("seed")
+    sampler.start()
+    resources: dict[str, Any] | None = None
     try:
+        slo = read_json(args.slo) if args.slo else None
+        if slo is not None:
+            validate_slo_schema(slo)
+        if args.search_readiness_timeout_seconds <= 0:
+            raise HarnessError("search readiness timeout must be positive")
+        if (
+            args.duration_budget_evidence
+            and duration_budget.get("budget_passed") is not True
+        ):
+            raise HarnessError(
+                "duration-budget preflight does not fit inside the workflow timeout"
+            )
+        if (
+            args.topology_evidence
+            and topology_initial.get("preflight_passed") is not True
+        ):
+            raise HarnessError(
+                "topology evidence did not pass strict replica/resource preflight"
+            )
+        if args.topology_evidence and not args.final_topology_evidence:
+            raise HarnessError(
+                "final topology evidence path is required with initial topology evidence"
+            )
         seed_report, index = seed_dataset(args.dataset_dir, client, profile, password)
         write_json(args.report_dir / "runtime-index.json", index)
+        sampler.set_phase("search_catch_up")
+        sampler.sample_now()
+        search_readiness = wait_for_search_ready(
+            client,
+            index,
+            (
+                int(manifest["counts"]["entities"])
+                + int(manifest["counts"]["books"])
+                + int(manifest["counts"]["signatures"])
+            ),
+            timeout_seconds=args.search_readiness_timeout_seconds,
+        )
+        sampler.set_phase("cryptographic_signing")
+        sampler.sample_now()
         cryptographic_report = (
             run_cryptographic_signing(
                 client,
@@ -1247,14 +2316,72 @@ def run_command(args: argparse.Namespace) -> int:
                 ),
             }
         )
-        workload_report, resources = run_workload(client, profile, index, password)
+        workload_report, _ = run_workload(
+            client,
+            profile,
+            index,
+            password,
+            resource_sampler=sampler,
+        )
+        resources = sampler.finish()
+        topology_final = (
+            capture_final_topology(
+                topology_initial,
+                args.final_topology_evidence,
+            )
+            if args.topology_evidence
+            else {"preflight_passed": False, "status": "not_supplied"}
+        )
+        topology = combine_topology_evidence(topology_initial, topology_final)
     except Exception as error:
-        write_failure_report(args, profile, manifest, validation, error)
+        resources = sampler.finish()
+        write_failure_report(
+            args,
+            profile,
+            manifest,
+            validation,
+            error,
+            resources=resources,
+            topology=topology,
+            duration_budget=duration_budget,
+        )
         if isinstance(error, HarnessError):
             raise
         raise HarnessError(str(error)) from error
-    slo = read_json(args.slo) if args.slo else None
-    slo_report = evaluate_slo(workload_report, resources, slo)
+    slo_report = evaluate_slo(
+        workload_report,
+        resources,
+        slo,
+        cryptographic_report,
+    )
+    proof_blockers: list[str] = []
+    if topology.get("preflight_passed") is not True:
+        failures = topology.get("failures", [])
+        detail = "; ".join(str(item) for item in failures[:8])
+        proof_blockers.append(
+            "Initial/final topology evidence was not stable and healthy"
+            + (f": {detail}" if detail else ".")
+        )
+    if duration_budget.get("budget_passed") is not True:
+        proof_blockers.append(
+            "A passing deterministic duration-budget preflight was not supplied."
+        )
+    if seed_report.get("exact") is not True:
+        proof_blockers.append("The exact requested seed volume did not complete.")
+    exactness_blocker = cryptographic_exactness_blocker(cryptographic_report)
+    if exactness_blocker:
+        proof_blockers.append(exactness_blocker)
+    if proof_blockers:
+        existing = slo_report.setdefault("proof_blockers", [])
+        for blocker in proof_blockers:
+            if blocker not in existing:
+                existing.append(blocker)
+        slo_report["proof_ready"] = False
+        if slo_report["assessment"] == "passed":
+            slo_report["assessment"] = "not_configured"
+            slo_report["message"] = (
+                "Measurements completed, but proof prerequisites are unavailable."
+            )
     report = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": utc_now(),
@@ -1263,9 +2390,12 @@ def run_command(args: argparse.Namespace) -> int:
         "dataset": manifest,
         "dataset_validation": validation,
         "seed": seed_report,
+        "search_readiness": search_readiness,
         "cryptographic_signing": cryptographic_report,
         "workload": workload_report,
         "resources": resources,
+        "topology": topology,
+        "duration_budget": duration_budget,
         "slo": slo_report,
         "environment": {
             "python": sys.version,
@@ -1283,6 +2413,8 @@ def run_command(args: argparse.Namespace) -> int:
         return 2
     if cryptographic_report.get("enabled") and not cryptographic_report.get("exact"):
         return 4
+    if topology.get("preflight_passed") is not True:
+        return 5
     if slo_report["assessment"] == "failed":
         return 3
     return 0
@@ -1299,12 +2431,51 @@ def build_parser() -> argparse.ArgumentParser:
     validate = subcommands.add_parser("validate", help="validate counts and SHA-256 digests")
     validate.add_argument("--dataset-dir", type=pathlib.Path, required=True)
 
+    budget = subcommands.add_parser(
+        "budget",
+        help="preflight the whole-run wall-clock budget against the workflow timeout",
+    )
+    budget.add_argument("--profile", type=pathlib.Path, required=True)
+    budget.add_argument("--output", type=pathlib.Path, required=True)
+    budget.add_argument("--workflow-timeout-seconds", type=float, required=True)
+    budget.add_argument(
+        "--search-readiness-timeout-seconds",
+        type=float,
+        required=True,
+    )
+    budget.add_argument("--cryptographic-config", type=pathlib.Path)
+
     run = subcommands.add_parser("run", help="seed target and run mixed workload")
     run.add_argument("--profile", type=pathlib.Path, required=True)
     run.add_argument("--dataset-dir", type=pathlib.Path, required=True)
     run.add_argument("--report-dir", type=pathlib.Path, required=True)
     run.add_argument("--base-url", default="http://127.0.0.1:18081")
     run.add_argument("--slo", type=pathlib.Path)
+    run.add_argument(
+        "--search-readiness-timeout-seconds",
+        type=float,
+        default=float(
+            os.environ.get(
+                "CHANCELA_PERF_SEARCH_READY_TIMEOUT_SECONDS",
+                "900",
+            )
+        ),
+    )
+    run.add_argument(
+        "--topology-evidence",
+        type=pathlib.Path,
+        help="strict topology preflight JSON captured after Compose startup",
+    )
+    run.add_argument(
+        "--final-topology-evidence",
+        type=pathlib.Path,
+        help="output path for the mandatory post-workload topology capture",
+    )
+    run.add_argument(
+        "--duration-budget-evidence",
+        type=pathlib.Path,
+        help="passing deterministic duration-budget preflight JSON",
+    )
     run.add_argument(
         "--cryptographic-config",
         type=pathlib.Path,
@@ -1325,6 +2496,8 @@ def main(argv: list[str] | None = None) -> int:
             result = validate_dataset(args.dataset_dir)
             print(json.dumps(result, sort_keys=True))
             return 0
+        if args.command == "budget":
+            return budget_command(args)
         if args.command == "run":
             return run_command(args)
         raise HarnessError(f"unknown command {args.command}")

@@ -24,7 +24,27 @@
       "p95_ms": null,
       "p99_ms": null,
       "max_error_rate": null
+    },
+    "search_query": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
+    },
+    "search_status": {
+      "p95_ms": null,
+      "p99_ms": null,
+      "max_error_rate": null
     }
+  },
+  "cryptographic_signing": {
+    "min_completed": null,
+    "max_error_rate": null,
+    "min_throughput_per_second": null,
+    "p95_ms": null,
+    "p99_ms": null,
+    "max_duration_seconds": null,
+    "max_phase_memory_bytes": null,
+    "max_phase_cpu_percent": null
   },
   "resources": {
     "max_container_memory_bytes": null,

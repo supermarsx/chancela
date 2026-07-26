@@ -12,6 +12,10 @@
   "workload": {
     "mode": "steady",
     "duration_seconds": 8,
+    "warmup_seconds": 1,
+    "ramp_seconds": 1,
+    "peak_plateau_seconds": 5,
+    "cooldown_seconds": 1,
     "clients": 2,
     "request_timeout_seconds": 15,
     "max_latency_samples_per_operation": 10000,
@@ -24,7 +28,9 @@
       "user_list": 1,
       "auth_login": 1,
       "entity_write": 1,
-      "signature_status": 3
+      "signature_status": 3,
+      "search_query": 2,
+      "search_status": 1
     }
   }
 }
