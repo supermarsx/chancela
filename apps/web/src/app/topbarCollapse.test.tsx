@@ -163,7 +163,7 @@ describe('Top bar — medium tier (tabs collapse to a burger)', () => {
     // The standalone Operações text tab was retired in t36 (its surface folded into Administração,
     // which is a right-hand utility glyph, not a primary tab), so the burger holds the four
     // remaining primary tabs.
-    for (const name of ['Painel', 'Entidades', 'Livros', 'Minutas']) {
+    for (const name of ['Painel', 'Entidades', 'Livros', 'Modelos']) {
       // Exactly one representation per tab (the menuitem) — the inline strip is not also mounted, so
       // there is no hidden duplicate to overlap or to double the a11y tree.
       expect(within(menu).getByRole('menuitem', { name })).toBeTruthy();

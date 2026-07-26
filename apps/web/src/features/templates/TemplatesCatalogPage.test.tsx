@@ -319,7 +319,7 @@ describe('TemplatesCatalogPage', () => {
 
     renderWithProviders(<TemplatesCatalogPage />, ['/templates']);
 
-    const table = await screen.findByRole('table', { name: 'Catálogo de minutas' });
+    const table = await screen.findByRole('table', { name: 'Catálogo de modelos' });
     const headers = within(table).getAllByRole('columnheader');
     // Eight by default: "Fonte legal" is hidden until the operator asks for it.
     expect(headers.map((header) => header.getAttribute('scope'))).toEqual(Array(8).fill('col'));
@@ -369,12 +369,12 @@ describe('TemplatesCatalogPage', () => {
     // The toggle now persists to the account, so the header drops after the write settles.
     await waitFor(() => {
       const headersNow = within(
-        screen.getByRole('table', { name: 'Catálogo de minutas' }),
+        screen.getByRole('table', { name: 'Catálogo de modelos' }),
       ).getAllByRole('columnheader');
       expect(headersNow.map((header) => header.textContent?.trim())).not.toContain('Família');
     });
     const afterHide = within(
-      screen.getByRole('table', { name: 'Catálogo de minutas' }),
+      screen.getByRole('table', { name: 'Catálogo de modelos' }),
     ).getAllByRole('columnheader');
     expect(afterHide[0].getAttribute('aria-sort')).toBe('none');
   });
@@ -454,7 +454,7 @@ describe('TemplatesCatalogPage', () => {
     expect(await screen.findByText('28 de 28 modelos')).toBeTruthy();
     expect(catalogRows()).toHaveLength(25);
     const pagination = screen.getByRole('navigation', {
-      name: 'Paginação do catálogo de minutas',
+      name: 'Paginação do catálogo de modelos',
     });
     expect(within(pagination).getByText(/A mostrar 1–25 de 28/)).toBeTruthy();
     expect(within(pagination).getByText(/Página 1 de 2/)).toBeTruthy();
@@ -473,7 +473,7 @@ describe('TemplatesCatalogPage', () => {
     await waitFor(() => expect(catalogRows()).toHaveLength(1));
     expect(screen.getByText('user-page-28/v1')).toBeTruthy();
     expect(
-      screen.queryByRole('navigation', { name: 'Paginação do catálogo de minutas' }),
+      screen.queryByRole('navigation', { name: 'Paginação do catálogo de modelos' }),
     ).toBeNull();
   });
 
@@ -573,10 +573,10 @@ describe('TemplatesCatalogPage', () => {
     fireEvent.change(screen.getByLabelText('Fase da minuta'), {
       target: { value: 'Convocatoria' },
     });
-    const catalog = screen.getByRole('region', { name: 'Catálogo de minutas' });
+    const catalog = screen.getByRole('region', { name: 'Catálogo de modelos' });
     expect(within(catalog).getByText('assoc-convocatoria-ga/v1')).toBeTruthy();
     expect(
-      within(within(catalog).getByRole('table', { name: 'Catálogo de minutas' })).getByText(
+      within(within(catalog).getByRole('table', { name: 'Catálogo de modelos' })).getByText(
         'Convocatória',
       ),
     ).toBeTruthy();

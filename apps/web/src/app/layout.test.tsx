@@ -148,7 +148,7 @@ describe('Layout', () => {
       'Painel',
       'Entidades',
       'Livros',
-      'Minutas',
+      'Modelos',
       'Arquivo',
       'Ferramentas',
       'Configurações',

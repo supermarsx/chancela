@@ -15,7 +15,7 @@ export const templatesCatalogPtPT = {
   'templates.catalog.empty.title': 'Ainda não existem modelos',
   'templates.catalog.empty.body':
     'Crie um modelo novo ou importe um ficheiro de modelo para começar.',
-  'templates.catalog.pagination.aria': 'Paginação do catálogo de minutas',
+  'templates.catalog.pagination.aria': 'Paginação do catálogo de modelos',
   'templates.catalog.pagination.range': 'A mostrar {from}–{to} de {total}',
   'templates.catalog.pagination.page': 'Página {current} de {total}',
   'templates.catalog.pagination.previous': 'Página anterior',

@@ -135,7 +135,7 @@ describe('hard catalog localization gate', () => {
     expect(ptBR['common.saving']).toBe('Salvando…');
     expect(ptBR['acts.singular']).toBe('Ata');
     expect(ptBR['books.atas']).toBe('Atas');
-    expect(ptBR['templates.title']).toBe('Minutas');
+    expect(ptBR['templates.title']).toBe('Modelos');
     expect(ptBR['entities.fiscalYearEnd.saving']).toBe('Salvando…');
     expect(ptBR['entities.fiscalYearEnd.save']).toBe('Salvar fechamento');
 

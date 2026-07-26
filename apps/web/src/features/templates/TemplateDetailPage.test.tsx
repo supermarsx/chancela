@@ -331,7 +331,7 @@ describe('TemplateDetailPage', () => {
 
     expect(await screen.findByText('nao-existe/v9')).toBeTruthy();
     expect(screen.getByText('Modelo não encontrado')).toBeTruthy();
-    expect(screen.getAllByRole('link', { name: 'Minutas' })[0].getAttribute('href')).toBe(
+    expect(screen.getAllByRole('link', { name: 'Modelos' })[0].getAttribute('href')).toBe(
       '/templates',
     );
   });
