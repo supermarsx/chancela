@@ -114,7 +114,7 @@ FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264
 # OCI provenance labels. These describe the image without embedding any secret.
 LABEL org.opencontainers.image.title="chancela-server (hardened)" \
       org.opencontainers.image.description="Hardened, distroless, non-root chancela-server image" \
-      org.opencontainers.image.source="https://github.com/chancela/chancela" \
+      org.opencontainers.image.source="https://github.com/supermarsx/chancela" \
       org.opencontainers.image.licenses="LicenseRef-Chancela-NonCommercial" \
       org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot" \
       org.opencontainers.image.base.digest="sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775"

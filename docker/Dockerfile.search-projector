@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1
+#
+# Dedicated full-search projector image. The process reads authoritative rows,
+# builds the derived search corpus away from API request runtimes, and publishes
+# only completed, fenced generations. It has no listening socket; its built-in
+# heartbeat healthcheck is the only container liveness surface.
+
+########################  Stage 1: Rust build  ########################
+FROM rust:1.97.0-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS rust-build
+WORKDIR /build
+
+# One image supports both deployment backends. Runtime still selects SQLite or
+# Postgres through CHANCELA_DB_BACKEND and the normal database environment.
+ARG CARGO_FEATURES="chancela-search-projector/sqlcipher chancela-search-projector/postgres"
+
+# The pinned rust:slim base already provides the C compiler, binutils, and Perl.
+# Vendored OpenSSL/SQLCipher additionally needs Make; the projector graph has no
+# PC/SC dependency and must not carry smart-card headers or runtime libraries.
+RUN DEBIAN_FRONTEND=noninteractive apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        make \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/build/target \
+    cargo build --release --locked -p chancela-search-projector --features "${CARGO_FEATURES}" \
+    && cp target/release/chancela-search-projector /chancela-search-projector
+
+########################  Stage 2: Runtime  ########################
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775 AS runtime
+
+LABEL org.opencontainers.image.title="chancela-search-projector" \
+      org.opencontainers.image.description="Isolated durable full-search projector for Chancela" \
+      org.opencontainers.image.source="https://github.com/supermarsx/chancela" \
+      org.opencontainers.image.licenses="LicenseRef-Chancela-NonCommercial" \
+      org.opencontainers.image.base.name="gcr.io/distroless/cc-debian13:nonroot" \
+      org.opencontainers.image.base.digest="sha256:d97bc0a941b8d4be647dc0ee75b264ddbb772f1ac5ba690a4309c00723b23775"
+
+COPY --from=rust-build /chancela-search-projector /usr/local/bin/chancela-search-projector
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/.keep
+COPY --chown=nonroot:nonroot docker/.chancela-data.keep /var/lib/chancela/search-projector/.keep
+
+ENV CHANCELA_DATA_DIR=/var/lib/chancela
+ENV CHANCELA_SEARCH_RUNTIME_DIR=/var/lib/chancela/search-projector
+ENV CHANCELA_SEARCH_HEARTBEAT_SECONDS=15
+ENV CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS=600
+
+USER 65532:65532
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
+    CMD ["/usr/local/bin/chancela-search-projector", "healthcheck", "--runtime-dir", "/var/lib/chancela/search-projector"]
+
+ENTRYPOINT ["/usr/local/bin/chancela-search-projector"]
+CMD ["run"]
