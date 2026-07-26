@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `b7a083a` (2026-07-26). It records the
+The current substantive checkpoint is `2f700c1` (2026-07-26). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -134,7 +134,7 @@ cryptographic signatures, PDF/A or PDF/UA certification, legal/template
 correctness, hosted CI success, GHCR publication, image/package signature, or
 spec completion is claimed. The spec matrix remains `PARTIAL=11`.
 
-At snapshot `b7a083a`, after `3d7cf815` aligned the stale Settings-page
+At snapshot `2f700c1`, after `3d7cf815` aligned the stale Settings-page
 assertions with the rendered `Lote do indexador integrado` label and
 `c9c1b192` refreshed the restore/reload mutation inventory and `32815f3e`
 aligned the group-dashboard member contract, and `01357def` hardened additive
@@ -167,7 +167,7 @@ reduced. This is bounded local unit coverage, not browser, desktop, hosted-CI,
 or production proof. The prior `c9c1b19`
 `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no
 aggregate test count is inferred from Cargo's per-target output. That result is
-not relabelled as full-workspace validation of `b7a083a`; the changed contract
+not relabelled as full-workspace validation of `2f700c1`; the changed contract
 and settings E2E are covered by the focused evidence above.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for

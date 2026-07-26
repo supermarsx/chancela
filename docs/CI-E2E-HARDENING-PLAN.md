@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-26 from the current CI configuration and reachable
-implementation snapshot `b7a083a`,
+implementation snapshot `2f700c1`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness, inherited document layouts, committed packaging and
@@ -1002,11 +1002,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b7a083a`
+## Focused Gate Snapshot Through `2f700c1`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-26 for current implementation head `b7a083a`.
+metadata-refreshed on 2026-07-26 for current implementation head `2f700c1`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1015,7 +1015,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `b7a083a` cover the accessible
+- Current landed-slice markers through `2f700c1` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1063,13 +1063,13 @@ above still apply.
   implementation tree. The prior `c9c1b19`
   `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no
   aggregate test count is inferred from Cargo's per-target output. That result
-  is not relabelled as full-workspace validation of `b7a083a`; the changed
+  is not relabelled as full-workspace validation of `2f700c1`; the changed
   contract and settings E2E are covered by the focused evidence above. No full
   capacity/soak profile, 10,000 cryptographic signatures, interactive visual
   QA, hosted CI run, GHCR publication, signature, or remote-provider/hardware
   run is recorded by this metadata refresh.
 
-  At snapshot `b7a083a`, after `3d7cf815` aligned the stale Settings-page
+  At snapshot `2f700c1`, after `3d7cf815` aligned the stale Settings-page
   assertions with the rendered `Lote do indexador integrado` label and
   `c9c1b192` refreshed the exact settings-gated restore/reload mutation
   inventory, `32815f3e` aligned the group-dashboard member contract, and
@@ -2581,7 +2581,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `b7a083a`
+- Current checkpoint metadata/static checks through `2f700c1`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
