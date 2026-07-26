@@ -69,12 +69,12 @@ const EXCLUDED_MUTATORS: &[(&str, &str)] = &[
         "destructive reset runs inside the explicit destructive search fence",
     ),
     (
-        "lib.rs::clear_search_source_memory_after_failed_restore",
-        "failed-restore recovery deliberately clears sources while the destructive fence is held",
+        "lib.rs::clear_search_source_memory_after_failed_restore_with_settings_gate_held",
+        "failed-restore recovery clears sources while both the destructive fence and settings gate are held",
     ),
     (
-        "lib.rs::reload_domain_memory",
-        "restore/reload replaces every source map before releasing the destructive search fence",
+        "lib.rs::reload_domain_memory_with_settings_gate_held",
+        "restore/reload replaces every source map while both the destructive fence and settings gate are held",
     ),
 ];
 
