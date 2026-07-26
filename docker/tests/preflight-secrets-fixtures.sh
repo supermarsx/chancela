@@ -96,11 +96,57 @@ make_valid_fixture "$newline"
 printf '\r\n' >>"$newline/credential_key"
 expect_fail "secret with CRLF" "$newline"
 
+case "$(uname -s):$(id -u)" in
+  Linux:0)
+    # Root outside the hardened container may retain DAC_OVERRIDE, so it cannot
+    # provide a meaningful unreadable-file fixture.
+    ;;
+  Linux:*)
+    unreadable="$fixture_root/unreadable"
+    make_valid_fixture "$unreadable"
+    chmod 000 "$unreadable/credential_key"
+    unreadable_status=0
+    unreadable_output="$(
+      CHANCELA_HOST_SECRETS_DIR="$unreadable" sh "$preflight" 2>&1
+    )" || unreadable_status=$?
+    chmod 0600 "$unreadable/credential_key"
+    if [ "$unreadable_status" -eq 0 ]; then
+      echo "FAIL: unreadable secret should have failed" >&2
+      exit 1
+    fi
+    if ! printf '%s' "$unreadable_output" | grep -q 'cannot be read by uid'; then
+      echo "FAIL: unreadable secret did not report its permission failure" >&2
+      exit 1
+    fi
+    if printf '%s' "$unreadable_output" | grep -q 'contains a CR or LF'; then
+      echo "FAIL: unreadable secret was misreported as CR/LF content" >&2
+      exit 1
+    fi
+    ;;
+esac
+
 symlink="$fixture_root/symlink"
 make_valid_fixture "$symlink"
 rm -f "$symlink/credential_key"
-ln -s "$valid/credential_key" "$symlink/credential_key"
-expect_fail "symbolic-link secret" "$symlink"
+symlink_created=0
+if ln -s "$valid/credential_key" "$symlink/credential_key" 2>/dev/null \
+  && [ -L "$symlink/credential_key" ]; then
+  symlink_created=1
+fi
+if [ "$symlink_created" -eq 1 ]; then
+  expect_fail "symbolic-link secret" "$symlink"
+else
+  rm -f "$symlink/credential_key"
+  case "$(uname -s)" in
+    CYGWIN* | MINGW* | MSYS*)
+      echo "SKIP: host cannot create a real symbolic-link fixture"
+      ;;
+    *)
+      echo "FAIL: could not create the mandatory symbolic-link fixture" >&2
+      exit 1
+      ;;
+  esac
+fi
 
 generated="$fixture_root/generated"
 mkdir -p "$generated"

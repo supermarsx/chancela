@@ -88,7 +88,15 @@ trap 'cleanup_publication' EXIT
 trap 'cleanup_publication; exit 130' HUP INT TERM
 
 read_secret() {
-  tr -d '\r\n' <"$1"
+  tr -d '\r\n' 2>/dev/null <"$1"
+}
+
+fail_unreadable_secret() {
+  path="$1"
+  label="$2"
+  echo "ERROR: $label at $path cannot be read by uid $(id -u)." >&2
+  echo "       Fix the secret file owner and mode; refusing to infer content errors." >&2
+  exit 1
 }
 
 reject_unsafe_existing_secret() {
@@ -112,8 +120,14 @@ reject_unsafe_existing_secret() {
     echo "       Generate a real value before starting any deployment." >&2
     exit 1
   fi
-  raw_bytes="$(wc -c <"$path" | tr -d '[:space:]')"
-  clean_bytes="$(read_secret "$path" | wc -c | tr -d '[:space:]')"
+  if ! raw_bytes="$(wc -c 2>/dev/null <"$path")"; then
+    fail_unreadable_secret "$path" "$label"
+  fi
+  raw_bytes="$(printf '%s' "$raw_bytes" | tr -d '[:space:]')"
+  if ! clean_value="$(read_secret "$path")"; then
+    fail_unreadable_secret "$path" "$label"
+  fi
+  clean_bytes="$(printf '%s' "$clean_value" | wc -c | tr -d '[:space:]')"
   if [ "$raw_bytes" != "$clean_bytes" ]; then
     echo "ERROR: $label at $path contains a CR or LF; secret files must be exact single values." >&2
     exit 1

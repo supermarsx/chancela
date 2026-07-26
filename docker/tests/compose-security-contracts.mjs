@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
@@ -242,6 +242,66 @@ for (const [serviceName, expectedSecrets] of hardenedExpectedSecrets) {
   );
 }
 
+const fileSecretPermissions =
+  hardenedPg.services["file-secrets-permissions-init"];
+assert(
+  fileSecretPermissions,
+  "hardened file-secret permissions init is missing",
+);
+assert(
+  fileSecretPermissions.user === "0:0",
+  "file-secret permissions init must start as root for chgrp",
+);
+assert(
+  fileSecretPermissions.read_only === true,
+  "file-secret permissions init rootfs must be read-only",
+);
+assert(
+  fileSecretPermissions.network_mode === "none",
+  "file-secret permissions init must be networkless",
+);
+sameMembers(
+  fileSecretPermissions.cap_drop,
+  ["ALL"],
+  "file-secret permissions init dropped capabilities",
+);
+sameMembers(
+  fileSecretPermissions.cap_add,
+  ["CHOWN", "DAC_OVERRIDE", "FOWNER"],
+  "file-secret permissions init added capabilities",
+);
+assert(
+  fileSecretPermissions.pids_limit === 16,
+  "file-secret permissions init PID limit",
+);
+assert(
+  JSON.stringify(
+    fileSecretPermissions.volumes
+      .filter(({ target }) => target === "/host-secrets")
+      .map(({ read_only: readOnly = false }) => readOnly),
+  ) === JSON.stringify([false]),
+  "file-secret permissions init needs the sole writable secret-directory mount",
+);
+const fileSecretDirectory = fileSecretPermissions.volumes.find(
+  ({ target }) => target === "/host-secrets",
+)?.source;
+assert(
+  Object.values(hardenedPg.secrets).every(
+    ({ file }) => dirname(file) === fileSecretDirectory,
+  ),
+  "hardened secret sources must share the permission initializer directory",
+);
+assert(
+  hardenedPg.services["secrets-preflight"].user === "65532:65532",
+  "hardened secret preflight must prove access as the application identity",
+);
+assert(
+  hardenedPg.services["secrets-preflight"].depends_on[
+    "file-secrets-permissions-init"
+  ].condition === "service_completed_successfully",
+  "hardened secret preflight must wait for the permission handoff",
+);
+
 const standardSource = readFileSync(
   resolve(repoRoot, "docker/docker-compose.yml"),
   "utf8",
@@ -257,6 +317,19 @@ assert(
 assert(
   hardenedSource.includes("CHANCELA_PROJECTOR_DEDICATED_DATABASE=true"),
   "hardened startup instructions omit the dedicated-database acknowledgement",
+);
+const fileSecretPermissionsSource = readFileSync(
+  resolve(repoRoot, "docker/file-secrets-permissions-init.sh"),
+  "utf8",
+);
+assert(
+  fileSecretPermissionsSource.includes('chgrp "$runtime_gid" "$path"') &&
+    fileSecretPermissionsSource.includes("chmod 0640"),
+  "file-secret permission handoff must preserve owner and grant group-only runtime access",
+);
+assert(
+  !fileSecretPermissionsSource.match(/chmod\s+0?4[04]4/),
+  "file-secret permission handoff must never make secrets world-readable",
 );
 
 console.log("Compose security contracts passed");

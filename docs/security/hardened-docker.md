@@ -257,6 +257,13 @@ different non-root UIDs of the explicitly attached consumers; confidentiality
 comes from per-secret volume attachment and read-only consumer mounts. The
 legacy combined volume is read-only and visible only to the migration
 initializer. Hardened Compose uses one file-backed Compose secret per value.
+Because local Compose implements those values as bind mounts and cannot remap
+their ownership, a networkless one-shot preserves the operator as owner, sets
+group `65532` and mode `0640`, and must finish before the non-root preflight
+runs as `65532:65532`. The API, Postgres, role initializer, and projector start
+only after that preflight succeeds. Thus the operator retains rotation access,
+the declared runtime identity gets group-read access, and neither other host
+users nor unrelated containers receive a world-readable fallback.
 
 The one-shot role initializer waits for the API's schema-readiness health gate,
 removes memberships in both directions and inherited/old grants, refuses an

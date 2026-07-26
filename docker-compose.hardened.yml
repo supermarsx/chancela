@@ -228,10 +228,43 @@ services:
   #
   # SINGLE-WRITER by design (see header + docker/DEPLOYMENT-PROFILES.md).
   # -----------------------------------------------------------------------
-  secrets-preflight:
+  # Compose implements local file secrets as bind mounts and cannot apply a
+  # target uid/gid/mode. Preserve the operator as owner, grant only the
+  # distroless application group read access, and gate every consumer on this
+  # handoff. The directory is mounted only into this networkless one-shot.
+  file-secrets-permissions-init:
     profiles: [postgres]
     image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
     user: "0:0"
+    read_only: true
+    network_mode: none
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 16
+    entrypoint: ["/bin/sh", "/usr/local/bin/file-secrets-permissions-init.sh"]
+    environment:
+      CHANCELA_FILE_SECRETS_DIR: /host-secrets
+      CHANCELA_RUNTIME_GID: "65532"
+    volumes:
+      - ./docker/file-secrets-permissions-init.sh:/usr/local/bin/file-secrets-permissions-init.sh:ro
+      - ${CHANCELA_HARDENED_SECRETS_DIR:-./docker/secrets}:/host-secrets
+    deploy:
+      resources:
+        limits:
+          cpus: "0.10"
+          memory: 16m
+          pids: 16
+    restart: "no"
+
+  secrets-preflight:
+    profiles: [postgres]
+    image: alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af
+    # The consumers run as the distroless application identity. Keeping the
+    # preflight on that same UID proves that file-backed Compose secrets are
+    # actually readable without relying on root or DAC_OVERRIDE.
+    user: "65532:65532"
     read_only: true
     network_mode: none
     cap_drop: [ALL]
@@ -257,6 +290,9 @@ services:
           cpus: "0.10"
           memory: 32m
           pids: 16
+    depends_on:
+      file-secrets-permissions-init:
+        condition: service_completed_successfully
     restart: "no"
 
   postgres-tls-init:
@@ -585,17 +621,19 @@ volumes:
   chancela-search-runtime:
 
 # File-based docker secrets. Real files are gitignored (see
-# docker/secrets/.gitignore); only the *.example templates are committed. Each
-# database URL must match its own password file; the projector pair is
-# deliberately independent from the API/Postgres-owner pair.
+# docker/secrets/.gitignore); only the *.example templates are committed.
+# `file-secrets-permissions-init` preserves their operator ownership and sets
+# gid 65532 + mode 0640 before any consumer starts. Each database URL must
+# match its own password file; the projector pair is deliberately independent
+# from the API/Postgres-owner pair.
 secrets:
   postgres_password:
-    file: ./docker/secrets/postgres_password
+    file: ${CHANCELA_HARDENED_SECRETS_DIR:-./docker/secrets}/postgres_password
   database_url:
-    file: ./docker/secrets/database_url
+    file: ${CHANCELA_HARDENED_SECRETS_DIR:-./docker/secrets}/database_url
   credential_key:
-    file: ./docker/secrets/credential_key
+    file: ${CHANCELA_HARDENED_SECRETS_DIR:-./docker/secrets}/credential_key
   search_database_password:
-    file: ./docker/secrets/search_database_password
+    file: ${CHANCELA_HARDENED_SECRETS_DIR:-./docker/secrets}/search_database_password
   search_database_url:
-    file: ./docker/secrets/search_database_url
+    file: ${CHANCELA_HARDENED_SECRETS_DIR:-./docker/secrets}/search_database_url

@@ -11,6 +11,7 @@ PROJECT="${CHANCELA_HARDENED_SMOKE_PROJECT:-chancela-hardened-pg-smoke}"
 HOST_PORT="${CHANCELA_HARDENED_SMOKE_PORT:-18083}"
 SERVER_IMAGE="${CHANCELA_POSTGRES_IMAGE:-chancela-server:ci}"
 PROJECTOR_IMAGE="${CHANCELA_SEARCH_PROJECTOR_IMAGE:-chancela-search-projector:ci}"
+SECRET_PROBE_IMAGE="${CHANCELA_SECRET_PROBE_IMAGE:-alpine/openssl:3.5.7@sha256:3da6a24cdaa2f2ac8ef4defb322249fae6159983104653a9e5312f5b75dac7af}"
 TEMP_ROOT="$(mktemp -d)"
 SECRETS_DIR="$TEMP_ROOT/secrets"
 OVERRIDE_FILE="$TEMP_ROOT/compose.override.yml"
@@ -20,6 +21,9 @@ DOCKER_OVERRIDE_FILE="$OVERRIDE_FILE"
 if command -v cygpath >/dev/null 2>&1; then
   DOCKER_SECRETS_DIR="$(cygpath -m "$SECRETS_DIR")"
   DOCKER_OVERRIDE_FILE="$(cygpath -m "$OVERRIDE_FILE")"
+  # The Docker Desktop daemon needs container paths verbatim. MSYS otherwise
+  # rewrites `/usr/local/bin/...` in `compose exec` into a Windows host path.
+  export MSYS_NO_PATHCONV=1
 fi
 
 mkdir -p "$SECRETS_DIR"
@@ -60,6 +64,7 @@ export CHANCELA_HOST_PORT="$HOST_PORT"
 export CHANCELA_POSTGRES_IMAGE="$SERVER_IMAGE"
 export CHANCELA_SEARCH_PROJECTOR_IMAGE="$PROJECTOR_IMAGE"
 export CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+export CHANCELA_HARDENED_SECRETS_DIR="$DOCKER_SECRETS_DIR"
 
 COMPOSE=(
   docker compose
@@ -126,10 +131,62 @@ assert_completed() {
 
 wait_for_api
 wait_for_projector
+echo "hardened PostgreSQL API and projector are healthy."
+assert_completed file-secrets-permissions-init
 assert_completed secrets-preflight
 assert_completed search-runtime-init
 assert_completed search-projector-role-init
+echo "secret permission handoff and one-shot initializers completed."
 "${COMPOSE[@]}" run --rm --no-deps search-projector-role-init verify
+echo "restricted projector role verification completed."
+
+case "$(uname -s)" in
+  Linux)
+    host_uid="$(id -u)"
+    for name in \
+      postgres_password \
+      database_url \
+      credential_key \
+      search_database_password \
+      search_database_url
+    do
+      test "$(stat -c '%u:%g:%a' "$SECRETS_DIR/$name")" = "$host_uid:65532:640"
+    done
+    echo "file-secret host owner/group/mode handoff verified."
+    ;;
+  *)
+    echo "POSIX host inode mapping check skipped on $(uname -s)."
+    ;;
+esac
+
+# An unrelated identity with no capabilities receives no secret bytes even if
+# it is explicitly handed this otherwise-private test directory. This runs on
+# Docker Desktop too; only the native-host inode assertion above is Linux-only.
+docker run --rm \
+  --network none \
+  --read-only \
+  --user 65534:65534 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --pids-limit 16 \
+  --mount "type=bind,src=${DOCKER_SECRETS_DIR},dst=/smoke-secrets,readonly" \
+  --entrypoint /bin/sh \
+  "$SECRET_PROBE_IMAGE" \
+  -eu -c '
+    for name in \
+      postgres_password \
+      database_url \
+      credential_key \
+      search_database_password \
+      search_database_url
+    do
+      if head -c 1 "/smoke-secrets/$name" >/dev/null 2>&1; then
+        echo "unrelated uid unexpectedly read $name" >&2
+        exit 1
+      fi
+    done
+  '
+echo "file-secret consumer access and unrelated-identity denial verified."
 
 server_id="$("${COMPOSE[@]}" ps -q server-postgres)"
 projector_id="$("${COMPOSE[@]}" ps -q search-projector-postgres)"
@@ -182,6 +239,7 @@ for label, container, expected in (
     if mounted != expected:
         fail(f"{label} read-only secret mounts differ: {sorted(mounted)}")
 PY
+echo "runtime hardening, network isolation, and secret exposure verified."
 
 "${COMPOSE[@]}" stop --timeout 20 search-projector-postgres server-postgres
 "${COMPOSE[@]}" start server-postgres
