@@ -1,11 +1,13 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-26 from current implementation snapshot `705e6ebff86c7263374bd19c548cc11642c48d70`,
+*Updated 2026-07-26 from current implementation snapshot `18a346ee3e7f26af90703352fc583e4ae322f36f`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
-exact-volume performance harness; and the inherited document-layout model,
-renderer, settings policy, stored resolved-layout snapshot, and web editors,
+exact-volume performance harness with fail-closed local-signing timestamp
+isolation and actual runtime-loader signing coverage; and the inherited
+document-layout model, renderer, settings policy, stored resolved-layout
+snapshot, and web editors,
 plus committed packaging and release-trust contract evidence and
 the earlier official pdfjs legacy main/worker
 compatibility path, its blocking core browser proof, the continuous template
@@ -329,7 +331,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `705e6eb` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `18a346e` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -361,13 +363,23 @@ Implementation checkpoints covered here:
   target so a renamed, added, removed, or unguarded source-map writer fails the
   dynamic guard.
 
-  `20008d37`, `4efd1956`, and `eff9866d` define exact-volume profiles for
-  15,000 users, 10,000 entities, 50,000 books, and 10,000 unsigned signature
-  subjects, plus a separate opt-in local PKCS#12 signing path. Forty-two
-  harness/topology tests cover deterministic data, search readiness, resource
-  telemetry, complete SLO policy, runner labels, and proof eligibility. These
-  are harness and governance safeguards, not recorded capacity, latency, soak,
-  cryptographic-signature, live-provider, or hosted-CI results.
+  `20008d37`, `4efd1956`, `eff9866d`, and `18a346ee` define exact-volume
+  profiles for 15,000 users, 10,000 entities, 50,000 books, and 10,000
+  unsigned signature subjects, plus a separate opt-in local PKCS#12 signing
+  path. The current harness applies its bounded whole-document TSA override
+  only after exact seeding and search readiness and before the first
+  cryptographic act mutation, verifies that both timestamp selectors are
+  disabled while non-TSA operator settings survive, and records sanitized
+  setup evidence. The disposable generator pins the SHA-1 MAC and 3DES PBE
+  profile supported by the runtime `p12` reader and keeps passphrases in
+  environment transport. On both native Python 3.12 and Cygwin Python 3.9, the
+  full performance suite passed 52/52 tests; each run generated the PFX and
+  invoked the exact ignored Rust regression through locked Cargo, loading it
+  with `Pkcs12SigningSource` by exact friendly name before a detached-CAdES
+  sign/validate round trip. These are harness, isolation, and generated-fixture
+  runtime-compatibility safeguards, not recorded capacity, latency, soak,
+  10,000 cryptographic-signature, public-TSA, live-provider, composed-API, or
+  hosted-CI results.
 
   The inherited document-layout lane resolves the concrete instance ->
   template -> entity -> book cascade before render/page counting, atomically

@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `705e6eb` (2026-07-26)",
+    "The current substantive checkpoint is `18a346e` (2026-07-26)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `705e6eb`",
+    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `18a346e`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `705e6eb`",
+    "Focused Gate Snapshot Through `18a346e`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `705e6eb`",
+    "Current checkpoint metadata/static checks through `18a346e`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `705e6ebff86c7263374bd19c548cc11642c48d70`",
+    "implementation snapshot `18a346ee3e7f26af90703352fc583e4ae322f36f`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `705e6eb`",
+    "Current checkpoint metadata/static checks through `18a346e`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16765,13 +16765,63 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `705e6eb` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `18a346e` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "These are harness and governance safeguards, not recorded capacity, latency, soak, cryptographic-signature, live-provider, or hosted-CI results",
+    "These are harness, isolation, and generated-fixture runtime-compatibility safeguards, not recorded capacity, latency, soak, 10,000 cryptographic-signature, public-TSA, live-provider, composed-API, or hosted-CI results",
     "spec coverage performance no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "The current harness applies its bounded whole-document TSA override only after exact seeding and search readiness and before the first cryptographic act mutation, verifies that both timestamp selectors are disabled while non-TSA operator settings survive, and records sanitized setup evidence",
+    "spec coverage performance TSA isolation evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Its disposable SHA-1/3DES PFX profile is exercised through the actual `Pkcs12SigningSource` loader and a detached-CAdES sign/validate round trip selected by exact friendly name",
+    "CI checkpoints actual PKCS12 loader signing evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Each performance run generated the disposable SHA-1/3DES PFX, passed its secret only through environment variables, and invoked the locked exact ignored Rust regression to load by friendly name and sign/validate detached CAdES",
+    "CI/E2E cross-runtime PKCS12 signing evidence",
+  );
+  assertFileContains(
+    "scripts/perf/generate-test-pkcs12.sh",
+    "-keypbe PBE-SHA1-3DES",
+    "performance PFX runtime-loader-compatible key PBE marker",
+  );
+  assertFileContains(
+    "scripts/perf/generate-test-pkcs12.sh",
+    "-passout env:CHANCELA_PERF_PKCS12_PASSPHRASE",
+    "performance PFX environment-only passphrase marker",
+  );
+  assertFileContains(
+    "scripts/perf/harness.py",
+    '"ordering": "after_seed_and_search_before_cryptographic_signing"',
+    "performance TSA override ordering evidence marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/soft_cert_pkcs12.rs",
+    "fn generated_performance_pkcs12_loads_and_signs_detached_cades()",
+    "generated performance PFX actual-loader signing test marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_pkcs12_generator.py",
+    'RUNTIME_TEST = "generated_performance_pkcs12_loads_and_signs_detached_cades"',
+    "performance generator exact Rust runtime test marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_pkcs12_generator.py",
+    '[cygpath, "-w", str(path)]',
+    "performance generator Cygwin native-Cargo path marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_pkcs12_generator.py",
+    "if passphrase in runtime_output:",
+    "performance runtime-loader secret-output redaction marker",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
@@ -16810,7 +16860,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `705e6eb` (2026-07-26)",
+    "The current substantive checkpoint is `18a346e` (2026-07-26)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(
@@ -16860,7 +16910,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "The prior `c9c1b19` `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `705e6eb`",
+    "The prior `c9c1b19` `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `18a346e`",
     "CI checkpoints prior Rust workspace evidence boundary",
   );
   assertFileContainsNormalized(
@@ -16875,7 +16925,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "The prior `c9c1b19` `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `705e6eb`",
+    "The prior `c9c1b19` `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `18a346e`",
     "CI/E2E prior Rust workspace evidence boundary",
   );
   assertFileContainsNormalized(

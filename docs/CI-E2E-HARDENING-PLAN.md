@@ -1,11 +1,12 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-26 from the current CI configuration and reachable
-implementation snapshot `705e6eb`,
+implementation snapshot `18a346e`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
-performance harness, inherited document layouts, committed packaging and
-release contracts, and the earlier official pdfjs legacy main/worker
+performance harness with fail-closed local TSA isolation and generated-PFX
+runtime-loader signing coverage, inherited document layouts, committed
+packaging and release contracts, and the earlier official pdfjs legacy main/worker
 compatibility path, the blocking core template PDF preview proof, the
 continuous template document editor, and the mobile companion foundation docs/scripts,
 destructive erasure preflight/approve/execute route wiring plus local gate
@@ -1002,11 +1003,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `705e6eb`
+## Focused Gate Snapshot Through `18a346e`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-26 for current implementation head `705e6eb`.
+metadata-refreshed on 2026-07-26 for current implementation head `18a346e`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1015,12 +1016,14 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `705e6eb` cover the accessible
+- Current landed-slice markers through `18a346e` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
   API-independent projection/compile crates; a slim projector image; the
-  exact-volume performance profiles plus proof-eligibility boundaries; and
+  exact-volume performance profiles, proof-eligibility boundaries, fail-closed
+  post-seed/search TSA isolation, and actual generated-PFX runtime-loader
+  signing coverage; and
   committed split-secret, network, role/ACL, and deployment contracts. The
   inherited-layout markers continue to pin instance -> template -> entity ->
   book resolution, atomic inherited validation, canonical snapshot
@@ -1054,8 +1057,12 @@ above still apply.
 
   Focused current validation passed 46 web tests (drawer/search/search
   settings), 30 API preview tests, 1 API search-source mutation-guard
-  integration test, 19 projector tests with the Postgres feature, and 42
-  performance harness/topology tests. The projector dependency gate reported
+  integration test, 19 projector tests with the Postgres feature, and 52/52
+  performance tests on both native Python 3.12 and Cygwin Python 3.9. Each
+  performance run generated the disposable SHA-1/3DES PFX, passed its secret
+  only through environment variables, and invoked the locked exact ignored
+  Rust regression to load by friendly name and sign/validate detached CAdES.
+  The projector dependency gate reported
   224/230 default packages, 242/250 all-feature packages, 12/13 internal
   packages in each graph, and zero forbidden dependencies. Docker image
   contracts, Compose topology, projector-role contracts, split-secret
@@ -1063,25 +1070,27 @@ above still apply.
   implementation tree. The prior `c9c1b19`
   `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no
   aggregate test count is inferred from Cargo's per-target output. That result
-  is not relabelled as full-workspace validation of `705e6eb`; the changed
+  is not relabelled as full-workspace validation of `18a346e`; the changed
   contract and settings E2E are covered by the focused evidence above. No full
   capacity/soak profile, 10,000 cryptographic signatures, interactive visual
   QA, hosted CI run, GHCR publication, signature, or remote-provider/hardware
   run is recorded by this metadata refresh.
 
-  At snapshot `705e6eb`, after `3d7cf815` aligned the stale Settings-page
+  At snapshot `18a346e`, after `3d7cf815` aligned the stale Settings-page
   assertions with the rendered `Lote do indexador integrado` label and
   `c9c1b192` refreshed the exact settings-gated restore/reload mutation
   inventory, `32815f3e` aligned the group-dashboard member contract, and
-  `01357def` hardened additive settings persistence coverage, and `65fe793b`
-  made structured-editor saves await PATCH completion directly, the complete
+  `01357def` hardened additive settings persistence coverage, `65fe793b` made
+  structured-editor saves await PATCH completion directly, and `18a346ee`
+  added fail-closed TSA isolation plus actual generated-PFX runtime-loader
+  signing coverage, the complete
   `npm run test:checkpoint:recent-landed` command passed. Its server
   canonical-contract E2E and additive settings-persistence E2E each recorded 1
   test; its web matrix recorded 25 files / 691 tests, including all 34
   structured-editor tests, 67 contract tests, and all 123 Settings-page tests;
   the template document-editor slice recorded 23 tests; the API search-source
   mutation guard recorded 1 test; the external projector recorded 19 tests;
-  and the performance governance suite recorded 42 tests. The dependency,
+  and the performance governance suite recorded 52 tests. The dependency,
   Docker image, Compose, role initializer, release trust/status,
   validator-corpus, and desktop lockfile gates also passed. Final-head focused
   checks additionally recorded 2 tenant-scan inventory tests, 1 dashboard
@@ -2581,7 +2590,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `705e6eb`
+- Current checkpoint metadata/static checks through `18a346e`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

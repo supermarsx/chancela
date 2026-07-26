@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `705e6eb` (2026-07-26). It records the
+The current substantive checkpoint is `18a346e` (2026-07-26). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -79,12 +79,17 @@ following bounded concern groups in this guard:
   exception inventory with the settings-gated restore/reload helpers; the
   checkpoint now executes the dedicated one-test
   `search_source_mutation_guards` integration target.
-- `20008d37`/`4efd1956`/`eff9866d` govern the exact-volume performance harness
-  for 15,000 users, 10,000 entities, 50,000 books, and 10,000 unsigned
-  signature subjects. Capacity/soak evidence is proof-eligible only with the
-  committed complete SLO policy, stable topology/resource evidence, an exact
-  clean source identity, and the dedicated runner labels; PR smoke is always
-  non-proof.
+- `20008d37`/`4efd1956`/`eff9866d`/`18a346ee` govern the exact-volume
+  performance harness for 15,000 users, 10,000 entities, 50,000 books, and
+  10,000 unsigned signature subjects. The opt-in local PKCS#12 phase now
+  disables both TSA selectors after seed/search readiness but before the first
+  act mutation, preserves non-TSA settings, fails closed, and emits only
+  sanitized timestamp-override setup evidence. Its disposable SHA-1/3DES PFX
+  profile is exercised through the actual `Pkcs12SigningSource` loader and a
+  detached-CAdES sign/validate round trip selected by exact friendly name.
+  Capacity/soak evidence is proof-eligible only with the committed complete SLO
+  policy, stable topology/resource evidence, an exact clean source identity,
+  and the dedicated runner labels; PR smoke is always non-proof.
 - `54529fb3` hardens normal, cluster, and hardened projector deployment with
   split secret exposure, backend-only data services, explicit
   dedicated-database acknowledgement, atomic no-clobber secret publication,
@@ -122,8 +127,10 @@ check, production web build, and one focused Chromium template-preview proof.
 Those historical results are not re-labelled as validation of the later batch.
 For the current batch, focused local validation recorded 46 web tests across
 the block drawer, search workspace, and search settings; 30 API preview tests;
-19 external-projector tests; 42 performance harness/topology tests; the
-projector dependency and Dockerfile contract gates; Compose/role/secret-init
+19 external-projector tests; and 52/52 performance tests on both native Python
+3.12 and Cygwin Python 3.9, each including the locked exact ignored
+runtime-loader signing regression; the projector dependency and Dockerfile
+contract gates; Compose/role/secret-init
 packaging contracts; and release-trust/status self-tests. The definitive live
 PostgreSQL projector smoke also passed three generations, invalid-runtime and
 rolling-overlap lease handling, query/freshness/clean-log checks, graceful
@@ -134,19 +141,20 @@ cryptographic signatures, PDF/A or PDF/UA certification, legal/template
 correctness, hosted CI success, GHCR publication, image/package signature, or
 spec completion is claimed. The spec matrix remains `PARTIAL=11`.
 
-At snapshot `705e6eb`, after `3d7cf815` aligned the stale Settings-page
+At snapshot `18a346e`, after `3d7cf815` aligned the stale Settings-page
 assertions with the rendered `Lote do indexador integrado` label and
 `c9c1b192` refreshed the restore/reload mutation inventory and `32815f3e`
 aligned the group-dashboard member contract, and `01357def` hardened additive
-settings persistence coverage, and `65fe793b` made structured-editor saves
-await PATCH completion directly, the complete
+settings persistence coverage, `65fe793b` made structured-editor saves await
+PATCH completion directly, and `18a346ee` added fail-closed TSA isolation plus
+actual generated-PFX runtime-loader signing coverage, the complete
 `npm run test:checkpoint:recent-landed` command passed. Its server canonical
 contract E2E and its additive settings-persistence E2E each recorded 1 test;
 its web matrix recorded 25 files / 691 tests, including all 34 structured-editor
 tests, 67 contract tests, and all 123 Settings-page tests; the template
 document-editor slice recorded 23 tests; the API search-source mutation guard
 recorded 1 test; the external projector recorded 19 tests; and the performance
-governance suite recorded 42 tests. The dependency, Docker image, Compose, role
+governance suite recorded 52 tests. The dependency, Docker image, Compose, role
 initializer, release trust/status, validator-corpus, and desktop lockfile gates
 also passed.
 Final-head focused checks additionally recorded 2 tenant-scan inventory tests,
@@ -167,7 +175,7 @@ reduced. This is bounded local unit coverage, not browser, desktop, hosted-CI,
 or production proof. The prior `c9c1b19`
 `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no
 aggregate test count is inferred from Cargo's per-target output. That result is
-not relabelled as full-workspace validation of `705e6eb`; the changed contract
+not relabelled as full-workspace validation of `18a346e`; the changed contract
 and settings E2E are covered by the focused evidence above.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
