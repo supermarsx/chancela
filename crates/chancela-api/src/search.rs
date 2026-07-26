@@ -3721,6 +3721,35 @@ mod tests {
             .block_on(future)
     }
 
+    #[cfg(feature = "postgres")]
+    fn promote_after_postgres_leader_drop(store: &chancela_store::Store) {
+        // Dropping the synchronous postgres client closes its socket, but the server can observe
+        // that close (and release its session-scoped advisory lock) shortly afterwards. Poll the
+        // non-blocking election primitive rather than assuming one immediate request sees it.
+        const TIMEOUT: StdDuration = StdDuration::from_secs(5);
+        const RETRY_BACKOFF: StdDuration = StdDuration::from_millis(20);
+
+        let started = Instant::now();
+        let deadline = started + TIMEOUT;
+        let mut attempts = 0_u32;
+        loop {
+            attempts += 1;
+            match store.cluster_try_promote() {
+                Ok(true) => return,
+                Ok(false) if Instant::now() < deadline => std::thread::sleep(RETRY_BACKOFF),
+                Ok(false) => panic!(
+                    "follower did not acquire the released PostgreSQL advisory lock within {TIMEOUT:?} \
+                     after {attempts} non-blocking attempts (elapsed {:?})",
+                    started.elapsed()
+                ),
+                Err(error) => panic!(
+                    "PostgreSQL promotion attempt {attempts} failed instead of waiting for the released \
+                     advisory lock: {error}"
+                ),
+            }
+        }
+    }
+
     #[tokio::test]
     async fn api_wrapper_and_external_projector_use_the_exact_shared_constructor() {
         let state = AppState::default();
@@ -5840,10 +5869,7 @@ mod tests {
             .unwrap();
 
         drop(leader);
-        assert!(
-            follower_store.cluster_try_promote().unwrap(),
-            "follower wins the released advisory lock"
-        );
+        promote_after_postgres_leader_drop(&follower_store);
         block_on_postgres_search_test(follower.cluster_promotion_handoff())
             .expect("promotion handoff");
         follower_store.cluster_enable_writes();
