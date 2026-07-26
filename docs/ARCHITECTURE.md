@@ -38,6 +38,7 @@ DAG is acyclic and the domain/security crates never depend on `chancela-api`.
 | `crates/chancela-archive` | Deterministic internal preservation-package builder (DOC-20, spec 08): ZIP manifest, checksums, provenance, rights/language metadata, signing/evidence sidecars, preservation level, retention/legal-hold metadata, and DGLAB-aligned producer/interchange metadata. It explicitly does not claim official DGLAB interchange or certification. |
 | `crates/chancela-api` | Axum HTTP layer over everything: DTOs, handlers, `AppState`, the router, the RBAC gate, and the degraded gate. |
 | `crates/chancela-server` | The `chancela-server` binary (`main.rs`); binds `127.0.0.1:8080` (`CHANCELA_ADDR`), serves the API + the web bundle from `apps/web/dist`. |
+| `crates/chancela-search-projector` | Store-backed full-search projector and socketless runtime binary. Compose runs one per backend profile; desktop and bare development builds keep embedded projection. |
 | `crates/chancela-connectors` | ARC-20/21 protocol boundary for local, WebDAV, Graph, Drive, SFTP, FTPS, SMB, and backup-only S3 targets; credential references, egress policy, integrity evidence, and redacted receipts. |
 | `crates/chancela-worker` | WFL-40 filesystem-backed queue, immutable target snapshots, audited stage/publish lifecycle, retries/cancellation, crash recovery, and heartbeat. |
 

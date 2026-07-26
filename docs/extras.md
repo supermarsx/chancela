@@ -9,9 +9,10 @@ container-security side; this page points at the surrounding pieces.
 - **SQLite (`single-node`)** — the in-app backup endpoint
   (`POST /v1/backup`, SQLite `VACUUM INTO`) applies. Restore verifies every
   member and that the snapshot ledger verifies before an atomic database swap.
-- **Postgres** — the in-app backup endpoint is **unsupported** (there is no `.db`
-  file). Use PG-native tooling — `pg_dump`/`pg_restore` for logical backups, or
-  WAL archiving + base backups for point-in-time recovery:
+- **Postgres** — the in-app endpoint creates a portable application-level
+  logical bundle, and recovery-drill preflight can verify it without changing
+  live data. Keep PG-native `pg_dump`/`pg_restore` backups and WAL archiving +
+  base backups for production point-in-time recovery:
 
     ```sh
     docker compose --profile postgres \

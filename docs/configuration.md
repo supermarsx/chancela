@@ -22,6 +22,7 @@ are baked into an image.
 | `CHANCELA_CORS_ALLOWED_ORIGINS` | Optional comma-separated exact HTTP(S) origins allowed to call the API from a companion WebView/browser. Blank/unset keeps same-origin only; wildcards and malformed origins fail startup closed. |
 | `CHANCELA_SESSION_MAX_LIFETIME` | Absolute session lifetime in seconds (default seven days), independent of the sliding 24-hour idle expiry. A non-positive value disables the absolute cap. |
 | `CHANCELA_TEMPLATE_HISTORY_LIMIT` | Retained saves per user-authored template (default `25`; values are clamped to `1..100`). Editable as a non-secret server override and applied after restart. |
+| `CHANCELA_SEARCH_RUNTIME` | Search execution topology for the API: `embedded` (default for desktop/dev) or `query-only` (Compose; completed generations come from the isolated projector). |
 
 ### Remote companion and session durability
 
@@ -61,6 +62,86 @@ configuration and credentials remain read-only runtime inputs.
 | `CHANCELA_CONNECTOR_SECRETS_HOST_DIR` | Protected host directory mounted read-only at the connector secrets root. |
 | `CHANCELA_CONNECTOR_SECRET_<NAME>` | Direct runtime secret value. References in target configuration must use this strict namespace. |
 | `CHANCELA_CONNECTOR_SECRET_<NAME>_FILE` | File containing the secret; it must canonicalize beneath `CHANCELA_CONNECTOR_SECRETS_DIR` without symlink components and be at most 64 KiB. |
+
+## Full-search projector
+
+The backend Compose profiles start exactly one socketless
+`chancela-search-projector` and put every API process in `query-only` mode. The
+desktop and bare server default to embedded indexing for compatibility and
+offline operation.
+
+| Variable                                                             | Purpose                                                                                                                                                                                                                                        |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CHANCELA_SEARCH_PROJECTOR_IMAGE`                                    | Image override used by both SQLite and Postgres projector services. Pin production deployments to the same immutable `sha-…` commit as the server.                                                                                             |
+| `CHANCELA_SEARCH_RUNTIME_DIR`                                        | Non-secret heartbeat/runtime directory; the image defaults to `/var/lib/chancela/search-projector`.                                                                                                                                            |
+| `CHANCELA_SEARCH_HEARTBEAT_SECONDS`                                  | Projector heartbeat interval (image and Compose default `15`).                                                                                                                                                                                 |
+| `CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS`                             | Shared projector/API heartbeat freshness window (default `600`). It must be at least twice `CHANCELA_SEARCH_HEARTBEAT_SECONDS`; invalid pairs fail closed instead of producing a flapping healthcheck.                                         |
+| `CHANCELA_SEARCH_INSTANCE_ID`                                        | Optional friendly projector identity prefix (1–128 characters) shown in the heartbeat/lease owner. Omit it to use the container hostname; the runtime adds a PID and opaque suffix for uniqueness.                                             |
+| `CHANCELA_SEARCH_DATABASE_URL` / `CHANCELA_SEARCH_DATABASE_URL_FILE` | PostgreSQL projector connection. Exactly one is required when `CHANCELA_DB_BACKEND=postgres`; there is deliberately no fallback to the API writer URL. Compose uses the file form with the fixed, restricted `chancela_search_projector` role. |
+| `CHANCELA_SEARCH_PROJECTOR_CPUS`                                     | Compose CPU ceiling for the projector (default `1.5`).                                                                                                                                                                                         |
+| `CHANCELA_SEARCH_PROJECTOR_MEMORY`                                   | Compose memory ceiling for the projector (default `1g`).                                                                                                                                                                                       |
+
+Database selection and TLS use the same `CHANCELA_DATA_DIR`,
+`CHANCELA_DB_BACKEND`, and `CHANCELA_PG_TLS_ROOT_CERT` contracts as the API.
+The connection credential is intentionally different: the API uses
+`DATABASE_URL_FILE`, while the projector fails closed unless its dedicated
+`CHANCELA_SEARCH_DATABASE_URL_FILE` exists. A one-shot initializer runs only
+after the API has migrated the schema, creates/reasserts the restricted role,
+and verifies its exact column allowlist plus real denials against raw document
+bytes, ledger/entity writes, authoritative control columns, and provider
+credentials. The projector also remains pinned to
+`CHANCELA_NODE_ROLE=follower` as defense in depth.
+
+The PostgreSQL role can read exactly `settings.id` and `settings.json`; `id` is
+required for singleton predicates and `json` contains the main `settings`
+document plus the authoritative `backup-recovery-drill-receipts`,
+`privacy-dpia-records`, `privacy-breach-playbooks`, and
+`privacy-transfer-controls` documents. It has no `INSERT`, `UPDATE`, or `DELETE`
+privilege on `settings`. When one of those database documents exists, it wins
+over its legacy JSON fallback. A missing backup/privacy singleton may still
+fall back to `backup-recovery-drills.json`, `privacy-dpias.json`,
+`privacy-breach-playbooks.json`, or `privacy-transfer-controls.json` during an
+upgrade; an existing fallback that cannot be read or decoded prevents candidate
+publication instead of silently becoming an empty document.
+
+SQLite keeps `settings.json`, `settings.pending-audit.json`, and the same legacy
+backup/privacy files beside the database under `CHANCELA_DATA_DIR`. The API and
+projector must therefore mount that complete root, not selected files. A
+genuinely absent settings document selects defaults, but an unreadable or
+malformed `settings.json`, or any existing pending-audit journal, makes the
+external projector fail closed. The API remains available for operator repair
+and the last completed search generation remains queryable but stale.
+
+These topology/database variables remain deployment-owned; the bounded indexing
+policy is edited through the dedicated `/v1/search/settings` slice and requires
+`search.manage`, without granting access to unrelated instance settings.
+
+`search.index_threads` is read before the projector constructs its Tokio
+runtime. Saving a new value persists the setting, but it takes effect only
+after the projector service restarts. The effective external minimum is two
+runtime worker threads; the setting does not claim that one corpus build is
+sharded across them. In embedded mode, `search.interval_seconds` is the periodic
+full-reconciliation interval. In external mode it is only the cheap
+control/settings polling cadence: a complete rebuild runs when the source
+revision or explicit command changes, after the process first acquires its
+projector lease, and once per UTC date. `search.queue_capacity` and
+`search.batch_size` bound only the embedded in-process worker; the external
+projector publishes one complete generation through a single atomic fenced CAS
+and does not claim queue/batch sharding.
+
+Query-only freshness is checkpoint-based, not the wall-clock age of an
+otherwise current generation. The API requires the published checkpoint to
+match the authoritative source/command checkpoint, requires a completed
+generation in the current UTC date bucket, and requires a trusted active lease
+owner with a heartbeat inside
+`CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS`. A generation therefore remains fresh
+while its inputs are unchanged, while a dead or fenced projector is still
+reported promptly. Schema-v2 heartbeats are stored below
+`<CHANCELA_SEARCH_RUNTIME_DIR>/search-projector-heartbeats/<lease_id>.json`.
+The API and CLI healthcheck read the durable control row first and select only
+that current lease's file. A rolling standby writes no heartbeat; a stale owner
+can update only its retired lease file, so neither can replace the selected
+active heartbeat or make an otherwise healthy query-only API appear stale.
 
 ### Connector egress allowlist: environment vs. Settings
 
@@ -137,6 +218,7 @@ So in practice:
   Prefer the `_FILE` form over `CHANCELA_CREDENTIAL_KEY`: an env var is visible to
   anything that can read `/proc/<pid>/environ` and tends to end up in shell
   history and process listings. Setting both is a fail-closed configuration error.
+
 - **In-memory mode (no `CHANCELA_DATA_DIR` and no `chancela-data/`)** — provider
   credentials cannot be saved at all, because there is nowhere to persist them or
   to seal a root. No credential key will help; set `CHANCELA_DATA_DIR`. The server
@@ -218,15 +300,17 @@ Used only by the cluster overlay (see [Deployment → Multi-node](deployment.md#
 
 ## Secrets (Postgres profile)
 
-The `postgres` compose profile reads three file-based docker secrets from
+The hardened `postgres` compose profile reads five file-based Docker secrets from
 `docker/secrets/`. The real files are **gitignored** — only the `*.example`
 templates are committed, so never commit a real secret.
 
 | Secret file | Injected as | Purpose |
 |---|---|---|
 | `postgres_password` | `POSTGRES_PASSWORD_FILE` | Postgres superuser password. |
-| `database_url` | `DATABASE_URL_FILE` | Full libpq URL **including the same password**; references the `postgres` service by name. |
-| `credential_key` | `CHANCELA_CREDENTIAL_KEY_FILE` | Provider-credential store root key (required on Postgres — there is no SQLCipher `DerivedFromDbKey` source). |
+| `database_url` | `DATABASE_URL_FILE` | Full libpq URL **including the same password**; references the `postgres` service by name and is mounted into the API only. |
+| `credential_key` | `CHANCELA_CREDENTIAL_KEY_FILE` | Provider-credential store root key (required on Postgres — there is no SQLCipher `DerivedFromDbKey` source). Mounted read-only into the API only; the projector cannot read it. |
+| `search_database_password` | role initializer only | Independent password for the fixed `chancela_search_projector` PostgreSQL role. Never mounted into the projector. |
+| `search_database_url` | `CHANCELA_SEARCH_DATABASE_URL_FILE` | URL containing the independent projector password. Mounted into the role verifier and projector only; it cannot authenticate as the API/schema owner. |
 
 ### Setting up the secret files
 
@@ -236,6 +320,8 @@ Copy each template, then fill it in with a strong value:
 cp docker/secrets/postgres_password.example docker/secrets/postgres_password
 cp docker/secrets/database_url.example      docker/secrets/database_url
 cp docker/secrets/credential_key.example    docker/secrets/credential_key
+cp docker/secrets/search_database_password.example docker/secrets/search_database_password
+cp docker/secrets/search_database_url.example      docker/secrets/search_database_url
 ```
 
 Generate strong values, e.g.:
@@ -243,10 +329,13 @@ Generate strong values, e.g.:
 ```sh
 openssl rand -base64 32 > docker/secrets/postgres_password   # also paste into database_url
 openssl rand -base64 48 > docker/secrets/credential_key
+openssl rand -base64 32 > docker/secrets/search_database_password # also paste into search_database_url
 ```
 
 The password inside `database_url` **must match** `postgres_password`, otherwise
-the app cannot authenticate to Postgres. The template uses
+the API cannot authenticate to Postgres. The independent password inside
+`search_database_url` must likewise match `search_database_password`; using the
+API password/role defeats the projector isolation contract. The templates use
 `sslmode=verify-full`. Before Postgres starts, the isolated
 `postgres-tls-init` service creates or renews a private compose CA and a server
 certificate valid for `postgres`/`localhost`; the CA is mounted read-only into
