@@ -8513,6 +8513,7 @@ export type SearchIndexPhase =
 /** Bounded, whole-instance controls for search indexing and result responses. */
 export interface SearchSettings {
   enabled: boolean;
+  index_threads: number;
   batch_size: number;
   interval_seconds: number;
   queue_capacity: number;
@@ -8527,6 +8528,7 @@ export interface SearchSettings {
 
 /** Live worker/projection health returned by `/v1/search/status` and every result page. */
 export interface SearchStatusResponse {
+  execution_mode: 'embedded' | 'query-only';
   enabled: boolean;
   partial: boolean;
   stale: boolean;
@@ -8557,6 +8559,16 @@ export interface SearchStatusResponse {
   dropped_commands?: number;
   projection_writer?: boolean;
   worker_thread?: string | null;
+  projector_command?: 'reconcile' | 'rebuild' | 'pause';
+  projector_source_revision?: number;
+  projector_published_source_revision?: number;
+  projector_lease_owner?: string;
+  projector_heartbeat_at?: string;
+  projector_lease_expires_at_unix_ms?: number;
+  projector_phase?: string;
+  projector_updated_at?: string;
+  projector_last_error?: string;
+  projector_heartbeat_fresh?: boolean;
 }
 
 /** Friendly client shape; `kinds` is serialized as the server's comma-separated `kind` value. */
@@ -8827,6 +8839,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   search: {
     enabled: true,
+    index_threads: 2,
     batch_size: 256,
     interval_seconds: 30,
     queue_capacity: 64,

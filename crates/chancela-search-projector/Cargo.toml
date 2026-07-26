@@ -1,0 +1,30 @@
+[package]
+name = "chancela-search-projector"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Separate durable full-search projection service for Chancela."
+
+[[bin]]
+name = "chancela-search-projector"
+path = "src/main.rs"
+
+[features]
+default = []
+sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
+postgres = ["chancela-api/postgres", "chancela-store/postgres"]
+
+[dependencies]
+chancela-api.workspace = true
+chancela-search.workspace = true
+chancela-store.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+uuid.workspace = true

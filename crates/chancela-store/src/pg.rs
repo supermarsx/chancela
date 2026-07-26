@@ -73,6 +73,7 @@
 
 use std::sync::atomic::{AtomicBool, AtomicI64};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use chancela_core::{
     Act, ActId, Book, CompanyGroup, Entity, EntityId, GroupTemplateLibrary,
@@ -91,20 +92,72 @@ use rusqlite::types::Value;
 use time::format_description::well_known::Rfc3339;
 
 use crate::{
-    LedgerEventPage, LedgerEventPageQuery, LoadedState, PendingCmdSession, RawEventRow, StoreError,
-    StoredCredentialRecord, StoredDocument, StoredDocumentSearchMetadata, StoredEmailDelivery,
-    StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
-    StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
-    StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
-    StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
-    StoredPaperBookOcrDraft, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
-    StoredSignedDocument, StoredUserTemplateVersion, int_to_u32, parse_date, parse_rfc3339,
-    parse_uuid_newtype,
+    LedgerEventPage, LedgerEventPageQuery, LoadedState, PendingCmdSession, RawEventRow,
+    SearchCorpusSnapshot, StoreError, StoredCredentialRecord, StoredDocument,
+    StoredDocumentSearchMetadata, StoredEmailDelivery, StoredFollowUp, StoredFollowUpStatus,
+    StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument, StoredImportedDocumentMeta,
+    StoredImportedDocumentReviewHistoryEntry, StoredImportedDocumentReviewStatus,
+    StoredPaperBookImport, StoredPaperBookImportMeta, StoredPaperBookOcrConversionDossier,
+    StoredPaperBookOcrConversionExecutionArtifact, StoredPaperBookOcrDraft,
+    StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus, StoredSignedDocument,
+    StoredUserTemplateVersion, int_to_u32, parse_date, parse_rfc3339, parse_uuid_newtype,
 };
 
 /// Fixed key for the process-wide writer advisory lock (§4). An arbitrary, stable 64-bit constant
 /// derived from "chancela-writer"; two instances contend on the same key.
 pub(crate) const WRITER_ADVISORY_LOCK_KEY: i64 = 0x0C_1A_17_CE_1A_17_CE_11u64 as i64;
+const FOLLOWER_SCHEMA_READY_TIMEOUT: Duration = Duration::from_secs(30);
+const FOLLOWER_SCHEMA_READY_POLL: Duration = Duration::from_millis(100);
+const LOCK_SCHEMA_MARKER_TABLE: &str = "LOCK TABLE meta IN ACCESS EXCLUSIVE MODE";
+const INVALIDATE_SCHEMA_VERSION_MARKER: &str = "DELETE FROM meta WHERE key = 'schema_version'";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LeaderSchemaSetupStep {
+    PreflightAndInvalidateMarker,
+    BaseDdl,
+    AdditiveColumns,
+    SeedSingletons,
+    ClusterEpoch,
+    PublishMarker,
+}
+
+const LEADER_SCHEMA_SETUP_ORDER: [LeaderSchemaSetupStep; 6] = [
+    LeaderSchemaSetupStep::PreflightAndInvalidateMarker,
+    LeaderSchemaSetupStep::BaseDdl,
+    LeaderSchemaSetupStep::AdditiveColumns,
+    LeaderSchemaSetupStep::SeedSingletons,
+    LeaderSchemaSetupStep::ClusterEpoch,
+    LeaderSchemaSetupStep::PublishMarker,
+];
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum SchemaMarkerState {
+    Ready,
+    Retry { observed: String },
+    Newer(i64),
+    Invalid(String),
+}
+
+fn classify_schema_marker(raw: Option<&str>) -> SchemaMarkerState {
+    let Some(raw) = raw else {
+        return SchemaMarkerState::Retry {
+            observed: "missing".to_owned(),
+        };
+    };
+    let trimmed = raw.trim();
+    let Ok(version) = trimmed.parse::<i64>() else {
+        return SchemaMarkerState::Invalid(trimmed.chars().take(64).collect());
+    };
+    if version == crate::schema::SCHEMA_VERSION {
+        SchemaMarkerState::Ready
+    } else if version < crate::schema::SCHEMA_VERSION {
+        SchemaMarkerState::Retry {
+            observed: version.to_string(),
+        }
+    } else {
+        SchemaMarkerState::Newer(version)
+    }
+}
 
 /// Additive guard matching SQLite's `configure_and_migrate` column repair for databases opened by
 /// earlier builds before the column was folded into the fresh-table DDL.
@@ -128,11 +181,24 @@ pub(crate) const ADD_DOCUMENTS_LAYOUT_COLUMN: &str =
 pub(crate) const EVENTS_SINCE_SQL: &str = "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
      prev_hash, hash, links FROM events WHERE seq > $1 ORDER BY seq";
 pub(crate) const DOCUMENT_SEARCH_METADATA_SELECT: &str = "SELECT id, act_id, template_id, pdf_digest, profile, created_at \
-     FROM documents ORDER BY created_at ASC, ctid ASC";
+     FROM documents ORDER BY created_at ASC, id ASC";
+pub(crate) const GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT: &str = "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+     channel, reference, evidence_reference, imported_document_id, recipients_json, \
+     operator_note, recorded_at FROM generated_document_dispatch_evidence \
+     ORDER BY recorded_at ASC, document_id ASC, idempotency_key ASC";
+pub(crate) const IMPORTED_DOCUMENTS_ALL_SELECT: &str = "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
+     sha256, size_bytes, imported_at, imported_by, operator_review_status, \
+     operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+     operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
+     FROM imported_documents ORDER BY imported_at DESC, id DESC";
+pub(crate) const PAPER_BOOK_IMPORTS_ALL_SELECT: &str = "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
+     date_to, page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
+     size_bytes, content_type, source_filename, notes, imported_at, imported_by, ocr_status \
+     FROM paper_book_imports ORDER BY imported_at DESC, import_id DESC";
 pub(crate) const PAPER_BOOK_OCR_DRAFTS_ALL_SELECT: &str = "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
      engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
      reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
-     ORDER BY import_id ASC, created_at DESC, ctid DESC";
+     ORDER BY import_id ASC, created_at DESC, draft_id DESC";
 
 pub(crate) fn decode_search_projection_control_row(
     row: &Row,
@@ -168,15 +234,83 @@ fn pg_now_unix_millis(transaction: &mut postgres::Transaction<'_>) -> Result<i64
 /// TLS is accepted, so plaintext and encrypt-only modes fail closed before any socket is opened.
 type PgManager = PostgresConnectionManager<crate::pg_tls::MakeRustlsConnect>;
 
+struct PostgresResources {
+    pool: r2d2::Pool<PgManager>,
+    writer: Mutex<Client>,
+}
+
+/// Own the synchronous driver's runtime-bearing resources and guarantee their final destruction
+/// never happens from inside a Tokio runtime. `postgres::Client::drop` drives its private runtime
+/// with `block_on`, so dropping the last `Store` clone in an async task would otherwise panic.
+struct RuntimeSafePostgresResources {
+    value: Option<PostgresResources>,
+}
+
+impl RuntimeSafePostgresResources {
+    fn new(value: PostgresResources) -> Self {
+        Self { value: Some(value) }
+    }
+}
+
+impl std::ops::Deref for RuntimeSafePostgresResources {
+    type Target = PostgresResources;
+
+    fn deref(&self) -> &Self::Target {
+        self.value
+            .as_ref()
+            .expect("Postgres resources are present until final drop")
+    }
+}
+
+impl Drop for RuntimeSafePostgresResources {
+    fn drop(&mut self) {
+        let Some(value) = self.value.take() else {
+            return;
+        };
+        drop_outside_tokio_runtime(value, "chancela-postgres-drop");
+    }
+}
+
+fn drop_outside_tokio_runtime<T: Send + 'static>(value: T, thread_name: &'static str) {
+    if tokio::runtime::Handle::try_current().is_err() {
+        drop(value);
+        return;
+    }
+
+    // Keep ownership outside the spawn closure so an OS thread creation failure cannot drop the
+    // runtime-bearing clients back on the Tokio worker. In that exceptional condition, leaking at
+    // process teardown is safer than a double-panic abort.
+    let slot = Arc::new(Mutex::new(Some(value)));
+    let worker_slot = slot.clone();
+    match std::thread::Builder::new()
+        .name(thread_name.to_owned())
+        .spawn(move || {
+            let value = worker_slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            drop(value);
+        }) {
+        Ok(_) => {}
+        Err(error) => {
+            let value = slot
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .take();
+            std::mem::forget(value);
+            eprintln!(
+                "warning: failed to start safe PostgreSQL cleanup thread; resources were \
+                 deliberately leaked to avoid nested-runtime teardown: {error}"
+            );
+        }
+    }
+}
+
 /// The PostgreSQL backend: a read pool plus a single advisory-locked writer connection.
 #[derive(Clone)]
 pub(crate) struct PostgresBackend {
-    /// Pooled read connections (boot `load`; future paged/blob reads).
-    pool: r2d2::Pool<PgManager>,
-    /// The single writer connection (holds the advisory lock; serves `persist`). Mutex-guarded so
-    /// the synchronous `persist` path takes it for the duration of one transaction — the direct
-    /// analogue of the SQLite backend's one mutex-guarded connection.
-    writer: Arc<Mutex<Client>>,
+    /// Pooled reads plus the single advisory-locked writer, with final drop isolated from Tokio.
+    resources: Arc<RuntimeSafePostgresResources>,
     /// wp16 P0 — leader-election state. `true` iff **this session** currently holds the writer
     /// advisory lock and is the cluster writer-leader. Flipped to `false` (fail-closed) the instant a
     /// liveness check finds the lock lost / the epoch stolen / the writer session broken. The
@@ -207,7 +341,7 @@ impl std::fmt::Debug for PostgresBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // The underlying `postgres::Client` is not `Debug`; report the pool state only.
         f.debug_struct("PostgresBackend")
-            .field("pool_state", &self.pool.state().connections)
+            .field("pool_state", &self.resources.pool.state().connections)
             .field("writer", &"<advisory-locked postgres client>")
             .finish()
     }
@@ -246,24 +380,49 @@ impl PostgresBackend {
         let is_leader = crate::pg_cluster::acquire_writer_lock(&mut writer, mode)?;
         let mut epoch: i64 = -1;
         if is_leader {
-            // Leader-only: run the idempotent DDL (derived from the SQLite schema so both dialects
-            // stay in lock-step), stamp meta, then bump the monotonic `leader_epoch` while holding
-            // the lock (fences any deposed leader, §4.3). Followers skip DDL — the leader owns schema.
-            for stmt in crate::schema::ALL {
-                writer.batch_execute(&crate::dialect::sqlite_ddl_to_pg(stmt))?;
+            for step in LEADER_SCHEMA_SETUP_ORDER {
+                match step {
+                    LeaderSchemaSetupStep::PreflightAndInvalidateMarker => {
+                        Self::preflight_and_invalidate_schema_version(&mut writer)?;
+                    }
+                    LeaderSchemaSetupStep::BaseDdl => {
+                        // Leader-only: run the idempotent DDL derived from SQLite so both dialects
+                        // stay in lock-step. Followers skip DDL and wait for final publication.
+                        for stmt in crate::schema::ALL {
+                            writer.batch_execute(&crate::dialect::sqlite_ddl_to_pg(stmt))?;
+                        }
+                    }
+                    LeaderSchemaSetupStep::AdditiveColumns => {
+                        Self::ensure_additive_columns(&mut writer)?;
+                    }
+                    LeaderSchemaSetupStep::SeedSingletons => {
+                        Self::seed_meta_and_search_control(&mut writer)?;
+                    }
+                    LeaderSchemaSetupStep::ClusterEpoch => {
+                        // Bump the monotonic epoch while holding the advisory lock, fencing any
+                        // deposed leader before the schema is advertised as ready.
+                        epoch = crate::pg_cluster::ensure_cluster_table_and_bump_epoch(
+                            &mut writer,
+                            node_id.as_ref(),
+                            advertised_addr.as_ref(),
+                        )?;
+                    }
+                    LeaderSchemaSetupStep::PublishMarker => {
+                        // Absolute final publication marker: a follower that observes the current
+                        // version is guaranteed to see every setup step above.
+                        Self::publish_schema_version(&mut writer)?;
+                    }
+                }
             }
-            Self::ensure_additive_columns(&mut writer)?;
-            Self::stamp_meta(&mut writer)?;
-            epoch = crate::pg_cluster::ensure_cluster_table_and_bump_epoch(
-                &mut writer,
-                node_id.as_ref(),
-                advertised_addr.as_ref(),
-            )?;
+        } else {
+            Self::wait_for_schema_readiness(&pool)?;
         }
 
         Ok(Self {
-            pool,
-            writer: Arc::new(Mutex::new(writer)),
+            resources: Arc::new(RuntimeSafePostgresResources::new(PostgresResources {
+                pool,
+                writer: Mutex::new(writer),
+            })),
             leader: Arc::new(AtomicBool::new(is_leader)),
             writes_enabled: Arc::new(AtomicBool::new(is_leader)),
             node_id,
@@ -283,34 +442,43 @@ impl PostgresBackend {
         Ok(())
     }
 
-    /// Gate the `schema_version` and mint the stable `instance_id`, mirroring the SQLite
-    /// [`crate::configure_and_migrate`] boot stamp so `Store::instance_id`, bundle provenance, and
-    /// the import feed all resolve on Postgres. A database written by a *newer* build is rejected
-    /// (we don't know its layout); an older stamp is advanced forward (the additive DDL already ran).
-    fn stamp_meta(writer: &mut Client) -> Result<(), StoreError> {
-        let found: Option<i64> = writer
-            .query_opt("SELECT value FROM meta WHERE key = 'schema_version'", &[])?
-            .and_then(|row| row.get::<_, String>(0).parse::<i64>().ok());
-        match found {
-            Some(v) if v > crate::schema::SCHEMA_VERSION => {
-                return Err(StoreError::UnsupportedSchemaVersion {
-                    found: v,
-                    supported: crate::schema::SCHEMA_VERSION,
-                });
+    /// Fail closed on malformed/newer versions, then remove the readiness marker before any
+    /// idempotent repair begins. The table lock makes validation + deletion atomic to followers:
+    /// they either read the previously complete schema before this transaction starts, or block
+    /// until the marker is absent and retry while setup is in progress.
+    fn preflight_and_invalidate_schema_version(writer: &mut Client) -> Result<(), StoreError> {
+        let mut transaction = writer.transaction()?;
+        if let Err(error) = transaction.batch_execute(LOCK_SCHEMA_MARKER_TABLE) {
+            if error.code() == Some(&postgres::error::SqlState::UNDEFINED_TABLE) {
+                transaction.rollback()?;
+                return Ok(());
             }
-            Some(_) => {
-                writer.execute(
-                    "UPDATE meta SET value = $1 WHERE key = 'schema_version'",
-                    &[&crate::schema::SCHEMA_VERSION.to_string()],
-                )?;
-            }
-            None => {
-                writer.execute(
-                    "INSERT INTO meta (key, value) VALUES ('schema_version', $1)",
-                    &[&crate::schema::SCHEMA_VERSION.to_string()],
-                )?;
+            return Err(error.into());
+        }
+        if let Some(row) =
+            transaction.query_opt("SELECT value FROM meta WHERE key = 'schema_version'", &[])?
+        {
+            match classify_schema_marker(Some(&row.get::<_, String>(0))) {
+                SchemaMarkerState::Ready | SchemaMarkerState::Retry { .. } => {}
+                SchemaMarkerState::Newer(found) => {
+                    return Err(StoreError::UnsupportedSchemaVersion {
+                        found,
+                        supported: crate::schema::SCHEMA_VERSION,
+                    });
+                }
+                SchemaMarkerState::Invalid(observed) => {
+                    return Err(StoreError::InvalidPostgresSchemaVersion { observed });
+                }
             }
         }
+        transaction.execute(INVALIDATE_SCHEMA_VERSION_MARKER, &[])?;
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Mint non-version singleton metadata. The version marker is published only after cluster
+    /// setup has also completed.
+    fn seed_meta_and_search_control(writer: &mut Client) -> Result<(), StoreError> {
         // Minted once, then immutable: `ON CONFLICT DO NOTHING` preserves a restored/source id.
         writer.execute(
             "INSERT INTO meta (key, value) VALUES ('instance_id', $1) ON CONFLICT (key) DO NOTHING",
@@ -326,9 +494,63 @@ impl PostgresBackend {
         Ok(())
     }
 
-    /// Read the stable per-install `instance_id` from `meta` (present after [`stamp_meta`]).
+    fn publish_schema_version(writer: &mut Client) -> Result<(), StoreError> {
+        writer.execute(
+            "INSERT INTO meta (key, value) VALUES ('schema_version', $1) \
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            &[&crate::schema::SCHEMA_VERSION.to_string()],
+        )?;
+        Ok(())
+    }
+
+    fn wait_for_schema_readiness(pool: &r2d2::Pool<PgManager>) -> Result<(), StoreError> {
+        let started = Instant::now();
+        loop {
+            let mut client = pool.get()?;
+            let observed = match client
+                .query_opt("SELECT value FROM meta WHERE key = 'schema_version'", &[])
+            {
+                Ok(row) => {
+                    let raw = row.as_ref().map(|row| row.get::<_, String>(0));
+                    match classify_schema_marker(raw.as_deref()) {
+                        SchemaMarkerState::Ready => return Ok(()),
+                        SchemaMarkerState::Retry { observed } => observed,
+                        SchemaMarkerState::Newer(found) => {
+                            return Err(StoreError::UnsupportedSchemaVersion {
+                                found,
+                                supported: crate::schema::SCHEMA_VERSION,
+                            });
+                        }
+                        SchemaMarkerState::Invalid(current) => {
+                            return Err(StoreError::InvalidPostgresSchemaVersion {
+                                observed: current,
+                            });
+                        }
+                    }
+                }
+                Err(error) if error.code() == Some(&postgres::error::SqlState::UNDEFINED_TABLE) => {
+                    "meta table missing".to_owned()
+                }
+                Err(error) => return Err(error.into()),
+            };
+            let elapsed = started.elapsed();
+            if elapsed >= FOLLOWER_SCHEMA_READY_TIMEOUT {
+                return Err(StoreError::PostgresSchemaNotReady {
+                    waited_ms: u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX),
+                    expected: crate::schema::SCHEMA_VERSION,
+                    observed,
+                });
+            }
+            std::thread::sleep(
+                FOLLOWER_SCHEMA_READY_POLL
+                    .min(FOLLOWER_SCHEMA_READY_TIMEOUT.saturating_sub(elapsed)),
+            );
+        }
+    }
+
+    /// Read the stable per-install `instance_id` from `meta` (present after schema publication).
     pub(crate) fn instance_id(&self) -> Result<String, StoreError> {
-        let mut client = self.pool.get()?;
+        let mut client = self.resources.pool.get()?;
         client
             .query_opt("SELECT value FROM meta WHERE key = 'instance_id'", &[])?
             .map(|row| row.get::<_, String>(0))
@@ -342,7 +564,10 @@ impl PostgresBackend {
 
     /// Borrow the writer connection for the single-writer `persist` transaction (§4).
     pub(crate) fn writer(&self) -> std::sync::MutexGuard<'_, Client> {
-        self.writer.lock().unwrap_or_else(|e| e.into_inner())
+        self.resources
+            .writer
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// **wp28 election-liveness fix — reconnect the writer session if its connection has broken.**
@@ -388,8 +613,8 @@ impl PostgresBackend {
     /// [`LoadedState`], byte-for-byte the same reconstruction as the SQLite [`crate::Store::load`]
     /// path (the `events` rows feed `Ledger::try_from_events`, which re-verifies the chain).
     pub(crate) fn load(&self) -> Result<LoadedState, StoreError> {
-        let mut client = self.pool.get()?;
-        let aggregates = load_aggregate_maps(&mut client)?;
+        let mut client = self.resources.pool.get()?;
+        let aggregates = load_aggregate_maps(&mut client, true)?;
 
         let mut events = Vec::new();
         for row in client.query(
@@ -417,13 +642,40 @@ impl PostgresBackend {
         })
     }
 
+    pub(crate) fn load_search_corpus_snapshot(&self) -> Result<SearchCorpusSnapshot, StoreError> {
+        let mut client = self.resources.pool.get()?;
+        let aggregates = load_aggregate_maps(&mut client, false)?;
+        let mut events = Vec::new();
+        for row in client.query(
+            "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
+             prev_hash, hash, links FROM events ORDER BY seq",
+            &[],
+        )? {
+            events.push(raw_event_row(&row).into_event()?);
+        }
+        let (ledger, chain_status) = Ledger::try_from_events(events);
+        let integrity = ledger.integrity_report();
+        Ok(SearchCorpusSnapshot {
+            group_template_libraries: aggregates.group_template_libraries,
+            group_template_library_revisions: aggregates.group_template_library_revisions,
+            entities: aggregates.entities,
+            books: aggregates.books,
+            acts: aggregates.acts,
+            registry_extracts: aggregates.registry_extracts,
+            follow_ups: aggregates.follow_ups,
+            ledger,
+            chain_status,
+            integrity,
+        })
+    }
+
     /// wp16 P1 — re-read **only** the aggregate read-model tables (no `events` scan), the store-side
     /// half of a follower's incremental delta apply (plan §2.3). The follower applies the ledger tail
     /// incrementally (seam-verified) and refreshes the small, bounded aggregate maps through this —
     /// the plan's sanctioned "simple v1" aggregate refresh, `O(aggregates)` not `O(all-events)`.
     pub(crate) fn load_aggregates(&self) -> Result<crate::AggregateSnapshot, StoreError> {
-        let mut client = self.pool.get()?;
-        load_aggregate_maps(&mut client)
+        let mut client = self.resources.pool.get()?;
+        load_aggregate_maps(&mut client, true)
     }
 
     /// wp16 P1 — the ordered ledger tail `seq > after_seq` (plan §2.2/§2.3). The follower change-feed
@@ -433,7 +685,7 @@ impl PostgresBackend {
         &self,
         after_seq: i64,
     ) -> Result<Vec<chancela_ledger::Event>, StoreError> {
-        let mut client = self.pool.get()?;
+        let mut client = self.resources.pool.get()?;
         let mut events = Vec::new();
         for row in client.query(EVENTS_SINCE_SQL, &[&after_seq])? {
             events.push(raw_event_row(&row).into_event()?);
@@ -460,14 +712,14 @@ impl PostgresBackend {
 
     /// Borrow a pooled read connection for the runtime `Store` read projections.
     fn read(&self) -> Result<r2d2::PooledConnection<PgManager>, StoreError> {
-        Ok(self.pool.get()?)
+        Ok(self.resources.pool.get()?)
     }
 
     /// Borrow a pooled connection for the logical backup/export path (wp15). Distinct from the
     /// runtime [`read`] only in name/visibility so [`crate::pg_backup`] can drive its
     /// `REPEATABLE READ`, `READ ONLY` export snapshot without reaching the private pool field.
     pub(crate) fn checkout(&self) -> Result<r2d2::PooledConnection<PgManager>, StoreError> {
-        Ok(self.pool.get()?)
+        Ok(self.resources.pool.get()?)
     }
 
     pub(crate) fn search_projection_control(&self) -> Result<SearchProjectionControl, StoreError> {
@@ -477,6 +729,33 @@ impl PostgresBackend {
             &[&crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
         )?;
         decode_search_projection_control_row(&row)
+    }
+
+    pub(crate) fn search_index_state_and_projection_control(
+        &self,
+    ) -> Result<
+        (
+            Option<SearchIndexState>,
+            Result<SearchProjectionControl, StoreError>,
+        ),
+        StoreError,
+    > {
+        let mut client = self.read()?;
+        let state = client
+            .query_opt(
+                "SELECT json FROM search_index_state WHERE id = $1",
+                &[&crate::SEARCH_INDEX_STATE_SINGLETON_ID],
+            )?
+            .map(|row| serde_json::from_str::<SearchIndexState>(&row.get::<_, String>(0)))
+            .transpose()?;
+        let control = client
+            .query_one(
+                crate::SEARCH_PROJECTION_CONTROL_SELECT_PG,
+                &[&crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+            )
+            .map_err(StoreError::from)
+            .and_then(|row| decode_search_projection_control_row(&row));
+        Ok((state, control))
     }
 
     pub(crate) fn try_acquire_search_projector_lease(
@@ -923,7 +1202,7 @@ impl PostgresBackend {
              channel, reference, evidence_reference, imported_document_id, recipients_json, \
              operator_note, recorded_at \
              FROM generated_document_dispatch_evidence \
-             WHERE document_id = $1 ORDER BY recorded_at ASC, ctid ASC",
+             WHERE document_id = $1 ORDER BY recorded_at ASC, idempotency_key ASC",
             &[&document_id],
         )?;
         rows.iter()
@@ -935,14 +1214,7 @@ impl PostgresBackend {
         &self,
     ) -> Result<Vec<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
         let mut client = self.read()?;
-        let rows = client.query(
-            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
-             channel, reference, evidence_reference, imported_document_id, recipients_json, \
-             operator_note, recorded_at \
-             FROM generated_document_dispatch_evidence \
-             ORDER BY recorded_at ASC, ctid ASC",
-            &[],
-        )?;
+        let rows = client.query(GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT, &[])?;
         rows.iter()
             .map(row_to_generated_dispatch_evidence)
             .collect()
@@ -979,19 +1251,11 @@ impl PostgresBackend {
                  operator_reviewed_at, operator_reviewed_by, operator_review_note, \
                  operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
                  FROM imported_documents \
-                 WHERE act_id = $1 ORDER BY imported_at DESC, ctid DESC",
+                 WHERE act_id = $1 ORDER BY imported_at DESC, id DESC",
                 &[&act_id.to_string()],
             )?
         } else {
-            client.query(
-                "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
-                 sha256, size_bytes, imported_at, imported_by, operator_review_status, \
-                 operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                 operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
-                 FROM imported_documents \
-                 ORDER BY imported_at DESC, ctid DESC",
-                &[],
-            )?
+            client.query(IMPORTED_DOCUMENTS_ALL_SELECT, &[])?
         };
         rows.iter().map(row_to_imported_document_meta).collect()
     }
@@ -1070,18 +1334,11 @@ impl PostgresBackend {
                  date_to, page_count, page_from, page_to, original_number_from, \
                  original_number_to, sha256, size_bytes, content_type, source_filename, notes, \
                  imported_at, imported_by, ocr_status FROM paper_book_imports \
-                 WHERE book_ref = $1 ORDER BY imported_at DESC, ctid DESC",
+                 WHERE book_ref = $1 ORDER BY imported_at DESC, import_id DESC",
                 &[&book_ref],
             )?
         } else {
-            client.query(
-                "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
-                 date_to, page_count, page_from, page_to, original_number_from, \
-                 original_number_to, sha256, size_bytes, content_type, source_filename, notes, \
-                 imported_at, imported_by, ocr_status FROM paper_book_imports \
-                 ORDER BY imported_at DESC, ctid DESC",
-                &[],
-            )?
+            client.query(PAPER_BOOK_IMPORTS_ALL_SELECT, &[])?
         };
         rows.iter().map(row_to_paper_book_import_meta).collect()
     }
@@ -1122,7 +1379,7 @@ impl PostgresBackend {
             "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
              engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
              reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
-             WHERE import_id = $1 ORDER BY created_at DESC, ctid DESC",
+             WHERE import_id = $1 ORDER BY created_at DESC, draft_id DESC",
             &[&import_id],
         )?;
         rows.iter().map(row_to_paper_book_ocr_draft).collect()
@@ -1533,14 +1790,19 @@ fn value_to_pg_param(value: &Value) -> Box<dyn ToSql + Sync> {
 /// `follow_ups` on `client` into an [`crate::AggregateSnapshot`], byte-for-byte the same
 /// reconstruction the boot [`PostgresBackend::load`] does. Shared by `load` (which then also scans
 /// `events`) and by [`PostgresBackend::load_aggregates`] (the events-free follower refresh, §2.3).
-fn load_aggregate_maps(client: &mut Client) -> Result<crate::AggregateSnapshot, StoreError> {
+fn load_aggregate_maps(
+    client: &mut Client,
+    include_company_groups: bool,
+) -> Result<crate::AggregateSnapshot, StoreError> {
     use std::collections::HashMap;
 
     let mut company_groups = HashMap::new();
-    for row in client.query("SELECT json FROM company_groups", &[])? {
-        let json: String = row.get(0);
-        let group: CompanyGroup = serde_json::from_str(&json)?;
-        company_groups.insert(group.id, group);
+    if include_company_groups {
+        for row in client.query("SELECT json FROM company_groups", &[])? {
+            let json: String = row.get(0);
+            let group: CompanyGroup = serde_json::from_str(&json)?;
+            company_groups.insert(group.id, group);
+        }
     }
 
     let mut group_template_libraries = HashMap::new();
@@ -2023,6 +2285,113 @@ pub(crate) fn row_to_pending_session(row: &Row) -> Result<PendingCmdSession, Sto
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn projector_bulk_reads_need_only_grantable_logical_columns() {
+        for query in [
+            DOCUMENT_SEARCH_METADATA_SELECT,
+            GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT,
+            IMPORTED_DOCUMENTS_ALL_SELECT,
+            PAPER_BOOK_IMPORTS_ALL_SELECT,
+            PAPER_BOOK_OCR_DRAFTS_ALL_SELECT,
+        ] {
+            assert!(
+                !query.contains("ctid") && !query.contains("rowid"),
+                "column-granted projector query must not reference physical row identity: {query}"
+            );
+        }
+        assert!(DOCUMENT_SEARCH_METADATA_SELECT.ends_with("created_at ASC, id ASC"));
+        assert!(
+            GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT
+                .ends_with("recorded_at ASC, document_id ASC, idempotency_key ASC")
+        );
+        assert!(IMPORTED_DOCUMENTS_ALL_SELECT.ends_with("imported_at DESC, id DESC"));
+        assert!(PAPER_BOOK_IMPORTS_ALL_SELECT.ends_with("imported_at DESC, import_id DESC"));
+        assert!(
+            PAPER_BOOK_OCR_DRAFTS_ALL_SELECT
+                .ends_with("import_id ASC, created_at DESC, draft_id DESC")
+        );
+    }
+
+    #[test]
+    fn runtime_safe_resource_drop_runs_outside_tokio_context() {
+        struct DropProbe(std::sync::mpsc::Sender<bool>);
+
+        impl Drop for DropProbe {
+            fn drop(&mut self) {
+                let _ = self.0.send(tokio::runtime::Handle::try_current().is_err());
+            }
+        }
+
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("test runtime");
+        runtime.block_on(async {
+            drop_outside_tokio_runtime(DropProbe(sender), "chancela-pg-drop-test");
+        });
+        assert!(
+            receiver
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .expect("drop probe completed"),
+            "runtime-bearing resource was dropped inside Tokio context"
+        );
+    }
+
+    #[test]
+    fn follower_schema_marker_classification_is_fail_closed() {
+        assert_eq!(
+            classify_schema_marker(None),
+            SchemaMarkerState::Retry {
+                observed: "missing".to_owned()
+            }
+        );
+        assert!(matches!(
+            classify_schema_marker(Some(&(crate::schema::SCHEMA_VERSION - 1).to_string())),
+            SchemaMarkerState::Retry { .. }
+        ));
+        assert_eq!(
+            classify_schema_marker(Some(&crate::schema::SCHEMA_VERSION.to_string())),
+            SchemaMarkerState::Ready
+        );
+        assert_eq!(
+            classify_schema_marker(Some(&(crate::schema::SCHEMA_VERSION + 1).to_string())),
+            SchemaMarkerState::Newer(crate::schema::SCHEMA_VERSION + 1)
+        );
+        assert!(matches!(
+            classify_schema_marker(Some("not-a-version")),
+            SchemaMarkerState::Invalid(_)
+        ));
+    }
+
+    #[test]
+    fn leader_invalidates_schema_marker_before_setup_and_publishes_it_last() {
+        let invalidation = LEADER_SCHEMA_SETUP_ORDER
+            .iter()
+            .position(|step| *step == LeaderSchemaSetupStep::PreflightAndInvalidateMarker)
+            .expect("schema plan invalidates the marker");
+        let base_ddl = LEADER_SCHEMA_SETUP_ORDER
+            .iter()
+            .position(|step| *step == LeaderSchemaSetupStep::BaseDdl)
+            .expect("schema plan includes base DDL");
+        let additive_ddl = LEADER_SCHEMA_SETUP_ORDER
+            .iter()
+            .position(|step| *step == LeaderSchemaSetupStep::AdditiveColumns)
+            .expect("schema plan includes additive DDL");
+        let publication = LEADER_SCHEMA_SETUP_ORDER
+            .iter()
+            .position(|step| *step == LeaderSchemaSetupStep::PublishMarker)
+            .expect("schema plan republishes the marker");
+
+        assert!(invalidation < base_ddl);
+        assert!(invalidation < additive_ddl);
+        assert_eq!(publication, LEADER_SCHEMA_SETUP_ORDER.len() - 1);
+        assert!(LOCK_SCHEMA_MARKER_TABLE.contains("ACCESS EXCLUSIVE"));
+        assert_eq!(
+            INVALIDATE_SCHEMA_VERSION_MARKER,
+            "DELETE FROM meta WHERE key = 'schema_version'"
+        );
+    }
 
     #[test]
     fn imported_documents_guardrail_ack_column_is_in_fresh_and_additive_ddl() {

@@ -53,6 +53,7 @@ chancela-store = { path = "crates/chancela-store" }
 # only; durable SQLite/Postgres persistence stays in chancela-store and background orchestration
 # stays in chancela-api, preserving the workspace DAG.
 chancela-search = { path = "crates/chancela-search" }
+chancela-search-projector = { path = "crates/chancela-search-projector" }
 # Template catalog engine + document/PDF-A generation (t48, Wave C). `chancela-templates` renders
 # records → DocumentModel via minijinja; `chancela-doc` writes DocumentModel → PDF/A-2u over lopdf.
 # The shared DocumentModel/LifecycleStage seam lives in chancela-core so both are truly parallel.

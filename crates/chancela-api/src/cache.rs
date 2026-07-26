@@ -215,6 +215,20 @@ impl VerifyMemo {
         verdict
     }
 
+    /// Seed a verdict already computed while hydrating a verified durable ledger. The search
+    /// projector uses this to avoid immediately re-verifying the complete chain while deriving
+    /// Action Center rows from the same immutable snapshot.
+    pub(crate) fn prime(
+        &self,
+        ledger: &Ledger,
+        verdict: &Result<u64, chancela_ledger::LedgerError>,
+    ) {
+        self.inner.insert(
+            (ledger.head(), ledger.len()),
+            verdict.as_ref().copied().map_err(ToString::to_string),
+        );
+    }
+
     /// Test seam: overwrite the memoized verdict for the ledger's current head with a sentinel, so
     /// a subsequent `verdict()` that returns the sentinel proves the cache was consulted (rather
     /// than recomputed).

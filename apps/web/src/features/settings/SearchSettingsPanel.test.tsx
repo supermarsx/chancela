@@ -7,6 +7,7 @@ import { SearchSettingsPanel } from './SearchSettingsPanel';
 
 const SEARCH_SETTINGS: SearchSettings = {
   enabled: true,
+  index_threads: 2,
   batch_size: 256,
   interval_seconds: 30,
   queue_capacity: 64,
@@ -20,6 +21,7 @@ const SEARCH_SETTINGS: SearchSettings = {
 };
 
 const STATUS: SearchStatusResponse = {
+  execution_mode: 'embedded',
   enabled: true,
   partial: false,
   stale: false,
@@ -109,6 +111,9 @@ describe('SearchSettingsPanel', () => {
     const table = await screen.findByRole('table', { name: 'Estado do índice' });
     expect(within(table).getByRole('row', { name: /Fase Disponível/ })).toBeTruthy();
     expect(
+      within(table).getByRole('row', { name: /Modo de execução Integrado na API/ }),
+    ).toBeTruthy();
+    expect(
       within(table).getByRole('row', { name: /Documentos 12.*000 documentos.*18 limitados/ }),
     ).toBeTruthy();
     expect(within(table).getByRole('row', { name: /Geração 7/ })).toBeTruthy();
@@ -122,6 +127,43 @@ describe('SearchSettingsPanel', () => {
     expect(screen.getByText('projection reader stopped at generation 6')).toBeTruthy();
   });
 
+  it('shows external projector command, revision, lease and heartbeat diagnostics', async () => {
+    vi.stubGlobal(
+      'fetch',
+      searchFetch({
+        ...STATUS,
+        execution_mode: 'query-only',
+        projector_command: 'reconcile',
+        projector_source_revision: 42,
+        projector_published_source_revision: 41,
+        projector_lease_owner: 'search-eu-west:4321',
+        projector_heartbeat_at: '2026-07-26T08:04:30Z',
+        projector_lease_expires_at_unix_ms: Date.parse('2026-07-26T08:05:00Z'),
+        projector_phase: 'building',
+        projector_updated_at: '2026-07-26T08:04:30Z',
+        projector_heartbeat_fresh: true,
+      }).fetch,
+    );
+    renderWithProviders(<SearchSettingsPanel />);
+
+    const table = await screen.findByRole('table', { name: 'Estado do índice' });
+    expect(
+      within(table).getByRole('row', {
+        name: /Modo de execução API apenas de consulta \+ projetor externo/,
+      }),
+    ).toBeTruthy();
+    expect(within(table).getByRole('row', { name: /Comando durável Reconciliar/ })).toBeTruthy();
+    expect(
+      within(table).getByRole('row', { name: /Revisão publicada \/ fonte 41 \/ 42/ }),
+    ).toBeTruthy();
+    expect(
+      within(table).getByRole('row', { name: /Instância do projetor search-eu-west:4321/ }),
+    ).toBeTruthy();
+    expect(within(table).getByRole('row', { name: /Heartbeat do projetor/ })).toBeTruthy();
+    expect(within(table).getByRole('row', { name: /Expiração da concessão/ })).toBeTruthy();
+    expect(within(table).getByRole('row', { name: /Estado do projetor A construir/ })).toBeTruthy();
+  });
+
   it('renders every SearchSettings value with the server bounds and clamps edits', async () => {
     const stub = searchFetch();
     vi.stubGlobal('fetch', stub.fetch);
@@ -132,9 +174,10 @@ describe('SearchSettingsPanel', () => {
       (screen.getByRole('switch', { name: 'Pesquisa ativa' }) as HTMLInputElement).checked,
     ).toBe(true);
     const fields = [
-      ['Documentos por lote', 256, 16, 5_000],
+      ['Threads do runtime do projetor', 2, 2, 16],
+      ['Lote do indexador integrado', 256, 16, 5_000],
       ['Intervalo de reconciliação', 30, 5, 86_400],
-      ['Capacidade da fila', 64, 1, 1_024],
+      ['Fila do indexador integrado', 64, 1, 1_024],
       ['Resultados por página', 100, 1, 500],
       ['Tamanho dos excertos', 240, 32, 2_000],
       ['Valores por filtro', 50, 1, 200],
@@ -158,12 +201,12 @@ describe('SearchSettingsPanel', () => {
     expect((screen.getByLabelText('Resultados por página') as HTMLInputElement).valueAsNumber).toBe(
       500,
     );
-    fireEvent.change(screen.getByLabelText('Documentos por lote'), {
+    fireEvent.change(screen.getByLabelText('Lote do indexador integrado'), {
       target: { value: '1' },
     });
-    expect((screen.getByLabelText('Documentos por lote') as HTMLInputElement).valueAsNumber).toBe(
-      16,
-    );
+    expect(
+      (screen.getByLabelText('Lote do indexador integrado') as HTMLInputElement).valueAsNumber,
+    ).toBe(16);
     await waitFor(() =>
       expect(
         stub.calls.some(
@@ -187,7 +230,9 @@ describe('SearchSettingsPanel', () => {
       .getByRole('switch', { name: 'Pesquisa ativa' })
       .closest('fieldset') as HTMLFieldSetElement;
     expect(settingsFieldset.disabled).toBe(false);
-    expect(settingsFieldset.contains(screen.getByLabelText('Documentos por lote'))).toBe(true);
+    expect(settingsFieldset.contains(screen.getByLabelText('Lote do indexador integrado'))).toBe(
+      true,
+    );
     const pause = screen.getByRole('button', {
       name: 'Pausar indexação',
     }) as HTMLButtonElement;

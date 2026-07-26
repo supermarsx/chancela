@@ -20,6 +20,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 const STATUS: SearchStatusResponse = {
+  execution_mode: 'embedded',
   enabled: true,
   partial: false,
   stale: false,

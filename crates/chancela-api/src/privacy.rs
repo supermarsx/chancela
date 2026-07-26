@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path as FsPath, PathBuf};
+use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path, Query, State};
@@ -16,6 +17,7 @@ use chancela_authz::{
     last_owner_guard,
 };
 use chancela_core::{Book, BookState, LegalHold};
+use chancela_store::{StoreError, Tx};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
@@ -2778,6 +2780,98 @@ pub(crate) fn load_transfer_controls(
     }
 }
 
+/// Strict projector-only DPIA sidecar loader. Missing means an empty register; any existing file
+/// that cannot be read or decoded invalidates the whole projection candidate.
+pub(crate) fn load_dpia_records_for_search_projector(
+    path: &FsPath,
+) -> Result<HashMap<DpiaRecordId, DpiaRecord>, chancela_store::StoreError> {
+    let Some(bytes) = load_privacy_projector_sidecar(path)? else {
+        return Ok(HashMap::new());
+    };
+    decode_dpia_records_for_search_projector(&bytes, &path.display().to_string())
+}
+
+/// Strict projector-only breach-playbook sidecar loader.
+pub(crate) fn load_breach_playbooks_for_search_projector(
+    path: &FsPath,
+) -> Result<HashMap<BreachPlaybookId, BreachPlaybookRecord>, chancela_store::StoreError> {
+    let Some(bytes) = load_privacy_projector_sidecar(path)? else {
+        return Ok(HashMap::new());
+    };
+    decode_breach_playbooks_for_search_projector(&bytes, &path.display().to_string())
+}
+
+/// Strict projector-only transfer-control sidecar loader.
+pub(crate) fn load_transfer_controls_for_search_projector(
+    path: &FsPath,
+) -> Result<HashMap<TransferControlId, TransferControlRecord>, chancela_store::StoreError> {
+    let Some(bytes) = load_privacy_projector_sidecar(path)? else {
+        return Ok(HashMap::new());
+    };
+    decode_transfer_controls_for_search_projector(&bytes, &path.display().to_string())
+}
+
+/// Strict byte decoder shared by the authoritative DB document and legacy DPIA sidecar fallback.
+pub(crate) fn decode_dpia_records_for_search_projector(
+    bytes: &[u8],
+    source_label: &str,
+) -> Result<HashMap<DpiaRecordId, DpiaRecord>, chancela_store::StoreError> {
+    let list = serde_json::from_slice::<Vec<DpiaRecord>>(bytes)
+        .map_err(chancela_store::StoreError::Serde)?;
+    collect_unique_projector_records(list, source_label, |record| record.id)
+}
+
+/// Strict byte decoder shared by the authoritative DB document and legacy breach sidecar fallback.
+pub(crate) fn decode_breach_playbooks_for_search_projector(
+    bytes: &[u8],
+    source_label: &str,
+) -> Result<HashMap<BreachPlaybookId, BreachPlaybookRecord>, chancela_store::StoreError> {
+    let list = serde_json::from_slice::<Vec<BreachPlaybookRecord>>(bytes)
+        .map_err(chancela_store::StoreError::Serde)?;
+    collect_unique_projector_records(list, source_label, |record| record.id)
+}
+
+/// Strict byte decoder shared by the authoritative DB document and legacy transfer sidecar fallback.
+pub(crate) fn decode_transfer_controls_for_search_projector(
+    bytes: &[u8],
+    source_label: &str,
+) -> Result<HashMap<TransferControlId, TransferControlRecord>, chancela_store::StoreError> {
+    let list = serde_json::from_slice::<Vec<TransferControlRecord>>(bytes)
+        .map_err(chancela_store::StoreError::Serde)?;
+    collect_unique_projector_records(list, source_label, |record| record.id)
+}
+
+fn load_privacy_projector_sidecar(
+    path: &FsPath,
+) -> Result<Option<Vec<u8>>, chancela_store::StoreError> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(chancela_store::StoreError::Io(error)),
+    }
+}
+
+fn collect_unique_projector_records<K, V>(
+    records: Vec<V>,
+    source_label: &str,
+    key: impl Fn(&V) -> K,
+) -> Result<HashMap<K, V>, chancela_store::StoreError>
+where
+    K: Copy + Eq + std::hash::Hash + std::fmt::Display,
+{
+    let mut unique = HashMap::with_capacity(records.len());
+    for record in records {
+        let id = key(&record);
+        if unique.insert(id, record).is_some() {
+            return Err(chancela_store::StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("{source_label} contains duplicate privacy record id {id}"),
+            )));
+        }
+    }
+    Ok(unique)
+}
+
 pub(crate) fn load_retention_policies(
     path: &FsPath,
 ) -> Option<HashMap<RetentionPolicyId, RetentionPolicyRecord>> {
@@ -2952,6 +3046,30 @@ pub(crate) fn write_transfer_controls_atomic(
     }
 }
 
+fn serialize_dpia_records_document(
+    records: &HashMap<DpiaRecordId, DpiaRecord>,
+) -> Result<String, serde_json::Error> {
+    let mut list: Vec<&DpiaRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    serde_json::to_string(&list)
+}
+
+fn serialize_breach_playbooks_document(
+    records: &HashMap<BreachPlaybookId, BreachPlaybookRecord>,
+) -> Result<String, serde_json::Error> {
+    let mut list: Vec<&BreachPlaybookRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    serde_json::to_string(&list)
+}
+
+fn serialize_transfer_controls_document(
+    records: &HashMap<TransferControlId, TransferControlRecord>,
+) -> Result<String, serde_json::Error> {
+    let mut list: Vec<&TransferControlRecord> = records.values().collect();
+    list.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.id.0.cmp(&b.id.0)));
+    serde_json::to_string(&list)
+}
+
 pub(crate) fn write_retention_policies_atomic(
     path: &FsPath,
     records: &HashMap<RetentionPolicyId, RetentionPolicyRecord>,
@@ -3048,31 +3166,80 @@ async fn persist_processor_records(state: &AppState) -> Result<(), ApiError> {
     Ok(())
 }
 
-async fn persist_dpia_records(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.dpia_records_path {
-        let records = state.dpia_records.read().await;
-        write_dpia_records_atomic(path, &records)
-            .map_err(|e| ApiError::Internal(format!("failed to persist DPIA records: {e}")))?;
-    }
-    Ok(())
-}
+#[allow(clippy::too_many_arguments)]
+async fn commit_searchable_privacy_mutation<
+    K,
+    V,
+    View,
+    Mutate,
+    SerializeDocument,
+    StoreAction,
+    WriteCache,
+>(
+    state: AppState,
+    records: Arc<tokio::sync::RwLock<HashMap<K, V>>>,
+    sidecar_path: Option<Arc<PathBuf>>,
+    scope: String,
+    kind: &'static str,
+    justification: &'static str,
+    actor_name: String,
+    attestor: CurrentAttestor,
+    mutate: Mutate,
+    serialize_document: SerializeDocument,
+    store_action: StoreAction,
+    write_cache: WriteCache,
+) -> Result<View, ApiError>
+where
+    K: Clone + Eq + std::hash::Hash + Send + Sync + 'static,
+    V: Clone + Send + Sync + 'static,
+    View: Serialize + Send + 'static,
+    Mutate: FnOnce(&mut HashMap<K, V>) -> Result<View, ApiError> + Send + 'static,
+    SerializeDocument: FnOnce(&HashMap<K, V>) -> Result<String, serde_json::Error> + Send + 'static,
+    StoreAction: for<'tx> FnOnce(&Tx<'tx>, &str) -> Result<(), StoreError> + Send + 'static,
+    WriteCache: FnOnce(&FsPath, &HashMap<K, V>) -> std::io::Result<()> + Send + 'static,
+{
+    // The owned task closes the cancellation window between the DB commit and live-memory/cache
+    // publication. All candidate work happens against a clone while the live map remains unchanged.
+    let coordinator = tokio::spawn(async move {
+        let _source_mutation = crate::search::begin_source_mutation(&state).await;
+        let mut live = records.write().await;
+        let mut next = live.clone();
+        let view = mutate(&mut next)?;
+        let payload = serde_json::to_vec(&view)?;
+        let document = serialize_document(&next)?;
+        let mut ledger = state.ledger.write().await;
+        try_append_event(
+            &mut ledger,
+            &actor_name,
+            &scope,
+            kind,
+            Some(justification),
+            &payload,
+        )?;
+        state
+            .persist_write_through(&mut ledger, 1, move |tx| store_action(tx, &document))
+            .await?;
 
-async fn persist_breach_playbooks(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.breach_playbooks_path {
-        let records = state.breach_playbooks.read().await;
-        write_breach_playbooks_atomic(path, &records)
-            .map_err(|e| ApiError::Internal(format!("failed to persist breach playbooks: {e}")))?;
-    }
-    Ok(())
-}
-
-async fn persist_transfer_controls(state: &AppState) -> Result<(), ApiError> {
-    if let Some(path) = &state.transfer_controls_path {
-        let records = state.transfer_controls.read().await;
-        write_transfer_controls_atomic(path, &records)
-            .map_err(|e| ApiError::Internal(format!("failed to persist transfer controls: {e}")))?;
-    }
-    Ok(())
+        // No await between the durable commit and publishing the matching live register.
+        *live = next;
+        // The singleton DB row is authoritative. The historical file is refreshed only after the
+        // audit/source-revision transaction, and cache failure cannot invalidate that commit.
+        if let Some(path) = sidecar_path.as_deref()
+            && let Err(error) = write_cache(path, &live)
+        {
+            eprintln!(
+                "warning: committed {kind} but could not refresh privacy cache {}: {error}",
+                path.display()
+            );
+        }
+        state.attest_latest(&attestor, &ledger).await;
+        Ok(view)
+    });
+    coordinator.await.map_err(|error| {
+        ApiError::Internal(format!(
+            "searchable privacy mutation coordinator task failed: {error}"
+        ))
+    })?
 }
 
 async fn persist_retention_policies(state: &AppState) -> Result<(), ApiError> {
@@ -3450,17 +3617,31 @@ pub async fn create_dpia_record(
         updated_at: now,
         updated_by: actor_name.clone(),
     };
-    let view = DpiaRecordView::from(&record);
-    state.dpia_records.write().await.insert(record.id, record);
-    persist_dpia_records(&state).await?;
-    record_privacy_event(
-        &state,
-        &format!("privacy:dpia:{}", view.id),
+    let scope = format!("privacy:dpia:{}", record.id);
+    let records = state.dpia_records.clone();
+    let sidecar_path = state.dpia_records_path.clone();
+    let view = commit_searchable_privacy_mutation(
+        state,
+        records,
+        sidecar_path,
+        scope,
         DPIA_CREATED_KIND,
         "DPIA record created",
-        &actor_name,
-        &view,
-        &attestor,
+        actor_name,
+        attestor,
+        move |records| {
+            if records.contains_key(&record.id) {
+                return Err(ApiError::Conflict(
+                    "DPIA record id already exists".to_owned(),
+                ));
+            }
+            let view = DpiaRecordView::from(&record);
+            records.insert(record.id, record);
+            Ok(view)
+        },
+        serialize_dpia_records_document,
+        |tx, document| tx.put_dpia_records_document(document),
+        write_dpia_records_atomic,
     )
     .await?;
 
@@ -3499,27 +3680,32 @@ pub async fn patch_dpia_record(
     require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let record_id = DpiaRecordId(id);
-
-    let mut records = state.dpia_records.write().await;
-    let mut record = records.get(&record_id).cloned().ok_or(ApiError::NotFound)?;
-    let changed = apply_dpia_patch(&mut record, req, &actor_name)?;
-    if !changed {
-        return Err(ApiError::Unprocessable(
-            "at least one DPIA record field is required".to_owned(),
-        ));
-    }
-    let view = DpiaRecordView::from(&record);
-    records.insert(record.id, record);
-    drop(records);
-    persist_dpia_records(&state).await?;
-    record_privacy_event(
-        &state,
-        &format!("privacy:dpia:{}", view.id),
+    let records = state.dpia_records.clone();
+    let sidecar_path = state.dpia_records_path.clone();
+    let view = commit_searchable_privacy_mutation(
+        state,
+        records,
+        sidecar_path,
+        format!("privacy:dpia:{record_id}"),
         DPIA_UPDATED_KIND,
         "DPIA record updated",
-        &actor_name,
-        &view,
-        &attestor,
+        actor_name.clone(),
+        attestor,
+        move |records| {
+            let mut record = records.get(&record_id).cloned().ok_or(ApiError::NotFound)?;
+            let changed = apply_dpia_patch(&mut record, req, &actor_name)?;
+            if !changed {
+                return Err(ApiError::Unprocessable(
+                    "at least one DPIA record field is required".to_owned(),
+                ));
+            }
+            let view = DpiaRecordView::from(&record);
+            records.insert(record.id, record);
+            Ok(view)
+        },
+        serialize_dpia_records_document,
+        |tx, document| tx.put_dpia_records_document(document),
+        write_dpia_records_atomic,
     )
     .await?;
 
@@ -3600,21 +3786,31 @@ pub async fn create_breach_playbook(
         updated_at: now,
         updated_by: actor_name.clone(),
     };
-    let view = BreachPlaybookView::from(&record);
-    state
-        .breach_playbooks
-        .write()
-        .await
-        .insert(record.id, record);
-    persist_breach_playbooks(&state).await?;
-    record_privacy_event(
-        &state,
-        &format!("privacy:breach-playbook:{}", view.id),
+    let scope = format!("privacy:breach-playbook:{}", record.id);
+    let records = state.breach_playbooks.clone();
+    let sidecar_path = state.breach_playbooks_path.clone();
+    let view = commit_searchable_privacy_mutation(
+        state,
+        records,
+        sidecar_path,
+        scope,
         BREACH_PLAYBOOK_CREATED_KIND,
         "Breach-response playbook created",
-        &actor_name,
-        &view,
-        &attestor,
+        actor_name,
+        attestor,
+        move |records| {
+            if records.contains_key(&record.id) {
+                return Err(ApiError::Conflict(
+                    "breach playbook id already exists".to_owned(),
+                ));
+            }
+            let view = BreachPlaybookView::from(&record);
+            records.insert(record.id, record);
+            Ok(view)
+        },
+        serialize_breach_playbooks_document,
+        |tx, document| tx.put_breach_playbooks_document(document),
+        write_breach_playbooks_atomic,
     )
     .await?;
 
@@ -3646,30 +3842,35 @@ pub async fn patch_breach_playbook(
     require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let playbook_id = BreachPlaybookId(id);
-
-    let mut records = state.breach_playbooks.write().await;
-    let mut record = records
-        .get(&playbook_id)
-        .cloned()
-        .ok_or(ApiError::NotFound)?;
-    let changed = apply_breach_playbook_patch(&mut record, req, &actor_name)?;
-    if !changed {
-        return Err(ApiError::Unprocessable(
-            "at least one breach playbook field is required".to_owned(),
-        ));
-    }
-    let view = BreachPlaybookView::from(&record);
-    records.insert(record.id, record);
-    drop(records);
-    persist_breach_playbooks(&state).await?;
-    record_privacy_event(
-        &state,
-        &format!("privacy:breach-playbook:{}", view.id),
+    let records = state.breach_playbooks.clone();
+    let sidecar_path = state.breach_playbooks_path.clone();
+    let view = commit_searchable_privacy_mutation(
+        state,
+        records,
+        sidecar_path,
+        format!("privacy:breach-playbook:{playbook_id}"),
         BREACH_PLAYBOOK_UPDATED_KIND,
         "Breach-response playbook updated",
-        &actor_name,
-        &view,
-        &attestor,
+        actor_name.clone(),
+        attestor,
+        move |records| {
+            let mut record = records
+                .get(&playbook_id)
+                .cloned()
+                .ok_or(ApiError::NotFound)?;
+            let changed = apply_breach_playbook_patch(&mut record, req, &actor_name)?;
+            if !changed {
+                return Err(ApiError::Unprocessable(
+                    "at least one breach playbook field is required".to_owned(),
+                ));
+            }
+            let view = BreachPlaybookView::from(&record);
+            records.insert(record.id, record);
+            Ok(view)
+        },
+        serialize_breach_playbooks_document,
+        |tx, document| tx.put_breach_playbooks_document(document),
+        write_breach_playbooks_atomic,
     )
     .await?;
 
@@ -3747,21 +3948,31 @@ pub async fn create_transfer_control(
         updated_at: now,
         updated_by: actor_name.clone(),
     };
-    let view = TransferControlView::from(&record);
-    state
-        .transfer_controls
-        .write()
-        .await
-        .insert(record.id, record);
-    persist_transfer_controls(&state).await?;
-    record_privacy_event(
-        &state,
-        &format!("privacy:transfer-control:{}", view.id),
+    let scope = format!("privacy:transfer-control:{}", record.id);
+    let records = state.transfer_controls.clone();
+    let sidecar_path = state.transfer_controls_path.clone();
+    let view = commit_searchable_privacy_mutation(
+        state,
+        records,
+        sidecar_path,
+        scope,
         TRANSFER_CONTROL_CREATED_KIND,
         "Transfer-control record created",
-        &actor_name,
-        &view,
-        &attestor,
+        actor_name,
+        attestor,
+        move |records| {
+            if records.contains_key(&record.id) {
+                return Err(ApiError::Conflict(
+                    "transfer control id already exists".to_owned(),
+                ));
+            }
+            let view = TransferControlView::from(&record);
+            records.insert(record.id, record);
+            Ok(view)
+        },
+        serialize_transfer_controls_document,
+        |tx, document| tx.put_transfer_controls_document(document),
+        write_transfer_controls_atomic,
     )
     .await?;
 
@@ -3793,30 +4004,35 @@ pub async fn patch_transfer_control(
     require_privacy_manage(&state, &actor).await?;
     let actor_name = actor.resolve("api");
     let control_id = TransferControlId(id);
-
-    let mut records = state.transfer_controls.write().await;
-    let mut record = records
-        .get(&control_id)
-        .cloned()
-        .ok_or(ApiError::NotFound)?;
-    let changed = apply_transfer_control_patch(&mut record, req, &actor_name)?;
-    if !changed {
-        return Err(ApiError::Unprocessable(
-            "at least one transfer control field is required".to_owned(),
-        ));
-    }
-    let view = TransferControlView::from(&record);
-    records.insert(record.id, record);
-    drop(records);
-    persist_transfer_controls(&state).await?;
-    record_privacy_event(
-        &state,
-        &format!("privacy:transfer-control:{}", view.id),
+    let records = state.transfer_controls.clone();
+    let sidecar_path = state.transfer_controls_path.clone();
+    let view = commit_searchable_privacy_mutation(
+        state,
+        records,
+        sidecar_path,
+        format!("privacy:transfer-control:{control_id}"),
         TRANSFER_CONTROL_UPDATED_KIND,
         "Transfer-control record updated",
-        &actor_name,
-        &view,
-        &attestor,
+        actor_name.clone(),
+        attestor,
+        move |records| {
+            let mut record = records
+                .get(&control_id)
+                .cloned()
+                .ok_or(ApiError::NotFound)?;
+            let changed = apply_transfer_control_patch(&mut record, req, &actor_name)?;
+            if !changed {
+                return Err(ApiError::Unprocessable(
+                    "at least one transfer control field is required".to_owned(),
+                ));
+            }
+            let view = TransferControlView::from(&record);
+            records.insert(record.id, record);
+            Ok(view)
+        },
+        serialize_transfer_controls_document,
+        |tx, document| tx.put_transfer_controls_document(document),
+        write_transfer_controls_atomic,
     )
     .await?;
 
@@ -8486,4 +8702,396 @@ fn now_rfc3339() -> String {
     OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod searchable_privacy_persistence_tests {
+    use super::*;
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("chancela-searchable-privacy-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create privacy test directory");
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn dpia_record(id: DpiaRecordId) -> DpiaRecord {
+        DpiaRecord {
+            id,
+            title: "DPIA fixture".to_owned(),
+            purpose: "Projection persistence regression".to_owned(),
+            legal_basis: "Operator review".to_owned(),
+            data_categories: vec!["corporate records".to_owned()],
+            subprocessors: Vec::new(),
+            risk_level: PrivacyRiskLevel::Low,
+            status: PrivacyRecordStatus::Draft,
+            evidence_receipts: Vec::new(),
+            created_at: "2026-07-26T08:00:00Z".to_owned(),
+            created_by: "fixture".to_owned(),
+            updated_at: "2026-07-26T08:00:00Z".to_owned(),
+            updated_by: "fixture".to_owned(),
+        }
+    }
+
+    fn breach_playbook(id: BreachPlaybookId) -> BreachPlaybookRecord {
+        BreachPlaybookRecord {
+            id,
+            title: "Breach fixture".to_owned(),
+            scope: "Local rehearsal".to_owned(),
+            detection_channels: vec!["operator report".to_owned()],
+            containment_steps: vec!["review evidence".to_owned()],
+            notification_roles: Vec::new(),
+            authority_notification_window: None,
+            subject_notification_guidance: None,
+            risk_level: PrivacyRiskLevel::Low,
+            status: PrivacyRecordStatus::Draft,
+            review_notes: None,
+            evidence_receipts: Vec::new(),
+            created_at: "2026-07-26T08:01:00Z".to_owned(),
+            created_by: "fixture".to_owned(),
+            updated_at: "2026-07-26T08:01:00Z".to_owned(),
+            updated_by: "fixture".to_owned(),
+        }
+    }
+
+    fn transfer_control(id: TransferControlId) -> TransferControlRecord {
+        TransferControlRecord {
+            id,
+            name: "Transfer fixture".to_owned(),
+            purpose: "Local review".to_owned(),
+            legal_basis: "Operator review".to_owned(),
+            data_categories: vec!["corporate records".to_owned()],
+            recipient: "Example recipient".to_owned(),
+            destination_country: "PT".to_owned(),
+            transfer_mechanism: "local register".to_owned(),
+            safeguards: vec!["manual review".to_owned()],
+            risk_level: PrivacyRiskLevel::Low,
+            status: PrivacyRecordStatus::Draft,
+            review_notes: None,
+            evidence_receipts: Vec::new(),
+            created_at: "2026-07-26T08:02:00Z".to_owned(),
+            created_by: "fixture".to_owned(),
+            updated_at: "2026-07-26T08:02:00Z".to_owned(),
+            updated_by: "fixture".to_owned(),
+        }
+    }
+
+    fn source_revision(state: &AppState) -> u64 {
+        state
+            .store
+            .as_ref()
+            .expect("durable test store")
+            .search_projection_control()
+            .expect("search projection control")
+            .checkpoint
+            .source_revision
+    }
+
+    #[tokio::test]
+    async fn searchable_privacy_commits_documents_audit_revision_memory_and_caches() {
+        let dir = TestDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        let before_revision = source_revision(&state);
+
+        let dpia = dpia_record(DpiaRecordId(Uuid::new_v4()));
+        let dpia_id = dpia.id;
+        commit_searchable_privacy_mutation(
+            state.clone(),
+            state.dpia_records.clone(),
+            state.dpia_records_path.clone(),
+            format!("privacy:dpia:{dpia_id}"),
+            DPIA_CREATED_KIND,
+            "DPIA record created",
+            "fixture".to_owned(),
+            CurrentAttestor::default(),
+            move |records| {
+                let view = DpiaRecordView::from(&dpia);
+                records.insert(dpia.id, dpia);
+                Ok(view)
+            },
+            serialize_dpia_records_document,
+            |tx, document| tx.put_dpia_records_document(document),
+            write_dpia_records_atomic,
+        )
+        .await
+        .expect("commit DPIA candidate");
+
+        let breach = breach_playbook(BreachPlaybookId(Uuid::new_v4()));
+        let breach_id = breach.id;
+        commit_searchable_privacy_mutation(
+            state.clone(),
+            state.breach_playbooks.clone(),
+            state.breach_playbooks_path.clone(),
+            format!("privacy:breach-playbook:{breach_id}"),
+            BREACH_PLAYBOOK_CREATED_KIND,
+            "Breach-response playbook created",
+            "fixture".to_owned(),
+            CurrentAttestor::default(),
+            move |records| {
+                let view = BreachPlaybookView::from(&breach);
+                records.insert(breach.id, breach);
+                Ok(view)
+            },
+            serialize_breach_playbooks_document,
+            |tx, document| tx.put_breach_playbooks_document(document),
+            write_breach_playbooks_atomic,
+        )
+        .await
+        .expect("commit breach candidate");
+
+        let transfer = transfer_control(TransferControlId(Uuid::new_v4()));
+        let transfer_id = transfer.id;
+        commit_searchable_privacy_mutation(
+            state.clone(),
+            state.transfer_controls.clone(),
+            state.transfer_controls_path.clone(),
+            format!("privacy:transfer-control:{transfer_id}"),
+            TRANSFER_CONTROL_CREATED_KIND,
+            "Transfer-control record created",
+            "fixture".to_owned(),
+            CurrentAttestor::default(),
+            move |records| {
+                let view = TransferControlView::from(&transfer);
+                records.insert(transfer.id, transfer);
+                Ok(view)
+            },
+            serialize_transfer_controls_document,
+            |tx, document| tx.put_transfer_controls_document(document),
+            write_transfer_controls_atomic,
+        )
+        .await
+        .expect("commit transfer candidate");
+
+        assert_eq!(source_revision(&state), before_revision + 3);
+        assert!(state.dpia_records.read().await.contains_key(&dpia_id));
+        assert!(state.breach_playbooks.read().await.contains_key(&breach_id));
+        assert!(
+            state
+                .transfer_controls
+                .read()
+                .await
+                .contains_key(&transfer_id)
+        );
+
+        let store = state.store.as_ref().expect("durable store");
+        assert_eq!(
+            decode_dpia_records_for_search_projector(
+                store
+                    .dpia_records_document()
+                    .expect("DPIA document read")
+                    .expect("DPIA document")
+                    .as_bytes(),
+                "DPIA DB fixture",
+            )
+            .expect("strict DPIA DB decode")
+            .len(),
+            1
+        );
+        assert_eq!(
+            decode_breach_playbooks_for_search_projector(
+                store
+                    .breach_playbooks_document()
+                    .expect("breach document read")
+                    .expect("breach document")
+                    .as_bytes(),
+                "breach DB fixture",
+            )
+            .expect("strict breach DB decode")
+            .len(),
+            1
+        );
+        assert_eq!(
+            decode_transfer_controls_for_search_projector(
+                store
+                    .transfer_controls_document()
+                    .expect("transfer document read")
+                    .expect("transfer document")
+                    .as_bytes(),
+                "transfer DB fixture",
+            )
+            .expect("strict transfer DB decode")
+            .len(),
+            1
+        );
+        assert_eq!(
+            load_dpia_records(&dir.0.join(DPIAS_FILE))
+                .expect("DPIA cache")
+                .len(),
+            1
+        );
+        assert_eq!(
+            load_breach_playbooks(&dir.0.join(BREACH_PLAYBOOKS_FILE))
+                .expect("breach cache")
+                .len(),
+            1
+        );
+        assert_eq!(
+            load_transfer_controls(&dir.0.join(TRANSFER_CONTROLS_FILE))
+                .expect("transfer cache")
+                .len(),
+            1
+        );
+        let ledger = state.ledger.read().await;
+        let kinds: Vec<&str> = ledger
+            .events()
+            .iter()
+            .map(|event| event.kind.as_str())
+            .collect();
+        assert!(kinds.contains(&DPIA_CREATED_KIND));
+        assert!(kinds.contains(&BREACH_PLAYBOOK_CREATED_KIND));
+        assert!(kinds.contains(&TRANSFER_CONTROL_CREATED_KIND));
+    }
+
+    #[tokio::test]
+    async fn searchable_privacy_store_failure_leaves_memory_file_ledger_and_revision_unchanged() {
+        let dir = TestDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        let sidecar = dir.0.join(DPIAS_FILE);
+        std::fs::write(&sidecar, b"previous privacy cache").expect("seed previous cache");
+        let previous_cache = std::fs::read(&sidecar).expect("read previous cache");
+        let before_revision = source_revision(&state);
+        let before_ledger_len = state.ledger.read().await.len();
+        let record = dpia_record(DpiaRecordId(Uuid::new_v4()));
+
+        let result = commit_searchable_privacy_mutation(
+            state.clone(),
+            state.dpia_records.clone(),
+            state.dpia_records_path.clone(),
+            format!("privacy:dpia:{}", record.id),
+            DPIA_CREATED_KIND,
+            "DPIA record created",
+            "fixture".to_owned(),
+            CurrentAttestor::default(),
+            move |records| {
+                let view = DpiaRecordView::from(&record);
+                records.insert(record.id, record);
+                Ok(view)
+            },
+            serialize_dpia_records_document,
+            |_tx, _document| {
+                Err(StoreError::Io(std::io::Error::other(
+                    "injected privacy document failure",
+                )))
+            },
+            write_dpia_records_atomic,
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Internal(_))));
+        assert!(state.dpia_records.read().await.is_empty());
+        assert_eq!(state.ledger.read().await.len(), before_ledger_len);
+        assert_eq!(source_revision(&state), before_revision);
+        assert_eq!(
+            state
+                .store
+                .as_ref()
+                .expect("durable store")
+                .dpia_records_document()
+                .expect("DPIA document read"),
+            None
+        );
+        assert_eq!(
+            std::fs::read(&sidecar).expect("read unchanged cache"),
+            previous_cache
+        );
+    }
+
+    #[tokio::test]
+    async fn searchable_privacy_restart_and_projector_prefer_durable_documents_over_malformed_caches()
+     {
+        let dir = TestDir::new();
+        let store = chancela_store::Store::open(&dir.0).expect("initialize durable store");
+        let dpia = dpia_record(DpiaRecordId(Uuid::new_v4()));
+        let breach = breach_playbook(BreachPlaybookId(Uuid::new_v4()));
+        let transfer = transfer_control(TransferControlId(Uuid::new_v4()));
+        let dpia_id = dpia.id;
+        let breach_id = breach.id;
+        let transfer_id = transfer.id;
+        let dpia_document = serialize_dpia_records_document(&HashMap::from([(dpia.id, dpia)]))
+            .expect("serialize durable DPIA fixture");
+        let breach_document =
+            serialize_breach_playbooks_document(&HashMap::from([(breach.id, breach)]))
+                .expect("serialize durable breach fixture");
+        let transfer_document =
+            serialize_transfer_controls_document(&HashMap::from([(transfer.id, transfer)]))
+                .expect("serialize durable transfer fixture");
+
+        store
+            .persist(|tx| {
+                tx.put_dpia_records_document(&dpia_document)?;
+                tx.put_breach_playbooks_document(&breach_document)?;
+                tx.put_transfer_controls_document(&transfer_document)
+            })
+            .expect("persist authoritative privacy documents");
+        for file in [DPIAS_FILE, BREACH_PLAYBOOKS_FILE, TRANSFER_CONTROLS_FILE] {
+            std::fs::write(dir.0.join(file), b"{malformed legacy cache")
+                .expect("poison legacy privacy cache");
+        }
+
+        let restarted = AppState::with_data_dir(dir.0.clone());
+        assert!(restarted.dpia_records.read().await.contains_key(&dpia_id));
+        assert!(
+            restarted
+                .breach_playbooks
+                .read()
+                .await
+                .contains_key(&breach_id)
+        );
+        assert!(
+            restarted
+                .transfer_controls
+                .read()
+                .await
+                .contains_key(&transfer_id)
+        );
+
+        let projector_store =
+            chancela_store::Store::open(&dir.0).expect("open projector store fixture");
+        let projector = AppState::load_search_projector_snapshot(
+            dir.0.clone(),
+            crate::DatabaseEncryptionConfig::plaintext(),
+            projector_store,
+        )
+        .expect("durable privacy documents bypass malformed legacy caches");
+        assert!(projector.dpia_records.read().await.contains_key(&dpia_id));
+        assert!(
+            projector
+                .breach_playbooks
+                .read()
+                .await
+                .contains_key(&breach_id)
+        );
+        assert!(
+            projector
+                .transfer_controls
+                .read()
+                .await
+                .contains_key(&transfer_id)
+        );
+    }
+
+    #[test]
+    fn strict_privacy_decoder_rejects_duplicate_ids_instead_of_partially_loading() {
+        let id = DpiaRecordId(Uuid::new_v4());
+        let document = serde_json::to_vec(&vec![dpia_record(id), dpia_record(id)])
+            .expect("duplicate fixture serialization");
+        match decode_dpia_records_for_search_projector(&document, "duplicate DPIA fixture") {
+            Err(StoreError::Io(error)) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+                assert!(error.to_string().contains("duplicate privacy record id"));
+            }
+            Err(error) => panic!("expected duplicate-id I/O refusal, got {error}"),
+            Ok(_) => panic!("duplicate privacy records were partially loaded"),
+        }
+    }
 }

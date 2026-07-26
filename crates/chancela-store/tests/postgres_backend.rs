@@ -238,6 +238,87 @@ fn persist_and_reload_event_roundtrips_on_postgres() {
     );
 }
 
+/// Dropping the final backend owner from an async task must not drive the synchronous postgres
+/// client's private runtime from inside Tokio (`postgres::Connection::block_on` would panic).
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn final_postgres_store_drop_isolated_from_tokio_runtime() {
+    if std::env::var("CHANCELA_NODE_ROLE")
+        .ok()
+        .is_some_and(|role| role.trim().eq_ignore_ascii_case("follower"))
+    {
+        eprintln!("skipping: this test requires auto/leader election, not pinned follower mode");
+        return;
+    }
+    let Some(isolated) = isolated_postgres("runtime-drop") else {
+        return;
+    };
+    let store = Store::open_backend(StoreBackendSelection::Postgres {
+        database_url: isolated.url(),
+    })
+    .expect("open postgres backend");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .expect("test runtime");
+    let teardown = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        runtime.block_on(async move {
+            drop(store);
+            tokio::task::yield_now().await;
+        });
+    }));
+    assert!(
+        teardown.is_ok(),
+        "dropping the final Store clone inside Tokio must not panic"
+    );
+    // Give the isolated cleanup thread a chance to close its sessions before the database fixture
+    // attempts DROP DATABASE. The safety assertion above is synchronous and does not depend on it.
+    std::thread::sleep(std::time::Duration::from_millis(100));
+}
+
+/// Fresh auto-role replicas may connect concurrently. Exactly one owns DDL; every follower waits
+/// for the leader's final schema-version publication marker before any aggregate read.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn concurrent_fresh_postgres_opens_wait_for_schema_publication() {
+    if std::env::var("CHANCELA_NODE_ROLE")
+        .ok()
+        .is_some_and(|role| role.trim().eq_ignore_ascii_case("follower"))
+    {
+        eprintln!("skipping: this test requires auto/leader election, not pinned follower mode");
+        return;
+    }
+    let Some(isolated) = isolated_postgres("concurrent-fresh-open") else {
+        return;
+    };
+    let database_url = isolated.url();
+    let barrier = std::sync::Arc::new(std::sync::Barrier::new(4));
+    let handles = (0..4)
+        .map(|_| {
+            let barrier = barrier.clone();
+            let database_url = database_url.clone();
+            std::thread::spawn(move || {
+                barrier.wait();
+                Store::open_backend(StoreBackendSelection::Postgres { database_url })
+            })
+        })
+        .collect::<Vec<_>>();
+    let stores = handles
+        .into_iter()
+        .map(|handle| {
+            handle
+                .join()
+                .expect("open thread must not panic")
+                .expect("all concurrent opens wait for current schema")
+        })
+        .collect::<Vec<_>>();
+    for store in &stores {
+        let loaded = store
+            .load()
+            .expect("follower cannot observe a partially-created schema");
+        assert!(loaded.chain_status.is_ok());
+    }
+}
+
 /// The group graph uses the same document-in-relational contract on Postgres as SQLite, including
 /// immutable composite-key revisions and aggregate-snapshot reloads.
 #[test]

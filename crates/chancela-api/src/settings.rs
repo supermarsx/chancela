@@ -143,12 +143,19 @@ pub struct SearchSettings {
     /// Master switch. Disabling stops reconciliation but preserves the durable index for an
     /// operator-visible stale status and a later resume.
     pub enabled: bool,
-    /// Maximum upsert/delete operations committed in one durable transaction.
+    /// Tokio worker threads dedicated to the external projector runtime. At least two are required
+    /// so lease/heartbeat/control work is never starved by the synchronous corpus build. This is a
+    /// runtime concurrency limit, not corpus sharding, and takes effect after projector restart.
+    pub index_threads: u32,
+    /// Maximum upsert/delete operations in one embedded-indexer transaction. The external
+    /// projector publishes one complete generation through its atomic CAS boundary.
     pub batch_size: u32,
-    /// Periodic reconciliation interval. Dropped/coalesced queue notifications are repaired here.
+    /// Embedded reconciliation interval. For the external projector this is the lightweight
+    /// control/settings polling cadence; full corpus publication runs only for source or command
+    /// changes, process/lease startup, or a completed UTC-date bucket change.
     pub interval_seconds: u32,
-    /// Live command queue ceiling; enqueue uses current settings and returns backpressure rather
-    /// than allowing unbounded rebuild requests or record batches.
+    /// Embedded-indexer command queue ceiling. External commands use the durable singleton control
+    /// record and do not use this in-process queue.
     pub queue_capacity: u32,
     /// Server-side ceiling for one result page.
     pub result_limit: u32,
@@ -174,6 +181,7 @@ impl Default for SearchSettings {
     fn default() -> Self {
         Self {
             enabled: true,
+            index_threads: 2,
             batch_size: 256,
             interval_seconds: 30,
             queue_capacity: 64,
@@ -191,6 +199,7 @@ impl Default for SearchSettings {
 impl SearchSettings {
     fn validate(&self) -> Result<(), ApiError> {
         for (field, value, min, max) in [
+            ("search.index_threads", self.index_threads, 2, 16),
             ("search.batch_size", self.batch_size, 16, 5_000),
             ("search.interval_seconds", self.interval_seconds, 5, 86_400),
             ("search.queue_capacity", self.queue_capacity, 1, 1_024),
@@ -3558,6 +3567,39 @@ pub(crate) fn load_settings(path: &Path) -> Option<Settings> {
     }
 }
 
+/// Load the SQLite settings document for the external search projector.
+///
+/// The HTTP server deliberately keeps [`load_settings`] permissive so an operator can repair a
+/// malformed file after startup. The projector cannot safely derive a candidate from defaults when
+/// a settings document exists but cannot be read or decoded: that could publish a generation under
+/// a different retention/search policy. Only a genuinely absent file selects defaults.
+pub(crate) fn load_settings_for_search_projector(
+    path: &Path,
+) -> Result<Settings, chancela_store::StoreError> {
+    let journal_path = settings_audit_journal_path(path);
+    match std::fs::symlink_metadata(&journal_path) {
+        Ok(_) => {
+            return Err(chancela_store::StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                format!(
+                    "cannot load projector settings while the settings audit journal {} is pending",
+                    journal_path.display()
+                ),
+            )));
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(chancela_store::StoreError::Io(error)),
+    }
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Settings::default());
+        }
+        Err(error) => return Err(chancela_store::StoreError::Io(error)),
+    };
+    serde_json::from_slice(&bytes).map_err(chancela_store::StoreError::Serde)
+}
+
 /// Atomically write `settings` to `path`: serialize to a uniquely-named temp file in the same
 /// directory, then rename it over the destination (an atomic replace on both Windows and
 /// Unix). The parent directory is created if missing.
@@ -4430,6 +4472,39 @@ mod tests {
         );
         recovered.finish().unwrap();
         assert!(!settings_audit_journal_path(&path).exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn projector_refuses_staged_settings_while_audit_journal_is_pending() {
+        let dir = std::env::temp_dir().join(format!(
+            "chancela-projector-settings-pending-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(SETTINGS_FILE);
+        let previous = Settings::default();
+        let mut next = previous.clone();
+        next.search.enabled = false;
+        write_settings_atomic(&path, &previous).unwrap();
+
+        let _pending =
+            PreparedSettingsAudit::prepare(&path, &previous, &next, Uuid::new_v4(), true, None)
+                .unwrap();
+        assert_eq!(
+            load_settings(&path),
+            Some(next),
+            "the staged settings document is otherwise valid"
+        );
+        match load_settings_for_search_projector(&path) {
+            Err(chancela_store::StoreError::Io(error)) => {
+                assert_eq!(error.kind(), std::io::ErrorKind::WouldBlock);
+                assert!(error.to_string().contains("settings audit journal"));
+            }
+            Err(error) => panic!("expected pending-journal I/O refusal, got {error}"),
+            Ok(_) => panic!("projector trusted staged settings before the audit/revision commit"),
+        }
+
         let _ = std::fs::remove_dir_all(dir);
     }
 

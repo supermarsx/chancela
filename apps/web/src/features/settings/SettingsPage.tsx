@@ -657,6 +657,12 @@ function toWireBody(draft: Settings): Settings {
     },
     search: {
       enabled: draft.search.enabled === true,
+      index_threads: boundedNumberValue(
+        String(draft.search.index_threads),
+        DEFAULT_SETTINGS.search.index_threads,
+        2,
+        16,
+      ),
       batch_size: boundedNumberValue(
         String(draft.search.batch_size),
         DEFAULT_SETTINGS.search.batch_size,

@@ -220,7 +220,7 @@ mod zk_repository;
 
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
@@ -280,7 +280,11 @@ pub use zk_repository::ZkRepositoryStore;
 // the crate root (the crate-private `CredentialSecretStore` itself stays internal).
 pub use privacy::provision_subject_dek;
 #[doc(hidden)]
-pub use search::{SearchService, shutdown_search_service};
+pub use search::{
+    SEARCH_PROJECTION_UTC_BUCKET_CHANGED, build_and_publish_external_search_projection,
+};
+#[doc(hidden)]
+pub use search::{SearchRuntimeMode, SearchService, shutdown_search_service};
 pub use secretstore::{CredentialKeySource, ProtectionLevel, SecretEnvelope, SecretStoreError};
 pub use secretstore_persist::{
     CmdCredentialFields, CredentialEntry, CredentialFieldSet, CredentialMode,
@@ -303,6 +307,27 @@ pub use settings::{
     SignatureFamily, SigningCmdSettings, SigningSettings, SignupMode, SignupSettings, ThemeMode,
     TwoFactorSettings,
 };
+
+/// Minimal non-secret settings needed before the external projector decides whether to hydrate the
+/// corpus. This intentionally does not expose the full settings document to the sidecar runtime.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ExternalSearchProjectorConfig {
+    pub enabled: bool,
+    pub index_threads: u32,
+    pub interval_seconds: u32,
+}
+
+impl From<&SearchSettings> for ExternalSearchProjectorConfig {
+    fn from(settings: &SearchSettings) -> Self {
+        Self {
+            enabled: settings.enabled,
+            index_threads: settings.index_threads,
+            interval_seconds: settings.interval_seconds,
+        }
+    }
+}
+
 pub use template_preview_samples::TemplatePreviewSampleSettings;
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
@@ -808,6 +833,10 @@ pub struct AppState {
     /// in-memory snapshot; source reconciliation and durable writes run on its background worker.
     #[doc(hidden)]
     pub search_index: search::SearchService,
+    /// Search projection execution mode. Embedded remains the constructor/desktop default;
+    /// `try_from_env` can select query-only for a server paired with the projector process.
+    #[doc(hidden)]
+    pub search_runtime: search::SearchRuntimeMode,
     /// wp16 P3b — whether the five non-ledger sidecars (users/roles/delegations/settings/
     /// provider-credentials) are DB-backed (shared across cluster nodes) rather than file-backed.
     /// `true` **only** for the Postgres backend; `false` (the [`Default`]) keeps the byte-identical
@@ -975,6 +1004,76 @@ pub struct AppState {
     /// preserves the desktop/browser same-origin posture and emits no CORS grants.
     #[doc(hidden)]
     pub cors: cors::CorsConfig,
+}
+
+fn load_authoritative_backup_recovery_drill_receipts(
+    store: &Store,
+    legacy_path: &Path,
+    strict_legacy_fallback: bool,
+) -> Result<Vec<BackupRecoveryDrillReceipt>, StoreError> {
+    match store.backup_recovery_drill_receipts_document()? {
+        Some(raw) => backup_recovery::decode_backup_recovery_drill_receipts_for_search_projector(
+            raw.as_bytes(),
+            "durable backup recovery drill receipt document",
+        ),
+        None if strict_legacy_fallback => {
+            backup_recovery::load_backup_recovery_drill_receipts_for_search_projector(legacy_path)
+        }
+        None => Ok(
+            backup_recovery::load_backup_recovery_drill_receipts(legacy_path).unwrap_or_default(),
+        ),
+    }
+}
+
+fn load_authoritative_dpia_records(
+    store: &Store,
+    legacy_path: &Path,
+    strict_legacy_fallback: bool,
+) -> Result<HashMap<privacy::DpiaRecordId, privacy::DpiaRecord>, StoreError> {
+    match store.dpia_records_document()? {
+        Some(raw) => privacy::decode_dpia_records_for_search_projector(
+            raw.as_bytes(),
+            "durable DPIA document",
+        ),
+        None if strict_legacy_fallback => {
+            privacy::load_dpia_records_for_search_projector(legacy_path)
+        }
+        None => Ok(privacy::load_dpia_records(legacy_path).unwrap_or_default()),
+    }
+}
+
+fn load_authoritative_breach_playbooks(
+    store: &Store,
+    legacy_path: &Path,
+    strict_legacy_fallback: bool,
+) -> Result<HashMap<privacy::BreachPlaybookId, privacy::BreachPlaybookRecord>, StoreError> {
+    match store.breach_playbooks_document()? {
+        Some(raw) => privacy::decode_breach_playbooks_for_search_projector(
+            raw.as_bytes(),
+            "durable breach playbook document",
+        ),
+        None if strict_legacy_fallback => {
+            privacy::load_breach_playbooks_for_search_projector(legacy_path)
+        }
+        None => Ok(privacy::load_breach_playbooks(legacy_path).unwrap_or_default()),
+    }
+}
+
+fn load_authoritative_transfer_controls(
+    store: &Store,
+    legacy_path: &Path,
+    strict_legacy_fallback: bool,
+) -> Result<HashMap<privacy::TransferControlId, privacy::TransferControlRecord>, StoreError> {
+    match store.transfer_controls_document()? {
+        Some(raw) => privacy::decode_transfer_controls_for_search_projector(
+            raw.as_bytes(),
+            "durable transfer control document",
+        ),
+        None if strict_legacy_fallback => {
+            privacy::load_transfer_controls_for_search_projector(legacy_path)
+        }
+        None => Ok(privacy::load_transfer_controls(legacy_path).unwrap_or_default()),
+    }
 }
 
 impl AppState {
@@ -1297,6 +1396,89 @@ impl AppState {
                     state.ledger = Arc::new(RwLock::new(loaded.ledger));
                     state.chain_status = Some(Arc::new(loaded.chain_status));
                     state.degraded = Arc::new(RwLock::new(!healthy));
+                    if let Some(path) = state.dpia_records_path.as_deref() {
+                        match load_authoritative_dpia_records(&store, path, false) {
+                            Ok(records) => state.dpia_records = Arc::new(RwLock::new(records)),
+                            Err(source) if require_durable_store => {
+                                return Err(AppStateInitError::StoreLoad {
+                                    data_dir: dir.clone(),
+                                    source,
+                                });
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "chancela-store: failed to load authoritative DPIA records \
+                                     ({error}); clearing that read model and entering DEGRADED mode"
+                                );
+                                state.dpia_records = Arc::new(RwLock::new(HashMap::new()));
+                                state.degraded = Arc::new(RwLock::new(true));
+                            }
+                        }
+                    }
+                    if let Some(path) = state.breach_playbooks_path.as_deref() {
+                        match load_authoritative_breach_playbooks(&store, path, false) {
+                            Ok(records) => state.breach_playbooks = Arc::new(RwLock::new(records)),
+                            Err(source) if require_durable_store => {
+                                return Err(AppStateInitError::StoreLoad {
+                                    data_dir: dir.clone(),
+                                    source,
+                                });
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "chancela-store: failed to load authoritative breach playbooks \
+                                     ({error}); clearing that read model and entering DEGRADED mode"
+                                );
+                                state.breach_playbooks = Arc::new(RwLock::new(HashMap::new()));
+                                state.degraded = Arc::new(RwLock::new(true));
+                            }
+                        }
+                    }
+                    if let Some(path) = state.transfer_controls_path.as_deref() {
+                        match load_authoritative_transfer_controls(&store, path, false) {
+                            Ok(records) => state.transfer_controls = Arc::new(RwLock::new(records)),
+                            Err(source) if require_durable_store => {
+                                return Err(AppStateInitError::StoreLoad {
+                                    data_dir: dir.clone(),
+                                    source,
+                                });
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "chancela-store: failed to load authoritative transfer \
+                                     controls ({error}); clearing that read model and entering \
+                                     DEGRADED mode"
+                                );
+                                state.transfer_controls = Arc::new(RwLock::new(HashMap::new()));
+                                state.degraded = Arc::new(RwLock::new(true));
+                            }
+                        }
+                    }
+                    if let Some(path) = state.backup_recovery_drill_receipts_path.as_deref() {
+                        match load_authoritative_backup_recovery_drill_receipts(&store, path, false)
+                        {
+                            Ok(receipts) => {
+                                state.backup_recovery_drill_receipts =
+                                    Arc::new(RwLock::new(receipts));
+                            }
+                            Err(source) if require_durable_store => {
+                                return Err(AppStateInitError::StoreLoad {
+                                    data_dir: dir.clone(),
+                                    source,
+                                });
+                            }
+                            Err(error) => {
+                                eprintln!(
+                                    "chancela-store: failed to load authoritative backup recovery \
+                                     receipts ({error}); clearing that read model and entering \
+                                     DEGRADED mode"
+                                );
+                                state.backup_recovery_drill_receipts =
+                                    Arc::new(RwLock::new(Vec::new()));
+                                state.degraded = Arc::new(RwLock::new(true));
+                            }
+                        }
+                    }
                     // Rehydrate the qualified-signing read models (t57-S3): the signed variants and
                     // any in-flight pending CMD sessions, so a session survives a restart and the
                     // signed-PDF/status reads serve from memory. A read failure is non-fatal (the
@@ -1597,6 +1779,9 @@ impl AppState {
             StoreError::AlreadyExists(resource) => {
                 ApiError::Conflict(format!("{resource} already exists"))
             }
+            StoreError::SearchProjectionPaused => {
+                ApiError::Conflict("retome o índice antes de pedir uma reconstrução".to_owned())
+            }
             other => ApiError::Internal(format!("{context}: {other}")),
         }
     }
@@ -1793,14 +1978,33 @@ impl AppState {
             *self.processor_records.write().await =
                 privacy::load_processor_records(&dir.join(privacy::PROCESSORS_FILE))
                     .unwrap_or_default();
-            *self.dpia_records.write().await =
-                privacy::load_dpia_records(&dir.join(privacy::DPIAS_FILE)).unwrap_or_default();
-            *self.breach_playbooks.write().await =
-                privacy::load_breach_playbooks(&dir.join(privacy::BREACH_PLAYBOOKS_FILE))
-                    .unwrap_or_default();
-            *self.transfer_controls.write().await =
-                privacy::load_transfer_controls(&dir.join(privacy::TRANSFER_CONTROLS_FILE))
-                    .unwrap_or_default();
+            let dpia_path = dir.join(privacy::DPIAS_FILE);
+            let breach_path = dir.join(privacy::BREACH_PLAYBOOKS_FILE);
+            let transfer_path = dir.join(privacy::TRANSFER_CONTROLS_FILE);
+            let receipts_path = dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE);
+            let (dpia_records, breach_playbooks, transfer_controls, receipts) = store
+                .read_blocking_async(move |store| {
+                    Ok::<_, StoreError>((
+                        load_authoritative_dpia_records(store, &dpia_path, false)?,
+                        load_authoritative_breach_playbooks(store, &breach_path, false)?,
+                        load_authoritative_transfer_controls(store, &transfer_path, false)?,
+                        load_authoritative_backup_recovery_drill_receipts(
+                            store,
+                            &receipts_path,
+                            false,
+                        )?,
+                    ))
+                })
+                .await
+                .map_err(|error| {
+                    ApiError::Internal(format!(
+                        "reload of authoritative Action Center inputs failed: {error}"
+                    ))
+                })?;
+            *self.dpia_records.write().await = dpia_records;
+            *self.breach_playbooks.write().await = breach_playbooks;
+            *self.transfer_controls.write().await = transfer_controls;
+            *self.backup_recovery_drill_receipts.write().await = receipts;
             *self.retention_policies.write().await =
                 privacy::load_retention_policies(&dir.join(privacy::RETENTION_POLICIES_FILE))
                     .unwrap_or_default();
@@ -1812,11 +2016,6 @@ impl AppState {
             *self.retention_candidate_resolutions.write().await =
                 privacy::load_retention_candidate_resolution_records(
                     &dir.join(privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
-                )
-                .unwrap_or_default();
-            *self.backup_recovery_drill_receipts.write().await =
-                backup_recovery::load_backup_recovery_drill_receipts(
-                    &dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
                 )
                 .unwrap_or_default();
             *self.notification_triage.write().await = notifications::load_notification_triage(
@@ -2056,6 +2255,8 @@ impl AppState {
     /// unsupported encrypted-store configuration returns an error instead of silently running
     /// plaintext or in-memory.
     pub fn try_from_env() -> Result<Self, AppStateInitError> {
+        let search_runtime = search::SearchRuntimeMode::from_env()
+            .map_err(AppStateInitError::SearchRuntimeConfiguration)?;
         let database_encryption = DatabaseEncryptionConfig::from_env()?;
         let mut state = match Self::resolve_data_dir() {
             Some(dir) => Self::try_with_data_dir(dir, database_encryption)?,
@@ -2088,6 +2289,14 @@ impl AppState {
         state.session_max_lifetime = session_max_lifetime_from_env();
         state.notification_dismiss_retention = notifications::notification_dismiss_retention();
         state.template_history_limit = template_history_limit_from_env();
+        state.search_runtime = search_runtime;
+        if search_runtime == search::SearchRuntimeMode::QueryOnly && state.store.is_none() {
+            return Err(AppStateInitError::SearchRuntimeConfiguration(format!(
+                "{}=query-only requires a durable store; set {}",
+                search::SEARCH_RUNTIME_ENV,
+                DATA_DIR_ENV
+            )));
+        }
         if let Some(store) = state.store.as_ref() {
             match store.prune_user_template_versions(state.template_history_limit.0) {
                 Ok(_) => {}
@@ -2116,6 +2325,233 @@ impl AppState {
             .map_err(|error| AppStateInitError::CorsConfiguration(error.to_string()))?;
         warn_if_credential_key_unavailable(&state);
         Ok(state)
+    }
+
+    /// Build the dedicated, read-only snapshot used by the external search projector.
+    ///
+    /// Unlike [`Self::try_from_env`], this does not construct HTTP/session authority, read signing
+    /// provider credentials, open the zero-knowledge repository, configure caches, run migrations,
+    /// or perform startup maintenance. It loads only the durable corpus inputs plus the few
+    /// file-backed privacy/backup sidecars required to derive Action Center search rows.
+    #[doc(hidden)]
+    pub fn try_from_env_for_search_projector() -> Result<Self, AppStateInitError> {
+        let database_encryption = DatabaseEncryptionConfig::from_env()?;
+        let dir = Self::resolve_data_dir().ok_or_else(|| {
+            AppStateInitError::SearchRuntimeConfiguration(format!(
+                "the external search projector requires a durable store; set {DATA_DIR_ENV}"
+            ))
+        })?;
+        let store = Self::open_search_projector_store(&dir, &database_encryption)?;
+        Self::load_search_projector_snapshot(dir, database_encryption, store)
+    }
+
+    /// Hydrate a projector-only snapshot from a store handle the projector opened at the current
+    /// capture boundary.
+    ///
+    /// The external runtime uses its stable Postgres handle instead of opening a second pool per
+    /// generation. On SQLite it supplies a newly reopened handle after the capture-before read, so
+    /// recovery inode replacement remains observable by the capture-after comparison.
+    #[doc(hidden)]
+    pub fn try_from_env_for_search_projector_with_store(
+        store: Store,
+    ) -> Result<Self, AppStateInitError> {
+        let database_encryption = DatabaseEncryptionConfig::from_env()?;
+        let dir = Self::resolve_data_dir().ok_or_else(|| {
+            AppStateInitError::SearchRuntimeConfiguration(format!(
+                "the external search projector requires a durable store; set {DATA_DIR_ENV}"
+            ))
+        })?;
+        Self::load_search_projector_snapshot(dir, database_encryption, store)
+    }
+
+    /// Open a fresh durable-store handle for projector control/lease/CAS operations without
+    /// hydrating the full HTTP read model.
+    ///
+    /// The projector deliberately reopens this handle at every poll and immediately before
+    /// publication. On SQLite, a recovery operation can atomically replace the database file; a
+    /// connection retained across that swap would otherwise keep reading the old inode.
+    #[doc(hidden)]
+    pub fn try_search_projector_store_from_env() -> Result<Store, AppStateInitError> {
+        let database_encryption = DatabaseEncryptionConfig::from_env()?;
+        let dir = Self::resolve_data_dir().ok_or_else(|| {
+            AppStateInitError::SearchRuntimeConfiguration(format!(
+                "the external search projector requires a durable store; set {DATA_DIR_ENV}"
+            ))
+        })?;
+        Self::open_search_projector_store(&dir, &database_encryption)
+    }
+
+    /// Open the projector's query-only control store and read only the search runtime settings
+    /// needed to size/start the process. No corpus rows, HTTP authority, provider credentials,
+    /// migrations, or startup maintenance are loaded.
+    #[doc(hidden)]
+    pub fn try_search_projector_store_and_config_from_env()
+    -> Result<(Store, ExternalSearchProjectorConfig), AppStateInitError> {
+        let database_encryption = DatabaseEncryptionConfig::from_env()?;
+        let dir = Self::resolve_data_dir().ok_or_else(|| {
+            AppStateInitError::SearchRuntimeConfiguration(format!(
+                "the external search projector requires a durable store; set {DATA_DIR_ENV}"
+            ))
+        })?;
+        let store = Self::open_search_projector_store(&dir, &database_encryption)?;
+        let config = Self::load_search_projector_config(&store, &dir)?;
+        Ok((store, config))
+    }
+
+    /// Refresh the minimal external-projector settings slice through an already open query-only
+    /// store. PostgreSQL reads the authoritative settings singleton; SQLite reads the existing
+    /// settings file without opening another database or running schema work.
+    #[doc(hidden)]
+    pub fn try_search_projector_config_with_store(
+        store: &Store,
+    ) -> Result<ExternalSearchProjectorConfig, AppStateInitError> {
+        let dir = Self::resolve_data_dir().ok_or_else(|| {
+            AppStateInitError::SearchRuntimeConfiguration(format!(
+                "the external search projector requires a durable store; set {DATA_DIR_ENV}"
+            ))
+        })?;
+        Self::load_search_projector_config(store, &dir)
+    }
+
+    fn load_search_projector_config(
+        store: &Store,
+        dir: &Path,
+    ) -> Result<ExternalSearchProjectorConfig, AppStateInitError> {
+        let loaded_settings = Self::load_search_projector_settings(store, dir)?;
+        Ok(ExternalSearchProjectorConfig::from(&loaded_settings.search))
+    }
+
+    fn load_search_projector_settings(
+        store: &Store,
+        dir: &Path,
+    ) -> Result<settings::Settings, AppStateInitError> {
+        let loaded = if store.cluster_election_enabled() {
+            match store
+                .settings()
+                .map_err(|source| AppStateInitError::StoreLoad {
+                    data_dir: dir.to_path_buf(),
+                    source,
+                })? {
+                Some(raw) => {
+                    serde_json::from_str(&raw).map_err(|source| AppStateInitError::StoreLoad {
+                        data_dir: dir.to_path_buf(),
+                        source: StoreError::Serde(source),
+                    })?
+                }
+                None => settings::Settings::default(),
+            }
+        } else {
+            settings::load_settings_for_search_projector(&dir.join(settings::SETTINGS_FILE))
+                .map_err(|source| AppStateInitError::StoreLoad {
+                    data_dir: dir.to_path_buf(),
+                    source,
+                })?
+        };
+        Ok(loaded)
+    }
+
+    fn open_search_projector_store(
+        dir: &Path,
+        database_encryption: &DatabaseEncryptionConfig,
+    ) -> Result<Store, AppStateInitError> {
+        if database_encryption.is_configured() {
+            let key_ops = Store::key_ops_status(dir, &database_encryption.store_open_options())
+                .map_err(|source| AppStateInitError::StoreOpen {
+                    data_dir: dir.to_path_buf(),
+                    source,
+                })?;
+            if key_ops.plan == StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration {
+                return Err(AppStateInitError::StoreOpen {
+                    data_dir: dir.to_path_buf(),
+                    source: StoreError::PlaintextEncryptionMigrationUnsupported {
+                        db_file: key_ops.database_file.display().to_string(),
+                    },
+                });
+            }
+            ensure_sqlcipher_feature_available()?;
+        }
+        let backend =
+            database::resolve_search_projector_backend_selection(dir, database_encryption)?;
+        Store::open_search_projector_backend(backend.selection).map_err(|source| {
+            AppStateInitError::StoreOpen {
+                data_dir: dir.to_path_buf(),
+                source,
+            }
+        })
+    }
+
+    fn load_search_projector_snapshot(
+        dir: PathBuf,
+        database_encryption: DatabaseEncryptionConfig,
+        store: Store,
+    ) -> Result<Self, AppStateInitError> {
+        let sidecars_db_backed = store.cluster_election_enabled();
+        let loaded_settings = Self::load_search_projector_settings(&store, &dir)?;
+        let projector_sidecar_error = |source| AppStateInitError::StoreLoad {
+            data_dir: dir.clone(),
+            source,
+        };
+        let dpia_records =
+            load_authoritative_dpia_records(&store, &dir.join(privacy::DPIAS_FILE), true)
+                .map_err(&projector_sidecar_error)?;
+        let breach_playbooks = load_authoritative_breach_playbooks(
+            &store,
+            &dir.join(privacy::BREACH_PLAYBOOKS_FILE),
+            true,
+        )
+        .map_err(&projector_sidecar_error)?;
+        let transfer_controls = load_authoritative_transfer_controls(
+            &store,
+            &dir.join(privacy::TRANSFER_CONTROLS_FILE),
+            true,
+        )
+        .map_err(&projector_sidecar_error)?;
+        let backup_recovery_drill_receipts = load_authoritative_backup_recovery_drill_receipts(
+            &store,
+            &dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
+            true,
+        )
+        .map_err(projector_sidecar_error)?;
+        // Validate the small policy/Action Center inputs before hydrating the potentially large
+        // durable corpus. The projector runtime still owns the surrounding capture-before/after
+        // comparison, so this fail-fast ordering does not weaken the stable candidate boundary.
+        let loaded =
+            store
+                .load_search_corpus_snapshot()
+                .map_err(|source| AppStateInitError::StoreLoad {
+                    data_dir: dir.clone(),
+                    source,
+                })?;
+        let healthy = loaded.integrity.healthy;
+        let verify_cache = cache::VerifyMemo::default();
+        verify_cache.prime(&loaded.ledger, &loaded.chain_status);
+
+        Ok(Self {
+            settings: Arc::new(RwLock::new(loaded_settings)),
+            entities: Arc::new(RwLock::new(loaded.entities)),
+            group_template_libraries: Arc::new(RwLock::new(loaded.group_template_libraries)),
+            group_template_library_revisions: Arc::new(RwLock::new(
+                loaded.group_template_library_revisions,
+            )),
+            books: Arc::new(RwLock::new(loaded.books)),
+            acts: Arc::new(RwLock::new(loaded.acts)),
+            follow_ups: Arc::new(RwLock::new(loaded.follow_ups)),
+            registry_extracts: Arc::new(RwLock::new(loaded.registry_extracts)),
+            ledger: Arc::new(RwLock::new(loaded.ledger)),
+            chain_status: Some(Arc::new(loaded.chain_status)),
+            degraded: Arc::new(RwLock::new(!healthy)),
+            dpia_records: Arc::new(RwLock::new(dpia_records)),
+            breach_playbooks: Arc::new(RwLock::new(breach_playbooks)),
+            transfer_controls: Arc::new(RwLock::new(transfer_controls)),
+            backup_recovery_drill_receipts: Arc::new(RwLock::new(backup_recovery_drill_receipts)),
+            sidecars_db_backed,
+            database_encryption_configured: database_encryption.is_configured(),
+            database_encryption_key_source: database_encryption.key_source(),
+            store: Some(store),
+            search_runtime: search::SearchRuntimeMode::QueryOnly,
+            verify_cache,
+            ..Self::default()
+        })
     }
 
     /// The data directory `from_env` would use, or `None` for in-memory. Exposed so a binary can
@@ -11280,6 +11716,8 @@ mod tests {
             "documents": {
                 "locale": "en-US",
                 "numbering_scheme_default": "LooseLeaf",
+                "template_preview_samples":
+                    crate::template_preview_samples::TemplatePreviewSampleSettings::default(),
                 "layout_defaults": {
                     "page": {
                         "size": "Letter",
@@ -11474,6 +11912,10 @@ mod tests {
                 "phone_pairing_share_whatsapp_enabled": true,
                 "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
             },
+            // `/v1/search/settings` is the sole writer for this separately authorized slice.
+            // Broad settings PUTs preserve its current value, so the round-trip fixture includes
+            // the authoritative default that the endpoint will return.
+            "search": settings::SearchSettings::default(),
             "workflow": {
                 "reminders": {
                     "enabled": true,
@@ -13066,6 +13508,351 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.dir);
         }
+    }
+
+    fn load_projector_snapshot_from(dir: &Path) -> Result<AppState, AppStateInitError> {
+        let store = Store::open(dir).expect("API owner initializes schema");
+        AppState::load_search_projector_snapshot(
+            dir.to_path_buf(),
+            DatabaseEncryptionConfig::plaintext(),
+            store,
+        )
+    }
+
+    fn assert_projector_store_load_serde(result: Result<AppState, AppStateInitError>) {
+        match result {
+            Err(AppStateInitError::StoreLoad {
+                source: StoreError::Serde(_),
+                ..
+            }) => {}
+            Err(error) => panic!("expected projector serialization failure, got {error}"),
+            Ok(_) => panic!("malformed projector input unexpectedly loaded"),
+        }
+    }
+
+    fn assert_projector_store_load_io(result: Result<AppState, AppStateInitError>) {
+        match result {
+            Err(AppStateInitError::StoreLoad {
+                source: StoreError::Io(_),
+                ..
+            }) => {}
+            Err(error) => panic!("expected projector I/O failure, got {error}"),
+            Ok(_) => panic!("unreadable projector input unexpectedly loaded"),
+        }
+    }
+
+    #[test]
+    fn projector_snapshot_ignores_unrelated_credentials_and_runtime_authorities() {
+        let tmp = TempDir::new();
+        std::fs::write(
+            tmp.dir.join(secretstore_persist::CREDENTIAL_SIDECAR_FILE),
+            b"this is deliberately not a credential envelope",
+        )
+        .expect("poison credential sidecar");
+        let store = Store::open(&tmp.dir).expect("API owner initializes schema");
+        let state = AppState::load_search_projector_snapshot(
+            tmp.dir.clone(),
+            DatabaseEncryptionConfig::plaintext(),
+            store,
+        )
+        .expect("projector loads only corpus inputs");
+
+        assert!(state.store.is_some());
+        assert_eq!(state.search_runtime, search::SearchRuntimeMode::QueryOnly);
+        assert!(state.csc_providers.is_empty());
+        assert!(!state.local_signing);
+        assert!(
+            format!("{:?}", state.provider_credentials).contains("persisted: false"),
+            "projector must retain the inert default credential store"
+        );
+        assert!(
+            state.persist_path.is_none(),
+            "projector snapshot must not expose a settings mutation path"
+        );
+    }
+
+    #[test]
+    fn projector_absent_settings_and_sidecars_load_defaults_and_empty_registers() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("API owner initializes schema");
+
+        let config = AppState::load_search_projector_config(&store, &tmp.dir)
+            .expect("an absent SQLite settings file selects defaults");
+        assert_eq!(
+            config,
+            ExternalSearchProjectorConfig::from(&settings::Settings::default().search)
+        );
+
+        let state =
+            load_projector_snapshot_from(&tmp.dir).expect("absent projector sidecars are empty");
+        assert_eq!(
+            *state.settings.try_read().expect("settings unlocked"),
+            settings::Settings::default()
+        );
+        assert!(
+            state
+                .dpia_records
+                .try_read()
+                .expect("DPIAs unlocked")
+                .is_empty()
+        );
+        assert!(
+            state
+                .breach_playbooks
+                .try_read()
+                .expect("breach playbooks unlocked")
+                .is_empty()
+        );
+        assert!(
+            state
+                .transfer_controls
+                .try_read()
+                .expect("transfer controls unlocked")
+                .is_empty()
+        );
+        assert!(
+            state
+                .backup_recovery_drill_receipts
+                .try_read()
+                .expect("backup receipts unlocked")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn projector_config_preflight_reads_only_the_sqlite_settings_file() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("API owner initializes schema");
+        let mut document = settings::Settings::default();
+        document.search.enabled = false;
+        document.search.index_threads = 7;
+        document.search.interval_seconds = 321;
+        settings::write_settings_atomic(&tmp.dir.join(settings::SETTINGS_FILE), &document)
+            .expect("seed search settings");
+
+        let config = AppState::load_search_projector_config(&store, &tmp.dir)
+            .expect("preflight reads the narrow settings slice");
+
+        assert_eq!(
+            config,
+            ExternalSearchProjectorConfig {
+                enabled: false,
+                index_threads: 7,
+                interval_seconds: 321,
+            }
+        );
+
+        let state = load_projector_snapshot_from(&tmp.dir)
+            .expect("full hydration reuses the strict settings loader");
+        assert!(
+            !state
+                .settings
+                .try_read()
+                .expect("settings unlocked")
+                .search
+                .enabled
+        );
+    }
+
+    #[test]
+    fn projector_settings_fail_closed_when_malformed_in_preflight_or_full_hydration() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("API owner initializes schema");
+        std::fs::write(tmp.dir.join(settings::SETTINGS_FILE), b"{ malformed")
+            .expect("malformed settings fixture");
+
+        match AppState::load_search_projector_config(&store, &tmp.dir) {
+            Err(AppStateInitError::StoreLoad {
+                source: StoreError::Serde(_),
+                ..
+            }) => {}
+            Err(error) => panic!("expected projector serialization failure, got {error}"),
+            Ok(_) => panic!("malformed projector settings unexpectedly loaded"),
+        }
+        assert_projector_store_load_serde(load_projector_snapshot_from(&tmp.dir));
+    }
+
+    #[test]
+    fn projector_settings_fail_closed_when_existing_path_is_unreadable() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("API owner initializes schema");
+        std::fs::create_dir(tmp.dir.join(settings::SETTINGS_FILE))
+            .expect("directory makes settings path unreadable as a file");
+
+        match AppState::load_search_projector_config(&store, &tmp.dir) {
+            Err(AppStateInitError::StoreLoad {
+                source: StoreError::Io(_),
+                ..
+            }) => {}
+            Err(error) => panic!("expected projector I/O failure, got {error}"),
+            Ok(_) => panic!("unreadable projector settings unexpectedly loaded"),
+        }
+        assert_projector_store_load_io(load_projector_snapshot_from(&tmp.dir));
+    }
+
+    #[test]
+    fn projector_privacy_and_backup_sidecars_fail_closed_when_malformed() {
+        for file in [
+            privacy::DPIAS_FILE,
+            privacy::BREACH_PLAYBOOKS_FILE,
+            privacy::TRANSFER_CONTROLS_FILE,
+            backup_recovery::BACKUP_RECOVERY_DRILLS_FILE,
+        ] {
+            let tmp = TempDir::new();
+            std::fs::write(tmp.dir.join(file), b"[{\"partial\":")
+                .expect("malformed projector sidecar fixture");
+            assert_projector_store_load_serde(load_projector_snapshot_from(&tmp.dir));
+        }
+    }
+
+    #[test]
+    fn projector_privacy_and_backup_sidecars_fail_closed_when_unreadable() {
+        for file in [
+            privacy::DPIAS_FILE,
+            privacy::BREACH_PLAYBOOKS_FILE,
+            privacy::TRANSFER_CONTROLS_FILE,
+            backup_recovery::BACKUP_RECOVERY_DRILLS_FILE,
+        ] {
+            let tmp = TempDir::new();
+            std::fs::create_dir(tmp.dir.join(file))
+                .expect("directory makes sidecar path unreadable as a file");
+            assert_projector_store_load_io(load_projector_snapshot_from(&tmp.dir));
+        }
+    }
+
+    #[test]
+    fn projector_rejects_whole_backup_receipt_candidate_when_one_entry_fails_normalization() {
+        let tmp = TempDir::new();
+        let receipt = |id: &str| backup_recovery::BackupRecoveryDrillReceipt {
+            id: id.to_owned(),
+            created_at: "2026-07-26T08:00:00Z".to_owned(),
+            archive: "backup.zip".to_owned(),
+            preflight_ok: false,
+            preflight_ready: false,
+            encrypted: Some(false),
+            ledger_verified: false,
+            manifest: None,
+            isolated_restore_verified: false,
+            isolated_restore_verification:
+                backup_recovery::BackupRecoveryDrillIsolatedRestoreVerification::default(),
+            operator_notes: None,
+            custody_location: None,
+            restore_executed: false,
+            live_db_swapped: false,
+            sidecars_staged: false,
+            ledger_restored_appended: false,
+            data_deleted: false,
+            offsite_custody_proven: false,
+            legal_archive_certified: false,
+        };
+        let bytes = serde_json::to_vec(&vec![receipt("valid"), receipt("   ")])
+            .expect("syntactically valid receipt list");
+        std::fs::write(
+            tmp.dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
+            bytes,
+        )
+        .expect("receipt fixture");
+
+        assert_projector_store_load_io(load_projector_snapshot_from(&tmp.dir));
+    }
+
+    #[test]
+    fn projector_prefers_durable_backup_receipts_over_a_malformed_legacy_sidecar() {
+        let tmp = TempDir::new();
+        let receipt = backup_recovery::BackupRecoveryDrillReceipt {
+            id: "durable-receipt".to_owned(),
+            created_at: "2026-07-26T08:00:00Z".to_owned(),
+            archive: "backup.zip".to_owned(),
+            preflight_ok: true,
+            preflight_ready: true,
+            encrypted: Some(false),
+            ledger_verified: true,
+            manifest: None,
+            isolated_restore_verified: false,
+            isolated_restore_verification:
+                backup_recovery::BackupRecoveryDrillIsolatedRestoreVerification::default(),
+            operator_notes: None,
+            custody_location: None,
+            restore_executed: false,
+            live_db_swapped: false,
+            sidecars_staged: false,
+            ledger_restored_appended: false,
+            data_deleted: false,
+            offsite_custody_proven: false,
+            legal_archive_certified: false,
+        };
+        let raw = serde_json::to_string(&vec![receipt]).unwrap();
+        let store = Store::open(&tmp.dir).expect("API owner initializes schema");
+        store
+            .persist(|tx| tx.put_backup_recovery_drill_receipts_document(&raw))
+            .unwrap();
+        std::fs::write(
+            tmp.dir.join(backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
+            b"{ malformed",
+        )
+        .unwrap();
+
+        let state = AppState::load_search_projector_snapshot(
+            tmp.dir.clone(),
+            DatabaseEncryptionConfig::plaintext(),
+            store,
+        )
+        .expect("durable receipt singleton is authoritative");
+        let receipts = state
+            .backup_recovery_drill_receipts
+            .try_read()
+            .expect("receipt map unlocked");
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].id, "durable-receipt");
+    }
+
+    #[test]
+    fn normal_server_startup_remains_permissive_for_malformed_projector_sidecars() {
+        let tmp = TempDir::new();
+        for file in [
+            settings::SETTINGS_FILE,
+            privacy::DPIAS_FILE,
+            privacy::BREACH_PLAYBOOKS_FILE,
+            privacy::TRANSFER_CONTROLS_FILE,
+            backup_recovery::BACKUP_RECOVERY_DRILLS_FILE,
+        ] {
+            std::fs::write(tmp.dir.join(file), b"{ malformed")
+                .expect("malformed repairable sidecar fixture");
+        }
+
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        assert_eq!(
+            *state.settings.try_read().expect("settings unlocked"),
+            settings::Settings::default()
+        );
+        assert!(
+            state
+                .dpia_records
+                .try_read()
+                .expect("DPIAs unlocked")
+                .is_empty()
+        );
+        assert!(
+            state
+                .breach_playbooks
+                .try_read()
+                .expect("breach playbooks unlocked")
+                .is_empty()
+        );
+        assert!(
+            state
+                .transfer_controls
+                .try_read()
+                .expect("transfer controls unlocked")
+                .is_empty()
+        );
+        assert!(
+            state
+                .backup_recovery_drill_receipts
+                .try_read()
+                .expect("backup receipts unlocked")
+                .is_empty()
+        );
     }
 
     #[tokio::test]

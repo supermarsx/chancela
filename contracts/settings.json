@@ -419,6 +419,7 @@
   },
   "search": {
     "enabled": true,
+    "index_threads": 2,
     "batch_size": 256,
     "interval_seconds": 30,
     "queue_capacity": 64,

@@ -264,6 +264,8 @@ pub enum AppStateInitError {
     SqlcipherFeatureUnavailable,
     /// The explicit cross-origin allowlist is malformed or unsafe.
     CorsConfiguration(String),
+    /// The search execution-mode selector is malformed.
+    SearchRuntimeConfiguration(String),
     /// Postgres/HA was selected without the Redis session authority required across nodes.
     SharedSessionsRequired,
     /// The encrypted store could not be opened.
@@ -302,6 +304,7 @@ impl fmt::Display for AppStateInitError {
                 "invalid {} configuration: {message}",
                 crate::cors::CORS_ALLOWED_ORIGINS_ENV
             ),
+            Self::SearchRuntimeConfiguration(message) => f.write_str(message),
             Self::SharedSessionsRequired => write!(
                 f,
                 "the Postgres/HA backend requires Redis-backed shared sessions; compile the redis feature and configure REDIS_URL or REDIS_URL_FILE"
@@ -384,6 +387,13 @@ pub const DATABASE_URL_ENV: &str = "DATABASE_URL";
 /// Environment variable pointing at a file that contains the PostgreSQL connection string. Mirrors
 /// [`DB_KEY_FILE_ENV`] for docker-secret delivery.
 pub const DATABASE_URL_FILE_ENV: &str = "DATABASE_URL_FILE";
+/// Projector-only PostgreSQL connection string. The external search projector must use a
+/// separately granted database role instead of inheriting the API writer's credentials.
+#[cfg(feature = "postgres")]
+pub const SEARCH_DATABASE_URL_ENV: &str = "CHANCELA_SEARCH_DATABASE_URL";
+/// Docker-secret/file indirection for [`SEARCH_DATABASE_URL_ENV`].
+#[cfg(feature = "postgres")]
+pub const SEARCH_DATABASE_URL_FILE_ENV: &str = "CHANCELA_SEARCH_DATABASE_URL_FILE";
 
 /// Which durable backend the operator selected.
 ///
@@ -446,6 +456,27 @@ pub(crate) fn resolve_backend_selection(
     }
 }
 
+/// Resolve the durable backend for the external search projector.
+///
+/// SQLite keeps using the configured data directory and optional SQLCipher key. PostgreSQL fails
+/// closed unless a projector-specific URL source is configured; silently falling back to the API
+/// writer URL would defeat the service's database least-privilege boundary.
+pub(crate) fn resolve_search_projector_backend_selection(
+    data_dir: &Path,
+    encryption: &DatabaseEncryptionConfig,
+) -> Result<ResolvedBackend, AppStateInitError> {
+    match backend_kind_from_env()? {
+        DatabaseBackendKind::Sqlite => Ok(ResolvedBackend {
+            selection: StoreBackendSelection::Sqlite {
+                data_dir: data_dir.to_path_buf(),
+                options: encryption.store_open_options(),
+            },
+            requires_durability: true,
+        }),
+        DatabaseBackendKind::Postgres => resolve_search_projector_postgres_backend(),
+    }
+}
+
 fn backend_kind_from_env() -> Result<DatabaseBackendKind, DatabaseBackendConfigError> {
     match std::env::var_os(DB_BACKEND_ENV) {
         None => Ok(DatabaseBackendKind::Sqlite),
@@ -482,10 +513,66 @@ fn resolve_postgres_backend() -> Result<ResolvedBackend, AppStateInitError> {
     })
 }
 
+#[cfg(feature = "postgres")]
+fn resolve_search_projector_postgres_backend() -> Result<ResolvedBackend, AppStateInitError> {
+    let direct = std::env::var_os(SEARCH_DATABASE_URL_ENV);
+    let file = std::env::var_os(SEARCH_DATABASE_URL_FILE_ENV).map(PathBuf::from);
+    let database_url = match (direct, file) {
+        (None, None) => {
+            return Err(AppStateInitError::SearchRuntimeConfiguration(format!(
+                "{DB_BACKEND_ENV}=postgres requires a restricted projector connection; set \
+                 {SEARCH_DATABASE_URL_ENV} or {SEARCH_DATABASE_URL_FILE_ENV}"
+            )));
+        }
+        (Some(_), Some(_)) => {
+            return Err(AppStateInitError::SearchRuntimeConfiguration(format!(
+                "{SEARCH_DATABASE_URL_ENV} and {SEARCH_DATABASE_URL_FILE_ENV} are both set; \
+                 configure exactly one projector connection-string source"
+            )));
+        }
+        (Some(raw), None) => raw.into_string().map_err(|_| {
+            AppStateInitError::SearchRuntimeConfiguration(format!(
+                "{SEARCH_DATABASE_URL_ENV} contains non-Unicode data"
+            ))
+        })?,
+        (None, Some(path)) => {
+            if path.as_os_str().is_empty() {
+                return Err(AppStateInitError::SearchRuntimeConfiguration(format!(
+                    "{SEARCH_DATABASE_URL_FILE_ENV} is set but empty"
+                )));
+            }
+            std::fs::read_to_string(&path).map_err(|source| {
+                AppStateInitError::SearchRuntimeConfiguration(format!(
+                    "failed to read the projector PostgreSQL connection string configured by \
+                     {SEARCH_DATABASE_URL_FILE_ENV} at {}: {source}",
+                    path.display()
+                ))
+            })?
+        }
+    };
+    let database_url = database_url.trim();
+    if database_url.is_empty() {
+        return Err(AppStateInitError::SearchRuntimeConfiguration(
+            "the configured projector PostgreSQL connection string is empty".to_owned(),
+        ));
+    }
+    Ok(ResolvedBackend {
+        selection: StoreBackendSelection::Postgres {
+            database_url: database_url.to_owned(),
+        },
+        requires_durability: true,
+    })
+}
+
 #[cfg(not(feature = "postgres"))]
 fn resolve_postgres_backend() -> Result<ResolvedBackend, AppStateInitError> {
     // Fail closed at the config layer: the Postgres backend was compiled out (embedded builds), so a
     // stray CHANCELA_DB_BACKEND=postgres must not silently open SQLite.
+    Err(DatabaseBackendConfigError::PostgresFeatureUnavailable.into())
+}
+
+#[cfg(not(feature = "postgres"))]
+fn resolve_search_projector_postgres_backend() -> Result<ResolvedBackend, AppStateInitError> {
     Err(DatabaseBackendConfigError::PostgresFeatureUnavailable.into())
 }
 

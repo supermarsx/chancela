@@ -37,6 +37,13 @@ interface BoundedField {
 
 const BOUNDED_FIELDS: readonly BoundedField[] = [
   {
+    key: 'index_threads',
+    label: 'admin.search.indexThreads.label',
+    hint: 'admin.search.indexThreads.hint',
+    min: 2,
+    max: 16,
+  },
+  {
     key: 'batch_size',
     label: 'admin.search.batchSize.label',
     hint: 'admin.search.batchSize.hint',
@@ -126,6 +133,12 @@ function formatNumber(value: number, locale: string): string {
   return new Intl.NumberFormat(locale).format(value);
 }
 
+function dateFromUnixMillis(value: number | undefined): string | null {
+  if (value === undefined || !Number.isFinite(value)) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function StatusValue({ date, fallback }: { date: string | null | undefined; fallback: string }) {
   return date ? <DateTime value={date} evidentiary /> : <>{fallback}</>;
 }
@@ -140,10 +153,22 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
   const indexedContentChars = status.indexed_content_chars ?? 0;
   const progressMax = Math.max(total, 1);
   const phaseKey = `admin.search.phase.${status.phase}` as SearchCopyKey;
+  const modeKey = `admin.search.runtime.${status.execution_mode}` as SearchCopyKey;
+  const commandKey = status.projector_command
+    ? (`admin.search.command.${status.projector_command}` as SearchCopyKey)
+    : null;
+  const projectorPhaseKey = status.projector_phase
+    ? (`admin.search.projectorPhase.${status.projector_phase}` as SearchCopyKey)
+    : null;
+  const leaseExpiry = dateFromUnixMillis(status.projector_lease_expires_at_unix_ms);
   const rows = [
     {
       label: st('admin.search.status.phase'),
       value: <Badge tone={phaseTone(status.phase)}>{st(phaseKey)}</Badge>,
+    },
+    {
+      label: st('admin.search.status.runtime'),
+      value: st(modeKey),
     },
     {
       label: st('admin.search.status.documents'),
@@ -205,6 +230,45 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
         status.last_event_seq == null
           ? st('admin.search.status.none')
           : formatNumber(status.last_event_seq, locale),
+    },
+    {
+      label: st('admin.search.status.command'),
+      value: commandKey ? st(commandKey) : st('admin.search.status.none'),
+    },
+    {
+      label: st('admin.search.status.projectorPhase'),
+      value: projectorPhaseKey ? st(projectorPhaseKey) : st('admin.search.status.none'),
+    },
+    {
+      label: st('admin.search.status.revisions'),
+      value:
+        status.projector_source_revision === undefined
+          ? st('admin.search.status.none')
+          : st('admin.search.status.revisionsValue', {
+              published: formatNumber(status.projector_published_source_revision ?? 0, locale),
+              source: formatNumber(status.projector_source_revision, locale),
+            }),
+    },
+    {
+      label: st('admin.search.status.leaseOwner'),
+      value: status.projector_lease_owner ?? st('admin.search.status.none'),
+    },
+    {
+      label: st('admin.search.status.heartbeat'),
+      value: (
+        <StatusValue
+          date={status.projector_heartbeat_at}
+          fallback={st('admin.search.status.none')}
+        />
+      ),
+    },
+    {
+      label: st('admin.search.status.leaseExpiry'),
+      value: <StatusValue date={leaseExpiry} fallback={st('admin.search.status.none')} />,
+    },
+    {
+      label: st('admin.search.status.projectorError'),
+      value: status.projector_last_error ?? st('admin.search.status.none'),
     },
     {
       label: st('admin.search.status.worker'),

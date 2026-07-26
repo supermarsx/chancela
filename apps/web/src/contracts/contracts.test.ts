@@ -5126,6 +5126,7 @@ describe('contract fixtures parse through the real client', () => {
       settings.search,
       {
         enabled: true,
+        index_threads: true,
         batch_size: true,
         interval_seconds: true,
         queue_capacity: true,
@@ -5141,6 +5142,7 @@ describe('contract fixtures parse through the real client', () => {
     );
     expect(typeof search.enabled).toBe('boolean');
     for (const value of [
+      search.index_threads,
       search.batch_size,
       search.interval_seconds,
       search.queue_capacity,
@@ -5155,6 +5157,8 @@ describe('contract fixtures parse through the real client', () => {
       expect(Number.isInteger(value)).toBe(true);
       expect(value).toBeGreaterThan(0);
     }
+    expect(search.index_threads).toBeGreaterThanOrEqual(2);
+    expect(search.index_threads).toBeLessThanOrEqual(16);
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },

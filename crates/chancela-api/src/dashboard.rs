@@ -20,6 +20,7 @@ use chancela_store::{
     StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
 };
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
 use time::{Date, Month, OffsetDateTime};
 
@@ -244,12 +245,34 @@ pub(crate) async fn search_actionables(
 
 /// Search-worker entry point that reuses its already bounded core-domain snapshot instead of
 /// cloning the largest maps a second time.
+#[cfg(test)]
 pub(crate) async fn search_actionables_from_snapshot(
     state: &AppState,
     entities: &HashMap<EntityId, Entity>,
     books: &HashMap<BookId, Book>,
     acts: &HashMap<ActId, Act>,
     follow_ups: &HashMap<String, StoredFollowUp>,
+) -> Result<Vec<DashboardSearchActionable>, ApiError> {
+    search_actionables_from_snapshot_at(
+        state,
+        entities,
+        books,
+        acts,
+        follow_ups,
+        OffsetDateTime::now_utc(),
+    )
+    .await
+}
+
+/// Deterministic search-projection variant: every deadline, freshness, and reminder calculation
+/// in one corpus build is derived from this single UTC instant.
+pub(crate) async fn search_actionables_from_snapshot_at(
+    state: &AppState,
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    follow_ups: &HashMap<String, StoredFollowUp>,
+    projection_as_of: OffsetDateTime,
 ) -> Result<Vec<DashboardSearchActionable>, ApiError> {
     let settings = state.settings.read().await;
     let reminder_policy = settings.workflow.reminders.clone();
@@ -267,7 +290,7 @@ pub(crate) async fn search_actionables_from_snapshot(
         let ledger = state.ledger.read().await;
         state.verify_cache.verdict(&ledger).is_ok()
     };
-    let now = OffsetDateTime::now_utc();
+    let now = projection_as_of.to_offset(time::UtcOffset::UTC);
     let today = now.date();
     let mut alerts = dashboard_alerts(
         entities,
@@ -301,8 +324,26 @@ pub(crate) async fn search_actionables_from_snapshot(
         &reminder_policy,
     );
 
+    search_actionables_from_rows(alerts, reminders)
+}
+
+fn stable_search_actionable_id<T: Serialize>(
+    prefix: &str,
+    semantic_identity: &T,
+) -> Result<String, ApiError> {
+    let canonical = serde_json::to_vec(semantic_identity).map_err(ApiError::from)?;
+    let digest: [u8; 32] = Sha256::digest(canonical).into();
+    Ok(format!("{prefix}:{}", crate::hex::hex(&digest)))
+}
+
+fn search_actionables_from_rows(
+    mut alerts: Vec<DashboardAlert>,
+    mut reminders: Vec<DashboardReminder>,
+) -> Result<Vec<DashboardSearchActionable>, ApiError> {
+    sort_dashboard_alerts(&mut alerts);
+    sort_dashboard_reminders(&mut reminders);
     let mut out = Vec::with_capacity(alerts.len() + reminders.len());
-    for (index, alert) in alerts.into_iter().enumerate() {
+    for alert in alerts {
         let required_permission = if alert.category == "LedgerIntegrity" {
             Permission::LedgerRead
         } else if alert.code.starts_with("backup.") {
@@ -334,8 +375,19 @@ pub(crate) async fn search_actionables_from_snapshot(
         } else {
             serde_json::to_string(&alert).map_err(ApiError::from)?
         };
+        let id = stable_search_actionable_id(
+            "alert",
+            &(
+                &alert.code,
+                &alert.target.entity_id,
+                &alert.target.book_id,
+                &alert.target.act_id,
+                &alert.params,
+                &alert.source,
+            ),
+        )?;
         out.push(DashboardSearchActionable {
-            id: format!("alert:{index}:{}", alert.code),
+            id,
             title: alert.code.clone(),
             body,
             status: alert.severity.clone(),
@@ -346,7 +398,7 @@ pub(crate) async fn search_actionables_from_snapshot(
             required_permission,
         });
     }
-    for (index, reminder) in reminders.into_iter().enumerate() {
+    for reminder in reminders {
         let act_id = reminder.params.get("act_id").cloned();
         let book_id = reminder.params.get("book_id").cloned();
         let required_permission = if reminder.source_rule.starts_with("privacy.")
@@ -379,8 +431,18 @@ pub(crate) async fn search_actionables_from_snapshot(
                 serde_json::to_string(&reminder).map_err(ApiError::from)?,
             )
         };
+        let id = stable_search_actionable_id(
+            "reminder",
+            &(
+                &reminder.source_rule,
+                &reminder.source_profile,
+                &reminder.entity_id,
+                &reminder.due_date,
+                &reminder.params,
+            ),
+        )?;
         out.push(DashboardSearchActionable {
-            id: format!("reminder:{index}:{}", reminder.source_rule),
+            id,
             title,
             body,
             status: reminder.status.clone(),
@@ -809,7 +871,16 @@ fn sort_dashboard_alerts(alerts: &mut [DashboardAlert]) {
             .then_with(|| a.target.entity_id.cmp(&b.target.entity_id))
             .then_with(|| a.target.book_id.cmp(&b.target.book_id))
             .then_with(|| a.target.act_id.cmp(&b.target.act_id))
+            .then_with(|| a.params.cmp(&b.params))
+            .then_with(|| a.source.cmp(&b.source))
+            .then_with(|| a.severity.cmp(&b.severity))
+            .then_with(|| a.message.cmp(&b.message))
+            .then_with(|| canonical_dashboard_sort_key(a).cmp(&canonical_dashboard_sort_key(b)))
     });
+}
+
+fn canonical_dashboard_sort_key<T: Serialize>(value: &T) -> Vec<u8> {
+    serde_json::to_vec(value).expect("dashboard DTO serialization is infallible")
 }
 
 fn backup_recovery_freshness_alert(
@@ -1665,6 +1736,12 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
         );
     }
 
+    sort_dashboard_reminders(&mut reminders);
+    reminders.truncate(policy.dashboard_limit as usize);
+    reminders
+}
+
+fn sort_dashboard_reminders(reminders: &mut [DashboardReminder]) {
     reminders.sort_by(|a, b| {
         dashboard_reminder_due_date_sort_key(a)
             .cmp(&dashboard_reminder_due_date_sort_key(b))
@@ -1672,9 +1749,12 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
             .then_with(|| a.entity_id.cmp(&b.entity_id))
             .then_with(|| a.source_profile.cmp(&b.source_profile))
             .then_with(|| a.source_rule.cmp(&b.source_rule))
+            .then_with(|| a.params.cmp(&b.params))
+            .then_with(|| a.status.cmp(&b.status))
+            .then_with(|| a.severity.cmp(&b.severity))
+            .then_with(|| a.reason.cmp(&b.reason))
+            .then_with(|| canonical_dashboard_sort_key(a).cmp(&canonical_dashboard_sort_key(b)))
     });
-    reminders.truncate(policy.dashboard_limit as usize);
-    reminders
 }
 
 fn follow_up_reminders(
@@ -6527,5 +6607,46 @@ mod tests {
         assert_eq!(reminders[1].entity_id, second_id);
         assert_eq!(reminders[0].due_date, reminders[1].due_date);
         assert_eq!(reminders[0].entity_name, reminders[1].entity_name);
+    }
+
+    #[test]
+    fn tied_search_reminders_have_semantic_ids_and_byte_stable_order() {
+        fn reminder(act_id: &str) -> DashboardReminder {
+            DashboardReminder {
+                due_date: "2026-07-26".to_owned(),
+                severity: "Advisory".to_owned(),
+                status: "DueSoon".to_owned(),
+                reason: "Review the tied reminder".to_owned(),
+                entity_id: "00000000-0000-4000-8000-000000000001".to_owned(),
+                entity_name: "Entidade".to_owned(),
+                source_rule: "act.follow_up".to_owned(),
+                source_profile: "commercial".to_owned(),
+                params: dashboard_alert_params([
+                    ("act_id", act_id.to_owned()),
+                    ("book_id", "00000000-0000-4000-8000-000000000010".to_owned()),
+                ]),
+                profile_calendar_plan: None,
+                law_refs: Vec::new(),
+                action: None,
+                recommended_next_steps: Vec::new(),
+                i18n: None,
+            }
+        }
+
+        let first = reminder("00000000-0000-4000-8000-000000000020");
+        let second = reminder("00000000-0000-4000-8000-000000000021");
+        let forward = search_actionables_from_rows(Vec::new(), vec![first.clone(), second.clone()])
+            .expect("tied reminders project");
+        let reversed = search_actionables_from_rows(Vec::new(), vec![second, first])
+            .expect("reversed tied reminders project");
+
+        assert_eq!(
+            serde_json::to_vec(&forward).expect("search actionables serialize"),
+            serde_json::to_vec(&reversed).expect("search actionables serialize")
+        );
+        assert_eq!(forward.len(), 2);
+        assert_ne!(forward[0].id, forward[1].id);
+        assert!(forward.iter().all(|row| row.id.starts_with("reminder:")));
+        assert!(forward.iter().all(|row| !row.id.starts_with("reminder:0:")));
     }
 }

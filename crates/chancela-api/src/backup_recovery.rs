@@ -13,7 +13,9 @@ use chancela_store::recovery::{
     RestorePreflightIsolatedRestoreEvidence, RestorePreflightManifestEvidence,
     RestorePreflightOutcome,
 };
+use chancela_store::{StoreError, Tx};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
@@ -449,7 +451,7 @@ pub async fn create_backup_recovery_drill(
         legal_archive_certified: false,
     };
 
-    persist_receipt(&state, receipt.clone()).await?;
+    persist_receipt(state.clone(), actor.resolve("api"), receipt.clone()).await?;
     Ok((StatusCode::CREATED, Json(receipt)))
 }
 
@@ -476,6 +478,48 @@ pub(crate) fn load_backup_recovery_drill_receipts(
     }
 }
 
+/// Strict projector-only receipt loader.
+///
+/// The general server loader remains repair-friendly and drops entries that fail bounded
+/// normalization. A search projection must instead be all-or-nothing: silently omitting one valid
+/// JSON entry would publish an incomplete Action Center corpus.
+pub(crate) fn load_backup_recovery_drill_receipts_for_search_projector(
+    path: &Path,
+) -> Result<Vec<BackupRecoveryDrillReceipt>, StoreError> {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(StoreError::Io(error)),
+    };
+    decode_backup_recovery_drill_receipts_for_search_projector(&bytes, &path.display().to_string())
+}
+
+/// Decode one authoritative projector receipt document without silently dropping entries.
+///
+/// This byte-oriented seam is shared by the legacy sidecar fallback and the DB-backed singleton
+/// document used by clustered/projector runtimes.
+pub(crate) fn decode_backup_recovery_drill_receipts_for_search_projector(
+    bytes: &[u8],
+    source_label: &str,
+) -> Result<Vec<BackupRecoveryDrillReceipt>, StoreError> {
+    let receipts = serde_json::from_slice::<Vec<BackupRecoveryDrillReceipt>>(bytes)
+        .map_err(StoreError::Serde)?;
+    let mut normalized = Vec::with_capacity(receipts.len());
+    for (index, receipt) in receipts.into_iter().enumerate() {
+        let receipt = normalize_loaded_receipt(receipt).ok_or_else(|| {
+            StoreError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "{source_label} contains a backup recovery receipt rejected by normalization at index {index}"
+                ),
+            ))
+        })?;
+        normalized.push(receipt);
+    }
+    prune_receipts(&mut normalized);
+    Ok(normalized)
+}
+
 pub(crate) fn write_backup_recovery_drill_receipts_atomic(
     path: &Path,
     receipts: &[BackupRecoveryDrillReceipt],
@@ -500,21 +544,81 @@ pub(crate) fn write_backup_recovery_drill_receipts_atomic(
 }
 
 async fn persist_receipt(
-    state: &AppState,
+    state: AppState,
+    actor: String,
     receipt: BackupRecoveryDrillReceipt,
 ) -> Result<(), ApiError> {
+    persist_receipt_with_store_action(state, actor, receipt, |_tx| Ok(())).await
+}
+
+async fn persist_receipt_with_store_action(
+    state: AppState,
+    actor: String,
+    receipt: BackupRecoveryDrillReceipt,
+    store_action: impl FnOnce(&Tx<'_>) -> Result<(), StoreError> + Send + 'static,
+) -> Result<(), ApiError> {
+    // Once the receipt mutation owns its inputs, request cancellation must not leave a staged
+    // sidecar without its matching durable audit event/source revision (or vice versa).
+    let coordinator =
+        tokio::spawn(
+            async move { persist_receipt_owned(&state, &actor, receipt, store_action).await },
+        );
+    coordinator.await.map_err(|error| {
+        ApiError::Internal(format!(
+            "backup recovery receipt coordinator task failed: {error}"
+        ))
+    })?
+}
+
+async fn persist_receipt_owned(
+    state: &AppState,
+    actor: &str,
+    receipt: BackupRecoveryDrillReceipt,
+    store_action: impl FnOnce(&Tx<'_>) -> Result<(), StoreError> + Send + 'static,
+) -> Result<(), ApiError> {
+    let payload = serde_json::to_vec(&json!({
+        "receipt_id": receipt.id,
+        "preflight_ok": receipt.preflight_ok,
+        "preflight_ready": receipt.preflight_ready,
+        "isolated_restore_verified": receipt.isolated_restore_verified,
+        "ledger_verified": receipt.ledger_verified,
+    }))?;
+    let _source_mutation = crate::search::begin_source_mutation(state).await;
     let mut receipts = state.backup_recovery_drill_receipts.write().await;
     let mut next = receipts.clone();
     next.push(receipt);
     prune_receipts(&mut next);
-    if let Some(path) = &state.backup_recovery_drill_receipts_path {
-        write_backup_recovery_drill_receipts_atomic(path, &next).map_err(|e| {
-            ApiError::Internal(format!(
-                "failed to persist backup recovery drill receipts: {e}"
-            ))
-        })?;
-    }
+    let next_json = serde_json::to_string(&next)?;
+    let mut ledger = state.ledger.write().await;
+    crate::try_append_event(
+        &mut ledger,
+        actor,
+        "backup",
+        "backup.recovery_drill.recorded",
+        Some("non-destructive recovery drill receipt recorded"),
+        &payload,
+    )?;
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            tx.put_backup_recovery_drill_receipts_document(&next_json)?;
+            store_action(tx)
+        })
+        .await?;
+    // There is no await after the durable commit and before publication. The coordinator still
+    // owns the receipt/search/ledger guards, so durable state, source revision, and live memory
+    // become observable in the same poll.
     *receipts = next;
+    // The DB document is authoritative. Refresh the historical sidecar only after its audit event
+    // and search revision commit, so a projector cannot observe new receipt data under an old
+    // checkpoint. A failed cache refresh is recoverable from the committed DB singleton.
+    if let Some(path) = state.backup_recovery_drill_receipts_path.as_deref()
+        && let Err(error) = write_backup_recovery_drill_receipts_atomic(path, &receipts)
+    {
+        eprintln!(
+            "warning: committed backup recovery drill receipt but could not refresh {}: {error}",
+            path.display()
+        );
+    }
     Ok(())
 }
 
@@ -751,4 +855,242 @@ fn default_isolated_restore_status() -> String {
 
 fn default_isolated_restore_not_recorded_next_step() -> String {
     "run a new recovery drill to record isolated snapshot verification".to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestDataDir(PathBuf);
+
+    impl TestDataDir {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "chancela-backup-recovery-receipt-test-{}",
+                Uuid::new_v4()
+            ));
+            std::fs::create_dir_all(&path).unwrap();
+            Self(path)
+        }
+    }
+
+    impl Drop for TestDataDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn receipt(id: &str, created_at: &str) -> BackupRecoveryDrillReceipt {
+        BackupRecoveryDrillReceipt {
+            id: id.to_owned(),
+            created_at: created_at.to_owned(),
+            archive: format!("backups/{id}.zip"),
+            preflight_ok: true,
+            preflight_ready: true,
+            encrypted: Some(true),
+            ledger_verified: true,
+            manifest: None,
+            isolated_restore_verified: false,
+            isolated_restore_verification: BackupRecoveryDrillIsolatedRestoreVerification::default(
+            ),
+            operator_notes: None,
+            custody_location: Some("cofre externo".to_owned()),
+            restore_executed: false,
+            live_db_swapped: false,
+            sidecars_staged: false,
+            ledger_restored_appended: false,
+            data_deleted: false,
+            offsite_custody_proven: false,
+            legal_archive_certified: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn receipt_commit_is_one_audited_source_revision_and_db_authority() {
+        let dir = TestDataDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        let store = state.store.clone().unwrap();
+        let before = store.search_projection_control().unwrap();
+        let before_ledger_len = state.ledger.read().await.len();
+
+        persist_receipt_with_store_action(
+            state.clone(),
+            "recovery-operator".to_owned(),
+            receipt("receipt-1", "2026-07-26T10:00:00Z"),
+            |_tx| Ok(()),
+        )
+        .await
+        .unwrap();
+
+        let after = store.search_projection_control().unwrap();
+        assert_eq!(
+            after.checkpoint.source_revision,
+            before.checkpoint.source_revision + 1
+        );
+        let ledger = state.ledger.read().await;
+        assert_eq!(ledger.len(), before_ledger_len + 1);
+        assert_eq!(
+            ledger.events().last().unwrap().kind,
+            "backup.recovery_drill.recorded"
+        );
+        drop(ledger);
+        let raw = store
+            .backup_recovery_drill_receipts_document()
+            .unwrap()
+            .expect("authoritative receipt singleton");
+        let durable: Vec<BackupRecoveryDrillReceipt> = serde_json::from_str(&raw).unwrap();
+        assert_eq!(durable.len(), 1);
+        assert_eq!(durable[0].id, "receipt-1");
+        assert_eq!(
+            state.backup_recovery_drill_receipts.read().await.as_slice(),
+            durable.as_slice()
+        );
+    }
+
+    #[tokio::test]
+    async fn failed_receipt_transaction_leaves_every_authority_and_sidecar_unchanged() {
+        let dir = TestDataDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        persist_receipt_with_store_action(
+            state.clone(),
+            "recovery-operator".to_owned(),
+            receipt("receipt-1", "2026-07-26T10:00:00Z"),
+            |_tx| Ok(()),
+        )
+        .await
+        .unwrap();
+        let store = state.store.clone().unwrap();
+        let control_before = store.search_projection_control().unwrap();
+        let ledger_before = state.ledger.read().await.events().to_vec();
+        let memory_before = state.backup_recovery_drill_receipts.read().await.clone();
+        let document_before = store.backup_recovery_drill_receipts_document().unwrap();
+        let sidecar_path = dir.0.join(BACKUP_RECOVERY_DRILLS_FILE);
+        let sidecar_before = std::fs::read(&sidecar_path).unwrap();
+
+        let error = persist_receipt_with_store_action(
+            state.clone(),
+            "recovery-operator".to_owned(),
+            receipt("receipt-2", "2026-07-26T11:00:00Z"),
+            |_tx| {
+                Err(StoreError::Io(std::io::Error::other(
+                    "injected receipt store failure",
+                )))
+            },
+        )
+        .await
+        .unwrap_err();
+        assert!(format!("{error:?}").contains("injected receipt store failure"));
+        assert_eq!(store.search_projection_control().unwrap(), control_before);
+        assert_eq!(state.ledger.read().await.events(), ledger_before.as_slice());
+        assert_eq!(
+            *state.backup_recovery_drill_receipts.read().await,
+            memory_before
+        );
+        assert_eq!(
+            store.backup_recovery_drill_receipts_document().unwrap(),
+            document_before
+        );
+        assert_eq!(std::fs::read(sidecar_path).unwrap(), sidecar_before);
+    }
+
+    #[tokio::test]
+    async fn receipt_sidecar_never_exposes_next_document_inside_the_durable_transaction() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        let dir = TestDataDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        persist_receipt_with_store_action(
+            state.clone(),
+            "recovery-operator".to_owned(),
+            receipt("receipt-1", "2026-07-26T10:00:00Z"),
+            |_tx| Ok(()),
+        )
+        .await
+        .unwrap();
+        let sidecar_path = dir.0.join(BACKUP_RECOVERY_DRILLS_FILE);
+        let observed_old_sidecar = Arc::new(AtomicBool::new(false));
+        let observed = observed_old_sidecar.clone();
+        persist_receipt_with_store_action(
+            state,
+            "recovery-operator".to_owned(),
+            receipt("receipt-2", "2026-07-26T11:00:00Z"),
+            move |_tx| {
+                let bytes = std::fs::read(&sidecar_path)?;
+                let receipts: Vec<BackupRecoveryDrillReceipt> = serde_json::from_slice(&bytes)?;
+                observed.store(
+                    receipts.len() == 1 && receipts[0].id == "receipt-1",
+                    Ordering::Release,
+                );
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+        assert!(observed_old_sidecar.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn broken_ledger_rejects_receipt_before_any_authority_changes() {
+        let dir = TestDataDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        persist_receipt_with_store_action(
+            state.clone(),
+            "recovery-operator".to_owned(),
+            receipt("receipt-1", "2026-07-26T10:00:00Z"),
+            |_tx| Ok(()),
+        )
+        .await
+        .unwrap();
+        let mut events = state.ledger.read().await.events().to_vec();
+        events.last_mut().unwrap().hash[0] ^= 0xff;
+        *state.ledger.write().await = chancela_ledger::Ledger::try_from_events(events).0;
+        let store = state.store.clone().unwrap();
+        let control_before = store.search_projection_control().unwrap();
+        let document_before = store.backup_recovery_drill_receipts_document().unwrap();
+        let memory_before = state.backup_recovery_drill_receipts.read().await.clone();
+        let sidecar_path = dir.0.join(BACKUP_RECOVERY_DRILLS_FILE);
+        let sidecar_before = std::fs::read(&sidecar_path).unwrap();
+
+        assert!(matches!(
+            persist_receipt_with_store_action(
+                state.clone(),
+                "recovery-operator".to_owned(),
+                receipt("receipt-2", "2026-07-26T11:00:00Z"),
+                |_tx| Ok(()),
+            )
+            .await,
+            Err(ApiError::Conflict(_))
+        ));
+        assert_eq!(store.search_projection_control().unwrap(), control_before);
+        assert_eq!(
+            store.backup_recovery_drill_receipts_document().unwrap(),
+            document_before
+        );
+        assert_eq!(
+            *state.backup_recovery_drill_receipts.read().await,
+            memory_before
+        );
+        assert_eq!(std::fs::read(sidecar_path).unwrap(), sidecar_before);
+    }
+
+    #[tokio::test]
+    async fn durable_receipt_wins_over_a_stale_or_malformed_legacy_sidecar_on_restart() {
+        let dir = TestDataDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        persist_receipt_with_store_action(
+            state,
+            "recovery-operator".to_owned(),
+            receipt("receipt-db", "2026-07-26T10:00:00Z"),
+            |_tx| Ok(()),
+        )
+        .await
+        .unwrap();
+        std::fs::write(dir.0.join(BACKUP_RECOVERY_DRILLS_FILE), b"{malformed").unwrap();
+
+        let restarted = AppState::with_data_dir(dir.0.clone());
+        let receipts = restarted.backup_recovery_drill_receipts.read().await;
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(receipts[0].id, "receipt-db");
+    }
 }

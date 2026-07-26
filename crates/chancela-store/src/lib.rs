@@ -84,6 +84,13 @@ pub const DB_FILE: &str = "chancela.db";
 /// settings sidecar is one document, so it lives as one row keyed by this constant; [`Tx::put_settings`]
 /// upserts it and [`Store::settings`] reads it back.
 pub const SETTINGS_SINGLETON_ID: &str = "settings";
+/// Reserved document id in the settings document table for the bounded recovery-drill receipt
+/// list. The list is authoritative in the database so its update and the search source revision
+/// commit atomically; the legacy JSON file is only a compatibility cache.
+pub const BACKUP_RECOVERY_DRILL_RECEIPTS_SINGLETON_ID: &str = "backup-recovery-drill-receipts";
+const DPIA_RECORDS_SINGLETON_ID: &str = "privacy-dpia-records";
+const BREACH_PLAYBOOKS_SINGLETON_ID: &str = "privacy-breach-playbooks";
+const TRANSFER_CONTROLS_SINGLETON_ID: &str = "privacy-transfer-controls";
 
 /// Fixed primary-key value for the one durable full-search lifecycle/progress row.
 pub const SEARCH_INDEX_STATE_SINGLETON_ID: &str = "main";
@@ -304,11 +311,24 @@ fn projection_publish_rejection(
     None
 }
 const DOCUMENT_SEARCH_METADATA_SELECT: &str = "SELECT id, act_id, template_id, pdf_digest, profile, created_at \
-     FROM documents ORDER BY created_at ASC, rowid ASC";
+     FROM documents ORDER BY created_at ASC, id ASC";
+const GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT: &str = "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+     channel, reference, evidence_reference, imported_document_id, recipients_json, \
+     operator_note, recorded_at FROM generated_document_dispatch_evidence \
+     ORDER BY recorded_at ASC, document_id ASC, idempotency_key ASC";
+const IMPORTED_DOCUMENTS_ALL_SELECT: &str = "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
+     sha256, size_bytes, imported_at, imported_by, operator_review_status, \
+     operator_reviewed_at, operator_reviewed_by, operator_review_note, \
+     operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
+     FROM imported_documents ORDER BY imported_at DESC, id DESC";
+const PAPER_BOOK_IMPORTS_ALL_SELECT: &str = "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
+     date_to, page_count, page_from, page_to, original_number_from, original_number_to, sha256, \
+     size_bytes, content_type, source_filename, notes, imported_at, imported_by, ocr_status \
+     FROM paper_book_imports ORDER BY imported_at DESC, import_id DESC";
 const PAPER_BOOK_OCR_DRAFTS_ALL_SELECT: &str = "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
      engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
      reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
-     ORDER BY import_id ASC, created_at DESC, rowid DESC";
+     ORDER BY import_id ASC, created_at DESC, draft_id DESC";
 
 /// wp16 P1 — the Postgres `LISTEN/NOTIFY` channel the leader signals a durable ledger append on and
 /// that followers listen on for near-real-time change-feed wakes (plan §2.2). The payload is the new
@@ -357,6 +377,27 @@ pub enum StoreError {
     #[cfg(feature = "postgres")]
     #[error("postgres connection pool error: {0}")]
     R2d2(#[from] r2d2::Error),
+    /// A PostgreSQL follower did not observe the leader's final schema publication marker before
+    /// the bounded startup deadline. Followers never execute DDL.
+    #[cfg(feature = "postgres")]
+    #[error(
+        "postgres schema was not ready after {waited_ms}ms: expected version {expected}, observed {observed}"
+    )]
+    PostgresSchemaNotReady {
+        /// Bounded time spent waiting.
+        waited_ms: u64,
+        /// Schema version required by this build.
+        expected: i64,
+        /// Last safe marker observation (`missing`, an older version, or a transient error code).
+        observed: String,
+    },
+    /// PostgreSQL exposed a malformed schema publication marker. Retrying cannot safely repair it.
+    #[cfg(feature = "postgres")]
+    #[error("postgres schema version marker is malformed: {observed}")]
+    InvalidPostgresSchemaVersion {
+        /// Raw marker value, bounded before inclusion in diagnostics.
+        observed: String,
+    },
     /// The Postgres TLS layer could not be configured: an unrecognized `sslmode`, an unreadable /
     /// empty `CHANCELA_PG_TLS_ROOT_CERT` bundle, or (under `verify-full`) no trusted root CA at all.
     /// Fails closed so a mis-set TLS config never silently degrades to an unverified or plaintext
@@ -397,6 +438,10 @@ pub enum StoreError {
     /// A backup was requested but the store has no on-disk location to snapshot (in-memory mode).
     #[error("backup requires on-disk persistence")]
     NotPersistent,
+    /// The external projector attempted to open an absent, unmigrated, or incompatible store.
+    /// Projector processes never create or migrate the authoritative schema.
+    #[error("search projector store is not ready: {0}")]
+    SearchProjectorStoreNotReady(String),
     /// wp16 P0: this node is not the elected cluster writer-leader (it is a follower, or a former
     /// leader that lost the advisory lock / had its `leader_epoch` fenced / lost its writer session).
     /// The write path fails closed with this rather than committing on a non-leader session, so at
@@ -436,6 +481,10 @@ pub enum StoreError {
     /// without parsing backend-specific error strings.
     #[error("already exists: {0}")]
     AlreadyExists(String),
+    /// A rebuild command was refused because the durable projector control is paused. Kept typed
+    /// so the API can return a conflict without parsing backend-specific text.
+    #[error("search projection is paused; resume it before requesting a rebuild")]
+    SearchProjectionPaused,
     /// A store encryption key was supplied to a build that was not compiled with SQLCipher support.
     #[error(
         "store encryption key supplied but this build was not compiled with the sqlcipher feature; \
@@ -552,6 +601,19 @@ impl SqliteBackend {
     /// (SQLCipher keyed open, PRAGMAs, idempotent DDL migration) stays in [`open_connection_with_options`].
     fn open(data_dir: &Path, options: &StoreOpenOptions) -> Result<Self, StoreError> {
         let conn = open_connection_with_options(data_dir, options)?;
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+            open_options: Arc::new(Mutex::new(options.clone())),
+        })
+    }
+
+    /// Open an already-migrated store for the external projector without creating files, applying
+    /// DDL, seeding rows, or changing the schema stamp.
+    fn open_for_search_projector(
+        data_dir: &Path,
+        options: &StoreOpenOptions,
+    ) -> Result<Self, StoreError> {
+        let conn = open_existing_projector_connection(data_dir, options)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
             open_options: Arc::new(Mutex::new(options.clone())),
@@ -1167,6 +1229,36 @@ pub struct LoadedState {
     /// permanent re-anchor disclosure. This **replaces the silent boot `eprintln!`-and-continue**:
     /// the api (E3) queries this to serve `GET /v1/ledger/integrity` and enter its degraded state.
     /// Open still never blocks on a break — the degraded 503 gate is E3's decision.
+    pub integrity: IntegrityReport,
+}
+
+/// Read-only source snapshot used by the external search projector.
+///
+/// This intentionally excludes HTTP/session/signing state and `company_groups`, which are not
+/// search-corpus inputs. Keeping this contract separate from [`LoadedState`] lets a PostgreSQL
+/// projector role receive only the source-table `SELECT` grants it actually needs.
+#[derive(Debug)]
+pub struct SearchCorpusSnapshot {
+    /// Named template libraries included in template search.
+    pub group_template_libraries: HashMap<TemplateLibraryId, GroupTemplateLibrary>,
+    /// Immutable template-library revisions included in template search.
+    pub group_template_library_revisions:
+        HashMap<(GroupId, TemplateLibraryId, u64), GroupTemplateLibraryRevision>,
+    /// Entities included in the corpus and relation graph.
+    pub entities: HashMap<EntityId, Entity>,
+    /// Books included in the corpus and relation graph.
+    pub books: HashMap<BookId, Book>,
+    /// Acts included in the corpus and relation graph.
+    pub acts: HashMap<ActId, Act>,
+    /// Registry extracts used to derive operational alerts/reminders.
+    pub registry_extracts: HashMap<EntityId, RegistryExtract>,
+    /// Act-scoped follow-ups included in the corpus and Action Center derivation.
+    pub follow_ups: HashMap<String, StoredFollowUp>,
+    /// Verified ledger used for searchable events and integrity-derived actionables.
+    pub ledger: Ledger,
+    /// Result of verifying the complete ledger chain.
+    pub chain_status: Result<u64, LedgerError>,
+    /// Rich integrity report derived from the complete ledger.
     pub integrity: IntegrityReport,
 }
 
@@ -2248,6 +2340,27 @@ impl Store {
         }
     }
 
+    /// Open an already-initialized backend for the external search projector.
+    ///
+    /// SQLite uses `READ_WRITE | NO_CREATE`, applies only connection-local safety pragmas, and
+    /// requires the exact current schema/control row without running migrations. PostgreSQL relies
+    /// on the caller pinning `CHANCELA_NODE_ROLE=follower`, for which the backend skips leader DDL.
+    pub fn open_search_projector_backend(
+        selection: StoreBackendSelection,
+    ) -> Result<Store, StoreError> {
+        match selection {
+            StoreBackendSelection::Sqlite { data_dir, options } => Ok(Store {
+                backend: Backend::Sqlite(SqliteBackend::open_for_search_projector(
+                    &data_dir, &options,
+                )?),
+            }),
+            #[cfg(feature = "postgres")]
+            StoreBackendSelection::Postgres { database_url } => Ok(Store {
+                backend: Backend::Postgres(pg::PostgresBackend::open(&database_url)?),
+            }),
+        }
+    }
+
     // ── wp16 P0 cluster / leader-election facade ──────────────────────────────────────────────────
     //
     // For the SQLite backend (the embedded single-node editions and the default build) there is no
@@ -2674,12 +2787,16 @@ impl Store {
         if let Backend::Postgres(backend) = &self.backend {
             return backend.load();
         }
+        self.load_sqlite_state(true)
+    }
+
+    fn load_sqlite_state(&self, include_company_groups: bool) -> Result<LoadedState, StoreError> {
         let guard = self.locked_conn()?;
 
         // Aggregates: the `json` column is the full serde value; its own `id` field is the map key,
         // so the scope columns (entity_id/book_id) never need re-parsing on load.
         let mut company_groups = HashMap::new();
-        {
+        if include_company_groups {
             let mut stmt = guard.prepare("SELECT json FROM company_groups")?;
             let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
             for json in rows {
@@ -2801,6 +2918,31 @@ impl Store {
             ledger,
             chain_status,
             integrity,
+        })
+    }
+
+    /// Load only the authoritative inputs required to build the full-text search corpus.
+    ///
+    /// The complete ledger is still replayed and verified because searchable events and the
+    /// integrity actionable depend on it. Unrelated aggregates such as company groups and all
+    /// authentication/signing/provider tables are deliberately not queried.
+    pub fn load_search_corpus_snapshot(&self) -> Result<SearchCorpusSnapshot, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.load_search_corpus_snapshot();
+        }
+        let loaded = self.load_sqlite_state(false)?;
+        Ok(SearchCorpusSnapshot {
+            group_template_libraries: loaded.group_template_libraries,
+            group_template_library_revisions: loaded.group_template_library_revisions,
+            entities: loaded.entities,
+            books: loaded.books,
+            acts: loaded.acts,
+            registry_extracts: loaded.registry_extracts,
+            follow_ups: loaded.follow_ups,
+            ledger: loaded.ledger,
+            chain_status: loaded.chain_status,
+            integrity: loaded.integrity,
         })
     }
 
@@ -3059,7 +3201,7 @@ impl Store {
              channel, reference, evidence_reference, imported_document_id, recipients_json, \
              operator_note, recorded_at \
              FROM generated_document_dispatch_evidence \
-             WHERE document_id = ?1 ORDER BY recorded_at ASC, rowid ASC",
+             WHERE document_id = ?1 ORDER BY recorded_at ASC, idempotency_key ASC",
         )?;
         let rows = stmt.query_map(params![document_id], row_to_generated_dispatch_evidence)?;
         let mut out = Vec::new();
@@ -3079,13 +3221,7 @@ impl Store {
             return backend.generated_document_dispatch_evidence_all();
         }
         let guard = self.locked_conn()?;
-        let mut stmt = guard.prepare(
-            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
-             channel, reference, evidence_reference, imported_document_id, recipients_json, \
-             operator_note, recorded_at \
-             FROM generated_document_dispatch_evidence \
-             ORDER BY recorded_at ASC, rowid ASC",
-        )?;
+        let mut stmt = guard.prepare(GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT)?;
         let rows = stmt.query_map([], row_to_generated_dispatch_evidence)?;
         let mut out = Vec::new();
         for row in rows {
@@ -3140,7 +3276,7 @@ impl Store {
                  operator_reviewed_at, operator_reviewed_by, operator_review_note, \
                  operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
                  FROM imported_documents \
-                 WHERE act_id = ?1 ORDER BY imported_at DESC, rowid DESC",
+                 WHERE act_id = ?1 ORDER BY imported_at DESC, id DESC",
             )?;
             let rows =
                 stmt.query_map(params![act_id.to_string()], row_to_imported_document_meta)?;
@@ -3148,14 +3284,7 @@ impl Store {
                 out.push(row??);
             }
         } else {
-            let mut stmt = guard.prepare(
-                "SELECT id, act_id, filename, declared_content_type, detected_content_type, \
-                 sha256, size_bytes, imported_at, imported_by, operator_review_status, \
-                 operator_reviewed_at, operator_reviewed_by, operator_review_note, \
-                 operator_acknowledged_guardrail_ids_json, technical_validation_report_json \
-                 FROM imported_documents \
-                 ORDER BY imported_at DESC, rowid DESC",
-            )?;
+            let mut stmt = guard.prepare(IMPORTED_DOCUMENTS_ALL_SELECT)?;
             let rows = stmt.query_map([], row_to_imported_document_meta)?;
             for row in rows {
                 out.push(row??);
@@ -3276,20 +3405,14 @@ impl Store {
                  date_to, page_count, page_from, page_to, original_number_from, \
                  original_number_to, sha256, size_bytes, content_type, source_filename, notes, \
                  imported_at, imported_by, ocr_status FROM paper_book_imports \
-                 WHERE book_ref = ?1 ORDER BY imported_at DESC, rowid DESC",
+                 WHERE book_ref = ?1 ORDER BY imported_at DESC, import_id DESC",
             )?;
             let rows = stmt.query_map(params![book_ref], row_to_paper_book_import_meta)?;
             for row in rows {
                 out.push(row??);
             }
         } else {
-            let mut stmt = guard.prepare(
-                "SELECT import_id, entity_ref, entity_name, entity_nipc, book_ref, date_from, \
-                 date_to, page_count, page_from, page_to, original_number_from, \
-                 original_number_to, sha256, size_bytes, content_type, source_filename, notes, \
-                 imported_at, imported_by, ocr_status FROM paper_book_imports \
-                 ORDER BY imported_at DESC, rowid DESC",
-            )?;
+            let mut stmt = guard.prepare(PAPER_BOOK_IMPORTS_ALL_SELECT)?;
             let rows = stmt.query_map([], row_to_paper_book_import_meta)?;
             for row in rows {
                 out.push(row??);
@@ -3351,7 +3474,7 @@ impl Store {
             "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
              engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
              reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
-             WHERE import_id = ?1 ORDER BY created_at DESC, rowid DESC",
+             WHERE import_id = ?1 ORDER BY created_at DESC, draft_id DESC",
         )?;
         let rows = stmt.query_map(params![import_id], row_to_paper_book_ocr_draft)?;
         let mut out = Vec::new();
@@ -3755,6 +3878,37 @@ impl Store {
         self.document_row("search_index_state", SEARCH_INDEX_STATE_SINGLETON_ID)?
             .map(|json| serde_json::from_str(&json).map_err(StoreError::from))
             .transpose()
+    }
+
+    /// Read the durable search generation and external-projector control with one backend
+    /// connection/lock. Query-only request paths use this to avoid doubling the pool pressure merely
+    /// to attach redacted trust metadata to an otherwise generation-consistent response.
+    pub fn search_index_state_and_projection_control(
+        &self,
+    ) -> Result<
+        (
+            Option<SearchIndexState>,
+            Result<SearchProjectionControl, StoreError>,
+        ),
+        StoreError,
+    > {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.search_index_state_and_projection_control();
+        }
+        let guard = self.locked_conn()?;
+        let state_json = guard
+            .query_row(
+                "SELECT json FROM search_index_state WHERE id = ?1",
+                params![SEARCH_INDEX_STATE_SINGLETON_ID],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?;
+        let state = state_json
+            .map(|json| serde_json::from_str(&json).map_err(StoreError::from))
+            .transpose()?;
+        let control = read_sqlite_search_projection_control(&guard);
+        Ok((state, control))
     }
 
     /// Read the durable cross-process projector checkpoint, command, and current lease.
@@ -4204,6 +4358,27 @@ impl Store {
         })
         .optional()
         .map_err(StoreError::from)
+    }
+
+    /// Read the authoritative bounded backup-recovery receipt list document, when one has been
+    /// committed. Older installations may have only the compatibility sidecar and return `None`.
+    pub fn backup_recovery_drill_receipts_document(&self) -> Result<Option<String>, StoreError> {
+        self.document_row("settings", BACKUP_RECOVERY_DRILL_RECEIPTS_SINGLETON_ID)
+    }
+
+    /// Read the authoritative DPIA register document used by Action Center projection.
+    pub fn dpia_records_document(&self) -> Result<Option<String>, StoreError> {
+        self.document_row("settings", DPIA_RECORDS_SINGLETON_ID)
+    }
+
+    /// Read the authoritative personal-data breach-playbook register document.
+    pub fn breach_playbooks_document(&self) -> Result<Option<String>, StoreError> {
+        self.document_row("settings", BREACH_PLAYBOOKS_SINGLETON_ID)
+    }
+
+    /// Read the authoritative international-transfer control register document.
+    pub fn transfer_controls_document(&self) -> Result<Option<String>, StoreError> {
+        self.document_row("settings", TRANSFER_CONTROLS_SINGLETON_ID)
     }
 
     /// Read one internal store metadata value.
@@ -4861,6 +5036,11 @@ impl Tx<'_> {
         &self,
         command: SearchProjectionCommand,
     ) -> Result<(), StoreError> {
+        if command == SearchProjectionCommand::Rebuild
+            && self.search_projection_control()?.command == SearchProjectionCommand::Pause
+        {
+            return Err(StoreError::SearchProjectionPaused);
+        }
         self.update_search_projection_command(command.as_str(), &now_rfc3339())
     }
 
@@ -6813,6 +6993,34 @@ impl Tx<'_> {
         Ok(())
     }
 
+    /// Upsert the authoritative bounded recovery-drill receipt list in the same transaction as
+    /// its audit event and search source-revision advance.
+    pub fn put_backup_recovery_drill_receipts_document(
+        &self,
+        json: &str,
+    ) -> Result<(), StoreError> {
+        self.upsert_document_row(
+            "settings",
+            BACKUP_RECOVERY_DRILL_RECEIPTS_SINGLETON_ID,
+            json,
+        )
+    }
+
+    /// Upsert the authoritative DPIA register document inside the enclosing source transaction.
+    pub fn put_dpia_records_document(&self, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("settings", DPIA_RECORDS_SINGLETON_ID, json)
+    }
+
+    /// Upsert the authoritative breach-playbook register inside the enclosing source transaction.
+    pub fn put_breach_playbooks_document(&self, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("settings", BREACH_PLAYBOOKS_SINGLETON_ID, json)
+    }
+
+    /// Upsert the authoritative transfer-control register inside the enclosing source transaction.
+    pub fn put_transfer_controls_document(&self, json: &str) -> Result<(), StoreError> {
+        self.upsert_document_row("settings", TRANSFER_CONTROLS_SINGLETON_ID, json)
+    }
+
     /// Upsert one application-owned metadata value inside the enclosing transaction.
     ///
     /// This is intentionally transactional so callers can commit a one-time migration marker in
@@ -8678,6 +8886,79 @@ pub(crate) fn open_connection_with_options(
     Ok(conn)
 }
 
+fn open_existing_projector_connection(
+    data_dir: &Path,
+    options: &StoreOpenOptions,
+) -> Result<rusqlite::Connection, StoreError> {
+    let db_file = data_dir.join(DB_FILE);
+    if !db_file.is_file() {
+        return Err(StoreError::SearchProjectorStoreNotReady(format!(
+            "{} does not exist; start the API migration owner first",
+            db_file.display()
+        )));
+    }
+    preflight_key_ops(data_dir, options)?;
+    let conn = rusqlite::Connection::open_with_flags(
+        &db_file,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE
+            | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX
+            | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+    )?;
+    apply_open_options(&conn, options)?;
+    conn.execute_batch(
+        "PRAGMA foreign_keys=ON;\n\
+         PRAGMA busy_timeout=5000;",
+    )?;
+    validate_search_projector_schema(&conn)?;
+    Ok(conn)
+}
+
+fn validate_search_projector_schema(conn: &rusqlite::Connection) -> Result<(), StoreError> {
+    let found = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| {
+            StoreError::SearchProjectorStoreNotReady(format!(
+                "schema metadata is unavailable ({error}); start the API migration owner first"
+            ))
+        })?
+        .and_then(|raw| raw.parse::<i64>().ok());
+    if found != Some(schema::SCHEMA_VERSION) {
+        return Err(StoreError::SearchProjectorStoreNotReady(format!(
+            "schema version {} is not the required {}; start the API migration owner first",
+            found
+                .map(|version| version.to_string())
+                .unwrap_or_else(|| "missing or invalid".to_owned()),
+            schema::SCHEMA_VERSION
+        )));
+    }
+    let control_exists = conn
+        .query_row(
+            "SELECT 1 FROM search_projection_control WHERE id = ?1",
+            params![SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+            |_| Ok(()),
+        )
+        .optional()
+        .map_err(|error| {
+            StoreError::SearchProjectorStoreNotReady(format!(
+                "search projection control is unavailable ({error}); start the API migration \
+                 owner first"
+            ))
+        })?
+        .is_some();
+    if !control_exists {
+        return Err(StoreError::SearchProjectorStoreNotReady(
+            "search projection control row is missing; start the API migration owner first"
+                .to_owned(),
+        ));
+    }
+    Ok(())
+}
+
 fn preflight_key_ops(data_dir: &Path, options: &StoreOpenOptions) -> Result<(), StoreError> {
     let status = Store::key_ops_status(data_dir, options)?;
     match status.plan {
@@ -9125,6 +9406,33 @@ mod tests {
     use super::*;
     use crate::recovery::ResetScope;
 
+    #[test]
+    fn sqlite_projector_bulk_reads_use_stable_logical_tie_breakers() {
+        for query in [
+            DOCUMENT_SEARCH_METADATA_SELECT,
+            GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT,
+            IMPORTED_DOCUMENTS_ALL_SELECT,
+            PAPER_BOOK_IMPORTS_ALL_SELECT,
+            PAPER_BOOK_OCR_DRAFTS_ALL_SELECT,
+        ] {
+            assert!(
+                !query.contains("rowid") && !query.contains("ctid"),
+                "projector query must not depend on physical row identity: {query}"
+            );
+        }
+        assert!(DOCUMENT_SEARCH_METADATA_SELECT.ends_with("created_at ASC, id ASC"));
+        assert!(
+            GENERATED_DOCUMENT_DISPATCH_EVIDENCE_ALL_SELECT
+                .ends_with("recorded_at ASC, document_id ASC, idempotency_key ASC")
+        );
+        assert!(IMPORTED_DOCUMENTS_ALL_SELECT.ends_with("imported_at DESC, id DESC"));
+        assert!(PAPER_BOOK_IMPORTS_ALL_SELECT.ends_with("imported_at DESC, import_id DESC"));
+        assert!(
+            PAPER_BOOK_OCR_DRAFTS_ALL_SELECT
+                .ends_with("import_id ASC, created_at DESC, draft_id DESC")
+        );
+    }
+
     /// A throwaway temp directory unique to this test run, removed on drop. The store's integration
     /// suite carries its own `TempDir`; this keeps the in-crate unit test self-contained.
     struct TempDir(std::path::PathBuf);
@@ -9169,6 +9477,82 @@ mod tests {
             source_version: "v1".to_owned(),
             privileged: None,
         }
+    }
+
+    #[test]
+    fn projector_open_never_creates_or_migrates_sqlite() {
+        let missing = TempDir::new();
+        let selection = || StoreBackendSelection::Sqlite {
+            data_dir: missing.path().to_path_buf(),
+            options: StoreOpenOptions::default(),
+        };
+        assert!(matches!(
+            Store::open_search_projector_backend(selection()),
+            Err(StoreError::SearchProjectorStoreNotReady(_))
+        ));
+        assert!(
+            !missing.path().join(DB_FILE).exists(),
+            "projector open must not create the authoritative database"
+        );
+
+        let old = TempDir::new();
+        let store = Store::open(old.path()).expect("API owner creates current schema");
+        store
+            .locked_conn()
+            .expect("sqlite")
+            .execute(
+                "UPDATE meta SET value = ?1 WHERE key = 'schema_version'",
+                params![schema::SCHEMA_VERSION - 1],
+            )
+            .expect("downgrade test stamp");
+        drop(store);
+        let old_selection = || StoreBackendSelection::Sqlite {
+            data_dir: old.path().to_path_buf(),
+            options: StoreOpenOptions::default(),
+        };
+        assert!(matches!(
+            Store::open_search_projector_backend(old_selection()),
+            Err(StoreError::SearchProjectorStoreNotReady(_))
+        ));
+        let raw = rusqlite::Connection::open(old.path().join(DB_FILE)).expect("inspect old store");
+        let version: i64 = raw
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("schema stamp")
+            .parse()
+            .expect("numeric stamp");
+        assert_eq!(
+            version,
+            schema::SCHEMA_VERSION - 1,
+            "projector open must not advance an old schema"
+        );
+    }
+
+    #[test]
+    fn repeated_projector_opens_leave_sqlite_schema_unchanged() {
+        let dir = TempDir::new();
+        drop(Store::open(dir.path()).expect("API owner creates schema"));
+        let schema_cookie = || {
+            rusqlite::Connection::open(dir.path().join(DB_FILE))
+                .expect("inspect store")
+                .query_row("PRAGMA schema_version", [], |row| row.get::<_, i64>(0))
+                .expect("schema cookie")
+        };
+        let before = schema_cookie();
+        for _ in 0..3 {
+            let store = Store::open_search_projector_backend(StoreBackendSelection::Sqlite {
+                data_dir: dir.path().to_path_buf(),
+                options: StoreOpenOptions::default(),
+            })
+            .expect("projector opens current schema");
+            store
+                .search_projection_control()
+                .expect("control row is readable");
+        }
+        assert_eq!(schema_cookie(), before);
     }
 
     #[test]

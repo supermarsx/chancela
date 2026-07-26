@@ -3,16 +3,18 @@
 //! Source reads and index writes never run on request threads. Requests query one immutable-at-lock
 //! in-memory projection; a bounded/coalescing command queue wakes the worker for incremental
 //! reconciliation or an explicit rebuild. The durable rows are derived data, so a periodic
-//! reconciliation also repairs any notification lost to queue backpressure. This is a logical
-//! service isolated on a dedicated OS thread, not a separately deployed process. In a Postgres
-//! cluster only the elected write leader builds and persists projections; followers hydrate stable
-//! completed generations.
+//! reconciliation also repairs any notification lost to queue backpressure. Embedded mode isolates
+//! that work on a dedicated OS thread. Query-only mode starts only a completed-generation hydrator;
+//! the separately deployed `chancela-search-projector` owns lease-fenced builds. In a Postgres
+//! cluster, embedded mode uses the elected writer while the external mode uses its independent
+//! projector lease.
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::hash::Hash;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock as SyncRwLock};
-use std::time::Duration as StdDuration;
+use std::time::{Duration as StdDuration, Instant};
 
 use axum::Json;
 use axum::extract::{Query, State};
@@ -23,19 +25,23 @@ use chancela_authz::{
     TenantId as AuthzTenantId,
 };
 use chancela_core::Book;
+#[cfg(test)]
+use chancela_search::SearchProjectionPublishRejection;
 use chancela_search::{
     InMemoryIndex, IndexOperation, SearchAccess, SearchDocument, SearchDocumentContent,
-    SearchFilters, SearchIndexPhase, SearchIndexState, SearchKind, SearchPage, SearchQuery,
+    SearchFilters, SearchIndexPhase, SearchIndexState, SearchKind, SearchPage,
+    SearchProjectionCheckpoint, SearchProjectionCommand, SearchProjectionControl,
+    SearchProjectionPublishOutcome, SearchProjectorLease, SearchQuery,
 };
 use chancela_store::{
-    StoreError, StoredDocumentSearchMetadata, StoredImportedDocumentMeta,
+    Store, StoreError, StoredDocumentSearchMetadata, StoredImportedDocumentMeta,
     StoredImportedDocumentReviewHistoryEntry, StoredPaperBookImportMeta, StoredPaperBookOcrDraft,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
-use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
+use time::{OffsetDateTime, UtcOffset};
 use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
@@ -52,13 +58,68 @@ const MAX_DATE_FILTER_CHARS: usize = 64;
 const MAX_KIND_FILTER_CHARS: usize = 256;
 const MAX_KIND_COUNT: usize = 16;
 const MAX_KIND_TOKEN_CHARS: usize = 32;
-const SEARCH_WORKER_THREAD: &str = "chancela-search-indexer";
 const SOURCE_SETTLE_MILLIS: u64 = 75;
 const SOURCE_SETTLE_MAX_MILLIS: u64 = 500;
 const SOURCE_SNAPSHOT_BATCH_SIZE: usize = 256;
 const SEARCH_QUERY_MAX_CONCURRENCY: usize = 4;
 const SEARCH_SHUTDOWN_TIMEOUT_SECS: u64 = 5;
 const SEARCH_PROJECTION_SUPERSEDED: &str = "search projection superseded by destructive change";
+#[doc(hidden)]
+pub const SEARCH_PROJECTION_UTC_BUCKET_CHANGED: &str =
+    "search projection crossed its captured UTC date; retrying from a fresh as-of instant";
+pub const SEARCH_RUNTIME_ENV: &str = "CHANCELA_SEARCH_RUNTIME";
+const SEARCH_EMBEDDED_WORKER_THREAD: &str = "chancela-search-indexer";
+const SEARCH_QUERY_HYDRATOR_THREAD: &str = "chancela-search-query-hydrator";
+const SEARCH_RUNTIME_DIR_ENV: &str = "CHANCELA_SEARCH_RUNTIME_DIR";
+const SEARCH_HEARTBEAT_SECONDS_ENV: &str = "CHANCELA_SEARCH_HEARTBEAT_SECONDS";
+const SEARCH_HEALTH_MAX_AGE_SECONDS_ENV: &str = "CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS";
+const SEARCH_PROJECTOR_HEARTBEAT_DIRECTORY: &str = "search-projector-heartbeats";
+const SEARCH_PROJECTOR_HEARTBEAT_SCHEMA_VERSION: u32 = 2;
+const SEARCH_PROJECTOR_HEARTBEAT_MAX_BYTES: u64 = 64 * 1024;
+const SEARCH_PROJECTOR_HEARTBEAT_DEFAULT_MAX_AGE_SECONDS: u64 = 600;
+const SEARCH_PROJECTOR_HEARTBEAT_DEFAULT_SECONDS: u64 = 10;
+
+/// Where search projection work executes for this API process.
+///
+/// The embedded mode preserves the desktop/development default. Query-only mode is intended for a
+/// server deployed beside `chancela-search-projector`: it only hydrates stable completed durable
+/// generations and never starts the in-process index builder.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SearchRuntimeMode {
+    #[default]
+    Embedded,
+    QueryOnly,
+}
+
+impl SearchRuntimeMode {
+    pub fn from_env() -> Result<Self, String> {
+        match std::env::var(SEARCH_RUNTIME_ENV) {
+            Err(std::env::VarError::NotPresent) => Ok(Self::Embedded),
+            Err(std::env::VarError::NotUnicode(_)) => Err(format!(
+                "{SEARCH_RUNTIME_ENV} contains non-Unicode data; expected embedded or query-only"
+            )),
+            Ok(raw) => match raw.trim().to_ascii_lowercase().as_str() {
+                "" | "embedded" => Ok(Self::Embedded),
+                "query-only" | "query_only" => Ok(Self::QueryOnly),
+                _ => Err(format!(
+                    "{SEARCH_RUNTIME_ENV}={raw:?} is invalid; expected embedded or query-only"
+                )),
+            },
+        }
+    }
+
+    const fn is_query_only(self) -> bool {
+        matches!(self, Self::QueryOnly)
+    }
+
+    const fn thread_name(self) -> &'static str {
+        match self {
+            Self::Embedded => SEARCH_EMBEDDED_WORKER_THREAD,
+            Self::QueryOnly => SEARCH_QUERY_HYDRATOR_THREAD,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SearchCommand {
@@ -119,6 +180,7 @@ struct SearchServiceInner {
     notify: Notify,
     running: AtomicBool,
     shutdown: AtomicBool,
+    query_only: AtomicBool,
     dropped_commands: AtomicU64,
     query_slots: Arc<Semaphore>,
     /// Number of authoritative source mutations whose durable and in-memory publication has not
@@ -132,6 +194,12 @@ struct SearchServiceInner {
     projection_writer: AtomicBool,
     projection_epoch: AtomicU64,
     projection_gate: AsyncMutex<()>,
+    /// One bounded/single-flight heartbeat read shared by status and hit-serving requests. Durable
+    /// generation confirmation remains authoritative for availability; this cache only supplies
+    /// fail-closed trust metadata.
+    projector_heartbeat_cache: AsyncMutex<Option<CachedManagedProjectorHeartbeat>>,
+    #[cfg(test)]
+    projector_heartbeat_file_reads: AtomicU64,
     destructive_fence: AtomicBool,
     destructive_reset_id: SyncRwLock<Option<Uuid>>,
     #[cfg(feature = "redis")]
@@ -140,6 +208,8 @@ struct SearchServiceInner {
     released_remote_fence_ids: Mutex<VecDeque<Uuid>>,
     task: Mutex<Option<std::thread::JoinHandle<()>>>,
     worker_thread: SyncRwLock<Option<String>>,
+    #[cfg(test)]
+    fail_next_durable_command: AtomicBool,
 }
 
 /// Shared background-index handle carried by [`AppState`].
@@ -158,6 +228,7 @@ impl Default for SearchService {
                 notify: Notify::new(),
                 running: AtomicBool::new(false),
                 shutdown: AtomicBool::new(false),
+                query_only: AtomicBool::new(false),
                 dropped_commands: AtomicU64::new(0),
                 query_slots: Arc::new(Semaphore::new(SEARCH_QUERY_MAX_CONCURRENCY)),
                 source_mutations_in_flight: AtomicU64::new(0),
@@ -166,6 +237,9 @@ impl Default for SearchService {
                 projection_writer: AtomicBool::new(false),
                 projection_epoch: AtomicU64::new(0),
                 projection_gate: AsyncMutex::new(()),
+                projector_heartbeat_cache: AsyncMutex::new(None),
+                #[cfg(test)]
+                projector_heartbeat_file_reads: AtomicU64::new(0),
                 destructive_fence: AtomicBool::new(false),
                 destructive_reset_id: SyncRwLock::new(None),
                 #[cfg(feature = "redis")]
@@ -174,6 +248,8 @@ impl Default for SearchService {
                 released_remote_fence_ids: Mutex::new(VecDeque::new()),
                 task: Mutex::new(None),
                 worker_thread: SyncRwLock::new(None),
+                #[cfg(test)]
+                fail_next_durable_command: AtomicBool::new(false),
             }),
         }
     }
@@ -212,26 +288,40 @@ impl SearchService {
             })
     }
 
-    fn start(&self, state: AppState) {
+    fn start(&self, state: AppState, runtime_mode: SearchRuntimeMode) {
         if self.inner.running.swap(true, Ordering::AcqRel) {
             return;
         }
         self.inner.shutdown.store(false, Ordering::Release);
+        self.inner
+            .query_only
+            .store(runtime_mode.is_query_only(), Ordering::Release);
         let service = self.clone();
         let handle = std::thread::Builder::new()
-            .name(SEARCH_WORKER_THREAD.to_owned())
+            .name(runtime_mode.thread_name().to_owned())
             .spawn(move || {
                 let runtime = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .expect("build dedicated search runtime");
-                runtime.block_on(service.worker(state));
+                if runtime_mode.is_query_only() {
+                    runtime.block_on(service.query_hydrator(state));
+                } else {
+                    runtime.block_on(service.worker(state));
+                }
             })
             .expect("spawn dedicated search worker");
         *lock_mutex(&self.inner.task) = Some(handle);
     }
 
     fn enqueue(&self, command: SearchCommand, capacity: usize) -> Result<(), ApiError> {
+        if self.inner.query_only.load(Ordering::Acquire) {
+            // Authoritative mutations already advance the durable source revision in their store
+            // transaction. The external projector observes that revision; this local notification
+            // only asks the query hydrator to check for a newly completed generation sooner.
+            self.inner.notify.notify_one();
+            return Ok(());
+        }
         if matches!(command, SearchCommand::Reconcile | SearchCommand::Rebuild) {
             self.inner.wake_epoch.fetch_add(1, Ordering::AcqRel);
         }
@@ -299,13 +389,29 @@ impl SearchService {
         settings: &crate::settings::SearchSettings,
         detailed: bool,
     ) -> SearchStatusResponse {
+        self.status_response_at(settings, detailed, OffsetDateTime::now_utc())
+    }
+
+    fn status_response_at(
+        &self,
+        settings: &crate::settings::SearchSettings,
+        detailed: bool,
+        now: OffsetDateTime,
+    ) -> SearchStatusResponse {
         let state = read_lock(&self.inner.status).clone();
-        let now = OffsetDateTime::now_utc();
+        let query_only = self.inner.query_only.load(Ordering::Acquire);
+        let current_utc_date = now.to_offset(UtcOffset::UTC).date();
         let stale_after =
             time::Duration::seconds(i64::from(settings.interval_seconds.saturating_mul(2)));
         let stale = state.last_completed_at.as_deref().is_none_or(|completed| {
             OffsetDateTime::parse(completed, &Rfc3339)
-                .map(|completed| now - completed > stale_after)
+                .map(|completed| {
+                    if query_only {
+                        completed.to_offset(UtcOffset::UTC).date() != current_utc_date
+                    } else {
+                        now - completed > stale_after
+                    }
+                })
                 .unwrap_or(true)
         }) || matches!(
             state.phase,
@@ -318,6 +424,11 @@ impl SearchService {
         );
         SearchStatusResponse {
             details_redacted: !detailed,
+            execution_mode: if query_only {
+                SearchRuntimeMode::QueryOnly
+            } else {
+                SearchRuntimeMode::Embedded
+            },
             enabled: settings.enabled,
             partial: state.phase.is_partial()
                 && (state.total == 0 || state.processed < state.total),
@@ -346,6 +457,16 @@ impl SearchService {
             worker_thread: detailed
                 .then(|| read_lock(&self.inner.worker_thread).clone())
                 .flatten(),
+            projector_command: None,
+            projector_source_revision: None,
+            projector_published_source_revision: None,
+            projector_lease_owner: None,
+            projector_heartbeat_at: None,
+            projector_lease_expires_at_unix_ms: None,
+            projector_phase: None,
+            projector_updated_at: None,
+            projector_last_error: None,
+            projector_heartbeat_fresh: None,
         }
     }
 
@@ -509,6 +630,39 @@ impl SearchService {
         self.inner.running.store(false, Ordering::Release);
     }
 
+    /// Query-only server loop. It has no writer-election or corpus-build path: each wake merely
+    /// installs a stable completed generation produced by the external projector.
+    async fn query_hydrator(&self, state: AppState) {
+        *write_lock(&self.inner.worker_thread) = std::thread::current().name().map(str::to_owned);
+        self.inner.projection_writer.store(false, Ordering::Release);
+        if let Err(error) = self.hydrate_from_store(&state, true).await {
+            self.record_local_error(error);
+        }
+        loop {
+            if self.inner.shutdown.load(Ordering::Acquire) {
+                break;
+            }
+            let interval = state
+                .settings
+                .read()
+                .await
+                .search
+                .interval_seconds
+                .clamp(5, 60);
+            tokio::select! {
+                () = self.inner.notify.notified() => {}
+                () = tokio::time::sleep(StdDuration::from_secs(u64::from(interval))) => {}
+            }
+            if self.inner.shutdown.load(Ordering::Acquire) {
+                break;
+            }
+            if let Err(error) = self.hydrate_from_store(&state, true).await {
+                self.record_local_error(error);
+            }
+        }
+        self.inner.running.store(false, Ordering::Release);
+    }
+
     async fn refresh_projection_role(&self, state: &AppState) -> Result<bool, String> {
         let Some(store) = state.store.clone() else {
             self.inner.projection_writer.store(true, Ordering::Release);
@@ -537,12 +691,22 @@ impl SearchService {
         if self.inner.destructive_fence.load(Ordering::Acquire) {
             return Ok(false);
         }
+        let local_status = read_lock(&self.inner.active).status.clone();
         let snapshot = store
             .read_blocking_async(move |store| {
                 let before = store.search_index_state()?;
                 if completed_only && !is_completed_snapshot(before.as_ref()) {
                     let clear_local = before.as_ref().is_none_or(|state| state.projection_fenced);
                     return Ok::<_, StoreError>((None, before, clear_local));
+                }
+                // The projector publishes documents and status in one transaction. If the exact
+                // completed status is already active locally, no document row can have changed
+                // underneath it, so avoid re-reading/deserializing a 50k-document generation on
+                // every query-only poll.
+                if completed_only
+                    && completed_snapshot_unchanged(Some(&local_status), before.as_ref())
+                {
+                    return Ok((None, before, false));
                 }
                 let documents = store.search_documents()?;
                 let after = store.search_index_state()?;
@@ -700,7 +864,9 @@ impl SearchService {
         )
         .await?;
 
-        let build = build_corpus(state, &settings, &self.inner.shutdown).await?;
+        let projection_as_of = OffsetDateTime::now_utc();
+        let build = build_corpus(state, &settings, &self.inner.shutdown, projection_as_of).await?;
+        ensure_projection_utc_date_current(build.projection_utc_date, OffsetDateTime::now_utc())?;
         self.ensure_source_epoch(settled_epoch).await?;
         let target: HashMap<String, SearchDocument> = build
             .documents
@@ -775,9 +941,10 @@ impl SearchService {
         progress.content_budget_exhausted = build.content_budget_exhausted;
         progress.processed = progress.total;
         progress.last_event_seq = build.last_event_seq;
-        progress.last_completed_at = Some(now_rfc3339());
+        ensure_projection_utc_date_current(build.projection_utc_date, OffsetDateTime::now_utc())?;
+        progress.last_completed_at = Some(format_time(projection_as_of));
         progress.projection_fenced = false;
-        progress.updated_at = now_rfc3339();
+        progress.updated_at = format_time(projection_as_of);
         if let Err(error) = self
             .publish_completed_projection(
                 state,
@@ -1011,7 +1178,12 @@ fn completed_snapshot_unchanged(
 
 /// Start the idempotent logical service on its dedicated OS thread.
 pub(crate) fn spawn_search_service(state: AppState) {
-    state.search_index.start(state.clone());
+    state
+        .search_index
+        .start(state.clone(), state.search_runtime);
+    if state.search_runtime.is_query_only() {
+        return;
+    }
     let settings = state.settings.try_read().map(|guard| guard.search.clone());
     if let Ok(settings) = settings {
         let _ = state
@@ -1406,6 +1578,7 @@ pub(crate) async fn apply_remote_completed_generation(state: &AppState, generati
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchStatusResponse {
     pub details_redacted: bool,
+    pub execution_mode: SearchRuntimeMode,
     pub enabled: bool,
     pub partial: bool,
     pub stale: bool,
@@ -1451,6 +1624,26 @@ pub struct SearchStatusResponse {
     pub projection_writer: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub worker_thread: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_command: Option<SearchProjectionCommand>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_source_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_published_source_revision: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_lease_owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_heartbeat_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_lease_expires_at_unix_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projector_heartbeat_fresh: Option<bool>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -1565,16 +1758,25 @@ pub async fn query(
             "o índice ou as autorizações mudaram; reinicie a paginação".to_owned(),
         ));
     }
-    let confirmed_index = confirm_search_snapshot_current(&state).await?;
-    if !same_search_generation(&index_before, &confirmed_index) {
+    let confirmed = confirm_search_snapshot_current_with_control(&state).await?;
+    if !same_search_generation(&index_before, &confirmed.status) {
         return Err(ApiError::Conflict(
             "o índice mudou durante a pesquisa; reinicie a paginação".to_owned(),
         ));
     }
     let (next_cursor, pagination_truncated) = bounded_next_cursor(&mut page, &fingerprint)?;
-    let index = state
+    let mut index = state
         .search_index
         .status_response(&settings, detailed_status);
+    enrich_projector_diagnostics_with_control(
+        &state,
+        &mut index,
+        detailed_status,
+        confirmed.control,
+        confirmed.status.generation,
+        false,
+    )
+    .await;
     Ok(Json(SearchResponse {
         page,
         next_cursor,
@@ -1588,6 +1790,120 @@ fn same_search_generation(left: &SearchIndexState, right: &SearchIndexState) -> 
 }
 
 async fn confirm_search_snapshot_current(state: &AppState) -> Result<SearchIndexState, ApiError> {
+    let local = stable_local_search_snapshot(state)?;
+    let Some(store) = state.store.clone() else {
+        return Ok(local);
+    };
+    if !store.cluster_election_enabled() && !state.search_runtime.is_query_only() {
+        return Ok(local);
+    }
+    let durable = store
+        .read_blocking_async(|store| store.search_index_state())
+        .await
+        .map_err(|error| {
+            ApiError::Unavailable(format!(
+                "não foi possível confirmar a geração do índice: {error}"
+            ))
+        })?;
+    if durable_confirms_local_snapshot(&local, durable.as_ref()) {
+        return Ok(local);
+    }
+    if state
+        .search_index
+        .hydrate_from_store(state, true)
+        .await
+        .map_err(|error| {
+            ApiError::Unavailable(format!(
+                "não foi possível hidratar a geração atual do índice: {error}"
+            ))
+        })?
+    {
+        let hydrated = read_lock(&state.search_index.inner.active).status.clone();
+        if is_completed_snapshot(Some(&hydrated)) {
+            return Ok(hydrated);
+        }
+    }
+    Err(ApiError::Unavailable(
+        "a geração local do índice está desatualizada; aguarde a sincronização".to_owned(),
+    ))
+}
+
+struct ConfirmedSearchSnapshot {
+    status: SearchIndexState,
+    /// `None` means external-projector trust does not apply. `Some(Err(_))` preserves a diagnostic
+    /// read failure so response enrichment marks stale without retrying or failing hit serving.
+    control: Option<Result<SearchProjectionControl, String>>,
+}
+
+async fn confirm_search_snapshot_current_with_control(
+    state: &AppState,
+) -> Result<ConfirmedSearchSnapshot, ApiError> {
+    let local = stable_local_search_snapshot(state)?;
+    let Some(store) = state.store.clone() else {
+        return Ok(ConfirmedSearchSnapshot {
+            status: local,
+            control: None,
+        });
+    };
+    if !store.cluster_election_enabled() && !state.search_runtime.is_query_only() {
+        return Ok(ConfirmedSearchSnapshot {
+            status: local,
+            control: None,
+        });
+    }
+    let (durable, control) = store
+        .read_blocking_async(|store| store.search_index_state_and_projection_control())
+        .await
+        .map_err(|error| {
+            ApiError::Unavailable(format!(
+                "não foi possível confirmar a geração do índice: {error}"
+            ))
+        })?;
+    let control = control.map_err(|error| error.to_string());
+    if durable_confirms_local_snapshot(&local, durable.as_ref()) {
+        return Ok(ConfirmedSearchSnapshot {
+            status: local,
+            control: Some(control),
+        });
+    }
+
+    // A missed pub/sub signal affects latency only. If the leader has completed a newer durable
+    // generation, atomically hydrate it before retrying this same request; tombstones/interrupted
+    // generations still clear local text and fail closed.
+    if state
+        .search_index
+        .hydrate_from_store(state, true)
+        .await
+        .map_err(|error| {
+            ApiError::Unavailable(format!(
+                "não foi possível hidratar a geração atual do índice: {error}"
+            ))
+        })?
+    {
+        let hydrated = read_lock(&state.search_index.inner.active).status.clone();
+        if is_completed_snapshot(Some(&hydrated)) {
+            let (durable, control) = store
+                .read_blocking_async(|store| store.search_index_state_and_projection_control())
+                .await
+                .map_err(|error| {
+                    ApiError::Unavailable(format!(
+                        "não foi possível confirmar a geração hidratada do índice: {error}"
+                    ))
+                })?;
+            if durable_confirms_local_snapshot(&hydrated, durable.as_ref()) {
+                return Ok(ConfirmedSearchSnapshot {
+                    status: hydrated,
+                    control: Some(control.map_err(|error| error.to_string())),
+                });
+            }
+        }
+    }
+    Err(ApiError::Unavailable(
+        "a geração local do índice está desatualizada; aguarde a sincronização".to_owned(),
+    ))
+}
+
+fn stable_local_search_snapshot(state: &AppState) -> Result<SearchIndexState, ApiError> {
     if state
         .search_index
         .inner
@@ -1609,45 +1925,7 @@ async fn confirm_search_snapshot_current(state: &AppState) -> Result<SearchIndex
             "o índice ainda não tem uma geração estável concluída".to_owned(),
         ));
     }
-    let Some(store) = state.store.clone() else {
-        return Ok(local);
-    };
-    if !store.cluster_election_enabled() {
-        return Ok(local);
-    }
-    let durable = store
-        .read_blocking_async(|store| store.search_index_state())
-        .await
-        .map_err(|error| {
-            ApiError::Unavailable(format!(
-                "não foi possível confirmar a geração do índice: {error}"
-            ))
-        })?;
-    if durable_confirms_local_snapshot(&local, durable.as_ref()) {
-        return Ok(local);
-    }
-
-    // A missed pub/sub signal affects latency only. If the leader has completed a newer durable
-    // generation, atomically hydrate it before retrying this same request; tombstones/interrupted
-    // generations still clear local text and fail closed.
-    if state
-        .search_index
-        .hydrate_from_store(state, true)
-        .await
-        .map_err(|error| {
-            ApiError::Unavailable(format!(
-                "não foi possível hidratar a geração atual do índice: {error}"
-            ))
-        })?
-    {
-        let hydrated = read_lock(&state.search_index.inner.active).status.clone();
-        if is_completed_snapshot(Some(&hydrated)) {
-            return Ok(hydrated);
-        }
-    }
-    Err(ApiError::Unavailable(
-        "a geração local do índice está desatualizada; aguarde a sincronização".to_owned(),
-    ))
+    Ok(local)
 }
 
 fn durable_confirms_local_snapshot(
@@ -1690,10 +1968,10 @@ pub async fn status(
         return Err(crate::authz::forbidden());
     }
     let settings = state.settings.read().await.search.clone();
-    Ok(Json(state.search_index.status_response(
-        &settings,
-        authz.permits(Permission::SearchManage, Scope::Global),
-    )))
+    let detailed = authz.permits(Permission::SearchManage, Scope::Global);
+    let mut response = state.search_index.status_response(&settings, detailed);
+    enrich_projector_diagnostics(&state, &mut response, detailed).await?;
+    Ok(Json(response))
 }
 
 pub async fn rebuild(
@@ -1734,9 +2012,26 @@ async fn admin_command(
             "ative a pesquisa nas definições antes desta operação".to_owned(),
         ));
     }
-    if command == SearchCommand::Rebuild
-        && read_lock(&state.search_index.inner.status).phase == SearchIndexPhase::Paused
-    {
+    let paused = if state.search_runtime.is_query_only() {
+        let store = state.store.clone().ok_or_else(|| {
+            ApiError::Unavailable(
+                "o modo de pesquisa externo requer armazenamento durável".to_owned(),
+            )
+        })?;
+        store
+            .read_blocking_async(|store| store.search_projection_control())
+            .await
+            .map_err(|error| {
+                ApiError::Unavailable(format!(
+                    "não foi possível ler o controlo do projetor de pesquisa: {error}"
+                ))
+            })?
+            .command
+            == SearchProjectionCommand::Pause
+    } else {
+        read_lock(&state.search_index.inner.status).phase == SearchIndexPhase::Paused
+    };
+    if command == SearchCommand::Rebuild && paused {
         return Err(ApiError::Conflict(
             "retome o índice antes de pedir uma reconstrução".to_owned(),
         ));
@@ -1758,15 +2053,552 @@ async fn admin_command(
         None,
         &payload,
     )?;
+    let durable_command = match command {
+        SearchCommand::Rebuild => SearchProjectionCommand::Rebuild,
+        SearchCommand::Pause => SearchProjectionCommand::Pause,
+        SearchCommand::Resume | SearchCommand::Reconcile => SearchProjectionCommand::Reconcile,
+    };
+    let query_only = state.search_runtime.is_query_only();
+    #[cfg(test)]
+    let fail_durable_command = state
+        .search_index
+        .inner
+        .fail_next_durable_command
+        .swap(false, Ordering::AcqRel);
+    #[cfg(not(test))]
+    let fail_durable_command = false;
     state
-        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .persist_write_through(&mut ledger, 1, move |tx| {
+            if query_only {
+                tx.request_search_projection_command(durable_command)?;
+                if fail_durable_command {
+                    return Err(StoreError::Io(std::io::Error::other(
+                        "injected durable search command failure",
+                    )));
+                }
+            }
+            Ok(())
+        })
         .await?;
     state.attest_latest(attestor, &ledger).await;
     drop(ledger);
+    if query_only {
+        state.search_index.inner.notify.notify_one();
+    } else {
+        state
+            .search_index
+            .enqueue(command, settings.queue_capacity as usize)?;
+    }
+    let mut response = state.search_index.status_response(&settings, true);
+    enrich_projector_diagnostics(state, &mut response, true).await?;
+    Ok(Json(response))
+}
+
+async fn enrich_projector_diagnostics(
+    state: &AppState,
+    response: &mut SearchStatusResponse,
+    detailed: bool,
+) -> Result<(), ApiError> {
+    let active_generation = read_lock(&state.search_index.inner.active)
+        .status
+        .generation;
+    enrich_projector_diagnostics_with_control(
+        state,
+        response,
+        detailed,
+        None,
+        active_generation,
+        detailed,
+    )
+    .await;
+    Ok(())
+}
+
+async fn enrich_projector_diagnostics_with_control(
+    state: &AppState,
+    response: &mut SearchStatusResponse,
+    detailed: bool,
+    confirmed_control: Option<Result<SearchProjectionControl, String>>,
+    trusted_generation: u64,
+    force_heartbeat_refresh: bool,
+) {
+    if !state.search_runtime.is_query_only() {
+        return;
+    }
+    let control = match confirmed_control {
+        Some(Ok(control)) => control,
+        Some(Err(error)) => {
+            mark_projector_trust_failure(
+                response,
+                detailed,
+                format!("não foi possível ler o estado do projetor de pesquisa: {error}"),
+            );
+            return;
+        }
+        None => {
+            let Some(store) = state.store.clone() else {
+                mark_projector_trust_failure(
+                    response,
+                    detailed,
+                    "o modo externo não tem armazenamento durável".to_owned(),
+                );
+                return;
+            };
+            match store
+                .read_blocking_async(|store| store.search_projection_control())
+                .await
+            {
+                Ok(control) => control,
+                Err(error) => {
+                    mark_projector_trust_failure(
+                        response,
+                        detailed,
+                        format!("não foi possível ler o estado do projetor de pesquisa: {error}"),
+                    );
+                    return;
+                }
+            }
+        }
+    };
+    let heartbeat = match control.lease.as_ref() {
+        Some(lease) => {
+            read_managed_projector_heartbeat_cached(state, &lease.lease_id, force_heartbeat_refresh)
+                .await
+        }
+        None => Ok(None),
+    };
+    apply_projector_trust_evidence(
+        response,
+        detailed,
+        &control,
+        trusted_generation,
+        unix_millis_now(),
+        heartbeat,
+    );
+}
+
+fn apply_projector_trust_evidence(
+    response: &mut SearchStatusResponse,
+    detailed: bool,
+    control: &SearchProjectionControl,
+    trusted_generation: u64,
+    now_ms: i64,
+    heartbeat: Result<Option<(ManagedProjectorHeartbeat, bool)>, String>,
+) {
+    if detailed {
+        response.projector_command = Some(control.command);
+        response.projector_source_revision = Some(control.checkpoint.source_revision);
+        response.projector_published_source_revision = control
+            .published_checkpoint
+            .map(|checkpoint| checkpoint.source_revision);
+    }
+    response.stale |= control.published_checkpoint.is_none_or(|published| {
+        published.source_revision != control.checkpoint.source_revision
+            || published.fence_token != control.checkpoint.fence_token
+            || published.command_generation != control.checkpoint.command_generation
+    }) || control.command == SearchProjectionCommand::Rebuild;
+    if control.command == SearchProjectionCommand::Pause {
+        response.phase = SearchIndexPhase::Paused;
+        response.stale = true;
+    }
+    if let Some(lease) = control.lease.as_ref() {
+        response.stale |= lease.expires_at_unix_ms <= now_ms;
+        if detailed {
+            response.projector_lease_owner = Some(lease.owner.clone());
+            response.projector_heartbeat_at = Some(lease.heartbeat_at.clone());
+            response.projector_lease_expires_at_unix_ms = Some(lease.expires_at_unix_ms);
+        }
+    } else {
+        response.stale = true;
+    }
+
+    match heartbeat {
+        Ok(Some((heartbeat, fresh))) => {
+            let trusted = managed_projector_heartbeat_is_trusted(
+                &heartbeat,
+                fresh,
+                control,
+                now_ms,
+                Some(trusted_generation),
+            );
+            if !trusted {
+                response.stale = true;
+                response.phase = SearchIndexPhase::Error;
+                if detailed {
+                    response.projector_phase = Some("untrusted".to_owned());
+                    response.projector_updated_at = Some(heartbeat.updated_at);
+                    response.projector_last_error = Some(
+                        "o heartbeat não corresponde à concessão e revisão duráveis atuais"
+                            .to_owned(),
+                    );
+                    response.projector_heartbeat_fresh = Some(false);
+                }
+                return;
+            }
+            if detailed {
+                response.projector_phase = Some(heartbeat.phase.as_str().to_owned());
+                response.projector_updated_at = Some(heartbeat.updated_at.clone());
+                response.projector_last_error = heartbeat.last_error.clone();
+                response.projector_heartbeat_fresh = Some(true);
+            }
+            response.stale |= matches!(
+                heartbeat.phase,
+                ManagedProjectorPhase::Starting
+                    | ManagedProjectorPhase::Standby
+                    | ManagedProjectorPhase::Paused
+                    | ManagedProjectorPhase::Disabled
+                    | ManagedProjectorPhase::Error
+                    | ManagedProjectorPhase::ShuttingDown
+            );
+            match heartbeat.phase {
+                ManagedProjectorPhase::Building => response.phase = SearchIndexPhase::Rebuilding,
+                ManagedProjectorPhase::Standby => response.phase = SearchIndexPhase::Starting,
+                ManagedProjectorPhase::Paused => response.phase = SearchIndexPhase::Paused,
+                ManagedProjectorPhase::Disabled => response.phase = SearchIndexPhase::Disabled,
+                ManagedProjectorPhase::Error => {
+                    response.phase = SearchIndexPhase::Error;
+                    if detailed {
+                        response.last_error = heartbeat.last_error;
+                        response.error_at = Some(heartbeat.updated_at);
+                    }
+                }
+                ManagedProjectorPhase::Starting => response.phase = SearchIndexPhase::Starting,
+                ManagedProjectorPhase::ShuttingDown => {
+                    response.phase = SearchIndexPhase::ShuttingDown;
+                }
+                ManagedProjectorPhase::Idle => {}
+            }
+        }
+        Ok(None) => {
+            response.stale = true;
+            response.phase = SearchIndexPhase::Error;
+            if detailed {
+                response.projector_phase = Some("missing".to_owned());
+                response.projector_heartbeat_fresh = Some(false);
+            }
+        }
+        Err(error) => {
+            mark_projector_trust_failure(response, detailed, error);
+        }
+    }
+}
+
+fn mark_projector_trust_failure(
+    response: &mut SearchStatusResponse,
+    detailed: bool,
+    error: String,
+) {
+    response.stale = true;
+    response.phase = SearchIndexPhase::Error;
+    if detailed {
+        response.projector_phase = Some("error".to_owned());
+        response.projector_last_error = Some(error);
+        response.projector_heartbeat_fresh = Some(false);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum ManagedProjectorPhase {
+    Starting,
+    Standby,
+    Building,
+    Idle,
+    Paused,
+    Disabled,
+    Error,
+    ShuttingDown,
+}
+
+impl ManagedProjectorPhase {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Starting => "starting",
+            Self::Standby => "standby",
+            Self::Building => "building",
+            Self::Idle => "idle",
+            Self::Paused => "paused",
+            Self::Disabled => "disabled",
+            Self::Error => "error",
+            Self::ShuttingDown => "shutting_down",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManagedProjectorHeartbeat {
+    schema_version: u32,
+    service: String,
+    lease_id: String,
+    owner: String,
+    phase: ManagedProjectorPhase,
+    updated_at: String,
+    updated_at_unix_ms: i64,
+    #[serde(default)]
+    source_revision: Option<u64>,
+    #[serde(default)]
+    fence_token: Option<u64>,
+    #[serde(default)]
+    command_generation: Option<u64>,
+    #[serde(default)]
+    generation: Option<u64>,
+    #[serde(default)]
+    last_error: Option<String>,
+}
+
+#[derive(Debug)]
+struct CachedManagedProjectorHeartbeat {
+    lease_id: String,
+    loaded_at: Instant,
+    cache_for: StdDuration,
+    result: Result<Option<(ManagedProjectorHeartbeat, i64)>, String>,
+}
+
+fn managed_projector_heartbeat_is_trusted(
+    heartbeat: &ManagedProjectorHeartbeat,
+    fresh: bool,
+    control: &chancela_search::SearchProjectionControl,
+    now_ms: i64,
+    active_generation: Option<u64>,
+) -> bool {
+    fresh
+        && control.lease.as_ref().is_some_and(|lease| {
+            lease.expires_at_unix_ms > now_ms
+                && lease.lease_id == heartbeat.lease_id
+                && lease.owner == heartbeat.owner
+        })
+        && heartbeat.source_revision == Some(control.checkpoint.source_revision)
+        && heartbeat.fence_token == Some(control.checkpoint.fence_token)
+        && heartbeat.command_generation == Some(control.checkpoint.command_generation)
+        && (!matches!(heartbeat.phase, ManagedProjectorPhase::Idle)
+            || heartbeat.generation == active_generation)
+}
+
+async fn read_managed_projector_heartbeat_cached(
+    state: &AppState,
+    lease_id: &str,
+    force_refresh: bool,
+) -> Result<Option<(ManagedProjectorHeartbeat, bool)>, String> {
+    read_managed_projector_heartbeat_cached_at(state, lease_id, force_refresh, unix_millis_now())
+        .await
+}
+
+async fn read_managed_projector_heartbeat_cached_at(
+    state: &AppState,
+    lease_id: &str,
+    force_refresh: bool,
+    now_ms: i64,
+) -> Result<Option<(ManagedProjectorHeartbeat, bool)>, String> {
+    let lease_id = Uuid::parse_str(lease_id)
+        .map_err(|_| "a concessão durável do projetor tem um lease_id inválido".to_owned())?
+        .to_string();
+    let mut cache = state
+        .search_index
+        .inner
+        .projector_heartbeat_cache
+        .lock()
+        .await;
+    if !force_refresh
+        && let Some(cached) = cache.as_ref()
+        && cached.lease_id == lease_id
+        && cached.loaded_at.elapsed() < cached.cache_for
+    {
+        return heartbeat_with_freshness_at(cached.result.clone(), now_ms);
+    }
+    #[cfg(test)]
     state
         .search_index
-        .enqueue(command, settings.queue_capacity as usize)?;
-    Ok(Json(state.search_index.status_response(&settings, true)))
+        .inner
+        .projector_heartbeat_file_reads
+        .fetch_add(1, Ordering::AcqRel);
+    let (result, cache_for) = read_managed_projector_heartbeat_uncached(lease_id.clone()).await;
+    *cache = Some(CachedManagedProjectorHeartbeat {
+        lease_id,
+        loaded_at: Instant::now(),
+        cache_for,
+        result: result.clone(),
+    });
+    heartbeat_with_freshness_at(result, now_ms)
+}
+
+fn heartbeat_with_freshness_at(
+    result: Result<Option<(ManagedProjectorHeartbeat, i64)>, String>,
+    now_ms: i64,
+) -> Result<Option<(ManagedProjectorHeartbeat, bool)>, String> {
+    result.map(|heartbeat| {
+        heartbeat.map(|(heartbeat, max_age_ms)| {
+            let age_ms = now_ms.saturating_sub(heartbeat.updated_at_unix_ms);
+            let fresh = (-5_000..=max_age_ms).contains(&age_ms);
+            (heartbeat, fresh)
+        })
+    })
+}
+
+async fn read_managed_projector_heartbeat_uncached(
+    lease_id: String,
+) -> (
+    Result<Option<(ManagedProjectorHeartbeat, i64)>, String>,
+    StdDuration,
+) {
+    let runtime_dir = std::env::var_os(SEARCH_RUNTIME_DIR_ENV)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("chancela-runtime"));
+    let path = runtime_dir
+        .join(SEARCH_PROJECTOR_HEARTBEAT_DIRECTORY)
+        .join(format!("{lease_id}.json"));
+    let heartbeat_seconds = match projector_env_seconds(
+        SEARCH_HEARTBEAT_SECONDS_ENV,
+        SEARCH_PROJECTOR_HEARTBEAT_DEFAULT_SECONDS,
+    ) {
+        Ok(seconds) => seconds,
+        Err(error) => {
+            return (
+                Err(error),
+                StdDuration::from_secs(SEARCH_PROJECTOR_HEARTBEAT_DEFAULT_SECONDS),
+            );
+        }
+    };
+    if !(1..=300).contains(&heartbeat_seconds) {
+        return (
+            Err(format!(
+                "{SEARCH_HEARTBEAT_SECONDS_ENV} deve estar entre 1 e 300 segundos"
+            )),
+            StdDuration::from_secs(SEARCH_PROJECTOR_HEARTBEAT_DEFAULT_SECONDS),
+        );
+    }
+    let cache_for = StdDuration::from_secs(heartbeat_seconds);
+    let max_age_seconds = match projector_env_seconds(
+        SEARCH_HEALTH_MAX_AGE_SECONDS_ENV,
+        SEARCH_PROJECTOR_HEARTBEAT_DEFAULT_MAX_AGE_SECONDS,
+    ) {
+        Ok(seconds) => seconds,
+        Err(error) => return (Err(error), cache_for),
+    };
+    if max_age_seconds < heartbeat_seconds.saturating_mul(2) {
+        return (
+            Err(format!(
+                "{SEARCH_HEALTH_MAX_AGE_SECONDS_ENV} deve ser pelo menos duas vezes \
+                 {SEARCH_HEARTBEAT_SECONDS_ENV}"
+            )),
+            cache_for,
+        );
+    }
+    let result = tokio::task::spawn_blocking(move || {
+        let metadata = match std::fs::metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => {
+                return Err(format!(
+                    "não foi possível ler o heartbeat do projetor em {}: {error}",
+                    path.display()
+                ));
+            }
+        };
+        if metadata.len() > SEARCH_PROJECTOR_HEARTBEAT_MAX_BYTES {
+            return Err(format!(
+                "o heartbeat do projetor em {} excede o limite de {} bytes",
+                path.display(),
+                SEARCH_PROJECTOR_HEARTBEAT_MAX_BYTES
+            ));
+        }
+        let bytes = std::fs::read(&path).map_err(|error| {
+            format!(
+                "não foi possível ler o heartbeat do projetor em {}: {error}",
+                path.display()
+            )
+        })?;
+        let heartbeat: ManagedProjectorHeartbeat =
+            serde_json::from_slice(&bytes).map_err(|error| {
+                format!(
+                    "o heartbeat do projetor em {} é inválido: {error}",
+                    path.display()
+                )
+            })?;
+        if heartbeat.schema_version != SEARCH_PROJECTOR_HEARTBEAT_SCHEMA_VERSION
+            || heartbeat.service != "chancela-search-projector"
+            || heartbeat.lease_id != lease_id
+        {
+            return Err(format!(
+                "o heartbeat do projetor em {} tem identidade, concessão ou versão inesperada",
+                path.display()
+            ));
+        }
+        if heartbeat.owner.is_empty()
+            || heartbeat.owner.chars().count() > 256
+            || heartbeat.owner.chars().any(char::is_control)
+        {
+            return Err(format!(
+                "o heartbeat do projetor em {} tem um proprietário inválido",
+                path.display()
+            ));
+        }
+        let parsed_updated_at = OffsetDateTime::parse(
+            &heartbeat.updated_at,
+            &time::format_description::well_known::Rfc3339,
+        )
+        .map_err(|_| {
+            format!(
+                "o heartbeat do projetor em {} tem uma data inválida",
+                path.display()
+            )
+        })?;
+        let parsed_updated_at_ms =
+            i64::try_from(parsed_updated_at.unix_timestamp_nanos() / 1_000_000).unwrap_or(i64::MAX);
+        if parsed_updated_at_ms.abs_diff(heartbeat.updated_at_unix_ms) > 1_000 {
+            return Err(format!(
+                "o heartbeat do projetor em {} tem datas inconsistentes",
+                path.display()
+            ));
+        }
+        let mut heartbeat = heartbeat;
+        heartbeat.last_error = heartbeat
+            .last_error
+            .as_deref()
+            .and_then(bounded_projector_diagnostic);
+        let max_age_ms = i64::try_from(max_age_seconds.saturating_mul(1_000)).unwrap_or(i64::MAX);
+        Ok(Some((heartbeat, max_age_ms)))
+    })
+    .await
+    .map_err(|error| format!("a leitura do heartbeat do projetor terminou: {error}"))
+    .and_then(|result| result);
+    (result, cache_for)
+}
+
+fn projector_env_seconds(name: &str, default: u64) -> Result<u64, String> {
+    match std::env::var(name) {
+        Ok(raw) => raw
+            .trim()
+            .parse::<u64>()
+            .ok()
+            .filter(|seconds| *seconds > 0)
+            .ok_or_else(|| format!("{name} deve ser um número inteiro positivo")),
+        Err(std::env::VarError::NotPresent) => Ok(default),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            Err(format!("{name} contém dados que não são Unicode"))
+        }
+    }
+}
+
+fn bounded_projector_diagnostic(raw: &str) -> Option<String> {
+    let mut value = String::with_capacity(raw.len().min(512));
+    for character in raw.trim().chars().take(512) {
+        value.push(if character.is_control() {
+            ' '
+        } else {
+            character
+        });
+    }
+    (!value.is_empty()).then_some(value)
+}
+
+fn bounded_projection_error(context: &str, error: impl std::fmt::Display) -> String {
+    let detail = bounded_projector_diagnostic(&error.to_string())
+        .unwrap_or_else(|| "unknown validation failure".to_owned());
+    format!("{context}: {detail}")
+}
+
+fn unix_millis_now() -> i64 {
+    i64::try_from(OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000).unwrap_or(i64::MAX)
 }
 
 #[derive(Default)]
@@ -1784,6 +2616,7 @@ struct CorpusBuild {
     last_event_seq: Option<u64>,
     indexed_content_chars: u64,
     content_budget_exhausted: bool,
+    projection_utc_date: time::Date,
 }
 
 struct CorpusContentBudget {
@@ -1824,6 +2657,19 @@ impl CorpusContentBudget {
     }
 }
 
+fn apply_global_content_budget(
+    mut documents: Vec<SearchDocument>,
+    max_chars: u64,
+) -> (Vec<SearchDocument>, u64, bool) {
+    documents.sort_by(|left, right| left.id.cmp(&right.id));
+    let mut budget = CorpusContentBudget::new(max_chars);
+    let documents = documents
+        .into_iter()
+        .map(|document| budget.apply(document))
+        .collect();
+    (documents, budget.retained, budget.exhausted)
+}
+
 #[derive(Clone, Default)]
 struct Relation {
     tenant_id: Option<String>,
@@ -1840,6 +2686,24 @@ fn ensure_projection_active(shutdown: &AtomicBool) -> Result<(), String> {
     } else {
         Ok(())
     }
+}
+
+fn projection_publication_guard<T>(
+    projection_utc_date: time::Date,
+    publication_now: OffsetDateTime,
+    publish: impl FnOnce() -> T,
+) -> Result<T, String> {
+    if publication_now.to_offset(UtcOffset::UTC).date() != projection_utc_date {
+        return Err(SEARCH_PROJECTION_UTC_BUCKET_CHANGED.to_owned());
+    }
+    Ok(publish())
+}
+
+fn ensure_projection_utc_date_current(
+    projection_utc_date: time::Date,
+    publication_now: OffsetDateTime,
+) -> Result<(), String> {
+    projection_publication_guard(projection_utc_date, publication_now, || ())
 }
 
 /// Copy a mutable request-facing map in bounded chunks. The first lock only copies compact keys;
@@ -1919,8 +2783,11 @@ async fn build_corpus(
     state: &AppState,
     settings: &crate::settings::SearchSettings,
     shutdown: &AtomicBool,
+    projection_as_of: OffsetDateTime,
 ) -> Result<CorpusBuild, String> {
     ensure_projection_active(shutdown)?;
+    let default_template_registry = chancela_templates::load_registry()
+        .map_err(|error| bounded_projection_error("default template registry is invalid", error))?;
     // Snapshot one bounded chunk at a time. Serialization and tokenization happen only after all
     // request-facing locks are released.
     let entities = snapshot_map_bounded(&state.entities, shutdown).await?;
@@ -1931,16 +2798,18 @@ async fn build_corpus(
         snapshot_map_bounded(&state.group_template_libraries, shutdown).await?;
     let template_revisions =
         snapshot_map_bounded(&state.group_template_library_revisions, shutdown).await?;
+    let projection_as_of = projection_as_of.to_offset(UtcOffset::UTC);
     let retention_cutoff =
-        OffsetDateTime::now_utc() - time::Duration::days(i64::from(settings.event_retention_days));
+        projection_as_of - time::Duration::days(i64::from(settings.event_retention_days));
     let events = retained_ledger_events_bounded(state, retention_cutoff, shutdown).await?;
     let durable = load_durable_rows(state).await?;
-    let actionables = crate::dashboard::search_actionables_from_snapshot(
+    let actionables = crate::dashboard::search_actionables_from_snapshot_at(
         state,
         &entities,
         &books,
         &acts,
         &follow_ups,
+        projection_as_of,
     )
     .await
     .map_err(|error| format!("Action Center search projection failed: {error:?}"))?;
@@ -1997,7 +2866,6 @@ async fn build_corpus(
             + follow_ups.len()
             + events.len().saturating_mul(2),
     );
-    let mut content_budget = CorpusContentBudget::new(settings.max_total_content_chars);
     let mut ordered_entities: Vec<_> = entities.values().collect();
     ordered_entities.sort_by_key(|entity| entity.id.0);
     let mut ordered_books: Vec<_> = books.values().collect();
@@ -2044,7 +2912,7 @@ async fn build_corpus(
             None,
             settings.max_content_chars as usize,
         );
-        documents.push(content_budget.apply(with_privileged(public, privileged?)));
+        documents.push(with_privileged(public, privileged?));
     }
     for book in ordered_books {
         ensure_projection_active(shutdown)?;
@@ -2079,7 +2947,7 @@ async fn build_corpus(
             None,
             settings.max_content_chars as usize,
         );
-        documents.push(content_budget.apply(with_privileged(public, privileged?)));
+        documents.push(with_privileged(public, privileged?));
     }
     for act in ordered_acts {
         ensure_projection_active(shutdown)?;
@@ -2114,7 +2982,7 @@ async fn build_corpus(
             act.meeting_date.map(|date| date.to_string()),
             settings.max_content_chars as usize,
         );
-        documents.push(content_budget.apply(with_privileged(public, privileged?)));
+        documents.push(with_privileged(public, privileged?));
     }
     for follow_up in ordered_follow_ups {
         ensure_projection_active(shutdown)?;
@@ -2187,32 +3055,14 @@ async fn build_corpus(
             privileged_body.as_bytes(),
             settings.max_content_chars as usize,
         );
-        documents.push(content_budget.apply(with_privileged(public, privileged)));
+        documents.push(with_privileged(public, privileged));
     }
 
-    if let Ok(registry) = chancela_templates::load_registry() {
-        for template in registry.specs() {
-            ensure_projection_active(shutdown)?;
-            documents.push(content_budget.apply(project_serializable(
-                format!("template:{}", template.id),
-                SearchKind::Template,
-                Relation::default(),
-                template.id.clone(),
-                template,
-                None,
-                template.law_references.first().map(|reference| {
-                    format!(
-                        "{} {}",
-                        reference.source_label,
-                        reference.article.as_deref().unwrap_or_default()
-                    )
-                }),
-                Some(format!("{:?}", template.stage)),
-                None,
-                settings.max_content_chars as usize,
-            )?));
-        }
-    }
+    documents.extend(project_default_template_registry(
+        Ok::<_, String>(default_template_registry),
+        settings,
+        shutdown,
+    )?);
     for (id, raw) in durable.user_templates {
         ensure_projection_active(shutdown)?;
         let value =
@@ -2250,7 +3100,7 @@ async fn build_corpus(
             raw.as_bytes(),
             settings.max_content_chars as usize,
         );
-        documents.push(content_budget.apply(with_privileged(public, privileged)));
+        documents.push(with_privileged(public, privileged));
     }
     for library in ordered_libraries {
         ensure_projection_active(shutdown)?;
@@ -2297,7 +3147,7 @@ async fn build_corpus(
             Some(format_time(library.updated_at)),
             settings.max_content_chars as usize,
         )?;
-        documents.push(content_budget.apply(with_privileged(public, privileged)));
+        documents.push(with_privileged(public, privileged));
     }
     for revision in ordered_revisions {
         ensure_projection_active(shutdown)?;
@@ -2346,7 +3196,7 @@ async fn build_corpus(
             Some(format_time(revision.created_at)),
             settings.max_content_chars as usize,
         )?;
-        documents.push(content_budget.apply(with_privileged(public, privileged)));
+        documents.push(with_privileged(public, privileged));
     }
 
     for diploma in chancela_law::LawCatalog::embedded().diplomas() {
@@ -2361,7 +3211,7 @@ async fn build_corpus(
                 article.display_body(),
                 article.cross_refs.join(" ")
             );
-            documents.push(content_budget.apply(project_text(
+            documents.push(project_text(
                 format!("law:{}:{}", diploma.id, article.number),
                 SearchKind::LawArticle,
                 Relation::default(),
@@ -2373,7 +3223,7 @@ async fn build_corpus(
                 article.source.dr_date.clone(),
                 body.as_bytes(),
                 settings.max_content_chars as usize,
-            )));
+            ));
         }
     }
 
@@ -2424,7 +3274,7 @@ async fn build_corpus(
             Some(format_time(event.timestamp)),
             settings.max_content_chars as usize,
         )?;
-        documents.push(content_budget.apply(with_privileged(public, privileged)));
+        documents.push(with_privileged(public, privileged));
     }
 
     for actionable in actionables {
@@ -2460,7 +3310,7 @@ async fn build_corpus(
             settings.max_content_chars as usize,
         );
         document.required_permission = Some(actionable.required_permission.as_str().to_owned());
-        documents.push(content_budget.apply(document));
+        documents.push(document);
     }
 
     let mut imported_review_history = durable.imported_review_history;
@@ -2516,24 +3366,22 @@ async fn build_corpus(
             imported.operator_review_status.as_str(),
             body
         );
-        documents.push(
-            content_budget.apply(project_text(
-                format!("imported_document:{}", imported.id),
-                SearchKind::ImportedDocument,
-                relation,
-                imported
-                    .filename
-                    .clone()
-                    .unwrap_or_else(|| format!("Documento importado {}", imported.id)),
-                body,
-                Some(imported.imported_by.clone()),
-                None,
-                Some(imported.operator_review_status.as_str().to_owned()),
-                Some(format_time(imported.imported_at)),
-                source.as_bytes(),
-                settings.max_content_chars as usize,
-            )),
-        );
+        documents.push(project_text(
+            format!("imported_document:{}", imported.id),
+            SearchKind::ImportedDocument,
+            relation,
+            imported
+                .filename
+                .clone()
+                .unwrap_or_else(|| format!("Documento importado {}", imported.id)),
+            body,
+            Some(imported.imported_by.clone()),
+            None,
+            Some(imported.operator_review_status.as_str().to_owned()),
+            Some(format_time(imported.imported_at)),
+            source.as_bytes(),
+            settings.max_content_chars as usize,
+        ));
     }
 
     for (paper, drafts) in durable.paper_imports {
@@ -2548,24 +3396,22 @@ async fn build_corpus(
             paper.notes.as_deref().unwrap_or_default(),
             paper.imported_by
         );
-        documents.push(
-            content_budget.apply(project_text(
-                format!("paper_book:{}", paper.import_id),
-                SearchKind::PaperBook,
-                relation.clone(),
-                paper
-                    .source_filename
-                    .clone()
-                    .unwrap_or_else(|| format!("Livro em papel {}", paper.book_ref)),
-                body.clone(),
-                Some(paper.imported_by.clone()),
-                None,
-                Some(paper.ocr_status.as_str().to_owned()),
-                Some(format_time(paper.imported_at)),
-                format!("{}:{body}", paper.sha256).as_bytes(),
-                settings.max_content_chars as usize,
-            )),
-        );
+        documents.push(project_text(
+            format!("paper_book:{}", paper.import_id),
+            SearchKind::PaperBook,
+            relation.clone(),
+            paper
+                .source_filename
+                .clone()
+                .unwrap_or_else(|| format!("Livro em papel {}", paper.book_ref)),
+            body.clone(),
+            Some(paper.imported_by.clone()),
+            None,
+            Some(paper.ocr_status.as_str().to_owned()),
+            Some(format_time(paper.imported_at)),
+            format!("{}:{body}", paper.sha256).as_bytes(),
+            settings.max_content_chars as usize,
+        ));
         for draft in drafts {
             ensure_projection_active(shutdown)?;
             let body = format!(
@@ -2576,26 +3422,24 @@ async fn build_corpus(
                 draft.engine_version.as_deref().unwrap_or_default(),
                 draft.reviewed_by.as_deref().unwrap_or_default()
             );
-            documents.push(
-                content_budget.apply(project_text(
-                    format!("ocr_draft:{}", draft.draft_id),
-                    SearchKind::OcrDraft,
-                    relation.clone(),
-                    format!("OCR {} — {}", paper.book_ref, draft.draft_id),
-                    body.clone(),
-                    Some(draft.created_by.clone()),
-                    None,
-                    Some(draft.review_status.as_str().to_owned()),
-                    Some(format_time(draft.created_at)),
-                    format!(
-                        "{}:{}:{body}",
-                        draft.text_digest.as_deref().unwrap_or_default(),
-                        draft.review_status.as_str()
-                    )
-                    .as_bytes(),
-                    settings.max_content_chars as usize,
-                )),
-            );
+            documents.push(project_text(
+                format!("ocr_draft:{}", draft.draft_id),
+                SearchKind::OcrDraft,
+                relation.clone(),
+                format!("OCR {} — {}", paper.book_ref, draft.draft_id),
+                body.clone(),
+                Some(draft.created_by.clone()),
+                None,
+                Some(draft.review_status.as_str().to_owned()),
+                Some(format_time(draft.created_at)),
+                format!(
+                    "{}:{}:{body}",
+                    draft.text_digest.as_deref().unwrap_or_default(),
+                    draft.review_status.as_str()
+                )
+                .as_bytes(),
+                settings.max_content_chars as usize,
+            ));
         }
     }
 
@@ -2614,7 +3458,7 @@ async fn build_corpus(
             "{}\n{}\n{}",
             generated.template_id, generated.profile, generated.pdf_digest
         );
-        documents.push(content_budget.apply(project_text(
+        documents.push(project_text(
             format!("generated_document:{}", generated.id),
             SearchKind::GeneratedDocument,
             relation,
@@ -2626,16 +3470,184 @@ async fn build_corpus(
             Some(format_time(generated.created_at)),
             body.as_bytes(),
             settings.max_content_chars as usize,
-        )));
+        ));
     }
 
     ensure_projection_active(shutdown)?;
+    let (documents, indexed_content_chars, content_budget_exhausted) =
+        apply_global_content_budget(documents, settings.max_total_content_chars);
     Ok(CorpusBuild {
         documents,
         last_event_seq,
-        indexed_content_chars: content_budget.retained,
-        content_budget_exhausted: content_budget.exhausted,
+        indexed_content_chars,
+        content_budget_exhausted,
+        projection_utc_date: projection_as_of.date(),
     })
+}
+
+fn project_default_template_registry<E: std::fmt::Display>(
+    registry: Result<chancela_templates::Registry, E>,
+    settings: &crate::settings::SearchSettings,
+    shutdown: &AtomicBool,
+) -> Result<Vec<SearchDocument>, String> {
+    let registry = registry
+        .map_err(|error| bounded_projection_error("default template registry is invalid", error))?;
+    let mut documents = Vec::with_capacity(registry.specs().len());
+    for template in registry.specs() {
+        ensure_projection_active(shutdown)?;
+        documents.push(project_serializable(
+            format!("template:{}", template.id),
+            SearchKind::Template,
+            Relation::default(),
+            template.id.clone(),
+            template,
+            None,
+            template.law_references.first().map(|reference| {
+                format!(
+                    "{} {}",
+                    reference.source_label,
+                    reference.article.as_deref().unwrap_or_default()
+                )
+            }),
+            Some(format!("{:?}", template.stage)),
+            None,
+            settings.max_content_chars as usize,
+        )?);
+    }
+    Ok(documents)
+}
+
+/// Build one complete external-projector candidate and atomically publish it through the durable
+/// lease/checkpoint CAS boundary.
+///
+/// This function never starts HTTP or the embedded worker. Callers must acquire and heartbeat the
+/// supplied lease, and must capture `checkpoint` only after refreshing [`AppState`] from the same
+/// durable source. A concurrent authoritative write, command, destructive fence, or lease takeover
+/// rejects the final transaction without exposing a partial generation.
+#[doc(hidden)]
+pub async fn build_and_publish_external_search_projection(
+    state: &AppState,
+    lease: SearchProjectorLease,
+    checkpoint: SearchProjectionCheckpoint,
+    force_rebuild: bool,
+    shutdown: Arc<AtomicBool>,
+) -> Result<SearchProjectionPublishOutcome, String> {
+    build_and_publish_external_search_projection_with_store(
+        state,
+        lease,
+        checkpoint,
+        force_rebuild,
+        shutdown,
+        None,
+    )
+    .await
+}
+
+async fn build_and_publish_external_search_projection_with_store(
+    state: &AppState,
+    lease: SearchProjectorLease,
+    checkpoint: SearchProjectionCheckpoint,
+    force_rebuild: bool,
+    shutdown: Arc<AtomicBool>,
+    publication_store: Option<Store>,
+) -> Result<SearchProjectionPublishOutcome, String> {
+    if state.store.is_none() {
+        return Err("the external search projector requires a durable store".to_owned());
+    }
+    ensure_projection_active(&shutdown)?;
+    let settings = state.settings.read().await.search.clone();
+    if !settings.enabled {
+        return Err("search projection is disabled in instance settings".to_owned());
+    }
+    let projection_as_of = OffsetDateTime::now_utc();
+    let build = build_corpus(state, &settings, &shutdown, projection_as_of).await?;
+    ensure_projection_active(&shutdown)?;
+    ensure_projection_utc_date_current(build.projection_utc_date, OffsetDateTime::now_utc())?;
+
+    // Reopen immediately before reading the baseline and publishing. SQLite recovery swaps the
+    // database file atomically; retaining the AppState connection could otherwise write a valid
+    // CAS result into the old inode after the live file has already installed a new fence.
+    let store = match publication_store {
+        Some(store) => store,
+        None if state
+            .store
+            .as_ref()
+            .is_some_and(Store::cluster_election_enabled) =>
+        {
+            state.store.clone().expect("checked above")
+        }
+        None => tokio::task::spawn_blocking(AppState::try_search_projector_store_from_env)
+            .await
+            .map_err(|error| format!("search projection store reopen task panicked: {error}"))?
+            .map_err(|error| format!("search projection store reopen failed: {error}"))?,
+    };
+    let existing = store
+        .read_blocking_async(|store| {
+            Ok::<_, StoreError>((store.search_documents()?, store.search_index_state()?))
+        })
+        .await
+        .map_err(|error| format!("search projection baseline load failed: {error}"))?;
+    let (existing_documents, existing_status) = existing;
+    let existing_by_id: HashMap<String, SearchDocument> = existing_documents
+        .into_iter()
+        .map(|document| (document.id.clone(), document))
+        .collect();
+    let target_by_id: HashMap<String, SearchDocument> = build
+        .documents
+        .into_iter()
+        .map(|document| (document.id.clone(), document))
+        .collect();
+    let mut operations = Vec::with_capacity(
+        target_by_id
+            .len()
+            .saturating_add(existing_by_id.len().saturating_sub(target_by_id.len())),
+    );
+    for (id, document) in &target_by_id {
+        if force_rebuild || existing_by_id.get(id) != Some(document) {
+            operations.push(IndexOperation::Upsert(Box::new(document.clone())));
+        }
+    }
+    for id in existing_by_id.keys() {
+        if !target_by_id.contains_key(id) {
+            operations.push(IndexOperation::Delete(id.clone()));
+        }
+    }
+    operations.sort_by(|left, right| operation_id(left).cmp(operation_id(right)));
+
+    let target_count = target_by_id.len() as u64;
+    let truncated_document_count = target_by_id
+        .values()
+        .filter(|document| document.content_truncated)
+        .count() as u64;
+    // Stamp the generation with the same as-of instant that drove retention/deadline derivation.
+    // If the clock crosses midnight in the tiny interval after the final guard, daily freshness
+    // still sees the prior UTC bucket and schedules an immediate clean rebuild.
+    let now = format_time(projection_as_of);
+    let mut completed = existing_status.unwrap_or_default();
+    completed.phase = SearchIndexPhase::Idle;
+    completed.generation = completed.generation.saturating_add(1);
+    completed.document_count = target_count;
+    completed.truncated_document_count = truncated_document_count;
+    completed.indexed_content_chars = build.indexed_content_chars;
+    completed.content_budget_exhausted = build.content_budget_exhausted;
+    completed.processed = operations.len() as u64;
+    completed.total = operations.len() as u64;
+    completed.last_event_seq = build.last_event_seq;
+    completed.last_started_at = Some(now.clone());
+    completed.last_completed_at = Some(now.clone());
+    completed.last_error = None;
+    completed.error_at = None;
+    completed.projection_fenced = false;
+    completed.updated_at = now;
+    ensure_projection_active(&shutdown)?;
+    ensure_projection_utc_date_current(build.projection_utc_date, OffsetDateTime::now_utc())?;
+
+    store
+        .read_blocking_async(move |store| {
+            store.publish_search_projection(&lease, checkpoint, &operations, &completed)
+        })
+        .await
+        .map_err(|error| format!("search projection CAS publication failed: {error}"))
 }
 
 async fn load_durable_rows(state: &AppState) -> Result<DurableCorpusRows, String> {
@@ -3368,6 +4380,360 @@ mod tests {
         }
     }
 
+    #[test]
+    fn managed_heartbeat_must_match_live_lease_checkpoint_and_generation() {
+        const LEASE_A: &str = "00000000-0000-0000-0000-00000000000a";
+        const LEASE_B: &str = "00000000-0000-0000-0000-00000000000b";
+        let checkpoint = SearchProjectionCheckpoint {
+            source_revision: 7,
+            fence_token: 3,
+            command_generation: 11,
+        };
+        let control = chancela_search::SearchProjectionControl {
+            checkpoint,
+            published_checkpoint: Some(checkpoint),
+            command: SearchProjectionCommand::Reconcile,
+            lease: Some(SearchProjectorLease {
+                lease_id: LEASE_A.to_owned(),
+                owner: "projector-a".to_owned(),
+                heartbeat_at: "2026-07-26T10:00:00Z".to_owned(),
+                expires_at_unix_ms: 2_000,
+                checkpoint,
+            }),
+            updated_at: "2026-07-26T10:00:00Z".to_owned(),
+        };
+        let mut heartbeat = ManagedProjectorHeartbeat {
+            schema_version: SEARCH_PROJECTOR_HEARTBEAT_SCHEMA_VERSION,
+            service: "chancela-search-projector".to_owned(),
+            lease_id: LEASE_A.to_owned(),
+            owner: "projector-a".to_owned(),
+            phase: ManagedProjectorPhase::Idle,
+            updated_at: "2026-07-26T10:00:00Z".to_owned(),
+            updated_at_unix_ms: 1_000,
+            source_revision: Some(7),
+            fence_token: Some(3),
+            command_generation: Some(11),
+            generation: Some(4),
+            last_error: None,
+        };
+        assert!(managed_projector_heartbeat_is_trusted(
+            &heartbeat,
+            true,
+            &control,
+            1_000,
+            Some(4)
+        ));
+        let mut reacquired = control.clone();
+        reacquired.lease.as_mut().unwrap().lease_id = LEASE_B.to_owned();
+        assert!(
+            !managed_projector_heartbeat_is_trusted(&heartbeat, true, &reacquired, 1_000, Some(4)),
+            "reacquiring under the same owner must not trust the previous lease artifact"
+        );
+        heartbeat.owner = "replaced-projector".to_owned();
+        assert!(!managed_projector_heartbeat_is_trusted(
+            &heartbeat,
+            true,
+            &control,
+            1_000,
+            Some(4)
+        ));
+        heartbeat.owner = "projector-a".to_owned();
+        heartbeat.source_revision = Some(8);
+        assert!(!managed_projector_heartbeat_is_trusted(
+            &heartbeat,
+            true,
+            &control,
+            1_000,
+            Some(4)
+        ));
+        heartbeat.source_revision = Some(7);
+        assert!(!managed_projector_heartbeat_is_trusted(
+            &heartbeat,
+            true,
+            &control,
+            2_000,
+            Some(4)
+        ));
+    }
+
+    fn projector_trust_fixture() -> (SearchProjectionControl, ManagedProjectorHeartbeat) {
+        const LEASE_A: &str = "00000000-0000-0000-0000-00000000000a";
+        let checkpoint = SearchProjectionCheckpoint {
+            source_revision: 7,
+            fence_token: 3,
+            command_generation: 11,
+        };
+        (
+            SearchProjectionControl {
+                checkpoint,
+                published_checkpoint: Some(checkpoint),
+                command: SearchProjectionCommand::Reconcile,
+                lease: Some(SearchProjectorLease {
+                    lease_id: LEASE_A.to_owned(),
+                    owner: "projector-a".to_owned(),
+                    heartbeat_at: "2026-07-26T10:00:00Z".to_owned(),
+                    expires_at_unix_ms: 2_000,
+                    checkpoint,
+                }),
+                updated_at: "2026-07-26T10:00:00Z".to_owned(),
+            },
+            ManagedProjectorHeartbeat {
+                schema_version: SEARCH_PROJECTOR_HEARTBEAT_SCHEMA_VERSION,
+                service: "chancela-search-projector".to_owned(),
+                lease_id: LEASE_A.to_owned(),
+                owner: "projector-a".to_owned(),
+                phase: ManagedProjectorPhase::Idle,
+                updated_at: "2026-07-26T10:00:00Z".to_owned(),
+                updated_at_unix_ms: 1_000,
+                source_revision: Some(7),
+                fence_token: Some(3),
+                command_generation: Some(11),
+                generation: Some(4),
+                last_error: None,
+            },
+        )
+    }
+
+    fn redacted_idle_status() -> SearchStatusResponse {
+        let service = SearchService::default();
+        let mut status = completed_status(4);
+        status.last_completed_at = Some("2026-07-26T10:00:00Z".to_owned());
+        *write_lock(&service.inner.status) = status;
+        service.inner.query_only.store(true, Ordering::Release);
+        service.status_response_at(
+            &crate::settings::SearchSettings::default(),
+            false,
+            OffsetDateTime::parse("2026-07-26T10:00:01Z", &Rfc3339).unwrap(),
+        )
+    }
+
+    fn assert_projector_details_redacted(response: &SearchStatusResponse) {
+        assert!(response.details_redacted);
+        assert!(response.projector_command.is_none());
+        assert!(response.projector_source_revision.is_none());
+        assert!(response.projector_published_source_revision.is_none());
+        assert!(response.projector_lease_owner.is_none());
+        assert!(response.projector_heartbeat_at.is_none());
+        assert!(response.projector_lease_expires_at_unix_ms.is_none());
+        assert!(response.projector_phase.is_none());
+        assert!(response.projector_updated_at.is_none());
+        assert!(response.projector_last_error.is_none());
+        assert!(response.projector_heartbeat_fresh.is_none());
+    }
+
+    #[test]
+    fn search_read_projector_trust_is_fail_closed_without_leaking_diagnostics() {
+        let (control, heartbeat) = projector_trust_fixture();
+
+        let mut healthy = redacted_idle_status();
+        apply_projector_trust_evidence(
+            &mut healthy,
+            false,
+            &control,
+            4,
+            1_000,
+            Ok(Some((heartbeat.clone(), true))),
+        );
+        assert!(!healthy.stale);
+        assert_eq!(healthy.phase, SearchIndexPhase::Idle);
+        assert_projector_details_redacted(&healthy);
+
+        let mut missing = redacted_idle_status();
+        apply_projector_trust_evidence(&mut missing, false, &control, 4, 1_000, Ok(None));
+        assert!(missing.stale);
+        assert_eq!(missing.phase, SearchIndexPhase::Error);
+        assert_projector_details_redacted(&missing);
+
+        let mut dead = redacted_idle_status();
+        apply_projector_trust_evidence(
+            &mut dead,
+            false,
+            &control,
+            4,
+            1_000,
+            Ok(Some((heartbeat.clone(), false))),
+        );
+        assert!(dead.stale);
+        assert_eq!(dead.phase, SearchIndexPhase::Error);
+        assert_projector_details_redacted(&dead);
+
+        let mut unpublished_control = control.clone();
+        unpublished_control.published_checkpoint = Some(SearchProjectionCheckpoint {
+            source_revision: 6,
+            ..control.checkpoint
+        });
+        let mut unpublished = redacted_idle_status();
+        apply_projector_trust_evidence(
+            &mut unpublished,
+            false,
+            &unpublished_control,
+            4,
+            1_000,
+            Ok(Some((heartbeat, true))),
+        );
+        assert!(unpublished.stale);
+        assert_projector_details_redacted(&unpublished);
+    }
+
+    #[tokio::test]
+    async fn ordinary_trust_reads_share_one_cadence_cache_refresh() {
+        const LEASE_A: &str = "00000000-0000-0000-0000-00000000000a";
+        let state = AppState::default();
+        let mut tasks = Vec::new();
+        for _ in 0..16 {
+            let state = state.clone();
+            tasks.push(tokio::spawn(async move {
+                let _ = read_managed_projector_heartbeat_cached(&state, LEASE_A, false).await;
+            }));
+        }
+        for task in tasks {
+            task.await.unwrap();
+        }
+        assert_eq!(
+            state
+                .search_index
+                .inner
+                .projector_heartbeat_file_reads
+                .load(Ordering::Acquire),
+            1
+        );
+        let _ = read_managed_projector_heartbeat_cached(&state, LEASE_A, true).await;
+        assert_eq!(
+            state
+                .search_index
+                .inner
+                .projector_heartbeat_file_reads
+                .load(Ordering::Acquire),
+            2,
+            "a detailed admin status may force a fresh diagnostic read"
+        );
+    }
+
+    #[tokio::test]
+    async fn search_read_control_diagnostic_failure_is_stale_not_an_error_response() {
+        let mut state = AppState::default();
+        state.search_runtime = SearchRuntimeMode::QueryOnly;
+        let mut response = redacted_idle_status();
+        enrich_projector_diagnostics_with_control(
+            &state,
+            &mut response,
+            false,
+            Some(Err("injected control read failure".to_owned())),
+            4,
+            false,
+        )
+        .await;
+        assert!(response.stale);
+        assert_eq!(response.phase, SearchIndexPhase::Error);
+        assert_projector_details_redacted(&response);
+    }
+
+    #[tokio::test]
+    async fn cached_heartbeat_ages_out_at_consumption_without_another_file_read() {
+        let state = AppState::default();
+        let (_, heartbeat) = projector_trust_fixture();
+        let lease_id = heartbeat.lease_id.clone();
+        *state
+            .search_index
+            .inner
+            .projector_heartbeat_cache
+            .lock()
+            .await = Some(CachedManagedProjectorHeartbeat {
+            lease_id: lease_id.clone(),
+            loaded_at: Instant::now(),
+            cache_for: StdDuration::from_secs(300),
+            result: Ok(Some((heartbeat, 100))),
+        });
+
+        let (_, fresh) =
+            read_managed_projector_heartbeat_cached_at(&state, &lease_id, false, 1_050)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(fresh);
+        let (_, fresh) =
+            read_managed_projector_heartbeat_cached_at(&state, &lease_id, false, 1_101)
+                .await
+                .unwrap()
+                .unwrap();
+        assert!(!fresh);
+        assert_eq!(
+            state
+                .search_index
+                .inner
+                .projector_heartbeat_file_reads
+                .load(Ordering::Acquire),
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn heartbeat_cache_never_crosses_a_durable_lease_boundary() {
+        const LEASE_B: &str = "00000000-0000-0000-0000-00000000000b";
+        let state = AppState::default();
+        let (_, heartbeat) = projector_trust_fixture();
+        *state
+            .search_index
+            .inner
+            .projector_heartbeat_cache
+            .lock()
+            .await = Some(CachedManagedProjectorHeartbeat {
+            lease_id: heartbeat.lease_id.clone(),
+            loaded_at: Instant::now(),
+            cache_for: StdDuration::from_secs(300),
+            result: Ok(Some((heartbeat, 100))),
+        });
+
+        let _ = read_managed_projector_heartbeat_cached(&state, LEASE_B, false).await;
+        assert_eq!(
+            state
+                .search_index
+                .inner
+                .projector_heartbeat_file_reads
+                .load(Ordering::Acquire),
+            1,
+            "a successor lease must force a read of its own scoped heartbeat"
+        );
+    }
+
+    #[test]
+    fn utc_bucket_guard_refuses_publication_before_invoking_the_sink() {
+        let captured = OffsetDateTime::parse("2026-07-26T23:59:59Z", &Rfc3339)
+            .unwrap()
+            .date();
+        let publication_now = OffsetDateTime::parse("2026-07-27T00:00:00Z", &Rfc3339).unwrap();
+        let called = AtomicBool::new(false);
+        assert_eq!(
+            projection_publication_guard(captured, publication_now, || {
+                called.store(true, Ordering::Release);
+            })
+            .unwrap_err(),
+            SEARCH_PROJECTION_UTC_BUCKET_CHANGED
+        );
+        assert!(!called.load(Ordering::Acquire));
+
+        let same_utc_day_with_offset =
+            OffsetDateTime::parse("2026-07-26T23:30:00-01:00", &Rfc3339).unwrap();
+        let captured = same_utc_day_with_offset.to_offset(UtcOffset::UTC).date();
+        projection_publication_guard(captured, same_utc_day_with_offset, || {
+            called.store(true, Ordering::Release);
+        })
+        .unwrap();
+        assert!(called.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn invalid_default_template_registry_fails_the_exact_projection_seam() {
+        let error = project_default_template_registry::<&str>(
+            Err("malformed embedded template"),
+            &crate::settings::SearchSettings::default(),
+            &AtomicBool::new(false),
+        )
+        .unwrap_err();
+        assert!(error.contains("default template registry is invalid"));
+        assert!(error.contains("malformed embedded template"));
+    }
+
     fn install_active(
         state: &AppState,
         documents: impl IntoIterator<Item = SearchDocument>,
@@ -3505,6 +4871,64 @@ mod tests {
     }
 
     #[test]
+    fn global_content_budget_is_byte_stable_for_reversed_actionable_documents() {
+        let first = project_text(
+            "operational_action:reminder:semantic-a".to_owned(),
+            SearchKind::OperationalAction,
+            Relation::default(),
+            "tied reminder".to_owned(),
+            "abcd".to_owned(),
+            None,
+            None,
+            Some("DueSoon".to_owned()),
+            Some("2026-07-26".to_owned()),
+            b"semantic-a",
+            100,
+        );
+        let second = project_text(
+            "operational_action:reminder:semantic-b".to_owned(),
+            SearchKind::OperationalAction,
+            Relation::default(),
+            "tied reminder".to_owned(),
+            "wxyz".to_owned(),
+            None,
+            None,
+            Some("DueSoon".to_owned()),
+            Some("2026-07-26".to_owned()),
+            b"semantic-b",
+            100,
+        );
+
+        let (forward, forward_retained, forward_exhausted) =
+            apply_global_content_budget(vec![first.clone(), second.clone()], 5);
+        let (reversed, reversed_retained, reversed_exhausted) =
+            apply_global_content_budget(vec![second, first], 5);
+
+        assert_eq!(
+            serde_json::to_vec(&forward).expect("search documents serialize"),
+            serde_json::to_vec(&reversed).expect("search documents serialize")
+        );
+        assert_eq!(
+            forward
+                .iter()
+                .map(|document| document.id.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "operational_action:reminder:semantic-a",
+                "operational_action:reminder:semantic-b",
+            ]
+        );
+        assert_eq!(forward[0].body, "abcd");
+        assert!(!forward[0].content_truncated);
+        assert_eq!(forward[1].body, "w");
+        assert!(forward[1].content_truncated);
+        assert_eq!(forward_retained, 5);
+        assert_eq!(forward_retained, reversed_retained);
+        assert!(forward_exhausted);
+        assert_eq!(forward_exhausted, reversed_exhausted);
+    }
+
+    #[test]
     fn query_terms_filters_and_cursor_context_are_strictly_bounded_and_unambiguous() {
         assert!(validate_query_terms("ab x", 2).is_err());
         assert!(validate_query_terms("ab xy", 2).is_ok());
@@ -3583,6 +5007,47 @@ mod tests {
         assert!(managed.get("queue_capacity").is_some());
     }
 
+    #[test]
+    fn query_only_idle_status_uses_the_utc_completion_bucket_not_generation_age() {
+        let service = SearchService::default();
+        service.inner.query_only.store(true, Ordering::Release);
+        let settings = crate::settings::SearchSettings::default();
+        let now = OffsetDateTime::parse("2026-07-26T18:00:00Z", &Rfc3339).unwrap();
+        {
+            let mut status = write_lock(&service.inner.status);
+            *status = completed_status(7);
+            status.last_completed_at = Some("2026-07-26T02:00:00Z".to_owned());
+        }
+
+        let current_day = service.status_response_at(&settings, true, now);
+        assert!(
+            !current_day.stale,
+            "a current, idle external generation stays fresh between reconciliations"
+        );
+
+        write_lock(&service.inner.status).last_completed_at =
+            Some("2026-07-26T00:15:00Z".to_owned());
+        let offset_now = OffsetDateTime::parse("2026-07-25T23:30:00-01:00", &Rfc3339).unwrap();
+        assert!(
+            !service
+                .status_response_at(&settings, true, offset_now)
+                .stale,
+            "freshness compares normalized UTC date buckets, not source offsets"
+        );
+
+        write_lock(&service.inner.status).last_completed_at =
+            Some("2026-07-25T23:59:59Z".to_owned());
+        assert!(service.status_response_at(&settings, true, now).stale);
+
+        service.inner.query_only.store(false, Ordering::Release);
+        write_lock(&service.inner.status).last_completed_at =
+            Some("2026-07-26T02:00:00Z".to_owned());
+        assert!(
+            service.status_response_at(&settings, true, now).stale,
+            "embedded mode retains interval-age freshness semantics"
+        );
+    }
+
     #[tokio::test]
     async fn guest_cannot_match_private_projection_while_owner_can_search_full_act_text() {
         let state = AppState::default();
@@ -3610,6 +5075,7 @@ mod tests {
             &state,
             &crate::settings::SearchSettings::default(),
             &shutdown,
+            OffsetDateTime::now_utc(),
         )
         .await
         .unwrap();
@@ -4004,6 +5470,7 @@ mod tests {
             &state,
             &crate::settings::SearchSettings::default(),
             &shutdown,
+            OffsetDateTime::now_utc(),
         )
         .await
         .unwrap_err();
@@ -4088,11 +5555,19 @@ mod tests {
             .await
             .unwrap();
         drop(ledger);
-        assert!(
-            lock_mutex(&state.search_index.inner.queue)
-                .iter()
-                .any(|command| matches!(command, SearchCommand::Reconcile))
-        );
+        tokio::time::timeout(StdDuration::from_secs(1), async {
+            loop {
+                if lock_mutex(&state.search_index.inner.queue)
+                    .iter()
+                    .any(|command| matches!(command, SearchCommand::Reconcile))
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("in-memory persistence schedules reconciliation");
     }
 
     #[test]
@@ -4439,6 +5914,7 @@ mod tests {
             &state,
             &crate::settings::SearchSettings::default(),
             &AtomicBool::new(false),
+            OffsetDateTime::now_utc(),
         )
         .await
         .unwrap();
@@ -4561,6 +6037,7 @@ mod tests {
             &state,
             &crate::settings::SearchSettings::default(),
             &AtomicBool::new(false),
+            OffsetDateTime::now_utc(),
         )
         .await
         .unwrap();
@@ -4713,6 +6190,14 @@ mod tests {
                 .unwrap()
         );
         assert_eq!(read_lock(&state.search_index.inner.active).index.len(), 1);
+        assert!(
+            !state
+                .search_index
+                .hydrate_from_store(&state, true)
+                .await
+                .unwrap(),
+            "an unchanged completed generation must not reload its document rows"
+        );
 
         let in_progress = SearchIndexState {
             phase: SearchIndexPhase::Reconciling,
@@ -5189,7 +6674,7 @@ mod tests {
         }
         assert_eq!(
             read_lock(&state.search_index.inner.worker_thread).as_deref(),
-            Some(SEARCH_WORKER_THREAD)
+            Some(SEARCH_EMBEDDED_WORKER_THREAD)
         );
         shutdown_search_service(&state).await;
     }
@@ -5238,6 +6723,226 @@ mod tests {
         release_tx.send(()).unwrap();
         assert!(reap_search_worker(&service, StdDuration::from_secs(1)).await);
         assert!(lock_mutex(&service.inner.task).is_none());
+    }
+
+    #[tokio::test]
+    async fn query_only_start_hydrates_sqlite_without_starting_the_embedded_builder() {
+        let dir = TestDataDir::new();
+        let mut state = AppState::with_data_dir(dir.0.clone());
+        state.search_runtime = SearchRuntimeMode::QueryOnly;
+        let store = state.store.clone().expect("durable store");
+        let document = project_text(
+            "act:external-generation".to_owned(),
+            SearchKind::Act,
+            Relation::default(),
+            "external generation".to_owned(),
+            "external generation".to_owned(),
+            None,
+            None,
+            None,
+            None,
+            b"external generation",
+            1_000,
+        );
+        let completed = SearchIndexState {
+            phase: SearchIndexPhase::Idle,
+            generation: 17,
+            document_count: 1,
+            processed: 1,
+            total: 1,
+            last_completed_at: Some("2026-07-26T12:00:00Z".to_owned()),
+            updated_at: "2026-07-26T12:00:00Z".to_owned(),
+            ..SearchIndexState::default()
+        };
+        store
+            .apply_search_index_batch(
+                &[IndexOperation::Upsert(Box::new(document.clone()))],
+                &completed,
+            )
+            .unwrap();
+
+        spawn_search_service(state.clone());
+        let deadline = tokio::time::Instant::now() + StdDuration::from_secs(5);
+        loop {
+            if read_lock(&state.search_index.inner.active)
+                .status
+                .generation
+                == 17
+            {
+                break;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "query hydrator did not install the durable generation"
+            );
+            tokio::time::sleep(StdDuration::from_millis(20)).await;
+        }
+        let active = read_lock(&state.search_index.inner.active).clone();
+        assert_eq!(active.index.get("act:external-generation"), Some(&document));
+        assert_eq!(
+            read_lock(&state.search_index.inner.worker_thread).as_deref(),
+            Some(SEARCH_QUERY_HYDRATOR_THREAD)
+        );
+        assert!(
+            !state
+                .search_index
+                .inner
+                .projection_writer
+                .load(Ordering::Acquire)
+        );
+        assert!(lock_mutex(&state.search_index.inner.queue).is_empty());
+        shutdown_search_service(&state).await;
+    }
+
+    #[tokio::test]
+    async fn query_only_admin_commands_are_durable_and_rebuild_cannot_overwrite_pause() {
+        let dir = TestDataDir::new();
+        let mut state = AppState::with_data_dir(dir.0.clone());
+        state.search_runtime = SearchRuntimeMode::QueryOnly;
+        let actor = actor_with_role(
+            &state,
+            "search-owner",
+            chancela_authz::OWNER_ROLE_ID,
+            Scope::Global,
+        )
+        .await;
+        let attestor = CurrentAttestor::default();
+        let store = state.store.clone().expect("durable store");
+        let initial_control = store.search_projection_control().unwrap();
+        let initial_ledger_len = state.ledger.read().await.len();
+
+        state
+            .search_index
+            .inner
+            .fail_next_durable_command
+            .store(true, Ordering::Release);
+        assert!(
+            admin_command(&state, &actor, &attestor, SearchCommand::Pause)
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            store.search_projection_control().unwrap(),
+            initial_control,
+            "the command update must roll back with its failed audit transaction"
+        );
+        assert_eq!(
+            state.ledger.read().await.len(),
+            initial_ledger_len,
+            "the in-memory ledger tail must roll back with the store transaction"
+        );
+
+        let _ = admin_command(&state, &actor, &attestor, SearchCommand::Pause)
+            .await
+            .expect("pause is audited and durable");
+        let paused = store.search_projection_control().unwrap();
+        assert_eq!(paused.command, SearchProjectionCommand::Pause);
+        let ledger_len = state.ledger.read().await.len();
+
+        assert!(matches!(
+            admin_command(&state, &actor, &attestor, SearchCommand::Rebuild).await,
+            Err(ApiError::Conflict(_))
+        ));
+        let unchanged = store.search_projection_control().unwrap();
+        assert_eq!(unchanged.command, SearchProjectionCommand::Pause);
+        assert_eq!(
+            unchanged.checkpoint.command_generation,
+            paused.checkpoint.command_generation
+        );
+        assert_eq!(state.ledger.read().await.len(), ledger_len);
+
+        let _ = admin_command(&state, &actor, &attestor, SearchCommand::Resume)
+            .await
+            .expect("resume is audited and durable");
+        assert_eq!(
+            store.search_projection_control().unwrap().command,
+            SearchProjectionCommand::Reconcile
+        );
+    }
+
+    #[tokio::test]
+    async fn external_candidate_publishes_hydrates_and_rejects_stale_or_replaced_store() {
+        let dir = TestDataDir::new();
+        let state = AppState::with_data_dir(dir.0.clone());
+        let store = state.store.clone().expect("durable store");
+        let lease = store
+            .try_acquire_search_projector_lease("api-projector-test", StdDuration::from_secs(60))
+            .unwrap()
+            .expect("lease");
+        let checkpoint = store.search_projection_control().unwrap().checkpoint;
+        let published = build_and_publish_external_search_projection_with_store(
+            &state,
+            lease.clone(),
+            checkpoint,
+            true,
+            Arc::new(AtomicBool::new(false)),
+            Some(store.clone()),
+        )
+        .await
+        .expect("candidate build");
+        let SearchProjectionPublishOutcome::Published {
+            generation,
+            document_count,
+            ..
+        } = published
+        else {
+            panic!("fresh candidate must publish");
+        };
+        assert!(generation > 0);
+        assert!(document_count > 0);
+        assert!(
+            state
+                .search_index
+                .hydrate_from_store(&state, true)
+                .await
+                .unwrap()
+        );
+        assert_eq!(
+            read_lock(&state.search_index.inner.active).index.len() as u64,
+            document_count
+        );
+
+        let stale_checkpoint = store.search_projection_control().unwrap().checkpoint;
+        store.persist(|_| Ok(())).unwrap();
+        let stale = build_and_publish_external_search_projection_with_store(
+            &state,
+            lease.clone(),
+            stale_checkpoint,
+            false,
+            Arc::new(AtomicBool::new(false)),
+            Some(store.clone()),
+        )
+        .await
+        .expect("stale candidate reaches CAS");
+        assert!(matches!(
+            stale,
+            SearchProjectionPublishOutcome::Rejected {
+                reason: SearchProjectionPublishRejection::SourceChanged,
+                ..
+            }
+        ));
+
+        let replacement_dir = TestDataDir::new();
+        let replacement = AppState::with_data_dir(replacement_dir.0.clone())
+            .store
+            .expect("replacement store");
+        let replaced = build_and_publish_external_search_projection_with_store(
+            &state,
+            lease,
+            store.search_projection_control().unwrap().checkpoint,
+            false,
+            Arc::new(AtomicBool::new(false)),
+            Some(replacement),
+        )
+        .await
+        .expect("replacement live store reaches CAS");
+        assert!(matches!(
+            replaced,
+            SearchProjectionPublishOutcome::Rejected {
+                reason: SearchProjectionPublishRejection::LeaseLost,
+                ..
+            }
+        ));
     }
 
     #[tokio::test]

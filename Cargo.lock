@@ -1186,6 +1186,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-search-projector"
+version = "26.1.0"
+dependencies = [
+ "chancela-api",
+ "chancela-search",
+ "chancela-store",
+ "clap",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "time",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "chancela-server"
 version = "26.1.0"
 dependencies = [
