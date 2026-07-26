@@ -69,27 +69,42 @@ function buildContainerStatus({ options, flags }) {
 
   const digest = options.get("digest");
   const runUrl = options.get("run-url");
+  const publicationRunUrl = options.get("publication-run-url") ?? runUrl;
+  const signingRunUrl = options.get("signing-run-url") ?? runUrl;
   const identity = options.get("identity");
   const certFingerprint = options.get("cert-fingerprint");
   const predicateType = options.get("predicate-type");
+  const attestationDigest = options.get("attestation-digest");
   const registry = options.get("registry");
   const repository = options.get("repository");
   const signer = options.get("signer");
 
   if (pushed) {
-    if (!isSha256Digest(digest)) fail("--pushed requires --digest sha256:<64 hex>");
-    if (!isHttpsUrl(runUrl)) fail("--pushed requires an HTTPS --run-url");
+    if (!isSha256Digest(digest))
+      fail("--pushed requires --digest sha256:<64 hex>");
+    if (!isHttpsUrl(publicationRunUrl)) {
+      fail("--pushed requires an HTTPS --publication-run-url or --run-url");
+    }
   }
   if (signed) {
-    if (!pushed) fail("--signed requires --pushed (an image is signed by digest in the registry)");
+    if (!pushed)
+      fail(
+        "--signed requires --pushed (an image is signed by digest in the registry)",
+      );
     if (!nonEmpty(identity) && !nonEmpty(certFingerprint)) {
       fail("--signed requires --identity or --cert-fingerprint");
     }
     if (!nonEmpty(signer)) fail("--signed requires --signer");
+    if (!isHttpsUrl(signingRunUrl)) {
+      fail("--signed requires an HTTPS --signing-run-url or --run-url");
+    }
   }
   if (attested) {
     if (!pushed) fail("--attested requires --pushed");
     if (!nonEmpty(predicateType)) fail("--attested requires --predicate-type");
+    if (!isSha256Digest(attestationDigest)) {
+      fail("--attested requires --attestation-digest sha256:<64 hex>");
+    }
   }
 
   const mode =
@@ -113,7 +128,7 @@ function buildContainerStatus({ options, flags }) {
           ...(registry ? { registry } : {}),
           ...(repository ? { repository } : {}),
           imageDigest: digest,
-          workflowRunUrl: runUrl,
+          workflowRunUrl: publicationRunUrl,
         },
       }
     : {
@@ -130,8 +145,10 @@ function buildContainerStatus({ options, flags }) {
         evidence: {
           imageDigest: digest,
           ...(nonEmpty(identity) ? { signingIdentity: identity } : {}),
-          ...(nonEmpty(certFingerprint) ? { certificateFingerprint: certFingerprint } : {}),
-          workflowRunUrl: runUrl,
+          ...(nonEmpty(certFingerprint)
+            ? { certificateFingerprint: certFingerprint }
+            : {}),
+          workflowRunUrl: signingRunUrl,
         },
       }
     : {
@@ -146,8 +163,8 @@ function buildContainerStatus({ options, flags }) {
         status: "attested",
         evidence: {
           predicateType,
-          artifactDigest: digest,
-          workflowRunUrl: runUrl,
+          artifactDigest: attestationDigest,
+          workflowRunUrl: publicationRunUrl,
         },
       }
     : {
@@ -203,9 +220,11 @@ function buildDesktopStatus({ options, flags }) {
     }
   }
   if (notarized) {
-    if (platform !== "macos") fail("--notarized is only valid for --platform macos");
+    if (platform !== "macos")
+      fail("--notarized is only valid for --platform macos");
     if (!signed) fail("--notarized requires --signed");
-    if (!nonEmpty(notarizationTicket)) fail("--notarized requires --notarization-ticket");
+    if (!nonEmpty(notarizationTicket))
+      fail("--notarized requires --notarization-ticket");
   }
 
   const codeSigning = signed
@@ -214,7 +233,9 @@ function buildDesktopStatus({ options, flags }) {
         signer: signer ?? "configured code-signing identity",
         evidence: {
           artifact,
-          ...(nonEmpty(certFingerprint) ? { certificateFingerprint: certFingerprint } : {}),
+          ...(nonEmpty(certFingerprint)
+            ? { certificateFingerprint: certFingerprint }
+            : {}),
           ...(isHttpsUrl(runUrl) ? { workflowRunUrl: runUrl } : {}),
         },
       }
@@ -271,7 +292,9 @@ function writeOutput(options, document) {
   if (output) {
     fs.mkdirSync(path.dirname(path.resolve(output)), { recursive: true });
     fs.writeFileSync(path.resolve(output), serialized);
-    console.log(`[release-signing-status] Wrote ${output} (mode=${document.releaseTrust.mode})`);
+    console.log(
+      `[release-signing-status] Wrote ${output} (mode=${document.releaseTrust.mode})`,
+    );
   } else {
     process.stdout.write(serialized);
   }
@@ -297,9 +320,14 @@ function expectFail(fn, needle) {
     process.exit = originalExit;
     console.error = originalError;
   }
-  if (!exited) throw new Error(`Expected failure containing "${needle}" but call succeeded`);
+  if (!exited)
+    throw new Error(
+      `Expected failure containing "${needle}" but call succeeded`,
+    );
   if (!captured.includes(needle)) {
-    throw new Error(`Expected failure containing "${needle}", got "${captured.trim()}"`);
+    throw new Error(
+      `Expected failure containing "${needle}", got "${captured.trim()}"`,
+    );
   }
 }
 
@@ -312,8 +340,10 @@ function runSelfTest() {
     options: new Map([["image", "chancela-server:local"]]),
     flags: new Set(),
   });
-  if (unsignedContainer.releaseTrust.mode !== "local-ci") throw new Error("expected local-ci mode");
-  if (unsignedContainer.signingPerformed !== false) throw new Error("expected signingPerformed false");
+  if (unsignedContainer.releaseTrust.mode !== "local-ci")
+    throw new Error("expected local-ci mode");
+  if (unsignedContainer.signingPerformed !== false)
+    throw new Error("expected signingPerformed false");
 
   // Fully signed container document with evidence.
   const signedContainer = buildContainerStatus({
@@ -321,15 +351,33 @@ function runSelfTest() {
       ["image", "ghcr.io/example/chancela-server"],
       ["digest", digest],
       ["run-url", runUrl],
-      ["identity", "https://github.com/example/chancela/.github/workflows/release-signing.yml"],
+      [
+        "publication-run-url",
+        "https://github.com/example/chancela/actions/runs/111",
+      ],
+      ["signing-run-url", runUrl],
+      [
+        "identity",
+        "https://github.com/example/chancela/.github/workflows/release-signing.yml",
+      ],
       ["signer", "github-actions keyless (Fulcio)"],
       ["predicate-type", "https://cyclonedx.org/bom"],
+      ["attestation-digest", `sha256:${"b".repeat(64)}`],
       ["registry", "ghcr.io"],
       ["repository", "example/chancela-server"],
     ]),
     flags: new Set(["pushed", "signed", "attested"]),
   });
-  if (signedContainer.releaseTrust.mode !== "production") throw new Error("expected production mode");
+  if (signedContainer.releaseTrust.mode !== "production")
+    throw new Error("expected production mode");
+  if (
+    signedContainer.releaseTrust.imagePublication.evidence.workflowRunUrl ===
+    signedContainer.releaseTrust.signing.evidence.workflowRunUrl
+  ) {
+    throw new Error(
+      "publication and signing evidence must retain their distinct run URLs",
+    );
+  }
 
   // Normal main-branch CI publishes with BuildKit provenance/SBOM but no signing identity.
   const publishedUnsignedContainer = buildContainerStatus({
@@ -338,16 +386,21 @@ function runSelfTest() {
       ["digest", digest],
       ["run-url", runUrl],
       ["predicate-type", "https://slsa.dev/provenance/v1"],
+      ["attestation-digest", `sha256:${"b".repeat(64)}`],
       ["registry", "ghcr.io"],
       ["repository", "example/chancela-server"],
-      ["reason-unsigned", "No container signing identity was used by normal CI."],
+      [
+        "reason-unsigned",
+        "No container signing identity was used by normal CI.",
+      ],
     ]),
     flags: new Set(["pushed", "attested"]),
   });
   if (publishedUnsignedContainer.releaseTrust.mode !== "published-unsigned") {
     throw new Error("expected published-unsigned mode");
   }
-  if (publishedUnsignedContainer.imagePushed !== true) throw new Error("expected imagePushed true");
+  if (publishedUnsignedContainer.imagePushed !== true)
+    throw new Error("expected imagePushed true");
   if (publishedUnsignedContainer.signingPerformed !== false) {
     throw new Error("expected signingPerformed false");
   }
@@ -376,6 +429,38 @@ function runSelfTest() {
         flags: new Set(["signed"]),
       }),
     "--signed requires --pushed",
+  );
+  expectFail(
+    () =>
+      buildContainerStatus({
+        options: new Map([
+          ["image", "ghcr.io/example/chancela-server@sha256:x"],
+          ["digest", digest],
+          ["publication-run-url", runUrl],
+          [
+            "identity",
+            "https://github.com/example/chancela/.github/workflows/release-signing.yml",
+          ],
+          ["signer", "x"],
+          ["predicate-type", "https://slsa.dev/provenance/v1"],
+          ["attestation-digest", `sha256:${"b".repeat(64)}`],
+        ]),
+        flags: new Set(["pushed", "signed", "attested"]),
+      }),
+    "--signed requires an HTTPS --signing-run-url",
+  );
+  expectFail(
+    () =>
+      buildContainerStatus({
+        options: new Map([
+          ["image", "ghcr.io/example/chancela-server@sha256:x"],
+          ["digest", digest],
+          ["run-url", runUrl],
+          ["predicate-type", "https://slsa.dev/provenance/v1"],
+        ]),
+        flags: new Set(["pushed", "attested"]),
+      }),
+    "--attested requires --attestation-digest",
   );
   expectFail(
     () =>
@@ -435,7 +520,7 @@ const [command, ...rest] = process.argv.slice(2);
 if (!command) {
   console.error(
     "Usage:\n" +
-      "  node scripts/release-signing-status.mjs container --image <ref> [--output <path>] [--pushed] [--signed] [--attested] [--digest sha256:..] [--run-url <https>] [--identity <s>] [--cert-fingerprint <s>] [--signer <s>] [--predicate-type <s>] [--registry <s>] [--repository <s>]\n" +
+      "  node scripts/release-signing-status.mjs container --image <ref> [--output <path>] [--pushed] [--signed] [--attested] [--digest sha256:..] [--attestation-digest sha256:..] [--run-url <https>] [--identity <s>] [--cert-fingerprint <s>] [--signer <s>] [--predicate-type <s>] [--registry <s>] [--repository <s>]\n" +
       "  node scripts/release-signing-status.mjs desktop --platform <windows|macos> --artifact <name> [--output <path>] [--signed] [--notarized] [--signer <s>] [--cert-fingerprint <s>] [--notarization-ticket <s>] [--run-url <https>]\n" +
       "  node scripts/release-signing-status.mjs self-test",
   );

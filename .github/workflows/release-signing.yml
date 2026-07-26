@@ -34,238 +34,323 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Container image signing + provenance/SBOM attestation with cosign.
-  #
-  # Enabled only when a registry repository is configured (RELEASE_IMAGE_REPOSITORY)
-  # AND either keyless OIDC is opted in (RELEASE_SIGNING_COSIGN_KEYLESS=true) or a
-  # key pair secret is present (COSIGN_PRIVATE_KEY). Otherwise every step below is
-  # skipped and an honest unsigned/not_pushed/not_attested status is recorded.
+  # Container signing is a digest-only consumer of normal main CI. It never
+  # builds, pushes, or tags an image. A configured signer must discover the
+  # successful main push for this exact commit, download that run's validated
+  # three-image set, and sign every immutable digest in it.
   # ---------------------------------------------------------------------------
   container:
-    name: Container image signing + attestation
+    name: Sign validated GHCR image-set digests
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write # push image + signatures to GHCR using GITHUB_TOKEN
-      id-token: write # cosign keyless OIDC identity token (Fulcio); unused unless keyless is enabled
+      actions: read # download the exact successful normal-CI image-set artifact
+      packages: write # cosign stores signatures as GHCR referrers; no image/tag write
+      id-token: write # keyless Fulcio identity; unused in key-based/disabled modes
     env:
-      STATUS_FILE: dist/release-signing/container-signing-status.json
-      IMAGE_SBOM: dist/release-signing/chancela-server-image-sbom.cdx.json
-      WORKER_STATUS_FILE: dist/release-signing/worker-container-signing-status.json
-      WORKER_IMAGE_SBOM: dist/release-signing/chancela-worker-image-sbom.cdx.json
+      SOURCE_DIR: dist/source-ghcr-publication
+      STATUS_DIR: dist/release-signing
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
 
       - name: Install Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
 
-      - name: Resolve container signing configuration
+      - name: Resolve signer and successful main CI source run
         id: cfg
         env:
-          IMAGE_REPOSITORY: ${{ vars.RELEASE_IMAGE_REPOSITORY }}
           KEYLESS: ${{ vars.RELEASE_SIGNING_COSIGN_KEYLESS }}
           HAVE_COSIGN_KEY: ${{ secrets.COSIGN_PRIVATE_KEY != '' }}
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag }}
         shell: bash
         run: |
           set -euo pipefail
           enabled=false
           mode=none
-          registry_host=""
-          if [ -n "${IMAGE_REPOSITORY:-}" ]; then
-            registry_host="${IMAGE_REPOSITORY%%/*}"
-            if [ "${KEYLESS:-}" = "true" ]; then
-              enabled=true
-              mode=keyless
-            elif [ "${HAVE_COSIGN_KEY:-}" = "true" ]; then
-              enabled=true
-              mode=key
-            fi
+          if [ "${KEYLESS:-}" = "true" ] && [ "${HAVE_COSIGN_KEY:-}" = "true" ]; then
+            echo "configure exactly one container signing mode: keyless or private key, not both" >&2
+            exit 1
+          elif [ "${KEYLESS:-}" = "true" ]; then
+            enabled=true
+            mode=keyless
+          elif [ "${HAVE_COSIGN_KEY:-}" = "true" ]; then
+            enabled=true
+            mode=key
           fi
+
+          source_ref="$GITHUB_SHA"
+          if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
+            source_ref="$GITHUB_REF_NAME"
+          elif [ -n "${INPUT_RELEASE_TAG:-}" ]; then
+            source_ref="$INPUT_RELEASE_TAG"
+          fi
+          source_sha="$(git rev-parse "$source_ref^{commit}")"
+          if ! [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "resolved source is not a full commit SHA: $source_sha" >&2
+            exit 1
+          fi
+          signing_run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          identity="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/release-signing.yml@${GITHUB_REF}"
+
+          source_run_id=""
+          source_run_attempt=""
+          source_run_url=""
+          if [ "$enabled" = "true" ]; then
+            runs="$(
+              gh api \
+                -H "Accept: application/vnd.github+json" \
+                -H "X-GitHub-Api-Version: 2022-11-28" \
+                "/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&head_sha=${source_sha}&per_page=100"
+            )"
+            selected="$(
+              jq -cer --arg sha "$source_sha" '
+                [
+                  .workflow_runs[]
+                  | select(
+                      .head_sha == $sha
+                      and .head_branch == "main"
+                      and .event == "push"
+                      and .status == "completed"
+                      and .conclusion == "success"
+                    )
+                ]
+                | sort_by(.id, .run_attempt)
+                | last
+                | select(. != null)
+              ' <<<"$runs"
+            )" || {
+              echo "no successful main push CI run exists for $source_sha" >&2
+              exit 1
+            }
+            source_run_id="$(jq -er '.id' <<<"$selected")"
+            source_run_attempt="$(
+              jq -er \
+                '.run_attempt | select(type == "number" and . >= 1 and . == floor)' \
+                <<<"$selected"
+            )"
+            source_run_url="$(jq -er '.html_url' <<<"$selected")"
+          fi
+
           {
             echo "enabled=$enabled"
             echo "mode=$mode"
-            echo "repository=${IMAGE_REPOSITORY:-}"
-            echo "worker_repository=${IMAGE_REPOSITORY:+${IMAGE_REPOSITORY}-worker}"
-            echo "registry_host=$registry_host"
-            echo "run_url=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "identity=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/.github/workflows/release-signing.yml@${GITHUB_REF}"
+            echo "source_sha=$source_sha"
+            echo "source_run_id=$source_run_id"
+            echo "source_run_attempt=$source_run_attempt"
+            echo "source_run_url=$source_run_url"
+            echo "artifact_name=ghcr-publication-trust-$source_sha-$source_run_id-$source_run_attempt"
+            echo "signing_run_url=$signing_run_url"
+            echo "identity=$identity"
           } >> "$GITHUB_OUTPUT"
+
           if [ "$enabled" != "true" ]; then
-            echo "Container signing not configured: set repository/actions variable RELEASE_IMAGE_REPOSITORY and RELEASE_SIGNING_COSIGN_KEYLESS=true (keyless), or add the COSIGN_PRIVATE_KEY secret (key-based). The image will not be pushed or signed." >> "$GITHUB_STEP_SUMMARY"
+            echo "Container signing is disabled: configure RELEASE_SIGNING_COSIGN_KEYLESS=true or COSIGN_PRIVATE_KEY. No image-set was downloaded and no registry write occurred." >> "$GITHUB_STEP_SUMMARY"
           else
-            echo "Container signing enabled ($mode) for ${IMAGE_REPOSITORY}." >> "$GITHUB_STEP_SUMMARY"
+            echo "Signing enabled ($mode); consuming successful main CI run $source_run_url at $source_sha." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Set up Buildx
+      - name: Download exact normal-CI GHCR publication evidence
         if: steps.cfg.outputs.enabled == 'true'
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ steps.cfg.outputs.artifact_name }}
+          path: ${{ env.SOURCE_DIR }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.cfg.outputs.source_run_id }}
+          github-token: ${{ github.token }}
 
-      - name: Log in to container registry
+      - name: Validate exact complete image set and source declarations
+        if: steps.cfg.outputs.enabled == 'true'
+        env:
+          EXPECTED_SOURCE_SHA: ${{ steps.cfg.outputs.source_sha }}
+          EXPECTED_SOURCE_RUN_URL: ${{ steps.cfg.outputs.source_run_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_set="$SOURCE_DIR/chancela-image-set.json"
+          test -f "$image_set"
+          node scripts/check-release-trust.mjs image-set \
+            --input "$image_set" \
+            --expect-commit "$EXPECTED_SOURCE_SHA"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg run_url "$EXPECTED_SOURCE_RUN_URL" '
+              .source.repository == $repository
+              and .workflowRunUrl == $run_url
+              and ([.images[].name] | sort
+                == ["search-projector", "server", "worker"])
+              and all(.images[];
+                (.reference | test(
+                  "^ghcr\\.io/[a-z0-9_.-]+/chancela-(server|worker|search-projector)@sha256:[a-f0-9]{64}$"
+                ))
+              )
+            ' "$image_set" >/dev/null
+          for name in server worker search-projector; do
+            node scripts/check-release-trust.mjs docker \
+              --input "$SOURCE_DIR/chancela-$name-signing-status.json" \
+              --image-set "$image_set" \
+              --expect-mode published-unsigned
+          done
+
+      - name: Log in to GHCR for signature referrers
         if: steps.cfg.outputs.enabled == 'true'
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
-          registry: ${{ steps.cfg.outputs.registry_host }}
-          username: ${{ secrets.REGISTRY_USERNAME || github.actor }}
-          password: ${{ secrets.REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
-
-      - name: Build and push server image (with provenance + SBOM)
-        if: steps.cfg.outputs.enabled == 'true'
-        id: build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: docker/Dockerfile.server
-          push: true
-          provenance: true
-          sbom: true
-          tags: |
-            ${{ steps.cfg.outputs.repository }}:${{ github.ref_name }}
-            ${{ steps.cfg.outputs.repository }}:sha-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-      - name: Build and push worker image (with provenance + SBOM)
-        if: steps.cfg.outputs.enabled == 'true'
-        id: worker-build
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: .
-          file: docker/Dockerfile.worker
-          push: true
-          provenance: true
-          sbom: true
-          tags: |
-            ${{ steps.cfg.outputs.worker_repository }}:${{ github.ref_name }}
-            ${{ steps.cfg.outputs.worker_repository }}:sha-${{ github.sha }}
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Install cosign
         if: steps.cfg.outputs.enabled == 'true'
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
 
-      - name: Generate image SBOM (syft, CycloneDX)
-        if: steps.cfg.outputs.enabled == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$(dirname "$IMAGE_SBOM")"
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/$(dirname "$IMAGE_SBOM"):/out" \
-            anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
-            "registry:${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}" \
-            -o "cyclonedx-json=/out/$(basename "$IMAGE_SBOM")"
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            -v "$PWD/$(dirname "$WORKER_IMAGE_SBOM"):/out" \
-            anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
-            "registry:${{ steps.cfg.outputs.worker_repository }}@${{ steps.worker-build.outputs.digest }}" \
-            -o "cyclonedx-json=/out/$(basename "$WORKER_IMAGE_SBOM")"
-
-      - name: Sign image (cosign keyless / OIDC)
+      - name: Sign and verify all three exact image digests (keyless)
         if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'keyless'
+        id: sign-keyless
+        env:
+          SIGNING_WORKFLOW_IDENTITY: ${{ steps.cfg.outputs.identity }}
         shell: bash
         run: |
           set -euo pipefail
-          cosign sign --yes "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
-          cosign sign --yes "${{ steps.cfg.outputs.worker_repository }}@${{ steps.worker-build.outputs.digest }}"
+          image_set="$SOURCE_DIR/chancela-image-set.json"
+          identity="$SIGNING_WORKFLOW_IDENTITY"
 
-      - name: Sign image (cosign key-based)
+          for name in server worker search-projector; do
+            reference="$(
+              jq -er --arg name "$name" \
+                '.images[] | select(.name == $name) | .reference' \
+                "$image_set"
+            )"
+            cosign sign --yes "$reference"
+            cosign verify \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+              "$reference" >/dev/null
+          done
+
+          echo "signing_identity=$identity" >> "$GITHUB_OUTPUT"
+
+      - name: Sign and verify all three exact image digests (private key)
         if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'key'
+        id: sign-key
         env:
+          ACTIONS_ID_TOKEN_REQUEST_TOKEN: ""
+          ACTIONS_ID_TOKEN_REQUEST_URL: ""
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
         shell: bash
         run: |
           set -euo pipefail
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
-            "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
-          cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
-            "${{ steps.cfg.outputs.worker_repository }}@${{ steps.worker-build.outputs.digest }}"
+          image_set="$SOURCE_DIR/chancela-image-set.json"
+          public_key="$RUNNER_TEMP/cosign-public.pem"
+          cosign public-key --key env://COSIGN_PRIVATE_KEY >"$public_key"
+          certificate_fingerprint="sha256:$(sha256sum "$public_key" | cut -d' ' -f1)"
 
-      - name: Attest image SBOM (cosign keyless / OIDC)
-        if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'keyless'
-        shell: bash
-        run: |
-          set -euo pipefail
-          cosign attest --yes --type cyclonedx --predicate "$IMAGE_SBOM" \
-            "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
-          cosign attest --yes --type cyclonedx --predicate "$WORKER_IMAGE_SBOM" \
-            "${{ steps.cfg.outputs.worker_repository }}@${{ steps.worker-build.outputs.digest }}"
+          for name in server worker search-projector; do
+            reference="$(
+              jq -er --arg name "$name" \
+                '.images[] | select(.name == $name) | .reference' \
+                "$image_set"
+            )"
+            cosign sign --yes --key env://COSIGN_PRIVATE_KEY "$reference"
+            cosign verify --key "$public_key" "$reference" >/dev/null
+          done
 
-      - name: Attest image SBOM (cosign key-based)
-        if: steps.cfg.outputs.enabled == 'true' && steps.cfg.outputs.mode == 'key'
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          cosign attest --yes --type cyclonedx --key env://COSIGN_PRIVATE_KEY \
-            --predicate "$IMAGE_SBOM" \
-            "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}"
-          cosign attest --yes --type cyclonedx --key env://COSIGN_PRIVATE_KEY \
-            --predicate "$WORKER_IMAGE_SBOM" \
-            "${{ steps.cfg.outputs.worker_repository }}@${{ steps.worker-build.outputs.digest }}"
+          echo "certificate_fingerprint=$certificate_fingerprint" >> "$GITHUB_OUTPUT"
 
-      - name: Record signed container status
+      - name: Record and validate signed digest declarations
         if: steps.cfg.outputs.enabled == 'true'
+        env:
+          SOURCE_PUBLICATION_RUN_URL: ${{ steps.cfg.outputs.source_run_url }}
+          SIGNING_RUN_URL: ${{ steps.cfg.outputs.signing_run_url }}
+          SIGNING_MODE: ${{ steps.cfg.outputs.mode }}
+          SIGNING_IDENTITY_OUTPUT: ${{ steps.sign-keyless.outputs.signing_identity }}
+          SIGNING_CERTIFICATE_FINGERPRINT: ${{ steps.sign-key.outputs.certificate_fingerprint }}
+          SIGNING_WORKFLOW_NAME: ${{ github.workflow }}
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/release-signing-status.mjs container \
-            --output "$STATUS_FILE" \
-            --image "${{ steps.cfg.outputs.repository }}@${{ steps.build.outputs.digest }}" \
-            --pushed --signed --attested \
-            --digest "${{ steps.build.outputs.digest }}" \
-            --run-url "${{ steps.cfg.outputs.run_url }}" \
-            --identity "${{ steps.cfg.outputs.identity }}" \
-            --signer "cosign ${{ steps.cfg.outputs.mode }} (${{ github.workflow }})" \
-            --predicate-type "https://cyclonedx.org/bom" \
-            --registry "${{ steps.cfg.outputs.registry_host }}" \
-            --repository "${{ steps.cfg.outputs.repository }}"
-          node scripts/release-signing-status.mjs container \
-            --output "$WORKER_STATUS_FILE" \
-            --image "${{ steps.cfg.outputs.worker_repository }}@${{ steps.worker-build.outputs.digest }}" \
-            --pushed --signed --attested \
-            --digest "${{ steps.worker-build.outputs.digest }}" \
-            --run-url "${{ steps.cfg.outputs.run_url }}" \
-            --identity "${{ steps.cfg.outputs.identity }}" \
-            --signer "cosign ${{ steps.cfg.outputs.mode }} (${{ github.workflow }})" \
-            --predicate-type "https://cyclonedx.org/bom" \
-            --registry "${{ steps.cfg.outputs.registry_host }}" \
-            --repository "${{ steps.cfg.outputs.worker_repository }}"
+          mkdir -p "$STATUS_DIR"
+          image_set="$SOURCE_DIR/chancela-image-set.json"
+          for name in server worker search-projector; do
+            entry="$(jq -cer --arg name "$name" '.images[] | select(.name == $name)' "$image_set")"
+            reference="$(jq -er '.reference' <<<"$entry")"
+            repository="$(jq -er '.repository' <<<"$entry")"
+            digest="$(jq -er '.tagDigest' <<<"$entry")"
+            platform_digest="$(jq -er '.platformDigest' <<<"$entry")"
+            resolution="$(jq -er '.resolution' <<<"$entry")"
+            output="$STATUS_DIR/chancela-$name-signing-status.json"
+            evidence_args=()
+            if [ -n "$SIGNING_IDENTITY_OUTPUT" ]; then
+              evidence_args+=(--identity "$SIGNING_IDENTITY_OUTPUT")
+            else
+              evidence_args+=(--cert-fingerprint "$SIGNING_CERTIFICATE_FINGERPRINT")
+            fi
+            node scripts/release-signing-status.mjs container \
+              --output "$output" \
+              --image "$reference" \
+              --pushed --signed --attested \
+              --digest "$digest" \
+              --attestation-digest "$platform_digest" \
+              --publication-run-url "$SOURCE_PUBLICATION_RUN_URL" \
+              --signing-run-url "$SIGNING_RUN_URL" \
+              "${evidence_args[@]}" \
+              --signer "cosign $SIGNING_MODE ($SIGNING_WORKFLOW_NAME)" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --registry "ghcr.io" \
+              --repository "$repository"
+            tmp="$(mktemp)"
+            jq \
+              --arg manifest "chancela-image-set.json" \
+              --arg platform_digest "$platform_digest" \
+              --arg resolution "$resolution" \
+              '. + {
+                imageSetManifest: $manifest,
+                platformDigest: $platform_digest,
+                publicationResolution: $resolution
+              }' "$output" >"$tmp"
+            mv "$tmp" "$output"
+            node scripts/check-release-trust.mjs docker \
+              --input "$output" \
+              --image-set "$image_set" \
+              --expect-mode production
+          done
+          cp "$image_set" "$STATUS_DIR/chancela-image-set.json"
 
       - name: Record unsigned container status
         if: steps.cfg.outputs.enabled != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/release-signing-status.mjs container \
-            --output "$STATUS_FILE" \
-            --image "chancela-server (not pushed)"
-          node scripts/release-signing-status.mjs container \
-            --output "$WORKER_STATUS_FILE" \
-            --image "chancela-worker (not pushed)"
+          mkdir -p "$STATUS_DIR"
+          for name in server worker search-projector; do
+            node scripts/release-signing-status.mjs container \
+              --output "$STATUS_DIR/chancela-$name-signing-status.json" \
+              --image "chancela-$name (signing not configured)"
+          done
 
       - name: Validate container trust declaration
+        if: steps.cfg.outputs.enabled != 'true'
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/check-release-trust.mjs docker --input "$STATUS_FILE"
-          node scripts/check-release-trust.mjs docker --input "$WORKER_STATUS_FILE"
+          for name in server worker search-projector; do
+            node scripts/check-release-trust.mjs docker \
+              --input "$STATUS_DIR/chancela-$name-signing-status.json" \
+              --expect-mode local-ci
+          done
 
       - name: Upload container signing status
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: chancela-container-signing-status-${{ github.run_id }}-${{ github.run_attempt }}
-          path: dist/release-signing/
+          path: ${{ env.STATUS_DIR }}/
           if-no-files-found: ignore
           retention-days: 30
 
@@ -281,11 +366,16 @@ jobs:
       contents: write # upload the SBOM asset to the GitHub release
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.release_tag || github.ref }}
 
       - name: Resolve release tag
         id: rel
         env:
           INPUT_TAG: ${{ github.event.inputs.release_tag }}
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
@@ -295,22 +385,93 @@ jobs:
           elif [ -n "${INPUT_TAG:-}" ]; then
             tag="${INPUT_TAG}"
           fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          source_commit="$(git rev-parse HEAD)"
+          if ! [[ "$source_commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "checked-out source is not a full commit SHA: $source_commit" >&2
+            exit 1
+          fi
+          if [ -n "$tag" ]; then
+            git check-ref-format "refs/tags/$tag" >/dev/null
+            tag_commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+            release_tag="$(gh release view "$tag" --json tagName --jq '.tagName')"
+            if [ "$release_tag" != "$tag" ]; then
+              echo "release lookup resolved '$release_tag', expected '$tag'" >&2
+              exit 1
+            fi
+            if [ "$source_commit" != "$tag_commit" ]; then
+              echo "checked-out source $source_commit does not match release tag $tag at $tag_commit" >&2
+              exit 1
+            fi
+          fi
+          {
+            echo "tag=$tag"
+            echo "source_commit=$source_commit"
+          } >> "$GITHUB_OUTPUT"
           if [ -z "$tag" ]; then
             echo "No release tag in context; SBOM will be generated but not attached to a release." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Generating the source SBOM from release $tag at $source_commit." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Generate source SBOM (syft, CycloneDX)
+        env:
+          SOURCE_COMMIT: ${{ steps.rel.outputs.source_commit }}
+          SOURCE_TAG: ${{ steps.rel.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist/release-signing
-          docker run --rm \
-            -v "$PWD:/src" \
-            -v "$PWD/dist/release-signing:/out" \
+          sbom_work_dir="$RUNNER_TEMP/chancela-source-sbom"
+          mkdir -p "$sbom_work_dir" dist/release-signing
+          docker run --rm --network none \
+            -v "$PWD:/src:ro" \
+            -v "$sbom_work_dir:/out" \
             anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
             dir:/src \
-            -o cyclonedx-json=/out/chancela-source-sbom.cdx.json
+            -o cyclonedx-json=/out/chancela-source-sbom.raw.cdx.json
+          raw_sbom="$sbom_work_dir/chancela-source-sbom.raw.cdx.json"
+          bound_sbom="$sbom_work_dir/chancela-source-sbom.cdx.json"
+          jq \
+            --arg source_commit "$SOURCE_COMMIT" \
+            --arg source_tag "$SOURCE_TAG" '
+              .metadata = (.metadata // {})
+              | .metadata.properties = (
+                  [
+                    (.metadata.properties // [])[]
+                    | select(
+                        .name != "chancela:source.commit"
+                        and .name != "chancela:source.tag"
+                      )
+                  ]
+                  + [{
+                      name: "chancela:source.commit",
+                      value: $source_commit
+                    }]
+                  + (
+                      if $source_tag == ""
+                      then []
+                      else [{
+                        name: "chancela:source.tag",
+                        value: $source_tag
+                      }]
+                      end
+                    )
+                )
+            ' "$raw_sbom" >"$bound_sbom"
+          sbom="dist/release-signing/chancela-source-sbom.cdx.json"
+          cp "$bound_sbom" "$sbom"
+          jq -e \
+            --arg source_commit "$SOURCE_COMMIT" \
+            --arg source_tag "$SOURCE_TAG" '
+              any(.metadata.properties[];
+                .name == "chancela:source.commit"
+                and .value == $source_commit)
+              and (
+                $source_tag == ""
+                or any(.metadata.properties[];
+                  .name == "chancela:source.tag"
+                  and .value == $source_tag)
+              )
+            ' "$sbom" >/dev/null
 
       - name: Attach SBOM to release
         if: steps.rel.outputs.tag != ''
@@ -386,6 +547,11 @@ jobs:
           mkdir -p dist/release-signing artifacts
           have_artifacts=false
           if [ -n "$tag" ]; then
+            release_tag="$(gh release view "$tag" --json tagName --jq '.tagName')"
+            if [ "$release_tag" != "$tag" ]; then
+              echo "release lookup resolved '$release_tag', expected '$tag'" >&2
+              exit 1
+            fi
             if [ "$platform" = "windows" ]; then
               patterns=(--pattern '*.exe' --pattern '*.msi')
             else

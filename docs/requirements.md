@@ -35,7 +35,7 @@ it. Put the Postgres data volume on **encrypted storage** (see
 | Linux kernel | 5.10+ | Modern seccomp/BPF filter and cgroup v2 accounting. |
 | cgroups | v2 | Required for the memory / CPU / **pids** limits to be enforced. |
 | Docker Engine | 24.0+ | BuildKit is the default builder; `docker compose up` honours `deploy.resources.limits`. |
-| Docker Compose | v2.20+ | v2 syntax; `deploy.resources.limits.pids` support. |
+| Docker Compose | v2.24.4+ | v2 syntax, `deploy.resources.limits.pids`, and the cluster overlay's safe `!override` dependency replacement. |
 | PostgreSQL | 18.4 (`postgres:18.4-alpine3.23`) | `postgres` profile only; pinned by the same digest in standard and hardened Compose. Major upgrades require dump/restore or `pg_upgrade`. |
 | Redis | 8.8 (`redis:8.8.0-alpine3.23`) | `postgres` profile only, cache-aside; pinned by the same digest in standard and hardened Compose. Review the Redis 8 licence choice. |
 

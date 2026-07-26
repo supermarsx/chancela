@@ -16,10 +16,12 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded runs on the same ref to save CI minutes.
+# Keep every running main publication alive. Pull-request runs still cancel when
+# superseded, while main pushes are keyed by commit so one push can never abort
+# another commit's release evidence.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
 jobs:
   # ---------------------------------------------------------------------------
@@ -73,6 +75,64 @@ jobs:
 
       - name: Check package provenance fixtures
         run: node scripts/check-package-artifacts.mjs --fixture --skip-dist
+
+  # ---------------------------------------------------------------------------
+  # Packaging contracts: cheap, deterministic guards for the isolated search
+  # projector graph, Dockerfile boundary, Compose topology, and secret
+  # initialization. This runs on pull requests as well as main so packaging
+  # drift is rejected before the main-only image build/smoke lane.
+  # ---------------------------------------------------------------------------
+  packaging-contracts:
+    name: Packaging and projector contracts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@1a3a6d54512beeaffd394f8d516ca16f2c506a20 # 1.97.0
+
+      - name: Check search-projector dependency boundary
+        run: node scripts/check-search-projector-dependencies.mjs
+
+      - name: Check Docker image contracts
+        run: |
+          node scripts/check-docker-image-contracts.mjs check
+          node scripts/check-docker-image-contracts.mjs self-test
+
+      - name: Check Compose security topology
+        shell: bash
+        run: |
+          set -euo pipefail
+          node docker/tests/compose-security-contracts.mjs
+          bash scripts/hardened-postgres-compose-smoke.sh --config-check
+
+      - name: Check secret initialization fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh docker/tests/preflight-secrets-fixtures.sh
+          sh docker/tests/secrets-init-fixtures.sh
+
+      - name: Check packaging shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          sh -n \
+            docker/preflight-secrets.sh \
+            docker/secrets-init.sh \
+            docker/search-runtime-init.sh \
+            docker/search-projector-role-init.sh \
+            docker/tests/preflight-secrets-fixtures.sh \
+            docker/tests/secrets-init-fixtures.sh
+          bash -n \
+            scripts/search-projector-postgres-smoke.sh \
+            scripts/search-projector-sqlite-input-smoke.sh \
+            scripts/hardened-postgres-compose-smoke.sh
 
   # ---------------------------------------------------------------------------
   # Supply chain: deterministic lockfile SBOM plus advisory reports. SBOM
@@ -655,13 +715,13 @@ jobs:
         run: npm run test:checkpoint:recent-landed
 
   # ---------------------------------------------------------------------------
-  # Docker: prove the server and dedicated worker images build and boot with
-  # durable persistence.
+  # Docker: prove the server, connector worker, and isolated search-projector
+  # images build and boot with durable persistence.
   # Kept off pull requests (the release build is slow) so PR feedback stays
   # fast; it gates pushes to main and can be run manually. No push.
   # ---------------------------------------------------------------------------
   docker:
-    name: Docker build + smoke (server + worker)
+    name: Docker build + smoke (server + worker + search projector)
     runs-on: ubuntu-latest
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
@@ -693,10 +753,12 @@ jobs:
           docker compose -f docker/docker-compose.yml --profile postgres config --quiet
           docker compose -f docker/docker-compose.yml --profile worker config --quiet
           docker compose -f docker-compose.hardened.yml --profile worker config --quiet
+          docker compose -f docker-compose.hardened.yml --profile single-node config --quiet
+          docker compose -f docker-compose.hardened.yml --profile postgres config --quiet
 
           # The backend axis and the sidecar axis have to COMPOSE. Render both
-          # combinations and assert each starts exactly one app service — a
-          # regression here means two app containers fighting over the host port
+          # combinations and assert each starts exactly one API service — a
+          # regression here means two API containers fighting over the host port
           # (which is what `--profile postgres --profile worker` used to do).
           for backend in single-node postgres; do
             services="$(docker compose -f docker/docker-compose.yml \
@@ -709,13 +771,257 @@ jobs:
             fi
             printf '%s\n' "$services" | grep -qx worker || {
               echo "worker missing from '$backend + worker'" >&2; exit 1; }
+            projector_count="$(
+              printf '%s\n' "$services" |
+                grep -Ec '^search-projector-(sqlite|postgres)$'
+            )"
+            if [ "$projector_count" -ne 1 ]; then
+              echo "expected exactly 1 search projector for '$backend + worker', got $projector_count" >&2
+              exit 1
+            fi
           done
+
+          # Preserve the isolation contract in both Compose variants: each
+          # projector has a real runtime PID cap; the Postgres projector shares
+          # the API's non-DB corpus, receives only read-only secret/TLS inputs,
+          # and can never acquire the authoritative writer role.
+          for compose_file in docker/docker-compose.yml docker-compose.hardened.yml; do
+            docker compose -f "$compose_file" --profile single-node config --format json |
+              jq -e '
+                .services["server-sqlite"] as $api
+                | .services["search-projector-sqlite"] as $projector
+                | ($api.environment.CHANCELA_SEARCH_RUNTIME == "query-only")
+                  and ($api.environment.CHANCELA_SEARCH_RUNTIME_DIR
+                    == "/var/lib/chancela/search-projector")
+                  and ($api.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS
+                    == "15")
+                  and ($api.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS
+                    == "600")
+                  and ($projector.pids_limit == 128)
+                  and ($projector.deploy.resources.limits.pids == 128)
+                  and ($projector.environment.CHANCELA_SEARCH_INSTANCE_ID == null)
+                  and ($projector.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS
+                    == "15")
+                  and ($projector.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS
+                    == "600")
+                  and ($projector.healthcheck.test == [
+                    "CMD",
+                    "/usr/local/bin/chancela-search-projector",
+                    "healthcheck",
+                    "--runtime-dir",
+                    "/var/lib/chancela/search-projector"
+                  ])
+                  and ([
+                    $api.volumes[]
+                    | select(.target == "/var/lib/chancela")
+                    | {source, read_only: (.read_only // false)}
+                  ] == [{"source":"chancela-data","read_only":false}])
+                  and ([
+                    $projector.volumes[]
+                    | select(.target == "/var/lib/chancela")
+                    | {source, read_only: (.read_only // false)}
+                  ] == [{"source":"chancela-data","read_only":false}])
+              ' >/dev/null
+            docker compose -f "$compose_file" --profile postgres config --format json |
+              jq -e '
+                .services["server-postgres"] as $api
+                | .services["search-projector-postgres"] as $projector
+                | .services["search-projector-role-init"] as $role_init
+                | .services["search-runtime-init"] as $runtime_init
+                | ($api.environment.CHANCELA_SEARCH_RUNTIME == "query-only")
+                  and ($api.environment.CHANCELA_SEARCH_RUNTIME_DIR
+                    == "/run/chancela-search")
+                  and ($api.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS
+                    == "15")
+                  and ($api.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS
+                    == "600")
+                  and ($projector.pids_limit == 128)
+                  and ($projector.deploy.replicas == 1)
+                  and ($projector.deploy.resources.limits.pids == 128)
+                  and ($projector.environment.CHANCELA_NODE_ROLE == "follower")
+                  and ($projector.environment.CHANCELA_SEARCH_INSTANCE_ID == null)
+                  and ($projector.environment.CHANCELA_CREDENTIAL_KEY_FILE == null)
+                  and ($projector.environment.DATABASE_URL_FILE == null)
+                  and ($projector.environment.CHANCELA_SEARCH_DATABASE_URL_FILE
+                    == "/run/secrets/search_database_url")
+                  and ($projector.environment.CHANCELA_SEARCH_RUNTIME_DIR
+                    == "/run/chancela-search")
+                  and ($projector.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS
+                    == "15")
+                  and ($projector.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS
+                    == "600")
+                  and ($projector.healthcheck.test == [
+                    "CMD",
+                    "/usr/local/bin/chancela-search-projector",
+                    "healthcheck",
+                    "--runtime-dir",
+                    "/run/chancela-search"
+                  ])
+                  and ($projector.depends_on["server-postgres"].condition
+                    == "service_healthy")
+                  and ($projector.depends_on["search-projector-role-init"].condition
+                    == "service_completed_successfully")
+                  and ($api.depends_on["search-runtime-init"].condition
+                    == "service_completed_successfully")
+                  and ($projector.depends_on["search-runtime-init"].condition
+                    == "service_completed_successfully")
+                  and ($role_init.depends_on["search-runtime-init"].condition
+                    == "service_completed_successfully")
+                  and ($runtime_init.user == "0:0")
+                  and ($runtime_init.read_only == true)
+                  and ($runtime_init.network_mode == "none")
+                  and ($runtime_init.pids_limit == 16)
+                  and ($runtime_init.cap_drop == ["ALL"])
+                  and ($runtime_init.cap_add == ["CHOWN"])
+                  and ([
+                    $runtime_init.volumes[]
+                    | select(.target == "/runtime")
+                    | {source, read_only: (.read_only // false)}
+                  ] == [{"source":"chancela-search-runtime","read_only":false}])
+                  and ([
+                    $api.volumes[]
+                    | select(.target == "/var/lib/chancela")
+                    | {source, read_only: (.read_only // false)}
+                  ] == [{"source":"chancela-app-data","read_only":false}])
+                  and ([
+                    $projector.volumes[]
+                    | select(.target == "/var/lib/chancela")
+                    | {source, read_only}
+                  ] == [{"source":"chancela-app-data","read_only":true}])
+                  and ([
+                    $projector.volumes[]
+                    | select(.target == "/run/chancela-search")
+                    | {source, read_only: (.read_only // false)}
+                  ] == [{"source":"chancela-search-runtime","read_only":false}])
+                  and ([
+                    $api.volumes[]
+                    | select(.target == "/run/chancela-search")
+                    | {source, read_only}
+                  ] == [{"source":"chancela-search-runtime","read_only":true}])
+              ' >/dev/null
+          done
+          docker compose -f docker/docker-compose.yml \
+            --profile postgres config --format json |
+            jq -e '
+              .services["search-projector-postgres"] as $projector
+              | .services["search-projector-role-init"] as $role_init
+              | ([
+                  $projector.volumes[]
+                  | select(.target == "/run/secrets")
+                  | .source
+                ] == ["chancela-search-secrets"])
+                and ($role_init.pids_limit == 64)
+                and ($role_init.depends_on["server-postgres"].condition
+                  == "service_healthy")
+                and ([
+                  $role_init.volumes[]
+                  | select(
+                      .target == "/run/postgres-password"
+                      or .target == "/run/database-url"
+                      or .target == "/run/search-password"
+                      or .target == "/run/projector-secrets"
+                    )
+                  | .source
+                ] | sort
+                  == [
+                    "chancela-database-url",
+                    "chancela-postgres-password",
+                    "chancela-search-password",
+                    "chancela-search-secrets"
+                  ])
+            ' >/dev/null
+          docker compose -f docker-compose.hardened.yml \
+            --profile postgres config --format json |
+            jq -e '
+              .services["search-projector-postgres"] as $projector
+              | .services["search-projector-role-init"] as $role_init
+              | ([$projector.secrets[].source] | sort
+                  == ["search_database_url"])
+                and ([$role_init.secrets[].source] | sort
+                  == [
+                    "database_url",
+                    "postgres_password",
+                    "search_database_password",
+                    "search_database_url"
+                  ])
+            ' >/dev/null
+          docker compose \
+            -f docker/docker-compose.yml \
+            -f docker/docker-compose.cluster.yml \
+            --profile postgres --profile cluster \
+            config --format json |
+            jq -e '
+              .services as $services
+              | $services["search-projector-postgres"] as $projector
+              | $services["search-projector-role-init"] as $role_init
+              | $services["chancela-cluster"] as $cluster
+              | (($services | keys) == [
+                  "chancela-cluster",
+                  "postgres",
+                  "postgres-tls-init",
+                  "redis",
+                  "search-projector-postgres",
+                  "search-projector-role-init",
+                  "search-runtime-init",
+                  "secrets-init"
+                ])
+                and ($services["server-postgres"] == null)
+                and ($services["server-sqlite"] == null)
+                and ($services["search-projector-sqlite"] == null)
+                and ($projector.depends_on["server-postgres"] == null)
+                and ($projector.environment.CHANCELA_SEARCH_INSTANCE_ID == null)
+                and ($projector.environment.CHANCELA_SEARCH_RUNTIME_DIR
+                  == "/run/chancela-search")
+                and ($cluster.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS
+                  == "15")
+                and ($cluster.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS
+                  == $projector.environment.CHANCELA_SEARCH_HEARTBEAT_SECONDS)
+                and ($cluster.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS
+                  == "600")
+                and ($cluster.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS
+                  == $projector.environment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS)
+                and ($projector.depends_on["chancela-cluster"].condition
+                  == "service_healthy")
+                and ($projector.depends_on["search-projector-role-init"].condition
+                  == "service_completed_successfully")
+                and ($projector.depends_on["search-runtime-init"].condition
+                  == "service_completed_successfully")
+                and ($role_init.depends_on["server-postgres"] == null)
+                and ($role_init.depends_on["chancela-cluster"].condition
+                  == "service_healthy")
+                and ($role_init.depends_on["search-runtime-init"].condition
+                  == "service_completed_successfully")
+                and ($cluster.depends_on["search-runtime-init"].condition
+                  == "service_completed_successfully")
+                and ([
+                  $cluster.volumes[]
+                  | select(.target == "/var/lib/chancela")
+                  | {source, read_only: (.read_only // false)}
+                ] == [{"source":"chancela-cluster-data","read_only":false}])
+                and ([
+                  $projector.volumes[]
+                  | select(.target == "/var/lib/chancela")
+                  | {source, read_only}
+                ] == [{"source":"chancela-cluster-data","read_only":true}])
+                and ([
+                  $projector.volumes[]
+                  | select(.target == "/run/chancela-search")
+                  | {source, read_only: (.read_only // false)}
+                ] == [{"source":"chancela-search-runtime","read_only":false}])
+                and ([
+                  $projector.volumes[]
+                  | select(.target == "/run/secrets")
+                  | .source
+                ] == ["chancela-search-secrets"])
+            ' >/dev/null
 
       - name: Build server image (no push)
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: docker/Dockerfile.server
+          build-args: |
+            CARGO_FEATURES=chancela-server/sqlcipher chancela-server/postgres chancela-server/redis
           push: false
           load: true
           tags: chancela-server:ci
@@ -744,6 +1050,23 @@ jobs:
             org.opencontainers.image.created=${{ steps.docker-meta.outputs.created }}
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
+
+      - name: Build search projector image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.search-projector
+          push: false
+          load: true
+          tags: chancela-search-projector:ci
+          labels: |
+            org.opencontainers.image.title=Chancela search projector
+            org.opencontainers.image.description=Chancela isolated durable full-search projector CI image
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.docker-meta.outputs.created }}
+          cache-from: type=gha,scope=search-projector
+          cache-to: type=gha,mode=max,scope=search-projector
 
       - name: Smoke server container
         shell: bash
@@ -869,6 +1192,200 @@ jobs:
           echo "worker heartbeat did not become healthy" >&2
           exit 1
 
+      - name: Smoke isolated search projector beside query-only server
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          data_dir="$(mktemp -d)"
+          chmod 777 "$data_dir"
+          server=""
+          projector=""
+          cleanup() {
+            local status=$?
+            if [ "$status" -ne 0 ]; then
+              [ -z "$server" ] || docker logs "$server" || true
+              [ -z "$projector" ] || docker logs "$projector" || true
+            fi
+            [ -z "$projector" ] || docker rm -f "$projector" >/dev/null 2>&1 || true
+            [ -z "$server" ] || docker rm -f "$server" >/dev/null 2>&1 || true
+            rm -rf "$data_dir" 2>/dev/null || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+
+          server="$(docker run -d \
+            --name "chancela-projector-server-ci-${{ github.run_id }}-${{ github.run_attempt }}" \
+            -p 127.0.0.1::8080 \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp \
+            -e CHANCELA_DATA_DIR=/data \
+            -e CHANCELA_SEARCH_RUNTIME=query-only \
+            -v "$data_dir:/data" \
+            chancela-server:ci)"
+
+          for _ in {1..60}; do
+            if docker exec "$server" /usr/bin/busybox wget -q -O /dev/null \
+              http://127.0.0.1:8080/health; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec "$server" /usr/bin/busybox wget -q -O /dev/null \
+            http://127.0.0.1:8080/health
+
+          mapped="$(docker port "$server" 8080/tcp)"
+          base_url="http://${mapped}"
+          password="Docker-Projector-Smoke-2026!"
+          owner="$(
+            curl -fsS \
+              -H "Content-Type: application/json" \
+              --data "{\"username\":\"projector.smoke\",\"display_name\":\"Projector Smoke\",\"password\":\"$password\"}" \
+              "$base_url/v1/users"
+          )"
+          user_id="$(jq -er '.id' <<<"$owner")"
+          session="$(
+            curl -fsS \
+              -H "Content-Type: application/json" \
+              --data "{\"user_id\":\"$user_id\",\"password\":\"$password\"}" \
+              "$base_url/v1/session"
+          )"
+          session_token="$(jq -er '.token' <<<"$session")"
+          entity="$(
+            curl -fsS \
+              -H "Content-Type: application/json" \
+              -H "X-Chancela-Session: $session_token" \
+              --data '{"name":"ProjectorSmokeUnique2026, Lda","nipc":"500000000","seat":"Lisboa","kind":"SociedadePorQuotas"}' \
+              "$base_url/v1/entities"
+          )"
+          entity_id="$(jq -er '.id' <<<"$entity")"
+
+          projector="$(docker run -d \
+            --name "chancela-search-projector-ci-${{ github.run_id }}-${{ github.run_attempt }}" \
+            --read-only \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp \
+            -e CHANCELA_DATA_DIR=/data \
+            -e CHANCELA_SEARCH_RUNTIME_DIR=/data/search-projector \
+            -v "$data_dir:/data" \
+            chancela-search-projector:ci)"
+
+          for _ in {1..60}; do
+            if docker exec "$projector" /usr/local/bin/chancela-search-projector \
+              healthcheck --runtime-dir /data/search-projector; then
+              break
+            fi
+            sleep 1
+          done
+          docker exec "$projector" /usr/local/bin/chancela-search-projector \
+            healthcheck --runtime-dir /data/search-projector
+
+          heartbeat_dir="$data_dir/search-projector/search-projector-heartbeats"
+          for _ in {1..60}; do
+            if HEARTBEAT_DIR="$heartbeat_dir" python3 - <<'PY'
+          import json
+          import os
+          import uuid
+          from pathlib import Path
+
+          paths = sorted(Path(os.environ["HEARTBEAT_DIR"]).glob("*.json"))
+          if len(paths) != 1:
+              raise SystemExit(1)
+          path = paths[0]
+          lease_id = str(uuid.UUID(path.stem))
+          if lease_id != path.stem:
+              raise SystemExit(1)
+          heartbeat = json.loads(path.read_text(encoding="utf-8"))
+          if (
+              heartbeat.get("schema_version") != 2
+              or heartbeat.get("service") != "chancela-search-projector"
+              or heartbeat.get("lease_id") != lease_id
+              or not heartbeat.get("owner")
+              or not isinstance(heartbeat.get("generation"), int)
+              or heartbeat["generation"] <= 0
+              or not isinstance(heartbeat.get("document_count"), int)
+              or heartbeat["document_count"] <= 0
+              or heartbeat.get("last_error") not in (None, "")
+          ):
+              raise SystemExit(1)
+          PY
+            then
+              break
+            fi
+            sleep 1
+          done
+          HEARTBEAT_DIR="$heartbeat_dir" python3 - <<'PY'
+          import json
+          import os
+          import uuid
+          from pathlib import Path
+
+          paths = sorted(Path(os.environ["HEARTBEAT_DIR"]).glob("*.json"))
+          assert len(paths) == 1, paths
+          path = paths[0]
+          lease_id = str(uuid.UUID(path.stem))
+          assert lease_id == path.stem, path
+          heartbeat = json.loads(path.read_text(encoding="utf-8"))
+          assert heartbeat["schema_version"] == 2, heartbeat
+          assert heartbeat["service"] == "chancela-search-projector", heartbeat
+          assert heartbeat["lease_id"] == lease_id, heartbeat
+          assert heartbeat["owner"], heartbeat
+          assert heartbeat["generation"] > 0, heartbeat
+          assert heartbeat["document_count"] > 0, heartbeat
+          assert heartbeat.get("last_error") in (None, ""), heartbeat
+          PY
+
+          search_body=""
+          for _ in {1..60}; do
+            if search_body="$(
+              curl -fsS \
+                -H "X-Chancela-Session: $session_token" \
+                "$base_url/v1/search?q=ProjectorSmokeUnique2026&kind=entity&limit=10"
+            )" && SEARCH_BODY="$search_body" ENTITY_ID="$entity_id" python3 - <<'PY'
+          import json
+          import os
+
+          response = json.loads(os.environ["SEARCH_BODY"])
+          hits = response.get("page", {}).get("hits", [])
+          if not any(hit.get("entity_id") == os.environ["ENTITY_ID"] for hit in hits):
+              raise SystemExit(1)
+          generation = response.get("index", {}).get("generation")
+          if not isinstance(generation, int) or generation <= 0:
+              raise SystemExit(1)
+          PY
+            then
+              printf '%s\n' "$search_body"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "query-only server did not hydrate and return the projected entity" >&2
+          exit 1
+
+      - name: Smoke SQLite projector fail-closed inputs
+        shell: bash
+        env:
+          CHANCELA_PROJECTOR_SQLITE_SMOKE_PROJECT: chancela-projector-sqlite-input-ci-${{ github.run_id }}-${{ github.run_attempt }}
+        run: bash scripts/search-projector-sqlite-input-smoke.sh
+
+      - name: Smoke restricted PostgreSQL projector role + publication
+        shell: bash
+        env:
+          CHANCELA_PROJECTOR_SMOKE_PROJECT: chancela-projector-pg-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CHANCELA_PROJECTOR_DEDICATED_DATABASE: "true"
+        run: bash scripts/search-projector-postgres-smoke.sh
+
+      - name: Smoke hardened PostgreSQL secret and lifecycle wiring
+        shell: bash
+        env:
+          CHANCELA_HARDENED_SMOKE_PROJECT: chancela-hardened-pg-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          CHANCELA_HARDENED_SMOKE_PORT: "18083"
+          CHANCELA_PROJECTOR_DEDICATED_DATABASE: "true"
+        run: bash scripts/hardened-postgres-compose-smoke.sh
+
       - name: Smoke single-node Compose runtime hardening
         shell: bash
         run: bash scripts/docker-smoke.sh --compose-profile chancela-server:ci
@@ -880,6 +1397,7 @@ jobs:
           mkdir -p dist/docker-security
           docker image inspect chancela-server:ci > dist/docker-security/chancela-server-image-inspect.json
           docker image inspect chancela-worker:ci > dist/docker-security/chancela-worker-image-inspect.json
+          docker image inspect chancela-search-projector:ci > dist/docker-security/chancela-search-projector-image-inspect.json
 
       - name: Generate Docker image SBOM (report)
         continue-on-error: true
@@ -899,6 +1417,12 @@ jobs:
             anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
             chancela-worker:ci \
             -o cyclonedx-json=/out/chancela-worker-image-sbom.cdx.json
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            anchore/syft:v1.46.0@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb \
+            chancela-search-projector:ci \
+            -o cyclonedx-json=/out/chancela-search-projector-image-sbom.cdx.json
 
       - name: Scan Docker image vulnerabilities (report)
         shell: bash
@@ -948,6 +1472,23 @@ jobs:
           if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$worker_status" -ne 0 ]; then
             exit "$worker_status"
           fi
+          set +e
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/dist/docker-security:/out" \
+            aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f \
+            image \
+            --exit-code "$exit_code" \
+            --format json \
+            --output /out/chancela-search-projector-trivy-high-critical.json \
+            --severity HIGH,CRITICAL \
+            --ignore-unfixed \
+            chancela-search-projector:ci
+          projector_status=$?
+          set -e
+          if [ "$SECURITY_SCAN_ENFORCED" = "true" ] && [ "$projector_status" -ne 0 ]; then
+            exit "$projector_status"
+          fi
 
       - name: Record Docker signing status
         shell: bash
@@ -983,10 +1524,19 @@ jobs:
             "note": "This CI job builds and smokes a local Docker image only. It does not push, sign, attest, or notarize the image. Configure registry publishing and a signing identity before making a signed-image claim."
           }
           JSON
+          jq '.image = "chancela-worker:ci"' \
+            dist/docker-security/chancela-server-signing-status.json \
+            > dist/docker-security/chancela-worker-signing-status.json
+          jq '.image = "chancela-search-projector:ci"' \
+            dist/docker-security/chancela-server-signing-status.json \
+            > dist/docker-security/chancela-search-projector-signing-status.json
           echo "Docker image signing/notarization: not performed for the local CI image." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Check Docker trust declaration
-        run: node scripts/check-release-trust.mjs docker --input dist/docker-security/chancela-server-signing-status.json --expect-mode local-ci
+        run: |
+          node scripts/check-release-trust.mjs docker --input dist/docker-security/chancela-server-signing-status.json --expect-mode local-ci
+          node scripts/check-release-trust.mjs docker --input dist/docker-security/chancela-worker-signing-status.json --expect-mode local-ci
+          node scripts/check-release-trust.mjs docker --input dist/docker-security/chancela-search-projector-signing-status.json --expect-mode local-ci
 
       - name: Upload Docker security artifacts
         if: always()
@@ -1372,12 +1922,13 @@ jobs:
           retention-days: 7
 
   # Final normal-CI job: every required main-push job above must succeed before
-  # either image is published. BuildKit attaches provenance and an SBOM, but
-  # these images are intentionally not signed.
+  # any application image is published. BuildKit attaches provenance and an
+  # SBOM, but these images are intentionally not signed.
   publish-ghcr:
-    name: Publish server + worker images to GHCR
+    name: Publish server + worker + search projector images to GHCR
     needs:
       - metadata
+      - packaging-contracts
       - supply-chain
       - rust
       - rust-coverage
@@ -1419,11 +1970,20 @@ jobs:
         run: |
           set -euo pipefail
           owner="${GITHUB_REPOSITORY_OWNER,,}"
+          source_date_epoch="$(git show -s --format=%ct "$GITHUB_SHA")"
+          created="$(date -u -d "@$source_date_epoch" +'%Y-%m-%dT%H:%M:%SZ')"
+          if ! [[ "$source_date_epoch" =~ ^[0-9]+$ ]]; then
+            echo "commit timestamp is not a Unix epoch: $source_date_epoch" >&2
+            exit 1
+          fi
           {
             echo "server=ghcr.io/$owner/chancela-server"
             echo "worker=ghcr.io/$owner/chancela-worker"
-            echo "created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "projector=ghcr.io/$owner/chancela-search-projector"
+            echo "source_date_epoch=$source_date_epoch"
+            echo "created=$created"
           } >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$source_date_epoch" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
         uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
@@ -1432,19 +1992,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      - name: Build and publish server image
+      # BuildKit first pushes every application image only by its canonical
+      # digest. No named tag is created until all three builds have completed.
+      - name: Build and push server image by canonical digest
         id: server
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: docker/Dockerfile.server
+          build-args: |
+            CARGO_FEATURES=chancela-server/sqlcipher chancela-server/postgres chancela-server/redis
+            SOURCE_DATE_EPOCH=${{ steps.image.outputs.source_date_epoch }}
           platforms: linux/amd64
-          push: true
-          provenance: mode=max
+          provenance: mode=max,version=v1
           sbom: true
-          tags: |
-            ${{ steps.image.outputs.server }}:sha-${{ github.sha }}
-            ${{ steps.image.outputs.server }}:latest
+          outputs: type=image,name=${{ steps.image.outputs.server }},push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.title=Chancela Server
@@ -1457,19 +2019,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and publish worker image
+      - name: Build and push worker image by canonical digest
         id: worker
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: docker/Dockerfile.worker
+          build-args: |
+            SOURCE_DATE_EPOCH=${{ steps.image.outputs.source_date_epoch }}
           platforms: linux/amd64
-          push: true
-          provenance: mode=max
+          provenance: mode=max,version=v1
           sbom: true
-          tags: |
-            ${{ steps.image.outputs.worker }}:sha-${{ github.sha }}
-            ${{ steps.image.outputs.worker }}:latest
+          outputs: type=image,name=${{ steps.image.outputs.worker }},push-by-digest=true,name-canonical=true,push=true
           labels: |
             org.opencontainers.image.created=${{ steps.image.outputs.created }}
             org.opencontainers.image.title=Chancela Worker
@@ -1482,31 +2043,369 @@ jobs:
           cache-from: type=gha,scope=worker
           cache-to: type=gha,mode=max,scope=worker
 
-      - name: Record honest unsigned publication status
+      - name: Build and push search projector image by canonical digest
+        id: projector
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: docker/Dockerfile.search-projector
+          build-args: |
+            SOURCE_DATE_EPOCH=${{ steps.image.outputs.source_date_epoch }}
+          platforms: linux/amd64
+          provenance: mode=max,version=v1
+          sbom: true
+          outputs: type=image,name=${{ steps.image.outputs.projector }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.created=${{ steps.image.outputs.created }}
+            org.opencontainers.image.title=Chancela Search Projector
+            org.opencontainers.image.description=Isolated durable full-search projector for Chancela
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.url=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=sha-${{ github.sha }}
+            org.opencontainers.image.licenses=LicenseRef-Chancela-NonCommercial
+          cache-from: type=gha,scope=search-projector
+          cache-to: type=gha,mode=max,scope=search-projector
+
+      - name: Reconcile immutable SHA tags and write the complete image set
+        shell: bash
+        env:
+          SERVER_REPOSITORY: ${{ steps.image.outputs.server }}
+          SERVER_BUILT_DIGEST: ${{ steps.server.outputs.digest }}
+          WORKER_REPOSITORY: ${{ steps.image.outputs.worker }}
+          WORKER_BUILT_DIGEST: ${{ steps.worker.outputs.digest }}
+          PROJECTOR_REPOSITORY: ${{ steps.image.outputs.projector }}
+          PROJECTOR_BUILT_DIGEST: ${{ steps.projector.outputs.digest }}
+          COMMIT_CREATED: ${{ steps.image.outputs.created }}
+          COMMIT_EPOCH: ${{ steps.image.outputs.source_date_epoch }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$STATUS_DIR/inspect"
+          records="$STATUS_DIR/image-records.jsonl"
+          : > "$records"
+
+          inspect_required() {
+            local reference="$1"
+            local output="$2"
+            docker buildx imagetools inspect "$reference" \
+              --format '{{json .}}' > "$output"
+          }
+
+          # Return 0 for an existing image, 1 only for a registry-confirmed
+          # absence, and 2 for authentication/network/other inspection errors.
+          inspect_optional() {
+            local reference="$1"
+            local output="$2"
+            local error_output="${output}.err"
+            if docker buildx imagetools inspect "$reference" \
+              --format '{{json .}}' > "$output" 2> "$error_output"; then
+              rm -f "$error_output"
+              return 0
+            fi
+            if grep -Eiq \
+              '(^|[[:space:]])MANIFEST_UNKNOWN([:[:space:]]|$)|manifest unknown' \
+              "$error_output" \
+              || grep -Fqx "$reference: not found" "$error_output" \
+              || grep -Fqx "ERROR: $reference: not found" "$error_output"; then
+              rm -f "$output" "$error_output"
+              return 1
+            fi
+            cat "$error_output" >&2
+            return 2
+          }
+
+          platform_digest() {
+            jq -er '
+              [
+                .manifest.manifests[]
+                | select(
+                    (
+                      (.annotations["vnd.docker.reference.type"] // "")
+                        == "attestation-manifest"
+                      and .platform.os == "unknown"
+                      and .platform.architecture == "unknown"
+                    ) | not
+                  )
+              ] as $runnable
+              | if
+                  ($runnable | length) == 1
+                  and $runnable[0].platform.os == "linux"
+                  and $runnable[0].platform.architecture == "amd64"
+                then $runnable[0].digest
+                else error(
+                  "expected exactly one non-attestation linux/amd64 platform manifest"
+                )
+                end
+            ' "$1"
+          }
+
+          validate_attestation_payloads() {
+            local reference="$1"
+            (
+              local evidence_dir
+              evidence_dir="$(mktemp -d)"
+              trap 'rm -rf "$evidence_dir"' EXIT
+              docker buildx imagetools inspect "$reference" \
+                --format '{{json .Provenance.SLSA}}' \
+                > "$evidence_dir/provenance.slsa.json"
+              docker buildx imagetools inspect "$reference" \
+                --format '{{json .SBOM.SPDX}}' \
+                > "$evidence_dir/sbom.spdx.json"
+              node scripts/check-release-trust.mjs buildkit-attestations \
+                --provenance "$evidence_dir/provenance.slsa.json" \
+                --sbom "$evidence_dir/sbom.spdx.json"
+            )
+          }
+
+          validate_contract() {
+            local reference="$1"
+            local document="$2"
+            local expected_platform_digest="$3"
+            local platform
+            local revision
+            local created
+            platform="$(platform_digest "$document")"
+            revision="$(
+              jq -er '
+                .image["linux/amd64"].config.Labels[
+                  "org.opencontainers.image.revision"
+                ]
+              ' "$document"
+            )"
+            created="$(
+              jq -er '
+                .image["linux/amd64"].config.Labels[
+                  "org.opencontainers.image.created"
+                ]
+              ' "$document"
+            )"
+            test "$platform" = "$expected_platform_digest"
+            test "$revision" = "$GITHUB_SHA"
+            test "$created" = "$COMMIT_CREATED"
+            jq -e --arg platform "$platform" '
+              .manifest.manifests as $descriptors
+              | [
+                  $descriptors[]
+                  | select(
+                      (
+                        (.annotations["vnd.docker.reference.type"] // "")
+                          == "attestation-manifest"
+                        and .platform.os == "unknown"
+                        and .platform.architecture == "unknown"
+                      ) | not
+                    )
+                ] as $runnable
+              | [
+                  $descriptors[]
+                  | select(
+                      (.annotations["vnd.docker.reference.type"] // "")
+                        == "attestation-manifest"
+                      and .platform.os == "unknown"
+                      and .platform.architecture == "unknown"
+                    )
+                ] as $attestations
+              | ($runnable | length) == 1
+                and $runnable[0].platform.os == "linux"
+                and $runnable[0].platform.architecture == "amd64"
+                and $runnable[0].digest == $platform
+                and ($attestations | length) >= 1
+                and all($attestations[];
+                  (.annotations["vnd.docker.reference.digest"] // "")
+                    == $platform
+                )
+                and (
+                  ($runnable | length) + ($attestations | length)
+                  == ($descriptors | length)
+                )
+            ' "$document" >/dev/null
+            validate_attestation_payloads "$reference"
+          }
+
+          reconcile_image() {
+            local name="$1"
+            local repository="$2"
+            local built_digest="$3"
+            local tag="sha-$GITHUB_SHA"
+            local tag_reference="$repository:$tag"
+            local built_document="$STATUS_DIR/inspect/$name-built.json"
+            local tag_document="$STATUS_DIR/inspect/$name-tag.json"
+            local built_platform_digest
+            local tag_digest
+            local tag_platform_digest
+            local resolution
+            local optional_status
+
+            inspect_required "$repository@$built_digest" "$built_document"
+            test "$(jq -er '.manifest.digest' "$built_document")" = "$built_digest"
+            built_platform_digest="$(platform_digest "$built_document")"
+            validate_contract \
+              "$repository@$built_digest" \
+              "$built_document" \
+              "$built_platform_digest"
+
+            if inspect_optional "$tag_reference" "$tag_document"; then
+              # A rerun preserves the pre-existing top-level digest. BuildKit
+              # attestations can contain run-specific metadata, so equality is
+              # intentionally enforced on the runnable platform digest and
+              # source labels rather than the attestation-bearing index digest.
+              resolution="preserved"
+              validate_contract \
+                "$tag_reference" \
+                "$tag_document" \
+                "$built_platform_digest"
+            else
+              optional_status=$?
+              test "$optional_status" -eq 1
+
+              # Recheck immediately before the only named-tag write. Main runs
+              # for this commit share a non-cancelling concurrency key.
+              if inspect_optional "$tag_reference" "$tag_document"; then
+                resolution="preserved"
+                validate_contract \
+                  "$tag_reference" \
+                  "$tag_document" \
+                  "$built_platform_digest"
+              else
+                optional_status=$?
+                test "$optional_status" -eq 1
+                docker buildx imagetools create \
+                  --tag "$tag_reference" \
+                  "$repository@$built_digest"
+                resolution="published"
+                inspect_required "$tag_reference" "$tag_document"
+                validate_contract \
+                  "$tag_reference" \
+                  "$tag_document" \
+                  "$built_platform_digest"
+              fi
+            fi
+
+            tag_digest="$(jq -er '.manifest.digest' "$tag_document")"
+            tag_platform_digest="$(platform_digest "$tag_document")"
+            jq -cn \
+              --arg name "$name" \
+              --arg repository "$repository" \
+              --arg tag "$tag" \
+              --arg tag_digest "$tag_digest" \
+              --arg platform_digest "$tag_platform_digest" \
+              --arg resolution "$resolution" \
+              '{
+                name: $name,
+                repository: $repository,
+                tag: $tag,
+                tagDigest: $tag_digest,
+                platform: "linux/amd64",
+                platformDigest: $platform_digest,
+                reference: ($repository + "@" + $tag_digest),
+                resolution: $resolution
+              }' >> "$records"
+          }
+
+          # All three canonical digest pushes above finish before this first
+          # named-tag reconciliation.
+          reconcile_image server "$SERVER_REPOSITORY" "$SERVER_BUILT_DIGEST"
+          reconcile_image worker "$WORKER_REPOSITORY" "$WORKER_BUILT_DIGEST"
+          reconcile_image search-projector \
+            "$PROJECTOR_REPOSITORY" "$PROJECTOR_BUILT_DIGEST"
+
+          # Re-read the whole set after the final named-tag operation. This
+          # catches any changed digest before completeness is recorded.
+          while IFS= read -r record; do
+            name="$(jq -er '.name' <<< "$record")"
+            repository="$(jq -er '.repository' <<< "$record")"
+            tag="$(jq -er '.tag' <<< "$record")"
+            expected_tag_digest="$(jq -er '.tagDigest' <<< "$record")"
+            expected_platform_digest="$(jq -er '.platformDigest' <<< "$record")"
+            final_document="$STATUS_DIR/inspect/$name-final.json"
+            inspect_required "$repository:$tag" "$final_document"
+            test "$(jq -er '.manifest.digest' "$final_document")" \
+              = "$expected_tag_digest"
+            validate_contract \
+              "$repository:$tag" \
+              "$final_document" \
+              "$expected_platform_digest"
+          done < "$records"
+
+          # The manifest is created only after all three tags have been read
+          # back and verified. Its absence means the image set is incomplete.
+          jq -s \
+            --arg source_repository "$GITHUB_REPOSITORY" \
+            --arg commit_sha "$GITHUB_SHA" \
+            --argjson source_date_epoch "$COMMIT_EPOCH" \
+            --arg created "$COMMIT_CREATED" \
+            --arg workflow_run_url "$RUN_URL" \
+            '{
+              schemaVersion: 1,
+              status: "complete",
+              completenessBoundary:
+                "workflow-green-and-image-set-manifest-present",
+              source: {
+                repository: $source_repository,
+                commitSha: $commit_sha,
+                sourceDateEpoch: $source_date_epoch,
+                created: $created
+              },
+              workflowRunUrl: $workflow_run_url,
+              images: sort_by(.name)
+            }' "$records" > "$STATUS_DIR/chancela-image-set.json"
+
+      - name: Validate complete image-set manifest
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$STATUS_DIR"
-          node scripts/release-signing-status.mjs container \
-            --output "$STATUS_DIR/chancela-server-signing-status.json" \
-            --image "${{ steps.image.outputs.server }}@${{ steps.server.outputs.digest }}" \
-            --pushed --attested \
-            --digest "${{ steps.server.outputs.digest }}" \
-            --run-url "$RUN_URL" \
-            --predicate-type "https://slsa.dev/provenance/v1" \
-            --registry "ghcr.io" \
-            --repository "${{ steps.image.outputs.server }}" \
-            --reason-unsigned "Normal CI publication does not use a container signing identity."
-          node scripts/release-signing-status.mjs container \
-            --output "$STATUS_DIR/chancela-worker-signing-status.json" \
-            --image "${{ steps.image.outputs.worker }}@${{ steps.worker.outputs.digest }}" \
-            --pushed --attested \
-            --digest "${{ steps.worker.outputs.digest }}" \
-            --run-url "$RUN_URL" \
-            --predicate-type "https://slsa.dev/provenance/v1" \
-            --registry "ghcr.io" \
-            --repository "${{ steps.image.outputs.worker }}" \
-            --reason-unsigned "Normal CI publication does not use a container signing identity."
+          node scripts/check-release-trust.mjs image-set \
+            --input "$STATUS_DIR/chancela-image-set.json" \
+            --expect-commit "$GITHUB_SHA"
+
+      - name: Record honest unsigned publication status at exact tag digests
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in server worker search-projector; do
+            repository="$(
+              jq -er --arg name "$name" \
+                '.images[] | select(.name == $name) | .repository' \
+                "$STATUS_DIR/chancela-image-set.json"
+            )"
+            digest="$(
+              jq -er --arg name "$name" \
+                '.images[] | select(.name == $name) | .tagDigest' \
+                "$STATUS_DIR/chancela-image-set.json"
+            )"
+            platform_digest="$(
+              jq -er --arg name "$name" \
+                '.images[] | select(.name == $name) | .platformDigest' \
+                "$STATUS_DIR/chancela-image-set.json"
+            )"
+            resolution="$(
+              jq -er --arg name "$name" \
+                '.images[] | select(.name == $name) | .resolution' \
+                "$STATUS_DIR/chancela-image-set.json"
+            )"
+            output="$STATUS_DIR/chancela-$name-signing-status.json"
+            node scripts/release-signing-status.mjs container \
+              --output "$output" \
+              --image "$repository@$digest" \
+              --pushed --attested \
+              --digest "$digest" \
+              --attestation-digest "$platform_digest" \
+              --run-url "$RUN_URL" \
+              --predicate-type "https://slsa.dev/provenance/v1" \
+              --registry "ghcr.io" \
+              --repository "$repository" \
+              --reason-unsigned "Normal CI publication does not use a container signing identity."
+            tmp="$(mktemp)"
+            jq \
+              --arg manifest "chancela-image-set.json" \
+              --arg platform_digest "$platform_digest" \
+              --arg resolution "$resolution" \
+              '. + {
+                imageSetManifest: $manifest,
+                platformDigest: $platform_digest,
+                publicationResolution: $resolution
+              }' "$output" > "$tmp"
+            mv "$tmp" "$output"
+          done
 
       - name: Validate publication trust declarations
         shell: bash
@@ -1514,23 +2413,32 @@ jobs:
           set -euo pipefail
           node scripts/check-release-trust.mjs docker \
             --input "$STATUS_DIR/chancela-server-signing-status.json" \
+            --image-set "$STATUS_DIR/chancela-image-set.json" \
             --expect-mode published-unsigned
           node scripts/check-release-trust.mjs docker \
             --input "$STATUS_DIR/chancela-worker-signing-status.json" \
+            --image-set "$STATUS_DIR/chancela-image-set.json" \
+            --expect-mode published-unsigned
+          node scripts/check-release-trust.mjs docker \
+            --input "$STATUS_DIR/chancela-search-projector-signing-status.json" \
+            --image-set "$STATUS_DIR/chancela-image-set.json" \
             --expect-mode published-unsigned
           {
-            echo "### GHCR images published"
+            echo "### GHCR image set complete"
             echo
-            echo "- Server: \`${{ steps.image.outputs.server }}:sha-${{ github.sha }}\` and \`:latest\`"
-            echo "- Worker: \`${{ steps.image.outputs.worker }}:sha-${{ github.sha }}\` and \`:latest\`"
+            jq -r '
+              .images[]
+              | "- \(.name): `\(.reference)` (tag `\(.tag)`, \(.resolution))"
+            ' "$STATUS_DIR/chancela-image-set.json"
+            echo "- Completeness boundary: this workflow is green and the validated \`chancela-image-set.json\` artifact is present."
             echo "- Trust: BuildKit provenance and SBOM attestations are attached; these images are **not cosign-signed**."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload publication trust declarations
+      - name: Upload complete image set and publication trust declarations
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: ghcr-publication-trust-${{ github.sha }}
+          name: ghcr-publication-trust-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: dist/ghcr-publication/
-          if-no-files-found: ignore
+          if-no-files-found: error
           retention-days: 30

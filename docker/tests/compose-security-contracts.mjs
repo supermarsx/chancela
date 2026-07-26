@@ -67,8 +67,51 @@ assert(
   hardenedSqlite.services["search-projector-sqlite"].network_mode === "none",
   "hardened SQLite projector must have no network namespace",
 );
+for (const [label, config, apiName, projectorName] of [
+  ["normal SQLite", normalSqlite, "server-sqlite", "search-projector-sqlite"],
+  [
+    "hardened SQLite",
+    hardenedSqlite,
+    "server-sqlite",
+    "search-projector-sqlite",
+  ],
+  [
+    "normal PostgreSQL",
+    normalPg,
+    "server-postgres",
+    "search-projector-postgres",
+  ],
+  [
+    "hardened PostgreSQL",
+    hardenedPg,
+    "server-postgres",
+    "search-projector-postgres",
+  ],
+  [
+    "cluster PostgreSQL",
+    cluster,
+    "chancela-cluster",
+    "search-projector-postgres",
+  ],
+]) {
+  const apiEnvironment = config.services[apiName].environment;
+  const projectorEnvironment = config.services[projectorName].environment;
+  assert(
+    apiEnvironment.CHANCELA_SEARCH_HEARTBEAT_SECONDS ===
+      projectorEnvironment.CHANCELA_SEARCH_HEARTBEAT_SECONDS,
+    `${label} API and projector heartbeat intervals must match`,
+  );
+  assert(
+    apiEnvironment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS ===
+      projectorEnvironment.CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS,
+    `${label} API and projector health-age limits must match`,
+  );
+}
 assert(normalPg.networks.backend.internal, "normal backend must be internal");
-assert(hardenedPg.networks.backend.internal, "hardened backend must be internal");
+assert(
+  hardenedPg.networks.backend.internal,
+  "hardened backend must be internal",
+);
 
 for (const serviceName of [
   "postgres",
@@ -123,14 +166,8 @@ const normalAllowedConsumers = new Map([
     "chancela-database-url",
     ["search-projector-role-init", "secrets-init", "server-postgres"],
   ],
-  [
-    "chancela-credential-key",
-    ["secrets-init", "server-postgres"],
-  ],
-  [
-    "chancela-search-password",
-    ["search-projector-role-init", "secrets-init"],
-  ],
+  ["chancela-credential-key", ["secrets-init", "server-postgres"]],
+  ["chancela-search-password", ["search-projector-role-init", "secrets-init"]],
   [
     "chancela-search-secrets",
     ["search-projector-postgres", "search-projector-role-init", "secrets-init"],

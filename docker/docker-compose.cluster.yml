@@ -82,6 +82,7 @@ services:
       # profile owns indexing. Every API replica remains a query/hydration node.
       CHANCELA_SEARCH_RUNTIME: query-only
       CHANCELA_SEARCH_RUNTIME_DIR: /run/chancela-search
+      CHANCELA_SEARCH_HEARTBEAT_SECONDS: ${CHANCELA_SEARCH_HEARTBEAT_SECONDS:-15}
       CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS: ${CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS:-600}
       # Elect via the advisory lock: one leader, the rest followers.
       CHANCELA_NODE_ROLE: auto
