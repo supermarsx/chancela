@@ -21,6 +21,7 @@
       "family": "CommercialCompany",
       "kind": "SociedadeAnonima",
       "fiscal_year_end": null,
+      "document_layout_override": null,
       "profile": {
         "family": "CommercialCompany",
         "rule_pack_id": "csc-art63/v2",
