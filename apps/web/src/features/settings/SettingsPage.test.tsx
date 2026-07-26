@@ -2802,7 +2802,7 @@ describe('SettingsPage', () => {
     expect(
       (await screen.findByRole('button', { name: 'Pesquisa' })).getAttribute('aria-pressed'),
     ).toBe('true');
-    fireEvent.change(await screen.findByLabelText('Documentos por lote'), {
+    fireEvent.change(await screen.findByLabelText('Lote do indexador integrado'), {
       target: { value: '333' },
     });
 
@@ -2858,7 +2858,7 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Serviços' })).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Pesquisa' })).toBeNull();
-    expect(screen.queryByLabelText('Documentos por lote')).toBeNull();
+    expect(screen.queryByLabelText('Lote do indexador integrado')).toBeNull();
     expect(calls.some((call) => call.url === '/v1/search/status')).toBe(false);
   });
 
