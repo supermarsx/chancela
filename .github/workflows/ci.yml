@@ -556,6 +556,12 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
+      # chancela-api's Postgres test links the smart-card feature graph through
+      # pcsc-sys; install the same Linux PC/SC development dependency used by
+      # the Rust, coverage, and E2E jobs before Cargo resolves that graph.
+      - name: Install PC/SC system deps (Linux)
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev pcscd
+
       - name: Enable verified TLS on the Postgres service
         env:
           POSTGRES_CONTAINER_ID: ${{ job.services.postgres.id }}
