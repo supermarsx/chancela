@@ -1,10 +1,11 @@
 /**
  * Tools (t22-web item 3) — the tools surface reached from the fixed tab bar.
  *
- * A sub-navigation (segmented control) switches between three consultation surfaces:
- *  - **Catálogo CAE** (default) — the CAE explorer (search + revision switch + hierarchy
- *    drill-down) and the catalog's state + "Atualizar catálogo" refresh, relocated here
- *    from the former standalone /cae page, which now redirects in.
+ * A sub-navigation (segmented control) switches between consultation surfaces:
+ *  - **Pesquisa** (default, when authorised) — permission-filtered, cross-domain full search.
+ *  - **Catálogo CAE** — the CAE explorer (search + revision switch + hierarchy drill-down)
+ *    and the catalog's state + "Atualizar catálogo" refresh, relocated here from the former
+ *    standalone /cae page, which now redirects to `/tools/cae`.
  *  - **Legislação** (t24) — a curated law shelf: the diplomas that ground the product,
  *    each with a faithful extract, official links and a last-reviewed date.
  *  - **Validador PDF** — itself split into a second sub-tab level (a second path segment, see
@@ -16,14 +17,15 @@
  *    and token-held public envelopes.
  *
  * Each tool is a deep-linkable sub-tab: the active one is a path segment (`/tools/pdf`);
- * its absence means the CAE surface, so `/cae` deep links and the CAE search flow open
- * unchanged. The CAE explorer's own `?code=`/`?rev=` params describe how you are looking at the
+ * its absence means Search. The CAE explorer's own `?code=`/`?rev=` params describe how you are
+ * looking at the
  * catalogue rather than where you are, so they stay query params and survive a tool switch. The
  * `SECTIONS` list is the single extension point for future tools.
  */
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
+import { type SearchCopyKey, useSearchT } from '../../i18n/searchFallback';
 import { Icon, PageHeader } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { CaeExplorer } from '../cae/CaeExplorer';
@@ -32,10 +34,17 @@ import { LegislationPage } from '../legislation/LegislationPage';
 import { TechnicalValidatorSection } from './TechnicalValidatorSection';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
+import { SearchPage } from './SearchPage';
+import { usePermissions } from '../session/permissions';
 
-type ToolsSection = 'cae' | 'legislation' | 'pdf' | 'trust' | 'external-signing';
+type ToolsSection = 'search' | 'cae' | 'legislation' | 'pdf' | 'trust' | 'external-signing';
 
-const SECTIONS: { id: ToolsSection; label: MessageKey; icon: ReactNode }[] = [
+type ToolsSectionDefinition =
+  | { id: ToolsSection; label: MessageKey; searchLabel?: never; icon: ReactNode }
+  | { id: ToolsSection; label?: never; searchLabel: SearchCopyKey; icon: ReactNode };
+
+const SECTIONS: ToolsSectionDefinition[] = [
+  { id: 'search', searchLabel: 'tools.section.search', icon: <Icon.Search /> },
   { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
   { id: 'legislation', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
   { id: 'pdf', label: 'tools.section.pdfValidator', icon: <Icon.FileText /> },
@@ -48,14 +57,24 @@ const isToolsSection = (value: string | undefined): value is ToolsSection =>
 
 export function ToolsPage() {
   const t = useT();
+  const st = useSearchT();
   const locale = useActiveLocale();
-  // The CAE surface is the default, so it carries no segment (keeps `/cae` and the smoke
-  // flow landing straight on the explorer). Derived from the path on every render, so a
-  // `/tools/pdf` deep link paints the validator on the first frame.
+  const { canAny } = usePermissions();
+  const canSearch = canAny('search.read');
+  const visibleSections = canSearch
+    ? SECTIONS
+    : SECTIONS.filter((candidate) => candidate.id !== 'search');
+  // Search is the default and carries no segment. A principal without search.read falls back to
+  // CAE without ever rendering the Search label or component; CAE still has the canonical
+  // `/tools/cae` address when selected or reached through the legacy `/cae` redirect.
   const { section, select: selectSection } = useSectionNav<ToolsSection>({
     base: '/tools',
-    parse: (raw) => (isToolsSection(raw) ? raw : 'cae'),
-    fallback: 'cae',
+    parse: (raw) => {
+      if (raw === undefined) return canSearch ? 'search' : 'cae';
+      if (isToolsSection(raw) && (raw !== 'search' || canSearch)) return raw;
+      return canSearch ? 'search' : 'cae';
+    },
+    fallback: 'search',
     replace: true,
   });
 
@@ -65,6 +84,7 @@ export function ToolsPage() {
   // transition does the sliding and collapses under prefers-reduced-motion.
   const navRef = useRef<HTMLDivElement>(null);
   const btnRefs = useRef<Record<ToolsSection, HTMLButtonElement | null>>({
+    search: null,
     cae: null,
     legislation: null,
     pdf: null,
@@ -126,7 +146,7 @@ export function ToolsPage() {
                 : { opacity: 0 }
             }
           />
-          {SECTIONS.map((s) => (
+          {visibleSections.map((s) => (
             <button
               key={s.id}
               ref={(el) => {
@@ -140,7 +160,7 @@ export function ToolsPage() {
               <span className="tools-subnav__icon" aria-hidden="true">
                 {s.icon}
               </span>
-              {t(s.label)}
+              {s.searchLabel ? st(s.searchLabel) : t(s.label)}
             </button>
           ))}
         </div>
@@ -151,7 +171,9 @@ export function ToolsPage() {
           the CAE explorer's own `?code=`/`?rev=` and Legislação's `?q=` param changes do
           NOT re-key (no distracting replay). Reduced-motion collapses the animation. */}
       <div className="route-transition" key={section} data-anim-key={section}>
-        {section === 'trust' ? (
+        {section === 'search' ? (
+          <SearchPage />
+        ) : section === 'trust' ? (
           <TrustCatalogPage />
         ) : section === 'pdf' ? (
           <TechnicalValidatorSection />

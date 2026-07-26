@@ -1242,7 +1242,7 @@ describe('Ferramentas — external-validator reports panel', () => {
 describe('Ferramentas — CAE catalog panel', () => {
   it('shows catalog metadata (origin + per-revision totals)', async () => {
     vi.stubGlobal('fetch', toolsFetch());
-    renderWithProviders(<ToolsPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools/cae']);
 
     expect(await screen.findByText('Incorporado')).toBeTruthy();
     // Rev.4 total = sum of the five level counts.
@@ -1260,7 +1260,7 @@ describe('Ferramentas — CAE catalog panel', () => {
         }),
       ),
     );
-    renderWithProviders(<ToolsPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools/cae']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Catálogo atualizado')).toBeTruthy();
@@ -1279,7 +1279,7 @@ describe('Ferramentas — CAE catalog panel', () => {
         ),
       ),
     );
-    renderWithProviders(<ToolsPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools/cae']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Configuração em falta')).toBeTruthy();
@@ -1295,7 +1295,7 @@ describe('Ferramentas — CAE catalog panel', () => {
       'fetch',
       toolsFetch(() => jsonResponse({ error: 'cae source failed: connection refused' }, 502)),
     );
-    renderWithProviders(<ToolsPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools/cae']);
 
     fireEvent.click(await screen.findByRole('button', { name: /atualizar catálogo/i }));
     expect(await screen.findByText('Fonte do catálogo indisponível')).toBeTruthy();
@@ -1345,10 +1345,10 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
 
   it('re-keys the content on tool switch but not on an unrelated (?q) param change', async () => {
     vi.stubGlobal('fetch', lawAwareToolsFetch());
-    const { container } = renderWithProviders(<ToolsPage />, ['/tools']);
+    const { container } = renderWithProviders(<ToolsPage />, ['/tools/cae']);
     const animKey = () => container.querySelector('[data-anim-key]')?.getAttribute('data-anim-key');
 
-    // Default surface is CAE; its indicator + active pill track the CAE sub-tab.
+    // The explicit CAE surface keeps its indicator + active pill on the CAE sub-tab.
     expect(await screen.findByText('Incorporado')).toBeTruthy();
     expect(animKey()).toBe('cae');
     expect(container.querySelector('.tools-subnav__indicator')).toBeTruthy();

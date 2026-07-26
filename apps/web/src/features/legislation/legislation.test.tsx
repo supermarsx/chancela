@@ -346,13 +346,13 @@ describe('Legislação — search', () => {
 });
 
 describe('Ferramentas — Legislação sub-navigation', () => {
-  it('defaults to CAE, opens the Legislação corpus reader, then the curated shelf', () => {
+  it('opens CAE explicitly, then the Legislação corpus reader and curated shelf', () => {
     // Stub fetch so the mounted CAE panels + law manifest resolve quietly. The corpus reader's
     // /v1/law/corpus probe simply errors under this stub — its search box still renders.
     vi.stubGlobal('fetch', lawFetch({ manifest: 'missing' }));
-    renderWithProviders(<ToolsPage />, ['/tools']);
+    renderWithProviders(<ToolsPage />, ['/tools/cae']);
 
-    // Default: the CAE explorer search is present (keeps the /cae smoke flow intact).
+    // The explicit CAE route keeps the legacy explorer flow intact.
     expect(screen.getByLabelText('Procurar no catálogo CAE')).toBeTruthy();
 
     // Legislação opens the full-text corpus reader (its default sub-view), not the CAE search.

@@ -229,6 +229,7 @@ import {
   type RetainedExportCleanupSettings,
   type SessionRoster,
   type SessionView,
+  type SearchSettings,
   type Settings,
   type RetentionDueCandidate,
   type RetentionDueCandidateFinding,
@@ -4810,6 +4811,7 @@ describe('contract fixtures parse through the real client', () => {
         signing: true,
         workflow: true,
         data_management: true,
+        search: true,
         platform: true,
         appearance: true,
         ui: true,
@@ -5113,6 +5115,39 @@ describe('contract fixtures parse through the real client', () => {
     ).toBe(true);
     expect(backupRecovery.target_rto_minutes).toBeGreaterThanOrEqual(1);
     expect(backupRecovery.target_rto_minutes).toBeLessThanOrEqual(525600);
+    const search = assertExactKeys<SearchSettings>(
+      settings.search,
+      {
+        enabled: true,
+        batch_size: true,
+        interval_seconds: true,
+        queue_capacity: true,
+        result_limit: true,
+        snippet_chars: true,
+        facet_limit: true,
+        max_content_chars: true,
+        max_total_content_chars: true,
+        event_retention_days: true,
+        min_query_chars: true,
+      },
+      'Settings.search',
+    );
+    expect(typeof search.enabled).toBe('boolean');
+    for (const value of [
+      search.batch_size,
+      search.interval_seconds,
+      search.queue_capacity,
+      search.result_limit,
+      search.snippet_chars,
+      search.facet_limit,
+      search.max_content_chars,
+      search.max_total_content_chars,
+      search.event_retention_days,
+      search.min_query_chars,
+    ]) {
+      expect(Number.isInteger(value)).toBe(true);
+      expect(value).toBeGreaterThan(0);
+    }
     const appearance = assertExactKeys<AppearanceSettings>(
       settings.appearance,
       { theme: true, leather_texture: true, texture_intensity: true, button_texture: true },

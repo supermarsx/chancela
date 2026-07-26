@@ -229,6 +229,9 @@ import type {
   BackupCodes,
   SessionListResponse,
   RevokedResponse,
+  SearchQueryParams,
+  SearchResponse,
+  SearchStatusResponse,
   Settings,
   UserPreferences,
   EmailStatusView,
@@ -869,6 +872,30 @@ function templateBundleEnvelope(input: TemplateBundleInput): TemplateBundle {
 
 export const api = {
   health: () => get<HealthResponse>('/health'),
+
+  // Full search — permission-filtered result/facet pages plus bounded worker controls.
+  search: (params: SearchQueryParams) =>
+    get<SearchResponse>(
+      `/v1/search${query({
+        q: params.q,
+        kind: params.kinds?.length ? params.kinds.join(',') : undefined,
+        tenant_id: params.tenant_id,
+        entity_id: params.entity_id,
+        book_id: params.book_id,
+        act_id: params.act_id,
+        author: params.author,
+        law: params.law,
+        status: params.status,
+        date_from: params.date_from,
+        date_to: params.date_to,
+        limit: params.limit,
+        cursor: params.cursor,
+      })}`,
+    ),
+  getSearchStatus: () => get<SearchStatusResponse>('/v1/search/status'),
+  rebuildSearchIndex: () => post<SearchStatusResponse>('/v1/search/rebuild'),
+  pauseSearchIndex: () => post<SearchStatusResponse>('/v1/search/pause'),
+  resumeSearchIndex: () => post<SearchStatusResponse>('/v1/search/resume'),
 
   // Settings (§2.8) — whole-document GET/PUT.
   getSettings: () => get<Settings>('/v1/settings'),

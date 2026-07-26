@@ -168,7 +168,7 @@ describe('CaePage redirect', () => {
     renderWithProviders(
       <Routes>
         <Route path="/cae" element={<CaePage />} />
-        <Route path="/tools" element={<ToolsPage />} />
+        <Route path="/tools/:tool?" element={<ToolsPage />} />
       </Routes>,
       ['/cae?code=68110&rev=Rev4'],
     );

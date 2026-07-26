@@ -60,6 +60,21 @@ describe('AdminConfigurationFinder', () => {
     expect(input.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('exposes the Search configuration only with search.manage and routes to its dedicated page', () => {
+    const hidden = renderFinder('settings.read');
+    const hiddenInput = screen.getByRole('combobox', { name: 'Encontrar uma configuração' });
+    fireEvent.change(hiddenInput, { target: { value: 'indice memoria' } });
+    expect(screen.queryByRole('option', { name: 'Abrir Pesquisa' })).toBeNull();
+    hidden.unmount();
+
+    renderFinder('search.manage');
+    const input = screen.getByRole('combobox', { name: 'Encontrar uma configuração' });
+    fireEvent.change(input, { target: { value: 'indice memoria' } });
+    fireEvent.click(screen.getByRole('option', { name: 'Abrir Pesquisa' }));
+
+    expect(screen.getByTestId('location').textContent).toBe('/admin/search');
+  });
+
   it('supports active-descendant keyboard selection, navigation, clear and escape', () => {
     renderFinder('signing.configure');
     const input = screen.getByRole('combobox', { name: 'Encontrar uma configuração' });

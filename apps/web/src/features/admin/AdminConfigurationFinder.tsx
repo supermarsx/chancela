@@ -50,6 +50,13 @@ export const ADMIN_CONFIGURATION_AREAS = [
     permissions: SETTINGS_PERMISSIONS,
   },
   {
+    id: 'search',
+    path: '/admin/search',
+    title: { source: 'admin', key: 'admin.search.title' },
+    keywords: 'admin.finder.keywords.search',
+    permissions: ['search.manage'],
+  },
+  {
     id: 'api',
     path: '/admin/api',
     title: { source: 'catalog', key: 'settings.subnav.api' },

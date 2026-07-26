@@ -1,0 +1,49 @@
+.search-admin-panel {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.search-admin-status-table table {
+  table-layout: fixed;
+  min-inline-size: 36rem;
+}
+
+.search-admin-status-table th:first-child {
+  inline-size: min(38%, 18rem);
+}
+
+.search-admin-status-table tbody th {
+  color: var(--text-muted);
+  font-weight: 700;
+  text-align: start;
+}
+
+.search-admin-status-table td {
+  overflow-wrap: anywhere;
+}
+
+.search-admin-progress {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.search-admin-progress progress {
+  inline-size: 100%;
+  accent-color: var(--accent);
+}
+
+.search-settings-rows .control[type='number'] {
+  inline-size: min(100%, 20rem);
+}
+
+@media (max-width: 44rem) {
+  .search-admin-status-table table {
+    min-inline-size: 30rem;
+  }
+
+  .search-admin-progress {
+    grid-template-columns: 1fr;
+  }
+}

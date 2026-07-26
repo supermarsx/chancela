@@ -100,6 +100,8 @@ import type {
   RegistryAutoUpdateAttemptBody,
   RegistryImportBody,
   SealActBody,
+  SearchQueryParams,
+  SearchStatusResponse,
   Settings,
   UserPreferences,
   NoticeDismissal,
@@ -246,6 +248,8 @@ export const keys = {
   dataKeyRotationPreflight: ['data', 'key-rotation', 'preflight'] as const,
   dataKeyRotationExecution: ['data', 'key-rotation', 'execution'] as const,
   dashboard: ['dashboard'] as const,
+  search: (params: SearchQueryParams) => ['search', 'results', params] as const,
+  searchStatus: ['search', 'status'] as const,
   settings: ['settings'] as const,
   mePreferences: ['me', 'preferences'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
@@ -2125,6 +2129,57 @@ export function useArchiveAct(id: string) {
 }
 
 // --- Ledger / Dashboard ---------------------------------------------------------
+
+/** Opaque-cursor full-search pages. The cursor never enters component state or the URL. */
+export function useFullSearch(params: SearchQueryParams, enabled = true) {
+  return useInfiniteQuery({
+    queryKey: keys.search(params),
+    queryFn: ({ pageParam }) => api.search({ ...params, cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
+    enabled,
+    retry: false,
+  });
+}
+
+/** Search projection health; the short poll keeps indexing progress and queue depth honest. */
+export function useSearchStatus(enabled = true) {
+  return useQuery({
+    queryKey: keys.searchStatus,
+    queryFn: () => api.getSearchStatus(),
+    enabled,
+    retry: false,
+    refetchInterval: 5_000,
+  });
+}
+
+function useSearchIndexCommand(command: 'rebuild' | 'pause' | 'resume') {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => {
+      if (command === 'rebuild') return api.rebuildSearchIndex();
+      if (command === 'pause') return api.pauseSearchIndex();
+      return api.resumeSearchIndex();
+    },
+    onSuccess: (status: SearchStatusResponse) => {
+      qc.setQueryData(keys.searchStatus, status);
+      void qc.invalidateQueries({ queryKey: ['search'] });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+export function useRebuildSearchIndex() {
+  return useSearchIndexCommand('rebuild');
+}
+
+export function usePauseSearchIndex() {
+  return useSearchIndexCommand('pause');
+}
+
+export function useResumeSearchIndex() {
+  return useSearchIndexCommand('resume');
+}
 
 export function useLedger(params: LedgerQueryParams = {}) {
   return useQuery({ queryKey: keys.ledger(params), queryFn: () => api.listLedger(params) });

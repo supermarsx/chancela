@@ -65,6 +65,7 @@ import {
   type RegisteredEntityColumn,
   type RegistryAutoUpdateSettings,
   type RetainedExportCleanupSettings,
+  type SearchSettings,
   type Settings,
   type SignatureFamily,
   type SigningProviderMetadata,
@@ -82,7 +83,7 @@ import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
-import { useAdminT } from '../../i18n/adminFallback';
+import { type AdminCopyKey, useAdminT } from '../../i18n/adminFallback';
 import { usePlatformLogNoticeT } from '../../i18n/platformLogNoticeFallback';
 import {
   type ReminderSettingsCopyKey,
@@ -121,6 +122,7 @@ import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSec
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
 import { ReminderSettingsCard } from './ReminderSettingsCard';
+import { SearchSettingsPanel } from './SearchSettingsPanel';
 import { DocumentLayoutDefaultsEditor } from '../documents/DocumentLayoutEditor';
 import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
 import { useCan } from '../session/permissions';
@@ -350,11 +352,14 @@ type SettingsWithMaybeAi = Omit<
   | 'data_management'
   | 'connectors'
   | 'email'
+  | 'search'
   | 'documents'
 > & {
   ai?: Partial<AiSettings> | null;
   // Absent on a server predating t23; defaulted to "mail off, STARTTLS" rather than assumed.
   email?: Partial<EmailSettings> | null;
+  // Absent on a server/client pair predating the full-search worker.
+  search?: Partial<SearchSettings> | null;
   // Absent whenever no runtime allowlist is set and no deployment ceiling is stamped.
   connectors?: Partial<ConnectorSettings> | null;
   ui?: Partial<UiSettings> | null;
@@ -487,6 +492,7 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
         ...backupRecovery,
       },
     },
+    search: { ...DEFAULT_SETTINGS.search, ...(settings.search ?? {}) },
     connectors: {
       ...DEFAULT_SETTINGS.connectors,
       ...(settings.connectors ?? {}),
@@ -615,6 +621,69 @@ function toWireBody(draft: Settings): Settings {
         ),
       },
     },
+    search: {
+      enabled: draft.search.enabled === true,
+      batch_size: boundedNumberValue(
+        String(draft.search.batch_size),
+        DEFAULT_SETTINGS.search.batch_size,
+        16,
+        5_000,
+      ),
+      interval_seconds: boundedNumberValue(
+        String(draft.search.interval_seconds),
+        DEFAULT_SETTINGS.search.interval_seconds,
+        5,
+        86_400,
+      ),
+      queue_capacity: boundedNumberValue(
+        String(draft.search.queue_capacity),
+        DEFAULT_SETTINGS.search.queue_capacity,
+        1,
+        1_024,
+      ),
+      result_limit: boundedNumberValue(
+        String(draft.search.result_limit),
+        DEFAULT_SETTINGS.search.result_limit,
+        1,
+        500,
+      ),
+      snippet_chars: boundedNumberValue(
+        String(draft.search.snippet_chars),
+        DEFAULT_SETTINGS.search.snippet_chars,
+        32,
+        2_000,
+      ),
+      facet_limit: boundedNumberValue(
+        String(draft.search.facet_limit),
+        DEFAULT_SETTINGS.search.facet_limit,
+        1,
+        200,
+      ),
+      max_content_chars: boundedNumberValue(
+        String(draft.search.max_content_chars),
+        DEFAULT_SETTINGS.search.max_content_chars,
+        1_000,
+        1_000_000,
+      ),
+      max_total_content_chars: boundedNumberValue(
+        String(draft.search.max_total_content_chars),
+        DEFAULT_SETTINGS.search.max_total_content_chars,
+        100_000,
+        100_000_000,
+      ),
+      event_retention_days: boundedNumberValue(
+        String(draft.search.event_retention_days),
+        DEFAULT_SETTINGS.search.event_retention_days,
+        1,
+        36_500,
+      ),
+      min_query_chars: boundedNumberValue(
+        String(draft.search.min_query_chars),
+        DEFAULT_SETTINGS.search.min_query_chars,
+        2,
+        8,
+      ),
+    },
     connectors: {
       // The stamped ceiling is server-owned and read-only; never echo it back on save.
       allowed_hosts: parseAllowedHosts(draft.connectors.allowed_hosts.join('\n')),
@@ -675,6 +744,7 @@ const SETTINGS_SUBSECTIONS = {
   operations: [
     'services',
     'logs',
+    'search',
     'api',
     'database',
     'cache',
@@ -707,8 +777,27 @@ type SettingsSubsection =
  *  it landed), so it names a key in that module instead, resolved with `st(...)` at render — the same
  *  split the pane itself uses. Exactly one of `label`/`serverEnvLabel` is present. */
 type SettingsSubsectionNav =
-  | { id: SettingsSubsection; label: MessageKey; icon: ReactNode; serverEnvLabel?: never }
-  | { id: SettingsSubsection; label?: never; icon: ReactNode; serverEnvLabel: ServerEnvCopyKey };
+  | {
+      id: SettingsSubsection;
+      label: MessageKey;
+      icon: ReactNode;
+      serverEnvLabel?: never;
+      adminLabel?: never;
+    }
+  | {
+      id: SettingsSubsection;
+      label?: never;
+      icon: ReactNode;
+      serverEnvLabel: ServerEnvCopyKey;
+      adminLabel?: never;
+    }
+  | {
+      id: SettingsSubsection;
+      label?: never;
+      icon: ReactNode;
+      serverEnvLabel?: never;
+      adminLabel: AdminCopyKey;
+    };
 
 /**
  * Second-level sub-tabs (t73). Two parents grew long enough to need their own strip, and three
@@ -731,6 +820,11 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // through to the first entry below. Both land on Serviços, the pane that address opened on.
     { id: 'services', label: 'settings.platform.tab.services', icon: <Icon.Power /> },
     { id: 'logs', label: 'settings.platform.tab.logs', icon: <Icon.Layers /> },
+    {
+      id: 'search',
+      adminLabel: 'admin.search.title',
+      icon: <Icon.Search />,
+    },
     // API (t82b). One button covering TWO addresses — `.../api` (server) and `.../api-keys`
     // (keys) — which is why `api-keys` is a valid subsection but not an entry here. See
     // API_PANES below.
@@ -891,6 +985,9 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
   'operations:groups',
   'operations:connectors',
   'operations:repositories',
+  // Search owns its operational endpoints behind `search.manage`; its whole-settings editor
+  // carries a narrower inner `settings.manage` fieldset.
+  'operations:search',
   'signing:providers',
 ];
 
@@ -911,7 +1008,12 @@ const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefi
  * Prestadores is a four-column read-only table whose Notas column is wrapping prose already
  * at 61ch and which never scrolls (61ch → 96ch if widened — worse, not better).
  */
-const WIDE_SUBSECTIONS: readonly string[] = ['signing:tsl', 'signing:tsa', 'signing:providers'];
+const WIDE_SUBSECTIONS: readonly string[] = [
+  'operations:search',
+  'signing:tsl',
+  'signing:tsa',
+  'signing:providers',
+];
 
 const isWideSubsection = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
   sub !== undefined && WIDE_SUBSECTIONS.includes(`${section}:${sub}`);
@@ -1392,6 +1494,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // unchanged — only the chrome around them differs.
   const isAdmin = surface === 'admin';
   const toast = useToast();
+  const can = useCan();
+  const canSearchManage = can('search.manage');
   const [params] = useSearchParams();
   const navigate = useNavigate();
   // Aparência is the default and carries no segment (so `/settings` lands on it). The
@@ -1452,7 +1556,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const sub: SettingsSubsection | undefined = subNav
     ? (retired?.sub ??
       RETIRED_SUBSECTIONS[section]?.[subSegment] ??
-      (validSubs?.includes(subSegment) ? (subSegment as SettingsSubsection) : subNav[0].id))
+      (validSubs?.includes(subSegment) && (subSegment !== 'search' || canSearchManage)
+        ? (subSegment as SettingsSubsection)
+        : subNav[0].id))
     : undefined;
   // Scoped to the ROSTER sub-tab, not to the whole Utilizadores section (t106). `?user=` is the
   // roster's own legacy state and redirects out to the edit screen; left section-wide it would
@@ -1500,7 +1606,6 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // disabled-with-explanation; the standalone sub-tabs (Utilizadores/Integridade/Dados)
   // gate their OWN actions, and "Sobre" is read-only info — so only the editable sections
   // lock. Reads (`settings.read`) still render everything.
-  const can = useCan();
   const canManageSettings = can('settings.manage');
   // The signing-configuration cluster is gated on its own dedicated verb since t50 (the whole
   // cluster moved into /admin and was re-permissioned): `signing.configure`, not `settings.manage`.
@@ -1519,7 +1624,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // co-located with their readouts (Armazenamento → retained-export cleanup; Cópias e recuperação →
   // backup-recovery). They DO touch the settings document, so — unlike other standalone subtabs —
   // the autosave save/error bar must still surface here; otherwise a failed policy save is silent.
-  const hostsSettingsPolicy = section === 'operations' && (sub === 'storage' || sub === 'backups');
+  const hostsSettingsPolicy =
+    section === 'operations' && (sub === 'storage' || sub === 'backups' || sub === 'search');
 
   // The committed (persisted) document, tracked in a ref so the unmount cleanup can
   // restore it if the operator navigated away mid-preview without saving.
@@ -1647,6 +1753,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     setDraft((d) => (d ? { ...d, email: { ...d.email, [key]: value } } : d));
   const setAi = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) =>
     setDraft((d) => (d ? { ...d, ai: { ...d.ai, [key]: value } } : d));
+  const setSearch = <K extends keyof SearchSettings>(key: K, value: SearchSettings[K]) =>
+    setDraft((d) => (d ? { ...d, search: { ...d.search, [key]: value } } : d));
   const setUi = <K extends keyof UiSettings>(key: K, value: UiSettings[K]) =>
     setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
@@ -1872,9 +1980,15 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           renders, so their sub-navs are only ever reached through the admin branch above. */}
       {isAdmin && sub ? (
         <SubNav
-          items={ADMIN_SUBSECTION_NAV.map((s) => ({
+          items={ADMIN_SUBSECTION_NAV.filter(
+            (candidate) => candidate.id !== 'search' || canSearchManage,
+          ).map((s) => ({
             id: s.id,
-            label: s.serverEnvLabel ? st(s.serverEnvLabel) : t(s.label),
+            label: s.adminLabel
+              ? at(s.adminLabel)
+              : s.serverEnvLabel
+                ? st(s.serverEnvLabel)
+                : t(s.label),
             icon: s.icon,
           }))}
           // `api-keys` is a pane of the API tab, so the API button is the one that reads as
@@ -1887,7 +2001,11 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
         <SubNav
           items={subNav.map((s) => ({
             id: s.id,
-            label: s.serverEnvLabel ? st(s.serverEnvLabel) : t(s.label),
+            label: s.adminLabel
+              ? at(s.adminLabel)
+              : s.serverEnvLabel
+                ? st(s.serverEnvLabel)
+                : t(s.label),
             icon: s.icon,
           }))}
           active={sub === 'api-keys' ? 'api' : sub}
@@ -2889,6 +3007,19 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                     </>
                   ) : null}
                 </div>
+              ) : null}
+
+              {/* Full search. The pane is reachable only with `search.manage`; operational
+                  commands use that dedicated permission and remain outside the page's
+                  settings.manage lock. Its bounded SearchSettings rows still write the whole
+                  settings document, so the component applies its own settings.manage fieldset
+                  and participates in this page's existing autosave/error bar. */}
+              {sub === 'search' && canSearchManage ? (
+                <SearchSettingsPanel
+                  value={draft.search}
+                  canEditSettings={canManageSettings}
+                  onChange={setSearch}
+                />
               ) : null}
 
               {/* Base de dados and Redis (t105). Read-only environment surfaces, not editors —

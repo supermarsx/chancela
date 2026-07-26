@@ -8094,6 +8094,146 @@ export interface ConnectorSettings {
   environment_ceiling?: string[] | null;
 }
 
+/** Every source family projected into the bounded full-search index. */
+export type SearchKind =
+  | 'act'
+  | 'entity'
+  | 'book'
+  | 'template'
+  | 'law_article'
+  | 'operational_action'
+  | 'ledger_event'
+  | 'follow_up'
+  | 'imported_document'
+  | 'paper_book'
+  | 'ocr_draft'
+  | 'generated_document';
+
+/** Lifecycle reported by the dedicated search worker. */
+export type SearchIndexPhase =
+  | 'starting'
+  | 'idle'
+  | 'reconciling'
+  | 'rebuilding'
+  | 'paused'
+  | 'disabled'
+  | 'error'
+  | 'shutting_down';
+
+/** Bounded, whole-instance controls for search indexing and result responses. */
+export interface SearchSettings {
+  enabled: boolean;
+  batch_size: number;
+  interval_seconds: number;
+  queue_capacity: number;
+  result_limit: number;
+  snippet_chars: number;
+  facet_limit: number;
+  max_content_chars: number;
+  max_total_content_chars: number;
+  event_retention_days: number;
+  min_query_chars: number;
+}
+
+/** Live worker/projection health returned by `/v1/search/status` and every result page. */
+export interface SearchStatusResponse {
+  enabled: boolean;
+  partial: boolean;
+  stale: boolean;
+  content_truncated: boolean;
+  phase: SearchIndexPhase;
+  generation: number;
+  document_count: number;
+  truncated_document_count: number;
+  indexed_content_chars: number;
+  /** Management-only configured ceiling; omitted from a redacted search.read response. */
+  content_budget_chars?: number;
+  content_budget_exhausted: boolean;
+  processed: number;
+  total: number;
+  last_event_seq: number | null;
+  last_started_at: string | null;
+  last_completed_at: string | null;
+  /** True when management-only worker/configuration diagnostics were intentionally omitted. */
+  details_redacted: boolean;
+  /** Management-only diagnostics may be omitted from a search.read response. */
+  last_error?: string | null;
+  error_at?: string | null;
+  updated_at: string;
+  queue_depth?: number;
+  queue_capacity?: number;
+  dropped_commands?: number;
+  projection_writer?: boolean;
+  worker_thread?: string | null;
+}
+
+/** Friendly client shape; `kinds` is serialized as the server's comma-separated `kind` value. */
+export interface SearchQueryParams {
+  q?: string;
+  kinds?: readonly SearchKind[];
+  tenant_id?: string;
+  entity_id?: string;
+  book_id?: string;
+  act_id?: string;
+  author?: string;
+  law?: string;
+  status?: string;
+  date_from?: string;
+  date_to?: string;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface SearchHit {
+  id: string;
+  kind: SearchKind;
+  title: string;
+  snippet: string;
+  content_truncated: boolean;
+  score: number;
+  tenant_id: string | null;
+  entity_id: string | null;
+  entity_name: string | null;
+  book_id: string | null;
+  book_label: string | null;
+  act_id: string | null;
+  author: string | null;
+  law: string | null;
+  status: string | null;
+  occurred_at: string | null;
+}
+
+export interface SearchFacets {
+  kind: Record<string, number>;
+  date: Record<string, number>;
+  /** Stable id keys with friendly labels; numeric values remain accepted for older servers. */
+  entity: Record<string, SearchRelationFacet | number>;
+  book: Record<string, SearchRelationFacet | number>;
+  author: Record<string, number>;
+  law: Record<string, number>;
+  status: Record<string, number>;
+}
+
+export interface SearchRelationFacet {
+  label: string;
+  count: number;
+}
+
+export interface SearchPage {
+  total: number;
+  offset: number;
+  limit: number;
+  has_more: boolean;
+  hits: SearchHit[];
+  facets: SearchFacets;
+}
+
+export interface SearchResponse {
+  page: SearchPage;
+  next_cursor: string | null;
+  index: SearchStatusResponse;
+}
+
 export interface Settings {
   schema_version: number;
   organization: OrganizationSettings;
@@ -8104,6 +8244,7 @@ export interface Settings {
   registry_auto_update: RegistryAutoUpdateSettings;
   workflow: WorkflowSettings;
   data_management: DataManagementSettings;
+  search: SearchSettings;
   connectors: ConnectorSettings;
   appearance: AppearanceSettings;
   ui: UiSettings;
@@ -8287,6 +8428,19 @@ export const DEFAULT_SETTINGS: Settings = {
       target_rto_minutes: 4 * 60,
     },
     // Absent by default: the interlock stays closed until an operator declares the shared mount.
+  },
+  search: {
+    enabled: true,
+    batch_size: 256,
+    interval_seconds: 30,
+    queue_capacity: 64,
+    result_limit: 100,
+    snippet_chars: 240,
+    facet_limit: 50,
+    max_content_chars: 200_000,
+    max_total_content_chars: 25_000_000,
+    event_retention_days: 3_650,
+    min_query_chars: 2,
   },
   connectors: { allowed_hosts: [] },
   appearance: {

@@ -2742,6 +2742,84 @@ describe('SettingsPage', () => {
     expect(sent.ai).toEqual({ enabled: true });
   });
 
+  it('deep-links to Search and autosaves its bounded slice through the whole settings document', async () => {
+    const base = settingsFetch();
+    const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url === '/v1/search/status') {
+        return Promise.resolve(
+          jsonResponse({
+            enabled: true,
+            partial: false,
+            stale: false,
+            content_truncated: false,
+            phase: 'idle',
+            generation: 3,
+            document_count: 12,
+            truncated_document_count: 0,
+            indexed_content_chars: 4_200,
+            content_budget_chars: 25_000_000,
+            content_budget_exhausted: false,
+            processed: 12,
+            total: 12,
+            last_event_seq: 41,
+            last_started_at: '2026-07-26T10:00:00Z',
+            last_completed_at: '2026-07-26T10:01:00Z',
+            details_redacted: false,
+            last_error: null,
+            error_at: null,
+            updated_at: '2026-07-26T10:01:00Z',
+            queue_depth: 0,
+            queue_capacity: 64,
+            dropped_commands: 0,
+            projection_writer: true,
+            worker_thread: 'search-worker',
+          }),
+        );
+      }
+      return base.fn(input, init);
+    }) as typeof fetch;
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/search']);
+
+    expect(
+      (await screen.findByRole('button', { name: 'Pesquisa' })).getAttribute('aria-pressed'),
+    ).toBe('true');
+    fireEvent.change(await screen.findByLabelText('Documentos por lote'), {
+      target: { value: '333' },
+    });
+
+    await waitFor(() => expect(base.calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const sent = JSON.parse(
+      base.calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.search).toEqual({ ...DEFAULT_SETTINGS.search, batch_size: 333 });
+    expect(sent.organization).toEqual(DEFAULT_SETTINGS.organization);
+    expect(sent.documents).toEqual(DEFAULT_SETTINGS.documents);
+  });
+
+  it('hides Search and falls back from its direct route without search.manage', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'settings.manage')}
+      >
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/search'],
+    );
+
+    expect(await screen.findByRole('button', { name: 'Serviços' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Pesquisa' })).toBeNull();
+    expect(screen.queryByLabelText('Documentos por lote')).toBeNull();
+    expect(calls.some((call) => call.url === '/v1/search/status')).toBe(false);
+  });
+
   it('leaves Gestão a read-only pointer to the gate, never a second writer', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
@@ -6397,7 +6475,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     vi.stubGlobal('fetch', fn);
     // t60 (Option B): the admin section level (Operações | Assinaturas) is dissolved into ONE flat
     // subtab strip. There is NO section strip on /admin — the strip below lists every admin area
-    // across both clusters, the fourteen operations panes then the six signing cards.
+    // across both clusters, the fifteen operations panes then the six signing cards.
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     const admin = within(await screen.findByRole('group', { name: 'Áreas de administração' }));
@@ -6407,12 +6485,13 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(screen.queryByRole('button', { name: 'Operações' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Assinaturas' })).toBeNull();
 
-    // The fourteen settings-ops panes (platform → stores → env override → integrations), then folded
+    // The fifteen settings-ops panes (platform → search → stores → env override → integrations), then folded
     // in after them the six signing cards — one flat strip, in cluster order.
     expect(labels(admin)).toEqual([
       // Operations cluster (t36) — reached off `/admin/:sub`.
       'Serviços',
       'Registos',
+      'Pesquisa',
       'API',
       'Base de dados',
       'Redis e estado partilhado',
