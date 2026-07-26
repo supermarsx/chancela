@@ -16630,12 +16630,15 @@ mod tests {
             let request = || PreviewTemplateDocument::Catalog {
                 template_id: shipped.id.clone(),
             };
-            let prepared = prepare_template_document_preview_model(&state, request())
-                .await
-                .unwrap_or_else(|error| {
-                    panic!("{} model preparation failed: {error:?}", shipped.id)
-                })
-                .unwrap_or_else(|_| panic!("{} model preparation returned 422", shipped.id));
+            let prepared = match prepare_template_document_preview_model(&state, request()).await {
+                Ok(Ok(model)) => model,
+                Ok(Err(response)) => panic!(
+                    "{} model preparation returned {}",
+                    shipped.id,
+                    response.status()
+                ),
+                Err(error) => panic!("{} model preparation failed: {error:?}", shipped.id),
+            };
             let expected_markdown = template_preview_markdown(&prepared);
             assert!(
                 !expected_markdown.trim().is_empty(),
