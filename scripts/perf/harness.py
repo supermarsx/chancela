@@ -41,6 +41,8 @@ import uuid
 from collections import Counter, defaultdict
 from typing import Any, Callable, Iterable, Iterator
 
+from perf_io import atomic_write_text_lf
+
 
 SCHEMA_VERSION = 1
 DATASET_FILES = {
@@ -122,12 +124,10 @@ def read_json(path: pathlib.Path) -> dict[str, Any]:
 
 
 def write_json(path: pathlib.Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(value, handle, indent=2, sort_keys=True)
-        handle.write("\n")
-    temporary.replace(path)
+    atomic_write_text_lf(
+        path,
+        json.dumps(value, indent=2, sort_keys=True) + "\n",
+    )
 
 
 def validate_profile(profile: dict[str, Any]) -> None:
@@ -2373,7 +2373,8 @@ def write_failure_report(
         },
     }
     write_json(args.report_dir / "report.json", failure)
-    (args.report_dir / "report.md").write_text(
+    atomic_write_text_lf(
+        args.report_dir / "report.md",
         "# Chancela performance evidence\n\n"
         f"- Profile: `{profile['name']}`\n"
         f"- Profile proof eligible: `{profile['proof_eligible']}`\n"
@@ -2382,8 +2383,6 @@ def write_failure_report(
         "- Result: `INCOMPLETE`\n"
         f"- Fatal error: `{type(error).__name__}: {error}`\n\n"
         "An incomplete run is not capacity proof.\n",
-        encoding="utf-8",
-        newline="\n",
     )
 
 
@@ -2582,8 +2581,9 @@ def run_command(args: argparse.Namespace) -> int:
         },
     }
     write_json(args.report_dir / "report.json", report)
-    (args.report_dir / "report.md").write_text(
-        markdown_report(report), encoding="utf-8", newline="\n"
+    atomic_write_text_lf(
+        args.report_dir / "report.md",
+        markdown_report(report),
     )
     print(json.dumps({"report": str(args.report_dir / "report.json"), "slo": slo_report}))
     if not seed_report["exact"]:

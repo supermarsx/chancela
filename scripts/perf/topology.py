@@ -16,6 +16,8 @@ import subprocess
 import sys
 from typing import Any
 
+from perf_io import atomic_write_text_lf
+
 
 REQUIRED_SERVICES = (
     "chancela-cluster",
@@ -375,14 +377,10 @@ def capture(
 
 
 def write_json(path: pathlib.Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    temporary.write_text(
+    atomic_write_text_lf(
+        path,
         json.dumps(value, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
     )
-    temporary.replace(path)
 
 
 def main(argv: list[str] | None = None) -> int:
