@@ -11,6 +11,7 @@ const webMatrixTestPaths = requireExistingTestPaths("apps/web", [
   "src/api/client.test.ts",
   "src/api/settingsDefaults.test.ts",
   "src/contracts/contracts.test.ts",
+  "src/features/acts/AtaEditorStructured.test.tsx",
   "src/features/books/books.test.tsx",
   "src/features/dashboard/DashboardPage.test.tsx",
   "src/features/documents/ActDocumentPanel.test.tsx",
@@ -33,6 +34,14 @@ const webMatrixTestPaths = requireExistingTestPaths("apps/web", [
   "src/i18n/i18n.test.ts",
   "src/ui/SubNav.test.tsx",
 ]);
+assert.ok(
+  webMatrixTestPaths.includes("src/contracts/contracts.test.ts"),
+  "web checkpoint matrix must include the canonical contract tests",
+);
+assert.ok(
+  webMatrixTestPaths.includes("src/features/acts/AtaEditorStructured.test.tsx"),
+  "web checkpoint matrix must include deterministic structured-editor save coverage",
+);
 
 const checks = [
   {
@@ -472,6 +481,38 @@ const checks = [
   {
     name: "MCP resources and prompts tests",
     command: ["cargo", ["test", "-p", "chancela-mcp", "--locked"]],
+  },
+  {
+    name: "server canonical contract E2E",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-server",
+        "--features",
+        "e2e",
+        "--locked",
+        "--test",
+        "e2e_contracts",
+      ],
+    ],
+  },
+  {
+    name: "server additive settings persistence E2E",
+    command: [
+      "cargo",
+      [
+        "test",
+        "-p",
+        "chancela-server",
+        "--test",
+        "e2e_settings_persistence",
+        "--features",
+        "e2e",
+        "--locked",
+      ],
+    ],
   },
   {
     name: "web contracts/dashboard/signing/i18n matrix",
@@ -4276,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `c9c1b19` (2026-07-26)",
+    "The current substantive checkpoint is `65fe793` (2026-07-26)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11325,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `c9c1b19`",
+    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `65fe793`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `c9c1b19`",
+    "Focused Gate Snapshot Through `65fe793`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12010,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `c9c1b19`",
+    "Current checkpoint metadata/static checks through `65fe793`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12600,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `c9c1b192d31d420d48bb0f17b641ca0ca877383d`",
+    "implementation snapshot `65fe793b55b8b269c35680fff829960fdeb33275`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12690,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `c9c1b19`",
+    "Current checkpoint metadata/static checks through `65fe793`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16453,6 +16494,56 @@ function assertCheckpointMap() {
     "API inherited layout validation atomicity coverage",
   );
   assertFileContains(
+    "contracts/group.dashboard.json",
+    '"document_layout_override": null',
+    "group dashboard member layout override contract marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_contracts.rs",
+    '&contract("group.dashboard.json")',
+    "server group dashboard canonical contract E2E marker",
+  );
+  assertFileContains(
+    "apps/web/src/contracts/contracts.test.ts",
+    "['fiscal_year_end', 'document_layout_override']",
+    "web Entity contract layout override marker",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_settings_persistence.rs",
+    "assert_submitted_leaves_round_trip",
+    "server stale-settings submitted-leaf round-trip coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_settings_persistence.rs",
+    '"/documents/template_preview_samples"',
+    "server omitted additive layout/preview defaults coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_settings_persistence.rs",
+    "GET must return the canonical PUT response",
+    "server canonical settings GET coverage",
+  );
+  assertFileContains(
+    "crates/chancela-server/tests/e2e_settings_persistence.rs",
+    "canonical settings loaded after restart",
+    "server canonical settings restart coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "waitForNextPatch: () =>",
+    "structured editor direct PATCH completion waiter",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "const body = await patch;",
+    "structured editor awaited PATCH body marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/acts/AtaEditorStructured.test.tsx",
+    "expect((save as HTMLButtonElement).disabled).toBe(false)",
+    "structured editor save completion marker",
+  );
+  assertFileContains(
     "apps/web/src/features/templates/TemplateBlocksEditor.test.tsx",
     "opens block settings only in an accessible right-side drawer and restores focus on Escape",
     "template block configure-only drawer coverage",
@@ -16674,7 +16765,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `c9c1b19` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `65fe793` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -16692,9 +16783,34 @@ function assertCheckpointMap() {
     "stores the canonical concrete policy with each new generated document, binds its SHA-256 digest separately from the template-spec digest in `document.generated`, and replays frozen encerramento bytes after mutable layers change",
     "spec coverage document layout snapshot digest and freeze marker",
   );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`01357def` strengthens the settings-persistence feature E2E to recursively verify every submitted stale-PUT leaf, preserve omitted layout and template-preview defaults, return the same canonical document from GET, and reload it after restart; the focused test passed 1/1",
+    "spec coverage additive settings persistence E2E evidence",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "At `01357def`, `cargo test -p chancela-server --features e2e --locked` also exited 0 in 112.4 seconds, including the canonical-contract and settings-persistence journeys; no aggregate count, hosted-CI result, browser proof, or production readiness is inferred",
+    "spec coverage current bounded server E2E evidence",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`65fe793b` makes the structured Ata-editor test stub expose and directly await PATCH completion before asserting each save, including the save-button re-enable boundary",
+    "spec coverage structured editor deterministic save evidence",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "The verified selected matrix passed 25/25 files and 691/691 tests, including all 34 structured-editor tests",
+    "spec coverage exact selected web matrix evidence",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "At `65fe793`, the exact local Node 24.18.0/npm 12.0.1 Vitest/V8 coverage gate passed 189/189 files and 2247/2247 tests at 90.03% statements, 80.75% branches, 88.79% functions, and 91.92% lines without lowering thresholds",
+    "spec coverage same-tree exact web coverage evidence",
+  );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `c9c1b19` (2026-07-26)",
+    "The current substantive checkpoint is `65fe793` (2026-07-26)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(
@@ -16704,8 +16820,33 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "Its web matrix recorded 24 files / 657 tests, including all 123 Settings-page tests",
+    "its web matrix recorded 25 files / 691 tests, including all 34 structured-editor tests, 67 contract tests, and all 123 Settings-page tests",
     "CI checkpoints exact web matrix evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "focused validation recorded 1/1 server canonical-contract E2E and 67/67 web contract tests",
+    "CI checkpoints group dashboard contract repair evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "`01357def` strengthens the feature-E2E settings round-trip to recursively verify every submitted stale-PUT leaf, preserve omitted layout and template-preview defaults, return the canonical PUT document from GET, and reload it after restart; the focused test passed 1/1",
+    "CI checkpoints additive settings persistence E2E evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "At `01357def`, `cargo test -p chancela-server --features e2e --locked` also exited 0 in 112.4 seconds, including the canonical-contract and additive settings-persistence journeys",
+    "CI checkpoints current bounded server E2E evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "`65fe793b` makes the structured Ata-editor test stub expose and directly await PATCH completion before asserting each save, including the save-button re-enable boundary",
+    "CI checkpoints structured editor deterministic save evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "At `65fe793`, the exact local Node 24.18.0/npm 12.0.1 Vitest/V8 coverage gate passed 189/189 files and 2247/2247 tests with 90.03% statements (18097/20100), 80.75% branches, 88.79% functions, and 91.92% lines",
+    "CI checkpoints same-tree exact web coverage evidence",
   );
   assertFileDoesNotContain(
     "docs/CI-CHECKPOINTS.md",
@@ -16719,8 +16860,8 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "The current `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output",
-    "CI checkpoints current Rust workspace evidence",
+    "The prior `c9c1b19` `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `65fe793`",
+    "CI checkpoints prior Rust workspace evidence boundary",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -16734,13 +16875,38 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "The current `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output",
-    "CI/E2E current Rust workspace evidence",
+    "The prior `c9c1b19` `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `65fe793`",
+    "CI/E2E prior Rust workspace evidence boundary",
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Its web matrix recorded 24 files / 657 tests, including all 123 Settings-page tests",
+    "its web matrix recorded 25 files / 691 tests, including all 34 structured-editor tests, 67 contract tests, and all 123 Settings-page tests",
     "CI/E2E exact web matrix evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "focused validation recorded 1/1 server canonical-contract E2E and 67/67 web contract tests",
+    "CI/E2E group dashboard contract repair evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`01357def` strengthens the feature-E2E settings round-trip to recursively verify every submitted stale-PUT leaf, preserve omitted layout and template-preview defaults, return the canonical PUT document from GET, and reload it after restart; the focused test passed 1/1",
+    "CI/E2E additive settings persistence evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "At `01357def`, `cargo test -p chancela-server --features e2e --locked` also exited 0 in 112.4 seconds, including the canonical-contract and additive settings-persistence journeys",
+    "CI/E2E current bounded server E2E evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "`65fe793b` makes the structured Ata-editor test stub expose and directly await PATCH completion before asserting each save, including the save-button re-enable boundary",
+    "CI/E2E structured editor deterministic save evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "At `65fe793`, the exact local Node 24.18.0/npm 12.0.1 Vitest/V8 coverage gate passed 189/189 files and 2247/2247 tests with 90.03% statements (18097/20100), 80.75% branches, 88.79% functions, and 91.92% lines, without lowering thresholds",
+    "CI/E2E same-tree exact web coverage evidence",
   );
   assertFileDoesNotContain(
     "docs/CI-E2E-HARDENING-PLAN.md",

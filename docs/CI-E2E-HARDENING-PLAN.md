@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-26 from the current CI configuration and reachable
-implementation snapshot `c9c1b19`,
+implementation snapshot `65fe793`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness, inherited document layouts, committed packaging and
@@ -1002,11 +1002,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `c9c1b19`
+## Focused Gate Snapshot Through `65fe793`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-26 for current implementation head `c9c1b19`.
+metadata-refreshed on 2026-07-26 for current implementation head `65fe793`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1015,7 +1015,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `c9c1b19` cover the accessible
+- Current landed-slice markers through `65fe793` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1036,7 +1036,21 @@ above still apply.
   coverage. `43ddb5de` commits the complete three-image SLSA v1 publication,
   run-and-attempt-qualified evidence, digest-only opt-in signing, split-secret
   deployment, and live smoke contracts; `5db517a` documents the external
-  topology.
+  topology. `32815f3e` aligns the canonical group-dashboard member
+  `EntityView` with the live DTO by exposing `document_layout_override`;
+  focused validation recorded 1/1 server canonical-contract E2E and 67/67 web
+  contract tests. This is bounded wire-shape evidence, not broader runtime,
+  rendering, legal, or production certification. `01357def` strengthens the
+  feature-E2E settings round-trip to recursively verify every submitted
+  stale-PUT leaf, preserve omitted layout and template-preview defaults, return
+  the canonical PUT document from GET, and reload it after restart; the focused
+  test passed 1/1. This is compatibility/persistence regression evidence, not
+  broad settings, deployment, or production certification. `65fe793b` makes
+  the structured Ata-editor test stub expose and directly await PATCH
+  completion before asserting each save, including the save-button re-enable
+  boundary. The selected fail-fast web matrix includes
+  `AtaEditorStructured.test.tsx`. This is deterministic test-harness evidence,
+  not a runtime editor behavior change or interactive browser proof.
 
   Focused current validation passed 46 web tests (drawer/search/search
   settings), 30 API preview tests, 1 API search-source mutation-guard
@@ -1046,31 +1060,47 @@ above still apply.
   packages in each graph, and zero forbidden dependencies. Docker image
   contracts, Compose topology, projector-role contracts, split-secret
   fixtures, and release trust/status self-tests also passed against the current
-  implementation tree. The current `cargo test --workspace --locked` gate also
-  exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's
-  per-target output. No full capacity/soak profile, 10,000 cryptographic
-  signatures, interactive visual QA, hosted CI run, GHCR publication,
-  signature, or remote-provider/hardware run is recorded by this metadata
-  refresh.
+  implementation tree. The prior `c9c1b19`
+  `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no
+  aggregate test count is inferred from Cargo's per-target output. That result
+  is not relabelled as full-workspace validation of `65fe793`; the changed
+  contract and settings E2E are covered by the focused evidence above. No full
+  capacity/soak profile, 10,000 cryptographic signatures, interactive visual
+  QA, hosted CI run, GHCR publication, signature, or remote-provider/hardware
+  run is recorded by this metadata refresh.
 
-  At snapshot `c9c1b19`, after `3d7cf815` aligned the stale Settings-page
+  At snapshot `65fe793`, after `3d7cf815` aligned the stale Settings-page
   assertions with the rendered `Lote do indexador integrado` label and
   `c9c1b192` refreshed the exact settings-gated restore/reload mutation
-  inventory, the complete `npm run test:checkpoint:recent-landed` command
-  passed. Its web matrix recorded 24 files / 657 tests, including all 123
-  Settings-page tests; the template document-editor slice recorded 23 tests;
-  the API search-source mutation guard recorded 1 test; the external projector
-  recorded 19 tests; and the performance governance suite recorded 42 tests.
-  The dependency, Docker image, Compose, role initializer, release
-  trust/status, validator-corpus, and desktop lockfile gates also passed.
-  Final-head focused checks additionally recorded 2 tenant-scan inventory
-  tests, 1 dashboard semantic-order test, and 35
-  i18n/template-preview-sample editor tests. This focused command does not
-  replace the full repository/hosted CI or the no-claim boundaries above.
+  inventory, `32815f3e` aligned the group-dashboard member contract, and
+  `01357def` hardened additive settings persistence coverage, and `65fe793b`
+  made structured-editor saves await PATCH completion directly, the complete
+  `npm run test:checkpoint:recent-landed` command passed. Its server
+  canonical-contract E2E and additive settings-persistence E2E each recorded 1
+  test; its web matrix recorded 25 files / 691 tests, including all 34
+  structured-editor tests, 67 contract tests, and all 123 Settings-page tests;
+  the template document-editor slice recorded 23 tests; the API search-source
+  mutation guard recorded 1 test; the external projector recorded 19 tests;
+  and the performance governance suite recorded 42 tests. The dependency,
+  Docker image, Compose, role initializer, release trust/status,
+  validator-corpus, and desktop lockfile gates also passed. Final-head focused
+  checks additionally recorded 2 tenant-scan inventory tests, 1 dashboard
+  semantic-order test, and 35 i18n/template-preview-sample editor tests. This
+  focused command does not replace the full repository/hosted CI or the
+  no-claim boundaries above.
 
-  The full web coverage gate passed 189 files / 2247 tests with 90.03%
-  statements (18097/20100), 80.75% branches, 88.79% functions, and 91.92%
-  lines, without lowering thresholds. The definitive PostgreSQL projector
+  At `01357def`,
+  `cargo test -p chancela-server --features e2e --locked` also exited 0 in
+  112.4 seconds, including the canonical-contract and additive
+  settings-persistence journeys. No aggregate count, hosted-CI result, browser
+  proof, remote-provider/hardware run, or production readiness is inferred
+  from this bounded local server gate.
+
+  At `65fe793`, the exact local Node 24.18.0/npm 12.0.1 Vitest/V8 coverage gate
+  passed 189/189 files and 2247/2247 tests with 90.03% statements
+  (18097/20100), 80.75% branches, 88.79% functions, and 91.92% lines, without
+  lowering thresholds. This is bounded local unit coverage, not browser,
+  desktop, hosted-CI, or production proof. The definitive PostgreSQL projector
   smoke also passed three generations, invalid-runtime and rolling-overlap
   lease handling, query/freshness/clean-log assertions, graceful stop, and
   exact cleanup.
@@ -2551,7 +2581,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `c9c1b19`
+- Current checkpoint metadata/static checks through `65fe793`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

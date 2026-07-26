@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `c9c1b19` (2026-07-26). It records the
+The current substantive checkpoint is `65fe793` (2026-07-26). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -100,6 +100,21 @@ following bounded concern groups in this guard:
   updates atomically, persists and separately digests the concrete layout for
   new documents, replays frozen encerramento output after mutable-layer
   changes, and leaves historical pre-binding rows explicitly unbound.
+  `32815f3e` aligns the canonical group-dashboard member `EntityView` with the
+  live DTO by exposing `document_layout_override`; focused validation recorded
+  1/1 server canonical-contract E2E and 67/67 web contract tests. This is
+  bounded wire-shape evidence, not broader runtime, rendering, legal, or
+  production certification. `01357def` strengthens the feature-E2E settings
+  round-trip to recursively verify every submitted stale-PUT leaf, preserve
+  omitted layout and template-preview defaults, return the canonical PUT
+  document from GET, and reload it after restart; the focused test passed 1/1.
+  This is compatibility/persistence regression evidence, not broad settings,
+  deployment, or production certification. `65fe793b` makes the structured
+  Ata-editor test stub expose and directly await PATCH completion before
+  asserting each save, including the save-button re-enable boundary. The
+  selected fail-fast web matrix includes `AtaEditorStructured.test.tsx`. This
+  is deterministic test-harness evidence, not a runtime editor behavior change
+  or interactive browser proof.
 
 The prior `16000bb` checkpoint recorded the full web Vitest suite (176 files /
 2121 tests), web lint (0 errors / 1 unrelated existing warning), web format
@@ -119,26 +134,41 @@ cryptographic signatures, PDF/A or PDF/UA certification, legal/template
 correctness, hosted CI success, GHCR publication, image/package signature, or
 spec completion is claimed. The spec matrix remains `PARTIAL=11`.
 
-At snapshot `c9c1b19`, after `3d7cf815` aligned the stale Settings-page
+At snapshot `65fe793`, after `3d7cf815` aligned the stale Settings-page
 assertions with the rendered `Lote do indexador integrado` label and
-`c9c1b192` refreshed the restore/reload mutation inventory, the complete
-`npm run test:checkpoint:recent-landed` command passed. Its web matrix recorded
-24 files / 657 tests, including all 123 Settings-page tests; the template
+`c9c1b192` refreshed the restore/reload mutation inventory and `32815f3e`
+aligned the group-dashboard member contract, and `01357def` hardened additive
+settings persistence coverage, and `65fe793b` made structured-editor saves
+await PATCH completion directly, the complete
+`npm run test:checkpoint:recent-landed` command passed. Its server canonical
+contract E2E and its additive settings-persistence E2E each recorded 1 test;
+its web matrix recorded 25 files / 691 tests, including all 34 structured-editor
+tests, 67 contract tests, and all 123 Settings-page tests; the template
 document-editor slice recorded 23 tests; the API search-source mutation guard
 recorded 1 test; the external projector recorded 19 tests; and the performance
 governance suite recorded 42 tests. The dependency, Docker image, Compose, role
 initializer, release trust/status, validator-corpus, and desktop lockfile gates
-also passed. Final-head focused checks additionally recorded 2 tenant-scan
-inventory tests, 1 dashboard semantic-order test, and 35
-i18n/template-preview-sample editor tests. This is a focused recent-landed
-checkpoint, not a substitute for the full repository/hosted CI or the no-claim
-boundaries above.
+also passed.
+Final-head focused checks additionally recorded 2 tenant-scan inventory tests,
+1 dashboard semantic-order test, and 35 i18n/template-preview-sample editor
+tests. This is a focused recent-landed checkpoint, not a substitute for the
+full repository/hosted CI or the no-claim boundaries above.
 
-The full web coverage gate passed 189 files / 2247 tests with 90.03% statements
-(18097/20100), 80.75% branches, 88.79% functions, and 91.92% lines. The
-thresholds were not reduced. The current `cargo test --workspace --locked`
-gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from
-Cargo's per-target output.
+At `01357def`, `cargo test -p chancela-server --features e2e --locked` also
+exited 0 in 112.4 seconds, including the canonical-contract and additive
+settings-persistence journeys. No aggregate count, hosted-CI result, browser
+proof, remote-provider/hardware run, or production readiness is inferred from
+this bounded local server gate.
+
+At `65fe793`, the exact local Node 24.18.0/npm 12.0.1 Vitest/V8 coverage gate
+passed 189/189 files and 2247/2247 tests with 90.03% statements (18097/20100),
+80.75% branches, 88.79% functions, and 91.92% lines. The thresholds were not
+reduced. This is bounded local unit coverage, not browser, desktop, hosted-CI,
+or production proof. The prior `c9c1b19`
+`cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no
+aggregate test count is inferred from Cargo's per-target output. That result is
+not relabelled as full-workspace validation of `65fe793`; the changed contract
+and settings E2E are covered by the focused evidence above.
 
 `npm run test:checkpoint:recent-landed` is a focused local and CI guard for
 recently landed work that crosses Rust API tests, data key preflight guards,

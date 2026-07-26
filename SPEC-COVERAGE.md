@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-26 from current implementation snapshot `c9c1b192d31d420d48bb0f17b641ca0ca877383d`,
+*Updated 2026-07-26 from current implementation snapshot `65fe793b55b8b269c35680fff829960fdeb33275`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -329,7 +329,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `c9c1b19` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `65fe793` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -375,8 +375,29 @@ Implementation checkpoints covered here:
   generated document, binds its SHA-256 digest separately from the
   template-spec digest in `document.generated`, and replays frozen
   encerramento bytes after mutable layers change. Historical pre-binding rows
-  remain explicitly unbound. `54529fb3` commits the initial secret
-  initialization, Compose isolation, projector role, and deployment contracts,
+  remain explicitly unbound. `32815f3e` aligns the canonical group-dashboard
+  member `EntityView` with the live DTO by exposing
+  `document_layout_override`; the focused live contract E2E passed 1/1 and the
+  web contract suite passed 67/67. This is bounded wire-shape regression
+  evidence, not broader runtime, layout-rendering, legal, or production
+  certification. `01357def` strengthens the settings-persistence feature E2E
+  to recursively verify every submitted stale-PUT leaf, preserve omitted
+  layout and template-preview defaults, return the same canonical document
+  from GET, and reload it after restart; the focused test passed 1/1. This is
+  compatibility/persistence regression evidence, not broad settings,
+  deployment, or production certification. At `01357def`,
+  `cargo test -p chancela-server --features e2e --locked` also exited 0 in
+  112.4 seconds, including the canonical-contract and settings-persistence
+  journeys; no aggregate count, hosted-CI result, browser proof, or production
+  readiness is inferred. `65fe793b` makes the structured Ata-editor test stub
+  expose and directly await PATCH completion before asserting each save,
+  including the save-button re-enable boundary. The selected fail-fast web
+  matrix includes `AtaEditorStructured.test.tsx`. This is deterministic
+  test-harness evidence, not a runtime editor behavior change or interactive
+  browser proof. The verified selected matrix passed 25/25 files and 691/691
+  tests, including all 34 structured-editor tests. `54529fb3` commits the
+  initial secret initialization,
+  Compose isolation, projector role, and deployment contracts,
   with `aa43b208` retaining workspace-lint cleanliness. `6f60ed65` adds bounded
   graceful projector lease release and immediate-successor regression coverage;
   the definitive PostgreSQL lifecycle smoke passed three generations,
@@ -385,8 +406,11 @@ Implementation checkpoints covered here:
   publication contract, run-and-attempt-qualified evidence, digest-only
   opt-in signing consumer, split-secret Compose hardening, and live SQLite,
   PostgreSQL projector, and hardened-PostgreSQL smoke wiring; `5db517a`
-  documents the external topology. The web coverage gate also passed 189 files
-  / 2247 tests at 90.03% statements without lowering thresholds. No hosted
+  documents the external topology. At `65fe793`, the exact local Node
+  24.18.0/npm 12.0.1 Vitest/V8 coverage gate passed 189/189 files and
+  2247/2247 tests at 90.03% statements, 80.75% branches, 88.79% functions,
+  and 91.92% lines without lowering thresholds. This is bounded local unit
+  coverage, not browser, desktop, hosted-CI, or production proof. No hosted
   workflow result, GHCR publication, signature/attestation execution, capacity
   run, PDF/A/PDF-UA certification, legal correctness, or legacy-layout
   migration is claimed. Statuses remain PARTIAL=11.
