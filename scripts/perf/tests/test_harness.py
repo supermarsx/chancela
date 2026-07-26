@@ -355,6 +355,19 @@ class WorkflowPolicyWiringTests(unittest.TestCase):
             "    - cpu-12-plus\n",
         )
 
+    def test_harness_self_test_installs_pcsc_before_running_the_python_suite(self):
+        harness_job = self.workflow.split("  harness-self-test:", 1)[1].split(
+            "\n  exact-volume-run:",
+            1,
+        )[0]
+        self.assertIn(
+            "      - name: Install PC/SC system deps (Linux)\n"
+            "        run: sudo apt-get update && "
+            "sudo apt-get install -y libpcsclite-dev pcscd\n"
+            "      - name: Compile and unit-test the harness",
+            harness_job,
+        )
+
     def test_workflow_uses_only_the_committed_policy_for_proof_eligible_profiles(self):
         dispatch = self.workflow.split("  workflow_dispatch:", 1)[1].split(
             "\npermissions:",
