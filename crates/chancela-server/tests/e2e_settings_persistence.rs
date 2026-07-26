@@ -189,6 +189,66 @@ fn sample_settings() -> Value {
     })
 }
 
+fn assert_submitted_leaves_round_trip(submitted: &Value, canonical: &Value, path: &str) {
+    match submitted {
+        Value::Object(submitted_fields) => {
+            let canonical_fields = canonical
+                .as_object()
+                .unwrap_or_else(|| panic!("{path} must remain an object: {canonical}"));
+            for (key, submitted_value) in submitted_fields {
+                let child_path = format!("{path}/{key}");
+                let canonical_value = canonical_fields
+                    .get(key)
+                    .unwrap_or_else(|| panic!("submitted setting {child_path} is missing"));
+                assert_submitted_leaves_round_trip(submitted_value, canonical_value, &child_path);
+            }
+        }
+        Value::Array(submitted_items) => {
+            let canonical_items = canonical
+                .as_array()
+                .unwrap_or_else(|| panic!("{path} must remain an array: {canonical}"));
+            assert_eq!(
+                canonical_items.len(),
+                submitted_items.len(),
+                "submitted setting array {path} changed length"
+            );
+            for (index, submitted_value) in submitted_items.iter().enumerate() {
+                assert_submitted_leaves_round_trip(
+                    submitted_value,
+                    &canonical_items[index],
+                    &format!("{path}/{index}"),
+                );
+            }
+        }
+        _ => assert_eq!(
+            canonical, submitted,
+            "submitted setting leaf {path} did not round-trip"
+        ),
+    }
+}
+
+fn assert_omitted_default_is_preserved(
+    submitted: &Value,
+    defaults: &Value,
+    canonical: &Value,
+    pointer: &str,
+) {
+    assert!(
+        submitted.pointer(pointer).is_none(),
+        "compatibility fixture must omit {pointer}"
+    );
+    let expected = defaults
+        .pointer(pointer)
+        .unwrap_or_else(|| panic!("defaults are missing {pointer}"));
+    let actual = canonical
+        .pointer(pointer)
+        .unwrap_or_else(|| panic!("canonical PUT response is missing {pointer}"));
+    assert_eq!(
+        actual, expected,
+        "omitted additive setting {pointer} must preserve its existing default"
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
     not(feature = "e2e"),
@@ -220,15 +280,23 @@ async fn settings_round_trip_validation_and_persistence() {
         })
     );
 
-    // A full PUT round-trips and is reflected by the next GET.
+    // A stale whole-document PUT preserves newly added settings while every submitted leaf
+    // round-trips. The response is the canonical document subsequent reads must return.
+    let submitted = sample_settings();
     let (status, stored) = h
-        .put_json_auth("/v1/settings", sample_settings(), &token)
+        .put_json_auth("/v1/settings", submitted.clone(), &token)
         .await;
     assert_eq!(status, 200);
-    assert_eq!(stored, sample_settings());
+    assert_submitted_leaves_round_trip(&submitted, &stored, "");
+    for pointer in [
+        "/documents/layout_defaults",
+        "/documents/template_preview_samples",
+    ] {
+        assert_omitted_default_is_preserved(&submitted, &defaults, &stored, pointer);
+    }
     let (status, got) = h.get_json("/v1/settings").await;
     assert_eq!(status, 200);
-    assert_eq!(got, sample_settings());
+    assert_eq!(got, stored, "GET must return the canonical PUT response");
 
     // The change is auditable.
     let (_, events) = h.get_json("/v1/ledger/events").await;
@@ -265,9 +333,5 @@ async fn settings_round_trip_validation_and_persistence() {
     h.restart().await;
     let (status, got) = h.get_json("/v1/settings").await;
     assert_eq!(status, 200);
-    assert_eq!(
-        got,
-        sample_settings(),
-        "persisted settings loaded after restart"
-    );
+    assert_eq!(got, stored, "canonical settings loaded after restart");
 }
