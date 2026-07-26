@@ -26,6 +26,33 @@ enum FontSlot {
     Header,
 }
 
+#[derive(Clone, Copy)]
+enum FontEmphasis {
+    Normal,
+    Bold,
+    Italic,
+    BoldItalic,
+}
+
+impl FontEmphasis {
+    fn from_flags(bold: bool, italic: bool) -> Self {
+        match (bold, italic) {
+            (false, false) => Self::Normal,
+            (true, false) => Self::Bold,
+            (false, true) => Self::Italic,
+            (true, true) => Self::BoldItalic,
+        }
+    }
+
+    fn bold(self) -> bool {
+        matches!(self, Self::Bold | Self::BoldItalic)
+    }
+
+    fn italic(self) -> bool {
+        matches!(self, Self::Italic | Self::BoldItalic)
+    }
+}
+
 /// Approved fonts needed by a concrete policy. Equal body/header families share one object.
 pub struct FontCatalog {
     pub fonts: Vec<Font>,
@@ -310,8 +337,7 @@ impl<'f> Layouter<'f> {
         x: f32,
         baseline: f32,
         size: f32,
-        bold: bool,
-        italic: bool,
+        emphasis: FontEmphasis,
         s: &str,
     ) {
         if s.is_empty() {
@@ -344,14 +370,14 @@ impl<'f> Layouter<'f> {
         self.cur
             .extend_from_slice(format!("/F{} {} Tf\n", font_index + 1, num(size)).as_bytes());
         self.cur.extend_from_slice(b"0 g\n");
-        if bold {
+        if emphasis.bold() {
             let lw = size * 0.03;
             self.cur
                 .extend_from_slice(format!("0 G\n{} w\n2 Tr\n", num(lw)).as_bytes());
         } else {
             self.cur.extend_from_slice(b"0 Tr\n");
         }
-        if italic {
+        if emphasis.italic() {
             self.cur.extend_from_slice(
                 format!(
                     "1 0 {} 1 {} {} Tm\n",
@@ -426,9 +452,23 @@ impl<'f> Layouter<'f> {
         let space = self.space_w(font, size);
         for (index, (xoff, w)) in line.iter().enumerate() {
             if index > 0 {
-                self.frag(font, x0 + xoff - space, baseline, size, false, false, " ");
+                self.frag(
+                    font,
+                    x0 + xoff - space,
+                    baseline,
+                    size,
+                    FontEmphasis::Normal,
+                    " ",
+                );
             }
-            self.frag(font, x0 + xoff, baseline, size, w.bold, w.italic, &w.text);
+            self.frag(
+                font,
+                x0 + xoff,
+                baseline,
+                size,
+                FontEmphasis::from_flags(w.bold, w.italic),
+                &w.text,
+            );
         }
     }
 
@@ -496,7 +536,14 @@ impl<'f> Layouter<'f> {
             let body_size = l.body_size();
             let baseline = l.take_line(body_size);
             l.tagged_element(StructureRole::TableHeaderCell(TableHeaderScope::Row), |l| {
-                l.frag(FontSlot::Body, x0, baseline, body_size, true, false, k);
+                l.frag(
+                    FontSlot::Body,
+                    x0,
+                    baseline,
+                    body_size,
+                    FontEmphasis::Bold,
+                    k,
+                );
             });
             l.tagged_element(StructureRole::TableDataCell, |l| {
                 // value wrapped within [val_x, val_x1]; first line shares the key's baseline.
@@ -524,8 +571,7 @@ impl<'f> Layouter<'f> {
                             val_x + line_w,
                             cur_base,
                             body_size,
-                            false,
-                            false,
+                            FontEmphasis::Normal,
                             " ",
                         );
                         line_w += space;
@@ -535,8 +581,7 @@ impl<'f> Layouter<'f> {
                         val_x + line_w,
                         cur_base,
                         body_size,
-                        false,
-                        false,
+                        FontEmphasis::Normal,
                         &w.text,
                     );
                     line_w += ww;
@@ -570,8 +615,7 @@ impl<'f> Layouter<'f> {
                             x0,
                             base,
                             body_size,
-                            true,
-                            false,
+                            FontEmphasis::Bold,
                             "Deliberação",
                         );
                     },
@@ -654,14 +698,25 @@ impl<'f> Layouter<'f> {
         s: &str,
     ) {
         let x = x_right - self.text_w(font, s, size);
-        self.frag(font, x, baseline, size, bold, false, s);
+        self.frag(
+            font,
+            x,
+            baseline,
+            size,
+            if bold {
+                FontEmphasis::Bold
+            } else {
+                FontEmphasis::Normal
+            },
+            s,
+        );
     }
 
     /// Draw plain (non-bold, non-italic) text, dropping trailing characters that would exceed
     /// `max_w` (simple clip for table labels).
     fn frag_clip(&mut self, font: FontSlot, x: f32, baseline: f32, size: f32, s: &str, max_w: f32) {
         if self.text_w(font, s, size) <= max_w {
-            self.frag(font, x, baseline, size, false, false, s);
+            self.frag(font, x, baseline, size, FontEmphasis::Normal, s);
             return;
         }
         let mut acc = String::new();
@@ -673,7 +728,7 @@ impl<'f> Layouter<'f> {
             acc.push(c);
         }
         acc.push('…');
-        self.frag(font, x, baseline, size, false, false, &acc);
+        self.frag(font, x, baseline, size, FontEmphasis::Normal, &acc);
     }
 
     fn signature_block(&mut self, slots: &[chancela_core::SignatureSlot]) {
@@ -690,9 +745,23 @@ impl<'f> Layouter<'f> {
                 l.rule_at(x0, x0 + line_w, rule_y, 0.6);
                 l.gap(2.0);
                 let b1 = l.take_line(body_size);
-                l.frag(FontSlot::Body, x0, b1, body_size, true, false, &slot.role);
+                l.frag(
+                    FontSlot::Body,
+                    x0,
+                    b1,
+                    body_size,
+                    FontEmphasis::Bold,
+                    &slot.role,
+                );
                 let b2 = l.take_line(body_size);
-                l.frag(FontSlot::Body, x0, b2, body_size, false, false, &slot.name);
+                l.frag(
+                    FontSlot::Body,
+                    x0,
+                    b2,
+                    body_size,
+                    FontEmphasis::Normal,
+                    &slot.name,
+                );
                 l.gap(8.0);
             }
         });
