@@ -2709,6 +2709,11 @@ describe('BookDetailPage — sub-tabs', () => {
 
     // The opening record still shows the book facts…
     expect(await screen.findByText('Finalidade')).toBeTruthy();
+    const summary = document.querySelector('.book-opening-summary');
+    expect(summary).toBeTruthy();
+    expect(summary?.children.length).toBeGreaterThan(3);
+    expect(summary?.querySelector(':scope > div > dt')).toBeTruthy();
+    expect(summary?.querySelector(':scope > div > dd')).toBeTruthy();
     // …and the termo is now a signable ata in its own right (t23): a legacy/one-shot book carries
     // no separately editable termo, so the editor renders that honest note rather than a stale
     // "in registration" placeholder or the acts panel.
@@ -2736,25 +2741,22 @@ describe('BookDetailPage — sub-tabs', () => {
     expect(await screen.findByText('Sem importações preservadas')).toBeTruthy();
   });
 
-  it('keeps every book sub-tab at the prose measure, including the atas table', async () => {
-    // Deliberate, and measured: unlike the book LIST (percentage-fixed, truncating
-    // columns), the atas table's Título cell WRAPS. At the shell measure it already runs
-    // at 72ch — the theme's own `--measure` is 68ch — and it never scrolls at any
-    // viewport, so widening would push it to 114ch for no gain. Termo is a definition
-    // list; retenção and importações are three-column tables of stacked prose. This
-    // asserts the absence so nobody re-widens the page without redoing the measurement.
+  it('widens only the opening editor and keeps the prose-oriented book sections narrow', async () => {
+    // The opening term is now a complete label/control table with nested clause and signatory
+    // rows, so it needs the shared wide measure. Atas, retention and imports retain their
+    // prose-oriented measure.
     const panel = () => document.querySelector('.route-transition');
-    for (const entry of [
-      '/books/book-1',
-      '/books/book-1/opening',
-      '/books/book-1/retention',
-      '/books/book-1/imports',
-    ]) {
+    for (const [entry, wide] of [
+      ['/books/book-1', false],
+      ['/books/book-1/opening', true],
+      ['/books/book-1/retention', false],
+      ['/books/book-1/imports', false],
+    ] as const) {
       vi.stubGlobal('fetch', bookDetailFetch().fn);
       const { unmount } = renderAtBook(entry);
       await screen.findByRole('group', { name: 'Secções do livro' });
       expect(panel(), entry).toBeTruthy();
-      expect(panel()?.classList.contains('wide-page'), entry).toBe(false);
+      expect(panel()?.classList.contains('wide-page'), entry).toBe(wide);
       unmount();
     }
   });

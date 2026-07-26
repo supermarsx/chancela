@@ -112,13 +112,28 @@ describe('TermoAberturaEditor', () => {
       return Promise.reject(new Error(`no stub for ${method} ${url}`));
     }) as typeof fetch);
 
-    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    const { container } = renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
 
     // The draft seeds the editor from the loaded termo.
     const title = (await screen.findByLabelText('Título do termo')) as HTMLInputElement;
     expect(title.value).toBe('Termo de abertura');
     // The signatory slot is editable (the termo is an ata, not a static record).
     expect(screen.getByDisplayValue('Amélia Marques')).toBeTruthy();
+
+    // The complete draft is one settings-row composition. Metadata, body, signatories and
+    // actions share one stable outer label column; repeated structures use compact nested tables.
+    const rows = container.querySelector('.termo-editor__rows.settings-rows');
+    expect(rows).toBeTruthy();
+    expect(rows?.querySelectorAll(':scope > .field')).toHaveLength(10);
+    expect(title.closest('.field')?.parentElement).toBe(rows);
+    expect(screen.getByLabelText('Finalidade').closest('.field')?.parentElement).toBe(rows);
+    expect(screen.getByLabelText('Data de abertura').closest('.field')?.parentElement).toBe(rows);
+    expect(screen.getByLabelText('Texto').closest('.field-table')).toBeTruthy();
+    expect(screen.getByDisplayValue('Amélia Marques').closest('.field-table')).toBeTruthy();
+    expect(screen.getByRole('switch', { name: 'Exigido' })).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Guardar rascunho' }).closest('.field')?.parentElement,
+    ).toBe(rows);
 
     fireEvent.change(title, { target: { value: 'Termo de abertura do Livro 1' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho' }));
@@ -150,12 +165,39 @@ describe('TermoAberturaEditor', () => {
 
     // The signing phase offers a sign action for the first unsigned required slot.
     expect(await screen.findByRole('button', { name: 'Assinar' })).toBeTruthy();
+    expect(document.querySelector('.termo-status-table')).toBeTruthy();
+    expect(document.querySelector('.termo-signatories-table')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Abrir livro' }).closest('.termo-action-row'),
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: 'Abrir livro' }));
 
     // The 409 is surfaced honestly — the book is NOT pretended open.
     expect(
       await screen.findByText('O termo ainda não está assinado criptograficamente'),
+    ).toBeTruthy();
+  });
+
+  it('renders the Sealed phase as status rows with a labelled artifact action row', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/termo/abertura')) {
+        return Promise.resolve(jsonResponse({ ...SIGNED_TERMO, state: 'Sealed' }));
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    expect(
+      await screen.findByText('O termo produziu efeito e o livro foi aberto. É imutável.'),
+    ).toBeTruthy();
+    expect(document.querySelector('.termo-status-table')).toBeTruthy();
+    expect(
+      screen
+        .getByRole('button', { name: 'Descarregar PDF base sem assinaturas' })
+        .closest('.termo-action-row'),
     ).toBeTruthy();
   });
 

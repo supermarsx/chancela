@@ -106,12 +106,25 @@ describe('TermoEncerramentoEditor', () => {
       return Promise.reject(new Error(`no stub for ${method} ${url}`));
     }) as typeof fetch);
 
-    renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
+    const { container } = renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
 
     const title = (await screen.findByLabelText('Título do termo')) as HTMLInputElement;
     expect(title.value).toBe('Termo de encerramento');
     const date = screen.getByLabelText('Data de encerramento') as HTMLInputElement;
     expect(date.value).toBe('2026-06-30');
+
+    const rows = container.querySelector('.termo-editor__rows.settings-rows');
+    expect(rows).toBeTruthy();
+    expect(rows?.querySelectorAll(':scope > .field')).toHaveLength(9);
+    expect(title.closest('.field')?.parentElement).toBe(rows);
+    expect(date.closest('.field')?.parentElement).toBe(rows);
+    expect(screen.getByLabelText('Texto').closest('.field-table')).toBeTruthy();
+    expect(screen.getByDisplayValue('Amélia Marques').closest('.field-table')).toBeTruthy();
+    const required = screen.getByRole('switch', { name: 'Exigido' });
+    expect(required).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Guardar rascunho' }).closest('.field')?.parentElement,
+    ).toBe(rows);
 
     // DA1 — choosing "Outro" reveals a required free-text note.
     expect(screen.queryByLabelText('Qual o motivo')).toBeNull();
@@ -120,6 +133,7 @@ describe('TermoEncerramentoEditor', () => {
     });
     const note = (await screen.findByLabelText('Qual o motivo')) as HTMLInputElement;
     fireEvent.change(note, { target: { value: 'Fusão por incorporação' } });
+    fireEvent.click(required);
 
     fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho' }));
 
@@ -132,6 +146,13 @@ describe('TermoEncerramentoEditor', () => {
     expect((patch?.body as { closing_reason?: unknown }).closing_reason).toEqual({
       Other: { note: 'Fusão por incorporação' },
     });
+    expect(
+      (
+        patch?.body as {
+          signatories?: Array<{ required?: boolean }>;
+        }
+      ).signatories?.[0]?.required,
+    ).toBe(false);
     expect(await screen.findByText('Rascunho guardado.')).toBeTruthy();
   });
 
@@ -153,11 +174,34 @@ describe('TermoEncerramentoEditor', () => {
     renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
 
     expect(await screen.findByRole('button', { name: 'Assinar' })).toBeTruthy();
+    expect(document.querySelector('.termo-status-table')).toBeTruthy();
+    expect(document.querySelector('.termo-signatories-table')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: 'Encerrar livro' }).closest('.termo-action-row'),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Encerrar livro' }));
 
     expect(
       await screen.findByText('O termo ainda não está assinado criptograficamente'),
     ).toBeTruthy();
+  });
+
+  it('renders the Sealed phase in the same one-column status-row convention', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/termo/encerramento')) {
+        return Promise.resolve(jsonResponse({ ...SIGNED_TERMO, state: 'Sealed' }));
+      }
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
+
+    expect(
+      await screen.findByText('O termo produziu efeito e o livro foi encerrado. É imutável.'),
+    ).toBeTruthy();
+    expect(document.querySelector('.termo-status-table')).toBeTruthy();
+    expect(document.querySelector('.termo-status-table')?.children).toHaveLength(2);
   });
 
   it('surfaces the stale-fact 409 distinctly on close', async () => {

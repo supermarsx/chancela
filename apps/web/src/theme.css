@@ -880,6 +880,132 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
+/* Formal opening/closing terms are long documents, but their configuration should still scan as
+   one form-table rather than as a pile of unrelated mini forms. The outer settings row grid owns
+   the stable label track; repeated clauses/signatories reuse the compact field table inside the
+   control track. */
+.termo-editor__rows {
+  --settings-label-col: 14rem;
+  --settings-label-col-max: 20rem;
+}
+
+.termo-editor__section-label {
+  margin-bottom: 0;
+}
+
+.termo-editor__collection {
+  min-width: 0;
+}
+
+.termo-editor__block {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.termo-editor__block .control,
+.termo-editor__block .toggle {
+  min-height: 2.6rem;
+}
+
+.termo-editor__block .toggle {
+  align-items: center;
+}
+
+.termo-editor__block-actions {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.55rem 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.termo-editor__actions {
+  flex-wrap: wrap;
+}
+
+/* The book facts above the editable opening term belong to the same visual job. The base
+   `.deflist` auto-fits facts into tiles; this modifier keeps one label/value row per fact so the
+   summary scans in the same direction as the editor below it. */
+.book-opening-summary,
+.termo-status-table,
+.termo-signatories-table,
+.termo-action-row {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 76%, transparent);
+  overflow: hidden;
+}
+
+.book-opening-summary > div,
+.termo-status-table > div,
+.termo-signatory-row,
+.termo-action-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 14rem) minmax(0, 1fr);
+  gap: 0.3rem 0.9rem;
+  align-items: start;
+  padding: 0.7rem;
+}
+
+.book-opening-summary > div + div,
+.termo-status-table > div + div,
+.termo-signatory-row + .termo-signatory-row {
+  border-top: 1px solid var(--border);
+}
+
+.book-opening-summary dt,
+.book-opening-summary dd,
+.termo-status-table dt,
+.termo-status-table dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.termo-signatories-table {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.termo-signatory-row__identity {
+  overflow-wrap: anywhere;
+}
+
+.termo-signatory-row__state {
+  display: flex;
+  align-items: center;
+  min-height: 2.6rem;
+}
+
+.termo-signatory-row__expanded {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+.termo-action-row > .field__label {
+  padding-top: 0.55rem;
+}
+
+@media (max-width: 48rem) {
+  .field-table > .field {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .book-opening-summary > div,
+  .termo-status-table > div,
+  .termo-signatory-row,
+  .termo-action-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .termo-action-row > .field__label {
+    padding-top: 0;
+  }
+}
+
 .check {
   font-family: var(--font-sans);
   font-size: 0.8rem;

@@ -51,6 +51,7 @@ import {
   Select,
   Skeleton,
   TextArea,
+  Toggle,
   useToast,
 } from '../../ui';
 import { useTermoT } from './termoStrings';
@@ -256,22 +257,25 @@ function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
   const busy = patch.isPending || advance.isPending;
 
   return (
-    <div className="stack">
+    <div className="stack termo-editor">
       <InlineWarning tone="info" title={tt(`books.termo.state.Draft`)}>
         {tt('books.termo.state.DraftHint')}
       </InlineWarning>
 
-      <Field
-        label={tt('books.termo.editor.titleLabel')}
-        htmlFor="termo-title"
-        help={tt('books.termo.editor.titleHelp')}
-      >
-        <Input id="termo-title" value={title} onChange={(e) => setTitle(e.target.value)} />
-      </Field>
+      <div className="form settings-rows termo-editor__rows">
+        <Field
+          label={tt('books.termo.editor.titleLabel')}
+          htmlFor="termo-title"
+          help={tt('books.termo.editor.titleHelp')}
+        >
+          <Input id="termo-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </Field>
 
-      {/* Fields (all ASSURANCE/product). */}
-      <p className="card__label">{tt('books.termo.editor.fieldsLegend')}</p>
-      <div className="form__grid">
+        <p className="card__label termo-editor__section-label" role="heading" aria-level={4}>
+          {tt('books.termo.editor.fieldsLegend')}
+        </p>
+
+        {/* Fields (all ASSURANCE/product). */}
         <Field
           label={tt('books.termo.field.purpose')}
           htmlFor="termo-purpose"
@@ -335,183 +339,200 @@ function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
             onChange={(e) => setPredecessorNote(e.target.value)}
           />
         </Field>
-      </div>
 
-      {/* Body clauses. */}
-      <Field label={tt('books.termo.editor.bodyLegend')} hint={tt('books.termo.editor.bodyHelp')}>
-        <div className="stack--tight">
-          {clauses.length === 0 ? (
-            <p className="field__hint">{tt('books.termo.editor.noClauses')}</p>
-          ) : null}
-          {clauses.map((clause, index) => (
-            <div className="stack--tight" key={index}>
-              <Field
-                label={tt('books.termo.editor.clauseHeading')}
-                htmlFor={`termo-clause-heading-${index}`}
-              >
-                <Input
-                  id={`termo-clause-heading-${index}`}
-                  value={clause.heading}
-                  onChange={(e) => updateClause(index, { heading: e.target.value })}
-                />
-              </Field>
-              <Field
-                label={tt('books.termo.editor.clauseText')}
-                htmlFor={`termo-clause-text-${index}`}
-              >
-                <TextArea
-                  id={`termo-clause-text-${index}`}
-                  rows={3}
-                  value={clause.text}
-                  onChange={(e) => updateClause(index, { text: e.target.value })}
-                />
-              </Field>
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.Trash />}
-                onClick={() => setClauses((rows) => rows.filter((_, idx) => idx !== index))}
-              >
-                {tt('books.termo.editor.removeClause')}
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            icon={<Icon.Plus />}
-            onClick={() => setClauses((rows) => [...rows, { heading: '', text: '' }])}
-          >
-            {tt('books.termo.editor.addClause')}
-          </Button>
-        </div>
-      </Field>
-
-      {/* Signatory slots. */}
-      <Field
-        label={tt('books.termo.editor.signatoriesLegend')}
-        hint={tt('books.termo.rule.allowList')}
-      >
-        <div className="stack--tight">
-          {slots.map((slot, index) => (
-            <div className="rowline" key={index}>
-              <Field
-                label={tt('books.termo.signatory.name')}
-                htmlFor={`termo-slot-name-${index}`}
-                help={tt('books.termo.signatory.nameHelp')}
-              >
-                <Input
-                  id={`termo-slot-name-${index}`}
-                  value={slot.name}
-                  onChange={(e) => updateSlot(index, { name: e.target.value })}
-                />
-              </Field>
-              <Field
-                label={tt('books.termo.signatory.capacity')}
-                htmlFor={`termo-slot-capacity-${index}`}
-                help={tt('books.termo.signatory.capacityHelp')}
-              >
-                <Select
-                  id={`termo-slot-capacity-${index}`}
-                  value={slot.capacity}
-                  onChange={(e) =>
-                    updateSlot(index, { capacity: e.target.value as SignatoryCapacity })
-                  }
-                  options={capacityOptions}
-                />
-              </Field>
-              {slot.capacity === 'Other' ? (
+        {/* Body clauses: each clause is itself a compact label/control table. */}
+        <Field label={tt('books.termo.editor.bodyLegend')} hint={tt('books.termo.editor.bodyHelp')}>
+          <div className="stack--tight termo-editor__collection">
+            {clauses.length === 0 ? (
+              <p className="field__hint">{tt('books.termo.editor.noClauses')}</p>
+            ) : null}
+            {clauses.map((clause, index) => (
+              <div className="field-table termo-editor__block" key={index}>
                 <Field
-                  label={tt('books.termo.signatory.other')}
-                  htmlFor={`termo-slot-note-${index}`}
-                  help={tt('books.termo.signatory.otherHelp')}
+                  label={tt('books.termo.editor.clauseHeading')}
+                  htmlFor={`termo-clause-heading-${index}`}
                 >
                   <Input
-                    id={`termo-slot-note-${index}`}
-                    value={slot.capacityNote}
-                    required
-                    placeholder={tt('books.termo.signatory.otherPlaceholder')}
-                    onChange={(e) => updateSlot(index, { capacityNote: e.target.value })}
+                    id={`termo-clause-heading-${index}`}
+                    value={clause.heading}
+                    onChange={(e) => updateClause(index, { heading: e.target.value })}
                   />
                 </Field>
-              ) : null}
-              <Field
-                label={tt('books.termo.signatory.email')}
-                htmlFor={`termo-slot-email-${index}`}
-                help={tt('books.termo.signatory.emailHelp')}
-              >
-                <Input
-                  id={`termo-slot-email-${index}`}
-                  type="email"
-                  value={slot.email}
-                  onChange={(e) => updateSlot(index, { email: e.target.value })}
-                />
-              </Field>
-              <Field
-                label={tt('books.termo.signatory.order')}
-                htmlFor={`termo-slot-order-${index}`}
-                help={tt('books.termo.signatory.orderHelp')}
-              >
-                <Input
-                  id={`termo-slot-order-${index}`}
-                  type="number"
-                  min={1}
-                  value={String(slot.order)}
-                  onChange={(e) => updateSlot(index, { order: Number(e.target.value) })}
-                />
-              </Field>
-              <Button
-                type="button"
-                variant="ghost"
-                icon={<Icon.Trash />}
-                onClick={() => setSlots((rows) => rows.filter((_, idx) => idx !== index))}
-              >
-                {tt('books.termo.editor.removeSignatory')}
-              </Button>
-            </div>
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            icon={<Icon.Plus />}
-            onClick={() =>
-              setSlots((rows) => [
-                ...rows,
-                {
-                  name: '',
-                  email: '',
-                  capacity: 'Manager',
-                  capacityNote: '',
-                  required: true,
-                  order: rows.length + 1,
-                },
-              ])
-            }
-          >
-            {tt('books.termo.editor.addSignatory')}
-          </Button>
-        </div>
-      </Field>
+                <Field
+                  label={tt('books.termo.editor.clauseText')}
+                  htmlFor={`termo-clause-text-${index}`}
+                >
+                  <TextArea
+                    id={`termo-clause-text-${index}`}
+                    rows={3}
+                    value={clause.text}
+                    onChange={(e) => updateClause(index, { text: e.target.value })}
+                  />
+                </Field>
+                <div className="termo-editor__block-actions">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Trash />}
+                    onClick={() => setClauses((rows) => rows.filter((_, idx) => idx !== index))}
+                  >
+                    {tt('books.termo.editor.removeClause')}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.Plus />}
+              onClick={() => setClauses((rows) => [...rows, { heading: '', text: '' }])}
+            >
+              {tt('books.termo.editor.addClause')}
+            </Button>
+          </div>
+        </Field>
 
-      {patch.error ? <ErrorNote error={patch.error} /> : null}
-      {advance.error ? <ErrorNote error={advance.error} /> : null}
-      <div className="form__actions">
-        <Button type="button" variant="secondary" onClick={onSave} disabled={busy}>
-          {patch.isPending ? tt('books.termo.editor.saving') : tt('books.termo.editor.save')}
-        </Button>
-        <Button
-          type="button"
-          variant="primary"
-          icon={<Icon.PenNib />}
-          onClick={onAdvance}
-          disabled={busy}
+        {/* Signatory slots use the same nested row table, including the required flag that was
+            previously persisted but not editable. */}
+        <Field
+          label={tt('books.termo.editor.signatoriesLegend')}
+          hint={tt('books.termo.rule.allowList')}
         >
-          {advance.isPending
-            ? tt('books.termo.action.advancing')
-            : tt('books.termo.action.advance')}
-        </Button>
+          <div className="stack--tight termo-editor__collection">
+            {slots.map((slot, index) => (
+              <div className="field-table termo-editor__block" key={index}>
+                <Field
+                  label={tt('books.termo.signatory.name')}
+                  htmlFor={`termo-slot-name-${index}`}
+                  help={tt('books.termo.signatory.nameHelp')}
+                >
+                  <Input
+                    id={`termo-slot-name-${index}`}
+                    value={slot.name}
+                    onChange={(e) => updateSlot(index, { name: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label={tt('books.termo.signatory.capacity')}
+                  htmlFor={`termo-slot-capacity-${index}`}
+                  help={tt('books.termo.signatory.capacityHelp')}
+                >
+                  <Select
+                    id={`termo-slot-capacity-${index}`}
+                    value={slot.capacity}
+                    onChange={(e) =>
+                      updateSlot(index, { capacity: e.target.value as SignatoryCapacity })
+                    }
+                    options={capacityOptions}
+                  />
+                </Field>
+                {slot.capacity === 'Other' ? (
+                  <Field
+                    label={tt('books.termo.signatory.other')}
+                    htmlFor={`termo-slot-note-${index}`}
+                    help={tt('books.termo.signatory.otherHelp')}
+                  >
+                    <Input
+                      id={`termo-slot-note-${index}`}
+                      value={slot.capacityNote}
+                      required
+                      placeholder={tt('books.termo.signatory.otherPlaceholder')}
+                      onChange={(e) => updateSlot(index, { capacityNote: e.target.value })}
+                    />
+                  </Field>
+                ) : null}
+                <Field
+                  label={tt('books.termo.signatory.email')}
+                  htmlFor={`termo-slot-email-${index}`}
+                  help={tt('books.termo.signatory.emailHelp')}
+                >
+                  <Input
+                    id={`termo-slot-email-${index}`}
+                    type="email"
+                    value={slot.email}
+                    onChange={(e) => updateSlot(index, { email: e.target.value })}
+                  />
+                </Field>
+                <Field
+                  label={tt('books.termo.signatory.order')}
+                  htmlFor={`termo-slot-order-${index}`}
+                  help={tt('books.termo.signatory.orderHelp')}
+                >
+                  <Input
+                    id={`termo-slot-order-${index}`}
+                    type="number"
+                    min={1}
+                    value={String(slot.order)}
+                    onChange={(e) => updateSlot(index, { order: Number(e.target.value) })}
+                  />
+                </Field>
+                <Field label={tt('books.termo.signatory.required')}>
+                  <Toggle
+                    id={`termo-slot-required-${index}`}
+                    checked={slot.required}
+                    onChange={(required) => updateSlot(index, { required })}
+                    label={<span className="sr-only">{tt('books.termo.signatory.required')}</span>}
+                  />
+                </Field>
+                <div className="termo-editor__block-actions">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    icon={<Icon.Trash />}
+                    onClick={() => setSlots((rows) => rows.filter((_, idx) => idx !== index))}
+                  >
+                    {tt('books.termo.editor.removeSignatory')}
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button
+              type="button"
+              variant="secondary"
+              icon={<Icon.Plus />}
+              onClick={() =>
+                setSlots((rows) => [
+                  ...rows,
+                  {
+                    name: '',
+                    email: '',
+                    capacity: 'Manager',
+                    capacityNote: '',
+                    required: true,
+                    order: rows.length + 1,
+                  },
+                ])
+              }
+            >
+              {tt('books.termo.editor.addSignatory')}
+            </Button>
+          </div>
+        </Field>
+
+        {patch.error ? <ErrorNote error={patch.error} /> : null}
+        {advance.error ? <ErrorNote error={advance.error} /> : null}
+        <Field
+          label={tt('books.termo.editor.actionsLegend')}
+          hint={tt('books.termo.action.advanceHint')}
+        >
+          <div className="form__actions termo-editor__actions">
+            <Button type="button" variant="secondary" onClick={onSave} disabled={busy}>
+              {patch.isPending ? tt('books.termo.editor.saving') : tt('books.termo.editor.save')}
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.PenNib />}
+              onClick={onAdvance}
+              disabled={busy}
+            >
+              {advance.isPending
+                ? tt('books.termo.action.advancing')
+                : tt('books.termo.action.advance')}
+            </Button>
+          </div>
+        </Field>
       </div>
-      <p className="field__hint">{tt('books.termo.action.advanceHint')}</p>
     </div>
   );
 }
@@ -535,12 +556,12 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
   const openFailedClosed = openBook.error instanceof ApiError && openBook.error.status === 409;
 
   return (
-    <div className="stack">
+    <div className="stack termo-editor">
       <InlineWarning tone="info" title={tt('books.termo.signing.legend')}>
         {tt('books.termo.signing.intro')}
       </InlineWarning>
 
-      <dl className="deflist">
+      <dl className="deflist termo-status-table">
         <div>
           <dt>{tt('books.termo.editor.policyLabel')}</dt>
           <dd>{formatPolicy(termo.completion_policy)}</dd>
@@ -560,17 +581,20 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
         </div>
       </dl>
 
-      <ul className="stack--tight" style={{ listStyle: 'none', padding: 0 }}>
+      <ul
+        className="termo-signatories-table"
+        aria-label={tt('books.termo.editor.signatoriesLegend')}
+      >
         {orderedSlots.map((slot) => (
-          <li className="stack--tight" key={slot.id} style={{ listStyle: 'none' }}>
-            <div className="rowline">
-              <span>
-                {slot.name || '—'}
-                {' · '}
-                {slot.capacity === 'Other'
-                  ? (slot.capacity_note ?? tt('books.termo.signatory.other'))
-                  : signatoryCapacityLabels[slot.capacity]}
-              </span>
+          <li className="termo-signatory-row" key={slot.id}>
+            <span className="termo-signatory-row__identity">
+              {slot.name || '—'}
+              {' · '}
+              {slot.capacity === 'Other'
+                ? (slot.capacity_note ?? tt('books.termo.signatory.other'))
+                : signatoryCapacityLabels[slot.capacity]}
+            </span>
+            <div className="termo-signatory-row__state">
               {slot.signed ? (
                 <Badge tone="ok">{tt('books.termo.signing.slotDone')}</Badge>
               ) : slot.id === nextSlotId ? (
@@ -590,19 +614,19 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
               )}
             </div>
             {slot.id === nextSlotId && slot.id === activeSlotId && !slot.signed ? (
-              <TermoSlotPkcs12Signer
-                slotId={slot.id}
-                sign={(body) => sign.mutateAsync(body)}
-                isPending={sign.isPending}
-                onSigned={() => setActiveSlotId(null)}
-                onCancel={() => setActiveSlotId(null)}
-              />
+              <div className="termo-signatory-row__expanded">
+                <TermoSlotPkcs12Signer
+                  slotId={slot.id}
+                  sign={(body) => sign.mutateAsync(body)}
+                  isPending={sign.isPending}
+                  onSigned={() => setActiveSlotId(null)}
+                  onCancel={() => setActiveSlotId(null)}
+                />
+              </div>
             ) : null}
           </li>
         ))}
       </ul>
-
-      <TermoDocumentActions termo={termo} />
 
       {openFailedClosed ? (
         <InlineWarning tone="warn" title={tt('books.termo.open.notSignedTitle')}>
@@ -612,18 +636,26 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
         <ErrorNote error={openBook.error} />
       ) : null}
 
-      <div className="form__actions">
-        <Button
-          type="button"
-          variant="primary"
-          icon={<Icon.BookPlus />}
-          onClick={() => openBook.mutate(undefined)}
-          disabled={openBook.isPending}
-        >
-          {openBook.isPending ? tt('books.termo.action.opening') : tt('books.termo.action.open')}
-        </Button>
+      <div className="termo-action-row">
+        <span className="field__label">{tt('books.termo.editor.actionsLegend')}</span>
+        <div className="stack--tight">
+          <TermoDocumentActions termo={termo} />
+          <div className="form__actions">
+            <Button
+              type="button"
+              variant="primary"
+              icon={<Icon.BookPlus />}
+              onClick={() => openBook.mutate(undefined)}
+              disabled={openBook.isPending}
+            >
+              {openBook.isPending
+                ? tt('books.termo.action.opening')
+                : tt('books.termo.action.open')}
+            </Button>
+          </div>
+          <p className="field__hint">{tt('books.termo.action.openHint')}</p>
+        </div>
       </div>
-      <p className="field__hint">{tt('books.termo.action.openHint')}</p>
     </div>
   );
 }
@@ -632,11 +664,11 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
 function TermoSealedView({ termo }: { termo: TermoInstrumentView }) {
   const tt = useTermoT();
   return (
-    <div className="stack">
+    <div className="stack termo-editor">
       <InlineWarning tone="info" title={tt('books.termo.state.Sealed')}>
         {tt('books.termo.state.SealedHint')}
       </InlineWarning>
-      <dl className="deflist">
+      <dl className="deflist termo-status-table">
         <div>
           <dt>{tt('books.termo.editor.titleLabel')}</dt>
           <dd>{termo.title}</dd>
@@ -646,7 +678,10 @@ function TermoSealedView({ termo }: { termo: TermoInstrumentView }) {
           <dd>{termo.fields.purpose ?? '—'}</dd>
         </div>
       </dl>
-      <TermoDocumentActions termo={termo} />
+      <div className="termo-action-row">
+        <span className="field__label">{tt('books.termo.editor.actionsLegend')}</span>
+        <TermoDocumentActions termo={termo} />
+      </div>
     </div>
   );
 }
