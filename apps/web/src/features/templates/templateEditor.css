@@ -648,6 +648,7 @@
   justify-content: flex-end;
   padding: 0;
   overflow: hidden;
+  overscroll-behavior: contain;
   background: color-mix(in srgb, #000 42%, transparent);
 }
 

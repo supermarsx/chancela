@@ -188,8 +188,12 @@ describe('TemplateBlocksEditor', () => {
     configure.focus();
     fireEvent.click(configure);
 
-    const drawer = screen.getByRole('dialog', { name: 'Definições do bloco · Título' });
+    const drawer = screen.getByRole('dialog', {
+      name: 'Bloco 1 Definições do bloco · Título',
+    });
     expect(drawer.getAttribute('aria-modal')).toBe('true');
+    expect(container.hasAttribute('inert')).toBe(true);
+    expect(document.body.style.overflow).toBe('hidden');
     expect(within(drawer).getByLabelText('Tipo de bloco')).toBeTruthy();
     expect(within(drawer).getByLabelText('Nível do título')).toBeTruthy();
     expect(within(drawer).getAllByRole('button', { name: 'Fechar definições' })).toHaveLength(2);
@@ -202,9 +206,99 @@ describe('TemplateBlocksEditor', () => {
 
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() =>
-      expect(screen.queryByRole('dialog', { name: 'Definições do bloco · Título' })).toBeNull(),
+      expect(
+        screen.queryByRole('dialog', { name: 'Bloco 1 Definições do bloco · Título' }),
+      ).toBeNull(),
     );
+    expect(container.hasAttribute('inert')).toBe(false);
+    expect(document.body.style.overflow).toBe('');
     expect(document.activeElement).toBe(configure);
+  });
+
+  it('preserves the inspector across safe kind changes and destructive confirmation cancellation', async () => {
+    renderWithProviders(<Harness initial={[{ kind: 'PageBreak' }]} presentation="document" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar bloco 1' }));
+    let drawer = screen.getByRole('dialog', {
+      name: 'Bloco 1 Definições do bloco · Quebra de página',
+    });
+    fireEvent.change(within(drawer).getByLabelText('Tipo de bloco'), {
+      target: { value: 'Rule' },
+    });
+    drawer = screen.getByRole('dialog', {
+      name: 'Bloco 1 Definições do bloco · Linha horizontal',
+    });
+    expect(screen.queryByRole('dialog', { name: 'Alterar o tipo deste bloco?' })).toBeNull();
+
+    fireEvent.change(within(drawer).getByLabelText('Tipo de bloco'), {
+      target: { value: 'Heading' },
+    });
+    drawer = screen.getByRole('dialog', {
+      name: 'Bloco 1 Definições do bloco · Título',
+    });
+    fireEvent.change(within(drawer).getByLabelText('Texto do modelo'), {
+      target: { value: 'Título preservado' },
+    });
+    fireEvent.change(within(drawer).getByLabelText('Tipo de bloco'), {
+      target: { value: 'Paragraph' },
+    });
+
+    const confirmation = screen.getByRole('dialog', { name: 'Alterar o tipo deste bloco?' });
+    expect(
+      screen.queryByRole('dialog', { name: 'Bloco 1 Definições do bloco · Título' }),
+    ).toBeNull();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Cancelar' }));
+
+    drawer = await screen.findByRole('dialog', {
+      name: 'Bloco 1 Definições do bloco · Título',
+    });
+    expect((within(drawer).getByLabelText('Texto do modelo') as HTMLTextAreaElement).value).toBe(
+      'Título preservado',
+    );
+    expect(drawer.contains(document.activeElement)).toBe(true);
+
+    fireEvent.change(within(drawer).getByLabelText('Tipo de bloco'), {
+      target: { value: 'Paragraph' },
+    });
+    fireEvent.click(
+      within(screen.getByRole('dialog', { name: 'Alterar o tipo deste bloco?' })).getByRole(
+        'button',
+        { name: 'Alterar tipo' },
+      ),
+    );
+    drawer = await screen.findByRole('dialog', {
+      name: 'Bloco 1 Definições do bloco · Parágrafo',
+    });
+    expect(currentBlocks()).toEqual([{ kind: 'Paragraph', template: '' }]);
+    expect(drawer.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole('button', { name: 'Configurar bloco 1' }),
+      ),
+    );
+  });
+
+  it('pins the drawer to the right edge and collapses it to full width at the mobile breakpoint', async () => {
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    const css = readFileSync('src/features/templates/templateEditor.css', 'utf8').replace(
+      /\r\n/gu,
+      '\n',
+    );
+
+    expect(css).toMatch(
+      /\.template-block-inspector__backdrop \{[\s\S]*?justify-content: flex-end;[\s\S]*?overflow: hidden;[\s\S]*?overscroll-behavior: contain;/u,
+    );
+    expect(css).toMatch(
+      /\.template-block-inspector \{[\s\S]*?width: min\(31rem, calc\(100vw - 2rem\)\);[\s\S]*?height: 100%;/u,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 720px\) \{[\s\S]*?\.template-block-inspector \{\s*width: 100%;\s*border-left: 0;/u,
+    );
   });
 
   it('offers every block kind in the split Add menu and inserts at the invoked position', async () => {

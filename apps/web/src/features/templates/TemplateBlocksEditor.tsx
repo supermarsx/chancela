@@ -64,6 +64,7 @@ interface PendingKindChange {
   index: number;
   fromKind: BlockKind;
   toKind: BlockKind;
+  reopenInspector: boolean;
 }
 
 type BlockFocusTarget = 'up' | 'down' | 'insert' | 'duplicate' | 'kind';
@@ -817,8 +818,35 @@ function BlockInspectorDrawer({
 }) {
   const bt = useTemplatesEditorT();
   const titleId = useId();
+  const blockLabelId = useId();
   const open = block !== null && index !== null;
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const backdropRef = useRef<HTMLDivElement>(null);
+
+  // `aria-modal` is only honest when the rest of the document is unavailable. Inert every body
+  // sibling while this portal is open and restore the exact pre-existing state before the passive
+  // focus-trap cleanup returns focus to the block's Configure button.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const backdrop = backdropRef.current;
+    if (!backdrop) return;
+    const siblings = Array.from(document.body.children).filter(
+      (element): element is HTMLElement => element instanceof HTMLElement && element !== backdrop,
+    );
+    const previouslyInert = siblings.map((element) => ({
+      element,
+      inert: element.hasAttribute('inert'),
+    }));
+    const previousOverflow = document.body.style.overflow;
+    siblings.forEach((element) => element.setAttribute('inert', ''));
+    document.body.style.overflow = 'hidden';
+    return () => {
+      previouslyInert.forEach(({ element, inert }) => {
+        if (!inert) element.removeAttribute('inert');
+      });
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -839,6 +867,7 @@ function BlockInspectorDrawer({
   return createPortal(
     <div
       className="modal-backdrop template-block-inspector__backdrop"
+      ref={backdropRef}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -848,11 +877,13 @@ function BlockInspectorDrawer({
         ref={trapRef}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={titleId}
+        aria-labelledby={`${blockLabelId} ${titleId}`}
       >
         <header className="template-block-inspector__head">
           <div>
-            <p className="card__label">{blockLabel}</p>
+            <p className="card__label" id={blockLabelId}>
+              {blockLabel}
+            </p>
             <h2 id={titleId}>
               {bt('templates.editor.blocks.inspector')} · {bt(kindCopyKey[block.kind])}
             </h2>
@@ -967,6 +998,19 @@ export function TemplateBlocksEditor({
     if (disabled || (inspectorIndex !== null && !inspectedBlock)) setInspectorIndex(null);
   }, [disabled, inspectedBlock, inspectorIndex]);
 
+  const closeInspector = () => {
+    const closedIndex = inspectorIndex;
+    setInspectorIndex(null);
+    if (closedIndex === null) return;
+    window.setTimeout(() => {
+      editorRef.current
+        ?.querySelector<HTMLButtonElement>(
+          `[data-template-block-index="${closedIndex}"] [data-template-block-action="configure"]:not(:disabled)`,
+        )
+        ?.focus();
+    }, 0);
+  };
+
   const writeWithFocus = (
     next: TemplateBlockSpec[],
     index: number,
@@ -1002,10 +1046,16 @@ export function TemplateBlocksEditor({
     next.splice(index + 1, 0, duplicateBlock);
     writeWithFocus(next, index + 1, 'duplicate');
   };
-  const changeKind = (index: number, block: TemplateBlockSpec, toKind: BlockKind) => {
+  const changeKind = (
+    index: number,
+    block: TemplateBlockSpec,
+    toKind: BlockKind,
+    reopenInspector = false,
+  ) => {
     if (block.kind === toKind) return;
     if (hasDiscardableFields(block)) {
-      setPendingKindChange({ index, fromKind: block.kind, toKind });
+      if (reopenInspector) setInspectorIndex(null);
+      setPendingKindChange({ index, fromKind: block.kind, toKind, reopenInspector });
       return;
     }
     update(index, newTemplateBlock(toKind));
@@ -1246,16 +1296,18 @@ export function TemplateBlocksEditor({
         }}
         onKindChange={(kind) => {
           if (inspectorIndex === null || !inspectedBlock) return;
-          const index = inspectorIndex;
-          setInspectorIndex(null);
-          changeKind(index, inspectedBlock, kind);
+          changeKind(inspectorIndex, inspectedBlock, kind, true);
         }}
-        onClose={() => setInspectorIndex(null)}
+        onClose={closeInspector}
       />
 
       <ConfirmActionModal
         open={!disabled && pendingKindChange !== null}
-        onClose={() => setPendingKindChange(null)}
+        onClose={() => {
+          const reopenIndex = pendingKindChange?.reopenInspector ? pendingKindChange.index : null;
+          setPendingKindChange(null);
+          if (reopenIndex !== null) setInspectorIndex(reopenIndex);
+        }}
         title={bt('templates.editor.blocks.changeKind.title')}
         intro={
           <p>
