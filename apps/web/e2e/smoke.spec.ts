@@ -18,7 +18,7 @@ test('boots the SPA with the leather background and the four-tab work bar', asyn
   // Archive and utility destinations are icon controls at the right-hand end of the bar.
   const tabs = page.getByTestId('tab-bar').getByRole('link');
   await expect(tabs).toHaveCount(4);
-  await expect(tabs).toHaveText(['Painel', 'Entidades', 'Livros', 'Minutas']);
+  await expect(tabs).toHaveText(['Painel', 'Entidades', 'Livros', 'Modelos']);
 
   // The four icon-bar destinations are addressed by ACCESSIBLE NAME:
   // they are icon-only, so if the `aria-label` were ever dropped in favour of a tooltip alone
@@ -102,11 +102,11 @@ test('Legislação shelf filters live via search in Ferramentas', async ({ page 
   await expect(page).toHaveURL(/[?&]q=condominio/);
 });
 
-test('legacy /templates redirects to the Minutas catalog', async ({ page }) => {
+test('legacy /templates redirects to the Modelos catalog', async ({ page }) => {
   await signInAt(page, '/templates');
 
   await expect(page).toHaveURL(/\/templates$/);
-  await expect(page.getByRole('heading', { name: 'Minutas', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Modelos', exact: true })).toBeVisible();
   await expect(page.getByRole('searchbox', { name: 'Pesquisa', exact: true })).toBeVisible();
 });
 

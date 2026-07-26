@@ -105,12 +105,19 @@ test('malicious and long entity text is escaped on mobile without executing dial
 
   await signInAt(page, '/settings');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.route('**/v1/entities', async (route) => {
+  await page.route('**/v1/entities/page**', async (route) => {
     if (
       route.request().method() === 'GET' &&
-      new URL(route.request().url()).pathname === '/v1/entities'
+      new URL(route.request().url()).pathname === '/v1/entities/page'
     ) {
-      await fulfillJson(route, [entityFixture({ name: maliciousName, seat: longTail })]);
+      await fulfillJson(route, {
+        items: [entityFixture({ name: maliciousName, seat: longTail })],
+        offset: 0,
+        limit: 50,
+        has_more: false,
+        next_offset: null,
+        next_cursor: null,
+      });
       return;
     }
     await route.continue();

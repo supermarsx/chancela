@@ -24,7 +24,7 @@ test('template PDF/A preview renders through real pdf.js and remains exclusive w
     await route.fulfill({
       status: 200,
       contentType: 'text/markdown; charset=utf-8',
-      body: '# Ata de Assembleia Geral\n\nPré-visualização estrutural Markdown.',
+      body: '# Ata de Assembleia Geral\n\nConteúdo integral da ata.',
     });
   });
   page.on('pageerror', (error) => {
@@ -55,14 +55,14 @@ test('template PDF/A preview renders through real pdf.js and remains exclusive w
       ),
     )
     .toBe(true);
-  await expect(page.getByLabel('Pré-visualização Markdown estrutural completa')).toHaveCount(0);
+  await expect(page.getByLabel('Conteúdo da pré-visualização Markdown')).toHaveCount(0);
   expect(compatibilityErrors).toEqual([]);
 
   await markdownTab.click();
 
   await expect(markdownTab).toHaveAttribute('aria-selected', 'true');
   await expect(pdfTab).toHaveAttribute('aria-selected', 'false');
-  await expect(page.getByLabel('Pré-visualização Markdown estrutural completa')).toBeVisible();
+  await expect(page.getByLabel('Conteúdo da pré-visualização Markdown')).toBeVisible();
   await expect(page.locator('.template-pdf-preview')).toHaveCount(0);
   await expect(page.locator('canvas.template-pdf-preview__canvas')).toHaveCount(0);
   expect(compatibilityErrors).toEqual([]);
