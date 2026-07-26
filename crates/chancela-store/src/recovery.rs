@@ -2144,6 +2144,7 @@ fn domain_table_names() -> Vec<String> {
         // Derived full-search rows can retain source text after the authoritative row is gone.
         "search_documents",
         "search_index_state",
+        "search_projection_control",
     ]
     .into_iter()
     .map(String::from)
@@ -2174,7 +2175,8 @@ fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
 /// operation even though the tables are technically rebuildable.
 fn clear_search_projection(tx: &Tx<'_>) -> Result<(), StoreError> {
     tx.execute_recovery_batch("DELETE FROM search_documents; DELETE FROM search_index_state;")?;
-    tx.put_search_index_state(&crate::search_projection_tombstone())
+    tx.put_search_index_state(&crate::search_projection_tombstone())?;
+    tx.fence_search_projection(&crate::now_rfc3339())
 }
 
 /// Clear the import isolation namespace.

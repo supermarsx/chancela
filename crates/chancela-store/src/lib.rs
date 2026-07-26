@@ -64,6 +64,8 @@ use chancela_ledger::{
 use chancela_registry::RegistryExtract;
 use chancela_search::{
     IndexOperation as SearchIndexOperation, SearchDocument, SearchIndexPhase, SearchIndexState,
+    SearchProjectionCheckpoint, SearchProjectionCommand, SearchProjectionControl,
+    SearchProjectionPublishOutcome, SearchProjectionPublishRejection, SearchProjectorLease,
 };
 use rand_core::{OsRng, RngCore};
 use rusqlite::types::Value;
@@ -86,6 +88,21 @@ pub const SETTINGS_SINGLETON_ID: &str = "settings";
 /// Fixed primary-key value for the one durable full-search lifecycle/progress row.
 pub const SEARCH_INDEX_STATE_SINGLETON_ID: &str = "main";
 
+/// Fixed primary-key value for the durable cross-process search-projector control row.
+pub const SEARCH_PROJECTION_CONTROL_SINGLETON_ID: &str = "main";
+
+const SEARCH_PROJECTION_CONTROL_SELECT_SQLITE: &str = "\
+SELECT source_revision, fence_token, published_source_revision, published_fence_token, \
+       published_command_generation, command, command_generation, lease_id, lease_owner, \
+       lease_heartbeat_at, lease_expires_at_unix_ms, updated_at \
+FROM search_projection_control WHERE id = ?1";
+#[cfg(feature = "postgres")]
+const SEARCH_PROJECTION_CONTROL_SELECT_PG: &str = "\
+SELECT source_revision, fence_token, published_source_revision, published_fence_token, \
+       published_command_generation, command, command_generation, lease_id, lease_owner, \
+       lease_heartbeat_at, lease_expires_at_unix_ms, updated_at \
+FROM search_projection_control WHERE id = $1";
+
 fn search_projection_tombstone() -> SearchIndexState {
     SearchIndexState {
         phase: SearchIndexPhase::Starting,
@@ -95,6 +112,196 @@ fn search_projection_tombstone() -> SearchIndexState {
             .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
         ..SearchIndexState::default()
     }
+}
+
+fn search_projection_control_tombstone() -> SearchProjectionControl {
+    SearchProjectionControl {
+        checkpoint: SearchProjectionCheckpoint {
+            source_revision: 0,
+            fence_token: 1,
+            command_generation: 1,
+        },
+        published_checkpoint: None,
+        command: SearchProjectionCommand::Rebuild,
+        lease: None,
+        updated_at: now_rfc3339(),
+    }
+}
+
+fn now_rfc3339() -> String {
+    OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned())
+}
+
+fn now_unix_millis() -> i64 {
+    i64::try_from(OffsetDateTime::now_utc().unix_timestamp_nanos() / 1_000_000).unwrap_or(i64::MAX)
+}
+
+fn lease_ttl_millis(ttl: std::time::Duration) -> i64 {
+    i64::try_from(ttl.as_millis().max(1)).unwrap_or(i64::MAX)
+}
+
+#[derive(Debug)]
+struct RawSearchProjectionControl {
+    source_revision: i64,
+    fence_token: i64,
+    published_source_revision: Option<i64>,
+    published_fence_token: Option<i64>,
+    published_command_generation: Option<i64>,
+    command: String,
+    command_generation: i64,
+    lease_id: Option<String>,
+    lease_owner: Option<String>,
+    lease_heartbeat_at: Option<String>,
+    lease_expires_at_unix_ms: Option<i64>,
+    updated_at: String,
+}
+
+fn decode_search_projection_control(
+    raw: RawSearchProjectionControl,
+) -> Result<SearchProjectionControl, StoreError> {
+    let checkpoint = SearchProjectionCheckpoint {
+        source_revision: nonnegative_i64_to_u64("search source revision", raw.source_revision)?,
+        fence_token: nonnegative_i64_to_u64("search fence token", raw.fence_token)?,
+        command_generation: nonnegative_i64_to_u64(
+            "search command generation",
+            raw.command_generation,
+        )?,
+    };
+    let published_checkpoint = match (
+        raw.published_source_revision,
+        raw.published_fence_token,
+        raw.published_command_generation,
+    ) {
+        (None, None, None) => None,
+        (Some(source_revision), Some(fence_token), Some(command_generation)) => {
+            Some(SearchProjectionCheckpoint {
+                source_revision: nonnegative_i64_to_u64(
+                    "published search source revision",
+                    source_revision,
+                )?,
+                fence_token: nonnegative_i64_to_u64("published search fence token", fence_token)?,
+                command_generation: nonnegative_i64_to_u64(
+                    "published search command generation",
+                    command_generation,
+                )?,
+            })
+        }
+        _ => {
+            return Err(invalid_store_data(
+                "published search checkpoint columns are only partially populated",
+            ));
+        }
+    };
+    let command = match raw.command.as_str() {
+        "reconcile" => SearchProjectionCommand::Reconcile,
+        "rebuild" => SearchProjectionCommand::Rebuild,
+        "pause" => SearchProjectionCommand::Pause,
+        other => {
+            return Err(invalid_store_data(format!(
+                "unknown durable search projection command {other:?}"
+            )));
+        }
+    };
+    let lease = match (
+        raw.lease_id,
+        raw.lease_owner,
+        raw.lease_heartbeat_at,
+        raw.lease_expires_at_unix_ms,
+    ) {
+        (None, None, None, None) => None,
+        (Some(lease_id), Some(owner), Some(heartbeat_at), Some(expires_at_unix_ms)) => {
+            Some(SearchProjectorLease {
+                lease_id,
+                owner,
+                heartbeat_at,
+                expires_at_unix_ms,
+                checkpoint,
+            })
+        }
+        _ => {
+            return Err(invalid_store_data(
+                "durable search projector lease columns are only partially populated",
+            ));
+        }
+    };
+    Ok(SearchProjectionControl {
+        checkpoint,
+        published_checkpoint,
+        command,
+        lease,
+        updated_at: raw.updated_at,
+    })
+}
+
+fn nonnegative_i64_to_u64(label: &str, value: i64) -> Result<u64, StoreError> {
+    u64::try_from(value).map_err(|_| invalid_store_data(format!("{label} is negative")))
+}
+
+fn invalid_store_data(message: impl Into<String>) -> StoreError {
+    StoreError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        message.into(),
+    ))
+}
+
+fn read_sqlite_search_projection_control(
+    conn: &rusqlite::Connection,
+) -> Result<SearchProjectionControl, StoreError> {
+    let raw = conn
+        .query_row(
+            SEARCH_PROJECTION_CONTROL_SELECT_SQLITE,
+            params![SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+            |row| {
+                Ok(RawSearchProjectionControl {
+                    source_revision: row.get(0)?,
+                    fence_token: row.get(1)?,
+                    published_source_revision: row.get(2)?,
+                    published_fence_token: row.get(3)?,
+                    published_command_generation: row.get(4)?,
+                    command: row.get(5)?,
+                    command_generation: row.get(6)?,
+                    lease_id: row.get(7)?,
+                    lease_owner: row.get(8)?,
+                    lease_heartbeat_at: row.get(9)?,
+                    lease_expires_at_unix_ms: row.get(10)?,
+                    updated_at: row.get(11)?,
+                })
+            },
+        )
+        .optional()?
+        .ok_or_else(|| invalid_store_data("search projection control singleton is missing"))?;
+    decode_search_projection_control(raw)
+}
+
+fn projection_publish_rejection(
+    control: &SearchProjectionControl,
+    lease: &SearchProjectorLease,
+    checkpoint: SearchProjectionCheckpoint,
+    now_ms: i64,
+) -> Option<SearchProjectionPublishRejection> {
+    let current_lease = control.lease.as_ref();
+    if !current_lease.is_some_and(|current| {
+        current.lease_id == lease.lease_id
+            && current.owner == lease.owner
+            && current.expires_at_unix_ms > now_ms
+    }) {
+        return Some(SearchProjectionPublishRejection::LeaseLost);
+    }
+    if control.checkpoint.fence_token != checkpoint.fence_token {
+        return Some(SearchProjectionPublishRejection::FenceChanged);
+    }
+    if control.checkpoint.source_revision != checkpoint.source_revision {
+        return Some(SearchProjectionPublishRejection::SourceChanged);
+    }
+    if control.checkpoint.command_generation != checkpoint.command_generation {
+        return Some(SearchProjectionPublishRejection::CommandChanged);
+    }
+    if control.command == SearchProjectionCommand::Pause {
+        return Some(SearchProjectionPublishRejection::Paused);
+    }
+    None
 }
 const DOCUMENT_SEARCH_METADATA_SELECT: &str = "SELECT id, act_id, template_id, pdf_digest, profile, created_at \
      FROM documents ORDER BY created_at ASC, rowid ASC";
@@ -3550,6 +3757,191 @@ impl Store {
             .transpose()
     }
 
+    /// Read the durable cross-process projector checkpoint, command, and current lease.
+    pub fn search_projection_control(&self) -> Result<SearchProjectionControl, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.search_projection_control();
+        }
+        let guard = self.locked_conn()?;
+        read_sqlite_search_projection_control(&guard)
+    }
+
+    /// Persist a projector command. Repeating the same command still advances its generation, so
+    /// two explicit rebuild requests cannot collapse into one across process restarts.
+    ///
+    /// Command writes use the ordinary cluster-writer gate but are themselves derived-control
+    /// mutations, not authoritative corpus mutations, so they do not advance `source_revision`.
+    pub fn request_search_projection_command(
+        &self,
+        command: SearchProjectionCommand,
+    ) -> Result<SearchProjectionControl, StoreError> {
+        self.persist_result_internal(
+            |tx| {
+                tx.request_search_projection_command(command)?;
+                tx.search_projection_control()
+            },
+            false,
+        )
+    }
+
+    /// Atomically acquire the single expiring projector lease.
+    ///
+    /// Any active lease returns `Ok(None)`, including one with the same owner label. Only the
+    /// opaque `lease_id` may renew/release a live lease; a restarted or duplicate process waits for
+    /// expiry before taking over. Every successful acquisition mints a new fencing token.
+    pub fn try_acquire_search_projector_lease(
+        &self,
+        owner: &str,
+        ttl: std::time::Duration,
+    ) -> Result<Option<SearchProjectorLease>, StoreError> {
+        if owner.trim().is_empty() {
+            return Err(invalid_store_data(
+                "search projector lease owner must not be empty",
+            ));
+        }
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.try_acquire_search_projector_lease(owner, ttl);
+        }
+
+        let now_ms = now_unix_millis();
+        let expires_ms = now_ms.saturating_add(lease_ttl_millis(ttl));
+        let heartbeat_at = now_rfc3339();
+        let lease_id = uuid::Uuid::new_v4().to_string();
+        let mut guard = self.locked_conn()?;
+        let txn = guard.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = txn.execute(
+            "UPDATE search_projection_control SET lease_id = ?1, lease_owner = ?2, \
+             lease_heartbeat_at = ?3, lease_expires_at_unix_ms = ?4, updated_at = ?3 \
+             WHERE id = ?5 AND (lease_id IS NULL OR lease_expires_at_unix_ms <= ?6)",
+            params![
+                lease_id,
+                owner,
+                heartbeat_at,
+                expires_ms,
+                SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                now_ms
+            ],
+        )?;
+        if changed == 0 {
+            txn.rollback()?;
+            return Ok(None);
+        }
+        let control = read_sqlite_search_projection_control(&txn)?;
+        txn.commit()?;
+        Ok(control.lease)
+    }
+
+    /// Extend a live projector lease. An expired/replaced lease is never revived.
+    pub fn heartbeat_search_projector_lease(
+        &self,
+        lease: &SearchProjectorLease,
+        ttl: std::time::Duration,
+    ) -> Result<bool, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.heartbeat_search_projector_lease(lease, ttl);
+        }
+        let now_ms = now_unix_millis();
+        let expires_ms = now_ms.saturating_add(lease_ttl_millis(ttl));
+        let heartbeat_at = now_rfc3339();
+        let mut guard = self.locked_conn()?;
+        let txn = guard.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = txn.execute(
+            "UPDATE search_projection_control SET lease_heartbeat_at = ?1, \
+             lease_expires_at_unix_ms = ?2, updated_at = ?1 \
+             WHERE id = ?3 AND lease_id = ?4 AND lease_owner = ?5 \
+                 AND lease_expires_at_unix_ms > ?6",
+            params![
+                heartbeat_at,
+                expires_ms,
+                SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                lease.lease_id,
+                lease.owner,
+                now_ms
+            ],
+        )?;
+        txn.commit()?;
+        Ok(changed == 1)
+    }
+
+    /// Release a live lease without disturbing a replacement lease.
+    pub fn release_search_projector_lease(
+        &self,
+        lease: &SearchProjectorLease,
+    ) -> Result<bool, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.release_search_projector_lease(lease);
+        }
+        let updated_at = now_rfc3339();
+        let mut guard = self.locked_conn()?;
+        let txn = guard.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let changed = txn.execute(
+            "UPDATE search_projection_control SET lease_id = NULL, lease_owner = NULL, \
+             lease_heartbeat_at = NULL, lease_expires_at_unix_ms = NULL, updated_at = ?1 \
+             WHERE id = ?2 AND lease_id = ?3 AND lease_owner = ?4",
+            params![
+                updated_at,
+                SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                lease.lease_id,
+                lease.owner
+            ],
+        )?;
+        txn.commit()?;
+        Ok(changed == 1)
+    }
+
+    /// Atomically publish one complete/incremental projection transaction after validating the
+    /// projector lease and optimistic source checkpoint.
+    ///
+    /// The authoritative-source revision is checked under the same database write lock as every
+    /// projection row and lifecycle-state mutation. A concurrent source commit, destructive fence,
+    /// operator command, lease expiry, or lease takeover therefore rejects the whole batch without
+    /// exposing a partial durable generation.
+    pub fn publish_search_projection(
+        &self,
+        lease: &SearchProjectorLease,
+        checkpoint: SearchProjectionCheckpoint,
+        operations: &[SearchIndexOperation],
+        state: &SearchIndexState,
+    ) -> Result<SearchProjectionPublishOutcome, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.publish_search_projection(lease, checkpoint, operations, state);
+        }
+        let now_ms = now_unix_millis();
+        let mut guard = self.locked_conn()?;
+        let txn = guard.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let control = read_sqlite_search_projection_control(&txn)?;
+        if let Some(reason) = projection_publish_rejection(&control, lease, checkpoint, now_ms) {
+            txn.rollback()?;
+            return Ok(SearchProjectionPublishOutcome::Rejected { reason, control });
+        }
+        let tx = Tx {
+            kind: TxKind::Sqlite(txn),
+        };
+        for operation in operations {
+            match operation {
+                SearchIndexOperation::Upsert(document) => {
+                    tx.upsert_search_document(document)?;
+                }
+                SearchIndexOperation::Delete(id) => {
+                    tx.delete_search_document(id)?;
+                }
+            }
+        }
+        tx.put_search_index_state(state)?;
+        tx.record_published_search_checkpoint(checkpoint, &now_rfc3339())?;
+        tx.commit()?;
+        Ok(SearchProjectionPublishOutcome::Published {
+            checkpoint,
+            generation: state.generation,
+            document_count: state.document_count,
+        })
+    }
+
     /// Atomically apply one bounded incremental index batch and persist the matching progress
     /// state. Search projections are derived data and intentionally do not append ledger events;
     /// the admin commands that trigger rebuild/pause/resume are audited by the API.
@@ -3558,19 +3950,22 @@ impl Store {
         operations: &[SearchIndexOperation],
         state: &SearchIndexState,
     ) -> Result<(), StoreError> {
-        self.persist(|tx| {
-            for operation in operations {
-                match operation {
-                    SearchIndexOperation::Upsert(document) => {
-                        tx.upsert_search_document(document)?;
-                    }
-                    SearchIndexOperation::Delete(id) => {
-                        tx.delete_search_document(id)?;
+        self.persist_result_internal(
+            |tx| {
+                for operation in operations {
+                    match operation {
+                        SearchIndexOperation::Upsert(document) => {
+                            tx.upsert_search_document(document)?;
+                        }
+                        SearchIndexOperation::Delete(id) => {
+                            tx.delete_search_document(id)?;
+                        }
                     }
                 }
-            }
-            tx.put_search_index_state(state)
-        })
+                tx.put_search_index_state(state)
+            },
+            false,
+        )
     }
 
     /// Synchronously discard every derived full-search row and install a fenced lifecycle marker.
@@ -3582,7 +3977,8 @@ impl Store {
             tx.execute_recovery_batch(
                 "DELETE FROM search_documents; DELETE FROM search_index_state;",
             )?;
-            tx.put_search_index_state(&search_projection_tombstone())
+            tx.put_search_index_state(&search_projection_tombstone())?;
+            tx.fence_search_projection(&now_rfc3339())
         })
     }
 
@@ -3943,6 +4339,22 @@ impl Store {
     where
         F: FnOnce(&Tx<'_>) -> Result<T, StoreError>,
     {
+        self.persist_result_internal(f, true)
+    }
+
+    /// Transaction runner for authoritative writes and rebuildable derived writes.
+    ///
+    /// `advance_search_source` is false only for projection rows/status themselves. Keeping that
+    /// exception here prevents the indexer's own progress batches from continuously invalidating
+    /// their source snapshot while every ordinary caller remains invalidating by default.
+    fn persist_result_internal<T, F>(
+        &self,
+        f: F,
+        advance_search_source: bool,
+    ) -> Result<T, StoreError>
+    where
+        F: FnOnce(&Tx<'_>) -> Result<T, StoreError>,
+    {
         self.cluster_assert_writable()?;
         // Both backends roll back on drop by default, so any early return from `f` (its `?`) or a
         // mid-closure `Err` discards every statement already issued — nothing is persisted unless
@@ -3958,6 +4370,9 @@ impl Store {
                     kind: TxKind::Sqlite(txn),
                 };
                 let out = f(&tx)?;
+                if advance_search_source {
+                    tx.bump_search_source_revision(&now_rfc3339())?;
+                }
                 tx.commit()?;
                 Ok(out)
             }
@@ -3969,6 +4384,9 @@ impl Store {
                     kind: TxKind::Postgres(std::cell::RefCell::new(txn)),
                 };
                 let out = f(&tx)?;
+                if advance_search_source {
+                    tx.bump_search_source_revision(&now_rfc3339())?;
+                }
                 tx.commit()?;
                 Ok(out)
             }
@@ -4286,9 +4704,166 @@ impl<'conn> Tx<'conn> {
         }
         Ok(())
     }
+
+    /// Advance the authoritative-source revision in the same transaction as the source mutation.
+    ///
+    /// This deliberately lives on the generic transaction wrapper: every normal
+    /// [`Store::persist_result`] commit uses it, so a new source writer cannot silently forget to
+    /// invalidate an external projector's optimistic snapshot.
+    fn bump_search_source_revision(&self, updated_at: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(txn) => {
+                txn.execute(
+                    "UPDATE search_projection_control \
+                     SET source_revision = source_revision + 1, updated_at = ?1 WHERE id = ?2",
+                    params![updated_at, SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "UPDATE search_projection_control \
+                     SET source_revision = source_revision + 1, updated_at = $1 WHERE id = $2",
+                    &[&updated_at, &SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Invalidate every in-flight projector lease/checkpoint after derived text is discarded.
+    fn fence_search_projection(&self, updated_at: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(txn) => {
+                txn.execute(
+                    "UPDATE search_projection_control SET \
+                     fence_token = fence_token + 1, command = 'rebuild', \
+                     command_generation = command_generation + 1, \
+                     published_source_revision = NULL, published_fence_token = NULL, \
+                     published_command_generation = NULL, lease_id = NULL, \
+                     lease_owner = NULL, lease_heartbeat_at = NULL, \
+                     lease_expires_at_unix_ms = NULL, updated_at = ?1 WHERE id = ?2",
+                    params![updated_at, SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "UPDATE search_projection_control SET \
+                     fence_token = fence_token + 1, command = 'rebuild', \
+                     command_generation = command_generation + 1, \
+                     published_source_revision = NULL, published_fence_token = NULL, \
+                     published_command_generation = NULL, lease_id = NULL, \
+                     lease_owner = NULL, lease_heartbeat_at = NULL, \
+                     lease_expires_at_unix_ms = NULL, updated_at = $1 WHERE id = $2",
+                    &[&updated_at, &SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn update_search_projection_command(
+        &self,
+        command: &str,
+        updated_at: &str,
+    ) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(txn) => {
+                txn.execute(
+                    "UPDATE search_projection_control SET command = ?1, \
+                     command_generation = command_generation + 1, updated_at = ?2 WHERE id = ?3",
+                    params![command, updated_at, SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "UPDATE search_projection_control SET command = $1, \
+                     command_generation = command_generation + 1, updated_at = $2 WHERE id = $3",
+                    &[
+                        &command,
+                        &updated_at,
+                        &SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn search_projection_control(&self) -> Result<SearchProjectionControl, StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(txn) => read_sqlite_search_projection_control(txn),
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                let row = cell.borrow_mut().query_one(
+                    SEARCH_PROJECTION_CONTROL_SELECT_PG,
+                    &[&SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )?;
+                crate::pg::decode_search_projection_control_row(&row)
+            }
+        }
+    }
+
+    fn record_published_search_checkpoint(
+        &self,
+        checkpoint: SearchProjectionCheckpoint,
+        updated_at: &str,
+    ) -> Result<(), StoreError> {
+        let source_revision = i64::try_from(checkpoint.source_revision).unwrap_or(i64::MAX);
+        let fence_token = i64::try_from(checkpoint.fence_token).unwrap_or(i64::MAX);
+        let command_generation = i64::try_from(checkpoint.command_generation).unwrap_or(i64::MAX);
+        match &self.kind {
+            TxKind::Sqlite(txn) => {
+                txn.execute(
+                    "UPDATE search_projection_control SET published_source_revision = ?1, \
+                     published_fence_token = ?2, published_command_generation = ?3, \
+                     command = CASE WHEN command = 'rebuild' THEN 'reconcile' ELSE command END, \
+                     updated_at = ?4 WHERE id = ?5",
+                    params![
+                        source_revision,
+                        fence_token,
+                        command_generation,
+                        updated_at,
+                        SEARCH_PROJECTION_CONTROL_SINGLETON_ID
+                    ],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "UPDATE search_projection_control SET published_source_revision = $1, \
+                     published_fence_token = $2, published_command_generation = $3, \
+                     command = CASE WHEN command = 'rebuild' THEN 'reconcile' ELSE command END, \
+                     updated_at = $4 WHERE id = $5",
+                    &[
+                        &source_revision,
+                        &fence_token,
+                        &command_generation,
+                        &updated_at,
+                        &SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Tx<'_> {
+    /// Persist a cross-process projector command inside the caller's existing transaction.
+    ///
+    /// API admin handlers use this beside their audit ledger event, so a crash can never commit the
+    /// audit without the command (or the command without its audit). Repeating a command advances
+    /// the durable command generation and is therefore observable by a polling projector.
+    pub fn request_search_projection_command(
+        &self,
+        command: SearchProjectionCommand,
+    ) -> Result<(), StoreError> {
+        self.update_search_projection_command(command.as_str(), &now_rfc3339())
+    }
+
     /// Persist one ledger event row into the `events` table (append-only, keyed by `seq`).
     ///
     /// The hash-chain fields are stored directly: the ids/scope/kind/actor as text, the timestamp
@@ -8298,6 +8873,16 @@ pub(crate) fn configure_and_migrate(conn: &rusqlite::Connection) -> Result<(), S
         )?;
     }
 
+    // Schema v30 singleton. `INSERT OR IGNORE` preserves every monotonic counter and any live
+    // projector lease across ordinary restarts while giving upgraded v29 stores an immediate,
+    // queryable coordination row.
+    conn.execute(
+        "INSERT OR IGNORE INTO search_projection_control \
+         (id, source_revision, fence_token, command, command_generation, updated_at) \
+         VALUES (?1, 0, 0, 'reconcile', 0, ?2)",
+        params![SEARCH_PROJECTION_CONTROL_SINGLETON_ID, now_rfc3339()],
+    )?;
+
     // schema_version gate: reject a file written by a *newer* build (we don't know its layout);
     // stamp a fresh DB with our version. Older versions would key future real migrations.
     let found: Option<i64> = conn
@@ -8409,6 +8994,7 @@ fn sanitize_sqlite_backup_snapshot(
     sanitized_snapshot: &Path,
 ) -> Result<(), StoreError> {
     let tombstone = serde_json::to_string(&search_projection_tombstone())?;
+    let control_tombstone = search_projection_control_tombstone();
 
     conn.execute(
         "ATTACH DATABASE ?1 AS chancela_backup_staging",
@@ -8418,11 +9004,25 @@ fn sanitize_sqlite_backup_snapshot(
     let sanitize_result = (|| {
         conn.execute_batch(
             "DELETE FROM chancela_backup_staging.search_documents;
-             DELETE FROM chancela_backup_staging.search_index_state;",
+             DELETE FROM chancela_backup_staging.search_index_state;
+             DELETE FROM chancela_backup_staging.search_projection_control;",
         )?;
         conn.execute(
             "INSERT INTO chancela_backup_staging.search_index_state (id, json) VALUES (?1, ?2)",
             params![SEARCH_INDEX_STATE_SINGLETON_ID, tombstone],
+        )?;
+        conn.execute(
+            "INSERT INTO chancela_backup_staging.search_projection_control \
+             (id, source_revision, fence_token, command, command_generation, updated_at) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                i64::try_from(control_tombstone.checkpoint.source_revision).unwrap_or(i64::MAX),
+                i64::try_from(control_tombstone.checkpoint.fence_token).unwrap_or(i64::MAX),
+                control_tombstone.command.as_str(),
+                i64::try_from(control_tombstone.checkpoint.command_generation).unwrap_or(i64::MAX),
+                control_tombstone.updated_at,
+            ],
         )?;
         // Compact into a new file so deleted search bodies cannot survive in freelist pages.
         conn.execute(
@@ -8624,6 +9224,295 @@ mod tests {
         );
     }
 
+    fn completed_search_state(generation: u64, document_count: u64) -> SearchIndexState {
+        SearchIndexState {
+            phase: SearchIndexPhase::Idle,
+            generation,
+            document_count,
+            processed: document_count,
+            total: document_count,
+            last_completed_at: Some("2026-07-26T10:00:01Z".to_owned()),
+            updated_at: "2026-07-26T10:00:01Z".to_owned(),
+            ..SearchIndexState::default()
+        }
+    }
+
+    #[test]
+    fn source_revision_advances_for_authoritative_commits_but_not_derived_batches() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let initial = store.search_projection_control().expect("initial control");
+        assert_eq!(initial.checkpoint.source_revision, 0);
+        assert!(initial.published_checkpoint.is_none());
+
+        store
+            .persist(|tx| tx.put_metadata_value("search-source-test", "changed"))
+            .expect("authoritative transaction");
+        let changed = store.search_projection_control().expect("changed control");
+        assert_eq!(
+            changed.checkpoint.source_revision,
+            initial.checkpoint.source_revision + 1
+        );
+
+        store
+            .apply_search_index_batch(&[], &completed_search_state(1, 0))
+            .expect("derived status transaction");
+        assert_eq!(
+            store
+                .search_projection_control()
+                .expect("control after derived write")
+                .checkpoint
+                .source_revision,
+            changed.checkpoint.source_revision,
+            "the projector must not invalidate its own source checkpoint"
+        );
+    }
+
+    #[test]
+    fn projector_lease_and_checkpoint_cas_fence_stale_publications() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let ttl = std::time::Duration::from_secs(30);
+        let lease = store
+            .try_acquire_search_projector_lease("projector-a", ttl)
+            .expect("acquire")
+            .expect("lease available");
+        assert!(
+            store
+                .try_acquire_search_projector_lease("projector-b", ttl)
+                .expect("contended acquire")
+                .is_none(),
+            "an unexpired lease has exactly one holder"
+        );
+        assert!(
+            store
+                .try_acquire_search_projector_lease("projector-a", ttl)
+                .expect("same-owner contended acquire")
+                .is_none(),
+            "an owner label is not a lease credential; only the opaque lease id may renew it"
+        );
+
+        let checkpoint = store
+            .search_projection_control()
+            .expect("control")
+            .checkpoint;
+        let first = search_document("act:lease-cas", "first generation");
+        let published = store
+            .publish_search_projection(
+                &lease,
+                checkpoint,
+                &[SearchIndexOperation::Upsert(Box::new(first.clone()))],
+                &completed_search_state(1, 1),
+            )
+            .expect("publish");
+        assert!(matches!(
+            published,
+            SearchProjectionPublishOutcome::Published { generation: 1, .. }
+        ));
+        let after_publish = store
+            .search_projection_control()
+            .expect("published control");
+        assert_eq!(after_publish.published_checkpoint, Some(checkpoint));
+
+        store
+            .persist(|tx| tx.put_metadata_value("search-source-test", "new revision"))
+            .expect("source mutation");
+        let rejected = store
+            .publish_search_projection(
+                &lease,
+                checkpoint,
+                &[SearchIndexOperation::Delete(first.id.clone())],
+                &completed_search_state(2, 0),
+            )
+            .expect("stale publish result");
+        assert!(matches!(
+            rejected,
+            SearchProjectionPublishOutcome::Rejected {
+                reason: SearchProjectionPublishRejection::SourceChanged,
+                ..
+            }
+        ));
+        assert_eq!(
+            store.search_documents().expect("unchanged projection"),
+            vec![first],
+            "a rejected CAS batch commits neither rows nor lifecycle state"
+        );
+
+        let rebuild = store
+            .request_search_projection_command(SearchProjectionCommand::Rebuild)
+            .expect("request rebuild");
+        let rebuilt = store
+            .publish_search_projection(
+                &lease,
+                rebuild.checkpoint,
+                &[],
+                &completed_search_state(2, 1),
+            )
+            .expect("publish requested rebuild");
+        assert!(matches!(
+            rebuilt,
+            SearchProjectionPublishOutcome::Published { generation: 2, .. }
+        ));
+        let rebuilt_control = store.search_projection_control().expect("rebuilt control");
+        assert_eq!(
+            rebuilt_control.command,
+            SearchProjectionCommand::Reconcile,
+            "a completed rebuild is consumed exactly once"
+        );
+        assert_eq!(
+            rebuilt_control.published_checkpoint,
+            Some(rebuild.checkpoint)
+        );
+
+        store.clear_search_projection().expect("destructive fence");
+        let fenced = store.search_projection_control().expect("fenced control");
+        assert!(fenced.published_checkpoint.is_none());
+        assert!(fenced.lease.is_none());
+        assert_eq!(fenced.command, SearchProjectionCommand::Rebuild);
+        let lease_rejection = store
+            .publish_search_projection(&lease, checkpoint, &[], &completed_search_state(3, 0))
+            .expect("fenced publish result");
+        assert!(matches!(
+            lease_rejection,
+            SearchProjectionPublishOutcome::Rejected {
+                reason: SearchProjectionPublishRejection::LeaseLost,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn expired_projector_lease_cannot_heartbeat_or_publish_after_takeover() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let ttl = std::time::Duration::from_secs(30);
+        let old = store
+            .try_acquire_search_projector_lease("projector-old", ttl)
+            .expect("acquire old")
+            .expect("old lease");
+        {
+            let guard = store.locked_conn().expect("sqlite");
+            guard
+                .execute(
+                    "UPDATE search_projection_control SET lease_expires_at_unix_ms = 0 \
+                     WHERE id = ?1",
+                    params![SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+                )
+                .expect("expire lease fixture");
+        }
+        let replacement = store
+            .try_acquire_search_projector_lease("projector-new", ttl)
+            .expect("acquire replacement")
+            .expect("replacement lease");
+        assert_ne!(old.lease_id, replacement.lease_id);
+        assert!(
+            !store
+                .heartbeat_search_projector_lease(&old, ttl)
+                .expect("old heartbeat"),
+            "an expired/replaced lease is never revived"
+        );
+        let rejected = store
+            .publish_search_projection(&old, old.checkpoint, &[], &completed_search_state(1, 0))
+            .expect("old publication");
+        assert!(matches!(
+            rejected,
+            SearchProjectionPublishOutcome::Rejected {
+                reason: SearchProjectionPublishRejection::LeaseLost,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn audited_projector_command_rolls_back_with_its_enclosing_transaction() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let before = store.search_projection_control().expect("before");
+        let refused = store.persist(|tx| {
+            tx.request_search_projection_command(SearchProjectionCommand::Rebuild)?;
+            Err(StoreError::NotFound("injected audit failure".to_owned()))
+        });
+        assert!(matches!(refused, Err(StoreError::NotFound(_))));
+        assert_eq!(
+            store.search_projection_control().expect("after rollback"),
+            before,
+            "the command cannot commit without the enclosing audit transaction"
+        );
+
+        store
+            .persist(|tx| {
+                tx.request_search_projection_command(SearchProjectionCommand::Pause)?;
+                Ok(())
+            })
+            .expect("commit command with audit transaction");
+        let paused = store.search_projection_control().expect("paused");
+        assert_eq!(paused.command, SearchProjectionCommand::Pause);
+        assert_eq!(
+            paused.checkpoint.command_generation,
+            before.checkpoint.command_generation + 1
+        );
+    }
+
+    #[test]
+    fn sqlite_backup_sanitization_discards_projection_lease_and_published_checkpoint() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let lease = store
+            .try_acquire_search_projector_lease(
+                "backup-projector",
+                std::time::Duration::from_secs(30),
+            )
+            .expect("acquire")
+            .expect("lease");
+        let checkpoint = store
+            .search_projection_control()
+            .expect("control")
+            .checkpoint;
+        store
+            .publish_search_projection(
+                &lease,
+                checkpoint,
+                &[SearchIndexOperation::Upsert(Box::new(search_document(
+                    "act:backup-secret",
+                    "backup must discard this text",
+                )))],
+                &completed_search_state(1, 1),
+            )
+            .expect("publish");
+
+        let raw = dir.path().join("raw-search-snapshot.db");
+        let sanitized = dir.path().join("sanitized-search-snapshot.db");
+        {
+            let guard = store.locked_conn().expect("sqlite");
+            guard
+                .execute("VACUUM INTO ?1", params![raw.to_string_lossy().as_ref()])
+                .expect("snapshot");
+            sanitize_sqlite_backup_snapshot(&guard, &raw, &sanitized).expect("sanitize");
+        }
+        let candidate = rusqlite::Connection::open(&sanitized).expect("open sanitized");
+        assert_eq!(
+            candidate
+                .query_row("SELECT COUNT(*) FROM search_documents", [], |row| {
+                    row.get::<_, i64>(0)
+                })
+                .expect("projection count"),
+            0
+        );
+        let control = read_sqlite_search_projection_control(&candidate).expect("control");
+        assert_eq!(control.command, SearchProjectionCommand::Rebuild);
+        assert!(control.lease.is_none());
+        assert!(control.published_checkpoint.is_none());
+        let state_json: String = candidate
+            .query_row(
+                "SELECT json FROM search_index_state WHERE id = ?1",
+                params![SEARCH_INDEX_STATE_SINGLETON_ID],
+                |row| row.get(0),
+            )
+            .expect("state tombstone");
+        let state: SearchIndexState = serde_json::from_str(&state_json).expect("state");
+        assert!(state.projection_fenced);
+    }
+
     #[test]
     fn domain_reset_receipt_and_rows_include_the_derived_search_projection() {
         let dir = TempDir::new();
@@ -8670,12 +9559,22 @@ mod tests {
                 .iter()
                 .any(|table| table == "search_index_state")
         );
+        assert!(
+            outcome
+                .cleared
+                .iter()
+                .any(|table| table == "search_projection_control")
+        );
         assert!(store.search_documents().unwrap().is_empty());
         assert_eq!(
             store.search_index_state().unwrap().unwrap().phase,
             chancela_search::SearchIndexPhase::Starting,
             "a durable non-completed tombstone makes every follower fail closed"
         );
+        let control = store.search_projection_control().expect("fenced control");
+        assert!(control.lease.is_none());
+        assert!(control.published_checkpoint.is_none());
+        assert_eq!(control.command, SearchProjectionCommand::Rebuild);
         assert!(
             !serde_json::to_string(&store.search_documents().unwrap())
                 .unwrap()
@@ -9349,7 +10248,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_v28_reopen_adds_durable_search_tables_and_advances_the_stamp() {
+    fn schema_v28_reopen_adds_durable_search_protocol_and_advances_the_stamp() {
         let dir = TempDir::new();
         let store = Store::open(dir.path()).expect("open current schema");
         drop(store);
@@ -9359,14 +10258,19 @@ mod tests {
         conn.execute_batch(
             "DROP TABLE search_documents;
              DROP TABLE search_index_state;
+             DROP TABLE search_projection_control;
              UPDATE meta SET value = '28' WHERE key = 'schema_version';",
         )
         .expect("downgrade fixture to v28");
         drop(conn);
 
-        let reopened = Store::open(dir.path()).expect("migrate v28 to v29");
+        let reopened = Store::open(dir.path()).expect("migrate v28 to v30");
         let conn = reopened.locked_conn().expect("sqlite connection");
-        for table in ["search_documents", "search_index_state"] {
+        for table in [
+            "search_documents",
+            "search_index_state",
+            "search_projection_control",
+        ] {
             let present: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -9374,7 +10278,7 @@ mod tests {
                     |row| row.get(0),
                 )
                 .expect("table lookup");
-            assert_eq!(present, 1, "{table} was not created by schema v29");
+            assert_eq!(present, 1, "{table} was not created by schema v30");
         }
         let version: String = conn
             .query_row(
@@ -9384,6 +10288,10 @@ mod tests {
             )
             .expect("schema stamp");
         assert_eq!(version, schema::SCHEMA_VERSION.to_string());
+        drop(conn);
+        let control = reopened.search_projection_control().expect("control row");
+        assert_eq!(control.checkpoint.source_revision, 0);
+        assert!(control.published_checkpoint.is_none());
     }
 
     #[test]

@@ -174,7 +174,12 @@
 ///   state. Both tables are document-in-relational and contain only rebuildable search projections.
 ///   Logical backups deliberately exclude them; restore clears them transactionally and leaves a
 ///   fail-closed tombstone for the background service to rebuild from authoritative rows.
-pub const SCHEMA_VERSION: i64 = 29;
+/// - **v30** — adds `search_projection_control`, the cross-process coordination boundary for a
+///   separately deployed search projector: monotonic authoritative-source and destructive-fence
+///   revisions, durable pause/rebuild commands, and one expiring lease/heartbeat. The row is
+///   disposable coordination state, so backups exclude it and restores install a fresh fenced
+///   rebuild request rather than reviving an archived process lease.
+pub const SCHEMA_VERSION: i64 = 30;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -1043,6 +1048,44 @@ CREATE TABLE IF NOT EXISTS search_index_state (
     json TEXT NOT NULL
 ) STRICT;";
 
+/// Singleton cross-process search-projector coordination row (schema v30).
+///
+/// `source_revision` advances with every authoritative [`crate::Store::persist`] transaction.
+/// `fence_token` advances whenever derived text is discarded for a destructive/security boundary.
+/// A projector may publish only while all three checkpoint counters and its opaque lease id still
+/// match. Lease expiry is an integer Unix millisecond instant so SQLite and Postgres use identical
+/// ordering without relying on backend-specific timestamp parsing.
+pub const CREATE_SEARCH_PROJECTION_CONTROL: &str = "\
+CREATE TABLE IF NOT EXISTS search_projection_control (
+    id                         TEXT PRIMARY KEY,
+    source_revision            INTEGER NOT NULL CHECK (source_revision >= 0),
+    fence_token                INTEGER NOT NULL CHECK (fence_token >= 0),
+    published_source_revision  INTEGER CHECK (published_source_revision >= 0),
+    published_fence_token      INTEGER CHECK (published_fence_token >= 0),
+    published_command_generation INTEGER CHECK (published_command_generation >= 0),
+    command                    TEXT NOT NULL CHECK (command IN ('reconcile', 'rebuild', 'pause')),
+    command_generation         INTEGER NOT NULL CHECK (command_generation >= 0),
+    lease_id                   TEXT,
+    lease_owner                TEXT,
+    lease_heartbeat_at         TEXT,
+    lease_expires_at_unix_ms   INTEGER,
+    updated_at                 TEXT NOT NULL,
+    CHECK (
+        (published_source_revision IS NULL AND published_fence_token IS NULL
+            AND published_command_generation IS NULL)
+        OR
+        (published_source_revision IS NOT NULL AND published_fence_token IS NOT NULL
+            AND published_command_generation IS NOT NULL)
+    ),
+    CHECK (
+        (lease_id IS NULL AND lease_owner IS NULL AND lease_heartbeat_at IS NULL
+            AND lease_expires_at_unix_ms IS NULL)
+        OR
+        (lease_id IS NOT NULL AND lease_owner IS NOT NULL AND lease_heartbeat_at IS NOT NULL
+            AND lease_expires_at_unix_ms IS NOT NULL)
+    )
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -1111,6 +1154,7 @@ pub const ALL: &[&str] = &[
     CREATE_TERMO_INSTRUMENTS_BOOK_IDX,
     CREATE_SEARCH_DOCUMENTS,
     CREATE_SEARCH_INDEX_STATE,
+    CREATE_SEARCH_PROJECTION_CONTROL,
 ];
 
 /// Every application table a **Postgres logical backup** exports and restores, in a stable order
@@ -1214,6 +1258,10 @@ pub(crate) const INTENTIONALLY_NOT_BACKED_UP: &[(&str, &str)] = &[
         "search_index_state",
         "derived search lifecycle state is replaced by a fail-closed restore tombstone",
     ),
+    (
+        "search_projection_control",
+        "projector leases and control revisions are reset to a fenced rebuild request after restore",
+    ),
 ];
 
 #[cfg(test)]
@@ -1290,8 +1338,12 @@ mod tests {
     }
 
     #[test]
-    fn logical_backup_excludes_both_derived_search_tables() {
-        for table in ["search_documents", "search_index_state"] {
+    fn logical_backup_excludes_all_derived_search_tables() {
+        for table in [
+            "search_documents",
+            "search_index_state",
+            "search_projection_control",
+        ] {
             assert!(
                 !LOGICAL_BACKUP_TABLES.contains(&table),
                 "{table} is derived and must not be exported"

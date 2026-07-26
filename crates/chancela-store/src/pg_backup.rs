@@ -270,10 +270,33 @@ impl PostgresBackend {
         // the fail-closed tombstone inside the same restore transaction so followers cannot observe
         // a restored completed marker between COMMIT and a later cleanup statement.
         let search_tombstone = serde_json::to_string(&crate::search_projection_tombstone())?;
-        txn.batch_execute("DELETE FROM search_documents; DELETE FROM search_index_state;")?;
+        let control_tombstone = crate::search_projection_control_tombstone();
+        txn.batch_execute(
+            "DELETE FROM search_documents; DELETE FROM search_index_state; \
+             DELETE FROM search_projection_control;",
+        )?;
         txn.execute(
             "INSERT INTO search_index_state (id, json) VALUES ($1, $2)",
             &[&crate::SEARCH_INDEX_STATE_SINGLETON_ID, &search_tombstone],
+        )?;
+        let source_revision =
+            i64::try_from(control_tombstone.checkpoint.source_revision).unwrap_or(i64::MAX);
+        let fence_token =
+            i64::try_from(control_tombstone.checkpoint.fence_token).unwrap_or(i64::MAX);
+        let command_generation =
+            i64::try_from(control_tombstone.checkpoint.command_generation).unwrap_or(i64::MAX);
+        txn.execute(
+            "INSERT INTO search_projection_control \
+             (id, source_revision, fence_token, command, command_generation, updated_at) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+            &[
+                &crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                &source_revision,
+                &fence_token,
+                &control_tombstone.command.as_str(),
+                &command_generation,
+                &control_tombstone.updated_at,
+            ],
         )?;
 
         // Re-verify the ledger from the freshly-loaded rows BEFORE committing (atomic guarantee).
@@ -803,7 +826,11 @@ mod tests {
 
     #[test]
     fn logical_backup_never_exports_discarded_search_projections() {
-        for table in ["search_documents", "search_index_state"] {
+        for table in [
+            "search_documents",
+            "search_index_state",
+            "search_projection_control",
+        ] {
             assert!(
                 !PG_BACKUP_TABLES.contains(&table),
                 "{table} is discarded transactionally on restore and must not be archived"

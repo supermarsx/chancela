@@ -80,6 +80,10 @@ use chancela_core::{
 };
 use chancela_ledger::Ledger;
 use chancela_registry::RegistryExtract;
+use chancela_search::{
+    IndexOperation as SearchIndexOperation, SearchIndexState, SearchProjectionCheckpoint,
+    SearchProjectionControl, SearchProjectionPublishOutcome, SearchProjectorLease,
+};
 use postgres::types::ToSql;
 use postgres::{Client, Row};
 use r2d2_postgres::PostgresConnectionManager;
@@ -129,6 +133,34 @@ pub(crate) const PAPER_BOOK_OCR_DRAFTS_ALL_SELECT: &str = "SELECT draft_id, impo
      engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
      reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
      ORDER BY import_id ASC, created_at DESC, ctid DESC";
+
+pub(crate) fn decode_search_projection_control_row(
+    row: &Row,
+) -> Result<SearchProjectionControl, StoreError> {
+    crate::decode_search_projection_control(crate::RawSearchProjectionControl {
+        source_revision: row.get(0),
+        fence_token: row.get(1),
+        published_source_revision: row.get(2),
+        published_fence_token: row.get(3),
+        published_command_generation: row.get(4),
+        command: row.get(5),
+        command_generation: row.get(6),
+        lease_id: row.get(7),
+        lease_owner: row.get(8),
+        lease_heartbeat_at: row.get(9),
+        lease_expires_at_unix_ms: row.get(10),
+        updated_at: row.get(11),
+    })
+}
+
+fn pg_now_unix_millis(transaction: &mut postgres::Transaction<'_>) -> Result<i64, StoreError> {
+    Ok(transaction
+        .query_one(
+            "SELECT (EXTRACT(EPOCH FROM clock_timestamp()) * 1000)::BIGINT",
+            &[],
+        )?
+        .get(0))
+}
 
 /// The `r2d2` connection manager type for the read pool. The TLS connector is always the
 /// rustls-based [`crate::pg_tls::MakeRustlsConnect`]; whether TLS is actually negotiated is decided
@@ -284,6 +316,13 @@ impl PostgresBackend {
             "INSERT INTO meta (key, value) VALUES ('instance_id', $1) ON CONFLICT (key) DO NOTHING",
             &[&uuid::Uuid::new_v4().to_string()],
         )?;
+        let updated_at = crate::now_rfc3339();
+        writer.execute(
+            "INSERT INTO search_projection_control \
+             (id, source_revision, fence_token, command, command_generation, updated_at) \
+             VALUES ($1, 0, 0, 'reconcile', 0, $2) ON CONFLICT (id) DO NOTHING",
+            &[&crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID, &updated_at],
+        )?;
         Ok(())
     }
 
@@ -429,6 +468,169 @@ impl PostgresBackend {
     /// `REPEATABLE READ`, `READ ONLY` export snapshot without reaching the private pool field.
     pub(crate) fn checkout(&self) -> Result<r2d2::PooledConnection<PgManager>, StoreError> {
         Ok(self.pool.get()?)
+    }
+
+    pub(crate) fn search_projection_control(&self) -> Result<SearchProjectionControl, StoreError> {
+        let mut client = self.read()?;
+        let row = client.query_one(
+            crate::SEARCH_PROJECTION_CONTROL_SELECT_PG,
+            &[&crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+        )?;
+        decode_search_projection_control_row(&row)
+    }
+
+    pub(crate) fn try_acquire_search_projector_lease(
+        &self,
+        owner: &str,
+        ttl: std::time::Duration,
+    ) -> Result<Option<SearchProjectorLease>, StoreError> {
+        let mut client = self.read()?;
+        let mut txn = client.transaction()?;
+        let now_ms = pg_now_unix_millis(&mut txn)?;
+        let expires_ms = now_ms.saturating_add(crate::lease_ttl_millis(ttl));
+        let heartbeat_at = crate::now_rfc3339();
+        let lease_id = uuid::Uuid::new_v4().to_string();
+        let changed = txn.execute(
+            "UPDATE search_projection_control SET lease_id = $1, lease_owner = $2, \
+             lease_heartbeat_at = $3, lease_expires_at_unix_ms = $4, updated_at = $3 \
+             WHERE id = $5 AND (lease_id IS NULL OR lease_expires_at_unix_ms <= $6)",
+            &[
+                &lease_id,
+                &owner,
+                &heartbeat_at,
+                &expires_ms,
+                &crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                &now_ms,
+            ],
+        )?;
+        if changed == 0 {
+            txn.rollback()?;
+            return Ok(None);
+        }
+        let row = txn.query_one(
+            crate::SEARCH_PROJECTION_CONTROL_SELECT_PG,
+            &[&crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+        )?;
+        let control = decode_search_projection_control_row(&row)?;
+        txn.commit()?;
+        Ok(control.lease)
+    }
+
+    pub(crate) fn heartbeat_search_projector_lease(
+        &self,
+        lease: &SearchProjectorLease,
+        ttl: std::time::Duration,
+    ) -> Result<bool, StoreError> {
+        let mut client = self.read()?;
+        let mut txn = client.transaction()?;
+        let now_ms = pg_now_unix_millis(&mut txn)?;
+        let expires_ms = now_ms.saturating_add(crate::lease_ttl_millis(ttl));
+        let heartbeat_at = crate::now_rfc3339();
+        let changed = txn.execute(
+            "UPDATE search_projection_control SET lease_heartbeat_at = $1, \
+             lease_expires_at_unix_ms = $2, updated_at = $1 \
+             WHERE id = $3 AND lease_id = $4 AND lease_owner = $5 \
+                 AND lease_expires_at_unix_ms > $6",
+            &[
+                &heartbeat_at,
+                &expires_ms,
+                &crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                &lease.lease_id,
+                &lease.owner,
+                &now_ms,
+            ],
+        )?;
+        txn.commit()?;
+        Ok(changed == 1)
+    }
+
+    pub(crate) fn release_search_projector_lease(
+        &self,
+        lease: &SearchProjectorLease,
+    ) -> Result<bool, StoreError> {
+        let mut client = self.read()?;
+        let updated_at = crate::now_rfc3339();
+        let changed = client.execute(
+            "UPDATE search_projection_control SET lease_id = NULL, lease_owner = NULL, \
+             lease_heartbeat_at = NULL, lease_expires_at_unix_ms = NULL, updated_at = $1 \
+             WHERE id = $2 AND lease_id = $3 AND lease_owner = $4",
+            &[
+                &updated_at,
+                &crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+                &lease.lease_id,
+                &lease.owner,
+            ],
+        )?;
+        Ok(changed == 1)
+    }
+
+    pub(crate) fn publish_search_projection(
+        &self,
+        lease: &SearchProjectorLease,
+        checkpoint: SearchProjectionCheckpoint,
+        operations: &[SearchIndexOperation],
+        state: &SearchIndexState,
+    ) -> Result<SearchProjectionPublishOutcome, StoreError> {
+        let mut client = self.read()?;
+        let mut txn = client.transaction()?;
+        let now_ms = pg_now_unix_millis(&mut txn)?;
+        let row = txn.query_one(
+            &format!("{} FOR UPDATE", crate::SEARCH_PROJECTION_CONTROL_SELECT_PG),
+            &[&crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID],
+        )?;
+        let control = decode_search_projection_control_row(&row)?;
+        if let Some(reason) =
+            crate::projection_publish_rejection(&control, lease, checkpoint, now_ms)
+        {
+            txn.rollback()?;
+            return Ok(SearchProjectionPublishOutcome::Rejected { reason, control });
+        }
+        for operation in operations {
+            match operation {
+                SearchIndexOperation::Upsert(document) => {
+                    let json = serde_json::to_string(document)?;
+                    txn.execute(
+                        "INSERT INTO search_documents (id, json) VALUES ($1, $2) \
+                         ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json",
+                        &[&document.id, &json],
+                    )?;
+                }
+                SearchIndexOperation::Delete(id) => {
+                    txn.execute("DELETE FROM search_documents WHERE id = $1", &[&id])?;
+                }
+            }
+        }
+        let state_json = serde_json::to_string(state)?;
+        txn.execute(
+            "INSERT INTO search_index_state (id, json) VALUES ($1, $2) \
+             ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json",
+            &[&crate::SEARCH_INDEX_STATE_SINGLETON_ID, &state_json],
+        )?;
+        let updated_at = crate::now_rfc3339();
+        let published_source_revision =
+            i64::try_from(checkpoint.source_revision).unwrap_or(i64::MAX);
+        let published_fence_token = i64::try_from(checkpoint.fence_token).unwrap_or(i64::MAX);
+        let published_command_generation =
+            i64::try_from(checkpoint.command_generation).unwrap_or(i64::MAX);
+        txn.execute(
+            "UPDATE search_projection_control SET published_source_revision = $1, \
+             published_fence_token = $2, published_command_generation = $3, \
+             command = CASE WHEN command = 'rebuild' THEN 'reconcile' ELSE command END, \
+             updated_at = $4 WHERE id = $5",
+            &[
+                &published_source_revision,
+                &published_fence_token,
+                &published_command_generation,
+                &updated_at,
+                &crate::SEARCH_PROJECTION_CONTROL_SINGLETON_ID,
+            ],
+        )?;
+        txn.commit()?;
+        Ok(SearchProjectionPublishOutcome::Published {
+            checkpoint,
+            generation: state.generation,
+            document_count: state.document_count,
+        })
     }
 
     /// Newest-first persisted event page (the Postgres twin of [`crate::Store::ledger_events_page`]).

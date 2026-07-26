@@ -137,6 +137,110 @@ pub enum IndexOperation {
     Delete(String),
 }
 
+/// Durable command consumed by either the embedded indexer or a separately deployed projector.
+///
+/// Commands carry a monotonically increasing generation in [`SearchProjectionControl`], so two
+/// identical consecutive requests (for example two explicit rebuilds) remain distinguishable.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchProjectionCommand {
+    /// Reconcile the durable projection with the current authoritative sources.
+    #[default]
+    Reconcile,
+    /// Rebuild the complete projection even when source digests look unchanged.
+    Rebuild,
+    /// Stop projection work while retaining the last completed generation for queries.
+    Pause,
+}
+
+impl SearchProjectionCommand {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Reconcile => "reconcile",
+            Self::Rebuild => "rebuild",
+            Self::Pause => "pause",
+        }
+    }
+}
+
+impl std::fmt::Display for SearchProjectionCommand {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Optimistic source snapshot token used by a projector build.
+///
+/// A projector captures this before reading its corpus. Publication succeeds only if every field
+/// still matches, which rejects a mixed/stale build after an authoritative commit, destructive
+/// fence, or newer operator command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchProjectionCheckpoint {
+    pub source_revision: u64,
+    pub fence_token: u64,
+    pub command_generation: u64,
+}
+
+/// Cross-process projector lease stored beside the durable projection control row.
+///
+/// `lease_id` is an opaque fencing token minted for each acquisition. A previous holder cannot
+/// heartbeat or publish after expiry/takeover even when it reuses the same human-readable owner.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchProjectorLease {
+    pub lease_id: String,
+    pub owner: String,
+    pub heartbeat_at: String,
+    pub expires_at_unix_ms: i64,
+    pub checkpoint: SearchProjectionCheckpoint,
+}
+
+/// Durable cross-process projection coordination state.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchProjectionControl {
+    pub checkpoint: SearchProjectionCheckpoint,
+    /// Checkpoint of the last generation that committed all projection rows and lifecycle state.
+    /// `None` means no completed generation is safe for the current store (fresh install, restore,
+    /// destructive fence, or an interrupted initial build).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub published_checkpoint: Option<SearchProjectionCheckpoint>,
+    pub command: SearchProjectionCommand,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lease: Option<SearchProjectorLease>,
+    pub updated_at: String,
+}
+
+/// Why an attempted compare-and-swap projection publication was refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SearchProjectionPublishRejection {
+    /// The lease expired, was released, or was replaced by another projector instance.
+    LeaseLost,
+    /// An authoritative transaction committed after the projector captured its corpus checkpoint.
+    SourceChanged,
+    /// A destructive/security fence changed while the projector was building.
+    FenceChanged,
+    /// A newer pause/rebuild/reconcile command superseded the in-flight build.
+    CommandChanged,
+    /// Projection work is durably paused.
+    Paused,
+}
+
+/// Result of the atomic, lease-validated durable projection publication.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "outcome")]
+pub enum SearchProjectionPublishOutcome {
+    Published {
+        checkpoint: SearchProjectionCheckpoint,
+        generation: u64,
+        document_count: u64,
+    },
+    Rejected {
+        reason: SearchProjectionPublishRejection,
+        control: SearchProjectionControl,
+    },
+}
+
 /// Durable lifecycle/progress state. The API adds live queue depth and computes freshness from the
 /// configured interval, but every rebuild/error boundary survives process restart here.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
