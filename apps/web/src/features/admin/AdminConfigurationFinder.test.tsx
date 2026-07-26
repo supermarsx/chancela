@@ -75,6 +75,22 @@ describe('AdminConfigurationFinder', () => {
     expect(screen.getByTestId('location').textContent).toBe('/admin/search');
   });
 
+  it('finds the dedicated template preview samples page for settings readers', () => {
+    const hidden = renderFinder('settings.manage');
+    const hiddenInput = screen.getByRole('combobox', { name: 'Encontrar uma configuração' });
+    fireEvent.change(hiddenInput, { target: { value: 'modelos ficticios pdf' } });
+    expect(screen.queryByRole('option', { name: 'Abrir Amostras de pré-visualização' })).toBeNull();
+    hidden.unmount();
+
+    renderFinder('settings.read');
+    const input = screen.getByRole('combobox', { name: 'Encontrar uma configuração' });
+
+    fireEvent.change(input, { target: { value: 'modelos ficticios pdf' } });
+    fireEvent.click(screen.getByRole('option', { name: 'Abrir Amostras de pré-visualização' }));
+
+    expect(screen.getByTestId('location').textContent).toBe('/admin/template-preview');
+  });
+
   it('supports active-descendant keyboard selection, navigation, clear and escape', () => {
     renderFinder('signing.configure');
     const input = screen.getByRole('combobox', { name: 'Encontrar uma configuração' });

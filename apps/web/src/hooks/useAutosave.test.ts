@@ -129,4 +129,29 @@ describe('useAutosave', () => {
     expect(onSave).toHaveBeenCalledTimes(2);
     expect(result.current.status).toBe('saved');
   });
+
+  it('preserves the persisted baseline while blocked and saves the complete pending value later', async () => {
+    const onSave = vi.fn(() => Promise.resolve());
+    const { result, rerender } = renderHook(
+      ({ value, blocked }) => useAutosave({ value, blocked, onSave, delay: 700 }),
+      {
+        initialProps: { value: 'persisted', blocked: true },
+      },
+    );
+
+    rerender({ value: 'pending elsewhere', blocked: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2_000);
+    });
+    expect(onSave).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('dirty');
+
+    rerender({ value: 'pending elsewhere', blocked: false });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(700);
+    });
+    expect(onSave).toHaveBeenCalledOnce();
+    expect(onSave).toHaveBeenCalledWith('pending elsewhere');
+    expect(result.current.status).toBe('saved');
+  });
 });

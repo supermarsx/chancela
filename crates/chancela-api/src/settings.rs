@@ -48,6 +48,7 @@ use crate::secretstore_persist::{
     FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD, FIELD_HTTP_BASIC_USERNAME,
 };
 use crate::smtp::SmtpEncryption;
+use crate::template_preview_samples::TemplatePreviewSampleSettings;
 use crate::{AppState, CredentialMode, DecryptedCredentialRecord};
 
 /// The current schema version of the settings document. Bumped only on a breaking shape
@@ -1657,6 +1658,9 @@ pub struct DocumentSettings {
     /// Concrete instance-wide document layout. Templates and future entity/book policies inherit
     /// from these product-reset values unless they author a bounded override.
     pub layout_defaults: DocumentLayoutPolicy,
+    /// Fictitious, non-secret values resolved into PDF/Markdown template previews. These are
+    /// visible to principals with `act.read` and must never contain production records or secrets.
+    pub template_preview_samples: TemplatePreviewSampleSettings,
 }
 
 impl Default for DocumentSettings {
@@ -1665,6 +1669,7 @@ impl Default for DocumentSettings {
             locale: Locale::default(),
             numbering_scheme_default: NumberingScheme::Sequential,
             layout_defaults: DocumentLayoutPolicy::default(),
+            template_preview_samples: TemplatePreviewSampleSettings::default(),
         }
     }
 }
@@ -2482,6 +2487,12 @@ impl Settings {
         self.documents.layout_defaults.validate().map_err(|error| {
             ApiError::Unprocessable(format!("documents.layout_defaults: {error}"))
         })?;
+        self.documents
+            .template_preview_samples
+            .validate()
+            .map_err(|error| {
+                ApiError::Unprocessable(format!("documents.template_preview_samples.{error}"))
+            })?;
         if !(1..=MAX_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS)
             .contains(&self.ui.external_signature_notice_snooze_days)
         {
@@ -4036,6 +4047,21 @@ fn carry_forward_omitted_document_layout(
     }
 }
 
+fn carry_forward_omitted_template_preview_samples(
+    raw: &serde_json::Value,
+    previous: &Settings,
+    next: &mut Settings,
+) {
+    if raw
+        .get("documents")
+        .and_then(|documents| documents.get("template_preview_samples"))
+        .is_none()
+    {
+        next.documents.template_preview_samples =
+            previous.documents.template_preview_samples.clone();
+    }
+}
+
 /// `PUT /v1/settings` — replace the whole settings document.
 ///
 /// The body is the entire [`Settings`] document. It is parsed leniently (missing fields
@@ -4096,6 +4122,7 @@ pub async fn put_settings(
         settings.platform.public_base_url = previous.platform.public_base_url.clone();
     }
     carry_forward_omitted_document_layout(&raw, &previous, &mut settings);
+    carry_forward_omitted_template_preview_samples(&raw, &previous, &mut settings);
     let raw_ui = raw.get("ui");
     if raw_ui
         .and_then(|ui| ui.get("external_signature_notice_snooze_days"))
@@ -4574,6 +4601,101 @@ mod tests {
             DocumentLayoutPolicy::default(),
             "an explicit product reset must not be mistaken for omission"
         );
+    }
+
+    #[test]
+    fn template_preview_sample_defaults_are_backward_compatible() {
+        let settings: Settings =
+            serde_json::from_str(r#"{"schema_version":1}"#).expect("legacy settings");
+        assert_eq!(
+            settings.documents.template_preview_samples,
+            TemplatePreviewSampleSettings::default()
+        );
+        settings
+            .documents
+            .template_preview_samples
+            .validate()
+            .expect("product preview samples validate");
+
+        let wire = serde_json::to_value(settings).expect("settings serialize");
+        assert_eq!(
+            wire["documents"]["template_preview_samples"],
+            serde_json::to_value(TemplatePreviewSampleSettings::default())
+                .expect("preview samples serialize")
+        );
+    }
+
+    #[test]
+    fn stale_settings_clients_carry_forward_preview_samples_but_explicit_values_replace_them() {
+        let mut previous = Settings::default();
+        previous
+            .documents
+            .template_preview_samples
+            .family_profiles
+            .association
+            .name = "Associação Configurada".to_owned();
+
+        let stale_raw = serde_json::json!({
+            "documents": {
+                "locale": "pt-PT",
+                "numbering_scheme_default": "Sequential",
+                "layout_defaults": DocumentLayoutPolicy::default()
+            }
+        });
+        let mut stale_next: Settings =
+            serde_json::from_value(stale_raw.clone()).expect("stale client document parses");
+        assert_eq!(
+            stale_next.documents.template_preview_samples,
+            TemplatePreviewSampleSettings::default(),
+            "serde alone applies the product default"
+        );
+        carry_forward_omitted_template_preview_samples(&stale_raw, &previous, &mut stale_next);
+        assert_eq!(
+            stale_next.documents.template_preview_samples,
+            previous.documents.template_preview_samples,
+            "an omitted unknown field carries configured samples forward"
+        );
+
+        let explicit_raw = serde_json::json!({
+            "documents": {
+                "template_preview_samples": TemplatePreviewSampleSettings::default()
+            }
+        });
+        let mut explicit_next: Settings =
+            serde_json::from_value(explicit_raw.clone()).expect("explicit samples parse");
+        carry_forward_omitted_template_preview_samples(
+            &explicit_raw,
+            &previous,
+            &mut explicit_next,
+        );
+        assert_eq!(
+            explicit_next.documents.template_preview_samples,
+            TemplatePreviewSampleSettings::default(),
+            "an explicit product reset must not be mistaken for omission"
+        );
+    }
+
+    #[test]
+    fn settings_reject_invalid_template_preview_samples_with_an_actionable_path() {
+        let mut settings = Settings::default();
+        settings
+            .documents
+            .template_preview_samples
+            .evidence
+            .attachments[0]
+            .digest = "A".repeat(64);
+
+        let error = settings
+            .validate()
+            .expect_err("uppercase preview digest must be rejected");
+        match error {
+            ApiError::Unprocessable(message) => assert!(
+                message
+                    .contains("documents.template_preview_samples.evidence.attachments[0].digest"),
+                "{message}"
+            ),
+            other => panic!("unexpected error: {other:?}"),
+        }
     }
 
     #[test]

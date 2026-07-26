@@ -29,6 +29,11 @@ export interface UseAutosaveOptions<T> {
   delay?: number;
   /** While `false`, no baseline is captured and nothing is scheduled (e.g. still loading). */
   enabled?: boolean;
+  /**
+   * While `true`, capture the first persisted baseline but do not schedule or flush saves.
+   * Later changes remain dirty against that baseline and are saved once the blocker clears.
+   */
+  blocked?: boolean;
   /** Serialize `value` for change detection. Defaults to `JSON.stringify`. */
   serialize?: (value: T) => string;
   /** Called once after each successful save round-trip. */
@@ -56,6 +61,7 @@ export function useAutosave<T>({
   onSave,
   delay = AUTOSAVE_DELAY_MS,
   enabled = true,
+  blocked = false,
   serialize = defaultSerialize,
   onSuccess,
   onError,
@@ -75,6 +81,10 @@ export function useAutosave<T>({
   onSuccessRef.current = onSuccess;
   const onErrorRef = useRef(onError);
   onErrorRef.current = onError;
+  const enabledRef = useRef(enabled);
+  enabledRef.current = enabled;
+  const blockedRef = useRef(blocked);
+  blockedRef.current = blocked;
 
   // The serialization of the last value we successfully persisted. `null` until the first
   // value is observed, so the initial (unchanged) mount never fires a spurious save.
@@ -96,6 +106,10 @@ export function useAutosave<T>({
     clearTimer();
     if (inFlightRef.current) return;
     const snapshotKey = serializeRef.current(valueRef.current);
+    if (!enabledRef.current || blockedRef.current) {
+      if (snapshotKey !== savedKeyRef.current) setStatus('dirty');
+      return;
+    }
     if (snapshotKey === savedKeyRef.current) return;
 
     inFlightRef.current = true;
@@ -127,9 +141,18 @@ export function useAutosave<T>({
 
   useEffect(() => {
     if (!enabled) return;
-    // First observed value seeds the baseline; never a save on mount.
+    // First observed value seeds the persisted baseline even when temporarily blocked.
     if (savedKeyRef.current === null) {
       savedKeyRef.current = key;
+      return;
+    }
+    // A blocker preserves that baseline and cancels any pending debounce. Once it clears,
+    // the normal key comparison below schedules the complete current value.
+    if (blocked) {
+      clearTimer();
+      if (key !== savedKeyRef.current) {
+        setStatus((s) => (s === 'saving' ? s : 'dirty'));
+      }
       return;
     }
     // Not dirty (unchanged, reverted, or just-saved): nothing to schedule.
@@ -139,7 +162,7 @@ export function useAutosave<T>({
     clearTimer();
     timerRef.current = setTimeout(run, delay);
     return clearTimer;
-  }, [key, enabled, delay, run, clearTimer]);
+  }, [key, enabled, blocked, delay, run, clearTimer]);
 
   // Cancel a pending debounce if the consumer unmounts.
   useEffect(() => clearTimer, [clearTimer]);

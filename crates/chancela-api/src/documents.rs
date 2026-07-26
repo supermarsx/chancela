@@ -71,6 +71,7 @@ use crate::external_validator_evidence::{
     ExternalValidatorEvidenceAttachment, ExternalValidatorRawReportAttachmentIndex,
     TECHNICAL_METADATA_ONLY, attachment_indexes, matching_attachments,
 };
+use crate::template_preview_samples::template_preview_sample_context;
 
 /// The frozen PDF/A profile string bound into every `document.generated` event and stored row
 /// (plan §1-D4 step 3 / §3.4). Self-describing: MIME type + PDF/A part+conformance.
@@ -9784,77 +9785,6 @@ pub enum PreviewTemplateDocument {
 
 const TEMPLATE_PREVIEW_KIND: &str = "sample-resolved";
 
-/// Product sample used until the same typed values are overridden through instance settings.
-///
-/// The shape is deliberately a superset of every render path shipped in the template catalog:
-/// ATA, convocatória, attendance, representation, registry communication and book instruments all
-/// read from this one value. Keeping it beside the preview renderer ensures PDF and Markdown can
-/// never drift onto different examples. Values are realistic but fictitious Portuguese data.
-fn template_preview_sample_context(spec: &TemplateSpec) -> Value {
-    // Historical company transport templates bind `book.predecessor` directly while the other
-    // families bind `book.predecessor.book_reference`. Adapt only that compatibility leaf; the
-    // user-facing sample setting remains one friendly predecessor reference.
-    let predecessor_reference = "Livro de atas n.º 1 (2020–2025)";
-    let book_predecessor = if spec.id.starts_with("csc-") {
-        Value::String(predecessor_reference.to_owned())
-    } else {
-        json!({ "book_reference": predecessor_reference })
-    };
-    // The one instance setting is reusable across families, while these presentation defaults keep
-    // the out-of-box preview idiomatic for the family of the template being viewed.
-    let (entity_name, legal_form) = if spec.id.starts_with("assoc-") {
-        (
-            "Associação Cultural Exemplo",
-            "Associação sem fins lucrativos",
-        )
-    } else if spec.id.starts_with("condominio-") {
-        ("Condomínio do Edifício Exemplo", "Condomínio")
-    } else if spec.id.starts_with("cooperativa-") {
-        ("Cooperativa Exemplo, C.R.L.", "Cooperativa")
-    } else if spec.id.starts_with("fundacao-") {
-        ("Fundação Exemplo", "Fundação")
-    } else {
-        ("Sociedade Exemplo, Lda.", "Sociedade por quotas")
-    };
-    let law_references = spec
-        .law_references
-        .iter()
-        .map(|reference| {
-            json!({
-                "source_id": reference.source_id,
-                "source_label": reference.source_label,
-                "citation": reference.citation,
-                "article": reference.article,
-                "verification": reference.verification,
-            })
-        })
-        .collect::<Vec<_>>();
-
-    // Keep the large, mostly static fixture out of `json!`: serde_json's token-munching macro
-    // recurses once per entry and exceeded the default compiler recursion limit in full workspace,
-    // release and coverage builds. Parsing one checked-in JSON asset once and cloning it for each
-    // preview keeps compile depth constant while preserving the exact sample wire shape.
-    static BASE_CONTEXT: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
-    let mut context = BASE_CONTEXT
-        .get_or_init(|| {
-            serde_json::from_str(include_str!("template_preview_sample_context.json"))
-                .expect("embedded template preview sample context must be valid JSON")
-        })
-        .clone();
-    for (pointer, value) in [
-        ("/entity/name", Value::String(entity_name.to_owned())),
-        ("/entity/legal_form", Value::String(legal_form.to_owned())),
-        ("/book/predecessor", book_predecessor),
-        ("/law_references", Value::Array(law_references)),
-    ] {
-        let slot = context
-            .pointer_mut(pointer)
-            .unwrap_or_else(|| panic!("embedded template preview sample context misses {pointer}"));
-        *slot = value;
-    }
-    context
-}
-
 /// The PDF writer owns a visible document-title prologue. Promote the first rendered authored H1
 /// into that slot, removing only its duplicate block representation. Every shipped template starts
 /// with this H1. A user template without one falls back to its own id metadata, never explanatory
@@ -9956,7 +9886,17 @@ async fn prepare_template_document_preview_model(
         }
     };
 
-    let sample_context = template_preview_sample_context(&spec);
+    // Take one settings snapshot for both the render context and instance layout. The PDF and
+    // Markdown endpoints both consume the model returned here, so neither representation can
+    // observe a different sample halfway through an operator update.
+    let (preview_samples, instance_layout) = {
+        let settings = state.settings.read().await;
+        (
+            settings.documents.template_preview_samples.clone(),
+            settings.documents.layout_defaults.clone(),
+        )
+    };
+    let sample_context = template_preview_sample_context(&spec, &preview_samples);
     let narrative = match chancela_templates::body_render::render_markdown_body(
         &body_markdown,
         &sample_context,
@@ -9992,7 +9932,6 @@ async fn prepare_template_document_preview_model(
 
     // A template preview has no scoped entity/book identity. Resolve the two layout layers available
     // here; canonical generation applies the real entity and book overrides as well.
-    let instance_layout = current_instance_document_layout(state).await;
     model.document_layout = resolve_effective_document_layout(&instance_layout, &spec, None, None)?;
 
     Ok(Ok(model))
@@ -16513,7 +16452,14 @@ mod tests {
         // the narrative body's — resolves before either representation sees it.
         let (prepared, _) =
             prepare_draft_template_preview(spec, body_markdown.clone()).expect("draft validates");
-        let sample_context = template_preview_sample_context(&prepared);
+        let preview_samples = state
+            .settings
+            .read()
+            .await
+            .documents
+            .template_preview_samples
+            .clone();
+        let sample_context = template_preview_sample_context(&prepared, &preview_samples);
         let narrative =
             chancela_templates::body_render::render_markdown_body(&body_markdown, &sample_context)
                 .expect("sample narrative renders");
@@ -16568,6 +16514,82 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(state.ledger.read().await.len(), ledger_before);
+    }
+
+    #[tokio::test]
+    async fn configured_template_preview_samples_feed_the_shared_markdown_and_pdf_model() {
+        let tmp = TempDir::new();
+        let state = AppState::with_data_dir(tmp.path());
+        let actor = seed_owner(&state).await;
+        {
+            let mut settings = state.settings.write().await;
+            let samples = &mut settings.documents.template_preview_samples;
+            samples.family_profiles.commercial_company.name = "Empresa Configurada Zeta".to_owned();
+            samples.meeting.meeting_date = "2031-09-17".to_owned();
+            samples.meeting.place = "Sala Configurada 42".to_owned();
+        }
+
+        let mut spec: Value =
+            serde_json::from_str(&valid_user_template_json()).expect("valid template JSON");
+        spec["id"] = json!("user-assoc-looking-but-company/v1");
+        spec["blocks"] = json!([{ "kind": "NarrativeBody" }]);
+        let body_markdown = "# {{ entity.name }}\n\nReunião em {{ meeting_date }}, {{ place }}.";
+        let request = || PreviewTemplateDocument::Draft {
+            spec: spec.clone(),
+            body_markdown: body_markdown.to_owned(),
+        };
+
+        let prepared = match prepare_template_document_preview_model(&state, request()).await {
+            Ok(Ok(model)) => model,
+            Ok(Err(response)) => panic!("model preparation returned {}", response.status()),
+            Err(error) => panic!("model preparation failed: {error:?}"),
+        };
+        let expected_markdown = template_preview_markdown(&prepared);
+        for marker in [
+            "Empresa Configurada Zeta",
+            "2031-09-17",
+            "Sala Configurada 42",
+        ] {
+            assert!(
+                expected_markdown.contains(marker),
+                "shared model missed configured marker {marker:?}: {expected_markdown}"
+            );
+        }
+
+        let markdown_response = preview_template_document_markdown(
+            State(state.clone()),
+            actor.clone(),
+            Json(request()),
+        )
+        .await
+        .expect("configured Markdown preview");
+        let markdown = String::from_utf8(
+            axum::body::to_bytes(markdown_response.into_body(), usize::MAX)
+                .await
+                .expect("Markdown bytes")
+                .to_vec(),
+        )
+        .expect("Markdown UTF-8");
+        assert_eq!(markdown, expected_markdown);
+
+        let pdf_response = preview_template_document(State(state), actor, Json(request()))
+            .await
+            .expect("configured PDF preview");
+        let pdf_bytes = axum::body::to_bytes(pdf_response.into_body(), usize::MAX)
+            .await
+            .expect("PDF bytes");
+        let pdf_text = extract_pdf_text(&pdf_bytes);
+        let normalized_pdf_text = pdf_text.split_whitespace().collect::<Vec<_>>().join(" ");
+        for marker in [
+            "Empresa Configurada Zeta",
+            "2031-09-17",
+            "Sala Configurada 42",
+        ] {
+            assert!(
+                normalized_pdf_text.contains(marker),
+                "PDF model missed configured marker {marker:?}: {normalized_pdf_text}"
+            );
+        }
     }
 
     #[tokio::test]

@@ -2862,6 +2862,201 @@ describe('SettingsPage', () => {
     expect(calls.some((call) => call.url === '/v1/search/status')).toBe(false);
   });
 
+  it('deep-links to preview samples and autosaves the typed slice in the whole settings document', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/template-preview']);
+
+    expect(
+      (await screen.findByRole('button', { name: 'Amostras de pré-visualização' })).getAttribute(
+        'aria-pressed',
+      ),
+    ).toBe('true');
+    expect(await screen.findByText(/Use apenas dados claramente fictícios/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Título'), {
+      target: { value: 'Ata fictícia para a pré-visualização' },
+    });
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const sent = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.documents.template_preview_samples.general.title).toBe(
+      'Ata fictícia para a pré-visualização',
+    );
+    expect(sent.documents.template_preview_samples.family_profiles).toEqual(
+      DEFAULT_SETTINGS.documents.template_preview_samples.family_profiles,
+    );
+    expect(sent.organization).toEqual(DEFAULT_SETTINGS.organization);
+    expect(sent.search).toEqual(DEFAULT_SETTINGS.search);
+  });
+
+  it('hydrates preview samples omitted by an older settings document before the first edit', async () => {
+    const stale = cloneJson(DEFAULT_SETTINGS) as unknown as Record<string, unknown>;
+    const documents = stale.documents as Record<string, unknown>;
+    delete documents.template_preview_samples;
+    const { fn, calls } = settingsFetch(stale);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/template-preview']);
+
+    expect(((await screen.findByLabelText('Título')) as HTMLInputElement).value).toBe(
+      DEFAULT_SETTINGS.documents.template_preview_samples.general.title,
+    );
+    fireEvent.change(screen.getByLabelText('Assunto'), {
+      target: { value: 'Assunto fictício hidratado' },
+    });
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const sent = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.documents.template_preview_samples.general.subject).toBe(
+      'Assunto fictício hidratado',
+    );
+    expect(sent.documents.template_preview_samples.family_profiles.foundation).toEqual(
+      DEFAULT_SETTINGS.documents.template_preview_samples.family_profiles.foundation,
+    );
+  });
+
+  it('requires settings.read to load preview samples and settings.manage additionally to edit', async () => {
+    const reader = settingsFetch();
+    vi.stubGlobal('fetch', reader.fn);
+
+    const rendered = renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'settings.read')}
+      >
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/template-preview'],
+    );
+
+    expect(
+      await screen.findByRole('button', { name: 'Amostras de pré-visualização' }),
+    ).toBeTruthy();
+    expect((screen.getByLabelText('Título') as HTMLInputElement).disabled).toBe(true);
+    expect(screen.getByText(/a edição requer permissão para gerir configurações/)).toBeTruthy();
+    expect(reader.calls.some((call) => call.method === 'PUT')).toBe(false);
+    rendered.unmount();
+
+    const manageOnly = settingsFetch();
+    vi.stubGlobal('fetch', manageOnly.fn);
+    const hiddenFromManageOnly = renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'settings.manage')}
+      >
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/template-preview'],
+    );
+    expect(await screen.findByRole('button', { name: 'Serviços' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Amostras de pré-visualização' })).toBeNull();
+    expect(screen.queryByLabelText('Título')).toBeNull();
+    hiddenFromManageOnly.unmount();
+
+    const readerManager = settingsFetch();
+    vi.stubGlobal('fetch', readerManager.fn);
+    const editable = renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) =>
+          ['settings.read', 'settings.manage'].includes(permission),
+        )}
+      >
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/template-preview'],
+    );
+    expect(((await screen.findByLabelText('Título')) as HTMLInputElement).disabled).toBe(false);
+    editable.unmount();
+
+    const denied = settingsFetch();
+    vi.stubGlobal('fetch', denied.fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue(() => false)}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/template-preview'],
+    );
+
+    expect(await screen.findByRole('button', { name: 'Serviços' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Amostras de pré-visualização' })).toBeNull();
+    expect(screen.queryByLabelText('Título')).toBeNull();
+  });
+
+  it('pauses autosave for visible over-limit preview samples until reset makes them safe', async () => {
+    const invalid = cloneJson(DEFAULT_SETTINGS);
+    invalid.documents.template_preview_samples.meeting.mesa.secretaries = Array.from(
+      { length: 11 },
+      (_, index) => `Secretário ${index + 1}`,
+    );
+    const { fn, calls } = settingsFetch(invalid);
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/template-preview']);
+
+    expect(await screen.findByText('Corrija os valores antes de guardar')).toBeTruthy();
+    expect(screen.getByText(/Secretários: existem 11 linhas; use entre 1 e 10/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Título'), {
+      target: { value: 'Esta alteração não pode descartar linhas' },
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 850));
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Repor amostras fictícias' }));
+    const dialog = screen.getByRole('dialog', {
+      name: 'Repor as amostras da pré-visualização?',
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Repor amostras' }));
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const sent = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.documents.template_preview_samples).toEqual(
+      DEFAULT_SETTINGS.documents.template_preview_samples,
+    );
+  });
+
+  it('keeps later-tab edits pending behind invalid preview samples and links back to repair them', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/template-preview']);
+
+    fireEvent.change(await screen.findByLabelText('Título'), { target: { value: '   ' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Email' }));
+
+    expect(await screen.findByText('Gravação automática em pausa')).toBeTruthy();
+    const repair = screen.getByRole('link', { name: 'Corrigir amostras' });
+    expect(repair.getAttribute('href')).toBe('/admin/template-preview');
+    fireEvent.change(await screen.findByLabelText('Servidor'), {
+      target: { value: 'smtp.pending.example' },
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 850));
+    expect(calls.some((call) => call.method === 'PUT')).toBe(false);
+
+    fireEvent.click(repair);
+    expect(((await screen.findByLabelText('Título')) as HTMLInputElement).value).toBe('   ');
+    fireEvent.change(screen.getByLabelText('Título'), {
+      target: { value: 'Ata fictícia reparada' },
+    });
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3_000,
+    });
+    const sent = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.documents.template_preview_samples.general.title).toBe('Ata fictícia reparada');
+    expect(sent.email.host).toBe('smtp.pending.example');
+  });
+
   it('leaves Gestão a read-only pointer to the gate, never a second writer', async () => {
     const { fn, calls } = settingsFetch();
     vi.stubGlobal('fetch', fn);
@@ -6517,7 +6712,7 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     vi.stubGlobal('fetch', fn);
     // t60 (Option B): the admin section level (Operações | Assinaturas) is dissolved into ONE flat
     // subtab strip. There is NO section strip on /admin — the strip below lists every admin area
-    // across both clusters, the fifteen operations panes then the six signing cards.
+    // across both clusters, the sixteen operations panes then the six signing cards.
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
     const admin = within(await screen.findByRole('group', { name: 'Áreas de administração' }));
@@ -6527,13 +6722,14 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(screen.queryByRole('button', { name: 'Operações' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Assinaturas' })).toBeNull();
 
-    // The fifteen settings-ops panes (platform → search → stores → env override → integrations), then folded
+    // The sixteen settings-ops panes (platform → search → stores → env override → integrations), then folded
     // in after them the six signing cards — one flat strip, in cluster order.
     expect(labels(admin)).toEqual([
       // Operations cluster (t36) — reached off `/admin/:sub`.
       'Serviços',
       'Registos',
       'Pesquisa',
+      'Amostras de pré-visualização',
       'API',
       'Base de dados',
       'Redis e estado partilhado',

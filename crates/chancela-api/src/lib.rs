@@ -189,6 +189,7 @@ mod session;
 // t95 session backend: best-effort device label + truncated IP for the active-sign-ins feature.
 mod session_metadata;
 mod settings;
+pub mod template_preview_samples;
 // wp16 P3b: backend-conditional storage seam for the five non-ledger file sidecars (users/roles/
 // delegations/settings/provider-credentials). File-backed on SQLite (single-node byte-identical),
 // DB-backed on Postgres so all nodes share them.
@@ -302,6 +303,7 @@ pub use settings::{
     SignatureFamily, SigningCmdSettings, SigningSettings, SignupMode, SignupSettings, ThemeMode,
     TwoFactorSettings,
 };
+pub use template_preview_samples::TemplatePreviewSampleSettings;
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
 pub use users::{User, UserId};

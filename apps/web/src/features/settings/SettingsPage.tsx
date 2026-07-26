@@ -15,7 +15,16 @@
  * them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
  */
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSectionNav } from '../../app/navPath';
 import {
@@ -38,6 +47,7 @@ import {
 } from '../../api/labels';
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_TEMPLATE_PREVIEW_SAMPLES,
   LOCALES,
   NUMBERING_SCHEMES,
   PLATFORM_EMITTED_LOG_LEVELS,
@@ -71,6 +81,7 @@ import {
   type SigningProviderMetadata,
   type SigningSettings,
   type ThemeMode,
+  type TemplatePreviewSampleSettings,
   type TsaProviderSettings,
   type TslSourceSettings,
   type UiSettings,
@@ -85,6 +96,7 @@ import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallba
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { type AdminCopyKey, useAdminT } from '../../i18n/adminFallback';
 import { usePlatformLogNoticeT } from '../../i18n/platformLogNoticeFallback';
+import { useTemplatePreviewSamplesT } from '../../i18n/templatePreviewSamplesFallback';
 import {
   type ReminderSettingsCopyKey,
   useReminderSettingsT,
@@ -123,6 +135,12 @@ import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
 import { ReminderSettingsCard } from './ReminderSettingsCard';
 import { SearchSettingsPanel } from './SearchSettingsPanel';
+import {
+  type DeepPartial,
+  hydrateTemplatePreviewSamples,
+  normalizeTemplatePreviewSamples,
+  validateTemplatePreviewSamples,
+} from './templatePreviewSamplesModel';
 import { DocumentLayoutDefaultsEditor } from '../documents/DocumentLayoutEditor';
 import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
 import { usePermissions } from '../session/permissions';
@@ -159,6 +177,11 @@ import {
 } from '../../ui';
 import { editUserPath, NEW_USER_PATH } from '../users/paths';
 import { UsersList } from '../users/UserListPage';
+
+const TemplatePreviewSamplesPanel = lazy(async () => {
+  const module = await import('./TemplatePreviewSamplesPanel');
+  return { default: module.TemplatePreviewSamplesPanel };
+});
 
 /** Trim to a value or `null` (the contract's "unset" for nullable strings). */
 const orNull = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -382,8 +405,10 @@ type SettingsWithMaybeAi = Omit<
     | null;
   signing: Omit<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'> &
     Partial<Pick<SigningSettings, 'providers' | 'tsl_sources' | 'tsa_providers'>>;
-  documents: Omit<DocumentSettings, 'layout_defaults'> &
-    Partial<Pick<DocumentSettings, 'layout_defaults'>>;
+  documents: Omit<DocumentSettings, 'layout_defaults' | 'template_preview_samples'> &
+    Partial<Pick<DocumentSettings, 'layout_defaults'>> & {
+      template_preview_samples?: DeepPartial<TemplatePreviewSampleSettings> | null;
+    };
 };
 
 function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
@@ -420,6 +445,9 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
           ...(settings.documents.layout_defaults?.regions ?? {}),
         },
       },
+      template_preview_samples: hydrateTemplatePreviewSamples(
+        settings.documents.template_preview_samples,
+      ),
     },
     signing: {
       ...DEFAULT_SETTINGS.signing,
@@ -524,6 +552,12 @@ function toWireBody(draft: Settings): Settings {
       // only the legacy single URL is edited here.
       ...draft.catalog,
       cae_update_url: orNull(draft.catalog.cae_update_url ?? ''),
+    },
+    documents: {
+      ...draft.documents,
+      template_preview_samples: normalizeTemplatePreviewSamples(
+        draft.documents.template_preview_samples,
+      ),
     },
     signing: {
       ...draft.signing,
@@ -745,6 +779,7 @@ const SETTINGS_SUBSECTIONS = {
     'services',
     'logs',
     'search',
+    'template-preview',
     'api',
     'database',
     'cache',
@@ -824,6 +859,11 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
       id: 'search',
       adminLabel: 'admin.search.title',
       icon: <Icon.Search />,
+    },
+    {
+      id: 'template-preview',
+      adminLabel: 'admin.templatePreview.title',
+      icon: <Icon.FileText />,
     },
     // API (t82b). One button covering TWO addresses — `.../api` (server) and `.../api-keys`
     // (keys) — which is why `api-keys` is a valid subsection but not an entry here. See
@@ -1010,6 +1050,7 @@ const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefi
  */
 const WIDE_SUBSECTIONS: readonly string[] = [
   'operations:search',
+  'operations:template-preview',
   'signing:tsl',
   'signing:tsa',
   'signing:providers',
@@ -1485,6 +1526,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const st = useServerEnvT();
   // "Administração" copy (title + nav) lives in its own owned fallback module (t36), same split.
   const at = useAdminT();
+  const templatePreviewT = useTemplatePreviewSamplesT();
   // The entities-column card is now the ORG DEFAULT (t37): its hint says so, from an owned module.
   const ct = useTableColumnsT();
   // The Administração surface (`/admin`) renders this page with `surface="admin"`: it titles the
@@ -1495,10 +1537,13 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const isAdmin = surface === 'admin';
   const toast = useToast();
   const { can, ready: permissionsReady } = usePermissions();
-  const canManageSettings = can('settings.manage');
   const canSearchManage = can('search.manage');
+  const canManageSettings = can('settings.manage');
+  const canReadSettings = can('settings.read');
+  const canTemplatePreviewSamples = canReadSettings;
   const [params] = useSearchParams();
   const navigate = useNavigate();
+  const { hash, pathname, search } = useLocation();
   // Aparência is the default and carries no segment (so `/settings` lands on it). The
   // section is read off the path on every render, so a deep link paints the right tab at once.
   // A retired address (`/settings/email`) still resolves — to the sub-tab its content
@@ -1544,7 +1589,6 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     // On the admin surface the signing section adds a path level (`/admin/signing/:detail`), so its
     // sub is read one segment deeper than the operations section (`/admin/:sub`). t50.
     base: isAdmin ? (section === 'signing' ? '/admin/signing' : '/admin') : `/settings/${section}`,
-  const { hash, pathname, search } = useLocation();
     parse: (raw) => raw ?? '',
     fallback: '',
   });
@@ -1558,7 +1602,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const sub: SettingsSubsection | undefined = subNav
     ? (retired?.sub ??
       RETIRED_SUBSECTIONS[section]?.[subSegment] ??
-      (validSubs?.includes(subSegment) && (subSegment !== 'search' || canSearchManage)
+      (validSubs?.includes(subSegment) &&
+      (subSegment !== 'search' || canSearchManage) &&
+      (subSegment !== 'template-preview' || canTemplatePreviewSamples)
         ? (subSegment as SettingsSubsection)
         : subNav[0].id))
     : undefined;
@@ -1694,9 +1740,13 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // clean form); a failure raises an error toast AND keeps an inline error + retry, and
   // the fields stay editable so it self-heals on the next edit or a manual retry.
   const body = useMemo(() => (draft ? toWireBody(draft) : null), [draft]);
+  const templatePreviewSamplesValid =
+    !draft || validateTemplatePreviewSamples(draft.documents.template_preview_samples).length === 0;
+  const templatePreviewAutosaveBlocked = !!draft && !templatePreviewSamplesValid;
   const autosave = useAutosave<Settings | null>({
     value: body,
     enabled: !!draft && canManageSettings && !broadSettingsSuppressed,
+    blocked: templatePreviewAutosaveBlocked,
     onSave: (b) => (b ? save.mutateAsync(b) : Promise.resolve()),
     onSuccess: () => toast.success(t('toast.settings.saved')),
     onError: (e) => toast.error(e),
@@ -1981,6 +2031,21 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           {t('perm.denied.body')}
         </InlineWarning>
       ) : null}
+      {templatePreviewAutosaveBlocked &&
+      canManageSettings &&
+      canTemplatePreviewSamples &&
+      sub !== 'template-preview' ? (
+        <InlineWarning tone="warn" title={templatePreviewT('templatePreview.blocked.title')}>
+          <div className="stack--tight">
+            <p>{templatePreviewT('templatePreview.blocked.body')}</p>
+            <div className="row-wrap">
+              <ButtonLink to="/admin/template-preview" icon={<Icon.FileText />}>
+                {templatePreviewT('templatePreview.blocked.action')}
+              </ButtonLink>
+            </div>
+          </div>
+        </InlineWarning>
+      ) : null}
 
       {/* The primary sub-tab strip. It sits OUTSIDE the fieldset on purpose: `editingLocked` inerts
           the fieldset, and a reader without the section's edit verb must still be able to move
@@ -1995,7 +2060,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
       {isAdmin && sub ? (
         <SubNav
           items={ADMIN_SUBSECTION_NAV.filter(
-            (candidate) => candidate.id !== 'search' || canSearchManage,
+            (candidate) =>
+              (candidate.id !== 'search' || canSearchManage) &&
+              (candidate.id !== 'template-preview' || canTemplatePreviewSamples),
           ).map((s) => ({
             id: s.id,
             label: s.adminLabel
@@ -3027,6 +3094,23 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   reachable with `search.manage`; it neither fetches nor writes broad settings. */}
               {sub === 'search' && canSearchManage ? <SearchSettingsPanel /> : null}
 
+              {sub === 'template-preview' && canTemplatePreviewSamples ? (
+                <Suspense fallback={settingsSkeleton}>
+                  <TemplatePreviewSamplesPanel
+                    value={draft.documents.template_preview_samples}
+                    canEdit={canManageSettings}
+                    onChange={(template_preview_samples) =>
+                      setDocuments('template_preview_samples', template_preview_samples)
+                    }
+                    onReset={() =>
+                      setDocuments(
+                        'template_preview_samples',
+                        structuredClone(DEFAULT_TEMPLATE_PREVIEW_SAMPLES),
+                      )
+                    }
+                  />
+                </Suspense>
+              ) : null}
 
               {/* Base de dados and Redis (t105). Read-only environment surfaces, not editors —
                   every value on both panes is resolved once at process start, and several embed a

@@ -32,6 +32,7 @@ import {
   DATA_PERSISTENCE_MODES,
   DATA_SIDECAR_STORAGE_MODES,
   DATA_USAGE_BASES,
+  DEFAULT_TEMPLATE_PREVIEW_SAMPLES,
   DSR_REQUEST_OUTCOMES,
   DSR_REQUEST_STATUSES,
   DSR_REQUEST_TYPES,
@@ -4832,7 +4833,12 @@ describe('contract fixtures parse through the real client', () => {
     );
     const documents = assertExactKeys<DocumentSettings>(
       settings.documents,
-      { locale: true, numbering_scheme_default: true, layout_defaults: true },
+      {
+        locale: true,
+        numbering_scheme_default: true,
+        layout_defaults: true,
+        template_preview_samples: true,
+      },
       'Settings.documents',
     );
     inEnum(LOCALES, documents.locale, 'Settings.documents.locale');
@@ -4849,6 +4855,7 @@ describe('contract fixtures parse through the real client', () => {
     expect(documents.layout_defaults.typography.body_font_size_pt).toBe(10);
     expect(documents.layout_defaults.typography.header_font_family).toBe('NotoSerif');
     expect(documents.layout_defaults.regions.header_gap_mm).toBe(4);
+    expect(documents.template_preview_samples).toEqual(DEFAULT_TEMPLATE_PREVIEW_SAMPLES);
     const ui = assertExactKeys<UiSettings>(
       settings.ui,
       {

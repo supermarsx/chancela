@@ -6342,11 +6342,401 @@ export interface OrganizationSettings {
   default_actor: string;
 }
 
+export const TEMPLATE_PREVIEW_FAMILY_PROFILE_KEYS = [
+  'commercial_company',
+  'association',
+  'condominium',
+  'cooperative',
+  'foundation',
+] as const;
+export type TemplatePreviewFamilyProfileKey = (typeof TEMPLATE_PREVIEW_FAMILY_PROFILE_KEYS)[number];
+
+export type TemplatePreviewNumberingScheme = 'BoundVolume' | 'LooseLeaf';
+export type TemplatePreviewClosingReason =
+  'BookFull' | 'EntityDissolved' | 'MigrationToSuccessor' | 'Other';
+export type TemplatePreviewVote =
+  'Unanimous' | { Recorded: { em_favor: number; contra: number; abstencoes: number } };
+
+export interface TemplatePreviewFamilyProfile {
+  name: string;
+  legal_form: string;
+}
+
+export interface TemplatePreviewAttendee {
+  name: string;
+  quality: SignatoryCapacity;
+  quality_note: string;
+  weight: { capital: string | null; permilage: number | null };
+  presence: PresenceMode;
+  represented_by: string | null;
+}
+
+export interface TemplatePreviewAgendaItem {
+  number: number;
+  text: string;
+}
+
+export interface TemplatePreviewStatement {
+  agenda_number: number;
+  member: string;
+  text: string;
+}
+
+export interface TemplatePreviewDeliberation {
+  agenda_number: number;
+  text: string;
+  vote: TemplatePreviewVote;
+  statements: TemplatePreviewStatement[];
+}
+
+export interface TemplatePreviewReferencedDocument {
+  label: string;
+  reference: string;
+}
+
+export interface TemplatePreviewAttachment {
+  kind: string;
+  digest: string;
+}
+
+export interface TemplatePreviewSignatory {
+  capacity: SignatoryCapacity;
+  role: string;
+  name: string;
+}
+
+export interface TemplatePreviewRecipient {
+  name: string;
+  contact: string;
+  channel: DispatchChannel;
+  reference: string;
+  dispatched_at: string;
+}
+
+/**
+ * Fictitious, non-secret instance sample used by PDF/Markdown template previews. These values are
+ * visible in previews to principals with `act.read`; they must never contain production records,
+ * credentials, personal contact details, tokens, or other secrets.
+ */
+export interface TemplatePreviewSampleSettings {
+  general: { title: string; subject: string; created_at: string };
+  entity: {
+    nipc: string;
+    seat: string;
+    address: string;
+    share_capital: string;
+    capital: string;
+  };
+  family_profiles: Record<TemplatePreviewFamilyProfileKey, TemplatePreviewFamilyProfile>;
+  book: { kind: string; reference: string; predecessor_reference: string };
+  act: {
+    number: number;
+    title: string;
+    meeting_date: string;
+    meeting_time: string;
+    place: string;
+  };
+  meeting: {
+    ata_number: number;
+    agenda_number: number;
+    meeting_date: string;
+    meeting_time: string;
+    place: string;
+    channel: MeetingChannel;
+    members_present: number;
+    members_represented: number;
+    attendance_reference: string;
+    mesa: { president: string; secretaries: string[] };
+    attendees: TemplatePreviewAttendee[];
+  };
+  agenda: TemplatePreviewAgendaItem[];
+  deliberations: {
+    summary: string;
+    items: TemplatePreviewDeliberation[];
+  };
+  evidence: {
+    referenced_documents: TemplatePreviewReferencedDocument[];
+    attachments: TemplatePreviewAttachment[];
+    signatories: TemplatePreviewSignatory[];
+    required_signatories: TemplatePreviewSignatory[];
+  };
+  convening: {
+    convener: string;
+    convener_capacity: SignatoryCapacity;
+    dispatch_date: string;
+    antecedence_days: number;
+    channel: DispatchChannel;
+    second_call: { date: string; time: string; reduced_quorum: boolean };
+    recipients: TemplatePreviewRecipient[];
+  };
+  convening_waiver: {
+    basis: string;
+    all_agreed_to_meet: boolean;
+    all_agreed_to_agenda: boolean;
+    grounds: string;
+    evidence_reference: string;
+  };
+  representation: {
+    scope: string;
+    instructions: string;
+    evidence_reference: string;
+    representative: { name: string; document: string };
+    represented: { name: string; unit: string };
+  };
+  telematic_evidence: { authenticity: string; recording: string; security: string };
+  book_instruments: {
+    opening_date: string;
+    closing_date: string;
+    numbering_scheme: TemplatePreviewNumberingScheme;
+    numbering_label: string;
+    purpose: string;
+    ata_count: number;
+    closing_reason: TemplatePreviewClosingReason;
+    rectifies: string;
+    seal_event_seq: number;
+    payload_digest: string;
+    digest: string;
+  };
+  fallbacks: {
+    capacity: SignatoryCapacity;
+    contact: string;
+    dispatched_at: string;
+    kind: string;
+    label: string;
+    name: string;
+    number: number;
+    quality: SignatoryCapacity;
+    quality_note: string;
+    reference: string;
+    represented_by: string;
+    role: string;
+    statement: { agenda_number: number; member: string; text: string };
+    text: string;
+    weight: { capital: string; permilage: number };
+  };
+}
+
+export const DEFAULT_TEMPLATE_PREVIEW_SAMPLES: TemplatePreviewSampleSettings = {
+  general: {
+    title: 'Ata n.º 12 — Assembleia Geral',
+    subject: '',
+    created_at: '2026-07-15',
+  },
+  entity: {
+    nipc: '500000000',
+    seat: 'Rua da República, 10, 1000-001 Lisboa',
+    address: 'Rua da República, 10, 1000-001 Lisboa',
+    share_capital: '100 000,00 EUR',
+    capital: '100 000,00 EUR',
+  },
+  family_profiles: {
+    commercial_company: {
+      name: 'Sociedade Exemplo, Lda.',
+      legal_form: 'Sociedade por quotas',
+    },
+    association: {
+      name: 'Associação Cultural Exemplo',
+      legal_form: 'Associação sem fins lucrativos',
+    },
+    condominium: {
+      name: 'Condomínio do Edifício Exemplo',
+      legal_form: 'Condomínio',
+    },
+    cooperative: {
+      name: 'Cooperativa Exemplo, C.R.L.',
+      legal_form: 'Cooperativa',
+    },
+    foundation: { name: 'Fundação Exemplo', legal_form: 'Fundação' },
+  },
+  book: {
+    kind: 'Assembleia geral',
+    reference: 'Livro de atas n.º 2',
+    predecessor_reference: 'Livro de atas n.º 1 (2020–2025)',
+  },
+  act: {
+    number: 12,
+    title: 'Assembleia Geral Ordinária',
+    meeting_date: '2026-07-15',
+    meeting_time: '10:30',
+    place: 'Sede social, Lisboa',
+  },
+  meeting: {
+    ata_number: 12,
+    agenda_number: 1,
+    meeting_date: '2026-07-15',
+    meeting_time: '10:30',
+    place: 'Sede social, Lisboa',
+    channel: 'Physical',
+    members_present: 2,
+    members_represented: 1,
+    attendance_reference: 'Lista de presenças anexa n.º LP-2026-12',
+    mesa: { president: 'Ana Martins', secretaries: ['Bruno Costa'] },
+    attendees: [
+      {
+        name: 'Ana Martins',
+        quality: 'Shareholder',
+        quality_note: 'Sócia e presidente da mesa',
+        weight: { capital: '60 000,00 EUR', permilage: null },
+        presence: 'InPerson',
+        represented_by: null,
+      },
+      {
+        name: 'Carlos Ferreira',
+        quality: 'Shareholder',
+        quality_note: 'Sócio',
+        weight: { capital: '40 000,00 EUR', permilage: null },
+        presence: 'Represented',
+        represented_by: 'Diana Lopes',
+      },
+      {
+        name: 'Eduarda Silva',
+        quality: 'CondoOwner',
+        quality_note: 'Condómina da fração C',
+        weight: { capital: null, permilage: 125 },
+        presence: 'Absent',
+        represented_by: null,
+      },
+    ],
+  },
+  agenda: [
+    { number: 1, text: 'Apreciação e aprovação das contas do exercício de 2025' },
+    { number: 2, text: 'Aplicação do resultado líquido do exercício' },
+  ],
+  deliberations: {
+    summary: 'As propostas constantes da ordem de trabalhos foram discutidas e votadas.',
+    items: [
+      {
+        agenda_number: 1,
+        text: 'Foram aprovadas as contas do exercício de 2025.',
+        vote: { Recorded: { em_favor: 2, contra: 0, abstencoes: 1 } },
+        statements: [
+          {
+            agenda_number: 1,
+            member: 'Carlos Ferreira',
+            text: 'Declaração de voto anexada à presente ata.',
+          },
+        ],
+      },
+      {
+        agenda_number: 2,
+        text: 'Foi aprovada a transferência do resultado para reservas livres.',
+        vote: 'Unanimous',
+        statements: [],
+      },
+    ],
+  },
+  evidence: {
+    referenced_documents: [
+      { label: 'Relatório e contas', reference: 'RC-2025' },
+      { label: 'Lista de presenças', reference: 'LP-2026-12' },
+    ],
+    attachments: [
+      {
+        kind: 'Relatório e contas',
+        digest: '8f2c1769d9f2b47b6fa13e72e4da9db20d8f6fd5a1ff8b954cf953faa9d87a11',
+      },
+      {
+        kind: 'Lista de presenças',
+        digest: '1ab490ef5d4f9070f931912252f3a48df5f25fd55e2f4228ec7b129023f2ad80',
+      },
+    ],
+    signatories: [
+      { capacity: 'Chair', role: 'Presidente da mesa', name: 'Ana Martins' },
+      { capacity: 'Secretary', role: 'Secretário', name: 'Bruno Costa' },
+    ],
+    required_signatories: [
+      { capacity: 'Chair', role: 'Presidente da mesa', name: 'Ana Martins' },
+      { capacity: 'Secretary', role: 'Secretário', name: 'Bruno Costa' },
+    ],
+  },
+  convening: {
+    convener: 'Ana Martins',
+    convener_capacity: 'Chair',
+    dispatch_date: '2026-06-30',
+    antecedence_days: 15,
+    channel: 'Email',
+    second_call: { date: '2026-07-15', time: '11:00', reduced_quorum: true },
+    recipients: [
+      {
+        name: 'Ana Martins',
+        contact: 'ana.martins@example.test',
+        channel: 'Email',
+        reference: 'CONV-2026-12-A',
+        dispatched_at: '2026-06-30',
+      },
+      {
+        name: 'Carlos Ferreira',
+        contact: 'carlos.ferreira@example.test',
+        channel: 'RegisteredLetterAR',
+        reference: 'CONV-2026-12-B',
+        dispatched_at: '2026-06-30',
+      },
+    ],
+  },
+  convening_waiver: {
+    basis: 'AssembleiaUniversal',
+    all_agreed_to_meet: true,
+    all_agreed_to_agenda: true,
+    grounds: 'Todos os sócios estavam presentes ou devidamente representados.',
+    evidence_reference: 'LP-2026-12',
+  },
+  representation: {
+    scope: 'Participação e voto em todos os pontos da ordem de trabalhos',
+    instructions: 'Votar favoravelmente as propostas apresentadas',
+    evidence_reference: 'PROC-2026-04',
+    representative: { name: 'Diana Lopes', document: 'Cartão de Cidadão n.º 00000000' },
+    represented: {
+      name: 'Carlos Ferreira',
+      unit: 'Quota com o valor nominal de 40 000,00 EUR',
+    },
+  },
+  telematic_evidence: {
+    authenticity: 'Identidade confirmada na sessão autenticada',
+    recording: 'Registo audiovisual interno REF-2026-12',
+    security: 'Ligação cifrada com controlo de acesso',
+  },
+  book_instruments: {
+    opening_date: '2026-01-02',
+    closing_date: '2026-07-15',
+    numbering_scheme: 'BoundVolume',
+    numbering_label: 'Livro encadernado com numeração sequencial',
+    purpose: 'Registo das atas da assembleia geral',
+    ata_count: 12,
+    closing_reason: 'BookFull',
+    rectifies: 'Ata n.º 11, de 30 de junho de 2026',
+    seal_event_seq: 124,
+    payload_digest: '8f2c1769d9f2b47b6fa13e72e4da9db20d8f6fd5a1ff8b954cf953faa9d87a11',
+    digest: '8f2c1769d9f2b47b6fa13e72e4da9db20d8f6fd5a1ff8b954cf953faa9d87a11',
+  },
+  fallbacks: {
+    capacity: 'Chair',
+    contact: 'secretaria@example.test',
+    dispatched_at: '2026-06-30',
+    kind: 'Documento de apoio',
+    label: 'Relatório e contas',
+    name: 'Ana Martins',
+    number: 1,
+    quality: 'Shareholder',
+    quality_note: 'Sócia',
+    reference: 'DOC-2026-12',
+    represented_by: 'Diana Lopes',
+    role: 'Presidente da mesa',
+    statement: {
+      agenda_number: 1,
+      member: 'Carlos Ferreira',
+      text: 'Declaração de voto anexada à presente ata.',
+    },
+    text: 'Apreciação e aprovação das contas do exercício de 2025',
+    weight: { capital: '60 000,00 EUR', permilage: 600 },
+  },
+};
+
 export interface DocumentSettings {
   locale: Locale;
   numbering_scheme_default: NumberingScheme;
   /** Concrete instance-wide base; templates, entities, and books inherit from this. */
   layout_defaults: DocumentLayoutPolicy;
+  template_preview_samples: TemplatePreviewSampleSettings;
 }
 
 /**
@@ -8286,6 +8676,7 @@ export const DEFAULT_SETTINGS: Settings = {
       },
       regions: { header_gap_mm: 4, footer_gap_mm: 4 },
     },
+    template_preview_samples: DEFAULT_TEMPLATE_PREVIEW_SAMPLES,
   },
   catalog: {
     cae_update_url: null,

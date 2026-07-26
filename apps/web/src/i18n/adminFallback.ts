@@ -44,8 +44,11 @@ export const adminPtPT = {
   'admin.finder.keywords.logs':
     'registos logs diagnóstico auditoria eventos níveis verbosidade histórico',
   'admin.search.title': 'Pesquisa',
+  'admin.templatePreview.title': 'Amostras de pré-visualização',
   'admin.finder.keywords.search':
     'pesquisa índice indexação worker fila reconstruir pausar retomar resultados facetas memória conteúdo',
+  'admin.finder.keywords.templatePreview':
+    'modelos minutas atas pré-visualização amostras PDF Markdown fictícios entidade reunião ordem trabalhos convocatória provas livro',
   'admin.finder.keywords.api': 'servidor API endereço endpoint porta limites tráfego pedidos rede',
   'admin.finder.keywords.apiKeys':
     'chaves API tokens credenciais acesso utilizadores validade revogar',
@@ -95,8 +98,11 @@ export const adminEnglish = {
   'admin.finder.keywords.services': 'services platform status health availability restart process',
   'admin.finder.keywords.logs': 'logs diagnostics audit events levels verbosity history records',
   'admin.search.title': 'Search',
+  'admin.templatePreview.title': 'Preview samples',
   'admin.finder.keywords.search':
     'search index indexing worker queue rebuild pause resume results facets memory content',
+  'admin.finder.keywords.templatePreview':
+    'templates minutes preview samples PDF Markdown fictitious entity meeting agenda convening evidence book',
   'admin.finder.keywords.api':
     'API server address endpoint port request rate limits traffic network',
   'admin.finder.keywords.apiKeys': 'API keys tokens credentials access users expiry revoke',

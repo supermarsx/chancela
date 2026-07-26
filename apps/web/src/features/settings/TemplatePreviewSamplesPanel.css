@@ -1,0 +1,121 @@
+.template-preview-samples {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.template-preview-samples__intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.template-preview-samples__intro > div {
+  display: grid;
+  gap: 0.55rem;
+  min-inline-size: 0;
+}
+
+.template-preview-samples__intro p {
+  margin: 0;
+}
+
+.template-preview-samples__tabs {
+  inline-size: 100%;
+}
+
+/* Internal editor tabs align with the left edge of this wide settings pane. */
+.template-preview-samples__tabs .subnav-rail {
+  inline-size: 100%;
+  max-inline-size: 100%;
+  margin-inline: 0;
+}
+
+.template-preview-samples__tabs .subnav-wrap {
+  margin-block-start: 0;
+}
+
+.template-preview-sample-collection,
+.template-preview-sample-table {
+  inline-size: 100%;
+  min-inline-size: 0;
+}
+
+.template-preview-sample-table .table {
+  inline-size: 100%;
+  min-inline-size: 42rem;
+}
+
+.template-preview-sample-table th:last-child,
+.template-preview-sample-table td:last-child {
+  inline-size: 11rem;
+}
+
+.template-preview-sample-table td {
+  max-inline-size: 38rem;
+  overflow-wrap: anywhere;
+}
+
+.template-preview-sample-table__actions {
+  white-space: nowrap;
+}
+
+.template-preview-sample-actions {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 0.3rem;
+}
+
+.template-preview-sample-modal {
+  inline-size: min(48rem, calc(100vw - 2rem));
+  max-inline-size: 48rem;
+}
+
+.template-preview-sample-modal__fields {
+  display: grid;
+  gap: 1rem;
+  min-inline-size: 0;
+}
+
+.template-preview-modal-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.template-preview-nested-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.template-preview-nested-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.template-preview-nested-editor {
+  display: grid;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+}
+
+@media (max-width: 48rem) {
+  .template-preview-samples__intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .template-preview-samples__intro > .btn {
+    inline-size: 100%;
+    justify-content: center;
+  }
+
+  .template-preview-modal-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
