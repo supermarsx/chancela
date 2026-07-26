@@ -72,8 +72,10 @@
 
 use crate::AppState;
 
-#[cfg(feature = "postgres")]
+#[cfg(any(feature = "postgres", test))]
 use std::collections::HashMap;
+#[cfg(any(feature = "postgres", test))]
+use std::hash::Hash;
 
 #[cfg(feature = "postgres")]
 use chancela_core::ActId;
@@ -221,6 +223,27 @@ struct FeedSnapshot {
     signed_documents: HashMap<ActId, StoredSignedDocument>,
 }
 
+/// Security classification for replacing one indexed source map with another. Content/status field
+/// changes keep the same authorization parent and may serve the preceding completed generation.
+/// Removal or a parent change can make that immutable generation over-authorized, so it must be
+/// fenced before the replacement is published.
+#[cfg(any(feature = "postgres", test))]
+fn removed_or_parent_changed<K, V, P>(
+    current: &HashMap<K, V>,
+    candidate: &HashMap<K, V>,
+    parent: impl Fn(&V) -> P,
+) -> bool
+where
+    K: Eq + Hash,
+    P: PartialEq,
+{
+    current.iter().any(|(id, current_value)| {
+        candidate
+            .get(id)
+            .is_none_or(|candidate_value| parent(current_value) != parent(candidate_value))
+    })
+}
+
 impl AppState {
     /// wp16 P1 — the follower read-lag indicator (plan §2.4), or `None` when this node is not part of
     /// an electing (Postgres) cluster. Exposed on `/health`.
@@ -313,7 +336,13 @@ impl AppState {
                     self.cluster_full_reload(&store).await;
                     return;
                 };
-                self.cluster_swap_delta_state(candidate, snapshot).await;
+                if let Err(error) = self.cluster_swap_delta_state(candidate, snapshot).await {
+                    eprintln!(
+                        "cluster feed: FAIL-CLOSED — search security fence could not start before \
+                         the delta snapshot swap ({error:?}); keeping current in-memory state"
+                    );
+                    return;
+                }
                 self.cluster_invalidate_caches(&delta).await;
                 // wp16 P3b: the ledger delta also covers this tick's user/role/delegation/settings/
                 // credential mutations (each such mutation appended a ledger event), so refresh the
@@ -377,11 +406,91 @@ impl AppState {
         }
     }
 
+    /// Compare only identity and authorization-parent fields. Additions and ordinary content/status
+    /// edits are safe to reconcile in the background; removals and scope-parent moves must first
+    /// tombstone the preceding projection.
+    #[cfg(feature = "postgres")]
+    async fn aggregate_requires_search_security_fence(
+        &self,
+        candidate: &AggregateSnapshot,
+    ) -> bool {
+        let group_template_libraries = self.group_template_libraries.read().await;
+        let group_template_library_revisions = self.group_template_library_revisions.read().await;
+        let entities = self.entities.read().await;
+        let books = self.books.read().await;
+        let acts = self.acts.read().await;
+        let follow_ups = self.follow_ups.read().await;
+
+        removed_or_parent_changed(&entities, &candidate.entities, |entity| entity.tenant_id)
+            || removed_or_parent_changed(&books, &candidate.books, |book| book.entity_id)
+            || removed_or_parent_changed(&acts, &candidate.acts, |act| act.book_id)
+            || removed_or_parent_changed(&follow_ups, &candidate.follow_ups, |follow_up| {
+                follow_up.act_id
+            })
+            || removed_or_parent_changed(
+                &group_template_libraries,
+                &candidate.group_template_libraries,
+                |library| (library.tenant_id, library.group_id),
+            )
+            || removed_or_parent_changed(
+                &group_template_library_revisions,
+                &candidate.group_template_library_revisions,
+                |revision| (revision.tenant_id, revision.group_id, revision.library_id),
+            )
+    }
+
+    #[cfg(feature = "postgres")]
+    async fn loaded_state_requires_search_security_fence(
+        &self,
+        candidate: &chancela_store::LoadedState,
+    ) -> bool {
+        let group_template_libraries = self.group_template_libraries.read().await;
+        let group_template_library_revisions = self.group_template_library_revisions.read().await;
+        let entities = self.entities.read().await;
+        let books = self.books.read().await;
+        let acts = self.acts.read().await;
+        let follow_ups = self.follow_ups.read().await;
+
+        removed_or_parent_changed(&entities, &candidate.entities, |entity| entity.tenant_id)
+            || removed_or_parent_changed(&books, &candidate.books, |book| book.entity_id)
+            || removed_or_parent_changed(&acts, &candidate.acts, |act| act.book_id)
+            || removed_or_parent_changed(&follow_ups, &candidate.follow_ups, |follow_up| {
+                follow_up.act_id
+            })
+            || removed_or_parent_changed(
+                &group_template_libraries,
+                &candidate.group_template_libraries,
+                |library| (library.tenant_id, library.group_id),
+            )
+            || removed_or_parent_changed(
+                &group_template_library_revisions,
+                &candidate.group_template_library_revisions,
+                |revision| (revision.tenant_id, revision.group_id, revision.library_id),
+            )
+    }
+
     /// Publish a verified candidate ledger together with its aggregate snapshot. Locks are acquired
     /// in the same front-of-state order documented on [`AppState`] so readers never observe a ledger
     /// advanced by this feed while the aggregate maps are still from the prior head.
     #[cfg(feature = "postgres")]
-    async fn cluster_swap_delta_state(&self, ledger: Ledger, snapshot: FeedSnapshot) {
+    async fn cluster_swap_delta_state(
+        &self,
+        ledger: Ledger,
+        snapshot: FeedSnapshot,
+    ) -> Result<(), crate::ApiError> {
+        let security_sensitive = self
+            .aggregate_requires_search_security_fence(&snapshot.aggregates)
+            .await;
+        let _search_security_mutation = if security_sensitive {
+            Some(crate::search::begin_security_sensitive_source_mutation(self).await?)
+        } else {
+            None
+        };
+        let _search_source_mutation = if security_sensitive {
+            None
+        } else {
+            Some(crate::search::begin_source_mutation(self).await)
+        };
         let mut company_groups = self.company_groups.write().await;
         let mut group_template_libraries = self.group_template_libraries.write().await;
         let mut group_template_library_revisions =
@@ -404,6 +513,7 @@ impl AppState {
         *registry_extracts = snapshot.aggregates.registry_extracts;
         *signed_documents = snapshot.signed_documents;
         *live_ledger = ledger;
+        Ok(())
     }
 
     /// wp16 P1 — the fail-closed remedy when a delta does not extend the current head: reload the
@@ -434,7 +544,13 @@ impl AppState {
                 return;
             }
         };
-        self.cluster_swap_loaded_state(loaded, signed).await;
+        if let Err(error) = self.cluster_swap_loaded_state(loaded, signed).await {
+            eprintln!(
+                "cluster feed: FAIL-CLOSED — search security fence could not start before the full \
+                 snapshot swap ({error:?}); keeping current in-memory state"
+            );
+            return;
+        }
         // wp16 P3b: a full durable reload must also refresh the DB-backed sidecars (users/roles/
         // delegations/settings/credentials) so a follower recovering from a rejected delta does not
         // keep stale shared auth/config state.
@@ -454,7 +570,20 @@ impl AppState {
         &self,
         loaded: chancela_store::LoadedState,
         signed_documents_snapshot: HashMap<ActId, StoredSignedDocument>,
-    ) {
+    ) -> Result<(), crate::ApiError> {
+        let security_sensitive = self
+            .loaded_state_requires_search_security_fence(&loaded)
+            .await;
+        let _search_security_mutation = if security_sensitive {
+            Some(crate::search::begin_security_sensitive_source_mutation(self).await?)
+        } else {
+            None
+        };
+        let _search_source_mutation = if security_sensitive {
+            None
+        } else {
+            Some(crate::search::begin_source_mutation(self).await)
+        };
         let mut company_groups = self.company_groups.write().await;
         let mut group_template_libraries = self.group_template_libraries.write().await;
         let mut group_template_library_revisions =
@@ -477,6 +606,7 @@ impl AppState {
         *registry_extracts = loaded.registry_extracts;
         *signed_documents = signed_documents_snapshot;
         *ledger = loaded.ledger;
+        Ok(())
     }
 
     /// wp16 P1 — cache coherence for a follower after a delta apply (plan §5.1/§5.2). [`VerifyMemo`]
@@ -651,6 +781,53 @@ mod tests {
             ledger.append("api", "settings", "settings.updated", None, b"{}");
         }
         ledger.events().to_vec()
+    }
+
+    #[derive(Clone)]
+    struct ClassifiedRow {
+        parent: u8,
+        content: &'static str,
+    }
+
+    #[test]
+    fn search_source_replacement_fences_only_deletions_and_scope_moves() {
+        let current = HashMap::from([(
+            1_u8,
+            ClassifiedRow {
+                parent: 7,
+                content: "old title",
+            },
+        )]);
+        let content_only = HashMap::from([(
+            1_u8,
+            ClassifiedRow {
+                parent: 7,
+                content: "new title",
+            },
+        )]);
+        assert_ne!(current[&1].content, content_only[&1].content);
+        assert!(
+            !removed_or_parent_changed(&current, &content_only, |row| row.parent),
+            "content-only deltas keep serving the preceding completed generation"
+        );
+
+        let deleted = HashMap::new();
+        assert!(
+            removed_or_parent_changed(&current, &deleted, |row| row.parent),
+            "physical removal must fail closed"
+        );
+
+        let scope_moved = HashMap::from([(
+            1_u8,
+            ClassifiedRow {
+                parent: 8,
+                content: "old title",
+            },
+        )]);
+        assert!(
+            removed_or_parent_changed(&current, &scope_moved, |row| row.parent),
+            "authorization-parent changes must fail closed"
+        );
     }
 
     /// A follower ledger holding the first `k` events of `full`.

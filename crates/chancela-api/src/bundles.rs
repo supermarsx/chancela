@@ -520,6 +520,7 @@ pub async fn start_over_book(
 
     // entities → books → ledger (canonical order; entities read for the termo snapshot).
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     // wp28: an OWNED ledger write guard so it can be moved into the blocking-pool task below and
     // handed back, keeping the sync store backend (and any postgres Client Drop) off the worker.

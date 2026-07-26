@@ -1,0 +1,13 @@
+[package]
+name = "chancela-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Lightweight full-search contracts and in-memory inverted index for Chancela."
+
+[dependencies]
+serde = { workspace = true }
+unicode-normalization = { workspace = true }

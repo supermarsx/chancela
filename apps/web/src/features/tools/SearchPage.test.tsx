@@ -79,6 +79,8 @@ function response({
   facets = EMPTY_FACETS,
   offset = 0,
   total = hits.length,
+  facetsTruncated = false,
+  paginationTruncated = false,
 }: {
   hits?: SearchHit[];
   nextCursor?: string | null;
@@ -86,6 +88,8 @@ function response({
   facets?: SearchFacets;
   offset?: number;
   total?: number;
+  facetsTruncated?: boolean;
+  paginationTruncated?: boolean;
 } = {}): SearchResponse {
   return {
     page: {
@@ -93,10 +97,12 @@ function response({
       offset,
       limit: 25,
       has_more: nextCursor !== null,
+      facets_truncated: facetsTruncated,
       hits,
       facets,
     },
     next_cursor: nextCursor,
+    pagination_truncated: paginationTruncated,
     index,
   };
 }
@@ -225,6 +231,20 @@ describe('Ferramentas — Pesquisa', () => {
     expect(screen.getByTestId('location').textContent).toBe('/tools?q=assembleia');
   });
 
+  it('explains the bounded result window instead of claiming every match was loaded', async () => {
+    vi.stubGlobal(
+      'fetch',
+      searchFetch(() => response({ total: 150_000, paginationTruncated: true })),
+    );
+
+    renderWithProviders(<SearchPage />, ['/tools?q=assembleia']);
+
+    expect(await screen.findByText('A janela máxima de resultados foi atingida')).toBeTruthy();
+    expect(screen.getByText(/Refine os termos ou filtros/)).toBeTruthy();
+    expect(screen.queryByText('Todos os resultados foram carregados.')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Carregar mais resultados' })).toBeNull();
+  });
+
   it('shows partial, stale and bounded-content notices without leaking manage-only diagnostics', async () => {
     const degraded: SearchStatusResponse = {
       ...STATUS,
@@ -253,6 +273,24 @@ describe('Ferramentas — Pesquisa', () => {
     ).toBeTruthy();
     expect(document.body.textContent).not.toContain('C:\\private\\search.idx');
     expect(document.body.textContent).not.toContain('search-worker-secret');
+  });
+
+  it('explains when high-cardinality facet values are bounded while returned counts stay usable', async () => {
+    const facets: SearchFacets = {
+      ...EMPTY_FACETS,
+      author: { 'Amélia Costa': 1 },
+    };
+    vi.stubGlobal(
+      'fetch',
+      searchFetch(() => response({ facets, facetsTruncated: true })),
+    );
+
+    renderWithProviders(<SearchPage />, ['/tools?q=assembleia']);
+
+    expect(await screen.findByText('Alguns valores de filtro estão ocultos')).toBeTruthy();
+    expect(screen.getByText(/As contagens apresentadas continuam exatas/)).toBeTruthy();
+    fireEvent.click(screen.getByText('Mais filtros'));
+    expect(screen.getByRole('option', { name: 'Amélia Costa (1)' })).toBeTruthy();
   });
 
   it('does not query results while the index is disabled', async () => {

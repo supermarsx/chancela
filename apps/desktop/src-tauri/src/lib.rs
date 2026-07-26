@@ -477,12 +477,14 @@ fn spawn_server(
             };
 
             runtime.block_on(async move {
+                let shutdown_state = state.clone();
                 let app = chancela_api::app(state, web_dist);
 
                 let listener = match tokio::net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).await {
                     Ok(l) => l,
                     Err(e) => {
                         let _ = tx.send(Err(e));
+                        chancela_api::shutdown_search_service(&shutdown_state).await;
                         return;
                     }
                 };
@@ -490,6 +492,7 @@ fn spawn_server(
                     Ok(addr) => addr.port(),
                     Err(e) => {
                         let _ = tx.send(Err(e));
+                        chancela_api::shutdown_search_service(&shutdown_state).await;
                         return;
                     }
                 };
@@ -497,12 +500,14 @@ fn spawn_server(
                 // Hand the port back so the UI thread can navigate; if the caller
                 // has gone away there is nothing to serve.
                 if tx.send(Ok(port)).is_err() {
+                    chancela_api::shutdown_search_service(&shutdown_state).await;
                     return;
                 }
 
                 if let Err(e) = axum::serve(listener, app).await {
                     eprintln!("chancela embedded server stopped: {e}");
                 }
+                chancela_api::shutdown_search_service(&shutdown_state).await;
             });
         })?;
 
@@ -565,24 +570,28 @@ fn spawn_dev_server(state: chancela_api::AppState) {
             runtime.block_on(async move {
                 // API-only: Vite serves the UI in dev, so no web dist here (a stale
                 // on-disk dist would only mislead).
+                let shutdown_state = state.clone();
                 let app = chancela_api::app(state, None);
 
                 let listener = match tokio::net::TcpListener::bind(addr).await {
                     Ok(l) => l,
                     Err(e) => {
                         let _ = tx.send(Err(e));
+                        chancela_api::shutdown_search_service(&shutdown_state).await;
                         return;
                     }
                 };
 
                 // Report a successful bind, then serve forever.
                 if tx.send(Ok(())).is_err() {
+                    chancela_api::shutdown_search_service(&shutdown_state).await;
                     return;
                 }
 
                 if let Err(e) = axum::serve(listener, app).await {
                     eprintln!("chancela (dev) embedded server stopped: {e}");
                 }
+                chancela_api::shutdown_search_service(&shutdown_state).await;
             });
         });
 

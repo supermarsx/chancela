@@ -25,6 +25,9 @@ export const searchPtPT = {
   'search.filters.dateTo': 'Até',
   'search.filters.all': 'Todos',
   'search.facets.title': 'Restringir os resultados',
+  'search.facets.truncated.title': 'Alguns valores de filtro estão ocultos',
+  'search.facets.truncated.body':
+    'Os filtros apresentam uma seleção limitada de valores. As contagens apresentadas continuam exatas; refine a pesquisa para revelar outros valores.',
   'search.initial.title': 'Pesquise em toda a Chancela',
   'search.initial.body':
     'Encontre conteúdo de atas, entidades, livros, modelos, legislação, ações operacionais, arquivo, seguimentos, importações, OCR e documentos gerados.',
@@ -37,6 +40,9 @@ export const searchPtPT = {
   'search.results.loadMore': 'Carregar mais resultados',
   'search.results.loadingMore': 'A carregar mais…',
   'search.results.end': 'Todos os resultados foram carregados.',
+  'search.results.window.title': 'A janela máxima de resultados foi atingida',
+  'search.results.window.body':
+    'Existem mais correspondências, mas a paginação foi limitada para manter a pesquisa rápida. Refine os termos ou filtros para continuar.',
   'search.hit.truncated': 'Excerto limitado',
   'search.hit.author': 'Autor: {value}',
   'search.hit.law': 'Lei: {value}',
@@ -168,6 +174,9 @@ export const searchEnglish = {
   'search.filters.dateTo': 'To',
   'search.filters.all': 'All',
   'search.facets.title': 'Narrow the results',
+  'search.facets.truncated.title': 'Some filter values are hidden',
+  'search.facets.truncated.body':
+    'Filters show a limited selection of values. Displayed counts remain exact; refine the search to reveal other values.',
   'search.initial.title': 'Search across Chancela',
   'search.initial.body':
     'Find minutes content, entities, books, templates, law, operational actions, ledger events, follow-ups, imports, OCR and generated documents.',
@@ -180,6 +189,9 @@ export const searchEnglish = {
   'search.results.loadMore': 'Load more results',
   'search.results.loadingMore': 'Loading more…',
   'search.results.end': 'All results have been loaded.',
+  'search.results.window.title': 'The maximum result window was reached',
+  'search.results.window.body':
+    'More matches exist, but pagination was bounded to keep search responsive. Refine the terms or filters to continue.',
   'search.hit.truncated': 'Limited excerpt',
   'search.hit.author': 'Author: {value}',
   'search.hit.law': 'Law: {value}',

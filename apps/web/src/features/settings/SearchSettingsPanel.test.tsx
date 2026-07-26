@@ -50,6 +50,7 @@ const STATUS: SearchStatusResponse = {
 interface FetchCall {
   url: string;
   method: string;
+  body?: unknown;
 }
 
 function searchFetch(initialStatus: SearchStatusResponse = STATUS): {
@@ -58,6 +59,7 @@ function searchFetch(initialStatus: SearchStatusResponse = STATUS): {
 } {
   const calls: FetchCall[] = [];
   let currentStatus = initialStatus;
+  let currentSettings = SEARCH_SETTINGS;
   const json = (body: unknown) =>
     new Response(JSON.stringify(body), {
       status: 200,
@@ -66,8 +68,14 @@ function searchFetch(initialStatus: SearchStatusResponse = STATUS): {
   const fetch = ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
-    calls.push({ url, method });
+    const body =
+      typeof init?.body === 'string' && init.body.length > 0 ? JSON.parse(init.body) : undefined;
+    calls.push({ url, method, body });
 
+    if (url.includes('/v1/search/settings')) {
+      if (method === 'PUT') currentSettings = body as SearchSettings;
+      return Promise.resolve(json(currentSettings));
+    }
     if (url.includes('/v1/search/status')) return Promise.resolve(json(currentStatus));
     if (url.includes('/v1/search/pause')) {
       currentStatus = { ...currentStatus, phase: 'paused' };
@@ -96,9 +104,7 @@ afterEach(() => {
 describe('SearchSettingsPanel', () => {
   it('presents index health and management-only diagnostics as a readable table', async () => {
     vi.stubGlobal('fetch', searchFetch().fetch);
-    renderWithProviders(
-      <SearchSettingsPanel value={SEARCH_SETTINGS} canEditSettings onChange={vi.fn()} />,
-    );
+    renderWithProviders(<SearchSettingsPanel />);
 
     const table = await screen.findByRole('table', { name: 'Estado do índice' });
     expect(within(table).getByRole('row', { name: /Fase Disponível/ })).toBeTruthy();
@@ -117,11 +123,9 @@ describe('SearchSettingsPanel', () => {
   });
 
   it('renders every SearchSettings value with the server bounds and clamps edits', async () => {
-    vi.stubGlobal('fetch', searchFetch().fetch);
-    const onChange = vi.fn();
-    renderWithProviders(
-      <SearchSettingsPanel value={SEARCH_SETTINGS} canEditSettings onChange={onChange} />,
-    );
+    const stub = searchFetch();
+    vi.stubGlobal('fetch', stub.fetch);
+    renderWithProviders(<SearchSettingsPanel />);
     await screen.findByRole('table', { name: 'Estado do índice' });
 
     expect(
@@ -151,26 +155,38 @@ describe('SearchSettingsPanel', () => {
     fireEvent.change(screen.getByLabelText('Resultados por página'), {
       target: { value: '9999' },
     });
-    expect(onChange).toHaveBeenCalledWith('result_limit', 500);
+    expect((screen.getByLabelText('Resultados por página') as HTMLInputElement).valueAsNumber).toBe(
+      500,
+    );
     fireEvent.change(screen.getByLabelText('Documentos por lote'), {
       target: { value: '1' },
     });
-    expect(onChange).toHaveBeenCalledWith('batch_size', 16);
+    expect((screen.getByLabelText('Documentos por lote') as HTMLInputElement).valueAsNumber).toBe(
+      16,
+    );
+    await waitFor(() =>
+      expect(
+        stub.calls.some(
+          (call) =>
+            call.url === '/v1/search/settings' &&
+            call.method === 'PUT' &&
+            (call.body as SearchSettings | undefined)?.result_limit === 500 &&
+            (call.body as SearchSettings | undefined)?.batch_size === 16,
+        ),
+      ).toBe(true),
+    );
   });
 
-  it('keeps index commands usable when settings editing is not permitted', async () => {
+  it('loads settings and keeps index commands usable through the search management surface', async () => {
     const stub = searchFetch({ ...STATUS, content_budget_exhausted: false, last_error: null });
     vi.stubGlobal('fetch', stub.fetch);
-    renderWithProviders(
-      <SearchSettingsPanel value={SEARCH_SETTINGS} canEditSettings={false} onChange={vi.fn()} />,
-    );
+    renderWithProviders(<SearchSettingsPanel />);
     await screen.findByRole('table', { name: 'Estado do índice' });
 
-    expect(screen.getByText(/editar estes limites requer também a permissão/)).toBeTruthy();
     const settingsFieldset = screen
       .getByRole('switch', { name: 'Pesquisa ativa' })
       .closest('fieldset') as HTMLFieldSetElement;
-    expect(settingsFieldset.disabled).toBe(true);
+    expect(settingsFieldset.disabled).toBe(false);
     expect(settingsFieldset.contains(screen.getByLabelText('Documentos por lote'))).toBe(true);
     const pause = screen.getByRole('button', {
       name: 'Pausar indexação',
@@ -179,21 +195,27 @@ describe('SearchSettingsPanel', () => {
 
     fireEvent.click(pause);
     await waitFor(() =>
-      expect(stub.calls).toContainEqual({ url: '/v1/search/pause', method: 'POST' }),
+      expect(stub.calls).toContainEqual({
+        url: '/v1/search/pause',
+        method: 'POST',
+        body: undefined,
+      }),
     );
   });
 
   it('rebuilds, pauses and resumes through the dedicated management endpoints', async () => {
     const stub = searchFetch({ ...STATUS, content_budget_exhausted: false, last_error: null });
     vi.stubGlobal('fetch', stub.fetch);
-    renderWithProviders(
-      <SearchSettingsPanel value={SEARCH_SETTINGS} canEditSettings onChange={vi.fn()} />,
-    );
+    renderWithProviders(<SearchSettingsPanel />);
     await screen.findByRole('table', { name: 'Estado do índice' });
 
     fireEvent.click(screen.getByRole('button', { name: 'Pausar indexação' }));
     await waitFor(() =>
-      expect(stub.calls).toContainEqual({ url: '/v1/search/pause', method: 'POST' }),
+      expect(stub.calls).toContainEqual({
+        url: '/v1/search/pause',
+        method: 'POST',
+        body: undefined,
+      }),
     );
     const resume = (await screen.findByRole('button', {
       name: 'Retomar indexação',
@@ -201,7 +223,11 @@ describe('SearchSettingsPanel', () => {
     await waitFor(() => expect(resume.disabled).toBe(false));
     fireEvent.click(resume);
     await waitFor(() =>
-      expect(stub.calls).toContainEqual({ url: '/v1/search/resume', method: 'POST' }),
+      expect(stub.calls).toContainEqual({
+        url: '/v1/search/resume',
+        method: 'POST',
+        body: undefined,
+      }),
     );
 
     const rebuild = screen.getByRole('button', {
@@ -210,7 +236,11 @@ describe('SearchSettingsPanel', () => {
     await waitFor(() => expect(rebuild.disabled).toBe(false));
     fireEvent.click(rebuild);
     await waitFor(() =>
-      expect(stub.calls).toContainEqual({ url: '/v1/search/rebuild', method: 'POST' }),
+      expect(stub.calls).toContainEqual({
+        url: '/v1/search/rebuild',
+        method: 'POST',
+        body: undefined,
+      }),
     );
   });
 });

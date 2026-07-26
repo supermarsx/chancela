@@ -266,6 +266,16 @@ impl PostgresBackend {
              (SELECT COUNT(*) FROM {IDENTITY_TABLE}) > 0)"
         ))?;
 
+        // Search is derived data and must never become visible from the archived generation. Keep
+        // the fail-closed tombstone inside the same restore transaction so followers cannot observe
+        // a restored completed marker between COMMIT and a later cleanup statement.
+        let search_tombstone = serde_json::to_string(&crate::search_projection_tombstone())?;
+        txn.batch_execute("DELETE FROM search_documents; DELETE FROM search_index_state;")?;
+        txn.execute(
+            "INSERT INTO search_index_state (id, json) VALUES ($1, $2)",
+            &[&crate::SEARCH_INDEX_STATE_SINGLETON_ID, &search_tombstone],
+        )?;
+
         // Re-verify the ledger from the freshly-loaded rows BEFORE committing (atomic guarantee).
         let mut loaded_events = Vec::new();
         for row in txn.query(
@@ -789,6 +799,16 @@ mod tests {
             .position(|table| *table == "group_template_library_revisions")
             .unwrap();
         assert!(group_index < library_index && library_index < revision_index);
+    }
+
+    #[test]
+    fn logical_backup_never_exports_discarded_search_projections() {
+        for table in ["search_documents", "search_index_state"] {
+            assert!(
+                !PG_BACKUP_TABLES.contains(&table),
+                "{table} is discarded transactionally on restore and must not be archived"
+            );
+        }
     }
 
     /// Build a minimal, VALID logical bundle for a one-event ledger, entirely in-memory (no DB).

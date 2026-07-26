@@ -34,6 +34,7 @@ use chancela_connectors::{
 };
 use chancela_core::{DocumentLayoutPolicy, NumberingScheme};
 use chancela_csc::{CscAuthorization, CscConfig, CscSecrets};
+use chancela_ledger::Ledger;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -86,6 +87,10 @@ pub struct Settings {
     /// Connector outbound-egress boundary. Empty by default so an older document never widens it.
     #[serde(default, skip_serializing_if = "ConnectorSettings::is_default")]
     pub connectors: ConnectorSettings,
+    /// Dedicated background full-search service policy. Missing on older settings documents and
+    /// therefore resolved to conservative, bounded product defaults.
+    #[serde(default)]
+    pub search: SearchSettings,
     /// Outbound email (SMTP) relay configuration (t23). Non-secret only — the relay password lives
     /// in the credential store, never here. Disabled by default.
     pub email: EmailSettings,
@@ -118,6 +123,7 @@ impl Default for Settings {
             workflow: WorkflowSettings::default(),
             data_management: DataManagementSettings::default(),
             connectors: ConnectorSettings::default(),
+            search: SearchSettings::default(),
             email: EmailSettings::default(),
             auth: AuthSettings::default(),
             ai: AiSettings::default(),
@@ -126,6 +132,102 @@ impl Default for Settings {
             ui: UiSettings::default(),
             onboarding: OnboardingSettings::default(),
         }
+    }
+}
+
+/// Bounded operational controls for the dedicated full-search worker.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SearchSettings {
+    /// Master switch. Disabling stops reconciliation but preserves the durable index for an
+    /// operator-visible stale status and a later resume.
+    pub enabled: bool,
+    /// Maximum upsert/delete operations committed in one durable transaction.
+    pub batch_size: u32,
+    /// Periodic reconciliation interval. Dropped/coalesced queue notifications are repaired here.
+    pub interval_seconds: u32,
+    /// Live command queue ceiling; enqueue uses current settings and returns backpressure rather
+    /// than allowing unbounded rebuild requests or record batches.
+    pub queue_capacity: u32,
+    /// Server-side ceiling for one result page.
+    pub result_limit: u32,
+    /// Default/maximum snippet size returned with a hit.
+    pub snippet_chars: u32,
+    /// Maximum distinct values retained per facet, preventing high-cardinality authors/status data
+    /// from creating an unbounded response.
+    pub facet_limit: u32,
+    /// Maximum projected characters retained from any one source object.
+    pub max_content_chars: u32,
+    /// Corpus-wide searchable-body ceiling. Metadata/title rows remain discoverable after the
+    /// budget is exhausted, but additional body text is marked truncated instead of growing memory
+    /// without bound.
+    pub max_total_content_chars: u64,
+    /// Ledger/action history included in the derived index. The ledger itself is never pruned.
+    pub event_retention_days: u32,
+    /// Minimum non-blank query length. Two-character exact tokens remain supported; one-character
+    /// vocabulary scans are refused.
+    pub min_query_chars: u8,
+}
+
+impl Default for SearchSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            batch_size: 256,
+            interval_seconds: 30,
+            queue_capacity: 64,
+            result_limit: 100,
+            snippet_chars: 240,
+            facet_limit: 50,
+            max_content_chars: 200_000,
+            max_total_content_chars: 25_000_000,
+            event_retention_days: 3_650,
+            min_query_chars: 2,
+        }
+    }
+}
+
+impl SearchSettings {
+    fn validate(&self) -> Result<(), ApiError> {
+        for (field, value, min, max) in [
+            ("search.batch_size", self.batch_size, 16, 5_000),
+            ("search.interval_seconds", self.interval_seconds, 5, 86_400),
+            ("search.queue_capacity", self.queue_capacity, 1, 1_024),
+            ("search.result_limit", self.result_limit, 1, 500),
+            ("search.snippet_chars", self.snippet_chars, 32, 2_000),
+            ("search.facet_limit", self.facet_limit, 1, 200),
+            (
+                "search.max_content_chars",
+                self.max_content_chars,
+                1_000,
+                1_000_000,
+            ),
+            (
+                "search.event_retention_days",
+                self.event_retention_days,
+                1,
+                36_500,
+            ),
+        ] {
+            if !(min..=max).contains(&value) {
+                return Err(ApiError::Unprocessable(format!(
+                    "{field} must be between {min} and {max}, got {value}"
+                )));
+            }
+        }
+        if !(2..=8).contains(&self.min_query_chars) {
+            return Err(ApiError::Unprocessable(format!(
+                "search.min_query_chars must be between 2 and 8, got {}",
+                self.min_query_chars
+            )));
+        }
+        if !(100_000..=100_000_000).contains(&self.max_total_content_chars) {
+            return Err(ApiError::Unprocessable(format!(
+                "search.max_total_content_chars must be between 100000 and 100000000, got {}",
+                self.max_total_content_chars
+            )));
+        }
+        Ok(())
     }
 }
 
@@ -2446,6 +2548,7 @@ impl Settings {
         self.workflow.validate()?;
         self.data_management.validate()?;
         self.connectors.validate()?;
+        self.search.validate()?;
         self.email.validate()?;
         self.platform.validate()?;
         self.auth.validate()?;
@@ -3099,6 +3202,333 @@ fn csc_authorization_missing_fields(
 
 /// The file name holding the settings document inside the data directory.
 pub const SETTINGS_FILE: &str = "settings.json";
+const SETTINGS_AUDIT_JOURNAL_FILE: &str = "settings.pending-audit.json";
+
+/// Crash-recovery intent for settings publication and any file-backed projections.
+///
+/// `settings.json` and the runtime allowlist cannot share the store transaction that appends the
+/// audit event. Even for DB-backed settings the request can be cancelled after the DB commit but
+/// before live-memory publication. The journal therefore records both possible documents and the
+/// exact event id. A durable event selects `next`; an absent event selects `previous`.
+#[derive(Debug, Serialize, Deserialize)]
+struct SettingsAuditJournal {
+    previous: Settings,
+    next: Settings,
+    audit_event_id: Uuid,
+    #[serde(default = "journal_settings_file_backed_default")]
+    settings_file_backed: bool,
+    #[serde(default)]
+    runtime_allowlist_previous: Option<FileSnapshot>,
+    #[serde(default)]
+    runtime_allowlist_next: Option<FileSnapshot>,
+}
+
+struct PreparedSettingsAudit {
+    settings_path: PathBuf,
+    journal_path: PathBuf,
+    previous: Settings,
+    settings_file_backed: bool,
+    runtime_allowlist_previous: Option<FileSnapshot>,
+}
+
+pub(crate) struct RecoveredSettingsAudit {
+    authoritative: Settings,
+    settings_file_backed: bool,
+    journal_path: PathBuf,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct FileSnapshot {
+    exists: bool,
+    #[serde(default)]
+    bytes: Vec<u8>,
+}
+
+struct RuntimeAllowlistTransition {
+    previous: FileSnapshot,
+    next: FileSnapshot,
+}
+
+const fn journal_settings_file_backed_default() -> bool {
+    true
+}
+
+impl PreparedSettingsAudit {
+    fn prepare(
+        settings_path: &Path,
+        previous: &Settings,
+        next: &Settings,
+        audit_event_id: Uuid,
+        settings_file_backed: bool,
+        runtime_allowlist: Option<RuntimeAllowlistTransition>,
+    ) -> std::io::Result<Self> {
+        let journal_path = settings_audit_journal_path(settings_path);
+        let runtime_allowlist_previous = runtime_allowlist
+            .as_ref()
+            .map(|transition| transition.previous.clone());
+        let journal = SettingsAuditJournal {
+            previous: previous.clone(),
+            next: next.clone(),
+            audit_event_id,
+            settings_file_backed,
+            runtime_allowlist_previous: runtime_allowlist_previous.clone(),
+            runtime_allowlist_next: runtime_allowlist
+                .as_ref()
+                .map(|transition| transition.next.clone()),
+        };
+        write_json_atomic(&journal_path, &journal)?;
+        if settings_file_backed && let Err(error) = write_settings_atomic(settings_path, next) {
+            let _ = std::fs::remove_file(&journal_path);
+            return Err(error);
+        }
+        if let Some(transition) = runtime_allowlist
+            && let Err(error) =
+                apply_file_snapshot(&runtime_allowlist_path(settings_path), &transition.next)
+        {
+            let settings_restored =
+                !settings_file_backed || write_settings_atomic(settings_path, previous).is_ok();
+            let runtime_restored =
+                apply_file_snapshot(&runtime_allowlist_path(settings_path), &transition.previous)
+                    .is_ok();
+            if settings_restored && runtime_restored {
+                let _ = std::fs::remove_file(&journal_path);
+            }
+            return Err(error);
+        }
+        Ok(Self {
+            settings_path: settings_path.to_path_buf(),
+            journal_path,
+            previous: previous.clone(),
+            settings_file_backed,
+            runtime_allowlist_previous,
+        })
+    }
+
+    fn rollback(self) -> std::io::Result<()> {
+        // Leave the journal in place when restoring the old document fails. A later startup can
+        // deterministically retry the same recovery because the audit event did not commit.
+        if self.settings_file_backed {
+            write_settings_atomic(&self.settings_path, &self.previous)?;
+        }
+        if let Some(previous) = self.runtime_allowlist_previous {
+            apply_file_snapshot(&runtime_allowlist_path(&self.settings_path), &previous)?;
+        }
+        remove_if_present(&self.journal_path)
+    }
+
+    fn finish(self) -> std::io::Result<()> {
+        remove_if_present(&self.journal_path)
+    }
+}
+
+impl RecoveredSettingsAudit {
+    pub(crate) fn authoritative(&self) -> &Settings {
+        &self.authoritative
+    }
+
+    pub(crate) fn settings_file_backed(&self) -> bool {
+        self.settings_file_backed
+    }
+
+    pub(crate) fn finish(self) -> std::io::Result<()> {
+        remove_if_present(&self.journal_path)
+    }
+}
+
+fn settings_audit_journal_path(settings_path: &Path) -> PathBuf {
+    settings_path.with_file_name(SETTINGS_AUDIT_JOURNAL_FILE)
+}
+
+fn runtime_allowlist_path(settings_path: &Path) -> PathBuf {
+    RuntimeAllowlist::path_in(settings_path.parent().unwrap_or_else(|| Path::new("")))
+}
+
+fn read_file_snapshot(path: &Path) -> std::io::Result<FileSnapshot> {
+    match std::fs::read(path) {
+        Ok(bytes) => Ok(FileSnapshot {
+            exists: true,
+            bytes,
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(FileSnapshot {
+            exists: false,
+            bytes: Vec::new(),
+        }),
+        Err(error) => Err(error),
+    }
+}
+
+fn apply_file_snapshot(path: &Path, snapshot: &FileSnapshot) -> std::io::Result<()> {
+    if snapshot.exists {
+        write_bytes_atomic(path, &snapshot.bytes)
+    } else {
+        remove_if_present(path)
+    }
+}
+
+fn remove_if_present(path: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+fn write_json_atomic(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
+    let json = serde_json::to_vec_pretty(value).map_err(std::io::Error::other)?;
+    write_bytes_atomic(path, &json)
+}
+
+fn write_bytes_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let tmp = tmp_path(path);
+    std::fs::write(&tmp, bytes)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(error)
+        }
+    }
+}
+
+/// Resolve a settings transaction left in-flight by a process interruption.
+///
+/// File projections have already been restored when this returns, but the intent journal remains
+/// until the caller publishes the authoritative document into live memory. For DB-backed settings,
+/// callers reload the committed row rather than trusting the journal payload. Passing `None` for
+/// `durable_ledger` is fail-closed and selects `previous`.
+pub(crate) fn recover_pending_settings_audit(
+    settings_path: &Path,
+    durable_ledger: Option<&Ledger>,
+) -> std::io::Result<Option<RecoveredSettingsAudit>> {
+    let journal_path = settings_audit_journal_path(settings_path);
+    let bytes = match std::fs::read(&journal_path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    let journal: SettingsAuditJournal = serde_json::from_slice(&bytes).map_err(|error| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "malformed settings audit journal {}: {error}",
+                journal_path.display()
+            ),
+        )
+    })?;
+    let audit_committed = durable_ledger.is_some_and(|ledger| {
+        ledger
+            .events()
+            .iter()
+            .any(|event| event.id.0 == journal.audit_event_id)
+    });
+    let authoritative = if audit_committed {
+        &journal.next
+    } else {
+        &journal.previous
+    };
+    if journal.settings_file_backed {
+        write_settings_atomic(settings_path, authoritative)?;
+    }
+    let runtime_allowlist = if audit_committed {
+        journal.runtime_allowlist_next.as_ref()
+    } else {
+        journal.runtime_allowlist_previous.as_ref()
+    };
+    if let Some(snapshot) = runtime_allowlist {
+        apply_file_snapshot(&runtime_allowlist_path(settings_path), snapshot)?;
+    }
+    Ok(Some(RecoveredSettingsAudit {
+        authoritative: authoritative.clone(),
+        settings_file_backed: journal.settings_file_backed,
+        journal_path,
+    }))
+}
+
+/// Reconcile an interrupted settings transaction into file projections and live memory.
+///
+/// Callers hold `settings_update_gate`, which makes this check-and-publish step exclusive with
+/// every settings writer and any still-running owned commit coordinator.
+pub(crate) async fn reconcile_pending_settings_audit(state: &AppState) -> Result<(), ApiError> {
+    let Some(path) = state.persist_path.as_deref() else {
+        return Ok(());
+    };
+    if !settings_audit_journal_path(path).exists() {
+        return Ok(());
+    }
+    // A coordinator normally owns `settings_update_gate` through commit. This tracker closes the
+    // residual panic/runtime-cancellation edge: its lease lives inside the non-cancellable
+    // blocking task until the writer transaction actually commits or rolls back.
+    state
+        .settings_store_commit_tracker
+        .wait_until_settled()
+        .await;
+    // When a store exists, decide the event outcome from a fresh durable load—not from the
+    // request-mutated in-memory ledger. This also waits behind an embedded-store transaction that
+    // is actually completing. Pure in-memory mode has no stronger authority, so its live ledger is
+    // the documented fallback.
+    let durable_ledger = if let Some(store) = state.store.as_ref() {
+        store
+            .read_blocking_async(|store| store.load().map(|loaded| loaded.ledger))
+            .await
+            .map_err(|error| {
+                ApiError::Internal(format!(
+                    "failed to load the durable ledger during settings audit recovery: {error}"
+                ))
+            })?
+    } else {
+        state.ledger.read().await.clone()
+    };
+    let recovered =
+        recover_pending_settings_audit(path, Some(&durable_ledger)).map_err(|error| {
+            ApiError::Internal(format!(
+                "failed to recover an interrupted settings audit transaction: {error}"
+            ))
+        })?;
+    let Some(recovered) = recovered else {
+        return Ok(());
+    };
+    let authoritative = if recovered.settings_file_backed() {
+        recovered.authoritative().clone()
+    } else {
+        let store = state.store.as_ref().ok_or_else(|| {
+            ApiError::Internal(
+                "DB-backed settings audit recovery has no durable store to reload".to_owned(),
+            )
+        })?;
+        let row = store
+            .read_blocking_async(|store| store.settings())
+            .await
+            .map_err(|error| {
+                ApiError::Internal(format!(
+                    "failed to reload committed DB settings during audit recovery: {error}"
+                ))
+            })?;
+        match row {
+            Some(json) => serde_json::from_str(&json).map_err(|error| {
+                ApiError::Internal(format!(
+                    "committed DB settings row is malformed during audit recovery: {error}"
+                ))
+            })?,
+            None => Settings::default(),
+        }
+    };
+    let _source_mutation = crate::search::begin_source_mutation(state).await;
+    let mut live = state.settings.write().await;
+    *live = authoritative;
+    recovered.finish().map_err(|error| {
+        ApiError::Internal(format!(
+            "settings audit recovery published live memory but could not remove its journal: {error}"
+        ))
+    })?;
+    drop(live);
+    drop(_source_mutation);
+    Ok(())
+}
 
 /// Read `settings.json` from `path`, returning `None` if it is absent or unreadable, and
 /// falling back to defaults (with a warning) if it is present but malformed. A corrupt file
@@ -3121,23 +3551,7 @@ pub(crate) fn load_settings(path: &Path) -> Option<Settings> {
 /// directory, then rename it over the destination (an atomic replace on both Windows and
 /// Unix). The parent directory is created if missing.
 pub(crate) fn write_settings_atomic(path: &Path, settings: &Settings) -> std::io::Result<()> {
-    if let Some(parent) = path.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        std::fs::create_dir_all(parent)?;
-    }
-    let json = serde_json::to_vec_pretty(settings).map_err(std::io::Error::other)?;
-    let tmp = tmp_path(path);
-    std::fs::write(&tmp, &json)?;
-    // rename over the destination is atomic and, on Windows, replaces an existing file.
-    match std::fs::rename(&tmp, path) {
-        Ok(()) => Ok(()),
-        Err(e) => {
-            // Best-effort cleanup so a failed rename does not leave a stray temp file behind.
-            let _ = std::fs::remove_file(&tmp);
-            Err(e)
-        }
-    }
+    write_json_atomic(path, settings)
 }
 
 /// A sibling temp path for the atomic write, made unique so two concurrent `PUT`s never race
@@ -3149,6 +3563,28 @@ fn tmp_path(path: &Path) -> PathBuf {
         .unwrap_or_else(|| SETTINGS_FILE.into());
     name.push(format!(".{}.tmp", Uuid::new_v4()));
     path.with_file_name(name)
+}
+
+#[cfg(test)]
+pub(crate) fn stage_settings_audit_for_test(
+    settings_path: &Path,
+    previous: &Settings,
+    next: &Settings,
+    audit_event_id: Uuid,
+) -> std::io::Result<()> {
+    PreparedSettingsAudit::prepare(settings_path, previous, next, audit_event_id, true, None)
+        .map(|_| ())
+}
+
+#[cfg(test)]
+pub(crate) fn stage_db_settings_audit_for_test(
+    settings_path: &Path,
+    previous: &Settings,
+    next: &Settings,
+    audit_event_id: Uuid,
+) -> std::io::Result<()> {
+    PreparedSettingsAudit::prepare(settings_path, previous, next, audit_event_id, false, None)
+        .map(|_| ())
 }
 
 /// The connector egress policy currently in force, resolved from live state.
@@ -3200,50 +3636,46 @@ fn allowlist_change_summary(previous: &[String], next: &[String], ceiling: Optio
     summary
 }
 
-/// Write the runtime allowlist sidecar the connector stack enforces from.
+/// Prepare the before/after runtime allowlist bytes the connector stack enforces from.
 ///
 /// The document lives in the shared data directory precisely because the connector *worker* is a
 /// separate process: it re-resolves the policy per job, so publishing the file is what makes a
 /// saved change effective without restarting anything. Without a data directory the API is a
 /// purely in-memory scaffold with no worker to inform, so there is nothing to publish.
-async fn publish_runtime_allowlist(
+fn runtime_allowlist_transition(
     state: &AppState,
     settings: &Settings,
     actor: &str,
-) -> Result<(), ApiError> {
+) -> Result<Option<RuntimeAllowlistTransition>, ApiError> {
     let Some(data_dir) = state.data_dir() else {
-        return Ok(());
+        return Ok(None);
     };
     let path = RuntimeAllowlist::path_in(&data_dir);
-    if settings.connectors.allowed_hosts.is_empty() {
-        // Removing the last entry restores the deployment ceiling as the sole boundary; it must
-        // never leave a stale file behind that keeps enforcing a boundary nobody can see.
-        return match std::fs::remove_file(&path) {
-            Ok(()) => Ok(()),
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(error) => Err(ApiError::Internal(format!(
-                "unable to clear the connector allowlist: {error}"
-            ))),
-        };
-    }
-    let document = RuntimeAllowlist::new(
-        settings.connectors.allowed_hosts.clone(),
-        time::OffsetDateTime::now_utc()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
-        actor.to_owned(),
-    );
-    let bytes = serde_json::to_vec_pretty(&document)?;
-    let temporary = tmp_path(&path);
-    std::fs::write(&temporary, &bytes).map_err(|error| {
-        ApiError::Internal(format!("unable to stage the connector allowlist: {error}"))
-    })?;
-    std::fs::rename(&temporary, &path).map_err(|error| {
-        let _ = std::fs::remove_file(&temporary);
+    let previous = read_file_snapshot(&path).map_err(|error| {
         ApiError::Internal(format!(
-            "unable to publish the connector allowlist: {error}"
+            "unable to snapshot the connector allowlist before update: {error}"
         ))
-    })
+    })?;
+    let next = if settings.connectors.allowed_hosts.is_empty() {
+        // Removing the last entry restores the deployment ceiling as the sole boundary.
+        FileSnapshot {
+            exists: false,
+            bytes: Vec::new(),
+        }
+    } else {
+        let document = RuntimeAllowlist::new(
+            settings.connectors.allowed_hosts.clone(),
+            time::OffsetDateTime::now_utc()
+                .format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
+            actor.to_owned(),
+        );
+        FileSnapshot {
+            exists: true,
+            bytes: serde_json::to_vec_pretty(&document)?,
+        }
+    };
+    Ok(Some(RuntimeAllowlistTransition { previous, next }))
 }
 
 // --- Handlers -----------------------------------------------------------------------------
@@ -3256,6 +3688,228 @@ pub struct SettingsActorQuery {
     pub actor: Option<String>,
 }
 
+pub(crate) struct SettingsAuditEventSpec {
+    actor: String,
+    scope: String,
+    kind: String,
+    justification: Option<String>,
+    payload: Vec<u8>,
+}
+
+impl SettingsAuditEventSpec {
+    pub(crate) fn new(
+        actor: impl Into<String>,
+        scope: impl Into<String>,
+        kind: impl Into<String>,
+        justification: Option<String>,
+        payload: Vec<u8>,
+    ) -> Self {
+        Self {
+            actor: actor.into(),
+            scope: scope.into(),
+            kind: kind.into(),
+            justification,
+            payload,
+        }
+    }
+}
+
+pub(crate) struct SettingsCommitOptions {
+    audit_events: Vec<SettingsAuditEventSpec>,
+    runtime_allowlist: Option<RuntimeAllowlistTransition>,
+}
+
+impl SettingsCommitOptions {
+    pub(crate) fn single(audit_event: SettingsAuditEventSpec) -> Self {
+        Self {
+            audit_events: vec![audit_event],
+            runtime_allowlist: None,
+        }
+    }
+
+    fn with_runtime_allowlist(
+        mut self,
+        runtime_allowlist: Option<RuntimeAllowlistTransition>,
+    ) -> Self {
+        self.runtime_allowlist = runtime_allowlist;
+        self
+    }
+
+    fn many(audit_events: Vec<SettingsAuditEventSpec>) -> Self {
+        Self {
+            audit_events,
+            runtime_allowlist: None,
+        }
+    }
+}
+
+/// Run a settings mutation in an owned coordinator task.
+///
+/// The request hands the coordinator an owned `settings_update_gate` guard. Cancelling the HTTP
+/// future therefore detaches—but does not cancel—the coordinator: it retains serialization,
+/// resolves the non-cancellable blocking store transaction, and publishes or rolls back before
+/// releasing the gate. The journal remains until live publication.
+pub(crate) async fn commit_settings_update(
+    state: AppState,
+    settings_update_guard: tokio::sync::OwnedMutexGuard<()>,
+    previous: Settings,
+    next: Settings,
+    options: SettingsCommitOptions,
+    attestor: CurrentAttestor,
+) -> Result<(), ApiError> {
+    let coordinator = tokio::spawn(async move {
+        let result = commit_settings_update_owned(
+            &state,
+            settings_update_guard,
+            previous,
+            next,
+            options,
+            &attestor,
+        )
+        .await;
+        if let Err(error) = &result {
+            eprintln!(
+                "settings commit coordinator failed after taking ownership of the mutation: \
+                 {error:?}"
+            );
+        }
+        result
+    });
+    coordinator.await.map_err(|error| {
+        ApiError::Internal(format!("settings commit coordinator task failed: {error}"))
+    })?
+}
+
+async fn commit_settings_update_owned(
+    state: &AppState,
+    settings_update_guard: tokio::sync::OwnedMutexGuard<()>,
+    previous: Settings,
+    next: Settings,
+    options: SettingsCommitOptions,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    if options.audit_events.is_empty() {
+        return Err(ApiError::Internal(
+            "settings commit requires at least one audit event".to_owned(),
+        ));
+    }
+
+    let settings_json = serde_json::to_string(&next)?;
+    let _search_source_mutation = crate::search::begin_source_mutation(state).await;
+    // Lock order: transaction gate → search fence → settings → ledger.
+    let mut live_settings = state.settings.write().await;
+    let mut ledger = state.ledger.write().await;
+    let event_count = options.audit_events.len();
+    let mut settings_event_id = None;
+    for event in options.audit_events {
+        let id = ledger
+            .append(
+                &event.actor,
+                &event.scope,
+                &event.kind,
+                event.justification.as_deref(),
+                &event.payload,
+            )
+            .id
+            .0;
+        settings_event_id.get_or_insert(id);
+    }
+    let settings_event_id = settings_event_id.expect("non-empty audit event list");
+
+    let file_stage = match state.persist_path.as_deref() {
+        Some(path) => match PreparedSettingsAudit::prepare(
+            path,
+            &previous,
+            &next,
+            settings_event_id,
+            !state.sidecars_db_backed,
+            options.runtime_allowlist,
+        ) {
+            Ok(stage) => Some(stage),
+            Err(error) => {
+                AppState::rollback_ledger_events(&mut ledger, event_count);
+                return Err(ApiError::Internal(format!(
+                    "failed to stage the settings audit transaction: {error}"
+                )));
+            }
+        },
+        None => None,
+    };
+
+    #[cfg(test)]
+    if let Some(pause) = state.settings_commit_test_pause.as_ref() {
+        pause.before_persist.notify_one();
+        pause.continue_persist.notified().await;
+    }
+
+    let db_settings_json = state.sidecars_db_backed.then_some(settings_json);
+    #[cfg(test)]
+    let commit_pause = state.settings_commit_test_pause.clone();
+    let store_completion = state
+        .store
+        .as_ref()
+        .map(|_| state.settings_store_commit_tracker.begin());
+    if let Err(audit_error) = state
+        .persist_write_through_holding(
+            &mut ledger,
+            event_count,
+            move |tx| {
+                if let Some(json) = db_settings_json {
+                    tx.put_settings(&json)?;
+                }
+                #[cfg(test)]
+                if let Some(pause) = commit_pause {
+                    use std::sync::atomic::Ordering;
+
+                    pause.store_persist_entered.notify_one();
+                    while pause.block_store_persist.load(Ordering::Acquire) {
+                        std::thread::sleep(std::time::Duration::from_millis(1));
+                    }
+                }
+                Ok(())
+            },
+            store_completion,
+        )
+        .await
+    {
+        if let Some(stage) = file_stage
+            && let Err(rollback_error) = stage.rollback()
+        {
+            return Err(ApiError::Internal(format!(
+                "{audit_error:?}; additionally failed to restore settings files after the audit \
+                 rollback: {rollback_error}"
+            )));
+        }
+        return Err(audit_error);
+    }
+
+    #[cfg(test)]
+    if let Some(pause) = state.settings_commit_test_pause.as_ref() {
+        pause.after_persist.notify_one();
+        pause.continue_publish.notified().await;
+    }
+
+    // `persist_write_through` has no post-commit await. This assignment therefore occurs in the
+    // same poll that observed the durable commit, while the owned coordinator still holds every
+    // publication guard.
+    *live_settings = next;
+    if let Some(stage) = file_stage
+        && let Err(error) = stage.finish()
+    {
+        // The exact audit event is durable and live memory contains `next`. Retaining the journal
+        // is safe and lets startup/request recovery replay the authoritative state.
+        eprintln!(
+            "warning: committed settings but could not remove its audit journal after live \
+             publication: {error}"
+        );
+    }
+    drop(live_settings);
+    drop(_search_source_mutation);
+    drop(settings_update_guard);
+    state.attest_latest(attestor, &ledger).await;
+    Ok(())
+}
+
 /// `GET /v1/settings` — the current settings document (defaults if never set).
 pub async fn get_settings(
     State(state): State<AppState>,
@@ -3263,6 +3917,8 @@ pub async fn get_settings(
 ) -> Result<Json<Settings>, ApiError> {
     // RBAC (t64-E3): reading settings is `settings.read` at Global.
     require_permission(&state, &actor, Permission::SettingsRead, Scope::Global).await?;
+    let _settings_update_guard = state.settings_update_gate.lock().await;
+    reconcile_pending_settings_audit(&state).await?;
     let mut settings = state.settings.read().await.clone();
     stamp_signing_provider_metadata(&state, &mut settings);
     // Show the deployment ceiling next to the setting it constrains, so the precedence rule is
@@ -3274,6 +3930,76 @@ pub async fn get_settings(
             .collect()
     });
     Ok(Json(settings))
+}
+
+/// `GET /v1/search/settings` — the bounded search-worker configuration only.
+///
+/// This deliberately does not reuse `GET /v1/settings`: a custom operations role may administer
+/// search through `search.manage` without receiving the rest of the instance settings document.
+pub async fn get_search_settings(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+) -> Result<Json<SearchSettings>, ApiError> {
+    require_permission(&state, &actor, Permission::SearchManage, Scope::Global).await?;
+    let _settings_update_guard = state.settings_update_gate.lock().await;
+    reconcile_pending_settings_audit(&state).await?;
+    Ok(Json(state.settings.read().await.search.clone()))
+}
+
+/// `PUT /v1/search/settings` — replace only the search-worker settings slice.
+///
+/// The stored whole document is cloned server-side, so callers neither need nor receive
+/// `settings.read`/`settings.manage`, and unrelated configuration cannot be reset by a narrow
+/// operations client. The response contains the same non-secret slice and nothing else.
+pub async fn put_search_settings(
+    State(state): State<AppState>,
+    Query(query): Query<SettingsActorQuery>,
+    current_actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(search): Json<SearchSettings>,
+) -> Result<Json<SearchSettings>, ApiError> {
+    require_permission(
+        &state,
+        &current_actor,
+        Permission::SearchManage,
+        Scope::Global,
+    )
+    .await?;
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    search.validate()?;
+
+    reconcile_pending_settings_audit(&state).await?;
+
+    let previous = state.settings.read().await.clone();
+    let mut settings = previous.clone();
+    settings.schema_version = SETTINGS_SCHEMA_VERSION;
+    settings.search = search.clone();
+    let request_actor = query
+        .actor
+        .filter(|actor| !actor.trim().is_empty())
+        .unwrap_or_else(|| settings.organization.default_actor.clone());
+    let actor = current_actor.resolve(&request_actor);
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "previous": &previous.search,
+        "search": &search,
+    }))?;
+    commit_settings_update(
+        state.clone(),
+        settings_update_guard,
+        previous,
+        settings,
+        SettingsCommitOptions::single(SettingsAuditEventSpec::new(
+            actor,
+            "search",
+            "search.settings.updated",
+            Some("search settings updated".to_owned()),
+            payload,
+        )),
+        attestor,
+    )
+    .await?;
+
+    Ok(Json(search))
 }
 
 /// Whether the operator-authored signing **policy** differs between two slices, ignoring the
@@ -3332,6 +4058,11 @@ pub async fn put_settings(
         Scope::Global,
     )
     .await?;
+    // Narrow settings endpoints and the whole-document writer share this transaction-level gate.
+    // It covers the authoritative snapshot, durable write, ledger record, and in-memory publish, so
+    // a stale concurrent slice update cannot restore unrelated values from before this PUT.
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    reconcile_pending_settings_audit(&state).await?;
     // Parse by hand (rather than via the `Json` extractor) so every rejection — malformed
     // JSON, a bad enum, a bad locale — renders through `ApiError` as the standard body. The
     // intermediate `Value` is kept because the carry-forward below needs to tell "the client sent
@@ -3353,6 +4084,10 @@ pub async fn put_settings(
     if raw.get("auth").is_none() {
         settings.auth = previous.auth.clone();
     }
+    // `/v1/search/settings` is the sole writer for this separately-authorized operational slice.
+    // A broad settings client may be stale, malicious, or simply unaware of the narrow endpoint;
+    // it can echo any value here, but it must never overwrite the authoritative search policy.
+    settings.search = previous.search.clone();
     if raw
         .get("platform")
         .and_then(|platform| platform.get("public_base_url"))
@@ -3450,11 +4185,6 @@ pub async fn put_settings(
     let previous_allowed_hosts = previous.connectors.normalized();
     let allowlist_changed = previous_allowed_hosts != settings.connectors.allowed_hosts;
 
-    // Persist before we acknowledge success, so we never report a write we did not make. wp16 P3b:
-    // routes to the active source (Postgres `settings` row, else `settings.json`). File behaviour on
-    // SQLite/single-node is unchanged.
-    crate::sidecar_store::persist_settings(&state, &settings).await?;
-
     // Actor precedence (contract §2.8): a valid session wins; else the `?actor=` override; else
     // the document's own default actor.
     let request_actor = query
@@ -3462,65 +4192,255 @@ pub async fn put_settings(
         .filter(|a| !a.trim().is_empty())
         .unwrap_or_else(|| settings.organization.default_actor.clone());
     let actor = current_actor.resolve(&request_actor);
-
-    // The egress boundary is enforced from a sidecar the worker process also reads, so publish it
-    // before acknowledging. A failure here is a failure of the whole PUT: reporting success while
-    // the enforced boundary still differs from the stored one would be the worst outcome.
-    if allowlist_changed {
-        publish_runtime_allowlist(&state, &settings, &actor).await?;
-    }
-
+    let runtime_allowlist = allowlist_changed
+        .then(|| runtime_allowlist_transition(&state, &settings, &actor))
+        .transpose()?
+        .flatten();
     let payload = serde_json::to_vec(&settings)?;
-    {
-        let mut ledger = state.ledger.write().await;
-        ledger.append(
-            &actor,
-            "settings",
-            "settings.updated",
-            Some("settings updated"),
-            &payload,
+    let mut audit_events = vec![SettingsAuditEventSpec::new(
+        actor.clone(),
+        "settings",
+        "settings.updated",
+        Some("settings updated".to_owned()),
+        payload,
+    )];
+    // A dedicated event for the egress boundary. `settings.updated` already carries the whole
+    // document, but reconstructing "who opened which host, and when" from a sequence of full
+    // documents is exactly the reconstruction we do not want to depend on after an incident.
+    if allowlist_changed {
+        let ceiling = environment_ceiling();
+        let summary = allowlist_change_summary(
+            &previous_allowed_hosts,
+            &settings.connectors.allowed_hosts,
+            ceiling.as_deref(),
         );
-        // A dedicated event for the egress boundary. `settings.updated` already carries the whole
-        // document, but reconstructing "who opened which host, and when" from a sequence of full
-        // documents is exactly the reconstruction we do not want to depend on after an incident.
-        if allowlist_changed {
-            let ceiling = environment_ceiling();
-            let summary = allowlist_change_summary(
-                &previous_allowed_hosts,
-                &settings.connectors.allowed_hosts,
-                ceiling.as_deref(),
-            );
-            let diff = serde_json::to_vec(&serde_json::json!({
-                "previous_allowed_hosts": previous_allowed_hosts,
-                "allowed_hosts": settings.connectors.allowed_hosts,
-                "added": difference(&settings.connectors.allowed_hosts, &previous_allowed_hosts),
-                "removed": difference(&previous_allowed_hosts, &settings.connectors.allowed_hosts),
-                "environment_ceiling_configured": ceiling.is_some(),
-                "environment_ceiling": ceiling,
-            }))?;
-            ledger.append(
-                &actor,
-                "settings",
-                "connector.allowlist.updated",
-                Some(&summary),
-                &diff,
-            );
-        }
-        // Persist the audit event(s); the settings document itself is durable via `settings.json`.
-        let event_count = if allowlist_changed { 2 } else { 1 };
-        state
-            .persist_write_through(&mut ledger, event_count, |_tx| Ok(()))
-            .await?;
-        state.attest_latest(&attestor, &ledger).await;
+        let diff = serde_json::to_vec(&serde_json::json!({
+            "previous_allowed_hosts": previous_allowed_hosts,
+            "allowed_hosts": settings.connectors.allowed_hosts,
+            "added": difference(&settings.connectors.allowed_hosts, &previous_allowed_hosts),
+            "removed": difference(&previous_allowed_hosts, &settings.connectors.allowed_hosts),
+            "environment_ceiling_configured": ceiling.is_some(),
+            "environment_ceiling": ceiling,
+        }))?;
+        audit_events.push(SettingsAuditEventSpec::new(
+            actor,
+            "settings",
+            "connector.allowlist.updated",
+            Some(summary),
+            diff,
+        ));
     }
+    let response = settings.clone();
+    commit_settings_update(
+        state.clone(),
+        settings_update_guard,
+        previous,
+        settings,
+        SettingsCommitOptions::many(audit_events).with_runtime_allowlist(runtime_allowlist),
+        attestor,
+    )
+    .await?;
 
-    *state.settings.write().await = settings.clone();
-    Ok(Json(settings))
+    Ok(Json(response))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_settings_writers_use_the_coordinator_or_authoritative_reload_gate() {
+        let platform = include_str!("platform_ops.rs");
+        assert!(platform.contains("commit_settings_update("));
+        assert!(!platform.contains("write_settings_atomic("));
+        let zk = include_str!("zk_repository.rs");
+        assert!(zk.contains("commit_settings_update("));
+        assert!(!zk.contains("sidecar_store::persist_settings("));
+        let sidecars = include_str!("sidecar_store.rs");
+        assert!(sidecars.contains(
+            "let _settings_update_guard = state.settings_update_gate.clone().lock_owned().await"
+        ));
+        assert!(sidecars.contains("begin_source_mutation(state).await"));
+        assert!(sidecars.contains("settings_store_commit_tracker"));
+
+        let data = include_str!("data.rs");
+        assert!(
+            data.matches(
+                "let settings_update_guard = state.settings_update_gate.clone().lock_owned().await"
+            )
+            .count()
+                >= 2,
+            "reset and start-over must each own the settings gate"
+        );
+        assert!(data.contains("settings_store_commit_tracker"));
+        assert!(data.contains("reconcile_pending_settings_audit(state).await?"));
+        assert!(data.contains("clear_all_memory_with_settings_gate_held"));
+        assert!(
+            data.matches("let coordinator = tokio::spawn(async move")
+                .count()
+                >= 2,
+            "reset and start-over must each detach an owned coordinator"
+        );
+        assert!(
+            data.matches("state.ledger.clone().write_owned().await")
+                .count()
+                >= 2,
+            "both destructive data coordinators must own the live ledger guard"
+        );
+        assert!(data.contains("destructive_operation_test_pause"));
+
+        let recovery = include_str!("recovery.rs");
+        assert!(recovery.contains(
+            "let settings_update_guard = state.settings_update_gate.clone().lock_owned().await"
+        ));
+        assert!(recovery.contains("settings_store_commit_tracker"));
+        assert!(recovery.contains("reconcile_pending_settings_audit(state).await?"));
+        assert!(recovery.contains("reload_domain_memory_with_settings_gate_held"));
+        assert!(
+            recovery.contains(
+                "clear_search_source_memory_after_failed_restore_with_settings_gate_held"
+            )
+        );
+        assert!(recovery.contains("let coordinator = tokio::spawn(async move"));
+        assert!(recovery.contains("state.ledger.clone().write_owned().await"));
+        assert!(recovery.contains("destructive_operation_test_pause"));
+    }
+
+    #[test]
+    fn pending_file_settings_without_durable_audit_restore_previous() {
+        let dir =
+            std::env::temp_dir().join(format!("chancela-settings-audit-absent-{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(SETTINGS_FILE);
+        let previous = Settings::default();
+        let mut next = previous.clone();
+        next.search.batch_size = 333;
+        write_settings_atomic(&path, &previous).unwrap();
+        let allowlist_path = runtime_allowlist_path(&path);
+        std::fs::write(&allowlist_path, b"old-allowlist").unwrap();
+        PreparedSettingsAudit::prepare(
+            &path,
+            &previous,
+            &next,
+            Uuid::new_v4(),
+            true,
+            Some(RuntimeAllowlistTransition {
+                previous: read_file_snapshot(&allowlist_path).unwrap(),
+                next: FileSnapshot {
+                    exists: true,
+                    bytes: b"new-allowlist".to_vec(),
+                },
+            }),
+        )
+        .unwrap();
+        assert_eq!(std::fs::read(&allowlist_path).unwrap(), b"new-allowlist");
+
+        let recovered = recover_pending_settings_audit(&path, Some(&Ledger::new()))
+            .unwrap()
+            .expect("pending journal recovered");
+        assert_eq!(recovered.authoritative(), &previous);
+        assert_eq!(load_settings(&path), Some(previous));
+        assert_eq!(std::fs::read(&allowlist_path).unwrap(), b"old-allowlist");
+        assert!(
+            settings_audit_journal_path(&path).exists(),
+            "intent remains until live memory publication"
+        );
+        recovered.finish().unwrap();
+        assert!(!settings_audit_journal_path(&path).exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pending_file_settings_with_exact_durable_audit_keep_next() {
+        let dir = std::env::temp_dir().join(format!(
+            "chancela-settings-audit-present-{}",
+            Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(SETTINGS_FILE);
+        let previous = Settings::default();
+        let mut next = previous.clone();
+        next.search.batch_size = 333;
+        write_settings_atomic(&path, &previous).unwrap();
+        let allowlist_path = runtime_allowlist_path(&path);
+        std::fs::write(&allowlist_path, b"old-allowlist").unwrap();
+        let mut ledger = Ledger::new();
+        let event_id = ledger
+            .append(
+                "fixture",
+                "search",
+                "search.settings.updated",
+                None,
+                b"committed",
+            )
+            .id
+            .0;
+        PreparedSettingsAudit::prepare(
+            &path,
+            &previous,
+            &next,
+            event_id,
+            true,
+            Some(RuntimeAllowlistTransition {
+                previous: read_file_snapshot(&allowlist_path).unwrap(),
+                next: FileSnapshot {
+                    exists: true,
+                    bytes: b"new-allowlist".to_vec(),
+                },
+            }),
+        )
+        .unwrap();
+
+        let recovered = recover_pending_settings_audit(&path, Some(&ledger))
+            .unwrap()
+            .expect("pending journal recovered");
+        assert_eq!(recovered.authoritative(), &next);
+        assert_eq!(load_settings(&path), Some(next));
+        assert_eq!(std::fs::read(&allowlist_path).unwrap(), b"new-allowlist");
+        assert!(
+            settings_audit_journal_path(&path).exists(),
+            "intent remains until live memory publication"
+        );
+        recovered.finish().unwrap();
+        assert!(!settings_audit_journal_path(&path).exists());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn search_defaults_are_bounded_and_valid() {
+        let search = SearchSettings::default();
+        search.validate().unwrap();
+        assert!(search.enabled);
+        assert!(search.batch_size <= 5_000);
+        assert!(search.queue_capacity <= 1_024);
+        assert!(search.result_limit <= 500);
+        assert!(search.facet_limit <= 200);
+        assert!(search.max_total_content_chars <= 100_000_000);
+    }
+
+    #[test]
+    fn search_validation_rejects_unbounded_controls() {
+        for search in [
+            SearchSettings {
+                queue_capacity: 0,
+                ..SearchSettings::default()
+            },
+            SearchSettings {
+                result_limit: 501,
+                ..SearchSettings::default()
+            },
+            SearchSettings {
+                max_content_chars: 1_000_001,
+                ..SearchSettings::default()
+            },
+            SearchSettings {
+                max_total_content_chars: 100_000_001,
+                ..SearchSettings::default()
+            },
+        ] {
+            assert!(search.validate().is_err());
+        }
+    }
 
     /// [`Locale::as_str`] and serde must agree, in both directions, for every variant.
     ///

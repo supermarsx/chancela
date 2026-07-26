@@ -279,6 +279,34 @@ impl Authorizer {
         has_permission(&self.eff, perm, scope, self.rel())
     }
 
+    /// Whether this principal carries `perm` at any scope. Collection endpoints use this only as
+    /// an admission gate; every returned row is still checked at its concrete scope.
+    #[must_use]
+    pub fn holds_at_any_scope(&self, perm: Permission) -> bool {
+        self.eff
+            .all_grants()
+            .any(|(candidate, _)| candidate == perm)
+    }
+
+    /// Select the same read-response privacy tier used by the ordinary entity/book/act DTOs.
+    /// Search invokes this before scoring so private tokens cannot affect guest results or facets.
+    pub(crate) fn read_redaction(&self) -> crate::dto::ReadRedaction {
+        crate::dto::ReadRedaction::for_effective_permissions(&self.eff)
+    }
+
+    /// Stable, sorted authority material used to bind opaque search cursors to the exact effective
+    /// grant set under which their first page was produced.
+    pub(crate) fn search_cursor_authority(&self) -> String {
+        let mut grants = self
+            .eff
+            .all_grants()
+            .map(|(permission, scope)| format!("{}:{scope:?}", permission.as_str()))
+            .collect::<Vec<_>>();
+        grants.sort();
+        grants.dedup();
+        grants.join("|")
+    }
+
     /// Require `perm` at `scope`, `403` otherwise.
     pub fn require(&self, perm: Permission, scope: Scope) -> Result<(), ApiError> {
         if self.permits(perm, scope) {
@@ -875,8 +903,14 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST data.export|data.backup@Repository
     ("/v1/dashboard", RouteClass::Gated),                          // GET act.read@Global
-    ("/v1/notifications/triage", RouteClass::Gated),               // GET act.read@Global
-    ("/v1/notifications/triage/{id}", RouteClass::Gated),          // PATCH act.read@Global
+    ("/v1/search", RouteClass::Gated), // GET search.read + source-domain read per visible row
+    ("/v1/search/status", RouteClass::Gated), // GET search.read at any scope or search.manage@Global
+    ("/v1/search/rebuild", RouteClass::Gated), // POST search.manage@Global
+    ("/v1/search/pause", RouteClass::Gated),  // POST search.manage@Global
+    ("/v1/search/resume", RouteClass::Gated), // POST search.manage@Global
+    ("/v1/search/settings", RouteClass::Gated), // GET/PUT search.manage@Global; search slice only
+    ("/v1/notifications/triage", RouteClass::Gated), // GET act.read@Global
+    ("/v1/notifications/triage/{id}", RouteClass::Gated), // PATCH act.read@Global
     // --- Settings -------------------------------------------------------------------------------
     ("/v1/settings", RouteClass::Gated), // GET settings.read@Global · PUT settings.manage@Global
     // Outbound email (t23). Reading the status is `settings.read`; setting/clearing the relay

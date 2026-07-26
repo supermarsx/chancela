@@ -977,6 +977,7 @@ pub async fn open_from_termo(
 
     // entities → books → ledger.
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
@@ -1433,6 +1434,7 @@ pub async fn close_from_termo(
 
     // entities → books → ledger.
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;

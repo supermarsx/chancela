@@ -239,6 +239,13 @@ pub(crate) const T30_ACT_REVERT_GRANDFATHER_MIGRATION: &str = "t30_act_revert_gr
 /// next boot — a shared marker would leave already-migrated stores without `signing.configure`.
 pub(crate) const T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION: &str =
     "t50_signing_configure_grandfather";
+/// Marker id for the seeded-role-only `search.read` compatibility grant. It is distinct from every
+/// broad permission split because it must not run on arbitrary operator-authored roles.
+pub(crate) const SEARCH_READ_SEEDED_GRANDFATHER_MIGRATION: &str = "search_read_seeded_grandfather";
+/// Shared durable marker for the store-backed catalog. Unlike the file catalog's marker envelope,
+/// this lives in the database `meta` table so replacing or adding a node cannot re-run the grant.
+pub(crate) const SEARCH_READ_SEEDED_GRANDFATHER_STORE_META_KEY: &str =
+    "role_migration.search_read_seeded_grandfather";
 
 /// The set of one-time role-catalog data migrations already applied to a given catalog store.
 #[derive(Debug, Clone, Default)]
@@ -251,7 +258,7 @@ impl RoleMigrationState {
         self.applied.contains(migration)
     }
 
-    fn mark(&mut self, migration: &str) {
+    pub(crate) fn mark(&mut self, migration: &str) {
         self.applied.insert(migration.to_owned());
     }
 }
@@ -424,6 +431,27 @@ pub(crate) fn reconcile_signing_configure_grandfather(
     }
     let catalog_changed = chancela_authz::grandfather_signing_configure_catalog(catalog);
     state.mark(T50_SIGNING_CONFIGURE_GRANDFATHER_MIGRATION);
+    RoleMigrationOutcome {
+        catalog_changed,
+        marker_changed: true,
+    }
+}
+
+/// Apply the one-time seeded-role `search.read` compatibility grant.
+///
+/// The authz predicate checks both the stable seeded id and the persisted `act.read` parent, so a
+/// custom role never changes and a deliberately narrowed built-in role stays narrowed. Burning the
+/// marker even on a no-op prevents a later operator removal from being silently undone.
+#[must_use]
+pub(crate) fn reconcile_seeded_search_read_grandfather(
+    catalog: &mut RoleCatalog,
+    state: &mut RoleMigrationState,
+) -> RoleMigrationOutcome {
+    if state.has_run(SEARCH_READ_SEEDED_GRANDFATHER_MIGRATION) {
+        return RoleMigrationOutcome::default();
+    }
+    let catalog_changed = chancela_authz::grandfather_seeded_search_read_catalog(catalog);
+    state.mark(SEARCH_READ_SEEDED_GRANDFATHER_MIGRATION);
     RoleMigrationOutcome {
         catalog_changed,
         marker_changed: true,
@@ -2465,6 +2493,64 @@ mod tests {
                 .unwrap()
                 .permission_set
                 .contains(&Permission::SigningConfigure)
+        );
+    }
+
+    #[test]
+    fn search_read_reconcile_is_seeded_only_parent_based_and_marker_guarded() {
+        let mut catalog = RoleCatalog::seeded_defaults();
+        let mut reader = catalog.get(chancela_authz::READER_ROLE_ID).unwrap().clone();
+        reader.permission_set.remove(&Permission::SearchRead);
+        reader.permission_set.insert(Permission::DataExport);
+        catalog.insert(reader);
+
+        let custom = custom_role(0x5EA2C4, "Custom act reader", &[Permission::ActRead]);
+        catalog.insert(custom.clone());
+        let mut narrowed = catalog.get(chancela_authz::GUEST_ROLE_ID).unwrap().clone();
+        narrowed.permission_set.remove(&Permission::SearchRead);
+        narrowed.permission_set.remove(&Permission::ActRead);
+        catalog.insert(narrowed.clone());
+
+        let mut migrations = RoleMigrationState::default();
+        let outcome = reconcile_seeded_search_read_grandfather(&mut catalog, &mut migrations);
+        assert!(outcome.catalog_changed && outcome.marker_changed);
+        let migrated_reader = catalog.get(chancela_authz::READER_ROLE_ID).unwrap();
+        assert!(
+            migrated_reader
+                .permission_set
+                .contains(&Permission::SearchRead)
+        );
+        assert!(
+            migrated_reader
+                .permission_set
+                .contains(&Permission::DataExport)
+        );
+        assert!(
+            !catalog
+                .get(custom.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SearchRead),
+            "custom role ids must opt into search.read explicitly"
+        );
+        assert_eq!(catalog.get(narrowed.id), Some(&narrowed));
+
+        let mut operator_removed = migrated_reader.clone();
+        operator_removed
+            .permission_set
+            .remove(&Permission::SearchRead);
+        catalog.insert(operator_removed);
+        assert_eq!(
+            reconcile_seeded_search_read_grandfather(&mut catalog, &mut migrations),
+            RoleMigrationOutcome::default(),
+            "the persisted marker must preserve a later deliberate removal"
+        );
+        assert!(
+            !catalog
+                .get(chancela_authz::READER_ROLE_ID)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SearchRead)
         );
     }
 }

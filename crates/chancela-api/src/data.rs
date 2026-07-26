@@ -206,22 +206,80 @@ pub async fn reset_data(
     let export_first = !factory_skip;
     let sidecars = state.instance_sidecars()?;
 
+    // From this point onward the operation belongs to an owned task. Dropping the HTTP future only
+    // detaches the waiter: the coordinator retains every guard, resolves the non-cancellable
+    // blocking store call, and publishes or aborts the destructive search fence before it exits.
+    let coordinator = tokio::spawn(async move {
+        let result = reset_data_owned(
+            &state,
+            store,
+            data_dir,
+            sidecars,
+            scope,
+            export_first,
+            actor,
+        )
+        .await;
+        if let Err(error) = &result {
+            eprintln!(
+                "data reset coordinator failed after taking ownership of the operation: {error:?}"
+            );
+        }
+        #[cfg(test)]
+        if let Some(pause) = state.destructive_operation_test_pause.as_ref() {
+            pause.coordinator_settled.notify_one();
+        }
+        result
+    });
+    let outcome = coordinator.await.map_err(|error| {
+        ApiError::Internal(format!("data reset coordinator task failed: {error}"))
+    })??;
+    Ok(Json(outcome))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn reset_data_owned(
+    state: &AppState,
+    store: chancela_store::Store,
+    data_dir: std::path::PathBuf,
+    sidecars: Vec<std::path::PathBuf>,
+    scope: ResetScope,
+    export_first: bool,
+    actor: String,
+) -> Result<ResetOutcomeView, ApiError> {
+    // Lock order: settings gate → search fence → settings → ledger. The owned coordinator retains
+    // this gate through the durable result and all live-state publication.
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    state
+        .settings_store_commit_tracker
+        .wait_until_settled()
+        .await;
+    crate::settings::reconcile_pending_settings_audit(state).await?;
+
     // A factory reset must never leave an old bearer valid against the new first-run instance.
     // In HA the Redis epoch advance is fail-closed and happens before the store transaction.
     if matches!(scope, ResetScope::BackendFactory) {
         state.invalidate_all_sessions().await?;
     }
 
+    crate::search::prepare_destructive_change(state)
+        .await
+        .map_err(ApiError::Unavailable)?;
     let outcome = {
-        let mut ledger_guard = state.ledger.write().await;
+        // `write_owned` makes the ledger guard part of the coordinator's owned state. It cannot be
+        // dropped merely because the HTTP task waiting on this coordinator is cancelled.
+        let mut ledger_guard = state.ledger.clone().write_owned().await;
         let at = OffsetDateTime::now_utc();
-        // The sync `reset` drives postgres writes (and a `postgres::Client` `Drop`) that must not run
-        // on an async worker (wp28). Move the owned ledger into the blocking closure and restore it
-        // after the offload; the write guard is held throughout, so no other task observes the swap.
         let mut ledger = std::mem::take(&mut *ledger_guard);
+        #[cfg(test)]
+        let pause = state.destructive_operation_test_pause.clone();
         let (ledger, result) = store
-            .read_blocking_async(move |s| {
-                let outcome = s.reset(
+            .read_blocking_async(move |store| {
+                #[cfg(test)]
+                if let Err(error) = crate::destructive_store_operation_checkpoint(pause.as_ref()) {
+                    return (ledger, Err(error));
+                }
+                let outcome = store.reset(
                     &mut ledger,
                     &data_dir,
                     scope,
@@ -234,25 +292,41 @@ pub async fn reset_data(
             })
             .await;
         *ledger_guard = ledger;
-        let outcome = result.map_err(map_store_error)?;
-        crate::refresh_degraded(&state, &ledger_guard).await;
-        outcome
+        match result {
+            Ok(outcome) => {
+                crate::refresh_degraded(state, &ledger_guard).await;
+                Ok(outcome)
+            }
+            Err(error) => Err(map_store_error(error)),
+        }
+    };
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            crate::search::abort_destructive_change(state).await;
+            return Err(error);
+        }
     };
 
-    // The store committed; bring the in-memory read-models in line (ledger guard already released,
-    // so clearing the domain locks never violates the entities→…→ledger acquisition order).
-    match scope {
+    // The store committed; bring the in-memory read-models in line only while the coordinator still
+    // owns the settings gate and fence. Any publication error explicitly aborts the fence.
+    let publication = match scope {
         ResetScope::BackendDomain => state.clear_domain_memory().await,
-        ResetScope::BackendFactory => state.clear_all_memory().await,
+        ResetScope::BackendFactory => state.clear_all_memory_with_settings_gate_held().await,
+    };
+    if let Err(error) = publication {
+        crate::search::abort_destructive_change(state).await;
+        return Err(error);
     }
+    drop(settings_update_guard);
 
-    Ok(Json(ResetOutcomeView {
+    Ok(ResetOutcomeView {
         scope: format!("{:?}", outcome.scope),
         export_archive: outcome
             .export_archive
-            .map(|p| p.to_string_lossy().into_owned()),
+            .map(|path| path.to_string_lossy().into_owned()),
         cleared: outcome.cleared,
-    }))
+    })
 }
 
 /// Parse the reset scope; an unrecognized value is a `422`.
@@ -318,33 +392,100 @@ pub async fn start_over_instance(
         .ok_or_else(|| ApiError::Internal("durable store without a data directory".to_owned()))?;
     let sidecars = state.instance_sidecars()?;
 
+    let reason = req.reason;
+    let coordinator = tokio::spawn(async move {
+        let result =
+            start_over_instance_owned(&state, store, data_dir, sidecars, reason, actor).await;
+        if let Err(error) = &result {
+            eprintln!(
+                "instance start-over coordinator failed after taking ownership of the operation: \
+                 {error:?}"
+            );
+        }
+        #[cfg(test)]
+        if let Some(pause) = state.destructive_operation_test_pause.as_ref() {
+            pause.coordinator_settled.notify_one();
+        }
+        result
+    });
+    let outcome = coordinator.await.map_err(|error| {
+        ApiError::Internal(format!(
+            "instance start-over coordinator task failed: {error}"
+        ))
+    })??;
+    Ok(Json(outcome))
+}
+
+async fn start_over_instance_owned(
+    state: &AppState,
+    store: chancela_store::Store,
+    data_dir: std::path::PathBuf,
+    sidecars: Vec<std::path::PathBuf>,
+    reason: String,
+    actor: String,
+) -> Result<InstanceStartOverResponse, ApiError> {
+    // A start-over replaces the durable domain tables while preserving settings. Retain the gate
+    // inside the owned coordinator until the replacement read-models are published.
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    state
+        .settings_store_commit_tracker
+        .wait_until_settled()
+        .await;
+    crate::settings::reconcile_pending_settings_audit(state).await?;
+    crate::search::prepare_destructive_change(state)
+        .await
+        .map_err(ApiError::Unavailable)?;
     let outcome = {
-        let mut ledger_guard = state.ledger.write().await;
+        let mut ledger_guard = state.ledger.clone().write_owned().await;
         let at = OffsetDateTime::now_utc();
-        // Offload the sync `start_over_instance` (postgres writes + `Client` `Drop`) off the async
-        // worker (wp28): move the owned ledger through the blocking closure and restore it after.
         let mut ledger = std::mem::take(&mut *ledger_guard);
-        let reason = req.reason;
+        #[cfg(test)]
+        let pause = state.destructive_operation_test_pause.clone();
         let (ledger, result) = store
-            .read_blocking_async(move |s| {
-                let outcome =
-                    s.start_over_instance(&mut ledger, &reason, &actor, at, &data_dir, &sidecars);
+            .read_blocking_async(move |store| {
+                #[cfg(test)]
+                if let Err(error) = crate::destructive_store_operation_checkpoint(pause.as_ref()) {
+                    return (ledger, Err(error));
+                }
+                let outcome = store.start_over_instance(
+                    &mut ledger,
+                    &reason,
+                    &actor,
+                    at,
+                    &data_dir,
+                    &sidecars,
+                );
                 (ledger, outcome)
             })
             .await;
         *ledger_guard = ledger;
-        let outcome = result.map_err(map_store_error)?;
-        crate::refresh_degraded(&state, &ledger_guard).await;
-        outcome
+        match result {
+            Ok(outcome) => {
+                crate::refresh_degraded(state, &ledger_guard).await;
+                Ok(outcome)
+            }
+            Err(error) => Err(map_store_error(error)),
+        }
+    };
+    let outcome = match outcome {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            crate::search::abort_destructive_change(state).await;
+            return Err(error);
+        }
     };
 
     // The whole store was re-seeded empty; clear the in-memory domain read-models to match (the
     // ledger was replaced in lock-step; users/settings are preserved).
-    state.clear_domain_memory().await;
+    if let Err(error) = state.clear_domain_memory().await {
+        crate::search::abort_destructive_change(state).await;
+        return Err(error);
+    }
+    drop(settings_update_guard);
 
-    Ok(Json(InstanceStartOverResponse {
+    Ok(InstanceStartOverResponse {
         scope: format!("{:?}", outcome.scope),
         archive_path: outcome.archive_path.to_string_lossy().into_owned(),
         archived_bundle_digest: outcome.archived_bundle_digest,
-    }))
+    })
 }

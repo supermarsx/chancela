@@ -2742,10 +2742,13 @@ describe('SettingsPage', () => {
     expect(sent.ai).toEqual({ enabled: true });
   });
 
-  it('deep-links to Search and autosaves its bounded slice through the whole settings document', async () => {
+  it('lets a search.manage-only operator load and autosave the narrow search slice', async () => {
     const base = settingsFetch();
+    const calls: Array<{ url: string; method: string; body?: BodyInit | null }> = [];
     const fn = ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: init?.body });
       if (url === '/v1/search/status') {
         return Promise.resolve(
           jsonResponse({
@@ -2777,11 +2780,24 @@ describe('SettingsPage', () => {
           }),
         );
       }
+      if (url === '/v1/search/settings' && method === 'GET') {
+        return Promise.resolve(jsonResponse(DEFAULT_SETTINGS.search));
+      }
+      if (url === '/v1/search/settings' && method === 'PUT') {
+        return Promise.resolve(jsonResponse(JSON.parse(String(init?.body))));
+      }
       return base.fn(input, init);
     }) as typeof fetch;
     vi.stubGlobal('fetch', fn);
 
-    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/search']);
+    renderWithProviders(
+      <StaticPermissionsProvider
+        value={permissionsValue((permission) => permission === 'search.manage')}
+      >
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/search'],
+    );
 
     expect(
       (await screen.findByRole('button', { name: 'Pesquisa' })).getAttribute('aria-pressed'),
@@ -2790,15 +2806,41 @@ describe('SettingsPage', () => {
       target: { value: '333' },
     });
 
-    await waitFor(() => expect(base.calls.some((call) => call.method === 'PUT')).toBe(true), {
-      timeout: 3000,
+    await waitFor(
+      () =>
+        expect(
+          calls.some((call) => call.url === '/v1/search/settings' && call.method === 'PUT'),
+        ).toBe(true),
+      { timeout: 3000 },
+    );
+    const put = calls.find((call) => call.url === '/v1/search/settings' && call.method === 'PUT');
+    expect(JSON.parse(String(put?.body))).toEqual({
+      ...DEFAULT_SETTINGS.search,
+      batch_size: 333,
     });
-    const sent = JSON.parse(
-      base.calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
-    ) as typeof DEFAULT_SETTINGS;
-    expect(sent.search).toEqual({ ...DEFAULT_SETTINGS.search, batch_size: 333 });
-    expect(sent.organization).toEqual(DEFAULT_SETTINGS.organization);
-    expect(sent.documents).toEqual(DEFAULT_SETTINGS.documents);
+    expect(calls.some((call) => call.url === '/v1/settings')).toBe(false);
+  });
+
+  it('suppresses the broad settings query on /admin/search while permissions are unresolved', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    const unresolved = {
+      ...permissionsValue(() => false),
+      ready: false,
+    };
+
+    renderWithProviders(
+      <StaticPermissionsProvider value={unresolved}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/search'],
+    );
+
+    expect(await screen.findByRole('button', { name: 'Serviços' })).toBeTruthy();
+    await waitFor(() => expect(calls.some((call) => call.url.includes('/health'))).toBe(true));
+    expect(
+      calls.some((call) => new URL(call.url, 'http://localhost').pathname === '/v1/settings'),
+    ).toBe(false);
   });
 
   it('hides Search and falls back from its direct route without search.manage', async () => {

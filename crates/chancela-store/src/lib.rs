@@ -62,6 +62,9 @@ use chancela_ledger::{
     AppendError, ChainId, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
 };
 use chancela_registry::RegistryExtract;
+use chancela_search::{
+    IndexOperation as SearchIndexOperation, SearchDocument, SearchIndexPhase, SearchIndexState,
+};
 use rand_core::{OsRng, RngCore};
 use rusqlite::types::Value;
 use rusqlite::{OptionalExtension, params, params_from_iter};
@@ -79,6 +82,26 @@ pub const DB_FILE: &str = "chancela.db";
 /// settings sidecar is one document, so it lives as one row keyed by this constant; [`Tx::put_settings`]
 /// upserts it and [`Store::settings`] reads it back.
 pub const SETTINGS_SINGLETON_ID: &str = "settings";
+
+/// Fixed primary-key value for the one durable full-search lifecycle/progress row.
+pub const SEARCH_INDEX_STATE_SINGLETON_ID: &str = "main";
+
+fn search_projection_tombstone() -> SearchIndexState {
+    SearchIndexState {
+        phase: SearchIndexPhase::Starting,
+        projection_fenced: true,
+        updated_at: OffsetDateTime::now_utc()
+            .format(&Rfc3339)
+            .unwrap_or_else(|_| "1970-01-01T00:00:00Z".to_owned()),
+        ..SearchIndexState::default()
+    }
+}
+const DOCUMENT_SEARCH_METADATA_SELECT: &str = "SELECT id, act_id, template_id, pdf_digest, profile, created_at \
+     FROM documents ORDER BY created_at ASC, rowid ASC";
+const PAPER_BOOK_OCR_DRAFTS_ALL_SELECT: &str = "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
+     engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
+     reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
+     ORDER BY import_id ASC, created_at DESC, rowid DESC";
 
 /// wp16 P1 — the Postgres `LISTEN/NOTIFY` channel the leader signals a durable ledger append on and
 /// that followers listen on for near-real-time change-feed wakes (plan §2.2). The payload is the new
@@ -192,6 +215,11 @@ pub enum StoreError {
     /// backup is never trusted; the live store is left untouched (t54 §2.5 / §4.1(6)).
     #[error("bad backup: {0}")]
     BadBackup(String),
+    /// A whole-store restore crossed its durable commit boundary, then failed while replacing
+    /// sidecars, reloading the committed rows, or appending the recovery audit event. Callers must
+    /// reconcile from the new store and must never treat this as an unapplied/pre-commit refusal.
+    #[error("restore committed but post-commit reconciliation failed: {0}")]
+    RestoreCommitted(String),
     /// A recovery/lifecycle operation could not locate a required aggregate (e.g. the book to
     /// export/start-over was not found in the store).
     #[error("not found: {0}")]
@@ -304,6 +332,11 @@ pub(crate) enum Backend {
 pub(crate) struct SqliteBackend {
     /// The one SQLite connection, shared and mutex-guarded.
     conn: Arc<Mutex<rusqlite::Connection>>,
+    /// The options that authenticated/opened `conn`, retained so whole-store restore can verify a
+    /// staged SQLCipher snapshot and reopen the swapped live file with the same key. The options'
+    /// custom `Debug` implementation redacts key material, and successful rekey updates this shared
+    /// value for every cloned [`Store`] handle.
+    open_options: Arc<Mutex<StoreOpenOptions>>,
 }
 
 impl SqliteBackend {
@@ -314,6 +347,7 @@ impl SqliteBackend {
         let conn = open_connection_with_options(data_dir, options)?;
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
+            open_options: Arc::new(Mutex::new(options.clone())),
         })
     }
 }
@@ -956,7 +990,7 @@ pub struct AggregateSnapshot {
 /// (frozen contract, t30.md §3.2).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupManifest {
-    /// Absolute path to the written `backups/chancela-backup-<utc>.zip`.
+    /// Absolute path to the written `backups/chancela-backup-<utc>-<nonce>.zip`.
     pub path: String,
     /// Total size of the zip archive in bytes.
     pub bytes: u64,
@@ -1146,6 +1180,19 @@ pub struct StoredDocument {
     /// row cannot honestly be rebound to settings that may have changed after its bytes were
     /// produced.
     pub document_layout_json: Option<String>,
+}
+
+/// Metadata-only generated-document projection for background discovery/indexing. Deliberately
+/// cannot carry PDF bytes, so scanning a large generated-document corpus has bounded memory
+/// independent of artifact size.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredDocumentSearchMetadata {
+    pub id: String,
+    pub act_id: ActId,
+    pub template_id: String,
+    pub pdf_digest: String,
+    pub profile: String,
+    pub created_at: OffsetDateTime,
 }
 
 /// One outbound message **attempt** and how it ended (schema v25, t108).
@@ -1961,6 +2008,22 @@ impl Store {
         }
     }
 
+    /// Clone the redacted SQLite open configuration for a staged verification/reopen operation.
+    /// Key material remains private to this crate and is never formatted or serialized.
+    pub(crate) fn sqlite_open_options(&self) -> Result<StoreOpenOptions, StoreError> {
+        match &self.backend {
+            Backend::Sqlite(backend) => Ok(backend
+                .open_options
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone()),
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(_) => Err(StoreError::UnsupportedOnPostgres {
+                op: "SQLite open options for whole-store restore",
+            }),
+        }
+    }
+
     /// Open the store on the backend named by `selection` (wp14 Phase 1, §2.4). This is the seam
     /// Phase 2 wires `CHANCELA_DB_BACKEND` / `DATABASE_URL` into: SQLite (the default) resolves to
     /// [`Store::open_with_options`]; Postgres connects the pool + advisory-locked writer and runs
@@ -2371,6 +2434,17 @@ impl Store {
             .map_err(|source| StoreError::EncryptionKeyRejected { source })?;
         verify_keyed_database(&guard)?;
         guard.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);")?;
+        match &self.backend {
+            Backend::Sqlite(backend) => {
+                *backend
+                    .open_options
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner()) =
+                    StoreOpenOptions::new().with_encryption_key(new_key);
+            }
+            #[cfg(feature = "postgres")]
+            Backend::Postgres(_) => unreachable!("locked_conn rejects Postgres before rekey"),
+        }
         Ok(())
     }
 
@@ -2639,6 +2713,25 @@ impl Store {
         Ok(out)
     }
 
+    /// Fetch every generated document's searchable metadata, oldest first. The selected shape
+    /// intentionally excludes `pdf_bytes`; full-search never materializes artifact blobs.
+    pub fn document_search_metadata(
+        &self,
+    ) -> Result<Vec<StoredDocumentSearchMetadata>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.document_search_metadata();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(DOCUMENT_SEARCH_METADATA_SELECT)?;
+        let rows = stmt.query_map([], row_to_document_search_metadata)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// Fetch a document by its own id (bytes + metadata), or `None` if unknown.
     pub fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
         #[cfg(feature = "postgres")]
@@ -2769,6 +2862,31 @@ impl Store {
         Ok(out)
     }
 
+    /// Fetch every generated-document dispatch evidence row in one ordered scan. Background
+    /// projections use this bulk path instead of issuing one query per act/document.
+    pub fn generated_document_dispatch_evidence_all(
+        &self,
+    ) -> Result<Vec<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.generated_document_dispatch_evidence_all();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+             channel, reference, evidence_reference, imported_document_id, recipients_json, \
+             operator_note, recorded_at \
+             FROM generated_document_dispatch_evidence \
+             ORDER BY recorded_at ASC, rowid ASC",
+        )?;
+        let rows = stmt.query_map([], row_to_generated_dispatch_evidence)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
     /// Fetch a generated-document dispatch evidence row by its deterministic idempotency key.
     pub fn generated_document_dispatch_evidence_by_key(
         &self,
@@ -2881,6 +2999,30 @@ impl Store {
             params![imported_document_id],
             row_to_imported_document_review_history_entry,
         )?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// Bulk review-history read for background indexing/export. Ordered by imported document then
+    /// history id, avoiding one blocking query per imported row.
+    pub fn imported_document_review_history_all(
+        &self,
+    ) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.imported_document_review_history_all();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(
+            "SELECT id, imported_document_id, review_status, reviewed_at, reviewed_by, \
+             review_note, acknowledged_guardrail_ids_json \
+             FROM imported_document_review_history \
+             ORDER BY imported_document_id ASC, id ASC",
+        )?;
+        let rows = stmt.query_map([], row_to_imported_document_review_history_entry)?;
         let mut out = Vec::new();
         for row in rows {
             out.push(row??);
@@ -3005,6 +3147,23 @@ impl Store {
              WHERE import_id = ?1 ORDER BY created_at DESC, rowid DESC",
         )?;
         let rows = stmt.query_map(params![import_id], row_to_paper_book_ocr_draft)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row??);
+        }
+        Ok(out)
+    }
+
+    /// List every non-authoritative OCR draft in one query. Background projections group the
+    /// returned rows by `import_id`, avoiding one blocking query per paper-book import.
+    pub fn paper_book_ocr_drafts_all(&self) -> Result<Vec<StoredPaperBookOcrDraft>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.paper_book_ocr_drafts_all();
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare(PAPER_BOOK_OCR_DRAFTS_ALL_SELECT)?;
+        let rows = stmt.query_map([], row_to_paper_book_ocr_draft)?;
         let mut out = Vec::new();
         for row in rows {
             out.push(row??);
@@ -3363,6 +3522,70 @@ impl Store {
         self.document_rows("user_templates")
     }
 
+    /// Load every durable full-search projection. The worker rebuilds the in-memory inverted index
+    /// from these rows on startup before reconciling against live source state.
+    pub fn search_documents(&self) -> Result<Vec<SearchDocument>, StoreError> {
+        self.document_rows("search_documents")?
+            .into_iter()
+            .map(|(id, json)| {
+                let document: SearchDocument = serde_json::from_str(&json)?;
+                if document.id != id {
+                    return Err(StoreError::Io(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!(
+                            "search document row id {id:?} does not match payload id {:?}",
+                            document.id
+                        ),
+                    )));
+                }
+                Ok(document)
+            })
+            .collect()
+    }
+
+    /// Load the durable background-index lifecycle/progress state, if indexing has ever started.
+    pub fn search_index_state(&self) -> Result<Option<SearchIndexState>, StoreError> {
+        self.document_row("search_index_state", SEARCH_INDEX_STATE_SINGLETON_ID)?
+            .map(|json| serde_json::from_str(&json).map_err(StoreError::from))
+            .transpose()
+    }
+
+    /// Atomically apply one bounded incremental index batch and persist the matching progress
+    /// state. Search projections are derived data and intentionally do not append ledger events;
+    /// the admin commands that trigger rebuild/pause/resume are audited by the API.
+    pub fn apply_search_index_batch(
+        &self,
+        operations: &[SearchIndexOperation],
+        state: &SearchIndexState,
+    ) -> Result<(), StoreError> {
+        self.persist(|tx| {
+            for operation in operations {
+                match operation {
+                    SearchIndexOperation::Upsert(document) => {
+                        tx.upsert_search_document(document)?;
+                    }
+                    SearchIndexOperation::Delete(id) => {
+                        tx.delete_search_document(id)?;
+                    }
+                }
+            }
+            tx.put_search_index_state(state)
+        })
+    }
+
+    /// Synchronously discard every derived full-search row and install a fenced lifecycle marker.
+    /// Destructive reset paths use this as a race fence against an index batch that may have been
+    /// in flight; SQLite whole-store restore applies the same operation to its staged candidate
+    /// before swapping it live.
+    pub fn clear_search_projection(&self) -> Result<(), StoreError> {
+        self.persist(|tx| {
+            tx.execute_recovery_batch(
+                "DELETE FROM search_documents; DELETE FROM search_index_state;",
+            )?;
+            tx.put_search_index_state(&search_projection_tombstone())
+        })
+    }
+
     /// Read one user-authored template's serialized `json` by id, or `None` when unknown. The `json`
     /// is the API's serialized `TemplateSpecDto` value (opaque to the store).
     pub fn user_template(&self, id: &str) -> Result<Option<String>, StoreError> {
@@ -3587,6 +3810,24 @@ impl Store {
         .map_err(StoreError::from)
     }
 
+    /// Read one internal store metadata value.
+    ///
+    /// Keys are application-owned constants (schema/instance stamps and one-time migration
+    /// markers), never user input. Keeping cluster-wide migration markers in `meta` makes their
+    /// one-time semantics survive node replacement and avoids a fresh follower reapplying an
+    /// additive authorization migration after an operator later narrows a role.
+    pub fn metadata_value(&self, key: &str) -> Result<Option<String>, StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.metadata_value(key);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare("SELECT value FROM meta WHERE key = ?1")?;
+        stmt.query_row(params![key], |row| row.get::<_, String>(0))
+            .optional()
+            .map_err(StoreError::from)
+    }
+
     /// Read every stored provider-credential record ([`StoredCredentialRecord`]), ordered by
     /// `(mode, provider_id)`. Mirrors the `provider-credentials.enc.json` `records` list. Each
     /// `record_blob` is returned verbatim (opaque AEAD ciphertext — the store never decrypts it);
@@ -3761,10 +4002,35 @@ impl Store {
         T: Send + 'static,
         F: FnOnce(&Tx<'_>) -> Result<T, StoreError> + Send + 'static,
     {
+        self.persist_result_blocking_async_holding(f, ()).await
+    }
+
+    /// Variant of [`Store::persist_result_blocking_async`] that keeps an owned completion token
+    /// alive inside the blocking task until the transaction has committed or rolled back.
+    ///
+    /// This is useful when a higher layer must detect a transaction still running after its async
+    /// waiter was cancelled: dropping a Tokio `JoinHandle` cannot cancel `spawn_blocking`, whereas
+    /// `hold` is dropped only after [`Store::persist_result`] has reached a durable outcome.
+    pub async fn persist_result_blocking_async_holding<T, F, H>(
+        &self,
+        f: F,
+        hold: H,
+    ) -> Result<T, StoreError>
+    where
+        T: Send + 'static,
+        F: FnOnce(&Tx<'_>) -> Result<T, StoreError> + Send + 'static,
+        H: Send + 'static,
+    {
         // Cheap clone (shared `Arc<Mutex<..>>` / pool) so the blocking task drives the exact same
         // underlying connection and advisory-locked writer as the caller.
         let store = self.clone();
-        match tokio::task::spawn_blocking(move || store.persist_result(f)).await {
+        match tokio::task::spawn_blocking(move || {
+            let result = store.persist_result(f);
+            drop(hold);
+            result
+        })
+        .await
+        {
             Ok(result) => result,
             // Re-raise a panic in the transaction on the caller, matching the previous behaviour of
             // the inline synchronous call (a panic unwound the request task). `spawn_blocking` tasks
@@ -3837,30 +4103,40 @@ impl Store {
 
         let created_at = OffsetDateTime::now_utc();
         let stamp = utc_stamp(created_at);
+        let backup_nonce = uuid::Uuid::new_v4();
         let backups_dir = data_dir.join("backups");
         std::fs::create_dir_all(&backups_dir)?;
 
         // 1. Transactionally-consistent hot snapshot via VACUUM INTO (no downtime, plan §D6). The
-        //    target must not pre-exist; the per-run stamp keeps it unique. Cleaned up after zipping.
-        let snapshot = backups_dir.join(format!(".snapshot-{stamp}.db"));
+        //    target must not pre-exist; the per-run stamp keeps it unique. Search is a disposable
+        //    projection rather than backup material, so the first snapshot is scrubbed through the
+        //    same live (and therefore correctly keyed, for SQLCipher) connection and VACUUMed into
+        //    a second compact file. The second VACUUM is essential: DELETE alone can leave indexed
+        //    source text in SQLite free pages inside the archive.
+        let raw_snapshot = backups_dir.join(format!(".snapshot-raw-{stamp}-{backup_nonce}.db"));
+        let snapshot = backups_dir.join(format!(".snapshot-sanitized-{stamp}-{backup_nonce}.db"));
+        let _snapshot_cleanup =
+            SqliteBackupSnapshotCleanup([raw_snapshot.clone(), snapshot.clone()]);
         {
             let guard = self.locked_conn()?;
             guard.execute(
                 "VACUUM INTO ?1",
-                params![snapshot.to_string_lossy().as_ref()],
+                params![raw_snapshot.to_string_lossy().as_ref()],
             )?;
+            sanitize_sqlite_backup_snapshot(&guard, &raw_snapshot, &snapshot)?;
         }
 
-        // 2. Ledger head/length/verified from a fresh load of the live DB (identical to the snapshot
-        //    just taken). Done after releasing the lock — `load` re-locks the connection.
+        // 2. Ledger head/length/verified from a fresh load of the live DB. The only intentional
+        //    difference in the archived snapshot is its discarded search projection. Done after
+        //    releasing the lock — `load` re-locks the connection.
         let loaded = self.load()?;
         let ledger_length = loaded.ledger.len() as u64;
         let ledger_head = loaded.ledger.head().map(|h| hex(&h));
         let ledger_verified = loaded.chain_status.is_ok();
 
         // 3. Build the archive at a temp path, then atomically rename into place.
-        let final_path = backups_dir.join(format!("chancela-backup-{stamp}.zip"));
-        let tmp_path = backups_dir.join(format!(".chancela-backup-{stamp}.zip.tmp"));
+        let final_path = backups_dir.join(format!("chancela-backup-{stamp}-{backup_nonce}.zip"));
+        let tmp_path = backups_dir.join(format!(".chancela-backup-{stamp}-{backup_nonce}.zip.tmp"));
         let mut files: Vec<BackupFile> = Vec::new();
         {
             let file = std::fs::File::create(&tmp_path)?;
@@ -3896,9 +4172,6 @@ impl Store {
             zip.write_all(serde_json::to_string_pretty(&embedded)?.as_bytes())?;
             zip.finish()?;
         }
-
-        // Best-effort cleanup of the transient snapshot (VACUUM INTO yields a single standalone DB).
-        let _ = std::fs::remove_file(&snapshot);
 
         std::fs::rename(&tmp_path, &final_path)?;
         let bytes = std::fs::metadata(&final_path)?.len();
@@ -5522,6 +5795,23 @@ impl Tx<'_> {
         self.upsert_document_row("users", id, json)
     }
 
+    /// Upsert one derived full-search projection.
+    pub fn upsert_search_document(&self, document: &SearchDocument) -> Result<(), StoreError> {
+        let json = serde_json::to_string(document)?;
+        self.upsert_document_row("search_documents", &document.id, &json)
+    }
+
+    /// Remove one derived full-search projection by namespace-qualified id.
+    pub fn delete_search_document(&self, id: &str) -> Result<(), StoreError> {
+        self.delete_document_row("search_documents", id)
+    }
+
+    /// Persist the singleton full-search lifecycle/progress/error state.
+    pub fn put_search_index_state(&self, state: &SearchIndexState) -> Result<(), StoreError> {
+        let json = serde_json::to_string(state)?;
+        self.upsert_document_row("search_index_state", SEARCH_INDEX_STATE_SINGLETON_ID, &json)
+    }
+
     /// Remove one user directory row by id (mirrors a user dropped from `users.json`). A no-op when
     /// the id is unknown.
     pub fn delete_user(&self, id: &str) -> Result<(), StoreError> {
@@ -5942,6 +6232,30 @@ impl Tx<'_> {
                     "INSERT INTO settings (id, json) VALUES ($1, $2) \
                      ON CONFLICT (id) DO UPDATE SET json = EXCLUDED.json",
                     &[&SETTINGS_SINGLETON_ID, &json],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Upsert one application-owned metadata value inside the enclosing transaction.
+    ///
+    /// This is intentionally transactional so callers can commit a one-time migration marker in
+    /// the same write as the data transformation it guards.
+    pub fn put_metadata_value(&self, key: &str, value: &str) -> Result<(), StoreError> {
+        match &self.kind {
+            TxKind::Sqlite(_) => {
+                self.raw()?.execute(
+                    "INSERT OR REPLACE INTO meta (key, value) VALUES (?1, ?2)",
+                    params![key, value],
+                )?;
+            }
+            #[cfg(feature = "postgres")]
+            TxKind::Postgres(cell) => {
+                cell.borrow_mut().execute(
+                    "INSERT INTO meta (key, value) VALUES ($1, $2) \
+                     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                    &[&key, &value],
                 )?;
             }
         }
@@ -6800,6 +7114,28 @@ fn row_to_document(
             pdf_bytes,
             template_spec_json,
             document_layout_json,
+        })
+    })())
+}
+
+#[allow(clippy::type_complexity)]
+fn row_to_document_search_metadata(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<Result<StoredDocumentSearchMetadata, StoreError>> {
+    let id: String = row.get(0)?;
+    let act_id_raw: String = row.get(1)?;
+    let template_id: String = row.get(2)?;
+    let pdf_digest: String = row.get(3)?;
+    let profile: String = row.get(4)?;
+    let created_at_raw: String = row.get(5)?;
+    Ok((|| {
+        Ok(StoredDocumentSearchMetadata {
+            id,
+            act_id: parse_uuid_newtype::<ActId>(&act_id_raw)?,
+            template_id,
+            pdf_digest,
+            profile,
+            created_at: parse_rfc3339(&created_at_raw)?,
         })
     })())
 }
@@ -7751,13 +8087,10 @@ fn hex_nibble(b: u8) -> Option<u8> {
     }
 }
 
-/// Open (creating if absent) `<data_dir>/chancela.db`, apply the PRAGMAs + idempotent migration,
-/// gate the schema version, and ensure the `instance_id` stamp. Factored out of [`Store::open`] so
-/// the whole-store [`recovery`] restore can rebuild a fresh connection after swapping the db file.
-pub(crate) fn open_connection(data_dir: &Path) -> Result<rusqlite::Connection, StoreError> {
-    open_connection_with_options(data_dir, &StoreOpenOptions::default())
-}
-
+/// Open (creating if absent) `<data_dir>/chancela.db`, apply the key/options, PRAGMAs and
+/// idempotent migration, gate the schema version, and ensure the `instance_id` stamp. Factored out
+/// of [`Store::open_with_options`] so whole-store [`recovery`] can reopen a swapped SQLCipher file
+/// with the exact options that authenticated the live handle.
 pub(crate) fn open_connection_with_options(
     data_dir: &Path,
     options: &StoreOpenOptions,
@@ -8064,6 +8397,60 @@ pub(crate) fn utc_stamp(t: OffsetDateTime) -> String {
     )
 }
 
+/// Remove the disposable full-search projection from a hot SQLite snapshot and compact the
+/// sanitized result into `sanitized_snapshot`.
+///
+/// The snapshot is attached through the already-open live connection instead of being opened with
+/// a fresh unkeyed handle. SQLCipher applies the live connection's key to attached databases, so
+/// this preserves the at-rest encryption mode while never mutating the live `main` schema.
+fn sanitize_sqlite_backup_snapshot(
+    conn: &rusqlite::Connection,
+    raw_snapshot: &Path,
+    sanitized_snapshot: &Path,
+) -> Result<(), StoreError> {
+    let tombstone = serde_json::to_string(&search_projection_tombstone())?;
+
+    conn.execute(
+        "ATTACH DATABASE ?1 AS chancela_backup_staging",
+        params![raw_snapshot.to_string_lossy().as_ref()],
+    )?;
+
+    let sanitize_result = (|| {
+        conn.execute_batch(
+            "DELETE FROM chancela_backup_staging.search_documents;
+             DELETE FROM chancela_backup_staging.search_index_state;",
+        )?;
+        conn.execute(
+            "INSERT INTO chancela_backup_staging.search_index_state (id, json) VALUES (?1, ?2)",
+            params![SEARCH_INDEX_STATE_SINGLETON_ID, tombstone],
+        )?;
+        // Compact into a new file so deleted search bodies cannot survive in freelist pages.
+        conn.execute(
+            "VACUUM chancela_backup_staging INTO ?1",
+            params![sanitized_snapshot.to_string_lossy().as_ref()],
+        )?;
+        Ok(())
+    })();
+
+    // A failed sanitization must not poison the shared connection for the next backup attempt.
+    let detach_result = conn
+        .execute_batch("DETACH DATABASE chancela_backup_staging;")
+        .map_err(StoreError::from);
+    sanitize_result.and(detach_result)
+}
+
+/// Always remove both SQLite backup staging files, including on an early archive/sidecar error.
+/// The raw snapshot can contain search text, so leaving it behind would defeat archive sanitation.
+struct SqliteBackupSnapshotCleanup([PathBuf; 2]);
+
+impl Drop for SqliteBackupSnapshotCleanup {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
 fn tmp_backup_path(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()
@@ -8136,6 +8523,7 @@ fn add_path_to_zip<W: Write + std::io::Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::recovery::ResetScope;
 
     /// A throwaway temp directory unique to this test run, removed on drop. The store's integration
     /// suite carries its own `TempDir`; this keeps the in-crate unit test self-contained.
@@ -8158,6 +8546,171 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    fn search_document(id: &str, body: &str) -> SearchDocument {
+        SearchDocument {
+            id: id.to_owned(),
+            kind: chancela_search::SearchKind::Act,
+            tenant_id: Some("tenant-a".to_owned()),
+            entity_id: Some("entity-a".to_owned()),
+            entity_name: Some("Entidade A".to_owned()),
+            book_id: Some("book-a".to_owned()),
+            book_label: Some("Livro A".to_owned()),
+            act_id: Some("act-a".to_owned()),
+            title: "Ata pesquisável".to_owned(),
+            body: body.to_owned(),
+            content_truncated: false,
+            author: Some("ana".to_owned()),
+            law: None,
+            status: Some("draft".to_owned()),
+            required_permission: None,
+            occurred_at: Some("2026-07-26T10:00:00Z".to_owned()),
+            source_version: "v1".to_owned(),
+            privileged: None,
+        }
+    }
+
+    #[test]
+    fn durable_search_batch_round_trips_upserts_deletes_and_progress_atomically() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let first = search_document("act:first", "primeiro");
+        let second = search_document("act:second", "segundo");
+        let state = SearchIndexState {
+            phase: chancela_search::SearchIndexPhase::Reconciling,
+            document_count: 2,
+            processed: 2,
+            total: 2,
+            updated_at: "2026-07-26T10:00:00Z".to_owned(),
+            ..SearchIndexState::default()
+        };
+        store
+            .apply_search_index_batch(
+                &[
+                    SearchIndexOperation::Upsert(Box::new(first.clone())),
+                    SearchIndexOperation::Upsert(Box::new(second)),
+                ],
+                &state,
+            )
+            .expect("persist search batch");
+        assert_eq!(store.search_documents().unwrap().len(), 2);
+        assert_eq!(store.search_index_state().unwrap(), Some(state.clone()));
+
+        let completed = SearchIndexState {
+            phase: chancela_search::SearchIndexPhase::Idle,
+            generation: 1,
+            document_count: 1,
+            processed: 1,
+            total: 1,
+            last_completed_at: Some("2026-07-26T10:00:01Z".to_owned()),
+            updated_at: "2026-07-26T10:00:01Z".to_owned(),
+            ..SearchIndexState::default()
+        };
+        store
+            .apply_search_index_batch(
+                &[SearchIndexOperation::Delete("act:second".to_owned())],
+                &completed,
+            )
+            .expect("delete stale projection");
+        assert_eq!(store.search_documents().unwrap(), vec![first]);
+        drop(store);
+        let reopened = Store::open(dir.path()).expect("reopen");
+        assert_eq!(reopened.search_documents().unwrap().len(), 1);
+        assert_eq!(
+            reopened.search_index_state().unwrap(),
+            Some(completed),
+            "progress survives restart with the same derived rows"
+        );
+    }
+
+    #[test]
+    fn domain_reset_receipt_and_rows_include_the_derived_search_projection() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let secret = "reset-search-secret-88419";
+        store
+            .apply_search_index_batch(
+                &[SearchIndexOperation::Upsert(Box::new(search_document(
+                    "act:secret",
+                    secret,
+                )))],
+                &SearchIndexState {
+                    phase: chancela_search::SearchIndexPhase::Idle,
+                    generation: 7,
+                    document_count: 1,
+                    last_completed_at: Some("2026-07-26T10:00:00Z".to_owned()),
+                    updated_at: "2026-07-26T10:00:00Z".to_owned(),
+                    ..SearchIndexState::default()
+                },
+            )
+            .expect("persist secret projection");
+        let mut ledger = Ledger::new();
+        let outcome = store
+            .reset(
+                &mut ledger,
+                dir.path(),
+                ResetScope::BackendDomain,
+                false,
+                &[],
+                "reset-test",
+                OffsetDateTime::now_utc(),
+            )
+            .expect("domain reset");
+
+        assert!(
+            outcome
+                .cleared
+                .iter()
+                .any(|table| table == "search_documents")
+        );
+        assert!(
+            outcome
+                .cleared
+                .iter()
+                .any(|table| table == "search_index_state")
+        );
+        assert!(store.search_documents().unwrap().is_empty());
+        assert_eq!(
+            store.search_index_state().unwrap().unwrap().phase,
+            chancela_search::SearchIndexPhase::Starting,
+            "a durable non-completed tombstone makes every follower fail closed"
+        );
+        assert!(
+            !serde_json::to_string(&store.search_documents().unwrap())
+                .unwrap()
+                .contains(secret)
+        );
+    }
+
+    #[test]
+    fn generated_document_search_projection_never_selects_pdf_blobs() {
+        assert!(
+            !DOCUMENT_SEARCH_METADATA_SELECT.contains("pdf_bytes"),
+            "metadata-only discovery must not materialize generated PDF bytes"
+        );
+        #[cfg(feature = "postgres")]
+        assert!(
+            !crate::pg::DOCUMENT_SEARCH_METADATA_SELECT.contains("pdf_bytes"),
+            "the Postgres metadata projection must also exclude generated PDF bytes"
+        );
+    }
+
+    #[test]
+    fn search_corpus_reads_all_ocr_drafts_with_one_unfiltered_query() {
+        assert!(
+            !PAPER_BOOK_OCR_DRAFTS_ALL_SELECT.contains("WHERE import_id"),
+            "the SQLite corpus projection must not issue one query per paper import"
+        );
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        assert!(store.paper_book_ocr_drafts_all().unwrap().is_empty());
+
+        #[cfg(feature = "postgres")]
+        assert!(
+            !crate::pg::PAPER_BOOK_OCR_DRAFTS_ALL_SELECT.contains("WHERE import_id"),
+            "the Postgres corpus projection must not issue one query per paper import"
+        );
     }
 
     #[test]
@@ -8793,6 +9346,44 @@ mod tests {
             present, 1,
             "pairing_devices was not created by the v22 migration"
         );
+    }
+
+    #[test]
+    fn schema_v28_reopen_adds_durable_search_tables_and_advances_the_stamp() {
+        let dir = TempDir::new();
+        let store = Store::open(dir.path()).expect("open current schema");
+        drop(store);
+
+        let db_path = dir.path().join(DB_FILE);
+        let conn = rusqlite::Connection::open(&db_path).expect("open raw sqlite");
+        conn.execute_batch(
+            "DROP TABLE search_documents;
+             DROP TABLE search_index_state;
+             UPDATE meta SET value = '28' WHERE key = 'schema_version';",
+        )
+        .expect("downgrade fixture to v28");
+        drop(conn);
+
+        let reopened = Store::open(dir.path()).expect("migrate v28 to v29");
+        let conn = reopened.locked_conn().expect("sqlite connection");
+        for table in ["search_documents", "search_index_state"] {
+            let present: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table lookup");
+            assert_eq!(present, 1, "{table} was not created by schema v29");
+        }
+        let version: String = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("schema stamp");
+        assert_eq!(version, schema::SCHEMA_VERSION.to_string());
     }
 
     #[test]

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, cleanup, renderHook } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { api } from './client';
+import { DEFAULT_SETTINGS, type SearchSettings, type Settings } from './types';
 import {
   keys,
   useAdvanceAct,
@@ -24,6 +25,8 @@ import {
   useStartOverInstance,
   useUnassignRole,
   useUpdatePaperBookImportOcrStatus,
+  useUpdateSearchSettings,
+  useUpdateSettings,
   useUpdateBook,
   useUpdateTemplate,
 } from './hooks';
@@ -43,6 +46,16 @@ function harness() {
   return { qc, wrapper };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 async function mutate(result: { current: { mutateAsync: unknown } }, value?: unknown) {
   await act(async () => {
     await (result.current.mutateAsync as (input: unknown) => Promise<unknown>)(value);
@@ -50,6 +63,80 @@ async function mutate(result: { current: { mutateAsync: unknown } }, value?: unk
 }
 
 describe('API hooks execute mutations and maintain authoritative caches', () => {
+  it('patches and invalidates the broad settings cache after a narrow search save', async () => {
+    const { qc, wrapper } = harness();
+    const staleBroad: Settings = structuredClone(DEFAULT_SETTINGS);
+    qc.setQueryData(keys.settings, staleBroad);
+    const stored: SearchSettings = {
+      ...DEFAULT_SETTINGS.search,
+      batch_size: 333,
+    };
+    vi.spyOn(api, 'putSearchSettings').mockResolvedValue(stored);
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+
+    await mutate(renderHook(() => useUpdateSearchSettings(), { wrapper }).result, stored);
+
+    expect(qc.getQueryData<Settings>(keys.settings)?.search).toEqual(stored);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: keys.settings });
+    expect(qc.getQueryData<SearchSettings>(keys.searchSettings)).toEqual(stored);
+  });
+
+  it('converges broad and narrow settings caches in either response order', async () => {
+    for (const order of ['narrow-first', 'broad-first'] as const) {
+      const { qc, wrapper } = harness();
+      const staleBroad: Settings = structuredClone(DEFAULT_SETTINGS);
+      staleBroad.organization.name = `Broad ${order}`;
+      const storedSearch: SearchSettings = {
+        ...DEFAULT_SETTINGS.search,
+        batch_size: 333,
+      };
+      qc.setQueryData(keys.settings, structuredClone(DEFAULT_SETTINGS));
+      qc.setQueryData(keys.searchSettings, DEFAULT_SETTINGS.search);
+
+      const broadResponse = deferred<Settings>();
+      const narrowResponse = deferred<SearchSettings>();
+      const broadSpy = vi.spyOn(api, 'putSettings').mockReturnValue(broadResponse.promise);
+      const narrowSpy = vi.spyOn(api, 'putSearchSettings').mockReturnValue(narrowResponse.promise);
+      const broadHook = renderHook(() => useUpdateSettings(), { wrapper });
+      const narrowHook = renderHook(() => useUpdateSearchSettings(), { wrapper });
+      let broadMutation!: Promise<Settings>;
+      let narrowMutation!: Promise<SearchSettings>;
+      await act(async () => {
+        broadMutation = broadHook.result.current.mutateAsync(staleBroad);
+        narrowMutation = narrowHook.result.current.mutateAsync(storedSearch);
+        await Promise.resolve();
+      });
+
+      if (order === 'narrow-first') {
+        narrowResponse.resolve(storedSearch);
+        await act(async () => {
+          await narrowMutation;
+        });
+        broadResponse.resolve({ ...staleBroad, search: storedSearch });
+        await act(async () => {
+          await broadMutation;
+        });
+      } else {
+        broadResponse.resolve({ ...staleBroad, search: DEFAULT_SETTINGS.search });
+        await act(async () => {
+          await broadMutation;
+        });
+        narrowResponse.resolve(storedSearch);
+        await act(async () => {
+          await narrowMutation;
+        });
+      }
+
+      expect(qc.getQueryData<Settings>(keys.settings)?.search).toEqual(storedSearch);
+      expect(qc.getQueryData<SearchSettings>(keys.searchSettings)).toEqual(storedSearch);
+      broadHook.unmount();
+      narrowHook.unmount();
+      broadSpy.mockRestore();
+      narrowSpy.mockRestore();
+      qc.clear();
+    }
+  });
+
   it('updates a book layout override and refreshes book collections', async () => {
     const { qc, wrapper } = harness();
     const saved = {

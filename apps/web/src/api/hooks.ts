@@ -101,6 +101,7 @@ import type {
   RegistryImportBody,
   SealActBody,
   SearchQueryParams,
+  SearchSettings,
   SearchStatusResponse,
   Settings,
   UserPreferences,
@@ -250,6 +251,7 @@ export const keys = {
   dashboard: ['dashboard'] as const,
   search: (params: SearchQueryParams) => ['search', 'results', params] as const,
   searchStatus: ['search', 'status'] as const,
+  searchSettings: ['search', 'settings'] as const,
   settings: ['settings'] as const,
   mePreferences: ['me', 'preferences'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
@@ -2153,6 +2155,37 @@ export function useSearchStatus(enabled = true) {
   });
 }
 
+/** Dedicated search configuration slice; never fetches the broader settings document. */
+export function useSearchSettings(enabled = true) {
+  return useQuery({
+    queryKey: keys.searchSettings,
+    queryFn: () => api.getSearchSettings(),
+    enabled,
+    retry: false,
+  });
+}
+
+/** Persist only the search configuration slice behind `search.manage`. */
+export function useUpdateSearchSettings() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SearchSettings) => api.putSearchSettings(body),
+    onSuccess: (stored) => {
+      qc.setQueryData(keys.searchSettings, stored);
+      // Keep any already-loaded broad settings working copy coherent with the independently
+      // authorized slice. The server still treats `/v1/search/settings` as the sole writer, but
+      // patching this cache prevents a later broad autosave from repeatedly echoing stale policy.
+      qc.setQueryData<Settings>(keys.settings, (current) =>
+        current ? { ...current, search: stored } : current,
+      );
+      void qc.invalidateQueries({ queryKey: keys.searchSettings });
+      void qc.invalidateQueries({ queryKey: keys.settings });
+      void qc.invalidateQueries({ queryKey: keys.searchStatus });
+      void qc.invalidateQueries({ queryKey: ['search', 'results'] });
+    },
+  });
+}
+
 function useSearchIndexCommand(command: 'rebuild' | 'pause' | 'resume') {
   const qc = useQueryClient();
   return useMutation({
@@ -3746,11 +3779,12 @@ export function useDryRunPrivacyRetentionPolicy() {
  * every consumer (the appearance layer, the Configurações page, the actor/numbering
  * pre-fills). Settings rarely change, so the cache is kept fresh for a minute.
  */
-export function useSettings() {
+export function useSettings(enabled = true) {
   return useQuery({
     queryKey: keys.settings,
     queryFn: () => api.getSettings(),
     staleTime: 60_000,
+    enabled,
   });
 }
 
@@ -3767,7 +3801,9 @@ export function useUpdateSettings() {
     onMutate: async (next) => {
       await qc.cancelQueries({ queryKey: keys.settings });
       const previous = qc.getQueryData<Settings>(keys.settings);
-      qc.setQueryData(keys.settings, next);
+      const authoritativeSearch =
+        qc.getQueryData<SearchSettings>(keys.searchSettings) ?? previous?.search ?? next.search;
+      qc.setQueryData(keys.settings, { ...next, search: authoritativeSearch });
       return { previous };
     },
     onError: (_err, _next, context) => {
@@ -3775,6 +3811,8 @@ export function useUpdateSettings() {
     },
     onSuccess: (stored) => {
       qc.setQueryData(keys.settings, stored);
+      qc.setQueryData(keys.searchSettings, stored.search);
+      void qc.invalidateQueries({ queryKey: keys.searchSettings });
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.settings });

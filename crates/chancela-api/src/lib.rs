@@ -182,6 +182,7 @@ mod recovery;
 mod registry;
 mod roles;
 mod scap;
+mod search;
 mod secretstore;
 mod secretstore_persist;
 mod session;
@@ -245,7 +246,7 @@ use chancela_store::{
     StoredSignedDocument, Tx,
 };
 use serde::Serialize;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use actor::{CurrentActor, CurrentAttestor};
@@ -277,6 +278,8 @@ pub use zk_repository::ZkRepositoryStore;
 // API/assembly slices (S3/S4) can name these and so the crypto core's consumers are reachable from
 // the crate root (the crate-private `CredentialSecretStore` itself stays internal).
 pub use privacy::provision_subject_dek;
+#[doc(hidden)]
+pub use search::{SearchService, shutdown_search_service};
 pub use secretstore::{CredentialKeySource, ProtectionLevel, SecretEnvelope, SecretStoreError};
 pub use secretstore_persist::{
     CmdCredentialFields, CredentialEntry, CredentialFieldSet, CredentialMode,
@@ -295,8 +298,9 @@ pub use settings::{
     PlatformLogLevel, PlatformLoggingSettings, PlatformServiceAction,
     PlatformServiceControlSettings, PlatformServiceDesiredState, PlatformServiceLastAction,
     PlatformSettings, RegistryAutoUpdateCadence, RegistryAutoUpdateEntityDefaults,
-    RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday, Settings, SignatureFamily,
-    SigningCmdSettings, SigningSettings, SignupMode, SignupSettings, ThemeMode, TwoFactorSettings,
+    RegistryAutoUpdateSettings, RegistryAutoUpdateWeekday, SearchSettings, Settings,
+    SignatureFamily, SigningCmdSettings, SigningSettings, SignupMode, SignupSettings, ThemeMode,
+    TwoFactorSettings,
 };
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
@@ -432,6 +436,98 @@ fn hydrate_tenants(store: &Store) -> HashMap<TenantId, Tenant> {
 pub type GroupTemplateLibraryRevisionMap =
     HashMap<(GroupId, TemplateLibraryId, u64), GroupTemplateLibraryRevision>;
 
+#[cfg(test)]
+#[derive(Default)]
+#[doc(hidden)]
+pub struct SettingsCommitTestPause {
+    pub(crate) before_persist: tokio::sync::Notify,
+    pub(crate) continue_persist: tokio::sync::Notify,
+    pub(crate) store_persist_entered: tokio::sync::Notify,
+    pub(crate) block_store_persist: std::sync::atomic::AtomicBool,
+    pub(crate) after_persist: tokio::sync::Notify,
+    pub(crate) continue_publish: tokio::sync::Notify,
+}
+
+/// Deterministic test seam for cancellation while a destructive store operation is running.
+#[cfg(test)]
+#[derive(Default)]
+#[doc(hidden)]
+pub struct DestructiveOperationTestPause {
+    pub(crate) store_operation_entered: tokio::sync::Notify,
+    pub(crate) block_store_operation: std::sync::atomic::AtomicBool,
+    pub(crate) fail_store_operation: std::sync::atomic::AtomicBool,
+    pub(crate) coordinator_settled: tokio::sync::Notify,
+}
+
+#[cfg(test)]
+pub(crate) fn destructive_store_operation_checkpoint(
+    pause: Option<&Arc<DestructiveOperationTestPause>>,
+) -> Result<(), StoreError> {
+    use std::sync::atomic::Ordering;
+
+    let Some(pause) = pause else {
+        return Ok(());
+    };
+    pause.store_operation_entered.notify_one();
+    while pause.block_store_operation.load(Ordering::Acquire) {
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    if pause.fail_store_operation.load(Ordering::Acquire) {
+        return Err(StoreError::Io(std::io::Error::other(
+            "injected destructive store failure",
+        )));
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+#[doc(hidden)]
+pub struct SettingsStoreCommitTracker {
+    in_flight: std::sync::atomic::AtomicUsize,
+    settled: tokio::sync::Notify,
+}
+
+impl SettingsStoreCommitTracker {
+    fn begin(self: &Arc<Self>) -> SettingsStoreCommitLease {
+        self.in_flight
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        SettingsStoreCommitLease {
+            tracker: self.clone(),
+        }
+    }
+
+    async fn wait_until_settled(&self) {
+        loop {
+            let settled = self.settled.notified();
+            if self.in_flight.load(std::sync::atomic::Ordering::Acquire) == 0 {
+                return;
+            }
+            settled.await;
+        }
+    }
+}
+
+pub(crate) struct SettingsStoreCommitLease {
+    tracker: Arc<SettingsStoreCommitTracker>,
+}
+
+impl Drop for SettingsStoreCommitLease {
+    fn drop(&mut self) {
+        if self
+            .tracker
+            .in_flight
+            .fetch_sub(1, std::sync::atomic::Ordering::AcqRel)
+            == 1
+        {
+            // `wait_until_settled` is always reached while the settings-update gate is held, so
+            // there is at most one waiter. `notify_one` deliberately retains a permit when the
+            // waiter has constructed `notified()` but has not yet been polled; `notify_waiters`
+            // would lose that wake and could strand a destructive reset or authoritative reload.
+            self.tracker.settled.notify_one();
+        }
+    }
+}
+
 #[derive(Clone, Default)]
 pub struct AppState {
     /// All known tenants (isolation boundaries above entities, wp26 tenancy), keyed by their
@@ -470,6 +566,23 @@ pub struct AppState {
     pub ledger: Arc<RwLock<Ledger>>,
     /// The current application settings document (contract §2.8). Defaults until a `PUT`.
     pub settings: Arc<RwLock<settings::Settings>>,
+    /// Serializes every settings mutation and authoritative follower reload from snapshot through
+    /// durable persist and in-memory publication, preventing stale read-clone writers or DB
+    /// snapshots from overwriting values committed by a concurrent request.
+    #[doc(hidden)]
+    pub settings_update_gate: Arc<Mutex<()>>,
+    /// Tracks settings store transactions through their actual blocking commit/rollback outcome,
+    /// even if the async request/coordinator waiting on `spawn_blocking` is cancelled.
+    #[doc(hidden)]
+    pub settings_store_commit_tracker: Arc<SettingsStoreCommitTracker>,
+    /// Unit-test cancellation seam for the owned settings commit coordinator.
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub settings_commit_test_pause: Option<Arc<SettingsCommitTestPause>>,
+    /// Unit-test cancellation seam for owned destructive-operation coordinators.
+    #[cfg(test)]
+    #[doc(hidden)]
+    pub destructive_operation_test_pause: Option<Arc<DestructiveOperationTestPause>>,
     /// Structured platform log tail. This is API-owned and bounded; it is backed by
     /// `platform-logs.json` when a data dir is configured, and in-memory otherwise. It is not a
     /// historical stdout/stderr tail or an MCP process-log collector.
@@ -689,6 +802,10 @@ pub struct AppState {
     /// behaviour, byte-identical). Set only by [`AppState::with_data_dir`]/[`AppState::from_env`];
     /// every mutation write-through goes through [`AppState::persist_write_through`].
     pub store: Option<Store>,
+    /// Dedicated full-search projection and worker control plane. Request handlers only read the
+    /// in-memory snapshot; source reconciliation and durable writes run on its background worker.
+    #[doc(hidden)]
+    pub search_index: search::SearchService,
     /// wp16 P3b — whether the five non-ledger sidecars (users/roles/delegations/settings/
     /// provider-credentials) are DB-backed (shared across cluster nodes) rather than file-backed.
     /// `true` **only** for the Postgres backend; `false` (the [`Default`]) keeps the byte-identical
@@ -938,18 +1055,35 @@ impl AppState {
             &mut roles_catalog,
             &mut role_migrations,
         );
+        // Search compatibility: only persisted seeded roles that still hold their historical
+        // `act.read` parent gain the new entry-point verb. Custom roles and narrowed seeds stay exact.
+        let search_read_migration = roles::reconcile_seeded_search_read_grandfather(
+            &mut roles_catalog,
+            &mut role_migrations,
+        );
         let catalog_changed = migration.catalog_changed
             || revert_migration.catalog_changed
-            || signing_configure_migration.catalog_changed;
+            || signing_configure_migration.catalog_changed
+            || search_read_migration.catalog_changed;
         let marker_changed = migration.marker_changed
             || revert_migration.marker_changed
-            || signing_configure_migration.marker_changed;
-        if (seeded || retired_any || catalog_changed)
-            && let Err(e) = roles::write_roles_atomic(&roles_path, &roles_catalog)
-        {
-            eprintln!("warning: failed to seed {} ({e})", roles_path.display());
-        }
+            || signing_configure_migration.marker_changed
+            || search_read_migration.marker_changed;
+        let catalog_persisted = if seeded || retired_any || catalog_changed {
+            match roles::write_roles_atomic(&roles_path, &roles_catalog) {
+                Ok(()) => true,
+                Err(e) => {
+                    eprintln!("warning: failed to seed {} ({e})", roles_path.display());
+                    false
+                }
+            }
+        } else {
+            true
+        };
+        // Never burn a one-time marker when its corresponding catalog write failed. A later boot
+        // must be allowed to retry instead of permanently recording a grant that never landed.
         if marker_changed
+            && catalog_persisted
             && let Err(e) =
                 roles::write_role_migration_state_atomic(&role_migrations_path, &role_migrations)
         {
@@ -1204,6 +1338,40 @@ impl AppState {
             }
         }
 
+        // Resolve a file-backed settings mutation interrupted between the atomic settings.json
+        // replacement and its ledger append. The journal names the exact audit event, so the
+        // durable ledger chooses the committed `next` document; an absent event restores
+        // `previous`. Do this after store hydration and before any subsystem consumes settings.
+        let pending_settings_recovery = if let Some(settings_path) = state.persist_path.as_deref() {
+            let recovered = if state.store.is_some() {
+                let ledger = state
+                    .ledger
+                    .try_read()
+                    .map_err(|_| AppStateInitError::StoreLoad {
+                        data_dir: dir.clone(),
+                        source: StoreError::Io(std::io::Error::new(
+                            std::io::ErrorKind::WouldBlock,
+                            "settings audit recovery could not inspect the hydrated ledger",
+                        )),
+                    })?;
+                settings::recover_pending_settings_audit(settings_path, Some(&ledger))
+            } else {
+                settings::recover_pending_settings_audit(settings_path, None)
+            }
+            .map_err(|error| AppStateInitError::StoreLoad {
+                data_dir: dir.clone(),
+                source: StoreError::Io(error),
+            })?;
+            if let Some(recovered) = recovered.as_ref()
+                && recovered.settings_file_backed()
+            {
+                state.settings = Arc::new(RwLock::new(recovered.authoritative().clone()));
+            }
+            recovered
+        } else {
+            None
+        };
+
         // wp16 P3b: on Postgres the five non-ledger sidecars live in the DB (shared across nodes), so
         // make the DB tables authoritative — load users/roles/delegations/settings from the store
         // (replacing the file-derived defaults) and seed/migrate the role catalog back into the DB.
@@ -1216,6 +1384,14 @@ impl AppState {
                     source,
                 }
             })?;
+        }
+        if let Some(recovered) = pending_settings_recovery {
+            recovered
+                .finish()
+                .map_err(|error| AppStateInitError::StoreLoad {
+                    data_dir: dir.clone(),
+                    source: StoreError::Io(error),
+                })?;
         }
 
         // The zero-knowledge object store opens HERE, deliberately after the hydration above, and
@@ -1310,7 +1486,26 @@ impl AppState {
         event_count: usize,
         upserts: impl FnOnce(&Tx<'_>) -> Result<(), StoreError> + Send + 'static,
     ) -> Result<(), ApiError> {
+        self.persist_write_through_holding(ledger, event_count, upserts, None)
+            .await
+    }
+
+    async fn persist_write_through_holding(
+        &self,
+        ledger: &mut Ledger,
+        event_count: usize,
+        upserts: impl FnOnce(&Tx<'_>) -> Result<(), StoreError> + Send + 'static,
+        store_completion: Option<SettingsStoreCommitLease>,
+    ) -> Result<(), ApiError> {
         let Some(store) = &self.store else {
+            drop(store_completion);
+            // No durable store: the in-memory append is committed when this method returns. Wake
+            // the projection only after returning to the caller, which may still have an aggregate
+            // or settings snapshot to publish synchronously in the same poll.
+            let state = self.clone();
+            tokio::spawn(async move {
+                search::notify_reconcile(&state).await;
+            });
             return Ok(());
         };
         // wp16 P0 leadership gate: only the cluster writer-leader may append. A follower — or a
@@ -1350,12 +1545,15 @@ impl AppState {
         // release/reacquire), so no `seq` can interleave (invariant #1).
         let events: Vec<Event> = ledger.events()[len - event_count..].to_vec();
         if let Err(e) = store
-            .persist_blocking_async(move |tx| {
-                for event in &events {
-                    tx.append_event(event)?;
-                }
-                upserts(tx)
-            })
+            .persist_result_blocking_async_holding(
+                move |tx| {
+                    for event in &events {
+                        tx.append_event(event)?;
+                    }
+                    upserts(tx)
+                },
+                store_completion,
+            )
             .await
         {
             // Roll the in-memory ledger back to match the (unchanged) durable chain on disk.
@@ -1366,22 +1564,25 @@ impl AppState {
                 e,
             ));
         }
-        // wp16 P1: the durable append committed — signal followers so the covered feed can advance
-        // near-real-time (plan §2.2). Best-effort by design: a missed NOTIFY (leader crash between
-        // commit and signal, no listener) is retried by the seq-poll backstop once Postgres can be
-        // queried, so a failure here must never fail the write. No-op on SQLite (single-node).
-        //
-        // wp28: the NOTIFY runs a Postgres sync query, so it is offloaded onto the blocking pool
-        // (direct call on this async worker would panic). The write already committed above, the
-        // seq is an owned primitive moved into the closure, and a failure here is still swallowed
-        // (logged only) — behaviour is preserved, only the thread the query runs on changes.
+        // wp16 P1: the durable append committed. From this point there must be no await before the
+        // caller can publish its corresponding in-memory aggregate/settings snapshot: cancellation
+        // during a best-effort NOTIFY used to leave durable state ahead of live memory. Detach both
+        // wakeups synchronously; the current task continues in the same poll and publishes before
+        // either spawned task can run. A missed NOTIFY is still covered by the seq-poll backstop.
         let notify_seq = (len as i64) - 1;
-        if let Err(e) = store
-            .read_blocking_async(move |s| s.cluster_notify_append(notify_seq))
-            .await
-        {
-            eprintln!("cluster: NOTIFY on append failed ({e}); followers will retry via seq-poll");
-        }
+        let store = store.clone();
+        let state = self.clone();
+        tokio::spawn(async move {
+            if let Err(e) = store
+                .read_blocking_async(move |s| s.cluster_notify_append(notify_seq))
+                .await
+            {
+                eprintln!(
+                    "cluster: NOTIFY on append failed ({e}); followers will retry via seq-poll"
+                );
+            }
+            search::notify_reconcile(&state).await;
+        });
         Ok(())
     }
 
@@ -1496,9 +1697,17 @@ impl AppState {
     }
 
     /// Reload the durable DB read-models and file-backed instance sidecars after a whole-store
-    /// restore so the running API reflects the swapped-in files. A no-op when in-memory. Does NOT
-    /// touch the ledger — the restore path already replaced it in lock-step.
-    pub(crate) async fn reload_domain_memory(&self) -> Result<(), ApiError> {
+    /// restore while the caller owns `settings_update_gate`, so the running API reflects the
+    /// committed replacement authority. A no-op when in-memory. The ledger is always replaced from
+    /// the store too: PostgreSQL can commit the logical restore before a later
+    /// sidecar/recovery-event step fails.
+    ///
+    /// Whole-store restore must hold the gate from before its destructive search fence and durable
+    /// swap until the replacement settings are published. Keeping this as a separate inner method
+    /// avoids recursively acquiring the non-reentrant gate during that post-commit reload.
+    pub(crate) async fn reload_domain_memory_with_settings_gate_held(
+        &self,
+    ) -> Result<(), ApiError> {
         let Some(store) = &self.store else {
             return Ok(());
         };
@@ -1517,6 +1726,11 @@ impl AppState {
         *self.acts.write().await = loaded.acts;
         *self.follow_ups.write().await = loaded.follow_ups;
         *self.registry_extracts.write().await = loaded.registry_extracts;
+        *self.ledger.write().await = loaded.ledger;
+        {
+            let ledger = self.ledger.read().await;
+            refresh_degraded(self, &ledger).await;
+        }
         // wp26 tenancy: re-hydrate the tenant directory from the restored `tenants` table (seeding
         // the default tenant if absent), matching the boot path.
         //
@@ -1542,26 +1756,35 @@ impl AppState {
         {
             *self.pending_signatures.write().await = pending;
         }
+        if self.sidecars_db_backed {
+            #[cfg(feature = "postgres")]
+            sidecar_store::reload_into_state_strict_with_settings_gate_held(self, store).await?;
+            #[cfg(not(feature = "postgres"))]
+            return Err(ApiError::Internal(
+                "DB-backed sidecars require the postgres feature".to_owned(),
+            ));
+        }
         if let Some(dir) = self.data_dir() {
-            *self.settings.write().await =
-                settings::load_settings(&dir.join(settings::SETTINGS_FILE)).unwrap_or_default();
+            if !self.sidecars_db_backed {
+                *self.settings.write().await =
+                    settings::load_settings(&dir.join(settings::SETTINGS_FILE)).unwrap_or_default();
+                *self.users.write().await =
+                    users::load_users(&dir.join(users::USERS_FILE)).unwrap_or_default();
+                let mut role_catalog =
+                    roles::load_roles(&dir.join(roles::ROLES_FILE)).unwrap_or_default();
+                roles::retire_merged_roles(&mut role_catalog);
+                roles::ensure_seeded_defaults(&mut role_catalog);
+                *self.roles.write().await = role_catalog;
+                *self.delegations.write().await =
+                    delegations::load_delegations(&dir.join(delegations::DELEGATIONS_FILE))
+                        .unwrap_or_default();
+            }
             *self.platform_logs.write().await =
                 platform_logs::load_platform_logs(&dir.join(platform_logs::PLATFORM_LOGS_FILE))
                     .unwrap_or_default();
-            *self.users.write().await =
-                users::load_users(&dir.join(users::USERS_FILE)).unwrap_or_default();
             *self.verifier_seed.write().await = attestation::VerifierSeed::load_or_generate(
                 dir.join(attestation::VERIFIER_SEED_FILE),
             );
-
-            let mut role_catalog =
-                roles::load_roles(&dir.join(roles::ROLES_FILE)).unwrap_or_default();
-            roles::retire_merged_roles(&mut role_catalog);
-            roles::ensure_seeded_defaults(&mut role_catalog);
-            *self.roles.write().await = role_catalog;
-            *self.delegations.write().await =
-                delegations::load_delegations(&dir.join(delegations::DELEGATIONS_FILE))
-                    .unwrap_or_default();
             *self.dsr_requests.write().await =
                 privacy::load_dsr_requests(&dir.join(privacy::DSR_REQUESTS_FILE))
                     .unwrap_or_default();
@@ -1624,13 +1847,28 @@ impl AppState {
             *self.law_store.write().await = law::load_law_store(&dir.join(law::LAWS_DIR));
             self.zk_repositories.write().await.reload()?;
         }
+        // Restore already tombstones the durable derived projection in its commit transaction.
+        // Completion only clears the local projection and releases/rebuilds the fence; a second
+        // fallible durable purge here could misreport an applied restore as if it had not landed.
+        search::reset_after_destructive_change(self).await;
         Ok(())
     }
 
     /// Clear the in-memory domain read-models (entities / books / acts / registry extracts /
     /// documents) to match a `BackendDomain` wipe or a whole-instance start-over (the ledger is
     /// preserved / re-seeded by the store, never touched here).
-    pub(crate) async fn clear_domain_memory(&self) {
+    pub(crate) async fn clear_domain_memory(&self) -> Result<(), ApiError> {
+        self.clear_domain_memory_raw().await?;
+        // The reset/start-over store transaction already tombstoned the derived projection.
+        // Release the local fence without a redundant fallible store write.
+        search::reset_after_destructive_change(self).await;
+        Ok(())
+    }
+
+    /// Clear only the domain read-models while retaining the caller's destructive search fence.
+    /// Whole-instance resets use this so no rebuild/release can occur between clearing domain rows
+    /// and clearing users, settings, sessions, and other factory-owned state.
+    async fn clear_domain_memory_raw(&self) -> Result<(), ApiError> {
         self.company_groups.write().await.clear();
         self.group_template_libraries.write().await.clear();
         self.group_template_library_revisions.write().await.clear();
@@ -1651,6 +1889,55 @@ impl AppState {
             && !matches!(error, ApiError::Unprocessable(_))
         {
             eprintln!("warning: failed to clear zero-knowledge repository storage: {error:?}");
+        }
+        Ok(())
+    }
+
+    /// Drop every mutable in-memory source consumed by the search corpus and Action Center
+    /// builders without touching the replacement store or sidecars.
+    ///
+    /// A committed restore can fail while reloading its read models (for example, a sidecar or
+    /// shared-session backend becomes unavailable after the database swap). Releasing the search
+    /// fence while these sources still describe the pre-restore instance would allow a worker to
+    /// reconstruct stale text or actionable notices. This emergency clear keeps the recovered
+    /// durable store intact while making any rebuild fail closed to an empty/default snapshot until
+    /// a retry reloads the replacement state.
+    pub(crate) async fn clear_search_source_memory_after_failed_restore_with_settings_gate_held(
+        &self,
+    ) {
+        *self.settings.write().await = settings::Settings::default();
+        self.group_template_libraries.write().await.clear();
+        self.group_template_library_revisions.write().await.clear();
+        self.entities.write().await.clear();
+        self.books.write().await.clear();
+        self.acts.write().await.clear();
+        self.follow_ups.write().await.clear();
+        self.registry_extracts.write().await.clear();
+        self.dpia_records.write().await.clear();
+        self.breach_playbooks.write().await.clear();
+        self.transfer_controls.write().await.clear();
+        self.backup_recovery_drill_receipts.write().await.clear();
+        *self.ledger.write().await = Ledger::new();
+    }
+
+    /// Fail closed after a committed restore whose authoritative sidecars or session revocation
+    /// could not be reconciled. No pre-restore identity, role, delegation, API key, invitation, or
+    /// process-local bearer remains usable while an operator retries/restarts reconciliation.
+    pub(crate) async fn clear_security_source_memory_after_failed_restore(&self) {
+        self.users.write().await.clear();
+        *self.roles.write().await = chancela_authz::RoleCatalog::new();
+        self.delegations.write().await.clear();
+        self.api_keys.write().await.clear();
+        self.sessions.write().await.clear();
+        self.session_issued_at.write().await.clear();
+        self.pending_two_factor.write().await.clear();
+        *self.auth_tokens.write().await = auth_token::AuthTokenStore::new();
+        self.invite_grants.write().await.clear();
+        if let Err(error) = self.durable_sessions.clear().await {
+            eprintln!(
+                "warning: committed restore could not clear the durable local session registry: \
+                 {error:?}"
+            );
         }
     }
 
@@ -1701,12 +1988,16 @@ impl AppState {
         Ok(())
     }
 
-    /// Clear ALL in-memory state to a blank first-run instance, to match a `BackendFactory` reset
-    /// (which also blanked the ledger + removed the sidecar files on disk): the domain read-models,
-    /// the user profiles, every live session + unlocked key, the attestation sidecar, and the
-    /// settings document (reset to defaults). The acting session is invalidated by design.
-    pub(crate) async fn clear_all_memory(&self) {
-        self.clear_domain_memory().await;
+    /// Clear ALL in-memory state to a blank first-run instance while a destructive handler retains
+    /// `settings_update_gate`, matching a `BackendFactory` reset (which also blanked the ledger and
+    /// removed the sidecar files on disk): the domain read-models, user profiles, every live
+    /// session and unlocked key, the attestation sidecar, and the settings document (reset to
+    /// defaults). The acting session is invalidated by design.
+    ///
+    /// The handler must keep the same guard across its durable reset and this publication so no
+    /// settings coordinator can commit into the freshly reset store and then be overwritten here.
+    pub(crate) async fn clear_all_memory_with_settings_gate_held(&self) -> Result<(), ApiError> {
+        self.clear_domain_memory_raw().await?;
         self.users.write().await.clear();
         self.dsr_requests.write().await.clear();
         self.processor_records.write().await.clear();
@@ -1741,6 +2032,10 @@ impl AppState {
         self.delegations.write().await.clear();
         *self.verifier_seed.write().await = attestation::VerifierSeed::default();
         *self.settings.write().await = settings::Settings::default();
+        // The committed factory-reset transaction is authoritative and already removed/tombstoned
+        // the projection. Always release the local fence after clearing safe source memory.
+        search::reset_after_destructive_change(self).await;
+        Ok(())
     }
 
     /// Resolve on-disk persistence from the environment, mirroring how `chancela-server` finds
@@ -2608,6 +2903,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/v1/data/start-over", post(data::start_over_instance))
         .route("/v1/dashboard", get(dashboard::dashboard))
+        .route("/v1/search", get(search::query))
+        .route("/v1/search/status", get(search::status))
+        .route("/v1/search/rebuild", post(search::rebuild))
+        .route("/v1/search/pause", post(search::pause))
+        .route("/v1/search/resume", post(search::resume))
         .route(
             "/v1/notifications/triage",
             get(notifications::list_notification_triage),
@@ -2627,6 +2927,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/settings",
             get(settings::get_settings).put(settings::put_settings),
+        )
+        .route(
+            "/v1/search/settings",
+            get(settings::get_search_settings).put(settings::put_search_settings),
         )
         // t23 outbound email. The non-secret configuration rides `PUT /v1/settings` like every other
         // section; these three exist for what cannot: the write-only relay password, the status that
@@ -3575,6 +3879,9 @@ pub fn app(state: AppState, web_dist: Option<PathBuf>) -> Router {
     // proactive fail-closed step-down of a partitioned / wedged leader). Inert unless the backend is an
     // electing one (Postgres); no-op on SQLite / in-memory.
     cluster_watchdog::spawn_leader_watchdog(state.clone());
+    // Full-search projection runs on its own named OS thread and current-thread runtime; request
+    // workers only read the completed in-memory snapshot.
+    search::spawn_search_service(state.clone());
     let api = router(state);
     let app = match web_dist {
         Some(dir) => {
@@ -3689,6 +3996,26 @@ mod tests {
 
     const DEFAULT_TEST_PASSWORD: &str = "Teste-Forte7!X";
     const PROVIDER_CREDENTIAL_STATUS_URI: &str = "/v1/signature/provider-credentials/status";
+
+    #[tokio::test]
+    async fn settings_commit_tracker_retains_a_wake_before_first_waiter_poll() {
+        let tracker = Arc::new(SettingsStoreCommitTracker::default());
+        let lease = tracker.begin();
+
+        // Model the precise race in `wait_until_settled`: the waiter has observed an in-flight
+        // transaction and constructed `notified()`, but that future has not been polled yet.
+        let settled = tracker.settled.notified();
+        assert_eq!(
+            tracker.in_flight.load(std::sync::atomic::Ordering::Acquire),
+            1
+        );
+        drop(lease);
+
+        tokio::time::timeout(std::time::Duration::from_millis(250), settled)
+            .await
+            .expect("the final transaction wake is retained until the waiter polls");
+        tracker.wait_until_settled().await;
+    }
 
     /// Send one request through a fresh router and return (status, parsed JSON body).
     /// Does NOT auto-seed a session — used by [`send`] and [`auth_token`] internally, and by
@@ -10627,6 +10954,13 @@ mod tests {
     async fn runtime_security_state_cleared_on_data_dir_reload() {
         let tmp = TempDir::new();
         let state = AppState::with_data_dir(tmp.dir.clone());
+        state.ledger.write().await.append(
+            "stale",
+            "recovery",
+            "stale.pre_restore",
+            None,
+            b"must be replaced from the committed store",
+        );
         state
             .session_issued_at
             .write()
@@ -10637,10 +10971,12 @@ mod tests {
             TokenBucket::new(1.0, std::time::Instant::now()),
         );
 
+        let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
         state
-            .reload_domain_memory()
+            .reload_domain_memory_with_settings_gate_held()
             .await
             .expect("data-dir reload succeeds");
+        drop(settings_update_guard);
 
         assert!(
             state.session_issued_at.read().await.is_empty(),
@@ -10649,6 +10985,10 @@ mod tests {
         assert!(
             state.rate_limit_buckets.read().await.is_empty(),
             "per-IP rate-limit buckets are cleared on reload"
+        );
+        assert!(
+            state.ledger.read().await.is_empty(),
+            "reload replaces a stale passed ledger from the committed durable authority"
         );
     }
 
@@ -10665,7 +11005,12 @@ mod tests {
             TokenBucket::new(1.0, std::time::Instant::now()),
         );
 
-        state.clear_all_memory().await;
+        let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+        state
+            .clear_all_memory_with_settings_gate_held()
+            .await
+            .unwrap();
+        drop(settings_update_guard);
 
         assert!(
             state.session_issued_at.read().await.is_empty(),
@@ -10675,6 +11020,49 @@ mod tests {
             state.rate_limit_buckets.read().await.is_empty(),
             "per-IP rate-limit buckets are cleared on factory reset"
         );
+    }
+
+    #[tokio::test]
+    async fn factory_domain_clear_retains_search_fence_until_the_whole_reset_finishes() {
+        let state = AppState::default();
+        let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+        search::prepare_destructive_change(&state)
+            .await
+            .expect("factory pre-fence");
+
+        state
+            .clear_domain_memory_raw()
+            .await
+            .expect("raw domain clear");
+
+        let (fenced, has_reset_id, queue_depth) = state.search_index.destructive_test_state();
+        assert!(
+            fenced,
+            "the domain sub-step must not release the factory-reset fence"
+        );
+        assert!(
+            has_reset_id,
+            "the same reset id stays active through the remaining factory clear"
+        );
+        assert_eq!(
+            queue_depth, 0,
+            "no clean rebuild may be queued during the intermediate domain clear"
+        );
+
+        state
+            .clear_all_memory_with_settings_gate_held()
+            .await
+            .expect("factory clear finishes");
+        drop(settings_update_guard);
+        let (fenced, _, _) = state.search_index.destructive_test_state();
+        assert!(
+            !fenced,
+            "the fence releases only after all factory-owned memory is blank"
+        );
+        search::prepare_destructive_change(&state)
+            .await
+            .expect("a committed factory clear always permits a retry");
+        search::abort_destructive_change(&state).await;
     }
 
     #[tokio::test]
@@ -11200,6 +11588,689 @@ mod tests {
         assert_eq!(body["appearance"]["leather_texture"], true);
         assert_eq!(body["appearance"]["texture_intensity"], 60);
         assert_eq!(body["appearance"]["button_texture"], true);
+    }
+
+    #[tokio::test]
+    async fn search_manage_only_role_reads_and_updates_only_the_search_settings_slice() {
+        use chancela_authz::{Permission, Role, RoleAssignment, RoleId, Scope};
+
+        let state = fresh_state().await;
+        state.settings.write().await.organization.name = Some("Must stay private".to_owned());
+        let role_id = RoleId(Uuid::from_u128(0x5EA2C4));
+        state.roles.write().await.insert(Role {
+            id: role_id,
+            name: "Search operator".to_owned(),
+            permission_set: [Permission::SearchManage].into_iter().collect(),
+            protected: false,
+        });
+        let user_id = seed_user(
+            &state,
+            "search.operator",
+            vec![RoleAssignment::new(role_id, Scope::Global)],
+        )
+        .await;
+        let token = seed_session(&state, &user_id.to_string()).await;
+
+        let (status, narrow) = send_raw(
+            state.clone(),
+            with_session(get("/v1/search/settings"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{narrow}");
+        assert_eq!(narrow["batch_size"], 256);
+        assert!(
+            narrow.get("organization").is_none(),
+            "narrow response exposed broad settings: {narrow}"
+        );
+
+        let (status, broad) =
+            send_raw(state.clone(), with_session(get("/v1/settings"), &token)).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{broad}");
+
+        let mut updated = narrow;
+        updated["batch_size"] = json!(333);
+        let (status, stored) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/search/settings", updated), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{stored}");
+        assert_eq!(stored["batch_size"], 333);
+        let complete = state.settings.read().await.clone();
+        assert_eq!(complete.search.batch_size, 333);
+        assert_eq!(
+            complete.organization.name.as_deref(),
+            Some("Must stay private"),
+            "narrow update must carry unrelated settings forward"
+        );
+
+        let mut invalid = stored;
+        invalid["queue_capacity"] = json!(0);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/search/settings", invalid), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(state.settings.read().await.search.queue_capacity, 64);
+    }
+
+    #[tokio::test]
+    async fn settings_manage_only_cannot_replace_search_through_the_broad_document() {
+        use chancela_authz::{Permission, Role, RoleAssignment, RoleId, Scope};
+
+        let state = fresh_state().await;
+        state.settings.write().await.search.batch_size = 333;
+        let role_id = RoleId(Uuid::from_u128(0x5EA2C5));
+        state.roles.write().await.insert(Role {
+            id: role_id,
+            name: "Broad settings operator".to_owned(),
+            permission_set: [Permission::SettingsManage].into_iter().collect(),
+            protected: false,
+        });
+        let user_id = seed_user(
+            &state,
+            "settings.operator",
+            vec![RoleAssignment::new(role_id, Scope::Global)],
+        )
+        .await;
+        let token = seed_session(&state, &user_id.to_string()).await;
+
+        let mut malicious =
+            serde_json::to_value(state.settings.read().await.clone()).expect("settings serialize");
+        malicious["organization"]["name"] = json!("Allowed broad update");
+        malicious["search"]["batch_size"] = json!(444);
+        malicious["search"]["queue_capacity"] = json!(1_024);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/settings", malicious), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["organization"]["name"], "Allowed broad update");
+        assert_eq!(
+            body["search"]["batch_size"], 333,
+            "the separately-authorized slice must ignore even an explicit malicious replacement"
+        );
+        let stored = state.settings.read().await;
+        assert_eq!(stored.search.batch_size, 333);
+        assert_eq!(stored.search.queue_capacity, 64);
+    }
+
+    #[tokio::test]
+    async fn narrow_save_then_stale_broad_save_preserves_authoritative_search() {
+        let state = fresh_state().await;
+        let token = auth_token(&state).await;
+        let mut stale_broad =
+            serde_json::to_value(state.settings.read().await.clone()).expect("settings serialize");
+        assert_eq!(stale_broad["search"]["batch_size"], 256);
+
+        let mut search = serde_json::to_value(settings::SearchSettings::default())
+            .expect("search settings serialize");
+        search["batch_size"] = json!(333);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/search/settings", search), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        stale_broad["organization"]["name"] = json!("Saved from a stale broad tab");
+        stale_broad["search"]["batch_size"] = json!(256);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/settings", stale_broad), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["organization"]["name"], "Saved from a stale broad tab");
+        assert_eq!(body["search"]["batch_size"], 333);
+        assert_eq!(state.settings.read().await.search.batch_size, 333);
+    }
+
+    #[tokio::test]
+    async fn narrow_and_whole_settings_writes_serialize_without_losing_unrelated_fields() {
+        let state = fresh_state().await;
+        let token = auth_token(&state).await;
+        let held = state.settings_update_gate.lock().await;
+
+        let mut broad_document = sample_settings();
+        broad_document["organization"]["name"] = json!("Concurrent broad update");
+        let broad_state = state.clone();
+        let broad_token = token.clone();
+        let broad = tokio::spawn(async move {
+            send_raw(
+                broad_state,
+                with_session(put_json("/v1/settings", broad_document), &broad_token),
+            )
+            .await
+        });
+        // Let the whole-document writer queue first on the shared FIFO mutex. The narrow writer
+        // must then take its snapshot after the broad update has fully published.
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+
+        let mut search = serde_json::to_value(settings::SearchSettings::default())
+            .expect("search settings serialize");
+        search["batch_size"] = json!(333);
+        let narrow_state = state.clone();
+        let narrow_token = token;
+        let narrow = tokio::spawn(async move {
+            send_raw(
+                narrow_state,
+                with_session(put_json("/v1/search/settings", search), &narrow_token),
+            )
+            .await
+        });
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
+        drop(held);
+
+        let (broad_status, broad_body) = broad.await.expect("broad writer joins");
+        assert_eq!(broad_status, StatusCode::OK, "{broad_body}");
+        let (narrow_status, narrow_body) = narrow.await.expect("narrow writer joins");
+        assert_eq!(narrow_status, StatusCode::OK, "{narrow_body}");
+
+        let stored = state.settings.read().await.clone();
+        assert_eq!(
+            stored.organization.name.as_deref(),
+            Some("Concurrent broad update")
+        );
+        assert_eq!(stored.search.batch_size, 333);
+    }
+
+    #[tokio::test]
+    async fn db_backed_search_settings_and_audit_roll_back_in_one_transaction() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("open durable fixture");
+        let mut state = fresh_state().await;
+        let previous = state.settings.read().await.clone();
+        let previous_json = serde_json::to_string(&previous).unwrap();
+        let mut durable_ledger = Ledger::new();
+        durable_ledger.append(
+            "fixture",
+            "search",
+            "fixture.conflict",
+            None,
+            b"reserve sequence zero",
+        );
+        store
+            .persist(|tx| {
+                tx.put_settings(&previous_json)?;
+                tx.append_event(&durable_ledger.events()[0])
+            })
+            .expect("seed authoritative settings and conflicting audit sequence");
+        state.store = Some(store.clone());
+        state.sidecars_db_backed = true;
+        let token = auth_token(&state).await;
+
+        let mut search = serde_json::to_value(settings::SearchSettings::default()).unwrap();
+        search["batch_size"] = json!(333);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/search/settings", search), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        let durable: settings::Settings = serde_json::from_str(
+            &store
+                .settings()
+                .expect("read settings row")
+                .expect("settings row exists"),
+        )
+        .unwrap();
+        assert_eq!(
+            durable.search, previous.search,
+            "the settings row must roll back with the rejected audit append"
+        );
+        assert_eq!(state.settings.read().await.search, previous.search);
+        assert!(
+            state.ledger.read().await.is_empty(),
+            "the rejected audit tail is rolled out of memory"
+        );
+    }
+
+    #[tokio::test]
+    async fn file_backed_search_settings_restore_previous_document_when_audit_fails() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("open durable fixture");
+        let mut state = fresh_state().await;
+        let previous = state.settings.read().await.clone();
+        let settings_path = tmp.dir.join(settings::SETTINGS_FILE);
+        settings::write_settings_atomic(&settings_path, &previous).expect("seed settings file");
+        let mut durable_ledger = Ledger::new();
+        durable_ledger.append(
+            "fixture",
+            "search",
+            "fixture.conflict",
+            None,
+            b"reserve sequence zero",
+        );
+        store
+            .persist(|tx| tx.append_event(&durable_ledger.events()[0]))
+            .expect("seed conflicting audit sequence");
+        state.store = Some(store);
+        state.sidecars_db_backed = false;
+        state.persist_path = Some(Arc::new(settings_path.clone()));
+        let token = auth_token(&state).await;
+
+        let mut search = serde_json::to_value(settings::SearchSettings::default()).unwrap();
+        search["batch_size"] = json!(333);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/search/settings", search), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        let durable = settings::load_settings(&settings_path).expect("restored settings document");
+        assert_eq!(durable.search, previous.search);
+        assert_eq!(state.settings.read().await.search, previous.search);
+        assert!(
+            !tmp.dir.join("settings.pending-audit.json").exists(),
+            "a successful rollback removes its recovery intent"
+        );
+        assert!(state.ledger.read().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn db_backed_broad_settings_allowlist_and_both_audits_roll_back_together() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("open durable fixture");
+        let mut state = fresh_state().await;
+        let mut previous = state.settings.read().await.clone();
+        previous.connectors.allowed_hosts = vec!["old.example".to_owned()];
+        *state.settings.write().await = previous.clone();
+        let previous_json = serde_json::to_string(&previous).unwrap();
+        let mut durable_ledger = Ledger::new();
+        durable_ledger.append(
+            "fixture",
+            "settings",
+            "fixture.conflict",
+            None,
+            b"reserve sequence zero",
+        );
+        store
+            .persist(|tx| {
+                tx.put_settings(&previous_json)?;
+                tx.append_event(&durable_ledger.events()[0])
+            })
+            .expect("seed settings and conflicting sequence");
+        state.store = Some(store.clone());
+        state.sidecars_db_backed = true;
+        state.persist_path = Some(Arc::new(tmp.dir.join(settings::SETTINGS_FILE)));
+        let allowlist_path = chancela_connectors::RuntimeAllowlist::path_in(&tmp.dir);
+        let previous_allowlist = b"previous-runtime-allowlist".to_vec();
+        std::fs::write(&allowlist_path, &previous_allowlist).unwrap();
+        let token = auth_token(&state).await;
+        let mut updated = serde_json::to_value(&previous).unwrap();
+        updated["connectors"]["allowed_hosts"] = json!(["new.example"]);
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/settings", updated), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        let durable: settings::Settings =
+            serde_json::from_str(&store.settings().unwrap().expect("settings row remains"))
+                .unwrap();
+        assert_eq!(durable.connectors.allowed_hosts, vec!["old.example"]);
+        assert_eq!(state.settings.read().await.connectors, previous.connectors);
+        assert_eq!(std::fs::read(&allowlist_path).unwrap(), previous_allowlist);
+        assert!(state.ledger.read().await.is_empty());
+        assert!(!tmp.dir.join("settings.pending-audit.json").exists());
+    }
+
+    #[tokio::test]
+    async fn file_backed_broad_settings_and_allowlist_restore_when_audit_fails() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("open durable fixture");
+        let mut state = fresh_state().await;
+        let mut previous = state.settings.read().await.clone();
+        previous.connectors.allowed_hosts = vec!["old.example".to_owned()];
+        *state.settings.write().await = previous.clone();
+        let settings_path = tmp.dir.join(settings::SETTINGS_FILE);
+        settings::write_settings_atomic(&settings_path, &previous).unwrap();
+        let mut durable_ledger = Ledger::new();
+        durable_ledger.append(
+            "fixture",
+            "settings",
+            "fixture.conflict",
+            None,
+            b"reserve sequence zero",
+        );
+        store
+            .persist(|tx| tx.append_event(&durable_ledger.events()[0]))
+            .expect("seed conflicting sequence");
+        state.store = Some(store);
+        state.sidecars_db_backed = false;
+        state.persist_path = Some(Arc::new(settings_path.clone()));
+        let allowlist_path = chancela_connectors::RuntimeAllowlist::path_in(&tmp.dir);
+        let previous_allowlist = b"previous-runtime-allowlist".to_vec();
+        std::fs::write(&allowlist_path, &previous_allowlist).unwrap();
+        let token = auth_token(&state).await;
+        let mut updated = serde_json::to_value(&previous).unwrap();
+        updated["connectors"]["allowed_hosts"] = json!(["new.example"]);
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/settings", updated), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{body}");
+        let durable = settings::load_settings(&settings_path).expect("settings restored");
+        assert_eq!(durable.connectors.allowed_hosts, vec!["old.example"]);
+        assert_eq!(state.settings.read().await.connectors, previous.connectors);
+        assert_eq!(std::fs::read(&allowlist_path).unwrap(), previous_allowlist);
+        assert!(state.ledger.read().await.is_empty());
+        assert!(!tmp.dir.join("settings.pending-audit.json").exists());
+    }
+
+    async fn assert_settings_commit_survives_inflight_request_cancellation(
+        narrow: bool,
+        db_backed: bool,
+    ) {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("open durable fixture");
+        let mut state = fresh_state().await;
+        let previous = state.settings.read().await.clone();
+        let settings_path = tmp.dir.join(settings::SETTINGS_FILE);
+        if db_backed {
+            let previous_json = serde_json::to_string(&previous).unwrap();
+            store
+                .persist(|tx| tx.put_settings(&previous_json))
+                .expect("seed DB settings row");
+        } else {
+            settings::write_settings_atomic(&settings_path, &previous).expect("seed settings file");
+        }
+        state.store = Some(store.clone());
+        state.sidecars_db_backed = db_backed;
+        state.persist_path = Some(Arc::new(settings_path.clone()));
+        let pause = Arc::new(SettingsCommitTestPause::default());
+        pause
+            .block_store_persist
+            .store(true, std::sync::atomic::Ordering::Release);
+        state.settings_commit_test_pause = Some(pause.clone());
+        let token = auth_token(&state).await;
+        let label = format!(
+            "cancelled-{}-{}",
+            if narrow { "narrow" } else { "broad" },
+            if db_backed { "db" } else { "file" }
+        );
+        let put_request = if narrow {
+            let mut search = serde_json::to_value(settings::SearchSettings::default()).unwrap();
+            search["batch_size"] = json!(333);
+            with_session(put_json("/v1/search/settings", search), &token)
+        } else {
+            let mut settings = serde_json::to_value(&previous).unwrap();
+            settings["organization"]["name"] = json!(label.clone());
+            with_session(put_json("/v1/settings", settings), &token)
+        };
+        let put_state = state.clone();
+        let put_task = tokio::spawn(async move { send_raw(put_state, put_request).await });
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            pause.before_persist.notified(),
+        )
+        .await
+        .expect("owned coordinator stages the journal");
+        pause.continue_persist.notify_one();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            pause.store_persist_entered.notified(),
+        )
+        .await
+        .expect("blocking store transaction reaches the injected in-flight pause");
+        assert!(
+            tmp.dir.join("settings.pending-audit.json").exists(),
+            "{label}: recovery intent exists while the store transaction is in flight"
+        );
+        assert!(
+            state.settings.try_read().is_err(),
+            "{label}: coordinator owns the live publication lock"
+        );
+
+        // Cancel the HTTP waiter while the non-cancellable blocking transaction is actually
+        // running. The owned coordinator—not the request—retains every guard and continues.
+        put_task.abort();
+        assert!(
+            put_task.await.unwrap_err().is_cancelled(),
+            "{label}: HTTP waiter is cancelled during the store transaction"
+        );
+
+        // A GET queued behind the writer must wait on the transaction-level gate rather than
+        // observe stale live memory or deadlock on the settings → ledger lock order.
+        let get_request = with_session(
+            get(if narrow {
+                "/v1/search/settings"
+            } else {
+                "/v1/settings"
+            }),
+            &token,
+        );
+        let get_state = state.clone();
+        let mut get_task = tokio::spawn(async move { send_raw(get_state, get_request).await });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), &mut get_task)
+                .await
+                .is_err(),
+            "{label}: GET must wait while the writer owns the settings publication gate"
+        );
+
+        pause
+            .block_store_persist
+            .store(false, std::sync::atomic::Ordering::Release);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            pause.after_persist.notified(),
+        )
+        .await
+        .expect("detached coordinator observes the durable commit");
+        let durable = if db_backed {
+            serde_json::from_str::<settings::Settings>(
+                &store
+                    .settings()
+                    .unwrap()
+                    .expect("committed DB settings row"),
+            )
+            .unwrap()
+        } else {
+            settings::load_settings(&settings_path).expect("committed settings file")
+        };
+        if narrow {
+            assert_eq!(durable.search.batch_size, 333, "{label}");
+        } else {
+            assert_eq!(durable.organization.name.as_deref(), Some(label.as_str()));
+        }
+        assert!(
+            state.settings.try_read().is_err(),
+            "{label}: live publication remains locked at the post-commit seam"
+        );
+        assert!(
+            tmp.dir.join("settings.pending-audit.json").exists(),
+            "{label}: journal remains until post-commit live publication"
+        );
+        pause.continue_publish.notify_one();
+
+        let (status, body) = tokio::time::timeout(std::time::Duration::from_secs(5), get_task)
+            .await
+            .expect("GET unblocks after cancelled writer")
+            .expect("GET task joins");
+        assert_eq!(status, StatusCode::OK, "{label}: {body}");
+        if narrow {
+            assert_eq!(body["batch_size"], 333, "{label}");
+            assert_eq!(
+                state.settings.read().await.search.batch_size,
+                333,
+                "{label}"
+            );
+        } else {
+            assert_eq!(body["organization"]["name"], label);
+            assert_eq!(
+                state.settings.read().await.organization.name.as_deref(),
+                body["organization"]["name"].as_str(),
+                "{label}"
+            );
+        }
+        assert!(
+            !tmp.dir.join("settings.pending-audit.json").exists(),
+            "{label}: GET reconciliation removes the intent only after live publication"
+        );
+    }
+
+    #[tokio::test]
+    async fn settings_commit_survives_inflight_cancellation_narrow_and_broad_file_and_db() {
+        for (narrow, db_backed) in [(true, false), (false, false), (true, true), (false, true)] {
+            assert_settings_commit_survives_inflight_request_cancellation(narrow, db_backed).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn db_settings_journal_get_reloads_durable_row_and_advances_search_source_epoch() {
+        let tmp = TempDir::new();
+        let store = Store::open(&tmp.dir).expect("open durable fixture");
+        let mut state = fresh_state().await;
+        let previous = state.settings.read().await.clone();
+        let mut committed = previous.clone();
+        committed.organization.name = Some("Committed DB authority".to_owned());
+        committed.search.batch_size = 333;
+        let mut durable_ledger = Ledger::new();
+        let event_id = durable_ledger
+            .append(
+                "fixture",
+                "settings",
+                "settings.updated",
+                None,
+                b"committed DB settings",
+            )
+            .id
+            .0;
+        let committed_json = serde_json::to_string(&committed).unwrap();
+        store
+            .persist(|tx| {
+                tx.append_event(&durable_ledger.events()[0])?;
+                tx.put_settings(&committed_json)
+            })
+            .expect("commit DB settings and exact audit");
+        state.store = Some(store);
+        state.sidecars_db_backed = true;
+        let settings_path = tmp.dir.join(settings::SETTINGS_FILE);
+        state.persist_path = Some(Arc::new(settings_path.clone()));
+        settings::stage_db_settings_audit_for_test(&settings_path, &previous, &committed, event_id)
+            .expect("leave DB publication journal");
+        let epoch_before = crate::search::source_epoch_for_test(&state);
+        let token = auth_token(&state).await;
+
+        let (status, body) =
+            send_raw(state.clone(), with_session(get("/v1/settings"), &token)).await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["organization"]["name"], "Committed DB authority");
+        assert_eq!(
+            state.settings.read().await.organization.name.as_deref(),
+            Some("Committed DB authority")
+        );
+        assert_eq!(state.settings.read().await.search.batch_size, 333);
+        assert!(
+            crate::search::source_epoch_for_test(&state) > epoch_before,
+            "recovery publication must wake/supersede search projection work"
+        );
+        assert!(
+            !tmp.dir.join("settings.pending-audit.json").exists(),
+            "journal is removed only after DB row publication"
+        );
+    }
+
+    #[tokio::test]
+    async fn zk_shared_object_root_uses_the_audited_settings_coordinator() {
+        let tmp = TempDir::new();
+        let root = tmp.dir.join(crate::zk_repository::ZK_REPOSITORY_DIR);
+        std::fs::create_dir_all(&root).expect("create declared ZK root");
+        let state = AppState::with_data_dir(tmp.dir.clone());
+        let (status, body) = send(
+            state.clone(),
+            put_json(
+                "/v1/zk-repositories/shared-object-root",
+                json!({ "shared_object_root": root.to_string_lossy() }),
+            ),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(
+            state
+                .settings
+                .read()
+                .await
+                .data_management
+                .zk_shared_object_root
+                .as_deref(),
+            Some(root.to_string_lossy().as_ref())
+        );
+        assert!(state.ledger.read().await.events().iter().any(|event| {
+            event.kind == "settings.zk_shared_object_root.updated" && event.scope == "settings"
+        }));
+        assert!(
+            !tmp.dir.join("settings.pending-audit.json").exists(),
+            "coordinator removes its journal after live publication"
+        );
+    }
+
+    #[tokio::test]
+    async fn broad_write_reconciles_committed_search_journal_before_its_snapshot() {
+        let tmp = TempDir::new();
+        let mut state = fresh_state().await;
+        let previous = state.settings.read().await.clone();
+        let mut committed = previous.clone();
+        committed.search.batch_size = 333;
+        let settings_path = tmp.dir.join(settings::SETTINGS_FILE);
+        settings::write_settings_atomic(&settings_path, &previous).unwrap();
+        state.persist_path = Some(Arc::new(settings_path.clone()));
+        let event_id = state
+            .ledger
+            .write()
+            .await
+            .append(
+                "fixture",
+                "search",
+                "search.settings.updated",
+                None,
+                b"committed narrow write",
+            )
+            .id
+            .0;
+        settings::stage_settings_audit_for_test(&settings_path, &previous, &committed, event_id)
+            .expect("leave committed journal behind");
+
+        let mut stale_broad = serde_json::to_value(&previous).unwrap();
+        stale_broad["organization"]["name"] = json!("Broad save after journal cleanup");
+        let token = auth_token(&state).await;
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(put_json("/v1/settings", stale_broad), &token),
+        )
+        .await;
+
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["search"]["batch_size"], 333);
+        assert_eq!(
+            body["organization"]["name"],
+            "Broad save after journal cleanup"
+        );
+        let durable = settings::load_settings(&settings_path).expect("settings persist");
+        assert_eq!(durable.search.batch_size, 333);
+        assert_eq!(
+            durable.organization.name.as_deref(),
+            Some("Broad save after journal cleanup")
+        );
+        assert!(!tmp.dir.join("settings.pending-audit.json").exists());
     }
 
     #[tokio::test]
@@ -22578,6 +23649,119 @@ mod tests {
         AppState::with_data_dir(dir)
     }
 
+    #[cfg(test)]
+    fn install_destructive_operation_pause(
+        state: &mut AppState,
+        fail_store_operation: bool,
+    ) -> Arc<DestructiveOperationTestPause> {
+        use std::sync::atomic::Ordering;
+
+        let pause = Arc::new(DestructiveOperationTestPause::default());
+        pause.block_store_operation.store(true, Ordering::Release);
+        pause
+            .fail_store_operation
+            .store(fail_store_operation, Ordering::Release);
+        state.destructive_operation_test_pause = Some(pause.clone());
+        pause
+    }
+
+    async fn cancel_destructive_waiter_and_release_store(
+        state: &AppState,
+        pause: &Arc<DestructiveOperationTestPause>,
+        waiter: tokio::task::JoinHandle<(StatusCode, Value)>,
+    ) {
+        use std::sync::atomic::Ordering;
+
+        tokio::time::timeout(
+            std::time::Duration::from_secs(20),
+            pause.store_operation_entered.notified(),
+        )
+        .await
+        .expect("destructive coordinator entered its blocking store operation");
+        let (fenced, has_reset_id, _) = state.search_index.destructive_test_state();
+        assert!(fenced && has_reset_id, "destructive search fence is owned");
+        assert!(
+            state.settings_update_gate.try_lock().is_err(),
+            "the owned coordinator retains the settings gate"
+        );
+
+        waiter.abort();
+        assert!(
+            waiter
+                .await
+                .expect_err("request waiter was aborted")
+                .is_cancelled(),
+            "only the HTTP waiter is cancelled"
+        );
+
+        let settled = pause.coordinator_settled.notified();
+        pause.block_store_operation.store(false, Ordering::Release);
+        tokio::time::timeout(std::time::Duration::from_secs(30), settled)
+            .await
+            .expect("detached destructive coordinator settles");
+
+        let (fenced, has_reset_id, _) = state.search_index.destructive_test_state();
+        assert!(
+            !fenced && !has_reset_id,
+            "the detached coordinator always settles the destructive fence"
+        );
+        let gate = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            state.settings_update_gate.clone().lock_owned(),
+        )
+        .await
+        .expect("the detached coordinator releases the settings gate");
+        drop(gate);
+
+        crate::search::prepare_destructive_change(state)
+            .await
+            .expect("a settled coordinator permits a destructive retry");
+        crate::search::abort_destructive_change(state).await;
+    }
+
+    async fn set_destructive_test_settings(state: &AppState, organization_name: &str) {
+        let mut settings = state.settings.read().await.clone();
+        settings.organization.name = Some(organization_name.to_owned());
+        let path = state
+            .persist_path
+            .as_deref()
+            .expect("persistent test state has settings path");
+        crate::settings::write_settings_atomic(path, &settings)
+            .expect("destructive test settings persist");
+        *state.settings.write().await = settings;
+    }
+
+    async fn live_ledger_snapshot(state: &AppState) -> (usize, Option<String>, Vec<String>) {
+        let ledger = state.ledger.read().await;
+        (
+            ledger.len(),
+            ledger.head().map(|head| crate::hex::hex(&head)),
+            ledger
+                .events()
+                .iter()
+                .map(|event| event.kind.clone())
+                .collect(),
+        )
+    }
+
+    async fn durable_ledger_snapshot(state: &AppState) -> (usize, Option<String>, Vec<String>) {
+        let store = state.store.as_ref().expect("durable test store").clone();
+        let loaded = store
+            .read_blocking_async(|store| store.load())
+            .await
+            .expect("durable ledger reload");
+        (
+            loaded.ledger.len(),
+            loaded.ledger.head().map(|head| crate::hex::hex(&head)),
+            loaded
+                .ledger
+                .events()
+                .iter()
+                .map(|event| event.kind.clone())
+                .collect(),
+        )
+    }
+
     async fn sync_handoff_router_snapshot(
         state: &AppState,
     ) -> (usize, usize, usize, usize, usize, usize) {
@@ -23770,6 +24954,237 @@ mod tests {
             !data_dir.join("imports").exists(),
             "body limit should reject before staging upload bytes"
         );
+    }
+
+    #[tokio::test]
+    async fn cancelled_reset_waiter_keeps_owned_commit_and_failure_settlement_alive() {
+        for fail_store_operation in [false, true] {
+            let mut state = persistent_state();
+            let token = user_with_password(&state, "reset.cancel", "Limpar-Cancelamento8!").await;
+            seed_entity_and_book(&state, &token).await;
+            set_destructive_test_settings(&state, "Reset cancellation sentinel").await;
+            let before = live_ledger_snapshot(&state).await;
+            let pause = install_destructive_operation_pause(&mut state, fail_store_operation);
+
+            let request_state = state.clone();
+            let request_token = token.clone();
+            let waiter = tokio::spawn(async move {
+                send_raw(
+                    request_state,
+                    with_session(
+                        post_json(
+                            "/v1/data/reset",
+                            json!({
+                                "scope": "backend_domain",
+                                "confirm_phrase": "LIMPAR DADOS",
+                                "export_first": true,
+                                "reauth": { "password": "Limpar-Cancelamento8!" }
+                            }),
+                        ),
+                        &request_token,
+                    ),
+                )
+                .await
+            });
+            cancel_destructive_waiter_and_release_store(&state, &pause, waiter).await;
+
+            let live = live_ledger_snapshot(&state).await;
+            let durable = durable_ledger_snapshot(&state).await;
+            assert_eq!(live, durable, "live and durable ledgers settle together");
+            assert_eq!(
+                state.settings.read().await.organization.name.as_deref(),
+                Some("Reset cancellation sentinel"),
+                "domain reset retains settings after waiter cancellation"
+            );
+            let settings_file = crate::settings::load_settings(
+                state
+                    .persist_path
+                    .as_deref()
+                    .expect("persistent settings path"),
+            )
+            .expect("settings sidecar remains readable");
+            assert_eq!(
+                settings_file.organization.name.as_deref(),
+                Some("Reset cancellation sentinel")
+            );
+
+            if fail_store_operation {
+                assert_eq!(
+                    live, before,
+                    "a pre-commit failure restores the live ledger"
+                );
+                assert!(
+                    !state.entities.read().await.is_empty(),
+                    "a failed reset keeps domain memory"
+                );
+            } else {
+                assert!(
+                    live.0 > before.0 && live.2.iter().any(|kind| kind == "data.wiped"),
+                    "a detached successful reset publishes its committed audit ledger"
+                );
+                assert!(
+                    state.entities.read().await.is_empty(),
+                    "a detached successful reset clears domain memory"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_start_over_waiter_keeps_owned_commit_and_failure_settlement_alive() {
+        for fail_store_operation in [false, true] {
+            let mut state = persistent_state();
+            let token =
+                user_with_password(&state, "start-over.cancel", "Recomecar-Cancelado8!").await;
+            seed_entity_and_book(&state, &token).await;
+            set_destructive_test_settings(&state, "Start-over cancellation sentinel").await;
+            let before = live_ledger_snapshot(&state).await;
+            let pause = install_destructive_operation_pause(&mut state, fail_store_operation);
+
+            let request_state = state.clone();
+            let request_token = token.clone();
+            let waiter = tokio::spawn(async move {
+                send_raw(
+                    request_state,
+                    with_session(
+                        post_json(
+                            "/v1/data/start-over",
+                            json!({
+                                "reason": "cancelled waiter coverage",
+                                "confirm_phrase": "RECOMEÇAR",
+                                "reauth": { "password": "Recomecar-Cancelado8!" }
+                            }),
+                        ),
+                        &request_token,
+                    ),
+                )
+                .await
+            });
+            cancel_destructive_waiter_and_release_store(&state, &pause, waiter).await;
+
+            let live = live_ledger_snapshot(&state).await;
+            let durable = durable_ledger_snapshot(&state).await;
+            assert_eq!(live, durable, "live and durable ledgers settle together");
+            assert_eq!(
+                state.settings.read().await.organization.name.as_deref(),
+                Some("Start-over cancellation sentinel"),
+                "start-over preserves settings after waiter cancellation"
+            );
+            if fail_store_operation {
+                assert_eq!(
+                    live, before,
+                    "a pre-commit failure restores the live ledger"
+                );
+                assert!(
+                    !state.entities.read().await.is_empty(),
+                    "a failed start-over keeps domain memory"
+                );
+            } else {
+                assert_eq!(live.0, 1, "the detached commit publishes the fresh ledger");
+                assert_eq!(live.2, vec!["ledger.reinitialized".to_owned()]);
+                assert!(
+                    state.entities.read().await.is_empty(),
+                    "a detached successful start-over clears domain memory"
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_restore_waiter_keeps_owned_commit_and_failure_settlement_alive() {
+        for fail_store_operation in [false, true] {
+            let mut state = persistent_state();
+            let token = user_with_password(&state, "restore.cancel", "Restaurar-Cancelado8!").await;
+            seed_entity_and_book(&state, &token).await;
+            set_destructive_test_settings(&state, "Archived cancellation settings").await;
+
+            let (status, manifest) = send_raw(
+                state.clone(),
+                with_session(post_json("/v1/backup", json!({})), &token),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK, "backup fixture: {manifest}");
+            let archive = manifest["path"]
+                .as_str()
+                .expect("backup archive path")
+                .to_owned();
+
+            {
+                let mut ledger = state.ledger.write().await;
+                ledger.append(
+                    "restore.cancel",
+                    "recovery",
+                    "after.backup.marker",
+                    None,
+                    b"must disappear only after a committed restore",
+                );
+                state
+                    .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+                    .await
+                    .expect("post-backup marker persists");
+            }
+            set_destructive_test_settings(&state, "Post-backup cancellation settings").await;
+            let before = live_ledger_snapshot(&state).await;
+            assert!(before.2.iter().any(|kind| kind == "after.backup.marker"));
+            let pause = install_destructive_operation_pause(&mut state, fail_store_operation);
+
+            let request_state = state.clone();
+            let request_token = token.clone();
+            let waiter = tokio::spawn(async move {
+                send_raw(
+                    request_state,
+                    with_session(
+                        post_json(
+                            "/v1/ledger/recovery/restore",
+                            json!({
+                                "archive": archive,
+                                "reauth": { "password": "Restaurar-Cancelado8!" }
+                            }),
+                        ),
+                        &request_token,
+                    ),
+                )
+                .await
+            });
+            cancel_destructive_waiter_and_release_store(&state, &pause, waiter).await;
+
+            let live = live_ledger_snapshot(&state).await;
+            let durable = durable_ledger_snapshot(&state).await;
+            assert_eq!(live, durable, "live and durable ledgers settle together");
+            let settings_name = state.settings.read().await.organization.name.clone();
+            let settings_file = crate::settings::load_settings(
+                state
+                    .persist_path
+                    .as_deref()
+                    .expect("persistent settings path"),
+            )
+            .expect("restored settings sidecar");
+            assert_eq!(settings_file.organization.name, settings_name);
+
+            if fail_store_operation {
+                assert_eq!(
+                    live, before,
+                    "a pre-commit failure restores the live ledger"
+                );
+                assert_eq!(
+                    settings_name.as_deref(),
+                    Some("Post-backup cancellation settings")
+                );
+            } else {
+                assert!(
+                    live.2.iter().any(|kind| kind == "ledger.restored"),
+                    "the detached restore publishes the committed replacement ledger"
+                );
+                assert!(
+                    !live.2.iter().any(|kind| kind == "after.backup.marker"),
+                    "post-backup ledger state is absent after the detached restore"
+                );
+                assert_eq!(
+                    settings_name.as_deref(),
+                    Some("Archived cancellation settings")
+                );
+            }
+        }
     }
 
     #[tokio::test]

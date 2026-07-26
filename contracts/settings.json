@@ -233,3 +233,16 @@
     "audit": []
   }
 }
+  "search": {
+    "enabled": true,
+    "batch_size": 256,
+    "interval_seconds": 30,
+    "queue_capacity": 64,
+    "result_limit": 100,
+    "snippet_chars": 240,
+    "facet_limit": 50,
+    "max_content_chars": 200000,
+    "max_total_content_chars": 25000000,
+    "event_retention_days": 3650,
+    "min_query_chars": 2
+  },

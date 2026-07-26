@@ -1675,9 +1675,10 @@ fn schema_version_is_current() {
     // signable instrument (termo_instruments — t23, finishing t8-A's undelivered store leg) landed as
     // schema v26; bounded user-template save history (user_template_versions) landed as schema v27;
     // the concrete resolved document layout snapshot (`documents.document_layout_json`) landed as
-    // schema v28.
+    // schema v28; the rebuildable full-search projection (`search_documents` plus its fenced
+    // lifecycle singleton) landed as schema v29.
     // A fresh DB is stamped with the current version.
-    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 28);
+    assert_eq!(chancela_store::schema::SCHEMA_VERSION, 29);
     let dir = TempDir::new();
     Store::open(dir.path()).expect("open fresh");
     let raw = rusqlite::Connection::open(dir.path().join("chancela.db")).unwrap();

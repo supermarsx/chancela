@@ -1180,6 +1180,7 @@ pub struct PutSharedObjectRootBody {
 pub(crate) async fn put_shared_object_root(
     State(state): State<AppState>,
     actor: CurrentActor,
+    attestor: CurrentAttestor,
     Json(body): Json<PutSharedObjectRootBody>,
 ) -> Result<Json<ZkStorageStatus>, ApiError> {
     require_permission(&state, &actor, Permission::SettingsManage, Scope::Global).await?;
@@ -1203,10 +1204,33 @@ pub(crate) async fn put_shared_object_root(
             .map_err(|reason| ApiError::Unprocessable(format!("shared object root: {reason}")))?;
     }
 
-    let mut settings = state.settings.read().await.clone();
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    crate::settings::reconcile_pending_settings_audit(&state).await?;
+    let previous = state.settings.read().await.clone();
+    let mut settings = previous.clone();
     settings.data_management.zk_shared_object_root = declared.map(str::to_owned);
-    crate::sidecar_store::persist_settings(&state, &settings).await?;
-    *state.settings.write().await = settings;
+    let audit_actor = actor.resolve("api");
+    let payload = serde_json::to_vec(&serde_json::json!({
+        "previous_shared_object_root": &previous.data_management.zk_shared_object_root,
+        "shared_object_root": &settings.data_management.zk_shared_object_root,
+    }))?;
+    crate::settings::commit_settings_update(
+        state.clone(),
+        settings_update_guard,
+        previous,
+        settings,
+        crate::settings::SettingsCommitOptions::single(
+            crate::settings::SettingsAuditEventSpec::new(
+                audit_actor,
+                "settings",
+                "settings.zk_shared_object_root.updated",
+                Some("zero-knowledge shared object root updated".to_owned()),
+                payload,
+            ),
+        ),
+        attestor,
+    )
+    .await?;
 
     // Report the LIVE interlock, which this write did not change: it is resolved at startup. The
     // client compares the value it just saved against `declared_root` to say whether a restart is

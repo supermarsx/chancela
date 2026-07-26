@@ -50,6 +50,7 @@ pub async fn draft_act(
     let actor = actor.resolve(&req.actor);
     // entities → books → acts → ledger. The entity read is acquired first (fixed global lock
     // order) so the act genesis can carry the parent entity's tenant (wp27-e3).
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let entities = state.entities.read().await;
     let books = state.books.read().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
@@ -181,6 +182,7 @@ pub async fn patch_act(
     require_permission(&state, &actor, Permission::ActEdit, scope).await?;
     let actor_name = actor.resolve("api");
     // books -> acts -> ledger. A closed/non-open book freezes all existing acts in it too.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let books = state.books.read().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
@@ -425,6 +427,7 @@ pub async fn advance_act(
     // lock is `write` because entering `Signing` reserves the frozen page count against the book
     // (t44 capacity enforcement); non-`Signing` advances leave the book untouched.
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
@@ -645,6 +648,7 @@ pub async fn reopen_act(
 
     // books → acts → ledger. The books lock is `write` because a reopen releases the act's page
     // reservation back to the book (t44 capacity enforcement).
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
@@ -793,6 +797,7 @@ pub async fn revert_act(
 
     // books → acts → ledger.
     let books = state.books.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
 
@@ -865,6 +870,7 @@ pub async fn verify_ai_human_review(
     let actor = actor.resolve(&req.actor);
     // books → acts → ledger (books only to resolve event scope and open-book mutation rules).
     let books = state.books.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
 
@@ -1294,6 +1300,7 @@ pub async fn seal_act_handler(
 
     // entities → books → acts → ledger (the full order; seal touches all four).
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
@@ -1514,6 +1521,7 @@ pub async fn archive_act(
 
     // books → acts → ledger (books only to resolve the entity id for the event scope).
     let books = state.books.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
 
@@ -1608,6 +1616,7 @@ pub async fn convening_dispatch(
 
     // books → acts → ledger (books only to resolve the entity id for the event scope).
     let books = state.books.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
 

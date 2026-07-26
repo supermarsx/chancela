@@ -96,6 +96,7 @@ pub async fn create_follow_up(
     };
     let payload = serde_json::to_vec(&FollowUpView::from(&follow_up))?;
 
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut follow_ups = state.follow_ups.write().await;
     let mut ledger = state.ledger.write().await;
     crate::try_append_event(
@@ -137,6 +138,7 @@ pub async fn patch_follow_up(
     let actor = actor.resolve(&req.actor);
 
     // follow_ups -> ledger.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut follow_ups = state.follow_ups.write().await;
     let follow_up = follow_ups.get_mut(&id).ok_or(ApiError::NotFound)?;
     if follow_up.status == StoredFollowUpStatus::Completed {
@@ -190,6 +192,7 @@ pub async fn complete_follow_up(
     let actor = actor.resolve(&req.actor);
 
     // follow_ups -> ledger.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut follow_ups = state.follow_ups.write().await;
     let follow_up = follow_ups.get_mut(&id).ok_or(ApiError::NotFound)?;
     if follow_up.status == StoredFollowUpStatus::Completed {

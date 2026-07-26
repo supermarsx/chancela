@@ -88,9 +88,9 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::{
     LedgerEventPage, LedgerEventPageQuery, LoadedState, PendingCmdSession, RawEventRow, StoreError,
-    StoredCredentialRecord, StoredDocument, StoredEmailDelivery, StoredFollowUp,
-    StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence, StoredImportedDocument,
-    StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
+    StoredCredentialRecord, StoredDocument, StoredDocumentSearchMetadata, StoredEmailDelivery,
+    StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
+    StoredImportedDocument, StoredImportedDocumentMeta, StoredImportedDocumentReviewHistoryEntry,
     StoredImportedDocumentReviewStatus, StoredPaperBookImport, StoredPaperBookImportMeta,
     StoredPaperBookOcrConversionDossier, StoredPaperBookOcrConversionExecutionArtifact,
     StoredPaperBookOcrDraft, StoredPaperBookOcrReviewStatus, StoredPaperBookOcrStatus,
@@ -123,6 +123,12 @@ pub(crate) const ADD_DOCUMENTS_LAYOUT_COLUMN: &str =
 /// strict `seq > after_seq` semantics the follower's fail-closed delta seam depends on.
 pub(crate) const EVENTS_SINCE_SQL: &str = "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
      prev_hash, hash, links FROM events WHERE seq > $1 ORDER BY seq";
+pub(crate) const DOCUMENT_SEARCH_METADATA_SELECT: &str = "SELECT id, act_id, template_id, pdf_digest, profile, created_at \
+     FROM documents ORDER BY created_at ASC, ctid ASC";
+pub(crate) const PAPER_BOOK_OCR_DRAFTS_ALL_SELECT: &str = "SELECT draft_id, import_id, extracted_text, text_digest, page_spans_json, confidence, \
+     engine_name, engine_version, created_at, created_by, review_status, reviewed_at, \
+     reviewed_by, review_note, superseded_by FROM paper_book_ocr_drafts \
+     ORDER BY import_id ASC, created_at DESC, ctid DESC";
 
 /// The `r2d2` connection manager type for the read pool. The TLS connector is always the
 /// rustls-based [`crate::pg_tls::MakeRustlsConnect`]; whether TLS is actually negotiated is decided
@@ -522,6 +528,14 @@ impl PostgresBackend {
         rows.iter().map(row_to_document).collect()
     }
 
+    pub(crate) fn document_search_metadata(
+        &self,
+    ) -> Result<Vec<StoredDocumentSearchMetadata>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(DOCUMENT_SEARCH_METADATA_SELECT, &[])?;
+        rows.iter().map(row_to_document_search_metadata).collect()
+    }
+
     pub(crate) fn document_by_id(&self, id: &str) -> Result<Option<StoredDocument>, StoreError> {
         let mut client = self.read()?;
         let row = client.query_opt(
@@ -715,6 +729,23 @@ impl PostgresBackend {
             .collect()
     }
 
+    pub(crate) fn generated_document_dispatch_evidence_all(
+        &self,
+    ) -> Result<Vec<StoredGeneratedDocumentDispatchEvidence>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT document_id, idempotency_key, act_id, template_id, actor, dispatched_at, \
+             channel, reference, evidence_reference, imported_document_id, recipients_json, \
+             operator_note, recorded_at \
+             FROM generated_document_dispatch_evidence \
+             ORDER BY recorded_at ASC, ctid ASC",
+            &[],
+        )?;
+        rows.iter()
+            .map(row_to_generated_dispatch_evidence)
+            .collect()
+    }
+
     pub(crate) fn generated_document_dispatch_evidence_by_key(
         &self,
         document_id: &str,
@@ -789,6 +820,22 @@ impl PostgresBackend {
              FROM imported_document_review_history \
              WHERE imported_document_id = $1 ORDER BY id ASC",
             &[&imported_document_id],
+        )?;
+        rows.iter()
+            .map(row_to_imported_document_review_history_entry)
+            .collect()
+    }
+
+    pub(crate) fn imported_document_review_history_all(
+        &self,
+    ) -> Result<Vec<StoredImportedDocumentReviewHistoryEntry>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(
+            "SELECT id, imported_document_id, review_status, reviewed_at, reviewed_by, \
+             review_note, acknowledged_guardrail_ids_json \
+             FROM imported_document_review_history \
+             ORDER BY imported_document_id ASC, id ASC",
+            &[],
         )?;
         rows.iter()
             .map(row_to_imported_document_review_history_entry)
@@ -876,6 +923,14 @@ impl PostgresBackend {
              WHERE import_id = $1 ORDER BY created_at DESC, ctid DESC",
             &[&import_id],
         )?;
+        rows.iter().map(row_to_paper_book_ocr_draft).collect()
+    }
+
+    pub(crate) fn paper_book_ocr_drafts_all(
+        &self,
+    ) -> Result<Vec<StoredPaperBookOcrDraft>, StoreError> {
+        let mut client = self.read()?;
+        let rows = client.query(PAPER_BOOK_OCR_DRAFTS_ALL_SELECT, &[])?;
         rows.iter().map(row_to_paper_book_ocr_draft).collect()
     }
 
@@ -1055,6 +1110,12 @@ impl PostgresBackend {
             "SELECT json FROM settings WHERE id = $1",
             &[&crate::SETTINGS_SINGLETON_ID],
         )?;
+        Ok(row.map(|row| row.get::<_, String>(0)))
+    }
+
+    pub(crate) fn metadata_value(&self, key: &str) -> Result<Option<String>, StoreError> {
+        let mut client = self.read()?;
+        let row = client.query_opt("SELECT value FROM meta WHERE key = $1", &[&key])?;
         Ok(row.map(|row| row.get::<_, String>(0)))
     }
 
@@ -1412,6 +1473,19 @@ pub(crate) fn row_to_document(row: &Row) -> Result<StoredDocument, StoreError> {
         template_spec_json: row.get(7),
         // NULL for rows written before schema v28 — never substitute mutable current settings.
         document_layout_json: row.get(8),
+    })
+}
+
+pub(crate) fn row_to_document_search_metadata(
+    row: &Row,
+) -> Result<StoredDocumentSearchMetadata, StoreError> {
+    Ok(StoredDocumentSearchMetadata {
+        id: row.get(0),
+        act_id: parse_uuid_newtype::<ActId>(&row.get::<_, String>(1))?,
+        template_id: row.get(2),
+        pdf_digest: row.get(3),
+        profile: row.get(4),
+        created_at: parse_rfc3339(&row.get::<_, String>(5))?,
     })
 }
 

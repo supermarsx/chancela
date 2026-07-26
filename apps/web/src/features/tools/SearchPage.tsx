@@ -194,8 +194,8 @@ function SearchIndexNotices({ status, locale }: { status: SearchStatusResponse; 
     notices.push(
       <InlineWarning key="indexing" tone="info" title={st('search.state.indexing.title')}>
         {st('search.state.indexing.body', {
-          processed: formatNumber(status.processed, locale),
-          total: formatNumber(status.total, locale),
+          processed: formatNumber(status.processed ?? 0, locale),
+          total: formatNumber(status.total ?? 0, locale),
         })}
       </InlineWarning>,
     );
@@ -226,7 +226,7 @@ function SearchIndexNotices({ status, locale }: { status: SearchStatusResponse; 
         {status.content_budget_chars === undefined
           ? st('search.state.budget.redactedBody')
           : st('search.state.budget.body', {
-              used: formatNumber(status.indexed_content_chars, locale),
+              used: formatNumber(status.indexed_content_chars ?? 0, locale),
               budget: formatNumber(status.content_budget_chars, locale),
             })}
       </InlineWarning>,
@@ -235,7 +235,7 @@ function SearchIndexNotices({ status, locale }: { status: SearchStatusResponse; 
     notices.push(
       <InlineWarning key="truncated" tone="warn" title={st('search.state.truncated.title')}>
         {st('search.state.truncated.body', {
-          count: formatNumber(status.truncated_document_count, locale),
+          count: formatNumber(status.truncated_document_count ?? 0, locale),
         })}
       </InlineWarning>,
     );
@@ -347,6 +347,7 @@ export function SearchPage() {
     status: {},
   };
   const index = pages.at(-1)?.index ?? statusQuery.data;
+  const paginationTruncated = pages.some((page) => page.pagination_truncated);
 
   const replaceParam = (name: string, value: string) => {
     const next = new URLSearchParams(params);
@@ -517,6 +518,12 @@ export function SearchPage() {
         </details>
       </form>
 
+      {firstPage?.facets_truncated ? (
+        <InlineWarning tone="info" title={st('search.facets.truncated.title')}>
+          {st('search.facets.truncated.body')}
+        </InlineWarning>
+      ) : null}
+
       {index && !index.enabled ? (
         <InlineWarning tone="info" title={st('search.state.disabled.title')}>
           {st('search.state.disabled.body')}
@@ -557,7 +564,11 @@ export function SearchPage() {
               <SearchResult key={hit.id} hit={hit} />
             ))}
           </div>
-          {resultsQuery.hasNextPage ? (
+          {paginationTruncated ? (
+            <InlineWarning tone="info" title={st('search.results.window.title')}>
+              {st('search.results.window.body')}
+            </InlineWarning>
+          ) : resultsQuery.hasNextPage ? (
             <Button
               type="button"
               className="full-search__load-more"

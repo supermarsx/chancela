@@ -125,7 +125,7 @@ import { ReminderSettingsCard } from './ReminderSettingsCard';
 import { SearchSettingsPanel } from './SearchSettingsPanel';
 import { DocumentLayoutDefaultsEditor } from '../documents/DocumentLayoutEditor';
 import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
-import { useCan } from '../session/permissions';
+import { usePermissions } from '../session/permissions';
 import {
   createNoticeDismissal,
   informationalNoticeHideDays,
@@ -985,8 +985,8 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
   'operations:groups',
   'operations:connectors',
   'operations:repositories',
-  // Search owns its operational endpoints behind `search.manage`; its whole-settings editor
-  // carries a narrower inner `settings.manage` fieldset.
+  // Search owns its operational endpoints and its dedicated settings slice behind
+  // `search.manage`; it never participates in the broad settings working copy.
   'operations:search',
   'signing:providers',
 ];
@@ -1494,7 +1494,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // unchanged — only the chrome around them differs.
   const isAdmin = surface === 'admin';
   const toast = useToast();
-  const can = useCan();
+  const { can, ready: permissionsReady } = usePermissions();
+  const canManageSettings = can('settings.manage');
   const canSearchManage = can('search.manage');
   const [params] = useSearchParams();
   const navigate = useNavigate();
@@ -1543,6 +1544,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     // On the admin surface the signing section adds a path level (`/admin/signing/:detail`), so its
     // sub is read one segment deeper than the operations section (`/admin/:sub`). t50.
     base: isAdmin ? (section === 'signing' ? '/admin/signing' : '/admin') : `/settings/${section}`,
+  const { hash, pathname, search } = useLocation();
     parse: (raw) => raw ?? '',
     fallback: '',
   });
@@ -1593,8 +1595,14 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
   // `search` is preserved verbatim by the retired-alias → /admin forwarding below, so the provider
   // `?configure=` deep link survives a `/settings/signing-providers?configure=…` bookmark (t50).
-  const { hash, pathname, search } = useLocation();
-  const settings = useSettings();
+  const directAdminSearchPath = isAdmin && pathname.replace(/\/+$/, '') === '/admin/search';
+  // The direct search route is known before the session/permission query resolves. Suppress the
+  // broad document immediately from pathname alone, then keep it suppressed only for an authorized
+  // search manager. A denied principal may load the ordinary fallback pane after readiness.
+  const broadSettingsSuppressed = directAdminSearchPath && (!permissionsReady || canSearchManage);
+  // A search.manage-only operator must never need or receive the broad settings document. The
+  // SearchSettingsPanel loads its narrow `/v1/search/settings` slice independently.
+  const settings = useSettings(!broadSettingsSuppressed);
   const health = useHealth();
   const ledger = useLedgerVerify();
   // The live UI language, for the read-only "Sobre" table: it is a fact an operator needs in a
@@ -1606,7 +1614,6 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // disabled-with-explanation; the standalone sub-tabs (Utilizadores/Integridade/Dados)
   // gate their OWN actions, and "Sobre" is read-only info — so only the editable sections
   // lock. Reads (`settings.read`) still render everything.
-  const canManageSettings = can('settings.manage');
   // The signing-configuration cluster is gated on its own dedicated verb since t50 (the whole
   // cluster moved into /admin and was re-permissioned): `signing.configure`, not `settings.manage`.
   // Grandfathering grants it to every prior `settings.manage` holder (t50-e1), so this narrows who
@@ -1624,8 +1631,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // co-located with their readouts (Armazenamento → retained-export cleanup; Cópias e recuperação →
   // backup-recovery). They DO touch the settings document, so — unlike other standalone subtabs —
   // the autosave save/error bar must still surface here; otherwise a failed policy save is silent.
-  const hostsSettingsPolicy =
-    section === 'operations' && (sub === 'storage' || sub === 'backups' || sub === 'search');
+  const hostsSettingsPolicy = section === 'operations' && (sub === 'storage' || sub === 'backups');
 
   // The committed (persisted) document, tracked in a ref so the unmount cleanup can
   // restore it if the operator navigated away mid-preview without saving.
@@ -1637,12 +1643,22 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   committedRef.current = committed;
 
   // Full working copy, seeded once when the document first loads.
-  const [draft, setDraft] = useState<Settings | null>(null);
+  const [draft, setDraft] = useState<Settings | null>(() =>
+    broadSettingsSuppressed ? structuredClone(DEFAULT_SETTINGS) : null,
+  );
+  const previousBroadSettingsSuppressed = useRef(broadSettingsSuppressed);
   const [resetDefaultsTarget, setResetDefaultsTarget] =
     useState<SettingsResetDefaultsTarget | null>(null);
   useEffect(() => {
-    if (settings.data && !draft) setDraft(withSettingsDefaults(settings.data));
-  }, [settings.data, draft]);
+    if (broadSettingsSuppressed) {
+      if (!draft) setDraft(structuredClone(DEFAULT_SETTINGS));
+      previousBroadSettingsSuppressed.current = true;
+    } else if (settings.data && (!draft || previousBroadSettingsSuppressed.current)) {
+      setDraft(withSettingsDefaults(settings.data));
+      // Keep the transition marked until the broad document has actually loaded.
+      previousBroadSettingsSuppressed.current = false;
+    }
+  }, [settings.data, draft, broadSettingsSuppressed]);
 
   // Live preview: apply the draft appearance/locale as it is edited so the operator
   // sees the theme switch, grain fade and language flip immediately.
@@ -1680,7 +1696,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const body = useMemo(() => (draft ? toWireBody(draft) : null), [draft]);
   const autosave = useAutosave<Settings | null>({
     value: body,
-    enabled: !!draft && canManageSettings,
+    enabled: !!draft && canManageSettings && !broadSettingsSuppressed,
     onSave: (b) => (b ? save.mutateAsync(b) : Promise.resolve()),
     onSuccess: () => toast.success(t('toast.settings.saved')),
     onError: (e) => toast.error(e),
@@ -1731,8 +1747,8 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
       />
     );
   }
-  if (settings.isLoading) return settingsSkeleton;
-  if (settings.error) return <ErrorNote error={settings.error} />;
+  if (!broadSettingsSuppressed && settings.isLoading) return settingsSkeleton;
+  if (!broadSettingsSuppressed && settings.error) return <ErrorNote error={settings.error} />;
   if (!draft) return settingsSkeleton;
 
   const setOrganization = <K extends keyof OrganizationSettings>(
@@ -1753,8 +1769,6 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     setDraft((d) => (d ? { ...d, email: { ...d.email, [key]: value } } : d));
   const setAi = <K extends keyof AiSettings>(key: K, value: AiSettings[K]) =>
     setDraft((d) => (d ? { ...d, ai: { ...d.ai, [key]: value } } : d));
-  const setSearch = <K extends keyof SearchSettings>(key: K, value: SearchSettings[K]) =>
-    setDraft((d) => (d ? { ...d, search: { ...d.search, [key]: value } } : d));
   const setUi = <K extends keyof UiSettings>(key: K, value: UiSettings[K]) =>
     setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
@@ -3009,18 +3023,10 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                 </div>
               ) : null}
 
-              {/* Full search. The pane is reachable only with `search.manage`; operational
-                  commands use that dedicated permission and remain outside the page's
-                  settings.manage lock. Its bounded SearchSettings rows still write the whole
-                  settings document, so the component applies its own settings.manage fieldset
-                  and participates in this page's existing autosave/error bar. */}
-              {sub === 'search' && canSearchManage ? (
-                <SearchSettingsPanel
-                  value={draft.search}
-                  canEditSettings={canManageSettings}
-                  onChange={setSearch}
-                />
-              ) : null}
+              {/* Full search. The pane and its dedicated settings/status/command endpoints are all
+                  reachable with `search.manage`; it neither fetches nor writes broad settings. */}
+              {sub === 'search' && canSearchManage ? <SearchSettingsPanel /> : null}
+
 
               {/* Base de dados and Redis (t105). Read-only environment surfaces, not editors —
                   every value on both panes is resolved once at process start, and several embed a

@@ -1248,6 +1248,7 @@ pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
     }
     let entity_id = book.entity_id;
 
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut acts = state.acts.write().await;
     let mut ledger = state.ledger.write().await;
     let mut act = Act::draft(

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { api } from './client';
+import { DEFAULT_SETTINGS } from './types';
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -20,10 +21,12 @@ describe('full-search API client', () => {
           offset: 100,
           limit: 25,
           has_more: false,
+          facets_truncated: false,
           hits: [],
           facets: { kind: {}, date: {}, entity: {}, book: {}, author: {}, law: {}, status: {} },
         },
         next_cursor: null,
+        pagination_truncated: false,
         index: {},
       }),
     );
@@ -87,5 +90,24 @@ describe('full-search API client', () => {
       undefined,
       undefined,
     ]);
+  });
+
+  it('reads and writes only the dedicated search settings slice', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation(async () => json(DEFAULT_SETTINGS.search));
+
+    await api.getSearchSettings();
+    await api.putSearchSettings({ ...DEFAULT_SETTINGS.search, batch_size: 333 });
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/v1/search/settings',
+      '/v1/search/settings',
+    ]);
+    expect(fetchMock.mock.calls[1]?.[1]?.method).toBe('PUT');
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      ...DEFAULT_SETTINGS.search,
+      batch_size: 333,
+    });
   });
 });

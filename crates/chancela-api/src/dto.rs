@@ -85,6 +85,7 @@ impl ReadRedaction {
                     Permission::EntityRead
                         | Permission::BookRead
                         | Permission::ActRead
+                        | Permission::SearchRead
                         | Permission::CaeRead
                         | Permission::LawRead
                 )
@@ -4087,6 +4088,24 @@ pub struct RegistryImportReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn seeded_guest_search_permission_remains_read_only_redacted() {
+        let effective = chancela_authz::effective_permissions(
+            chancela_authz::UserId(Uuid::new_v4()),
+            &[chancela_authz::RoleAssignment::new(
+                chancela_authz::GUEST_ROLE_ID,
+                chancela_authz::Scope::Global,
+            )],
+            &chancela_authz::RoleCatalog::seeded_defaults(),
+            &[],
+            OffsetDateTime::now_utc(),
+        );
+        assert_eq!(
+            ReadRedaction::for_effective_permissions(&effective),
+            ReadRedaction::Guest
+        );
+    }
 
     fn waiver_input(json: serde_json::Value) -> Result<ConveningWaiver, ApiError> {
         serde_json::from_value::<ConveningWaiverInput>(json)

@@ -30,8 +30,8 @@
 use axum::Json;
 use axum::extract::State;
 use chancela_ledger::{ChainBreak, ChainStatus, IntegrityReport, ReanchorError, ReanchorRecord};
-use chancela_store::StoreError;
 use chancela_store::recovery::{RestorePreflightManifestEvidence, RestorePreflightOutcome};
+use chancela_store::{Store, StoreError};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
@@ -470,17 +470,70 @@ pub async fn restore_store(
     // verify-before-swap contract promises does not happen.
     state.probe_session_authority()?;
 
-    let outcome = {
-        let mut ledger_guard = state.ledger.write().await;
+    let coordinator = tokio::spawn(async move {
+        let result = restore_store_owned(
+            &state, store, data_dir, archive, sidecars, passphrase, actor,
+        )
+        .await;
+        if let Err(error) = &result {
+            eprintln!(
+                "whole-store restore coordinator failed after taking ownership of the operation: \
+                 {error:?}"
+            );
+        }
+        #[cfg(test)]
+        if let Some(pause) = state.destructive_operation_test_pause.as_ref() {
+            pause.coordinator_settled.notify_one();
+        }
+        result
+    });
+    let outcome = coordinator.await.map_err(|error| {
+        ApiError::Internal(format!(
+            "whole-store restore coordinator task failed: {error}"
+        ))
+    })??;
+    Ok(Json(outcome))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn restore_store_owned(
+    state: &AppState,
+    store: Store,
+    data_dir: std::path::PathBuf,
+    archive: std::path::PathBuf,
+    sidecars: Vec<std::path::PathBuf>,
+    passphrase: Option<String>,
+    actor: String,
+) -> Result<RestoreOutcomeView, ApiError> {
+    // A settings coordinator owns this gate until its durable transaction and live publication
+    // both finish, even when the originating HTTP request is cancelled. Restore must retain the
+    // same gate from before the destructive search fence and store swap through authoritative
+    // reload/failure clearing, otherwise an older live settings snapshot can overwrite a commit
+    // that landed in the replacement store.
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    state
+        .settings_store_commit_tracker
+        .wait_until_settled()
+        .await;
+    crate::settings::reconcile_pending_settings_audit(state).await?;
+    crate::search::prepare_destructive_change(state)
+        .await
+        .map_err(ApiError::Unavailable)?;
+    let restore_result = {
+        // The owned guard remains inside this spawned coordinator if the HTTP waiter disappears.
+        let mut ledger_guard = state.ledger.clone().write_owned().await;
         let at = OffsetDateTime::now_utc();
-        // The sync restore drives postgres writes (and a `postgres::Client` `Drop`) that must not run
-        // on an async worker (wp28). Fold both restore variants into ONE blocking closure that owns
-        // the ledger, then restore it after; the write guard is held throughout.
         let mut ledger = std::mem::take(&mut *ledger_guard);
+        #[cfg(test)]
+        let pause = state.destructive_operation_test_pause.clone();
         let (ledger, result) = store
-            .read_blocking_async(move |s| {
+            .read_blocking_async(move |store| {
+                #[cfg(test)]
+                if let Err(error) = crate::destructive_store_operation_checkpoint(pause.as_ref()) {
+                    return (ledger, Err(error));
+                }
                 let outcome = match passphrase.as_deref() {
-                    Some(passphrase) => s.restore_encrypted_with_sidecars(
+                    Some(passphrase) => store.restore_encrypted_with_sidecars(
                         &mut ledger,
                         &archive,
                         &data_dir,
@@ -489,7 +542,7 @@ pub async fn restore_store(
                         passphrase,
                         &sidecars,
                     ),
-                    None => s.restore_with_sidecars(
+                    None => store.restore_with_sidecars(
                         &mut ledger,
                         &archive,
                         &data_dir,
@@ -502,26 +555,112 @@ pub async fn restore_store(
             })
             .await;
         *ledger_guard = ledger;
-        let outcome = result.map_err(map_store_error)?;
-        crate::refresh_degraded(&state, &ledger_guard).await;
-        outcome
+        if result.is_ok() {
+            // On the complete path the store handed back the replacement ledger (including
+            // ledger.restored), so the degraded flag can be refreshed immediately. A committed
+            // post-step error retains the old passed ledger and is refreshed by strict reload.
+            if let Ok(_outcome) = &result {
+                crate::refresh_degraded(state, &ledger_guard).await;
+            }
+        }
+        result
+    };
+    let (outcome, committed_store_error) = match restore_result {
+        Ok(outcome) => (Some(outcome), None),
+        Err(StoreError::RestoreCommitted(detail)) => (
+            None,
+            Some(ApiError::Internal(format!(
+                "o restauro foi aplicado, mas a reconciliação pós-restauro falhou: {detail}"
+            ))),
+        ),
+        Err(error) => {
+            crate::search::abort_destructive_change(state).await;
+            return Err(map_store_error(error));
+        }
     };
 
-    // The swap landed: every pre-restore bearer must now stop working against the recovered
-    // instance, including the one that drove this restore.
-    state.invalidate_all_sessions().await?;
+    // The swap landed. Both post-commit operations must be attempted: returning early after a
+    // session-authority failure used to strand the destructive search fence forever. Likewise, a
+    // reload failure must release the fence only after all mutable search sources have been cleared,
+    // so no worker can reconstruct pre-restore text.
+    let session_result = state.invalidate_all_sessions().await.map_err(|_| {
+        ApiError::Unavailable(
+            "o restauro foi aplicado, mas não foi possível invalidar todas as sessões; repita o \
+             restauro quando a autoridade de sessões estiver disponível"
+                .to_owned(),
+        )
+    });
+    let reload_result = state
+        .reload_domain_memory_with_settings_gate_held()
+        .await
+        .map_err(|error| {
+            eprintln!("post-commit restore reload failed: {error:?}");
+            ApiError::Internal(
+                "o restauro foi aplicado, mas a memória de domínio não foi recarregada; a pesquisa \
+                 ficou vazia e o restauro deve ser repetido"
+                    .to_owned(),
+            )
+        });
+    let settlement = finish_committed_restore(state, session_result, reload_result).await;
+    drop(settings_update_guard);
+    if let Some(committed_error) = committed_store_error {
+        if let Err(settlement_error) = settlement {
+            eprintln!(
+                "committed restore also failed API reconciliation: {settlement_error:?}; original \
+                 store reconciliation failure: {committed_error:?}"
+            );
+            return Err(settlement_error);
+        }
+        return Err(committed_error);
+    }
+    settlement?;
+    let outcome = outcome.expect("complete restore result exists without a committed error");
 
-    // The swap replaced the whole DB; refresh the in-memory read-models so reads reflect it.
-    state.reload_domain_memory().await?;
-
-    let integrity = current_integrity(&state).await;
-    Ok(Json(RestoreOutcomeView {
+    let integrity = current_integrity(state).await;
+    Ok(RestoreOutcomeView {
         restored_from: outcome.restored_from.to_string_lossy().into_owned(),
         ledger_length: outcome.ledger_length,
         ledger_head: outcome.ledger_head,
         chain_verified: outcome.chain_verified,
         integrity,
-    }))
+    })
+}
+
+/// Settle post-commit recovery without ever leaving the local destructive fence stuck.
+///
+/// `reload_domain_memory_with_settings_gate_held` releases the fence itself on success. If it fails
+/// before that point, all mutable corpus sources are discarded before the fence is released. The
+/// durable projection was already tombstoned transactionally by restore, so a retry starts from
+/// replacement data only.
+async fn finish_committed_restore(
+    state: &AppState,
+    session_result: Result<(), ApiError>,
+    reload_result: Result<(), ApiError>,
+) -> Result<(), ApiError> {
+    if let Err(reload_error) = reload_result {
+        state
+            .clear_search_source_memory_after_failed_restore_with_settings_gate_held()
+            .await;
+        state
+            .clear_security_source_memory_after_failed_restore()
+            .await;
+        crate::search::abort_destructive_change(state).await;
+        if let Err(session_error) = session_result {
+            eprintln!("post-commit restore also failed to reload domain memory: {reload_error:?}");
+            return Err(session_error);
+        }
+        return Err(reload_error);
+    }
+    if let Err(session_error) = session_result {
+        // The replacement domain loaded, but old bearers could not be revoked. Discard every local
+        // authorization source so a pre-restore principal cannot regain access while reconciliation
+        // is retried or the process is restarted.
+        state
+            .clear_security_source_memory_after_failed_restore()
+            .await;
+        return Err(session_error);
+    }
+    Ok(())
 }
 
 fn resolve_restore_archive(
@@ -562,5 +701,114 @@ pub(crate) fn map_store_error(e: StoreError) -> ApiError {
         }
         StoreError::NotLeader => AppState::not_leader_error(),
         other => ApiError::Internal(format!("recovery store error: {other}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chancela_core::{Entity, EntityKind, Nipc};
+
+    #[tokio::test]
+    async fn post_commit_failure_clears_stale_sources_and_releases_fence_for_retry() {
+        let state = AppState::default();
+        *state.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
+        state.ledger.write().await.append(
+            "pre-restore-actor",
+            "recovery",
+            "pre_restore.searchable",
+            None,
+            b"stale ledger text",
+        );
+        state.backup_recovery_drill_receipts.write().await.push(
+            serde_json::from_value(serde_json::json!({
+                "id": "pre-restore-receipt",
+                "created_at": "2026-07-01T00:00:00Z",
+                "archive": "pre-restore-secret.zip",
+                "preflight_ok": true,
+                "preflight_ready": true,
+                "encrypted": true,
+                "ledger_verified": true,
+                "manifest": null
+            }))
+            .expect("stale backup-recovery receipt fixture"),
+        );
+        state.settings.write().await.workflow.reminders.enabled = false;
+        let stale = Entity::new(
+            "Pre-restore secret",
+            Nipc::unvalidated("stale-entity"),
+            "Lisboa",
+            EntityKind::SociedadePorQuotas,
+        );
+        state.entities.write().await.insert(stale.id, stale);
+
+        crate::search::prepare_destructive_change(&state)
+            .await
+            .expect("first restore acquires destructive fence");
+        let result = finish_committed_restore(
+            &state,
+            Err(ApiError::Unavailable(
+                "injected session invalidation failure".to_owned(),
+            )),
+            Err(ApiError::Internal("injected reload failure".to_owned())),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unavailable(_))));
+        assert!(
+            state.entities.read().await.is_empty(),
+            "pre-restore searchable sources must be discarded before release"
+        );
+        assert!(
+            state.ledger.read().await.is_empty(),
+            "pre-restore ledger events must not be rebuilt into search after release"
+        );
+        assert!(
+            state.backup_recovery_drill_receipts.read().await.is_empty(),
+            "pre-restore Action Center sources must be discarded before release"
+        );
+        assert!(
+            state.settings.read().await.workflow.reminders.enabled,
+            "pre-restore Action Center settings must reset to fail-closed defaults"
+        );
+        assert!(
+            state.roles.read().await.is_empty(),
+            "pre-restore authorization sources must fail closed after reconciliation failure"
+        );
+        crate::search::prepare_destructive_change(&state)
+            .await
+            .expect("released fence permits a safe retry");
+        crate::search::abort_destructive_change(&state).await;
+    }
+
+    #[tokio::test]
+    async fn post_commit_session_failure_clears_reloaded_auth_and_remains_retryable() {
+        let state = AppState::default();
+        *state.roles.write().await = chancela_authz::RoleCatalog::seeded_defaults();
+        crate::search::prepare_destructive_change(&state)
+            .await
+            .expect("restore acquires destructive fence");
+        // A successful reload completes the local fence before settlement sees the independent
+        // shared-session failure.
+        crate::search::reset_after_destructive_change(&state).await;
+
+        let result = finish_committed_restore(
+            &state,
+            Err(ApiError::Unavailable(
+                "injected shared-session invalidation failure".to_owned(),
+            )),
+            Ok(()),
+        )
+        .await;
+
+        assert!(matches!(result, Err(ApiError::Unavailable(_))));
+        assert!(
+            state.roles.read().await.is_empty(),
+            "reloaded authorization must be discarded while old bearers may remain live"
+        );
+        crate::search::prepare_destructive_change(&state)
+            .await
+            .expect("session failure does not strand the destructive fence");
+        crate::search::abort_destructive_change(&state).await;
     }
 }

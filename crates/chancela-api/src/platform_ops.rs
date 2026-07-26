@@ -19,8 +19,9 @@ use crate::platform_logs::{PlatformLogInput, record_platform_log};
 use crate::settings::{
     PLATFORM_API_SERVICE_ID, PLATFORM_MCP_STDIO_SERVICE_ID, PlatformAuditEvent,
     PlatformControlOutcomeKind, PlatformLogLevel, PlatformServiceAction,
-    PlatformServiceDesiredState, PlatformServiceLastAction, Settings, validate_platform_service_id,
-    write_settings_atomic,
+    PlatformServiceDesiredState, PlatformServiceLastAction, Settings, SettingsAuditEventSpec,
+    SettingsCommitOptions, commit_settings_update, reconcile_pending_settings_audit,
+    validate_platform_service_id,
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -134,6 +135,8 @@ pub async fn control_service(
 
     validate_controllable_service_id(&service_id)?;
     let action = parse_action(&action)?;
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    reconcile_pending_settings_audit(&state).await?;
     let requested_by = current_actor.resolve("api");
     let requested_at = time::OffsetDateTime::now_utc()
         .format(&Rfc3339)
@@ -142,7 +145,8 @@ pub async fn control_service(
     let outcome = outcome_for(&service_id, action);
     let message = outcome_message(&service_id, action, outcome).to_owned();
 
-    let mut settings = state.settings.read().await.clone();
+    let previous = state.settings.read().await.clone();
+    let mut settings = previous.clone();
     {
         let control = settings.platform.control_settings_mut(&service_id)?;
         control.enabled = matches!(desired_state, PlatformServiceDesiredState::Running);
@@ -166,11 +170,6 @@ pub async fn control_service(
     });
     settings.validate()?;
 
-    if let Some(path) = &state.persist_path {
-        write_settings_atomic(path, &settings)
-            .map_err(|e| ApiError::Internal(format!("failed to persist settings: {e}")))?;
-    }
-
     let limitations = limitations_for(&settings, &service_id);
     let payload = PlatformControlAuditPayload {
         service_id: service_id.clone(),
@@ -183,22 +182,21 @@ pub async fn control_service(
         limitations: limitations.clone(),
     };
     let payload_bytes = serde_json::to_vec(&payload)?;
-    {
-        let mut ledger = state.ledger.write().await;
-        ledger.append(
-            &payload.requested_by,
+    commit_settings_update(
+        state.clone(),
+        settings_update_guard,
+        previous,
+        settings.clone(),
+        SettingsCommitOptions::single(SettingsAuditEventSpec::new(
+            payload.requested_by.clone(),
             "platform",
             "platform.service.control",
-            Some("platform service control requested"),
-            &payload_bytes,
-        );
-        state
-            .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
-            .await?;
-        state.attest_latest(&attestor, &ledger).await;
-    }
-
-    *state.settings.write().await = settings.clone();
+            Some("platform service control requested".to_owned()),
+            payload_bytes,
+        )),
+        attestor,
+    )
+    .await?;
     let service = service_status(&settings, &service_id)?;
     record_platform_log(
         &state,

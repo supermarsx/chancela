@@ -330,6 +330,14 @@ pub enum InvalidationEvent {
         /// The affected principal.
         user_id: Uuid,
     },
+    /// A destructive reset/restore installed a durable search tombstone before mutating sources.
+    SearchProjectionFenced { reset_id: Uuid },
+    /// The destructive operation completed or was refused; peers may hydrate/rebuild from the now
+    /// authoritative durable projection generation.
+    SearchProjectionReleased { reset_id: Uuid },
+    /// The elected projection writer atomically completed a normal generation. Followers should
+    /// hydrate it immediately instead of waiting for their periodic 5–60 second poll.
+    SearchProjectionCompleted { generation: u64 },
 }
 
 impl InvalidationEvent {
@@ -341,6 +349,15 @@ impl InvalidationEvent {
             }
             InvalidationEvent::AllSessionsRevoked => "sessions-revoked:all".to_owned(),
             InvalidationEvent::RoleChanged { user_id } => format!("role-changed:{user_id}"),
+            InvalidationEvent::SearchProjectionFenced { reset_id } => {
+                format!("search-projection-fenced:{reset_id}")
+            }
+            InvalidationEvent::SearchProjectionReleased { reset_id } => {
+                format!("search-projection-released:{reset_id}")
+            }
+            InvalidationEvent::SearchProjectionCompleted { generation } => {
+                format!("search-projection-completed:{generation}")
+            }
         }
     }
 
@@ -364,6 +381,23 @@ impl InvalidationEvent {
             return Uuid::parse_str(uid.trim())
                 .ok()
                 .map(|user_id| InvalidationEvent::RoleChanged { user_id });
+        }
+        if let Some(reset_id) = payload.strip_prefix("search-projection-fenced:") {
+            return Uuid::parse_str(reset_id.trim())
+                .ok()
+                .map(|reset_id| InvalidationEvent::SearchProjectionFenced { reset_id });
+        }
+        if let Some(reset_id) = payload.strip_prefix("search-projection-released:") {
+            return Uuid::parse_str(reset_id.trim())
+                .ok()
+                .map(|reset_id| InvalidationEvent::SearchProjectionReleased { reset_id });
+        }
+        if let Some(generation) = payload.strip_prefix("search-projection-completed:") {
+            return generation
+                .trim()
+                .parse()
+                .ok()
+                .map(|generation| InvalidationEvent::SearchProjectionCompleted { generation });
         }
         None
     }
@@ -460,6 +494,15 @@ impl crate::AppState {
                 // conservatively drop the shared catalog projection so any permission-shaped cached
                 // read recomputes. Kept minimal on purpose.
                 self.cache.invalidate(&crate::cache::CacheKey::CaeCatalog);
+            }
+            InvalidationEvent::SearchProjectionFenced { reset_id } => {
+                crate::search::apply_remote_destructive_fence(self, *reset_id, true).await;
+            }
+            InvalidationEvent::SearchProjectionReleased { reset_id } => {
+                crate::search::apply_remote_destructive_fence(self, *reset_id, false).await;
+            }
+            InvalidationEvent::SearchProjectionCompleted { generation } => {
+                crate::search::apply_remote_completed_generation(self, *generation).await;
             }
         }
     }
@@ -1436,12 +1479,16 @@ mod tests {
     #[test]
     fn invalidation_event_encode_parse_round_trip() {
         let uid = Uuid::new_v4();
+        let reset_id = Uuid::new_v4();
         for event in [
             InvalidationEvent::SessionRevoked {
                 token_sha256: crate::session::session_token_digest("abc-123"),
             },
             InvalidationEvent::AllSessionsRevoked,
             InvalidationEvent::RoleChanged { user_id: uid },
+            InvalidationEvent::SearchProjectionFenced { reset_id },
+            InvalidationEvent::SearchProjectionReleased { reset_id },
+            InvalidationEvent::SearchProjectionCompleted { generation: 42 },
         ] {
             let wire = event.encode();
             assert_eq!(

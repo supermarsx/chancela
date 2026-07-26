@@ -46,7 +46,8 @@ pub use role::{
     RETIRED_SIGNATARIO_ROLE_ID, REVIEWER_ROLE_ID, Role, RoleCatalog, RoleId, SIGNATORY_ROLE_ID,
     SignupDefaultRefusal, T27_VERB_SPLIT_GRANDFATHER, T30_ACT_REVERT_GRANDFATHER,
     T50_SIGNING_CONFIGURE_GRANDFATHER, TENANT_ADMIN_ROLE_ID, default_roles, grandfather_act_revert,
-    grandfather_act_revert_catalog, grandfather_signing_configure,
+    grandfather_act_revert_catalog, grandfather_seeded_search_read,
+    grandfather_seeded_search_read_catalog, grandfather_signing_configure,
     grandfather_signing_configure_catalog, grandfather_split_verbs,
     grandfather_split_verbs_catalog, is_seeded_role, retired_role_successor,
 };

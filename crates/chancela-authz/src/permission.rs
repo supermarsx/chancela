@@ -113,6 +113,15 @@ pub enum Permission {
     #[serde(rename = "template.manage")]
     TemplateManage,
 
+    // --- Full search ---
+    /// Query the cross-domain acts-management index. The API additionally requires the underlying
+    /// resource read verb for every returned row, so this permission never widens domain access.
+    #[serde(rename = "search.read")]
+    SearchRead,
+    /// Rebuild, pause, or resume the background indexer and inspect its administrative controls.
+    #[serde(rename = "search.manage")]
+    SearchManage,
+
     // --- Ledger ---
     #[serde(rename = "ledger.read")]
     LedgerRead,
@@ -214,7 +223,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 51] = [
+    pub const ALL: [Permission; 53] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -241,6 +250,8 @@ impl Permission {
         Permission::SigningConfigure,
         Permission::DocumentGenerate,
         Permission::TemplateManage,
+        Permission::SearchRead,
+        Permission::SearchManage,
         Permission::LedgerRead,
         Permission::LedgerRecover,
         Permission::LedgerReanchor,
@@ -293,7 +304,7 @@ impl Permission {
     ///
     /// Owner is excluded by `protected`, not by this list — it holds every permission anyway, but
     /// the refusal names protection so the message is honest about *why*.
-    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 14] = [
+    pub const SELF_SIGNUP_FORBIDDEN: [Permission; 15] = [
         Permission::UserManage,
         Permission::RoleManage,
         Permission::RoleAssign,
@@ -313,6 +324,7 @@ impl Permission {
         // seal-status rule, provider credentials) is privileged security configuration, split off
         // `settings.manage` which is already forbidden here — so it must be too.
         Permission::SigningConfigure,
+        Permission::SearchManage,
     ];
 
     /// The stable dotted id (matches the serde representation).
@@ -345,6 +357,8 @@ impl Permission {
             Permission::SigningConfigure => "signing.configure",
             Permission::DocumentGenerate => "document.generate",
             Permission::TemplateManage => "template.manage",
+            Permission::SearchRead => "search.read",
+            Permission::SearchManage => "search.manage",
             Permission::LedgerRead => "ledger.read",
             Permission::LedgerRecover => "ledger.recover",
             Permission::LedgerReanchor => "ledger.reanchor",
@@ -440,6 +454,8 @@ mod tests {
                 | Permission::SigningConfigure
                 | Permission::DocumentGenerate
                 | Permission::TemplateManage
+                | Permission::SearchRead
+                | Permission::SearchManage
                 | Permission::LedgerRead
                 | Permission::LedgerRecover
                 | Permission::LedgerReanchor
@@ -496,6 +512,8 @@ mod tests {
             Permission::SigningConfigure,
             Permission::DocumentGenerate,
             Permission::TemplateManage,
+            Permission::SearchRead,
+            Permission::SearchManage,
             Permission::LedgerRead,
             Permission::LedgerRecover,
             Permission::LedgerReanchor,

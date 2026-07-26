@@ -574,6 +574,7 @@ jobs:
         run: |
           cargo test -p chancela-store --features postgres --locked --test postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored --test-threads=1
           cargo test -p chancela-store --features postgres --locked --test postgres_backend sslmode_verify_full_opens_and_roundtrips_on_postgres -- --ignored --test-threads=1
+          cargo test -p chancela-api --features postgres --locked --lib search::tests::postgres_two_node_search_promotion_discards_interrupted_generation -- --ignored --exact --test-threads=1
 
   # ---------------------------------------------------------------------------
   # Web: format, lint, test and build the @chancela/web workspace on supported

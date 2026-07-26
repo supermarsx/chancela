@@ -8142,24 +8142,25 @@ export interface SearchStatusResponse {
   stale: boolean;
   content_truncated: boolean;
   phase: SearchIndexPhase;
-  generation: number;
-  document_count: number;
-  truncated_document_count: number;
-  indexed_content_chars: number;
+  /** Management-only global corpus diagnostics. */
+  generation?: number;
+  document_count?: number;
+  truncated_document_count?: number;
+  indexed_content_chars?: number;
   /** Management-only configured ceiling; omitted from a redacted search.read response. */
   content_budget_chars?: number;
-  content_budget_exhausted: boolean;
-  processed: number;
-  total: number;
-  last_event_seq: number | null;
-  last_started_at: string | null;
-  last_completed_at: string | null;
+  content_budget_exhausted?: boolean;
+  processed?: number;
+  total?: number;
+  last_event_seq?: number | null;
+  last_started_at?: string | null;
+  last_completed_at?: string | null;
   /** True when management-only worker/configuration diagnostics were intentionally omitted. */
   details_redacted: boolean;
   /** Management-only diagnostics may be omitted from a search.read response. */
   last_error?: string | null;
   error_at?: string | null;
-  updated_at: string;
+  updated_at?: string;
   queue_depth?: number;
   queue_capacity?: number;
   dropped_commands?: number;
@@ -8189,7 +8190,8 @@ export interface SearchHit {
   kind: SearchKind;
   title: string;
   snippet: string;
-  content_truncated: boolean;
+  /** Management-only global corpus diagnostic. */
+  content_truncated?: boolean;
   score: number;
   tenant_id: string | null;
   entity_id: string | null;
@@ -8614,6 +8616,8 @@ export interface RestoreOutcomeView {
   ledger_head: string | null;
   chain_verified: boolean;
   integrity: IntegrityReportView;
+  /** Some high-cardinality facet values were omitted; counts for returned values remain exact. */
+  facets_truncated: boolean;
 }
 
 /** Secret-free manifest evidence persisted in a non-destructive backup recovery drill receipt. */
@@ -8621,6 +8625,7 @@ export interface BackupRecoveryDrillManifestEvidence {
   schema: string;
   version: number;
   store_schema_version: number;
+  pagination_truncated: boolean;
   ledger_length: number;
   ledger_verified: boolean;
   member_count: number;

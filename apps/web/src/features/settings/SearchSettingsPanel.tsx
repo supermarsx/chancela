@@ -1,11 +1,15 @@
+import { useEffect, useState } from 'react';
 import {
   usePauseSearchIndex,
   useRebuildSearchIndex,
   useResumeSearchIndex,
+  useSearchSettings,
   useSearchStatus,
+  useUpdateSearchSettings,
 } from '../../api/hooks';
 import type { SearchIndexPhase, SearchSettings, SearchStatusResponse } from '../../api/types';
-import { useActiveLocale } from '../../i18n';
+import { useAutosave } from '../../hooks/useAutosave';
+import { useActiveLocale, useT } from '../../i18n';
 import { type SearchCopyKey, useSearchT } from '../../i18n/searchFallback';
 import {
   Badge,
@@ -19,14 +23,9 @@ import {
   SkeletonDeflist,
   Table,
   Toggle,
+  useToast,
 } from '../../ui';
 import './SearchSettingsPanel.css';
-
-interface SearchSettingsPanelProps {
-  value: SearchSettings;
-  canEditSettings: boolean;
-  onChange: <K extends keyof SearchSettings>(key: K, value: SearchSettings[K]) => void;
-}
 
 interface BoundedField {
   key: Exclude<keyof SearchSettings, 'enabled'>;
@@ -136,7 +135,10 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
   const locale = useActiveLocale();
   const queueDepth = status.queue_depth;
   const queueCapacity = status.queue_capacity;
-  const progressMax = Math.max(status.total, 1);
+  const processed = status.processed ?? 0;
+  const total = status.total ?? 0;
+  const indexedContentChars = status.indexed_content_chars ?? 0;
+  const progressMax = Math.max(total, 1);
   const phaseKey = `admin.search.phase.${status.phase}` as SearchCopyKey;
   const rows = [
     {
@@ -146,21 +148,21 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
     {
       label: st('admin.search.status.documents'),
       value: st('admin.search.status.documentsValue', {
-        count: formatNumber(status.document_count, locale),
-        truncated: formatNumber(status.truncated_document_count, locale),
+        count: formatNumber(status.document_count ?? 0, locale),
+        truncated: formatNumber(status.truncated_document_count ?? 0, locale),
       }),
     },
     {
       label: st('admin.search.status.generation'),
-      value: formatNumber(status.generation, locale),
+      value: formatNumber(status.generation ?? 0, locale),
     },
     {
       label: st('admin.search.status.progress'),
       value: (
         <span className="search-admin-progress">
-          <progress max={progressMax} value={Math.min(status.processed, progressMax)} />
+          <progress max={progressMax} value={Math.min(processed, progressMax)} />
           <span>
-            {formatNumber(status.processed, locale)} / {formatNumber(status.total, locale)}
+            {formatNumber(processed, locale)} / {formatNumber(total, locale)}
           </span>
         </span>
       ),
@@ -180,16 +182,16 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
       value:
         status.content_budget_chars === undefined
           ? st('admin.search.status.contentRedactedValue', {
-              used: formatNumber(status.indexed_content_chars, locale),
+              used: formatNumber(indexedContentChars, locale),
             })
           : st('admin.search.status.contentValue', {
-              used: formatNumber(status.indexed_content_chars, locale),
+              used: formatNumber(indexedContentChars, locale),
               budget: formatNumber(status.content_budget_chars, locale),
             }),
     },
     {
       label: st('admin.search.status.updated'),
-      value: <DateTime value={status.updated_at} evidentiary />,
+      value: <StatusValue date={status.updated_at} fallback={st('admin.search.status.none')} />,
     },
     {
       label: st('admin.search.status.completed'),
@@ -200,7 +202,7 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
     {
       label: st('admin.search.status.event'),
       value:
-        status.last_event_seq === null
+        status.last_event_seq == null
           ? st('admin.search.status.none')
           : formatNumber(status.last_event_seq, locale),
     },
@@ -250,14 +252,14 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
           {status.content_budget_chars === undefined
             ? st('search.state.budget.redactedBody')
             : st('search.state.budget.body', {
-                used: formatNumber(status.indexed_content_chars, locale),
+                used: formatNumber(indexedContentChars, locale),
                 budget: formatNumber(status.content_budget_chars, locale),
               })}
         </InlineWarning>
       ) : status.content_truncated ? (
         <InlineWarning tone="warn" title={st('search.state.truncated.title')}>
           {st('search.state.truncated.body', {
-            count: formatNumber(status.truncated_document_count, locale),
+            count: formatNumber(status.truncated_document_count ?? 0, locale),
           })}
         </InlineWarning>
       ) : null}
@@ -271,12 +273,25 @@ function SearchStatusTable({ status }: { status: SearchStatusResponse }) {
   );
 }
 
-export function SearchSettingsPanel({
-  value,
-  canEditSettings,
-  onChange,
-}: SearchSettingsPanelProps) {
+export function SearchSettingsPanel() {
   const st = useSearchT();
+  const t = useT();
+  const toast = useToast();
+  const configured = useSearchSettings(true);
+  const update = useUpdateSearchSettings();
+  const [value, setValue] = useState<SearchSettings | null>(null);
+  useEffect(() => {
+    if (configured.data) setValue((current) => current ?? configured.data);
+  }, [configured.data]);
+  const autosave = useAutosave<SearchSettings | null>({
+    value,
+    enabled: value !== null,
+    onSave: (next) => (next ? update.mutateAsync(next) : Promise.resolve()),
+    onSuccess: () => toast.success(t('toast.settings.saved')),
+    onError: (error) => toast.error(error),
+  });
+  const onChange = <K extends keyof SearchSettings>(key: K, next: SearchSettings[K]) =>
+    setValue((current) => (current ? { ...current, [key]: next } : current));
   const status = useSearchStatus(true);
   const rebuild = useRebuildSearchIndex();
   const pause = usePauseSearchIndex();
@@ -306,7 +321,7 @@ export function SearchSettingsPanel({
             <Button
               type="button"
               variant="secondary"
-              disabled={!value.enabled || phase === 'paused' || commandPending}
+              disabled={!value?.enabled || phase === 'paused' || commandPending}
               onClick={() => rebuild.mutate()}
             >
               {rebuild.isPending
@@ -331,7 +346,7 @@ export function SearchSettingsPanel({
             <Button
               type="button"
               variant="secondary"
-              disabled={!value.enabled || phase !== 'paused' || commandPending}
+              disabled={!value?.enabled || phase !== 'paused' || commandPending}
               onClick={() => resume.mutate()}
             >
               {resume.isPending
@@ -344,42 +359,60 @@ export function SearchSettingsPanel({
       </Card>
 
       <Card title={st('admin.search.settings.title')}>
-        {!canEditSettings ? (
-          <InlineWarning tone="info">{st('admin.search.settings.permission')}</InlineWarning>
-        ) : null}
-        <fieldset className="settings-fieldset" disabled={!canEditSettings}>
-          <div className="form settings-rows search-settings-rows">
-            <Toggle
-              label={st('admin.search.enabled.label')}
-              checked={value.enabled}
-              onChange={(enabled) => onChange('enabled', enabled)}
-            />
-            <p className="field__hint">{st('admin.search.enabled.hint')}</p>
-            {BOUNDED_FIELDS.map((field) => (
-              <Field
-                key={field.key}
-                label={st(field.label)}
-                htmlFor={`search-setting-${field.key}`}
-                hint={st(field.hint)}
-              >
-                <Input
-                  id={`search-setting-${field.key}`}
-                  type="number"
-                  min={field.min}
-                  max={field.max}
-                  step={1}
-                  value={value[field.key]}
-                  onChange={(event) =>
-                    onChange(
-                      field.key,
-                      bounded(event.target.value, value[field.key], field.min, field.max),
-                    )
-                  }
+        {configured.error ? (
+          <ErrorNote error={configured.error} />
+        ) : configured.isLoading || !value ? (
+          <SkeletonDeflist rows={6} />
+        ) : (
+          <>
+            <fieldset className="settings-fieldset">
+              <div className="form settings-rows search-settings-rows">
+                <Toggle
+                  label={st('admin.search.enabled.label')}
+                  checked={value.enabled}
+                  onChange={(enabled) => onChange('enabled', enabled)}
                 />
-              </Field>
-            ))}
-          </div>
-        </fieldset>
+                <p className="field__hint">{st('admin.search.enabled.hint')}</p>
+                {BOUNDED_FIELDS.map((field) => (
+                  <Field
+                    key={field.key}
+                    label={st(field.label)}
+                    htmlFor={`search-setting-${field.key}`}
+                    hint={st(field.hint)}
+                  >
+                    <Input
+                      id={`search-setting-${field.key}`}
+                      type="number"
+                      min={field.min}
+                      max={field.max}
+                      step={1}
+                      value={value[field.key]}
+                      onChange={(event) =>
+                        onChange(
+                          field.key,
+                          bounded(event.target.value, value[field.key], field.min, field.max),
+                        )
+                      }
+                    />
+                  </Field>
+                ))}
+              </div>
+            </fieldset>
+            {autosave.status === 'error' ? (
+              <div className="stack--tight">
+                <ErrorNote error={autosave.error} />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={autosave.isSaving}
+                  onClick={() => autosave.flush()}
+                >
+                  {t('settings.autosave.retry')}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
       </Card>
     </div>
   );

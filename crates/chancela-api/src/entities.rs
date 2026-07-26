@@ -114,6 +114,7 @@ pub async fn create_entity(
     let payload = serde_json::to_vec(&entity)?;
     let justification = overridden.then_some(NIPC_OVERRIDE_JUSTIFICATION);
     let actor = actor.resolve("api");
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     // Emit the entity genesis on its `tenant:{t}/entity:{id}` scope so the write joins BOTH its tenant
     // chain (ChainId::Tenant — previously missing on entity mutations, a1 Q1) and its company chain.
     // The `company:`-equivalent `entity:` segment keeps `entity.created` the genesis of the company
@@ -185,6 +186,7 @@ pub async fn patch_entity(
         .layout_defaults
         .clone();
     // entities → ledger (the global lock order); attestation sidecar acquired last.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut entities = state.entities.write().await;
     let books = state.books.read().await;
 

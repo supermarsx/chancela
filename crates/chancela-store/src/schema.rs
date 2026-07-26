@@ -170,7 +170,11 @@
 ///   reconstruct instance, entity, and book overrides, so new documents pin this policy beside the
 ///   producing template. Historical rows remain `NULL` and are reported as unbound; no migration
 ///   fabricates settings that were never recorded.
-pub const SCHEMA_VERSION: i64 = 28;
+/// - **v29** — adds the lightweight derived full-search projection and its durable progress/error
+///   state. Both tables are document-in-relational and contain only rebuildable search projections.
+///   Logical backups deliberately exclude them; restore clears them transactionally and leaves a
+///   fail-closed tombstone for the background service to rebuild from authoritative rows.
+pub const SCHEMA_VERSION: i64 = 29;
 
 /// `meta` — small key/value table for the `schema_version` stamp and the app version.
 pub const CREATE_META: &str = "\
@@ -1023,6 +1027,22 @@ CREATE TABLE IF NOT EXISTS termo_instruments (
 pub const CREATE_TERMO_INSTRUMENTS_BOOK_IDX: &str =
     "CREATE INDEX IF NOT EXISTS idx_termo_instruments_book ON termo_instruments (book_id);";
 
+/// Rebuildable full-search projections. Each JSON value is a
+/// [`chancela_search::SearchDocument`]; the dedicated worker is the sole writer.
+pub const CREATE_SEARCH_DOCUMENTS: &str = "\
+CREATE TABLE IF NOT EXISTS search_documents (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
+/// Singleton durable search lifecycle/progress/error document. Kept separate from the projection
+/// rows so status writes never rewrite a large corpus and survive a worker/process restart.
+pub const CREATE_SEARCH_INDEX_STATE: &str = "\
+CREATE TABLE IF NOT EXISTS search_index_state (
+    id   TEXT PRIMARY KEY,
+    json TEXT NOT NULL
+) STRICT;";
+
 /// Every DDL statement, in dependency order, for [`crate::Store::open`] to execute on boot.
 pub const ALL: &[&str] = &[
     CREATE_META,
@@ -1089,6 +1109,8 @@ pub const ALL: &[&str] = &[
     CREATE_EMAIL_DELIVERIES_USER_IDX,
     CREATE_TERMO_INSTRUMENTS,
     CREATE_TERMO_INSTRUMENTS_BOOK_IDX,
+    CREATE_SEARCH_DOCUMENTS,
+    CREATE_SEARCH_INDEX_STATE,
 ];
 
 /// Every application table a **Postgres logical backup** exports and restores, in a stable order
@@ -1180,17 +1202,23 @@ pub(crate) fn schema_table_names() -> Vec<&'static str> {
         .collect()
 }
 
+/// Tables deliberately excluded from Postgres logical backups, with the required drift-exemption
+/// reason. Test-only because production backup code needs only [`LOGICAL_BACKUP_TABLES`].
+#[cfg(test)]
+pub(crate) const INTENTIONALLY_NOT_BACKED_UP: &[(&str, &str)] = &[
+    (
+        "search_documents",
+        "derived full-search rows are rebuilt from authoritative domain data after restore",
+    ),
+    (
+        "search_index_state",
+        "derived search lifecycle state is replaced by a fail-closed restore tombstone",
+    ),
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Tables deliberately NOT carried by a logical backup, each with the reason.
-    ///
-    /// Empty on purpose: today every table in [`ALL`] is backed up. The list exists so an
-    /// intentional omission and a forgotten one cannot look alike — silently leaving a table out of
-    /// [`LOGICAL_BACKUP_TABLES`] is exactly how that enumeration drifted twice. Adding an entry here
-    /// is the only sanctioned way to exclude a table, and it forces the reason to be written down.
-    const INTENTIONALLY_NOT_BACKED_UP: &[(&str, &str)] = &[];
 
     /// The guard for [`LOGICAL_BACKUP_TABLES`]: the hand-maintained enumeration must cover the schema
     /// exactly. A table in [`ALL`] and not there is exported by no Postgres backup and restored by no
@@ -1259,5 +1287,21 @@ mod tests {
             LOGICAL_BACKUP_TABLES.contains(&"pairing_devices"),
             "a logical backup must carry the companion-device pairing registry"
         );
+    }
+
+    #[test]
+    fn logical_backup_excludes_both_derived_search_tables() {
+        for table in ["search_documents", "search_index_state"] {
+            assert!(
+                !LOGICAL_BACKUP_TABLES.contains(&table),
+                "{table} is derived and must not be exported"
+            );
+            assert!(
+                INTENTIONALLY_NOT_BACKED_UP
+                    .iter()
+                    .any(|(excluded, reason)| *excluded == table && !reason.trim().is_empty()),
+                "{table} needs an explicit schema-drift exemption"
+            );
+        }
     }
 }

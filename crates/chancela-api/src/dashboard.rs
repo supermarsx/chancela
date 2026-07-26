@@ -19,6 +19,7 @@ use chancela_store::{
     StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
     StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
 };
+use serde::Serialize;
 use time::format_description::well_known::Rfc3339;
 use time::{Date, Month, OffsetDateTime};
 
@@ -211,26 +212,231 @@ pub async fn dashboard(
     }))
 }
 
+/// Search-ready Action Center row. This is derived from the exact alert/reminder builders used by
+/// `GET /v1/dashboard`, so discovery cannot drift into a second, event-shaped approximation of an
+/// actionable.
+#[derive(Clone, Serialize)]
+pub(crate) struct DashboardSearchActionable {
+    pub id: String,
+    pub title: String,
+    pub body: String,
+    pub status: String,
+    pub due_date: Option<String>,
+    pub entity_id: Option<String>,
+    pub book_id: Option<String>,
+    pub act_id: Option<String>,
+    pub required_permission: Permission,
+}
+
+/// Build the full Action Center corpus for the background search worker. No request authorization
+/// happens here: each row carries its underlying domain permission and the query path applies that
+/// permission together with `search.read` before hits or facets are counted.
+#[cfg(test)]
+pub(crate) async fn search_actionables(
+    state: &AppState,
+) -> Result<Vec<DashboardSearchActionable>, ApiError> {
+    let entities = state.entities.read().await.clone();
+    let books = state.books.read().await.clone();
+    let acts = state.acts.read().await.clone();
+    let follow_ups = state.follow_ups.read().await.clone();
+    search_actionables_from_snapshot(state, &entities, &books, &acts, &follow_ups).await
+}
+
+/// Search-worker entry point that reuses its already bounded core-domain snapshot instead of
+/// cloning the largest maps a second time.
+pub(crate) async fn search_actionables_from_snapshot(
+    state: &AppState,
+    entities: &HashMap<EntityId, Entity>,
+    books: &HashMap<BookId, Book>,
+    acts: &HashMap<ActId, Act>,
+    follow_ups: &HashMap<String, StoredFollowUp>,
+) -> Result<Vec<DashboardSearchActionable>, ApiError> {
+    let settings = state.settings.read().await;
+    let reminder_policy = settings.workflow.reminders.clone();
+    let backup_recovery_policy = settings.data_management.backup_recovery.clone();
+    drop(settings);
+
+    let registry_extracts = state.registry_extracts.read().await.clone();
+    let dpia_records = state.dpia_records.read().await.clone();
+    let breach_playbooks = state.breach_playbooks.read().await.clone();
+    let transfer_controls = state.transfer_controls.read().await.clone();
+    let generated_dispatch_evidence =
+        load_generated_dispatch_evidence_snapshots(state, acts).await?;
+    let imported_documents = load_imported_document_metadata(state).await?;
+    let ledger_valid = {
+        let ledger = state.ledger.read().await;
+        state.verify_cache.verdict(&ledger).is_ok()
+    };
+    let now = OffsetDateTime::now_utc();
+    let today = now.date();
+    let mut alerts = dashboard_alerts(
+        entities,
+        books,
+        acts,
+        &registry_extracts,
+        ledger_valid,
+        today,
+    );
+    let mut receipts = state.backup_recovery_drill_receipts.read().await.clone();
+    sort_backup_recovery_drill_receipts(&mut receipts);
+    let freshness = backup_recovery_freshness_review(&receipts, backup_recovery_policy, now);
+    if let Some(alert) = backup_recovery_freshness_alert(&freshness) {
+        alerts.push(alert);
+        sort_dashboard_alerts(&mut alerts);
+    }
+    let reminders = dashboard_reminders_with_generated_dispatch_evidence(
+        ReminderInputs {
+            entities,
+            books,
+            acts,
+            follow_ups,
+            generated_dispatch_evidence: &generated_dispatch_evidence,
+            imported_documents: &imported_documents,
+            registry_extracts: &registry_extracts,
+            dpia_records: &dpia_records,
+            breach_playbooks: &breach_playbooks,
+            transfer_controls: &transfer_controls,
+        },
+        today,
+        &reminder_policy,
+    );
+
+    let mut out = Vec::with_capacity(alerts.len() + reminders.len());
+    for (index, alert) in alerts.into_iter().enumerate() {
+        let required_permission = if alert.category == "LedgerIntegrity" {
+            Permission::LedgerRead
+        } else if alert.code.starts_with("backup.") {
+            Permission::DataBackup
+        } else if alert.target.act_id.is_some() {
+            Permission::ActRead
+        } else if alert.target.book_id.is_some() {
+            Permission::BookRead
+        } else if alert.target.entity_id.is_some() {
+            Permission::EntityRead
+        } else {
+            Permission::ActRead
+        };
+        let body = if matches!(
+            required_permission,
+            Permission::ActRead | Permission::BookRead | Permission::EntityRead
+        ) {
+            serde_json::to_string(&serde_json::json!({
+                "code": &alert.code,
+                "label": &alert.label,
+                "severity": &alert.severity,
+                "category": &alert.category,
+                "source": &alert.source,
+                "law_refs": &alert.law_refs,
+                "action": &alert.action,
+                "i18n": &alert.i18n,
+            }))
+            .map_err(ApiError::from)?
+        } else {
+            serde_json::to_string(&alert).map_err(ApiError::from)?
+        };
+        out.push(DashboardSearchActionable {
+            id: format!("alert:{index}:{}", alert.code),
+            title: alert.code.clone(),
+            body,
+            status: alert.severity.clone(),
+            due_date: None,
+            entity_id: alert.target.entity_id.clone(),
+            book_id: alert.target.book_id.clone(),
+            act_id: alert.target.act_id.clone(),
+            required_permission,
+        });
+    }
+    for (index, reminder) in reminders.into_iter().enumerate() {
+        let act_id = reminder.params.get("act_id").cloned();
+        let book_id = reminder.params.get("book_id").cloned();
+        let required_permission = if reminder.source_rule.starts_with("privacy.")
+            || reminder.source_rule.contains("dpia")
+            || reminder.source_rule.contains("breach")
+            || reminder.source_rule.contains("transfer")
+        {
+            Permission::PrivacyManage
+        } else {
+            Permission::ActRead
+        };
+        let (title, body) = if required_permission == Permission::ActRead {
+            (
+                reminder.source_rule.clone(),
+                serde_json::to_string(&serde_json::json!({
+                    "due_date": &reminder.due_date,
+                    "severity": &reminder.severity,
+                    "status": &reminder.status,
+                    "source_rule": &reminder.source_rule,
+                    "source_profile": &reminder.source_profile,
+                    "law_refs": &reminder.law_refs,
+                    "action": &reminder.action,
+                    "i18n": &reminder.i18n,
+                }))
+                .map_err(ApiError::from)?,
+            )
+        } else {
+            (
+                reminder.reason.clone(),
+                serde_json::to_string(&reminder).map_err(ApiError::from)?,
+            )
+        };
+        out.push(DashboardSearchActionable {
+            id: format!("reminder:{index}:{}", reminder.source_rule),
+            title,
+            body,
+            status: reminder.status.clone(),
+            due_date: Some(reminder.due_date.clone()),
+            entity_id: Some(reminder.entity_id.clone()),
+            book_id,
+            act_id,
+            required_permission,
+        });
+    }
+    Ok(out)
+}
+
 async fn load_generated_dispatch_evidence_snapshots(
     state: &AppState,
     acts: &HashMap<ActId, Act>,
 ) -> Result<Vec<GeneratedDispatchEvidenceSnapshot>, ApiError> {
     if let Some(store) = &state.store {
-        // wp28: offload the whole read-loop onto the blocking pool as ONE closure so the sync
-        // postgres backend never drives its connector on an async worker (would panic/abort).
-        let act_ids: Vec<ActId> = acts.values().map(|act| act.id).collect();
+        // One metadata scan plus one evidence scan avoids loading PDF bytes and avoids the former
+        // per-act/per-document N+1 query pattern.
+        let act_ids = acts
+            .keys()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
         return store
             .read_blocking_async(move |s| {
+                let mut evidence_by_document =
+                    HashMap::<String, Vec<StoredGeneratedDocumentDispatchEvidence>>::new();
+                for evidence in s.generated_document_dispatch_evidence_all()? {
+                    evidence_by_document
+                        .entry(evidence.document_id.clone())
+                        .or_default()
+                        .push(evidence);
+                }
                 let mut snapshots = Vec::new();
-                for act_id in act_ids {
-                    let docs = s.documents_for_act(act_id)?;
-                    for document in docs.into_iter().filter(|document| {
-                        crate::documents::generated_dispatch_evidence_profile_for_template(
-                            &document.template_id,
+                for metadata in s.document_search_metadata()? {
+                    if act_ids.contains(&metadata.act_id)
+                        && crate::documents::generated_dispatch_evidence_profile_for_template(
+                            &metadata.template_id,
                         )
                         .is_some()
-                    }) {
-                        let evidence = s.generated_document_dispatch_evidence(&document.id)?;
+                    {
+                        let evidence = evidence_by_document
+                            .remove(&metadata.id)
+                            .unwrap_or_default();
+                        let document = StoredDocument {
+                            id: metadata.id,
+                            act_id: metadata.act_id,
+                            template_id: metadata.template_id,
+                            pdf_digest: metadata.pdf_digest,
+                            profile: metadata.profile,
+                            created_at: metadata.created_at,
+                            pdf_bytes: Vec::new(),
+                            template_spec_json: None,
+                            document_layout_json: None,
+                        };
                         snapshots.push(GeneratedDispatchEvidenceSnapshot { document, evidence });
                     }
                 }

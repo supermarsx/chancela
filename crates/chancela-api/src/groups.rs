@@ -513,6 +513,7 @@ pub(crate) async fn archive_group(
     if current.is_archived() {
         return Ok(StatusCode::NO_CONTENT);
     }
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut libraries = state.group_template_libraries.write().await;
     let entities = state.entities.read().await;
     if entities
@@ -613,6 +614,7 @@ pub(crate) async fn assign_entity(
     .await?;
     let groups = state.company_groups.read().await;
     let group = group_for_path(&groups, tenant_id, group_id)?;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut entities = state.entities.write().await;
     let current = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
     let next = assigned_entity(group, current)?;
@@ -664,6 +666,7 @@ pub(crate) async fn remove_entity(
     .await?;
     let groups = state.company_groups.read().await;
     group_for_path(&groups, tenant_id, group_id)?;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut entities = state.entities.write().await;
     let current = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
     if current.tenant_id != tenant_id || current.group_id != Some(group_id) {
@@ -764,6 +767,7 @@ pub(crate) async fn create_template_library(
     }))?;
     let scope = tenant_scope(tenant_id);
     let object = audit_object(group_id, Some(library.id));
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut libraries = state.group_template_libraries.write().await;
     ensure_unique_library_name(&libraries, group_id, None, &library.name)?;
     let mut revisions = state.group_template_library_revisions.write().await;
@@ -846,6 +850,7 @@ pub(crate) async fn patch_template_library(
             "archived groups cannot be edited".to_owned(),
         ));
     }
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut libraries = state.group_template_libraries.write().await;
     let current = library_for_path(&libraries, tenant_id, group_id, library_id)?;
     if current.is_archived() {
@@ -915,6 +920,7 @@ pub(crate) async fn archive_template_library(
             "cannot archive a library in an archived group".to_owned(),
         ));
     }
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut libraries = state.group_template_libraries.write().await;
     let current = library_for_path(&libraries, tenant_id, group_id, library_id)?;
     if current.is_archived() {
@@ -980,6 +986,7 @@ pub(crate) async fn append_template_library_revision(
             "cannot revise an archived template library".to_owned(),
         ));
     }
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut revisions = state.group_template_library_revisions.write().await;
     let previous = current_revision(&revisions, group_id, library_id)
         .ok_or_else(|| ApiError::Conflict("template library has no initial revision".to_owned()))?;

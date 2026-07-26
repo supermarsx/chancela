@@ -49,6 +49,10 @@ chancela-law = { path = "crates/chancela-law" }
 # crates and chancela-api in the DAG (core, ledger, registry → chancela-store → chancela-api);
 # must NOT depend on chancela-api (no cycle). See .orchestration/plans/t30.md §2.
 chancela-store = { path = "crates/chancela-store" }
+# Lightweight backend-neutral full-search engine. It owns normalization/ranking/index contracts
+# only; durable SQLite/Postgres persistence stays in chancela-store and background orchestration
+# stays in chancela-api, preserving the workspace DAG.
+chancela-search = { path = "crates/chancela-search" }
 # Template catalog engine + document/PDF-A generation (t48, Wave C). `chancela-templates` renders
 # records → DocumentModel via minijinja; `chancela-doc` writes DocumentModel → PDF/A-2u over lopdf.
 # The shared DocumentModel/LifecycleStage seam lives in chancela-core so both are truly parallel.
@@ -92,6 +96,7 @@ chancela-scap = { path = "crates/chancela-scap" }
 # Third-party (conservative, declared once so every crate inherits identical versions).
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+unicode-normalization = "0.1"
 bytes = "1"
 futures-core = "0.3"
 sha2 = "0.10"

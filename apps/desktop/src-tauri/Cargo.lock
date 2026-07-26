@@ -1193,6 +1193,7 @@ dependencies = [
  "chancela-pades",
  "chancela-registry",
  "chancela-scap",
+ "chancela-search",
  "chancela-signing",
  "chancela-smartcard",
  "chancela-store",
@@ -1223,6 +1224,7 @@ dependencies = [
  "tokio-rustls",
  "tower-http 0.7.0",
  "tracing",
+ "unicode-normalization",
  "uuid",
  "x509-cert",
  "zeroize",
@@ -1470,6 +1472,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-search"
+version = "26.1.0"
+dependencies = [
+ "serde",
+ "unicode-normalization",
+]
+[[package]]
 name = "chancela-signing"
 version = "26.1.0"
 dependencies = [
@@ -1527,6 +1536,7 @@ dependencies = [
  "chancela-core",
  "chancela-ledger",
  "chancela-registry",
+ "chancela-search",
  "rand_core 0.6.4",
  "rusqlite",
  "serde",

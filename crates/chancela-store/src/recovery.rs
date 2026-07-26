@@ -41,8 +41,8 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 
 use crate::{
-    BackupFile, BackupManifest, DB_FILE, Store, StoreError, Tx, decrypt_backup_envelope, hex,
-    is_encrypted_backup, open_connection, utc_stamp,
+    BackupFile, BackupManifest, DB_FILE, Store, StoreError, StoreOpenOptions, Tx,
+    decrypt_backup_envelope, hex, is_encrypted_backup, open_connection_with_options, utc_stamp,
 };
 
 /// The frozen portable-bundle format tag (a `.zip`); see the module docs and plan §2.4.
@@ -358,6 +358,33 @@ pub struct RestoreOutcome {
     pub chain_verified: bool,
 }
 
+/// Mark every failure after a whole-store durable commit so upper layers reconcile from the new
+/// authority instead of releasing their destructive fence as though nothing was applied.
+#[cfg(any(feature = "postgres", test))]
+fn after_restore_commit<T>(result: Result<T, StoreError>) -> Result<T, StoreError> {
+    result.map_err(|error| match error {
+        already @ StoreError::RestoreCommitted(_) => already,
+        other => StoreError::RestoreCommitted(other.to_string()),
+    })
+}
+
+#[cfg(test)]
+mod committed_restore_tests {
+    use super::*;
+
+    #[test]
+    fn post_commit_failures_are_never_reported_as_precommit_errors() {
+        let result: Result<(), StoreError> = after_restore_commit(Err(StoreError::Io(
+            std::io::Error::other("injected sidecar failure"),
+        )));
+        assert!(matches!(
+            result,
+            Err(StoreError::RestoreCommitted(message))
+                if message.contains("injected sidecar failure")
+        ));
+    }
+}
+
 /// Bounded, secret-free evidence produced by [`Store::restore_preflight`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestorePreflightOutcome {
@@ -413,8 +440,9 @@ pub struct RestorePreflightIsolatedRestoreEvidence {
     pub sidecar_materialized_bytes: u64,
     /// Whether the temp directory was removed and no longer exists.
     pub cleanup_verified: bool,
-    /// SQLCipher-at-rest proof for the temp database. `None` means unknown: preflight opened the
-    /// temp copy with the default store options and did not prove SQLCipher encryption.
+    /// SQLCipher-at-rest proof for the temp database. `Some(true)` means the retained live key
+    /// authenticated the staged copy and its header remained non-plaintext; `None` means the live
+    /// SQLite store was opened without a configured key.
     pub sqlcipher_encryption_verified: Option<bool>,
 }
 
@@ -453,6 +481,23 @@ struct VerifiedRestoreZip<'a> {
     at: OffsetDateTime,
     archive_bytes: &'a [u8],
     sidecars: &'a [PathBuf],
+}
+
+/// Remove a recovery staging directory on every exit path. Restore material can contain legacy
+/// derived search text, so cleanup must be armed immediately after directory creation rather than
+/// relying on a success-only statement at the bottom of the operation.
+struct RestoreStageCleanup(PathBuf);
+
+impl RestoreStageCleanup {
+    fn new(path: PathBuf) -> Self {
+        Self(path)
+    }
+}
+
+impl Drop for RestoreStageCleanup {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 // =================================================================================================
@@ -912,7 +957,14 @@ impl Store {
             ));
         }
 
-        match verify_restore_preflight_zip(archive, data_dir, encrypted, &archive_bytes) {
+        let sqlite_open_options = self.sqlite_open_options()?;
+        match verify_restore_preflight_zip(
+            archive,
+            data_dir,
+            encrypted,
+            &archive_bytes,
+            &sqlite_open_options,
+        ) {
             Ok(outcome) => Ok(outcome),
             Err(StoreError::BadBackup(msg)) => Ok(restore_preflight_failure(
                 archive,
@@ -1096,29 +1148,49 @@ impl Store {
         }
 
         // Extract the snapshot db and verify its ledger verifies Ok BEFORE the swap.
+        let sqlite_open_options = self.sqlite_open_options()?;
         let db_bytes = verified_members
             .get(DB_FILE)
             .ok_or_else(|| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?
             .clone();
-        let verify_dir = data_dir.join(format!(".restore-verify-{}", utc_stamp(at)));
-        let _ = std::fs::remove_dir_all(&verify_dir);
+        let restore_nonce = uuid::Uuid::new_v4();
+        let verify_dir =
+            data_dir.join(format!(".restore-verify-{}-{restore_nonce}", utc_stamp(at)));
         std::fs::create_dir_all(&verify_dir)?;
-        std::fs::write(verify_dir.join(DB_FILE), &db_bytes)?;
-        let snapshot_ok = {
-            let verify_store = Store::open(&verify_dir)?;
-            verify_store.load()?.chain_status.is_ok()
-        };
-        let _ = std::fs::remove_dir_all(&verify_dir);
-        if !snapshot_ok {
+        let _verify_cleanup = RestoreStageCleanup::new(verify_dir.clone());
+        let candidate_db = verify_dir.join(DB_FILE);
+        std::fs::write(&candidate_db, &db_bytes)?;
+        let staged_candidate: Result<Option<Vec<u8>>, StoreError> = (|| {
+            let verify_store = Store::open_with_options(&verify_dir, sqlite_open_options.clone())?;
+            let snapshot_ok = verify_store.load()?.chain_status.is_ok();
+            if !snapshot_ok {
+                return Ok(None);
+            }
+            // Search rows are disposable derived state and may contain source text that is no
+            // longer authorized after restore. Fence the staged candidate before the live file
+            // is touched, then compact/checkpoint it so deleted bodies do not survive in free
+            // pages or a detached WAL. Any failure here leaves the live database untouched.
+            verify_store.clear_search_projection()?;
+            {
+                let guard = verify_store.locked_conn()?;
+                guard.execute_batch("VACUUM; PRAGMA wal_checkpoint(TRUNCATE);")?;
+            }
+            drop(verify_store);
+            Ok(Some(std::fs::read(&candidate_db)?))
+        })();
+        let Some(sanitized_db_bytes) = staged_candidate? else {
             return Err(StoreError::BadBackup(
                 "snapshot ledger does not verify — refusing to restore a broken backup".to_owned(),
             ));
-        }
+        };
 
         // Stage sidecar bytes after all archive verification and before touching live state. If
         // this fails, the live DB and sidecars are still untouched.
-        let sidecar_stage = data_dir.join(format!(".restore-sidecars-{}", utc_stamp(at)));
-        let _ = std::fs::remove_dir_all(&sidecar_stage);
+        let sidecar_stage = data_dir.join(format!(
+            ".restore-sidecars-{}-{restore_nonce}",
+            utc_stamp(at)
+        ));
+        let _sidecar_cleanup = RestoreStageCleanup::new(sidecar_stage.clone());
         let staged_roots = stage_backup_sidecars(&sidecar_stage, &verified_members)?;
 
         // Atomic db swap plus sidecar replacement: free the live file, write the verified snapshot,
@@ -1132,11 +1204,10 @@ impl Store {
             let _ = std::fs::remove_file(&db);
             let _ = std::fs::remove_file(data_dir.join(format!("{DB_FILE}-wal")));
             let _ = std::fs::remove_file(data_dir.join(format!("{DB_FILE}-shm")));
-            std::fs::write(&db, &db_bytes)?;
+            std::fs::write(&db, &sanitized_db_bytes)?;
             replace_live_sidecars(data_dir, &sidecar_stage, &staged_roots, sidecars)?;
-            *guard = open_connection(data_dir)?;
+            *guard = open_connection_with_options(data_dir, &sqlite_open_options)?;
         }
-        let _ = std::fs::remove_dir_all(&sidecar_stage);
 
         // Load the restored chain, record the restore (chained), and hand the caller the new ledger.
         let restored = self.load()?;
@@ -1446,38 +1517,42 @@ impl Store {
         // 2. Atomic transactional load (all-or-rollback; re-verifies the ledger head before COMMIT).
         backend.logical_restore(&verified)?;
 
-        // 3. Replace instance sidecars from the verified members, after the DB restore committed.
-        let sidecar_members = crate::pg_backup::sidecar_members(&verified.members);
-        if !sidecar_members.is_empty() || !sidecars.is_empty() {
-            let stage = data_dir.join(format!(".restore-sidecars-{}", utc_stamp(at)));
-            let _ = std::fs::remove_dir_all(&stage);
-            let staged_roots = stage_backup_sidecars(&stage, &sidecar_members)?;
-            replace_live_sidecars(data_dir, &stage, &staged_roots, sidecars)?;
-            let _ = std::fs::remove_dir_all(&stage);
-        }
+        after_restore_commit((|| {
+            // 3. Replace instance sidecars from the verified members, after the DB restore
+            // committed. Every error from this point is explicitly classified as applied.
+            let sidecar_members = crate::pg_backup::sidecar_members(&verified.members);
+            if !sidecar_members.is_empty() || !sidecars.is_empty() {
+                let stage = data_dir.join(format!(".restore-sidecars-{}", utc_stamp(at)));
+                let _ = std::fs::remove_dir_all(&stage);
+                let staged_roots = stage_backup_sidecars(&stage, &sidecar_members)?;
+                replace_live_sidecars(data_dir, &stage, &staged_roots, sidecars)?;
+                let _ = std::fs::remove_dir_all(&stage);
+            }
 
-        // 4. Reload the restored chain, record the restore (chained), and hand back the new ledger.
-        let restored = self.load()?;
-        let mut restored_ledger = restored.ledger;
-        let record = RestoreRecord {
-            actor: actor.to_owned(),
-            at,
-            archive: archive.to_string_lossy().into_owned(),
-            source_instance_id: self.instance_id().ok(),
-            restored_length: restored_ledger.len() as u64,
-            restored_head: restored_ledger.head().map(|h| hex(&h)),
-        };
-        self.append_recovery_event(&mut restored_ledger, RESTORED_EVENT_KIND, actor, &record)?;
+            // 4. Reload the restored chain, record the restore (chained), and hand back the new
+            // ledger. A failure leaves the logical restore committed and retryable.
+            let restored = self.load()?;
+            let mut restored_ledger = restored.ledger;
+            let record = RestoreRecord {
+                actor: actor.to_owned(),
+                at,
+                archive: archive.to_string_lossy().into_owned(),
+                source_instance_id: self.instance_id().ok(),
+                restored_length: restored_ledger.len() as u64,
+                restored_head: restored_ledger.head().map(|h| hex(&h)),
+            };
+            self.append_recovery_event(&mut restored_ledger, RESTORED_EVENT_KIND, actor, &record)?;
 
-        let ledger_length = restored_ledger.len() as u64;
-        let ledger_head = restored_ledger.head().map(|h| hex(&h));
-        *ledger = restored_ledger;
-        Ok(RestoreOutcome {
-            restored_from: archive.to_path_buf(),
-            ledger_length,
-            ledger_head,
-            chain_verified: true,
-        })
+            let ledger_length = restored_ledger.len() as u64;
+            let ledger_head = restored_ledger.head().map(|h| hex(&h));
+            *ledger = restored_ledger;
+            Ok(RestoreOutcome {
+                restored_from: archive.to_path_buf(),
+                ledger_length,
+                ledger_head,
+                chain_verified: true,
+            })
+        })())
     }
 
     // --- internals ------------------------------------------------------------------------------
@@ -2066,6 +2141,9 @@ fn domain_table_names() -> Vec<String> {
         "instrument_signatures",
         "signed_documents",
         "follow_ups",
+        // Derived full-search rows can retain source text after the authoritative row is gone.
+        "search_documents",
+        "search_index_state",
     ]
     .into_iter()
     .map(String::from)
@@ -2087,7 +2165,16 @@ fn clear_domain(tx: &Tx<'_>) -> Result<(), StoreError> {
          DELETE FROM termo_instruments; \
          DELETE FROM instrument_signatures; DELETE FROM signed_documents; \
          DELETE FROM follow_ups;",
-    )
+    )?;
+    clear_search_projection(tx)
+}
+
+/// Clear derived discovery rows whenever authoritative state is wiped, reset, or restored. Search
+/// text is not an archive: retaining it after source deletion would violate the destructive
+/// operation even though the tables are technically rebuildable.
+fn clear_search_projection(tx: &Tx<'_>) -> Result<(), StoreError> {
+    tx.execute_recovery_batch("DELETE FROM search_documents; DELETE FROM search_index_state;")?;
+    tx.put_search_index_state(&crate::search_projection_tombstone())
 }
 
 /// Clear the import isolation namespace.
@@ -2155,6 +2242,7 @@ fn verify_restore_preflight_zip(
     data_dir: &Path,
     encrypted: bool,
     archive_bytes: &[u8],
+    open_options: &StoreOpenOptions,
 ) -> Result<RestorePreflightOutcome, StoreError> {
     let mut findings = Vec::new();
     let mut zip = zip::ZipArchive::new(std::io::Cursor::new(archive_bytes))
@@ -2227,7 +2315,12 @@ fn verify_restore_preflight_zip(
     let db_bytes = verified_members
         .get(DB_FILE)
         .ok_or_else(|| StoreError::BadBackup(format!("archive has no {DB_FILE}")))?;
-    let isolated = materialize_isolated_restore_preflight(data_dir, db_bytes, &verified_members)?;
+    let isolated = materialize_isolated_restore_preflight(
+        data_dir,
+        db_bytes,
+        &verified_members,
+        open_options,
+    )?;
     findings.push(format!(
         "isolated restore materialized {} sidecar root(s) / {} file(s)",
         isolated.sidecar_root_count, isolated.sidecar_materialized_file_count
@@ -2274,6 +2367,7 @@ fn materialize_isolated_restore_preflight(
     data_dir: &Path,
     db_bytes: &[u8],
     verified_members: &BTreeMap<String, Vec<u8>>,
+    open_options: &StoreOpenOptions,
 ) -> Result<RestorePreflightIsolatedRestoreEvidence, StoreError> {
     let temp_dir_name = format!(".restore-preflight-{}", uuid::Uuid::new_v4());
     let verify_dir = data_dir.join(&temp_dir_name);
@@ -2307,10 +2401,15 @@ fn materialize_isolated_restore_preflight(
         evidence.sidecar_materialized_bytes = sidecar_bytes;
 
         {
-            let verify_store = Store::open(&verify_dir).map_err(|e| {
-                StoreError::BadBackup(format!("snapshot database could not be opened: {e}"))
-            })?;
+            let verify_store = Store::open_with_options(&verify_dir, open_options.clone())
+                .map_err(|e| {
+                    StoreError::BadBackup(format!("snapshot database could not be opened: {e}"))
+                })?;
             evidence.db_opened = true;
+            if open_options.encryption_key().is_some() {
+                evidence.sqlcipher_encryption_verified =
+                    Some(!db_bytes.starts_with(b"SQLite format 3"));
+            }
             let loaded = verify_store.load().map_err(|e| {
                 StoreError::BadBackup(format!("snapshot database could not be loaded: {e}"))
             })?;
@@ -2744,7 +2843,7 @@ mod wipe_coverage_tests {
     //! pins the relationship between them, which neither list's own guard can see.
     use super::*;
 
-    /// **Nothing may be destroyed by a wipe that a logical backup would not have carried.**
+    /// **Nothing authoritative may be destroyed by a wipe that a logical backup would not carry.**
     ///
     /// A domain wipe is only acceptable because it is preceded by an export-first archive, so a
     /// table that `clear_domain` deletes but `LOGICAL_BACKUP_TABLES` omits is unrecoverable
@@ -2761,12 +2860,17 @@ mod wipe_coverage_tests {
         let missing: Vec<&String> = wiped
             .iter()
             .filter(|table| !crate::schema::LOGICAL_BACKUP_TABLES.contains(&table.as_str()))
+            .filter(|table| {
+                !crate::schema::INTENTIONALLY_NOT_BACKED_UP
+                    .iter()
+                    .any(|(excluded, _)| *excluded == table.as_str())
+            })
             .collect();
         assert!(
             missing.is_empty(),
             "a wipe deletes {missing:?}, which no logical backup carries — the export-first \
-             archive that makes the wipe acceptable would not contain them. Add each to \
-             schema::LOGICAL_BACKUP_TABLES, or stop wiping it."
+             archive that makes the wipe acceptable would not contain them. Add each authoritative \
+             table to schema::LOGICAL_BACKUP_TABLES, or document a derived-table exemption."
         );
     }
 

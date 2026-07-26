@@ -898,6 +898,7 @@ pub async fn import_into_entity(
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
 
     // Lock order: entities → registry_extracts → ledger.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut entities = state.entities.write().await;
     let entity = entities.get_mut(&eid).ok_or(ApiError::NotFound)?;
 
@@ -1051,6 +1052,7 @@ pub async fn import_from_registry(
 
     // Lock order: entities → registry_extracts → ledger. Both events + both new aggregate rows
     // persist in one transaction, and the read model is committed only after that succeeds.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut entities = state.entities.write().await;
     let mut extracts = state.registry_extracts.write().await;
     {

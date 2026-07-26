@@ -860,6 +860,7 @@ dependencies = [
  "chancela-pades",
  "chancela-registry",
  "chancela-scap",
+ "chancela-search",
  "chancela-signing",
  "chancela-smartcard",
  "chancela-store",
@@ -1177,6 +1178,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-search"
+version = "26.1.0"
+dependencies = [
+ "serde",
+ "unicode-normalization",
+]
+
+[[package]]
 name = "chancela-server"
 version = "26.1.0"
 dependencies = [
@@ -1256,6 +1265,7 @@ dependencies = [
  "chancela-core",
  "chancela-ledger",
  "chancela-registry",
+ "chancela-search",
  "postgres",
  "r2d2",
  "r2d2_postgres",

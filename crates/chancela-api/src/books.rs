@@ -187,6 +187,7 @@ pub async fn create_book(
     )
     .await?;
     let actor = actor.resolve(&req_actor);
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
 
     if !one_shot {
         return create_book_two_phase(
@@ -450,6 +451,7 @@ pub async fn patch_book(
     let actor = actor.resolve("api");
     // entities → books → ledger, matching the global aggregate lock order.
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let book = books.get_mut(&book_id).ok_or(ApiError::NotFound)?;
     let entity = entities
@@ -847,6 +849,7 @@ pub async fn close_book(
 
     // entities → books → ledger (entities read so the family selects the encerramento template).
     let entities = state.entities.read().await;
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
     let book = books.get_mut(&BookId(id)).ok_or(ApiError::NotFound)?;
@@ -1119,6 +1122,7 @@ pub async fn set_legal_hold(
         set_at: OffsetDateTime::now_utc(),
     };
 
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
     let book = books.get_mut(&book_id).ok_or(ApiError::NotFound)?;
@@ -1170,6 +1174,7 @@ pub async fn clear_legal_hold(
         .unwrap_or("system");
     let actor = actor.resolve(req_actor);
 
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut books = state.books.write().await;
     let mut ledger = state.ledger.write().await;
     let book = books.get_mut(&book_id).ok_or(ApiError::NotFound)?;

@@ -42,6 +42,7 @@ chancela-registry = { workspace = true }
 chancela-cae = { workspace = true }
 chancela-law = { workspace = true }
 chancela-store = { workspace = true }
+chancela-search = { workspace = true }
 chancela-templates = { workspace = true }
 chancela-doc = { workspace = true }
 chancela-signing = { workspace = true }
@@ -85,7 +86,7 @@ time = { workspace = true }
 tokio = { workspace = true }
 tower-http = { workspace = true }
 uuid = { workspace = true }
-unicode-normalization = "0.1"
+unicode-normalization = { workspace = true }
 x509-cert = { workspace = true }
 zip = { workspace = true }
 zeroize = "1"
@@ -175,3 +176,7 @@ path = "tests/seed_dataset.rs"
 [[test]]
 name = "termo_pkcs12_signing"
 path = "tests/termo_pkcs12_signing.rs"
+
+[[test]]
+name = "search_source_mutation_guards"
+path = "tests/search_source_mutation_guards.rs"

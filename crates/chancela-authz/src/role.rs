@@ -207,6 +207,7 @@ impl Role {
                 Permission::EntityRead,
                 Permission::BookRead,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::CaeRead,
                 Permission::LawRead,
@@ -260,6 +261,8 @@ impl Role {
                 Permission::SigningConfigure,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
+                Permission::SearchRead,
+                Permission::SearchManage,
                 Permission::LedgerRead,
                 Permission::LedgerRecover,
                 // t27: grandfathered from `ledger.recover`, which this role holds.
@@ -321,6 +324,7 @@ impl Role {
                 // t30: grandfathered from `act.advance`, which this role holds.
                 Permission::ActRevert,
                 Permission::ActArchive,
+                Permission::SearchRead,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -351,6 +355,7 @@ impl Role {
                 Permission::BookRead,
                 Permission::BookExport,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::SettingsRead,
                 Permission::CaeRead,
@@ -373,6 +378,7 @@ impl Role {
                 Permission::EntityRead,
                 Permission::BookRead,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::CaeRead,
                 Permission::LawRead,
             ]
@@ -399,6 +405,7 @@ impl Role {
                 Permission::ActAdvance,
                 // t30: grandfathered from `act.advance`, which this role holds.
                 Permission::ActRevert,
+                Permission::SearchRead,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -445,6 +452,7 @@ impl Role {
                 Permission::ActAdvance,
                 Permission::ActRevert,
                 Permission::ActArchive,
+                Permission::SearchRead,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -480,6 +488,7 @@ impl Role {
                 Permission::ActEdit,
                 Permission::ActAdvance,
                 Permission::ActRevert,
+                Permission::SearchRead,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -511,6 +520,7 @@ impl Role {
                 Permission::BookRead,
                 Permission::LegalHoldManage,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::CaeRead,
                 Permission::LawRead,
@@ -538,6 +548,7 @@ impl Role {
                 Permission::BookExport,
                 Permission::BookImport,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::ActArchive,
                 Permission::DocumentGenerate,
                 Permission::LedgerRead,
@@ -566,6 +577,7 @@ impl Role {
                 Permission::EntityRead,
                 Permission::BookRead,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
                 Permission::ActRevert,
@@ -588,6 +600,7 @@ impl Role {
                 Permission::EntityRead,
                 Permission::BookRead,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
                 Permission::ActRevert,
@@ -765,6 +778,14 @@ pub const T30_ACT_REVERT_GRANDFATHER: &[(Permission, &[Permission])] =
 pub const T50_SIGNING_CONFIGURE_GRANDFATHER: &[(Permission, &[Permission])] =
     &[(Permission::SigningConfigure, &[Permission::SettingsManage])];
 
+/// Parent read grant for the one-time seeded-role `search.read` compatibility migration.
+///
+/// Search was introduced as a cross-domain view over the acts-management workspace. Every current
+/// non-Owner seeded role intended to reach it already held `act.read`; checking the persisted parent
+/// preserves an operator-customized seeded role that deliberately removed act access. Custom role
+/// ids are never touched: their author must opt into the new cross-domain entry point explicitly.
+pub const SEARCH_READ_GRANDFATHER_PARENT: Permission = Permission::ActRead;
+
 /// Grant each child verb in `table` whose parent the role already holds. Returns `true` if the set
 /// changed. Shared engine behind [`grandfather_split_verbs`] (t27) and [`grandfather_act_revert`]
 /// (t30).
@@ -862,6 +883,41 @@ pub fn grandfather_signing_configure(role: &mut Role) -> bool {
 #[must_use]
 pub fn grandfather_signing_configure_catalog(catalog: &mut RoleCatalog) -> bool {
     apply_grandfather_table_catalog(catalog, T50_SIGNING_CONFIGURE_GRANDFATHER)
+}
+
+/// Grant `search.read` to an existing seeded role that still holds its historical `act.read`
+/// parent. Only the new verb is added; names and every other permission remain byte-for-byte
+/// operator-authored. Protected Owner already resolves every verb and is left untouched.
+#[must_use]
+pub fn grandfather_seeded_search_read(role: &mut Role) -> bool {
+    if role.protected
+        || !is_seeded_role(role.id)
+        || role.permission_set.contains(&Permission::SearchRead)
+        || !role
+            .permission_set
+            .contains(&SEARCH_READ_GRANDFATHER_PARENT)
+    {
+        return false;
+    }
+    role.permission_set.insert(Permission::SearchRead)
+}
+
+/// Apply [`grandfather_seeded_search_read`] across a loaded file/store catalog.
+#[must_use]
+pub fn grandfather_seeded_search_read_catalog(catalog: &mut RoleCatalog) -> bool {
+    let ids: Vec<RoleId> = catalog.iter().map(|role| role.id).collect();
+    let mut changed = false;
+    for id in ids {
+        let Some(current) = catalog.get(id) else {
+            continue;
+        };
+        let mut role = current.clone();
+        if grandfather_seeded_search_read(&mut role) {
+            catalog.insert(role);
+            changed = true;
+        }
+    }
+    changed
 }
 
 #[cfg(test)]
@@ -1285,6 +1341,7 @@ mod tests {
                 Permission::ActAdvance,
                 Permission::ActRevert,
                 Permission::ActArchive,
+                Permission::SearchRead,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -1309,6 +1366,7 @@ mod tests {
                 Permission::ActEdit,
                 Permission::ActAdvance,
                 Permission::ActRevert,
+                Permission::SearchRead,
                 Permission::SigningPerform,
                 Permission::DocumentGenerate,
                 Permission::TemplateManage,
@@ -1327,6 +1385,7 @@ mod tests {
                 Permission::BookRead,
                 Permission::LegalHoldManage,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::CaeRead,
                 Permission::LawRead,
@@ -1345,6 +1404,7 @@ mod tests {
                 Permission::BookImport,
                 Permission::ActRead,
                 Permission::ActArchive,
+                Permission::SearchRead,
                 Permission::DocumentGenerate,
                 Permission::LedgerRead,
                 Permission::DataExport,
@@ -1359,6 +1419,7 @@ mod tests {
                 Permission::EntityRead,
                 Permission::BookRead,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
                 Permission::ActRevert,
@@ -1372,6 +1433,7 @@ mod tests {
                 Permission::EntityRead,
                 Permission::BookRead,
                 Permission::ActRead,
+                Permission::SearchRead,
                 Permission::LedgerRead,
                 Permission::ActAdvance,
                 Permission::ActRevert,
@@ -1590,6 +1652,7 @@ mod tests {
             Permission::ActAdvance,
             Permission::ActRevert,
             Permission::ActArchive,
+            Permission::SearchRead,
             Permission::SigningPerform,
             Permission::DocumentGenerate,
             Permission::TemplateManage,
@@ -1606,6 +1669,7 @@ mod tests {
             Permission::EntityRead,
             Permission::BookRead,
             Permission::ActRead,
+            Permission::SearchRead,
             Permission::LedgerRead,
             Permission::ActAdvance,
             Permission::ActRevert,
@@ -1972,6 +2036,49 @@ mod tests {
             legacy.permission_set,
             Role::platform_administrator().permission_set,
             "migration must restore the role's exact pre-t50 reach — no more, no less"
+        );
+    }
+
+    #[test]
+    fn search_read_grandfather_targets_seeded_parent_holders_without_resetting_customizations() {
+        let mut reader = Role::reader();
+        reader.permission_set.remove(&Permission::SearchRead);
+        reader.name = "Reader renamed by operator".to_owned();
+        reader.permission_set.insert(Permission::DataExport);
+        let before_without_search = reader.permission_set.clone();
+        assert!(grandfather_seeded_search_read(&mut reader));
+        assert_eq!(reader.name, "Reader renamed by operator");
+        assert_eq!(
+            reader
+                .permission_set
+                .difference(&before_without_search)
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![Permission::SearchRead],
+            "migration may add only the new compatibility verb"
+        );
+
+        let mut narrowed = Role::guest();
+        narrowed.permission_set.remove(&Permission::SearchRead);
+        narrowed.permission_set.remove(&Permission::ActRead);
+        let narrowed_before = narrowed.clone();
+        assert!(!grandfather_seeded_search_read(&mut narrowed));
+        assert_eq!(
+            narrowed, narrowed_before,
+            "a customized seeded role without the parent must stay narrowed"
+        );
+
+        let mut custom = Role {
+            id: RoleId(Uuid::new_v4()),
+            name: "Custom act reader".to_owned(),
+            permission_set: [Permission::ActRead].into_iter().collect(),
+            protected: false,
+        };
+        let custom_before = custom.clone();
+        assert!(!grandfather_seeded_search_read(&mut custom));
+        assert_eq!(
+            custom, custom_before,
+            "arbitrary custom roles must never receive implicit cross-domain authority"
         );
     }
 }

@@ -190,6 +190,7 @@ async fn run() {
     // recommended production posture visible.
     let store_is_plaintext = state.store.is_some() && !state.database_encryption_configured;
 
+    let shutdown_state = state.clone();
     let app = chancela_api::app(state, web_dist.clone());
 
     let listener = TcpListener::bind(addr)
@@ -232,6 +233,7 @@ async fn run() {
     .await
     .expect("server error");
 
+    chancela_api::shutdown_search_service(&shutdown_state).await;
     tracing::info!("chancela-server shut down cleanly");
 }
 

@@ -97,9 +97,16 @@ fn reconcile_documents(
     store: &Store,
     table: DocumentTable,
     rows: Vec<(String, String)>,
+    metadata: Option<(&str, &str)>,
 ) -> Result<(), StoreError> {
     let existing = existing_ids(store, table)?;
-    store.persist(|tx| reconcile_documents_tx(tx, table, &rows, &existing))
+    store.persist(|tx| {
+        reconcile_documents_tx(tx, table, &rows, &existing)?;
+        if let Some((key, value)) = metadata {
+            tx.put_metadata_value(key, value)?;
+        }
+        Ok(())
+    })
 }
 
 /// Async reconcile for the request-path write-through (wp27-e9): offload the blocking store
@@ -129,17 +136,46 @@ fn persist_seed(
     store: &Store,
     table: DocumentTable,
     rows: Vec<(String, String)>,
-) -> Result<(), StoreError> {
-    match reconcile_documents(store, table, rows) {
-        Ok(()) => Ok(()),
+    metadata: Option<(&str, &str)>,
+) -> Result<bool, StoreError> {
+    match reconcile_documents(store, table, rows, metadata) {
+        Ok(()) => Ok(true),
         Err(StoreError::NotLeader) => {
             eprintln!(
                 "wp16 P3b: this node is not the cluster writer-leader; skipping the one-time sidecar \
                  seed/migration (the leader seeds it and this node adopts it via the change-feed)"
             );
-            Ok(())
+            Ok(false)
         }
         Err(e) => Err(e),
+    }
+}
+
+/// Publish a migrated role candidate only when its roles-and-marker transaction committed.
+///
+/// A follower's `NotLeader` is represented by `Ok(false)` by [`persist_seed`]. In that case, and
+/// on every other persistence error, restore the catalog loaded from the authoritative store before
+/// the caller installs it into `AppState`. This prevents an uncommitted compatibility grant from
+/// becoming locally effective during a failover window.
+fn persist_role_catalog_candidate(
+    candidate: &mut RoleCatalog,
+    authoritative: &RoleCatalog,
+    needs_persist: bool,
+    persist: impl FnOnce(&RoleCatalog) -> Result<bool, StoreError>,
+) -> Result<bool, StoreError> {
+    if !needs_persist {
+        return Ok(true);
+    }
+    match persist(candidate) {
+        Ok(true) => Ok(true),
+        Ok(false) => {
+            candidate.clone_from(authoritative);
+            Ok(false)
+        }
+        Err(error) => {
+            candidate.clone_from(authoritative);
+            Err(error)
+        }
     }
 }
 
@@ -269,6 +305,8 @@ pub(crate) async fn persist_delegations(state: &AppState) -> Result<(), ApiError
 
 /// Persist the settings singleton to the active source (Postgres `settings` row, else
 /// `settings.json`). Takes the already-validated document the handler is about to commit.
+#[cfg(test)]
+#[allow(dead_code)]
 pub(crate) async fn persist_settings(
     state: &AppState,
     settings: &Settings,
@@ -367,6 +405,7 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
         delegations,
         settings,
     } = load_sidecars(store)?;
+    let authoritative_roles = roles.clone();
 
     // Seed the default role catalog (Owner forced canonical/locked) and bring legacy users forward
     // with the idempotent, anti-lockout role migration — persisting each back to the DB only when it
@@ -379,11 +418,9 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
     // t27: grandfather the verb split onto the DB catalog too, so a Postgres deployment's
     // operator-authored roles (and a pre-t27 seeded Platform Administrator, which
     // `ensure_seeded_defaults` never rewrites) keep their privacy/retention reach after the split.
-    // Guarded by a per-node marker sidecar kept DISTINCT from the file catalog's marker
-    // (`ROLE_MIGRATIONS_STORE_FILE`) so the file seam — which reconciles the soon-discarded
-    // file-derived catalog on a Postgres boot — never pre-burns this guard. The marker is per-node;
-    // a shared-DB marker (a store `meta` KV write) is the multi-node follow-up. The reconcile is
-    // additive and anti-lockout, so an extra pass can only ever grant reach, never strip it.
+    // Older migrations retain their per-node marker sidecar. The seeded SearchRead compatibility
+    // grant additionally uses a shared database marker below: authorization must not be widened
+    // again merely because a fresh node joins after an operator intentionally removes that grant.
     let store_marker_path = state
         .data_dir()
         .map(|dir| dir.join(crate::roles::ROLE_MIGRATIONS_STORE_FILE));
@@ -401,13 +438,55 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
     // from t27's and t30's) so a Postgres deployment already migrated past them still picks it up.
     let signing_configure_migration =
         crate::roles::reconcile_signing_configure_grandfather(&mut roles, &mut store_migrations);
+    let shared_search_read_complete = store
+        .metadata_value(crate::roles::SEARCH_READ_SEEDED_GRANDFATHER_STORE_META_KEY)?
+        .is_some();
+    if shared_search_read_complete {
+        store_migrations.mark(crate::roles::SEARCH_READ_SEEDED_GRANDFATHER_MIGRATION);
+    }
+    // A follower never applies an uncommitted authorization migration to its live catalog. The
+    // leader commits roles and the shared marker atomically; followers adopt both via reload.
+    let search_read_migration = if shared_search_read_complete || store.cluster_is_leader() {
+        crate::roles::reconcile_seeded_search_read_grandfather(&mut roles, &mut store_migrations)
+    } else {
+        crate::roles::RoleMigrationOutcome::default()
+    };
+    let shared_search_marker = (!shared_search_read_complete && store.cluster_is_leader())
+        .then_some((
+            crate::roles::SEARCH_READ_SEEDED_GRANDFATHER_STORE_META_KEY,
+            "complete",
+        ));
     let catalog_changed = migration.catalog_changed
         || revert_migration.catalog_changed
-        || signing_configure_migration.catalog_changed;
+        || signing_configure_migration.catalog_changed
+        || search_read_migration.catalog_changed;
     let marker_changed = migration.marker_changed
         || revert_migration.marker_changed
-        || signing_configure_migration.marker_changed;
+        || signing_configure_migration.marker_changed
+        || search_read_migration.marker_changed;
+    let needs_catalog_persist =
+        seeded || retired_any || catalog_changed || shared_search_marker.is_some();
+    let catalog_persisted = persist_role_catalog_candidate(
+        &mut roles,
+        &authoritative_roles,
+        needs_catalog_persist,
+        |roles| {
+            let rows = roles
+                .iter()
+                .filter_map(|role| {
+                    serde_json::to_string(role)
+                        .ok()
+                        .map(|json| (role.id.0.to_string(), json))
+                })
+                .collect();
+            persist_seed(store, DocumentTable::Roles, rows, shared_search_marker)
+        },
+    )?;
+    // Never burn a store-catalog marker before the corresponding catalog transaction commits.
+    // A follower that could not write keeps the marker absent, so it can safely retry after
+    // promotion instead of permanently skipping the compatibility grant.
     if marker_changed
+        && catalog_persisted
         && let Some(path) = store_marker_path.as_deref()
         && let Err(e) = crate::roles::write_role_migration_state_atomic(path, &store_migrations)
     {
@@ -415,17 +494,6 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
             "warning: failed to record role migrations to {} ({e})",
             path.display()
         );
-    }
-    if seeded || retired_any || catalog_changed {
-        let rows = roles
-            .iter()
-            .filter_map(|role| {
-                serde_json::to_string(role)
-                    .ok()
-                    .map(|json| (role.id.0.to_string(), json))
-            })
-            .collect();
-        persist_seed(store, DocumentTable::Roles, rows)?;
     }
     // t87 runs in the same pass and before the anti-lockout default, so a user whose only assignment
     // named a retired role is moved onto the successor rather than looking unassigned.
@@ -439,7 +507,7 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
                     .map(|json| (user.id.0.to_string(), json))
             })
             .collect();
-        persist_seed(store, DocumentTable::Users, rows)?;
+        let _ = persist_seed(store, DocumentTable::Users, rows, None)?;
     }
 
     state.users = Arc::new(RwLock::new(users));
@@ -460,32 +528,57 @@ pub(crate) fn hydrate_from_store(state: &mut AppState, store: &Store) -> Result<
 /// blocking pool so a stall never blocks a runtime worker; a read error keeps the prior in-memory
 /// sidecars (reads stay available and lag is tolerated) rather than clearing them.
 #[cfg(feature = "postgres")]
-pub(crate) async fn reload_into_state(state: &AppState, store: &Store) {
+pub(crate) async fn reload_into_state_strict(
+    state: &AppState,
+    store: &Store,
+) -> Result<(), ApiError> {
+    // Serialize the authoritative DB snapshot and settings publication against every local
+    // settings coordinator. Taking the gate before the read prevents a follower tick from loading
+    // an old row, waiting for a local commit, and then overwriting the freshly-published settings.
+    let _settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    state
+        .settings_store_commit_tracker
+        .wait_until_settled()
+        .await;
+    reload_into_state_strict_with_settings_gate_held(state, store).await
+}
+
+/// Reload DB-backed sidecars while the caller already owns `settings_update_gate`.
+///
+/// Whole-store restore holds that gate across the durable swap and authoritative publication, so
+/// reacquiring it here would deadlock. All other callers use [`reload_into_state_strict`].
+#[cfg(feature = "postgres")]
+pub(crate) async fn reload_into_state_strict_with_settings_gate_held(
+    state: &AppState,
+    store: &Store,
+) -> Result<(), ApiError> {
     let store = store.clone();
-    let loaded = tokio::task::spawn_blocking(move || load_sidecars(&store)).await;
-    let loaded = match loaded {
-        Ok(Ok(loaded)) => loaded,
-        Ok(Err(e)) => {
-            eprintln!(
-                "cluster: sidecar reload from DB failed ({e}); keeping prior in-memory copies"
-            );
-            return;
-        }
-        Err(e) => {
-            eprintln!("cluster: sidecar reload task panicked ({e})");
-            return;
-        }
-    };
+    let loaded = tokio::task::spawn_blocking(move || load_sidecars(&store))
+        .await
+        .map_err(|error| ApiError::Internal(format!("sidecar reload task failed: {error}")))?
+        .map_err(|error| ApiError::Internal(format!("sidecar reload from DB failed: {error}")))?;
+    let _source_mutation = crate::search::begin_source_mutation(state).await;
     *state.users.write().await = loaded.users;
     *state.roles.write().await = loaded.roles;
     *state.delegations.write().await = loaded.delegations;
     *state.settings.write().await = loaded.settings;
+    drop(_source_mutation);
     // Refresh the encrypted provider-credential records (ciphertext only; no decryption here). The DB
     // read runs on the blocking pool so the synchronous `postgres` query never executes on a runtime
     // worker thread; `reload_from_db` handles its own read errors (failing that store closed).
     let credentials = state.provider_credentials.clone();
-    if let Err(e) = tokio::task::spawn_blocking(move || credentials.reload_from_db()).await {
-        eprintln!("cluster: provider-credential reload task panicked ({e})");
+    tokio::task::spawn_blocking(move || credentials.reload_from_db())
+        .await
+        .map_err(|error| {
+            ApiError::Internal(format!("provider-credential reload task failed: {error}"))
+        })?;
+    Ok(())
+}
+
+#[cfg(feature = "postgres")]
+pub(crate) async fn reload_into_state(state: &AppState, store: &Store) {
+    if let Err(error) = reload_into_state_strict(state, store).await {
+        eprintln!("cluster: {error:?}; keeping prior in-memory sidecar copies");
     }
 }
 
@@ -536,6 +629,169 @@ mod tests {
         ] {
             let _copy = table; // Copy + used, so an added variant forces this array to be updated.
         }
+    }
+
+    #[test]
+    fn rejected_role_migration_never_publishes_local_grants_rows_or_marker() {
+        use chancela_authz::{Permission, RoleId};
+
+        let dir =
+            std::env::temp_dir().join(format!("chancela-role-failover-seam-{}", Uuid::new_v4()));
+        let store = Store::open(&dir).expect("open sqlite fixture store");
+        let mut reader = Role::reader();
+        reader.permission_set.remove(&Permission::SearchRead);
+        let custom = Role {
+            id: RoleId(Uuid::new_v4()),
+            name: "Narrow custom reader".to_owned(),
+            permission_set: [Permission::ActRead].into_iter().collect(),
+            protected: false,
+        };
+        let authoritative: RoleCatalog = [reader.clone(), custom.clone()].into_iter().collect();
+        let reader_id = reader.id.0.to_string();
+        let custom_id = custom.id.0.to_string();
+        let reader_json = serde_json::to_string(&reader).unwrap();
+        let custom_json = serde_json::to_string(&custom).unwrap();
+        store
+            .persist(|tx| {
+                tx.upsert_role(&reader_id, &reader_json)?;
+                tx.upsert_role(&custom_id, &custom_json)
+            })
+            .expect("seed authoritative roles");
+
+        let mut candidate = authoritative.clone();
+        let mut widened_reader = reader.clone();
+        widened_reader.permission_set.insert(Permission::SearchRead);
+        candidate.insert(widened_reader);
+        let persisted =
+            persist_role_catalog_candidate(&mut candidate, &authoritative, true, |_candidate| {
+                Ok(false)
+            })
+            .expect("NotLeader seam is non-fatal");
+
+        assert!(!persisted);
+        assert_eq!(
+            candidate, authoritative,
+            "a rejected candidate must not become the node's effective role catalog"
+        );
+        let stored: HashMap<_, _> = store.roles().unwrap().into_iter().collect();
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored.get(&reader_id), Some(&reader_json));
+        assert_eq!(stored.get(&custom_id), Some(&custom_json));
+        assert_eq!(
+            store
+                .metadata_value(crate::roles::SEARCH_READ_SEEDED_GRANDFATHER_STORE_META_KEY)
+                .unwrap(),
+            None,
+            "the shared completion marker belongs to the same successful transaction as the rows"
+        );
+
+        let mut error_candidate = candidate.clone();
+        error_candidate.insert({
+            let mut role = reader;
+            role.permission_set.insert(Permission::SearchRead);
+            role
+        });
+        let error = persist_role_catalog_candidate(
+            &mut error_candidate,
+            &authoritative,
+            true,
+            |_candidate| {
+                Err(StoreError::Io(std::io::Error::other(
+                    "injected migration failure",
+                )))
+            },
+        )
+        .expect_err("ordinary persistence failures remain fatal");
+        assert!(matches!(error, StoreError::Io(_)));
+        assert_eq!(error_candidate, authoritative);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn store_search_read_marker_is_shared_and_preserves_later_role_narrowing() {
+        use chancela_authz::{Permission, RoleId};
+
+        let dir =
+            std::env::temp_dir().join(format!("chancela-search-role-marker-{}", Uuid::new_v4()));
+        let store = Store::open(&dir).expect("open sqlite fixture store");
+        let mut reader = Role::reader();
+        reader.permission_set.remove(&Permission::SearchRead);
+        let custom = Role {
+            id: RoleId(Uuid::new_v4()),
+            name: "Custom act reader".to_owned(),
+            permission_set: [Permission::ActRead].into_iter().collect(),
+            protected: false,
+        };
+        let reader_id = reader.id.0.to_string();
+        let custom_id = custom.id.0.to_string();
+        let reader_json = serde_json::to_string(&reader).unwrap();
+        let custom_json = serde_json::to_string(&custom).unwrap();
+        store
+            .persist(|tx| {
+                tx.upsert_role(&reader_id, &reader_json)?;
+                tx.upsert_role(&custom_id, &custom_json)
+            })
+            .expect("seed legacy role catalog");
+
+        let mut first_node = AppState::default();
+        hydrate_from_store(&mut first_node, &store).expect("first-node hydration migrates");
+        assert!(
+            first_node
+                .roles
+                .blocking_read()
+                .get(reader.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SearchRead)
+        );
+        assert!(
+            !first_node
+                .roles
+                .blocking_read()
+                .get(custom.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SearchRead),
+            "arbitrary custom roles are never migrated"
+        );
+        assert_eq!(
+            store
+                .metadata_value(crate::roles::SEARCH_READ_SEEDED_GRANDFATHER_STORE_META_KEY)
+                .unwrap()
+                .as_deref(),
+            Some("complete")
+        );
+
+        // Simulate an operator deliberately removing the compatibility grant after migration.
+        let mut narrowed: Role = store
+            .roles()
+            .unwrap()
+            .into_iter()
+            .find(|(id, _)| id == &reader_id)
+            .and_then(|(_, json)| serde_json::from_str(&json).ok())
+            .expect("stored reader");
+        narrowed.permission_set.remove(&Permission::SearchRead);
+        let narrowed_json = serde_json::to_string(&narrowed).unwrap();
+        store
+            .persist(|tx| tx.upsert_role(&reader_id, &narrowed_json))
+            .expect("persist operator narrowing");
+
+        // A fresh node has no local marker file. The shared DB marker must still prevent a regrant.
+        let mut replacement_node = AppState::default();
+        hydrate_from_store(&mut replacement_node, &store).expect("replacement-node hydration");
+        assert!(
+            !replacement_node
+                .roles
+                .blocking_read()
+                .get(reader.id)
+                .unwrap()
+                .permission_set
+                .contains(&Permission::SearchRead),
+            "shared marker must preserve the operator's later removal across node replacement"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
