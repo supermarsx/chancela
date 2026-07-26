@@ -767,6 +767,31 @@ a:focus-visible {
   cursor: not-allowed;
 }
 
+.date-input {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  width: 100%;
+}
+
+.date-input > .control {
+  min-width: 0;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.date-input > .tooltip {
+  flex: 0 0 auto;
+}
+
+.date-input__today {
+  height: 100%;
+  min-width: 2.6rem;
+  border-start-start-radius: 0;
+  border-end-start-radius: 0;
+  border-inline-start: 0;
+}
+
 .control--textarea {
   resize: vertical;
   font-family: var(--font-body);

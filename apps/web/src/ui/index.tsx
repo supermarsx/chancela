@@ -4,7 +4,7 @@
  * dark-green, light/dark via `prefers-color-scheme`). Kept deliberately small so the
  * feature pages stay readable.
  */
-import { createContext, useContext, useId } from 'react';
+import { createContext, useContext, useId, useRef } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -15,6 +15,9 @@ import type {
 import { useT } from '../i18n';
 import { ApiError } from '../api/client';
 import { FieldHelp } from './FieldHelp';
+import { useDateInputT } from './dateInputStrings';
+import { Calendar } from './icons';
+import { IconButton } from './Tooltip';
 
 // Presentational primitives kept in their own files (they carry a little local state or
 // a router dependency) but surfaced through this barrel so features import from one place.
@@ -156,7 +159,71 @@ export function Field({ label, htmlFor, hint, error, help, children }: FieldProp
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   const describedBy = useDescribedBy(props['aria-describedby']);
-  return <input className="control" {...props} aria-describedby={describedBy} />;
+  const { className, type, ...inputProps } = props;
+  const controlClassName = `control ${className ?? ''}`.trim();
+
+  if (type === 'date') {
+    return (
+      <DateInput {...inputProps} className={controlClassName} aria-describedby={describedBy} />
+    );
+  }
+
+  return (
+    <input
+      className={controlClassName}
+      type={type}
+      {...inputProps}
+      aria-describedby={describedBy}
+    />
+  );
+}
+
+/**
+ * Date-only enhancement kept in a child so ordinary text/number inputs do not subscribe to the
+ * active locale or allocate a ref. The public `Input` API remains a native input-attribute shape.
+ */
+function DateInput(props: InputHTMLAttributes<HTMLInputElement>) {
+  const dateT = useDateInputT();
+  const dateInput = useRef<HTMLInputElement>(null);
+
+  // A civil date must be built from local calendar parts. `toISOString()` would silently choose
+  // yesterday for users west of UTC during part of their day.
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+    now.getDate(),
+  ).padStart(2, '0')}`;
+  const outsideBounds =
+    (typeof props.min === 'string' && today < props.min) ||
+    (typeof props.max === 'string' && today > props.max);
+  const todayDisabled = props.disabled || props.readOnly || outsideBounds;
+
+  function chooseToday() {
+    const input = dateInput.current;
+    if (!input || todayDisabled) return;
+
+    // Use the native value setter before dispatching `input`. React tracks controlled inputs'
+    // DOM values; assigning `input.value` directly can update that tracker before React sees the
+    // event and leave the caller's `onChange` silent.
+    const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    valueSetter?.call(input, today);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.focus();
+  }
+
+  return (
+    <span className="date-input">
+      <input ref={dateInput} {...props} type="date" />
+      <IconButton
+        type="button"
+        className="date-input__today"
+        label={dateT('dateInput.today')}
+        icon={<Calendar />}
+        placement="top"
+        disabled={todayDisabled}
+        onClick={chooseToday}
+      />
+    </span>
+  );
 }
 
 export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
