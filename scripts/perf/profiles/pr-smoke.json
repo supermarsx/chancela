@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "name": "pr-smoke",
+  "proof_eligible": false,
   "seed": 20260725,
   "dataset": {
     "users": 4,

@@ -1,0 +1,4 @@
+self-hosted-runner:
+  labels:
+    - chancela-capacity
+    - cpu-12-plus

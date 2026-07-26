@@ -59,7 +59,7 @@ on:
   workflow_dispatch:
     inputs:
       profile:
-        description: Exact-volume profile. pr-smoke is not capacity proof.
+        description: Exact-volume profile. Capacity/soak use the committed policy; pr-smoke is non-proof.
         required: true
         type: choice
         options:
@@ -67,11 +67,6 @@ on:
           - soak
           - pr-smoke
         default: capacity
-      slo_path:
-        description: Optional reviewed SLO JSON path in this checkout. Blank means not_configured, never pass.
-        required: false
-        type: string
-        default: ""
       cryptographic_signatures:
         description: Opt-in count of real local PKCS#12 signatures (0 disables; manual runs only).
         required: false
@@ -156,11 +151,19 @@ jobs:
           && 'Scheduled exact capacity run'
           || format('Manual {0} run', inputs.profile) }}
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - chancela-capacity
+      - cpu-12-plus
     timeout-minutes: 360
     env:
       PERF_PROFILE: ${{ github.event_name == 'schedule' && 'capacity' || inputs.profile }}
-      PERF_SLO_PATH: ${{ github.event_name == 'workflow_dispatch' && inputs.slo_path || '' }}
+      PERF_SLO_PATH: >-
+        ${{ (github.event_name == 'schedule' || inputs.profile != 'pr-smoke')
+            && 'scripts/perf/slo.capacity.json'
+            || '' }}
       CRYPTO_COUNT: ${{ github.event_name == 'workflow_dispatch' && inputs.cryptographic_signatures || 0 }}
       CHANCELA_PERF_PASSWORD: Perf-Only-Password-2026!
       CHANCELA_PERF_PKCS12_PASSPHRASE: Ephemeral-Perf-PKCS12-2026!

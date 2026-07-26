@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "name": "capacity",
+  "proof_eligible": true,
   "seed": 20260725,
   "dataset": {
     "users": 15000,

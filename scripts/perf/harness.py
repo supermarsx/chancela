@@ -101,6 +101,8 @@ DURATION_BUDGET_SECONDS = {
 }
 DEFAULT_PASSWORD = "Perf-Only-Password-2026!"
 USER_NAMESPACE = uuid.UUID("7b0fb943-83ff-4e56-a670-0fd19fb46ee5")
+GITHUB_MAIN_REF = "refs/heads/main"
+GIT_SHA_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 class HarnessError(RuntimeError):
@@ -131,6 +133,10 @@ def write_json(path: pathlib.Path, value: Any) -> None:
 def validate_profile(profile: dict[str, Any]) -> None:
     if profile.get("schema_version") != SCHEMA_VERSION:
         raise HarnessError(f"profile schema_version must be {SCHEMA_VERSION}")
+    if not isinstance(profile.get("proof_eligible"), bool):
+        raise HarnessError("profile.proof_eligible must be a boolean")
+    if profile.get("name") == "pr-smoke" and profile["proof_eligible"]:
+        raise HarnessError("the pr-smoke profile must not be proof eligible")
     dataset = profile.get("dataset")
     if not isinstance(dataset, dict):
         raise HarnessError("profile.dataset must be an object")
@@ -184,6 +190,120 @@ def validate_profile(profile: dict[str, Any]) -> None:
         raise HarnessError("workload weights must be non-negative integers")
     if sum(weights.values()) <= 0:
         raise HarnessError("at least one workload weight must be positive")
+
+
+def _git_output(*arguments: str) -> str | None:
+    try:
+        completed = subprocess.run(
+            ["git", *arguments],
+            cwd=pathlib.Path(__file__).resolve().parents[2],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if completed.returncode != 0:
+        return None
+    return completed.stdout.strip()
+
+
+def valid_git_sha(value: Any) -> bool:
+    return isinstance(value, str) and GIT_SHA_PATTERN.fullmatch(value) is not None
+
+
+def capture_source_context() -> dict[str, Any]:
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+        ref = os.environ.get("GITHUB_REF") or None
+        commit_sha = os.environ.get("GITHUB_SHA") or None
+        return {
+            "kind": "github_actions",
+            "proof_eligible": ref == GITHUB_MAIN_REF and valid_git_sha(commit_sha),
+            "ref": ref,
+            "commit_sha": commit_sha,
+            "repository": os.environ.get("GITHUB_REPOSITORY") or None,
+            "event_name": os.environ.get("GITHUB_EVENT_NAME") or None,
+            "run_id": os.environ.get("GITHUB_RUN_ID") or None,
+            "run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT") or None,
+            "working_tree_dirty": None,
+            "working_tree_status_entries": None,
+        }
+
+    commit_sha = _git_output("rev-parse", "HEAD")
+    ref = _git_output("rev-parse", "--abbrev-ref", "HEAD")
+    status = _git_output("status", "--short")
+    status_entries = None if status is None else len(status.splitlines())
+    working_tree_dirty = None if status_entries is None else status_entries > 0
+    return {
+        "kind": "local",
+        "proof_eligible": valid_git_sha(commit_sha) and working_tree_dirty is False,
+        "ref": ref,
+        "commit_sha": commit_sha,
+        "repository": None,
+        "event_name": None,
+        "run_id": None,
+        "run_attempt": None,
+        "working_tree_dirty": working_tree_dirty,
+        "working_tree_status_entries": status_entries,
+    }
+
+
+def proof_context_blockers(
+    profile: dict[str, Any],
+    source_context: dict[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+    if profile.get("name") == "pr-smoke" or profile.get("proof_eligible") is not True:
+        blockers.append(
+            f"Profile {profile.get('name', '<unknown>')} is evidence-only and is not "
+            "eligible for capacity proof."
+        )
+    if (
+        source_context.get("kind") == "github_actions"
+        and source_context.get("ref") != GITHUB_MAIN_REF
+    ):
+        blockers.append(
+            "GitHub Actions capacity proof requires GITHUB_REF "
+            f"{GITHUB_MAIN_REF}; observed {source_context.get('ref')!r}."
+        )
+    if not valid_git_sha(source_context.get("commit_sha")):
+        blockers.append(
+            "Capacity proof requires a recorded 40-hex Git commit SHA; observed "
+            f"{source_context.get('commit_sha')!r}."
+        )
+    if source_context.get("kind") == "local":
+        dirty = source_context.get("working_tree_dirty")
+        if dirty is not False:
+            blockers.append(
+                "Local capacity proof requires a known-clean Git working tree; "
+                f"working_tree_dirty is {dirty!r}."
+            )
+    elif source_context.get("kind") != "github_actions":
+        blockers.append(
+            "Capacity proof requires a recognized local or GitHub Actions source context."
+        )
+    return blockers
+
+
+def add_proof_blockers(
+    slo_report: dict[str, Any],
+    blockers: Iterable[str],
+) -> None:
+    existing = slo_report.setdefault("proof_blockers", [])
+    has_blockers = False
+    for blocker in blockers:
+        has_blockers = True
+        if blocker not in existing:
+            existing.append(blocker)
+    if not has_blockers:
+        return
+    slo_report["proof_ready"] = False
+    if slo_report["assessment"] == "passed":
+        slo_report["assessment"] = "not_configured"
+        slo_report["message"] = (
+            "Measurements completed, but proof prerequisites are unavailable."
+        )
 
 
 def _validate_object(
@@ -1980,11 +2100,18 @@ def markdown_report(report: dict[str, Any]) -> str:
     resources = report["resources"]
     topology = report["topology"]
     duration_budget = report["duration_budget"]
+    source = report["source"]
     lines = [
         "# Chancela performance evidence",
         "",
         f"- Generated: `{report['generated_at']}`",
         f"- Profile: `{report['profile']}`",
+        f"- Profile proof eligible: `{report['profile_proof_eligible']}`",
+        f"- Source kind: `{source.get('kind')}`",
+        f"- Source ref: `{source.get('ref')}`",
+        f"- Source commit: `{source.get('commit_sha')}`",
+        f"- Source proof eligible: `{source.get('proof_eligible')}`",
+        f"- Local working tree dirty: `{source.get('working_tree_dirty')}`",
         f"- Workload mode: `{workload['mode']}`",
         f"- SLO assessment: `{report['slo']['assessment']}`",
         f"- Proof ready: `{report['slo'].get('proof_ready', False)}`",
@@ -2213,11 +2340,17 @@ def write_failure_report(
     resources: dict[str, Any] | None = None,
     topology: dict[str, Any] | None = None,
     duration_budget: dict[str, Any] | None = None,
+    source_context: dict[str, Any] | None = None,
 ) -> None:
+    source_context = source_context or capture_source_context()
+    proof_blockers = proof_context_blockers(profile, source_context)
+    proof_blockers.append("Harness stopped before workload completion.")
     failure = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": utc_now(),
         "profile": profile["name"],
+        "profile_proof_eligible": profile["proof_eligible"],
+        "source": source_context,
         "base_url": args.base_url,
         "dataset": manifest,
         "dataset_validation": validation,
@@ -2235,7 +2368,7 @@ def write_failure_report(
             "configured_thresholds": 0,
             "checks": [],
             "proof_ready": False,
-            "proof_blockers": ["Harness stopped before workload completion."],
+            "proof_blockers": proof_blockers,
             "message": "Harness stopped before workload completion.",
         },
     }
@@ -2243,6 +2376,9 @@ def write_failure_report(
     (args.report_dir / "report.md").write_text(
         "# Chancela performance evidence\n\n"
         f"- Profile: `{profile['name']}`\n"
+        f"- Profile proof eligible: `{profile['proof_eligible']}`\n"
+        f"- Source kind: `{source_context.get('kind')}`\n"
+        f"- Source ref: `{source_context.get('ref')}`\n"
         "- Result: `INCOMPLETE`\n"
         f"- Fatal error: `{type(error).__name__}: {error}`\n\n"
         "An incomplete run is not capacity proof.\n",
@@ -2275,6 +2411,7 @@ def budget_command(args: argparse.Namespace) -> int:
 def run_command(args: argparse.Namespace) -> int:
     profile = read_json(args.profile)
     validate_profile(profile)
+    source_context = capture_source_context()
     validation = validate_dataset(args.dataset_dir)
     manifest = read_json(args.dataset_dir / "manifest.json")
     password = os.environ.get("CHANCELA_PERF_PASSWORD", DEFAULT_PASSWORD)
@@ -2391,6 +2528,7 @@ def run_command(args: argparse.Namespace) -> int:
             resources=resources,
             topology=topology,
             duration_budget=duration_budget,
+            source_context=source_context,
         )
         if isinstance(error, HarnessError):
             raise
@@ -2401,7 +2539,7 @@ def run_command(args: argparse.Namespace) -> int:
         slo,
         cryptographic_report,
     )
-    proof_blockers: list[str] = []
+    proof_blockers = proof_context_blockers(profile, source_context)
     if topology.get("preflight_passed") is not True:
         failures = topology.get("failures", [])
         detail = "; ".join(str(item) for item in failures[:8])
@@ -2418,21 +2556,13 @@ def run_command(args: argparse.Namespace) -> int:
     exactness_blocker = cryptographic_exactness_blocker(cryptographic_report)
     if exactness_blocker:
         proof_blockers.append(exactness_blocker)
-    if proof_blockers:
-        existing = slo_report.setdefault("proof_blockers", [])
-        for blocker in proof_blockers:
-            if blocker not in existing:
-                existing.append(blocker)
-        slo_report["proof_ready"] = False
-        if slo_report["assessment"] == "passed":
-            slo_report["assessment"] = "not_configured"
-            slo_report["message"] = (
-                "Measurements completed, but proof prerequisites are unavailable."
-            )
+    add_proof_blockers(slo_report, proof_blockers)
     report = {
         "schema_version": SCHEMA_VERSION,
         "generated_at": utc_now(),
         "profile": profile["name"],
+        "profile_proof_eligible": profile["proof_eligible"],
+        "source": source_context,
         "base_url": args.base_url,
         "dataset": manifest,
         "dataset_validation": validation,
@@ -2447,7 +2577,7 @@ def run_command(args: argparse.Namespace) -> int:
         "environment": {
             "python": sys.version,
             "platform": sys.platform,
-            "git_sha": os.environ.get("GITHUB_SHA"),
+            "git_sha": source_context.get("commit_sha"),
             "runner": os.environ.get("RUNNER_ENVIRONMENT"),
         },
     }

@@ -7,16 +7,19 @@ resource samples, topology inputs, and an explicit SLO assessment.
 
 ## Evidence profiles
 
-| Profile | Users | Entities | Books | Signature-shaped subjects | Workload |
-| --- | ---: | ---: | ---: | ---: | --- |
-| `pr-smoke` | 4 | 8 | 16 | 6 | 8 seconds, including a 5-second peak plateau at 2 clients |
-| `capacity` | **15,000** | **10,000** | **50,000** | **10,000** | 1m warm-up, 10m ramp, **18m peak plateau at 64 clients**, 1m cool-down |
-| `soak` | **15,000** | **10,000** | **50,000** | **10,000** | 1m warm-up, 4m ramp, **174m peak plateau at 64 clients**, 1m cool-down |
+| Profile | Proof eligible | Users | Entities | Books | Signature-shaped subjects | Workload |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `pr-smoke` | **No** | 4 | 8 | 16 | 6 | 8 seconds, including a 5-second peak plateau at 2 clients |
+| `capacity` | Yes | **15,000** | **10,000** | **50,000** | **10,000** | 1m warm-up, 10m ramp, **18m peak plateau at 64 clients**, 1m cool-down |
+| `soak` | Yes | **15,000** | **10,000** | **50,000** | **10,000** | 1m warm-up, 4m ramp, **174m peak plateau at 64 clients**, 1m cool-down |
 
 The PR smoke is a harness regression check. It is never labelled or reported as
-the full capacity result. Scheduled and manual jobs generate the exact full
-dataset from scratch and upload their reports even when the run fails or remains
-incomplete.
+the full capacity result, even if it is run with a complete policy whose checks
+pass. Every profile must declare `proof_eligible`; the harness additionally
+hard-codes `pr-smoke` as evidence-only. Profile eligibility is necessary, but
+does not replace any other proof prerequisite. Scheduled and manual jobs
+generate the exact full dataset from scratch and upload their reports even when
+the run fails or remains incomplete.
 
 ### Signature boundary
 
@@ -64,13 +67,12 @@ infrastructure, not a production load balancer.
 bash scripts/perf/run-compose.sh capacity .perf-work/capacity
 ```
 
-After committing a genuinely reviewed, non-null SLO file, dispatch the exact
-final `main` revision with explicit topology inputs:
+Dispatch the exact final `main` revision with an explicit reviewed policy and
+topology inputs:
 
 ```sh
 gh workflow run performance.yml --ref main \
   -f profile=capacity \
-  -f slo_path=path/to/committed-reviewed-slo.json \
   -f cryptographic_signatures=10000 \
   -f app_replicas=3 \
   -f app_cpus=2.0 \
@@ -79,8 +81,32 @@ gh workflow run performance.yml --ref main \
   -f keep_failed_topology=false
 ```
 
-The repository intentionally contains only `slo.example.json` with null
-thresholds. Pointing the workflow at that example remains `not_configured`.
+Manual `capacity` and `soak` dispatches and the weekly schedule always select
+the committed `scripts/perf/slo.capacity.json` policy. The workflow exposes no
+arbitrary SLO-path input: changing the policy used for proof requires a reviewed
+repository change. The `pr-smoke` profile always receives a blank policy path
+and can never inherit the capacity policy.
+
+The exact-volume job targets a self-hosted runner carrying every one of these
+labels: `self-hosted`, `linux`, `x64`, `chancela-capacity`, and `cpu-12-plus`.
+Operators must apply the capacity labels only to a Linux x64 runner with a
+working Docker/Compose installation, at least 12 host CPUs, at least 6 GiB RAM,
+and enough free disk for fresh images, volumes, fixtures, logs, and artifacts.
+Without that explicitly provisioned runner, capacity and soak jobs remain
+queued; they do not fall back to a smaller GitHub-hosted machine. The separate
+harness self-test remains on `ubuntu-latest` and is never capacity proof.
+
+GitHub Actions evidence is proof eligible only when the report records
+`source.ref: refs/heads/main` and a valid 40-hex `source.commit_sha`. Runs
+dispatched from another branch or without a valid commit identity still produce
+useful reports, but the harness adds a proof blocker. Local final-source runs
+remain possible from a clean branch or detached commit: their report records
+the local Git commit, branch or detached ref, working-tree dirty state, and
+status-entry count. A missing or malformed commit, dirty tree, or unknown tree
+state is disclosed and blocks local proof.
+
+The repository contains both `slo.example.json`, whose null thresholds remain
+`not_configured`, and the reviewed `slo.capacity.json` policy described below.
 
 The topology is intentionally explicit:
 
@@ -113,7 +139,9 @@ aggregate **11.5 CPUs** and **5,576,000,000 bytes** of memory. Compose `g`/`m`
 resource suffixes are decimal units for this envelope calculation. Use a Docker
 host with at least **12 CPUs and 6 GiB RAM** for the default topology; larger
 hosts are appropriate when runner overhead or resource sampling headroom also
-matters.
+matters. The workflow's `cpu-12-plus` label is an operator assertion of this
+minimum; the topology preflight still measures and enforces the live host
+envelope.
 
 The wrapper defaults those test-edge limits to 1,000 requests/s and burst 2,000
 so exact-volume seeding is not principally a test of the default 50 requests/s
@@ -244,6 +272,24 @@ bash scripts/perf/run-compose.sh \
   capacity .perf-work/capacity path/to/reviewed-slo.json
 ```
 
+The repository also carries `scripts/perf/slo.capacity.json`, the pre-run
+acceptance policy for the committed `capacity` profile. It requires 100
+requests/s overall, a maximum 0.5% aggregate error rate, bounded p95/p99/error
+rates for every exercised operation, and per-container CPU and memory
+headroom. Its cryptographic section additionally requires all 10,000 requested
+local software-certificate signatures, zero signing errors, at least two
+signatures/s, bounded latency and resource use, and completion within two
+hours. These are acceptance thresholds fixed before evidence is collected,
+not values derived from a result. They are a repository test policy rather
+than a promise about untested production hardware or external providers.
+
+Run the reviewed capacity policy with:
+
+```sh
+bash scripts/perf/run-compose.sh \
+  capacity .perf-work/capacity scripts/perf/slo.capacity.json
+```
+
 The SLO file uses schema version 1. Its top-level and nested sections are
 strictly typed objects; thresholds are finite non-negative numbers (or null),
 error rates are in `[0,1]`, operation names/fields are known, and unknown fields
@@ -272,12 +318,13 @@ Before generation or Compose startup, the wrapper writes
 do not fit the workflow timeout. The sum includes dataset/topology startup,
 exact-volume seeding, the configured search-readiness timeout, the full workload
 duration, optional per-signature cryptographic allowance, and a dedicated
-cleanup/artifact-upload reserve. The hosted job retains GitHub's 360-minute
-bound (`CHANCELA_PERF_JOB_TIMEOUT_SECONDS=21600`). The three-hour soak fits with
+cleanup/artifact-upload reserve. The self-hosted exact-volume job retains the
+workflow's 360-minute bound (`CHANCELA_PERF_JOB_TIMEOUT_SECONDS=21600`). The
+three-hour soak fits with
 its reserves, but combining that soak with 10,000 cryptographic signatures is
 rejected before startup rather than being credibly cancelled near the job
 deadline. Run those as separate evidence jobs, or use an explicitly larger
-approved runner and matching timeout input outside this hosted workflow. This
+approved runner and matching timeout configuration outside this workflow. This
 is scheduling headroom, not a performance claim or an SLO.
 
 ## Reports and operational interpretation
@@ -288,26 +335,31 @@ Each run writes:
 - `report/runtime-index.json` with observed server IDs;
 - `report/topology-initial.json` and `report/topology-final.json`;
 - `report/duration-budget.json`;
-- `report/report.json`, the machine-readable source of truth;
+- `report/report.json`, the machine-readable source of truth, including profile
+  eligibility and hosted/local source context;
 - `report/report.md`, a compact human summary;
 - `logs/generate.json`, `validate.json`, gateway health, harness log, and all
   Compose logs.
 
 Do not call a run capacity proof unless all of the following are true:
 
-1. the exact seed says `exact: true`;
-2. search readiness passed and known entity/book/act records plus cursor paging
+1. the profile declares `proof_eligible: true`; `pr-smoke` is always excluded;
+2. a GitHub Actions run records `source.ref: refs/heads/main`, every run records
+   a valid 40-hex commit SHA, and a local run records a known-clean working tree
+   (a detached clean commit is allowed);
+3. the exact seed says `exact: true`;
+4. search readiness passed and known entity/book/act records plus cursor paging
    were observed;
-3. the intended phases completed, including the sustained peak plateau;
-4. whole-run resource sampling was available;
-5. strict topology preflight passed and the final snapshot has no restart/OOM
+5. the intended phases completed, including the sustained peak plateau;
+6. whole-run resource sampling was available;
+7. strict topology preflight passed and the final snapshot has no restart/OOM
    regression;
-6. a complete reviewed, non-null latency/throughput/error/resource policy was
+8. a complete reviewed, non-null latency/throughput/error/resource policy was
    supplied for every measured operation;
-7. when cryptographic signing was requested, every required crypto threshold
+9. when cryptographic signing was requested, every required crypto threshold
    was configured and the exact requested count completed;
-8. `slo.assessment` is `passed`;
-9. the claim stays within the tested topology and signing-provider boundary.
+10. `slo.assessment` is `passed`;
+11. the claim stays within the tested topology and signing-provider boundary.
 
 An interrupted seed, unavailable dependency, `not_configured` SLO, failed
 threshold, or unsigned signature-status run is useful evidence, but not proof of

@@ -1,3 +1,4 @@
+import copy
 import json
 import pathlib
 import sys
@@ -10,9 +11,86 @@ from unittest import mock
 
 
 PERF_ROOT = pathlib.Path(__file__).resolve().parents[1]
+REPO_ROOT = PERF_ROOT.parents[1]
 sys.path.insert(0, str(PERF_ROOT))
 
 import harness  # noqa: E402
+
+
+EXPECTED_CAPACITY_POLICY = {
+    "schema_version": 1,
+    "global": {
+        "max_error_rate": 0.005,
+        "min_throughput_per_second": 100,
+    },
+    "operations": {
+        "health": {"p95_ms": 200, "p99_ms": 500, "max_error_rate": 0.001},
+        "entity_list": {
+            "p95_ms": 500,
+            "p99_ms": 1000,
+            "max_error_rate": 0.01,
+        },
+        "entity_get": {
+            "p95_ms": 250,
+            "p99_ms": 500,
+            "max_error_rate": 0.01,
+        },
+        "book_list": {
+            "p95_ms": 750,
+            "p99_ms": 1500,
+            "max_error_rate": 0.01,
+        },
+        "book_get": {
+            "p95_ms": 250,
+            "p99_ms": 500,
+            "max_error_rate": 0.01,
+        },
+        "user_list": {
+            "p95_ms": 750,
+            "p99_ms": 1500,
+            "max_error_rate": 0.01,
+        },
+        "auth_login": {
+            "p95_ms": 1500,
+            "p99_ms": 3000,
+            "max_error_rate": 0.01,
+        },
+        "entity_write": {
+            "p95_ms": 500,
+            "p99_ms": 1000,
+            "max_error_rate": 0.01,
+        },
+        "signature_status": {
+            "p95_ms": 250,
+            "p99_ms": 500,
+            "max_error_rate": 0.01,
+        },
+        "search_query": {
+            "p95_ms": 750,
+            "p99_ms": 1500,
+            "max_error_rate": 0.01,
+        },
+        "search_status": {
+            "p95_ms": 250,
+            "p99_ms": 500,
+            "max_error_rate": 0.01,
+        },
+    },
+    "cryptographic_signing": {
+        "min_completed": 10000,
+        "max_error_rate": 0,
+        "min_throughput_per_second": 2,
+        "p95_ms": 1000,
+        "p99_ms": 2000,
+        "max_duration_seconds": 7200,
+        "max_phase_memory_bytes": 900000000,
+        "max_phase_cpu_percent": 190,
+    },
+    "resources": {
+        "max_container_memory_bytes": 900000000,
+        "max_container_cpu_percent": 190,
+    },
+}
 
 
 class DatasetTests(unittest.TestCase):
@@ -23,6 +101,7 @@ class DatasetTests(unittest.TestCase):
                 {
                     "schema_version": 1,
                     "name": "test",
+                    "proof_eligible": True,
                     "seed": 7,
                     "dataset": {
                         "users": 3,
@@ -95,6 +174,223 @@ class DatasetTests(unittest.TestCase):
                 harness.validate_profile(profile)
 
 
+class ProofEligibilityTests(unittest.TestCase):
+    def test_profile_proof_eligibility_is_required_and_pr_smoke_cannot_enable_it(self):
+        with tempfile.TemporaryDirectory() as raw:
+            profile_path = DatasetTests().profile(pathlib.Path(raw))
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            profile.pop("proof_eligible")
+            with self.assertRaisesRegex(harness.HarnessError, "proof_eligible"):
+                harness.validate_profile(profile)
+
+            profile["proof_eligible"] = "yes"
+            with self.assertRaisesRegex(harness.HarnessError, "proof_eligible"):
+                harness.validate_profile(profile)
+
+            profile["proof_eligible"] = True
+            profile["name"] = "pr-smoke"
+            with self.assertRaisesRegex(harness.HarnessError, "must not"):
+                harness.validate_profile(profile)
+
+    def test_committed_profiles_freeze_proof_eligibility(self):
+        eligibility = {}
+        for profile_name in ("capacity", "soak", "pr-smoke"):
+            profile = json.loads(
+                (PERF_ROOT / "profiles" / f"{profile_name}.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            harness.validate_profile(profile)
+            eligibility[profile_name] = profile["proof_eligible"]
+        self.assertEqual(
+            eligibility,
+            {"capacity": True, "soak": True, "pr-smoke": False},
+        )
+
+    def test_pr_smoke_is_non_proof_even_if_a_passing_report_is_misdeclared(self):
+        profile = {"name": "pr-smoke", "proof_eligible": True}
+        source = {
+            "kind": "local",
+            "ref": "main",
+            "commit_sha": "a" * 40,
+            "working_tree_dirty": False,
+            "proof_eligible": True,
+        }
+        slo_report = {
+            "assessment": "passed",
+            "proof_ready": True,
+            "proof_blockers": [],
+            "message": "Every explicitly configured threshold passed.",
+        }
+        harness.add_proof_blockers(
+            slo_report,
+            harness.proof_context_blockers(profile, source),
+        )
+        self.assertEqual(slo_report["assessment"], "not_configured")
+        self.assertFalse(slo_report["proof_ready"])
+        self.assertIn("evidence-only", " ".join(slo_report["proof_blockers"]))
+
+    def test_github_actions_proof_requires_main_ref_and_valid_commit_sha(self):
+        profile = {"name": "capacity", "proof_eligible": True}
+        for ref, commit_sha, expected in (
+            ("refs/heads/main", "a" * 40, True),
+            ("refs/heads/main", "short-sha", False),
+            ("refs/heads/main", None, False),
+            ("refs/heads/feature", "a" * 40, False),
+            ("refs/pull/42/merge", "a" * 40, False),
+            (None, "a" * 40, False),
+        ):
+            environment = {
+                "GITHUB_ACTIONS": "true",
+                "GITHUB_REPOSITORY": "example/chancela",
+            }
+            if ref is not None:
+                environment["GITHUB_REF"] = ref
+            if commit_sha is not None:
+                environment["GITHUB_SHA"] = commit_sha
+            with self.subTest(ref=ref, commit_sha=commit_sha), mock.patch.dict(
+                harness.os.environ,
+                environment,
+                clear=True,
+            ):
+                source = harness.capture_source_context()
+                blockers = harness.proof_context_blockers(profile, source)
+                self.assertEqual(source["proof_eligible"], expected)
+                self.assertEqual(not blockers, expected)
+                self.assertEqual(source["ref"], ref)
+
+    def test_clean_detached_local_source_is_recorded_without_blocking_proof(self):
+        profile = {"name": "capacity", "proof_eligible": True}
+        with (
+            mock.patch.dict(harness.os.environ, {}, clear=True),
+            mock.patch.object(
+                harness,
+                "_git_output",
+                side_effect=["b" * 40, "HEAD", ""],
+            ),
+        ):
+            source = harness.capture_source_context()
+        self.assertEqual(source["kind"], "local")
+        self.assertEqual(source["commit_sha"], "b" * 40)
+        self.assertEqual(source["ref"], "HEAD")
+        self.assertFalse(source["working_tree_dirty"])
+        self.assertEqual(source["working_tree_status_entries"], 0)
+        self.assertTrue(source["proof_eligible"])
+        self.assertEqual(harness.proof_context_blockers(profile, source), [])
+
+    def test_local_dirty_unknown_or_unidentified_source_blocks_proof(self):
+        profile = {"name": "capacity", "proof_eligible": True}
+        cases = (
+            (
+                {
+                    "kind": "local",
+                    "ref": "main",
+                    "commit_sha": "a" * 40,
+                    "working_tree_dirty": True,
+                },
+                "known-clean",
+            ),
+            (
+                {
+                    "kind": "local",
+                    "ref": "main",
+                    "commit_sha": "a" * 40,
+                    "working_tree_dirty": None,
+                },
+                "known-clean",
+            ),
+            (
+                {
+                    "kind": "local",
+                    "ref": "main",
+                    "commit_sha": "not-a-sha",
+                    "working_tree_dirty": False,
+                },
+                "40-hex",
+            ),
+            (
+                {
+                    "kind": "local",
+                    "ref": "main",
+                    "commit_sha": None,
+                    "working_tree_dirty": False,
+                },
+                "40-hex",
+            ),
+        )
+        for source, expected_message in cases:
+            with self.subTest(source=source):
+                blockers = harness.proof_context_blockers(profile, source)
+                self.assertTrue(blockers)
+                self.assertIn(expected_message, " ".join(blockers))
+                slo_report = {
+                    "assessment": "passed",
+                    "proof_ready": True,
+                    "proof_blockers": [],
+                    "message": "Every explicitly configured threshold passed.",
+                }
+                harness.add_proof_blockers(slo_report, blockers)
+                self.assertEqual(slo_report["assessment"], "not_configured")
+                self.assertFalse(slo_report["proof_ready"])
+
+
+class WorkflowPolicyWiringTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.workflow = (
+            REPO_ROOT / ".github" / "workflows" / "performance.yml"
+        ).read_text(encoding="utf-8")
+        cls.actionlint_config = (
+            REPO_ROOT / ".github" / "actionlint.yaml"
+        ).read_text(encoding="utf-8")
+
+    def test_actionlint_declares_only_the_custom_capacity_runner_labels(self):
+        self.assertEqual(
+            self.actionlint_config,
+            "self-hosted-runner:\n"
+            "  labels:\n"
+            "    - chancela-capacity\n"
+            "    - cpu-12-plus\n",
+        )
+
+    def test_workflow_uses_only_the_committed_policy_for_proof_eligible_profiles(self):
+        dispatch = self.workflow.split("  workflow_dispatch:", 1)[1].split(
+            "\npermissions:",
+            1,
+        )[0]
+        self.assertNotIn("slo_path:", dispatch)
+
+        exact_job = self.workflow.split("  exact-volume-run:", 1)[1]
+        environment = exact_job.split("    env:", 1)[1].split("    steps:", 1)[0]
+        self.assertIn(
+            "PERF_PROFILE: ${{ github.event_name == 'schedule' && 'capacity' || inputs.profile }}",
+            environment,
+        )
+        self.assertIn(
+            "(github.event_name == 'schedule' || inputs.profile != 'pr-smoke')",
+            environment,
+        )
+        self.assertIn("'scripts/perf/slo.capacity.json'", environment)
+        self.assertIn("|| '' }}", environment)
+        self.assertNotIn("inputs.slo_path", environment)
+
+    def test_exact_runs_require_the_explicit_capacity_runner_labels(self):
+        exact_job = self.workflow.split("  exact-volume-run:", 1)[1]
+        runs_on = exact_job.split("    runs-on:", 1)[1].split(
+            "    timeout-minutes:",
+            1,
+        )[0]
+        self.assertEqual(
+            [
+                line.removeprefix("      - ")
+                for line in runs_on.splitlines()
+                if line.startswith("      - ")
+            ],
+            ["self-hosted", "linux", "x64", "chancela-capacity", "cpu-12-plus"],
+        )
+        self.assertNotIn("ubuntu-latest", runs_on)
+
+
 class FailureReportTests(unittest.TestCase):
     def test_malformed_slo_writes_a_harness_failure_report(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -127,6 +423,10 @@ class FailureReportTests(unittest.TestCase):
                 (report_dir / "report.json").read_text(encoding="utf-8")
             )
             self.assertFalse(failure["slo"]["proof_ready"])
+            self.assertTrue(failure["profile_proof_eligible"])
+            self.assertIn(failure["source"]["kind"], {"local", "github_actions"})
+            self.assertIn("ref", failure["source"])
+            self.assertIn("commit_sha", failure["source"])
             self.assertIn("HarnessError", failure["seed"]["fatal_error"])
             self.assertNotIn("AttributeError", failure["seed"]["fatal_error"])
 
@@ -272,6 +572,102 @@ class FailureReportTests(unittest.TestCase):
 
 
 class MetricsTests(unittest.TestCase):
+    def test_committed_capacity_policy_is_complete_before_measurement(self):
+        profile = json.loads(
+            (PERF_ROOT / "profiles" / "capacity.json").read_text(encoding="utf-8")
+        )
+        policy = json.loads(
+            (PERF_ROOT / "slo.capacity.json").read_text(encoding="utf-8")
+        )
+        harness.validate_profile(profile)
+        harness.validate_slo_schema(policy)
+        self.assertEqual(policy, EXPECTED_CAPACITY_POLICY)
+
+        self.assertTrue(
+            all(value is not None for value in policy["global"].values())
+        )
+        self.assertTrue(
+            all(value is not None for value in policy["resources"].values())
+        )
+        measured_operations = {
+            operation
+            for operation, weight in profile["workload"]["weights"].items()
+            if weight > 0
+        }
+        self.assertEqual(set(policy["operations"]), measured_operations)
+        for thresholds in policy["operations"].values():
+            self.assertEqual(set(thresholds), harness.SLO_OPERATION_FIELDS)
+            self.assertTrue(all(value is not None for value in thresholds.values()))
+        self.assertEqual(
+            set(policy["cryptographic_signing"]),
+            harness.CRYPTO_SLO_FIELDS,
+        )
+        self.assertTrue(
+            all(
+                value is not None
+                for value in policy["cryptographic_signing"].values()
+            )
+        )
+
+    def test_committed_capacity_policy_boundaries_are_inclusive_and_breaches_fail(self):
+        policy = copy.deepcopy(EXPECTED_CAPACITY_POLICY)
+        workload = {
+            "error_rate": policy["global"]["max_error_rate"],
+            "throughput_per_second": policy["global"][
+                "min_throughput_per_second"
+            ],
+            "operations": {
+                operation: {
+                    "p95_ms": thresholds["p95_ms"],
+                    "p99_ms": thresholds["p99_ms"],
+                    "error_rate": thresholds["max_error_rate"],
+                }
+                for operation, thresholds in policy["operations"].items()
+            },
+            "phases": {"model": "explicit", "peak_plateau_complete": True},
+        }
+        resource_container = {
+            "max_memory_bytes": policy["resources"][
+                "max_container_memory_bytes"
+            ],
+            "max_cpu_percent": policy["resources"]["max_container_cpu_percent"],
+        }
+        resources = {
+            "available": True,
+            "containers": {"app": resource_container},
+            "phases": {
+                phase: {"containers": {"app": resource_container}}
+                for phase in ("seed", "search_catch_up", "mixed_workload")
+            },
+        }
+
+        boundary = harness.evaluate_slo(workload, resources, policy)
+        self.assertEqual(boundary["assessment"], "passed")
+        self.assertTrue(boundary["proof_ready"])
+
+        throughput_breach = copy.deepcopy(workload)
+        throughput_breach["throughput_per_second"] -= 0.001
+        error_breach = copy.deepcopy(workload)
+        error_breach["error_rate"] += 0.000001
+        latency_breach = copy.deepcopy(workload)
+        latency_breach["operations"]["health"]["p99_ms"] += 0.001
+        cpu_breach = copy.deepcopy(resources)
+        cpu_breach["containers"]["app"]["max_cpu_percent"] += 0.001
+        for name, candidate_workload, candidate_resources in (
+            ("throughput", throughput_breach, resources),
+            ("error rate", error_breach, resources),
+            ("operation latency", latency_breach, resources),
+            ("container CPU", workload, cpu_breach),
+        ):
+            with self.subTest(boundary=name):
+                result = harness.evaluate_slo(
+                    candidate_workload,
+                    candidate_resources,
+                    policy,
+                )
+                self.assertEqual(result["assessment"], "failed")
+                self.assertFalse(result["proof_ready"])
+
     def test_percentiles_interpolate(self):
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
         self.assertEqual(harness.percentile(values, 0.5), 3.0)

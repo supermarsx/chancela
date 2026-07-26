@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "name": "soak",
+  "proof_eligible": true,
   "seed": 20260725,
   "dataset": {
     "users": 15000,

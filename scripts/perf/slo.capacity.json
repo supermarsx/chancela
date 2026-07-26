@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "global": {
+    "max_error_rate": 0.005,
+    "min_throughput_per_second": 100
+  },
+  "operations": {
+    "health": {
+      "p95_ms": 200,
+      "p99_ms": 500,
+      "max_error_rate": 0.001
+    },
+    "entity_list": {
+      "p95_ms": 500,
+      "p99_ms": 1000,
+      "max_error_rate": 0.01
+    },
+    "entity_get": {
+      "p95_ms": 250,
+      "p99_ms": 500,
+      "max_error_rate": 0.01
+    },
+    "book_list": {
+      "p95_ms": 750,
+      "p99_ms": 1500,
+      "max_error_rate": 0.01
+    },
+    "book_get": {
+      "p95_ms": 250,
+      "p99_ms": 500,
+      "max_error_rate": 0.01
+    },
+    "user_list": {
+      "p95_ms": 750,
+      "p99_ms": 1500,
+      "max_error_rate": 0.01
+    },
+    "auth_login": {
+      "p95_ms": 1500,
+      "p99_ms": 3000,
+      "max_error_rate": 0.01
+    },
+    "entity_write": {
+      "p95_ms": 500,
+      "p99_ms": 1000,
+      "max_error_rate": 0.01
+    },
+    "signature_status": {
+      "p95_ms": 250,
+      "p99_ms": 500,
+      "max_error_rate": 0.01
+    },
+    "search_query": {
+      "p95_ms": 750,
+      "p99_ms": 1500,
+      "max_error_rate": 0.01
+    },
+    "search_status": {
+      "p95_ms": 250,
+      "p99_ms": 500,
+      "max_error_rate": 0.01
+    }
+  },
+  "cryptographic_signing": {
+    "min_completed": 10000,
+    "max_error_rate": 0,
+    "min_throughput_per_second": 2,
+    "p95_ms": 1000,
+    "p99_ms": 2000,
+    "max_duration_seconds": 7200,
+    "max_phase_memory_bytes": 900000000,
+    "max_phase_cpu_percent": 190
+  },
+  "resources": {
+    "max_container_memory_bytes": 900000000,
+    "max_container_cpu_percent": 190
+  }
+}
