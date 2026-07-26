@@ -837,6 +837,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-action-center"
+version = "26.1.0"
+dependencies = [
+ "chancela-authz",
+ "chancela-core",
+ "chancela-law",
+ "chancela-registry",
+ "chancela-store",
+ "chancela-templates",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "chancela-api"
 version = "26.1.0"
 dependencies = [
@@ -845,6 +862,7 @@ dependencies = [
  "base64",
  "bytes",
  "chacha20poly1305",
+ "chancela-action-center",
  "chancela-apikey",
  "chancela-archive",
  "chancela-authz",
@@ -859,8 +877,10 @@ dependencies = [
  "chancela-ledger",
  "chancela-pades",
  "chancela-registry",
+ "chancela-runtime-config",
  "chancela-scap",
  "chancela-search",
+ "chancela-search-projection",
  "chancela-signing",
  "chancela-smartcard",
  "chancela-store",
@@ -1163,6 +1183,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-runtime-config"
+version = "26.1.0"
+dependencies = [
+ "chancela-action-center",
+ "chancela-search",
+ "chancela-store",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "chancela-scap"
 version = "26.1.0"
 dependencies = [
@@ -1186,11 +1217,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "chancela-search-projection"
+version = "26.1.0"
+dependencies = [
+ "chancela-action-center",
+ "chancela-core",
+ "chancela-law",
+ "chancela-ledger",
+ "chancela-registry",
+ "chancela-runtime-config",
+ "chancela-search",
+ "chancela-store",
+ "chancela-templates",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "time",
+ "uuid",
+]
+
+[[package]]
 name = "chancela-search-projector"
 version = "26.1.0"
 dependencies = [
- "chancela-api",
+ "chancela-runtime-config",
  "chancela-search",
+ "chancela-search-projection",
  "chancela-store",
  "clap",
  "serde",

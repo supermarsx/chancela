@@ -35,6 +35,7 @@ use chancela_connectors::{
 use chancela_core::{DocumentLayoutPolicy, NumberingScheme};
 use chancela_csc::{CscAuthorization, CscConfig, CscSecrets};
 use chancela_ledger::Ledger;
+pub use chancela_search::SearchSettings;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -133,111 +134,6 @@ impl Default for Settings {
             ui: UiSettings::default(),
             onboarding: OnboardingSettings::default(),
         }
-    }
-}
-
-/// Bounded operational controls for the dedicated full-search worker.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct SearchSettings {
-    /// Master switch. Disabling stops reconciliation but preserves the durable index for an
-    /// operator-visible stale status and a later resume.
-    pub enabled: bool,
-    /// Tokio worker threads dedicated to the external projector runtime. At least two are required
-    /// so lease/heartbeat/control work is never starved by the synchronous corpus build. This is a
-    /// runtime concurrency limit, not corpus sharding, and takes effect after projector restart.
-    pub index_threads: u32,
-    /// Maximum upsert/delete operations in one embedded-indexer transaction. The external
-    /// projector publishes one complete generation through its atomic CAS boundary.
-    pub batch_size: u32,
-    /// Embedded reconciliation interval. For the external projector this is the lightweight
-    /// control/settings polling cadence; full corpus publication runs only for source or command
-    /// changes, process/lease startup, or a completed UTC-date bucket change.
-    pub interval_seconds: u32,
-    /// Embedded-indexer command queue ceiling. External commands use the durable singleton control
-    /// record and do not use this in-process queue.
-    pub queue_capacity: u32,
-    /// Server-side ceiling for one result page.
-    pub result_limit: u32,
-    /// Default/maximum snippet size returned with a hit.
-    pub snippet_chars: u32,
-    /// Maximum distinct values retained per facet, preventing high-cardinality authors/status data
-    /// from creating an unbounded response.
-    pub facet_limit: u32,
-    /// Maximum projected characters retained from any one source object.
-    pub max_content_chars: u32,
-    /// Corpus-wide searchable-body ceiling. Metadata/title rows remain discoverable after the
-    /// budget is exhausted, but additional body text is marked truncated instead of growing memory
-    /// without bound.
-    pub max_total_content_chars: u64,
-    /// Ledger/action history included in the derived index. The ledger itself is never pruned.
-    pub event_retention_days: u32,
-    /// Minimum non-blank query length. Two-character exact tokens remain supported; one-character
-    /// vocabulary scans are refused.
-    pub min_query_chars: u8,
-}
-
-impl Default for SearchSettings {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            index_threads: 2,
-            batch_size: 256,
-            interval_seconds: 30,
-            queue_capacity: 64,
-            result_limit: 100,
-            snippet_chars: 240,
-            facet_limit: 50,
-            max_content_chars: 200_000,
-            max_total_content_chars: 25_000_000,
-            event_retention_days: 3_650,
-            min_query_chars: 2,
-        }
-    }
-}
-
-impl SearchSettings {
-    fn validate(&self) -> Result<(), ApiError> {
-        for (field, value, min, max) in [
-            ("search.index_threads", self.index_threads, 2, 16),
-            ("search.batch_size", self.batch_size, 16, 5_000),
-            ("search.interval_seconds", self.interval_seconds, 5, 86_400),
-            ("search.queue_capacity", self.queue_capacity, 1, 1_024),
-            ("search.result_limit", self.result_limit, 1, 500),
-            ("search.snippet_chars", self.snippet_chars, 32, 2_000),
-            ("search.facet_limit", self.facet_limit, 1, 200),
-            (
-                "search.max_content_chars",
-                self.max_content_chars,
-                1_000,
-                1_000_000,
-            ),
-            (
-                "search.event_retention_days",
-                self.event_retention_days,
-                1,
-                36_500,
-            ),
-        ] {
-            if !(min..=max).contains(&value) {
-                return Err(ApiError::Unprocessable(format!(
-                    "{field} must be between {min} and {max}, got {value}"
-                )));
-            }
-        }
-        if !(2..=8).contains(&self.min_query_chars) {
-            return Err(ApiError::Unprocessable(format!(
-                "search.min_query_chars must be between 2 and 8, got {}",
-                self.min_query_chars
-            )));
-        }
-        if !(100_000..=100_000_000).contains(&self.max_total_content_chars) {
-            return Err(ApiError::Unprocessable(format!(
-                "search.max_total_content_chars must be between 100000 and 100000000, got {}",
-                self.max_total_content_chars
-            )));
-        }
-        Ok(())
     }
 }
 
@@ -2568,7 +2464,9 @@ impl Settings {
         self.workflow.validate()?;
         self.data_management.validate()?;
         self.connectors.validate()?;
-        self.search.validate()?;
+        self.search
+            .validate()
+            .map_err(|error| ApiError::Unprocessable(error.to_string()))?;
         self.email.validate()?;
         self.platform.validate()?;
         self.auth.validate()?;
@@ -4019,7 +3917,9 @@ pub async fn put_search_settings(
     )
     .await?;
     let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
-    search.validate()?;
+    search
+        .validate()
+        .map_err(|error| ApiError::Unprocessable(error.to_string()))?;
 
     reconcile_pending_settings_audit(&state).await?;
 

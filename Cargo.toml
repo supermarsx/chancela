@@ -54,6 +54,9 @@ chancela-store = { path = "crates/chancela-store" }
 # stays in chancela-api, preserving the workspace DAG.
 chancela-search = { path = "crates/chancela-search" }
 chancela-search-projector = { path = "crates/chancela-search-projector" }
+chancela-search-projection = { path = "crates/chancela-search-projection" }
+chancela-runtime-config = { path = "crates/chancela-runtime-config" }
+chancela-action-center = { path = "crates/chancela-action-center" }
 # Template catalog engine + document/PDF-A generation (t48, Wave C). `chancela-templates` renders
 # records → DocumentModel via minijinja; `chancela-doc` writes DocumentModel → PDF/A-2u over lopdf.
 # The shared DocumentModel/LifecycleStage seam lives in chancela-core so both are truly parallel.

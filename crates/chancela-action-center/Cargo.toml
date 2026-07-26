@@ -1,0 +1,22 @@
+[package]
+name = "chancela-action-center"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Pure Action Center derivation shared by Chancela runtimes."
+
+[dependencies]
+chancela-authz.workspace = true
+chancela-core.workspace = true
+chancela-law.workspace = true
+chancela-registry.workspace = true
+chancela-store.workspace = true
+chancela-templates.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+uuid.workspace = true

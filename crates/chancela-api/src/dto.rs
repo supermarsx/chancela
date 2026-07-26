@@ -8,8 +8,6 @@
 //! to lowercase hex ([`crate::hex`]). Enum fields reuse the core enums directly: their serde
 //! representation is the bare variant name, which is exactly what the contract pins (§2.1).
 
-use std::collections::BTreeMap;
-
 use serde::{Deserialize, Deserializer, Serialize};
 use time::format_description::well_known::Rfc3339;
 use time::macros::format_description;
@@ -3291,161 +3289,12 @@ pub struct DashboardOpenBook {
     pub links: DashboardTargetLinks,
 }
 
-/// One actionable dashboard alert. Alerts are routing/review signals only: `label` is intentionally
-/// limited to advisory/review-required and messages avoid unsupported legal conclusions.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardAlert {
-    pub code: String,
-    pub label: String,
-    pub severity: String,
-    pub category: String,
-    pub message: String,
-    pub params: BTreeMap<String, String>,
-    pub target: DashboardAlertTarget,
-    pub source: Option<String>,
-    pub law_refs: Vec<DashboardLawReference>,
-    pub action: Option<DashboardAction>,
-    pub recommended_next_steps: Vec<String>,
-    pub i18n: Option<DashboardI18n>,
-}
-
-/// Safe target ids for a dashboard alert.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardAlertTarget {
-    pub entity_id: Option<String>,
-    pub book_id: Option<String>,
-    pub act_id: Option<String>,
-    pub links: DashboardTargetLinks,
-}
-
-/// API links a client can follow for the target, when such a target exists.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardTargetLinks {
-    pub entity: Option<String>,
-    pub book: Option<String>,
-    pub act: Option<String>,
-    pub ledger: Option<String>,
-}
-
-/// One law-corpus article reference attached to a dashboard actionable.
-///
-/// `verification` carries the corpus authenticity tier on the wire as `"Verified"` /
-/// `"automated_review"` / `"Pending"` (the [`chancela_law::Verification`] serde value). An
-/// `"automated_review"` reference is authentic vendored text reviewed by an automated process but
-/// **not** human-legally-approved; `review_method` (e.g. `"automated-capture"`) and `review_note`
-/// (the standing pt-PT caveat) are populated for that tier so the client can badge it honestly and
-/// show the caveat tooltip. Both are `null` for `Verified`/`Pending`/`Missing` references.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardLawReference {
-    pub diploma_id: String,
-    pub article: String,
-    pub label: String,
-    pub heading: String,
-    pub verification: String,
-    pub source_url: Option<String>,
-    pub source_complete: bool,
-    pub review_method: Option<String>,
-    pub review_note: Option<String>,
-}
-
-/// Client-facing action metadata for dashboard actionables.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardAction {
-    pub kind: String,
-    pub label_key: String,
-    pub api_href: Option<String>,
-    pub route: Option<String>,
-}
-
-/// Translation keys for user-facing dashboard actionable text.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardI18n {
-    pub title_key: String,
-    pub body_key: String,
-    pub action_key: Option<String>,
-}
-
-/// One bounded dashboard reminder/action item. These are advisory planning signals, not compliance
-/// gates; `source_rule` is the calendar/rule seed and `source_profile` is the entity profile facet
-/// that produced it.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardReminder {
-    pub due_date: String,
-    pub severity: String,
-    pub status: String,
-    pub reason: String,
-    pub entity_id: String,
-    pub entity_name: String,
-    pub source_rule: String,
-    pub source_profile: String,
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
-    pub params: BTreeMap<String, String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile_calendar_plan: Option<DashboardProfileCalendarPlan>,
-    pub law_refs: Vec<DashboardLawReference>,
-    pub action: Option<DashboardAction>,
-    pub recommended_next_steps: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub i18n: Option<DashboardI18n>,
-}
-
-/// Typed local advisory profile-calendar metadata attached to profile-calendar reminders.
-///
-/// This is a local plan surface only. It does not assert legal-calendar authority, legal
-/// compliance, source completeness, external delivery/sync, provider effects, or certification.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardProfileCalendarPlan {
-    pub preset_id: String,
-    pub preset_label: String,
-    pub rule_kind: String,
-    pub support_status: String,
-    pub review_status: String,
-    pub source_status: String,
-    pub due_rule: DashboardProfileCalendarDueRule,
-    pub evaluation: DashboardProfileCalendarEvaluation,
-    pub no_claims: DashboardProfileCalendarNoClaimFlags,
-}
-
-/// The local due-rule shape for a profile-calendar reminder.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardProfileCalendarDueRule {
-    pub kind: String,
-    pub months_after_fiscal_year_end: Option<u8>,
-    pub default_fiscal_year_end: Option<String>,
-    pub annual_fixed_month: Option<u8>,
-    pub annual_fixed_day: Option<u8>,
-    pub unsupported_reason: Option<String>,
-}
-
-/// The local evaluation result rendered on the reminder.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardProfileCalendarEvaluation {
-    pub local_due_date_rule_configured: bool,
-    pub local_due_date_calculated: bool,
-    pub legal_deadline_calculated: bool,
-    pub fiscal_year_end: Option<String>,
-    pub due_year: Option<i32>,
-    pub due_basis: Option<String>,
-    pub unsupported_reason: Option<String>,
-}
-
-/// Explicit no-claim flags for profile-calendar output.
-#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
-pub struct DashboardProfileCalendarNoClaimFlags {
-    pub local_advisory_only: bool,
-    pub legal_deadline_authority_claimed: bool,
-    pub legal_calendar_authority_claimed: bool,
-    pub legal_compliance_claimed: bool,
-    pub compliance_status_claimed: bool,
-    pub workflow_completion_claimed: bool,
-    pub external_delivery_claimed: bool,
-    pub external_calendar_sync_claimed: bool,
-    pub webhook_delivery_claimed: bool,
-    pub legal_review_claimed: bool,
-    pub dre_verification_claimed: bool,
-    pub provider_effect_claimed: bool,
-    pub certification_claimed: bool,
-}
+pub use chancela_action_center::{
+    DashboardAction, DashboardAlert, DashboardAlertTarget, DashboardI18n, DashboardLawReference,
+    DashboardProfileCalendarDueRule, DashboardProfileCalendarEvaluation,
+    DashboardProfileCalendarNoClaimFlags, DashboardProfileCalendarPlan, DashboardReminder,
+    DashboardTargetLinks,
+};
 
 // --- Registry views + report (§2.7) ------------------------------------------------------
 

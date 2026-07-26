@@ -41,8 +41,8 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
     // Persisted safe environment overrides can select the data directory/backend used by both the
     // healthcheck and the long-running projector. Apply them before either opens the narrow store.
-    if let Some(data_dir) = chancela_api::AppState::resolve_data_dir() {
-        chancela_api::env_overrides::apply_from_data_dir(&data_dir);
+    if let Some(data_dir) = chancela_runtime_config::resolve_data_dir() {
+        chancela_runtime_config::env_overrides::apply_from_data_dir(&data_dir);
     }
     if let Command::Healthcheck {
         runtime_dir,

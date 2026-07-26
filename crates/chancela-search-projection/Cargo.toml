@@ -1,0 +1,30 @@
+[package]
+name = "chancela-search-projection"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared deterministic search corpus projection for Chancela runtimes."
+
+[features]
+default = []
+postgres = ["chancela-runtime-config/postgres", "chancela-store/postgres"]
+sqlcipher = ["chancela-runtime-config/sqlcipher", "chancela-store/sqlcipher"]
+
+[dependencies]
+chancela-action-center.workspace = true
+chancela-core.workspace = true
+chancela-law.workspace = true
+chancela-ledger.workspace = true
+chancela-registry.workspace = true
+chancela-runtime-config.workspace = true
+chancela-search.workspace = true
+chancela-store.workspace = true
+chancela-templates.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+time.workspace = true
+uuid.workspace = true

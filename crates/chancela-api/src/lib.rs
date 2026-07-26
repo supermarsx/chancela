@@ -278,6 +278,8 @@ pub use zk_repository::ZkRepositoryStore;
 // Signature-provider credential model + encrypted sidecar (t77 S2). Re-exported so the credential
 // API/assembly slices (S3/S4) can name these and so the crypto core's consumers are reachable from
 // the crate root (the crate-private `CredentialSecretStore` itself stays internal).
+#[doc(hidden)]
+pub use chancela_search::ExternalSearchProjectorConfig;
 pub use privacy::provision_subject_dek;
 #[doc(hidden)]
 pub use search::{
@@ -307,26 +309,6 @@ pub use settings::{
     SignatureFamily, SigningCmdSettings, SigningSettings, SignupMode, SignupSettings, ThemeMode,
     TwoFactorSettings,
 };
-
-/// Minimal non-secret settings needed before the external projector decides whether to hydrate the
-/// corpus. This intentionally does not expose the full settings document to the sidecar runtime.
-#[doc(hidden)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ExternalSearchProjectorConfig {
-    pub enabled: bool,
-    pub index_threads: u32,
-    pub interval_seconds: u32,
-}
-
-impl From<&SearchSettings> for ExternalSearchProjectorConfig {
-    fn from(settings: &SearchSettings) -> Self {
-        Self {
-            enabled: settings.enabled,
-            index_threads: settings.index_threads,
-            interval_seconds: settings.interval_seconds,
-        }
-    }
-}
 
 pub use template_preview_samples::TemplatePreviewSampleSettings;
 #[cfg(debug_assertions)]
@@ -401,7 +383,7 @@ pub struct ExportCleanupPreviewStore {
 /// Environment variable naming a data directory for on-disk persistence. When unset,
 /// [`AppState::from_env`] falls back to walking up for an existing `chancela-data/` directory,
 /// and finally to pure in-memory state.
-pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
+pub use chancela_runtime_config::DATA_DIR_ENV;
 
 /// Maximum retained saves per user-authored template. The running server resolves this once from
 /// [`TEMPLATE_HISTORY_LIMIT_ENV`]; test/embedding states use [`DEFAULT_TEMPLATE_HISTORY_LIMIT`].
@@ -2454,30 +2436,7 @@ impl AppState {
         dir: &Path,
         database_encryption: &DatabaseEncryptionConfig,
     ) -> Result<Store, AppStateInitError> {
-        if database_encryption.is_configured() {
-            let key_ops = Store::key_ops_status(dir, &database_encryption.store_open_options())
-                .map_err(|source| AppStateInitError::StoreOpen {
-                    data_dir: dir.to_path_buf(),
-                    source,
-                })?;
-            if key_ops.plan == StoreKeyOpsPlan::RefusePlaintextToEncryptedMigration {
-                return Err(AppStateInitError::StoreOpen {
-                    data_dir: dir.to_path_buf(),
-                    source: StoreError::PlaintextEncryptionMigrationUnsupported {
-                        db_file: key_ops.database_file.display().to_string(),
-                    },
-                });
-            }
-            ensure_sqlcipher_feature_available()?;
-        }
-        let backend =
-            database::resolve_search_projector_backend_selection(dir, database_encryption)?;
-        Store::open_search_projector_backend(backend.selection).map_err(|source| {
-            AppStateInitError::StoreOpen {
-                data_dir: dir.to_path_buf(),
-                source,
-            }
-        })
+        chancela_runtime_config::open_search_projector_store(dir, database_encryption)
     }
 
     fn load_search_projector_snapshot(
@@ -2557,19 +2516,7 @@ impl AppState {
     /// The data directory `from_env` would use, or `None` for in-memory. Exposed so a binary can
     /// report the resolved path in its startup banner.
     pub fn resolve_data_dir() -> Option<PathBuf> {
-        if let Ok(raw) = std::env::var(DATA_DIR_ENV)
-            && !raw.trim().is_empty()
-        {
-            return Some(PathBuf::from(raw));
-        }
-        let start = std::env::current_dir().ok()?;
-        for base in start.ancestors() {
-            let candidate = base.join("chancela-data");
-            if candidate.is_dir() {
-                return Some(candidate);
-            }
-        }
-        None
+        chancela_runtime_config::resolve_data_dir()
     }
 }
 

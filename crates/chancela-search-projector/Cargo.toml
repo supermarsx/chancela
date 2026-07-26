@@ -14,12 +14,20 @@ path = "src/main.rs"
 
 [features]
 default = []
-sqlcipher = ["chancela-api/sqlcipher", "chancela-store/sqlcipher"]
-postgres = ["chancela-api/postgres", "chancela-store/postgres"]
+sqlcipher = [
+    "chancela-runtime-config/sqlcipher",
+    "chancela-store/sqlcipher",
+]
+postgres = [
+    "chancela-runtime-config/postgres",
+    "chancela-search-projection/postgres",
+    "chancela-store/postgres",
+]
 
 [dependencies]
-chancela-api.workspace = true
 chancela-search.workspace = true
+chancela-search-projection.workspace = true
+chancela-runtime-config.workspace = true
 chancela-store.workspace = true
 clap.workspace = true
 serde.workspace = true

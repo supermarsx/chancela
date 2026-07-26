@@ -4,15 +4,17 @@
 //! refreshes authoritative application state, builds the search corpus, and publishes one complete
 //! durable generation through the store's lease/checkpoint CAS boundary.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use chancela_api::{AppState, ExternalSearchProjectorConfig};
 use chancela_search::{
+    ExternalSearchProjectorConfig, IndexOperation, SearchDocument, SearchIndexPhase,
     SearchIndexState, SearchProjectionCommand, SearchProjectionControl,
     SearchProjectionPublishOutcome, SearchProjectionPublishRejection, SearchProjectorLease,
+    SearchSettings,
 };
 use chancela_store::Store;
 use serde::{Deserialize, Serialize};
@@ -29,11 +31,16 @@ pub const NODE_ROLE_ENV: &str = "CHANCELA_NODE_ROLE";
 
 const HEARTBEAT_SCHEMA_VERSION: u32 = 2;
 const SERVICE_NAME: &str = "chancela-search-projector";
+const SEARCH_PROJECTION_UTC_BUCKET_CHANGED: &str =
+    "search projection crossed its captured UTC date; retrying from a fresh as-of instant";
 const DEFAULT_HEARTBEAT_SECONDS: u64 = 10;
 pub const DEFAULT_HEALTH_MAX_AGE_SECONDS: u64 = 600;
 const MIN_HEARTBEAT_SECONDS: u64 = 1;
 const MAX_HEARTBEAT_SECONDS: u64 = 300;
 const MIN_LEASE_SECONDS: u64 = 15;
+const HEARTBEAT_PRUNE_MAX_INSPECTED: usize = 256;
+const HEARTBEAT_PRUNE_MAX_REMOVED: usize = 32;
+const HEARTBEAT_RETENTION_MILLIS: i64 = 24 * 60 * 60 * 1_000;
 const CHILD_SHUTDOWN_GRACE: Duration = Duration::from_secs(4);
 /// Process-level grace after a shutdown signal before the projector supervisor is aborted.
 pub const PROCESS_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
@@ -308,7 +315,7 @@ pub enum ProjectorError {
 /// Its dedicated projector lease is independent from the API ledger-writer advisory lock. This
 /// guard prevents a standalone projector that starts first from ever competing for the latter.
 pub fn validate_projector_environment() -> Result<(), ProjectorError> {
-    let backend = std::env::var(chancela_api::DB_BACKEND_ENV)
+    let backend = std::env::var(chancela_runtime_config::DB_BACKEND_ENV)
         .unwrap_or_default()
         .trim()
         .to_ascii_lowercase();
@@ -321,7 +328,7 @@ pub fn validate_projector_environment() -> Result<(), ProjectorError> {
             return Err(ProjectorError::Configuration(format!(
                 "{}={backend} requires {NODE_ROLE_ENV}=follower for {SERVICE_NAME}; the projector \
                  must never contend for the authoritative ledger-writer lock",
-                chancela_api::DB_BACKEND_ENV
+                chancela_runtime_config::DB_BACKEND_ENV
             )));
         }
     }
@@ -330,8 +337,9 @@ pub fn validate_projector_environment() -> Result<(), ProjectorError> {
 
 pub fn bootstrap_state() -> Result<ProjectorBootstrap, ProjectorError> {
     validate_projector_environment()?;
-    let (store, config) = AppState::try_search_projector_store_and_config_from_env()
+    let (store, settings) = chancela_runtime_config::search_projector_store_and_settings_from_env()
         .map_err(|error| ProjectorError::State(error.to_string()))?;
+    let config = ExternalSearchProjectorConfig::from(&settings.search);
     Ok(ProjectorBootstrap { store, config })
 }
 
@@ -590,7 +598,7 @@ async fn run_with_lease(
             }
 
             // Capture-before-refresh + capture-after-refresh closes the gap between independent
-            // source-table/sidecar reads. A commit during AppState hydration changes the revision
+            // source-table/sidecar reads. A commit during snapshot hydration changes the revision
             // and discards this candidate before any corpus work begins.
             //
             // Re-resolve at this boundary: Postgres returns the stable process handle (avoiding a
@@ -602,16 +610,33 @@ async fn run_with_lease(
             // detached read-only call cannot publish; publication remains guarded separately by
             // the durable lease/checkpoint CAS.
             let mut refresh_task = tokio::spawn(async move {
-                tokio::task::spawn_blocking(move || {
-                    chancela_api::AppState::try_from_env_for_search_projector_with_store(
-                        candidate_store,
+                tokio::task::spawn_blocking(move || -> Result<_, ProjectorError> {
+                    let data_dir =
+                        chancela_runtime_config::resolve_data_dir().ok_or_else(|| {
+                            ProjectorError::State(format!(
+                                "the external search projector requires a durable store; set {}",
+                                chancela_runtime_config::DATA_DIR_ENV
+                            ))
+                        })?;
+                    let settings = chancela_runtime_config::search_projector_settings_with_store(
+                        &candidate_store,
+                        &data_dir,
                     )
+                    .map_err(|error| ProjectorError::State(error.to_string()))?;
+                    let projection_as_of = OffsetDateTime::now_utc();
+                    let inputs = chancela_search_projection::load_projection_inputs(
+                        &candidate_store,
+                        &data_dir,
+                        &settings,
+                        projection_as_of,
+                    )
+                    .map_err(ProjectorError::State)?;
+                    Ok((settings, inputs, candidate_store, projection_as_of))
                 })
                 .await
                 .map_err(|error| {
                     ProjectorError::State(format!("state refresh task panicked: {error}"))
                 })?
-                .map_err(|error| ProjectorError::State(error.to_string()))
             });
             let refreshed = tokio::select! {
                 result = &mut refresh_task => {
@@ -628,7 +653,9 @@ async fn run_with_lease(
                     ).await;
                 }
             };
-            let refreshed_search_settings = refreshed.settings.read().await.search.clone();
+            let (refreshed_settings, projection_inputs, refreshed_store, projection_as_of) =
+                refreshed;
+            let refreshed_search_settings = refreshed_settings.search;
             reconciliation.interval = Duration::from_secs(u64::from(
                 refreshed_search_settings.interval_seconds.clamp(5, 86_400),
             ));
@@ -649,10 +676,6 @@ async fn run_with_lease(
                 wait_or_shutdown(reconciliation.interval, shutdown).await;
                 continue;
             }
-            let refreshed_store = refreshed
-                .store
-                .clone()
-                .ok_or(ProjectorError::DurableStoreRequired)?;
             let after = read_control(&refreshed_store).await?;
             ensure_current_lease(&after, &lease)?;
             if before.checkpoint != after.checkpoint || before.command != after.command {
@@ -673,14 +696,17 @@ async fn run_with_lease(
                 wait_for_shutdown_requested(&watcher_shutdown).await;
                 watcher_cancel.store(true, Ordering::Release);
             });
-            let build_state = refreshed.clone();
+            let build_provider = provider.clone();
             let build_lease = lease.clone();
             let build_cancel = candidate_cancel.clone();
             let checkpoint = after.checkpoint;
             let force_rebuild = after.command == SearchProjectionCommand::Rebuild;
             let mut build_task = tokio::spawn(async move {
-                chancela_api::build_and_publish_external_search_projection(
-                    &build_state,
+                build_and_publish_projection(
+                    &build_provider,
+                    projection_inputs,
+                    refreshed_search_settings,
+                    projection_as_of,
                     build_lease,
                     checkpoint,
                     force_rebuild,
@@ -772,7 +798,7 @@ async fn run_with_lease(
                 continue;
             }
             let outcome = match build_result {
-                Err(error) if error == chancela_api::SEARCH_PROJECTION_UTC_BUCKET_CHANGED => {
+                Err(error) if error == SEARCH_PROJECTION_UTC_BUCKET_CHANGED => {
                     // Every time-derived row in one candidate shares a captured UTC as-of
                     // instant. Crossing midnight invalidates that candidate before CAS; retry
                     // immediately under the still-current lease with a fresh bucket.
@@ -894,16 +920,150 @@ async fn load_completed_status(
         .map_err(|error| ProjectorError::Store(error.to_string()))
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn build_and_publish_projection(
+    provider: &StoreProvider,
+    inputs: chancela_search_projection::ProjectionInputs,
+    settings: SearchSettings,
+    projection_as_of: OffsetDateTime,
+    lease: SearchProjectorLease,
+    checkpoint: chancela_search::SearchProjectionCheckpoint,
+    force_rebuild: bool,
+    shutdown: Arc<AtomicBool>,
+) -> Result<SearchProjectionPublishOutcome, String> {
+    if !settings.enabled {
+        return Err("search projection is disabled in instance settings".to_owned());
+    }
+    if shutdown.load(Ordering::Acquire) {
+        return Err("search projection cancelled for shutdown".to_owned());
+    }
+    let build_shutdown = shutdown.clone();
+    let build = tokio::task::spawn_blocking(move || {
+        chancela_search_projection::build_corpus(
+            inputs,
+            &settings,
+            build_shutdown.as_ref(),
+            projection_as_of,
+        )
+    })
+    .await
+    .map_err(|error| format!("search projection build task panicked: {error}"))??;
+    ensure_projection_date_current(build.projection_utc_date)?;
+
+    // Reopen at the publication boundary so a SQLite recovery inode replacement cannot receive a
+    // valid CAS result through a handle retained from the captured source snapshot.
+    let store = provider
+        .current()
+        .await
+        .map_err(|error| error.to_string())?;
+    let existing = store
+        .read_blocking_async(|store| {
+            Ok::<_, chancela_store::StoreError>((
+                store.search_documents()?,
+                store.search_index_state()?,
+            ))
+        })
+        .await
+        .map_err(|error| format!("search projection baseline load failed: {error}"))?;
+    let (existing_documents, existing_status) = existing;
+    let existing_by_id: HashMap<String, SearchDocument> = existing_documents
+        .into_iter()
+        .map(|document| (document.id.clone(), document))
+        .collect();
+    let target_by_id: HashMap<String, SearchDocument> = build
+        .documents
+        .into_iter()
+        .map(|document| (document.id.clone(), document))
+        .collect();
+    let mut operations = Vec::with_capacity(
+        target_by_id
+            .len()
+            .saturating_add(existing_by_id.len().saturating_sub(target_by_id.len())),
+    );
+    for (id, document) in &target_by_id {
+        if force_rebuild || existing_by_id.get(id) != Some(document) {
+            operations.push(IndexOperation::Upsert(Box::new(document.clone())));
+        }
+    }
+    for id in existing_by_id.keys() {
+        if !target_by_id.contains_key(id) {
+            operations.push(IndexOperation::Delete(id.clone()));
+        }
+    }
+    operations.sort_by(|left, right| operation_id(left).cmp(operation_id(right)));
+
+    let target_count = target_by_id.len() as u64;
+    let truncated_document_count = target_by_id
+        .values()
+        .filter(|document| document.content_truncated)
+        .count() as u64;
+    let now = format_projection_time(projection_as_of);
+    let mut completed = existing_status.unwrap_or_default();
+    completed.phase = SearchIndexPhase::Idle;
+    completed.generation = completed.generation.saturating_add(1);
+    completed.document_count = target_count;
+    completed.truncated_document_count = truncated_document_count;
+    completed.indexed_content_chars = build.indexed_content_chars;
+    completed.content_budget_exhausted = build.content_budget_exhausted;
+    completed.processed = operations.len() as u64;
+    completed.total = operations.len() as u64;
+    completed.last_event_seq = build.last_event_seq;
+    completed.last_started_at = Some(now.clone());
+    completed.last_completed_at = Some(now.clone());
+    completed.last_error = None;
+    completed.error_at = None;
+    completed.projection_fenced = false;
+    completed.updated_at = now;
+    if shutdown.load(Ordering::Acquire) {
+        return Err("search projection cancelled for shutdown".to_owned());
+    }
+    ensure_projection_date_current(build.projection_utc_date)?;
+    store
+        .read_blocking_async(move |store| {
+            store.publish_search_projection(&lease, checkpoint, &operations, &completed)
+        })
+        .await
+        .map_err(|error| format!("search projection CAS publication failed: {error}"))
+}
+
+fn ensure_projection_date_current(projection_utc_date: time::Date) -> Result<(), String> {
+    if OffsetDateTime::now_utc().date() != projection_utc_date {
+        return Err(SEARCH_PROJECTION_UTC_BUCKET_CHANGED.to_owned());
+    }
+    Ok(())
+}
+
+fn operation_id(operation: &IndexOperation) -> &str {
+    match operation {
+        IndexOperation::Upsert(document) => &document.id,
+        IndexOperation::Delete(id) => id,
+    }
+}
+
+fn format_projection_time(value: OffsetDateTime) -> String {
+    value.format(&Rfc3339).unwrap_or_default()
+}
+
 async fn load_projector_config(
     store: &Store,
 ) -> Result<ExternalSearchProjectorConfig, ProjectorError> {
     let store = store.clone();
-    tokio::task::spawn_blocking(move || AppState::try_search_projector_config_with_store(&store))
-        .await
-        .map_err(|error| {
-            ProjectorError::State(format!("search settings preflight task panicked: {error}"))
-        })?
-        .map_err(|error| ProjectorError::State(error.to_string()))
+    tokio::task::spawn_blocking(move || {
+        let data_dir = chancela_runtime_config::resolve_data_dir().ok_or_else(|| {
+            ProjectorError::State(format!(
+                "the external search projector requires a durable store; set {}",
+                chancela_runtime_config::DATA_DIR_ENV
+            ))
+        })?;
+        let settings =
+            chancela_runtime_config::search_projector_settings_with_store(&store, &data_dir)
+                .map_err(|error| ProjectorError::State(error.to_string()))?;
+        Ok::<_, ProjectorError>(ExternalSearchProjectorConfig::from(&settings.search))
+    })
+    .await
+    .map_err(|error| {
+        ProjectorError::State(format!("search settings preflight task panicked: {error}"))
+    })?
 }
 
 fn ensure_current_lease(
@@ -1051,7 +1211,7 @@ impl StoreProvider {
 }
 
 async fn reopen_store() -> Result<Store, ProjectorError> {
-    tokio::task::spawn_blocking(chancela_api::AppState::try_search_projector_store_from_env)
+    tokio::task::spawn_blocking(chancela_runtime_config::search_projector_store_from_env)
         .await
         .map_err(|error| ProjectorError::State(format!("store reopen task panicked: {error}")))?
         .map_err(|error| ProjectorError::State(error.to_string()))
@@ -1197,6 +1357,9 @@ fn write_shared_heartbeat_if_current_lease(
         return Ok(false);
     }
     write_shared_heartbeat(runtime_dir, heartbeat, lease)?;
+    // Cleanup is deliberately best-effort: a directory permission race must not turn an otherwise
+    // valid current heartbeat into a lease-health failure.
+    let _ = prune_retired_heartbeat_files(runtime_dir, &lease.lease_id, now_ms);
     Ok(true)
 }
 
@@ -1291,6 +1454,95 @@ pub fn write_heartbeat_atomic(
             Err(ProjectorError::HeartbeatIo { path, source })
         }
     }
+}
+
+/// Remove a bounded number of expired heartbeat artifacts belonging to retired lease UUIDs.
+///
+/// Only direct, regular `UUID.json` children whose decoded lease identity matches the filename are
+/// candidates. The currently durable lease is always preserved, symlinks/directories are ignored,
+/// and malformed or fresh artifacts are left untouched for diagnosis.
+pub fn prune_retired_heartbeat_files(
+    runtime_dir: &Path,
+    current_lease_id: &str,
+    now_unix_ms: i64,
+) -> Result<usize, ProjectorError> {
+    let current_lease = Uuid::parse_str(current_lease_id).map_err(|_| {
+        ProjectorError::Configuration(
+            "durable search projector lease_id must be a canonical UUID".to_owned(),
+        )
+    })?;
+    let directory = heartbeat_directory(runtime_dir);
+    let entries = match std::fs::read_dir(&directory) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(source) => {
+            return Err(ProjectorError::HeartbeatIo {
+                path: directory,
+                source,
+            });
+        }
+    };
+    let mut removed = 0usize;
+    for (inspected, entry) in entries.enumerate() {
+        if inspected >= HEARTBEAT_PRUNE_MAX_INSPECTED || removed >= HEARTBEAT_PRUNE_MAX_REMOVED {
+            break;
+        }
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(_) => continue,
+        };
+        let path = entry.path();
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(_) => continue,
+        };
+        if !metadata.file_type().is_file() || metadata.len() > 64 * 1024 {
+            continue;
+        }
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        let Some(stem) = file_name.strip_suffix(".json") else {
+            continue;
+        };
+        let Ok(lease_id) = Uuid::parse_str(stem) else {
+            continue;
+        };
+        if stem != lease_id.to_string() || lease_id == current_lease {
+            continue;
+        }
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => continue,
+        };
+        let heartbeat = match serde_json::from_slice::<ProjectorHeartbeat>(&bytes) {
+            Ok(heartbeat) => heartbeat,
+            Err(_) => continue,
+        };
+        if heartbeat.schema_version != HEARTBEAT_SCHEMA_VERSION
+            || heartbeat.service != SERVICE_NAME
+            || heartbeat.lease_id != stem
+        {
+            continue;
+        }
+        let expired = heartbeat
+            .lease_expires_at_unix_ms
+            .is_some_and(|expires_at| expires_at <= now_unix_ms)
+            || heartbeat.updated_at_unix_ms
+                <= now_unix_ms.saturating_sub(HEARTBEAT_RETENTION_MILLIS);
+        if !expired {
+            continue;
+        }
+        // Recheck immediately before deletion so a path swapped to a symlink or directory while it
+        // was decoded is never followed or treated as a regular retired artifact.
+        let regular = std::fs::symlink_metadata(&path)
+            .map(|metadata| metadata.file_type().is_file())
+            .unwrap_or(false);
+        if regular && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 pub fn healthcheck(
@@ -1395,7 +1647,7 @@ pub fn healthcheck_from_env(
     max_age: Duration,
 ) -> Result<ProjectorHeartbeat, ProjectorError> {
     validate_projector_environment()?;
-    let store = AppState::try_search_projector_store_from_env()
+    let store = chancela_runtime_config::search_projector_store_from_env()
         .map_err(|error| ProjectorError::State(error.to_string()))?;
     healthcheck(&store, runtime_dir, max_age)
 }
@@ -1442,6 +1694,108 @@ mod tests {
         assert_eq!(loaded.owner, "test-owner");
         assert_eq!(loaded.lease_id, lease.lease_id);
         assert_eq!(loaded.service, SERVICE_NAME);
+    }
+
+    #[test]
+    fn heartbeat_pruning_is_bounded_and_preserves_current_fresh_and_untrusted_paths() {
+        let dir = TempDir::new();
+        let now_ms = 1_900_000_000_000i64;
+        let current_id = Uuid::new_v4().to_string();
+        let expired_id = Uuid::new_v4().to_string();
+        let fresh_retired_id = Uuid::new_v4().to_string();
+
+        let mut current = ProjectorHeartbeat::new("current-owner".to_owned());
+        current.lease_id.clone_from(&current_id);
+        current.updated_at_unix_ms = 0;
+        current.lease_expires_at_unix_ms = Some(0);
+        write_heartbeat_atomic(&dir.0, &current_id, &current).unwrap();
+
+        let mut expired = ProjectorHeartbeat::new("retired-owner".to_owned());
+        expired.lease_id.clone_from(&expired_id);
+        expired.updated_at_unix_ms = now_ms - HEARTBEAT_RETENTION_MILLIS - 1;
+        expired.lease_expires_at_unix_ms = Some(now_ms - 1);
+        write_heartbeat_atomic(&dir.0, &expired_id, &expired).unwrap();
+
+        let mut fresh_retired = ProjectorHeartbeat::new("fresh-retired-owner".to_owned());
+        fresh_retired.lease_id.clone_from(&fresh_retired_id);
+        fresh_retired.updated_at_unix_ms = now_ms;
+        fresh_retired.lease_expires_at_unix_ms = Some(now_ms + 60_000);
+        write_heartbeat_atomic(&dir.0, &fresh_retired_id, &fresh_retired).unwrap();
+
+        let directory = heartbeat_directory(&dir.0);
+        std::fs::write(directory.join("not-a-uuid.json"), b"do not delete").unwrap();
+        let nested = directory.join("nested");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join(format!("{}.json", Uuid::new_v4())), b"nested").unwrap();
+
+        assert_eq!(
+            prune_retired_heartbeat_files(&dir.0, &current_id, now_ms).unwrap(),
+            1
+        );
+        assert!(
+            heartbeat_path(&dir.0, &current_id).unwrap().exists(),
+            "the current durable lease artifact is never pruned, even if its timestamps look stale"
+        );
+        assert!(!heartbeat_path(&dir.0, &expired_id).unwrap().exists());
+        assert!(heartbeat_path(&dir.0, &fresh_retired_id).unwrap().exists());
+        assert!(directory.join("not-a-uuid.json").exists());
+        assert!(nested.exists());
+    }
+
+    #[test]
+    fn heartbeat_pruning_never_follows_a_symlink() {
+        let dir = TempDir::new();
+        let directory = heartbeat_directory(&dir.0);
+        std::fs::create_dir_all(&directory).unwrap();
+        let current_id = Uuid::new_v4().to_string();
+        let linked_id = Uuid::new_v4().to_string();
+        let target = dir.0.join("sentinel.json");
+        std::fs::write(&target, b"must survive").unwrap();
+        let link = directory.join(format!("{linked_id}.json"));
+
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        #[cfg(windows)]
+        if std::os::windows::fs::symlink_file(&target, &link).is_err() {
+            // Windows may require Developer Mode or the symlink privilege. The production guard is
+            // still exercised on Unix CI and by the metadata-only traversal test above.
+            return;
+        }
+
+        assert_eq!(
+            prune_retired_heartbeat_files(&dir.0, &current_id, i64::MAX).unwrap(),
+            0
+        );
+        assert_eq!(std::fs::read(&target).unwrap(), b"must survive");
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+    }
+
+    #[test]
+    fn heartbeat_pruning_caps_each_pass() {
+        let dir = TempDir::new();
+        let now_ms = 1_900_000_000_000i64;
+        let current_id = Uuid::new_v4().to_string();
+        for index in 0..(HEARTBEAT_PRUNE_MAX_REMOVED + 9) {
+            let lease_id = Uuid::new_v4().to_string();
+            let mut heartbeat = ProjectorHeartbeat::new(format!("retired-{index}"));
+            heartbeat.lease_id.clone_from(&lease_id);
+            heartbeat.updated_at_unix_ms = 0;
+            heartbeat.lease_expires_at_unix_ms = Some(0);
+            write_heartbeat_atomic(&dir.0, &lease_id, &heartbeat).unwrap();
+        }
+        assert_eq!(
+            prune_retired_heartbeat_files(&dir.0, &current_id, now_ms).unwrap(),
+            HEARTBEAT_PRUNE_MAX_REMOVED
+        );
+        let remaining = std::fs::read_dir(heartbeat_directory(&dir.0))
+            .unwrap()
+            .count();
+        assert_eq!(remaining, 9);
     }
 
     #[test]

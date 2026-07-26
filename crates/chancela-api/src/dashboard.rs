@@ -19,10 +19,8 @@ use chancela_store::{
     StoredDocument, StoredFollowUp, StoredFollowUpStatus, StoredGeneratedDocumentDispatchEvidence,
     StoredImportedDocumentMeta, StoredImportedDocumentReviewStatus,
 };
-use serde::Serialize;
-use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
-use time::{Date, Month, OffsetDateTime};
+use time::{Date, OffsetDateTime};
 
 use crate::AppState;
 use crate::actor::CurrentActor;
@@ -46,6 +44,21 @@ use crate::privacy::{
     dpia_advisory_review, transfer_control_advisory_review,
 };
 use crate::settings::WorkflowReminderSettings;
+use chancela_action_center::{
+    BackupRecoveryFreshnessReview as SharedBackupRecoveryFreshnessReview,
+    BackupRecoveryFreshnessStatus as SharedBackupRecoveryFreshnessStatus,
+    BackupRecoveryPolicySettings as SharedBackupRecoveryPolicySettings,
+    BreachPlaybookRecord as SharedBreachPlaybookRecord, DashboardSearchActionable,
+    DpiaRecord as SharedDpiaRecord,
+    GeneratedDispatchEvidenceSnapshot as SharedGeneratedDispatchEvidenceSnapshot,
+    ReminderInputs as SharedReminderInputs, TransferControlRecord as SharedTransferControlRecord,
+    WorkflowReminderSettings as SharedWorkflowReminderSettings,
+    backup_recovery_freshness_alert as shared_backup_recovery_freshness_alert,
+    dashboard_alerts as shared_dashboard_alerts,
+    dashboard_reminders_with_generated_dispatch_evidence as shared_dashboard_reminders,
+    parse_dashboard_date, search_actionables_from_rows, sort_dashboard_alerts,
+    sort_dashboard_reminders,
+};
 
 const REGISTRY_EXPIRY_WARNING_DAYS: i32 = 30;
 
@@ -216,19 +229,6 @@ pub async fn dashboard(
 /// Search-ready Action Center row. This is derived from the exact alert/reminder builders used by
 /// `GET /v1/dashboard`, so discovery cannot drift into a second, event-shaped approximation of an
 /// actionable.
-#[derive(Clone, Serialize)]
-pub(crate) struct DashboardSearchActionable {
-    pub id: String,
-    pub title: String,
-    pub body: String,
-    pub status: String,
-    pub due_date: Option<String>,
-    pub entity_id: Option<String>,
-    pub book_id: Option<String>,
-    pub act_id: Option<String>,
-    pub required_permission: Permission,
-}
-
 /// Build the full Action Center corpus for the background search worker. No request authorization
 /// happens here: each row carries its underlying domain permission and the query path applies that
 /// permission together with `search.read` before hits or facets are counted.
@@ -292,7 +292,7 @@ pub(crate) async fn search_actionables_from_snapshot_at(
     };
     let now = projection_as_of.to_offset(time::UtcOffset::UTC);
     let today = now.date();
-    let mut alerts = dashboard_alerts(
+    let mut alerts = shared_dashboard_alerts(
         entities,
         books,
         acts,
@@ -303,157 +303,108 @@ pub(crate) async fn search_actionables_from_snapshot_at(
     let mut receipts = state.backup_recovery_drill_receipts.read().await.clone();
     sort_backup_recovery_drill_receipts(&mut receipts);
     let freshness = backup_recovery_freshness_review(&receipts, backup_recovery_policy, now);
-    if let Some(alert) = backup_recovery_freshness_alert(&freshness) {
+    let shared_freshness = SharedBackupRecoveryFreshnessReview {
+        generated_at: freshness.generated_at.clone(),
+        policy: SharedBackupRecoveryPolicySettings {
+            max_drill_age_days: freshness.policy.max_drill_age_days,
+            target_rpo_minutes: freshness.policy.target_rpo_minutes,
+            target_rto_minutes: freshness.policy.target_rto_minutes,
+        },
+        status: match freshness.status {
+            BackupRecoveryFreshnessStatus::NoReceipt => {
+                SharedBackupRecoveryFreshnessStatus::NoReceipt
+            }
+            BackupRecoveryFreshnessStatus::Fresh => SharedBackupRecoveryFreshnessStatus::Fresh,
+            BackupRecoveryFreshnessStatus::Stale => SharedBackupRecoveryFreshnessStatus::Stale,
+            BackupRecoveryFreshnessStatus::Failed => SharedBackupRecoveryFreshnessStatus::Failed,
+        },
+        latest_receipt_id: freshness.latest_receipt_id.clone(),
+        latest_receipt_at: freshness.latest_receipt_at.clone(),
+        latest_receipt_age_days: freshness.latest_receipt_age_days,
+        latest_receipt_preflight_ready: freshness.latest_receipt_preflight_ready,
+        latest_receipt_isolated_restore_verified: freshness
+            .latest_receipt_isolated_restore_verified,
+        restore_performed: freshness.restore_performed,
+        db_swap_performed: freshness.db_swap_performed,
+        offsite_custody_verified: freshness.offsite_custody_verified,
+        rpo_rto_certified: freshness.rpo_rto_certified,
+        production_backup_policy_certified: freshness.production_backup_policy_certified,
+    };
+    if let Some(alert) = shared_backup_recovery_freshness_alert(&shared_freshness) {
         alerts.push(alert);
         sort_dashboard_alerts(&mut alerts);
     }
-    let reminders = dashboard_reminders_with_generated_dispatch_evidence(
-        ReminderInputs {
+    let shared_reminder_policy: SharedWorkflowReminderSettings =
+        transcode_projection_input(&reminder_policy, "workflow reminder policy")?;
+    let shared_dpia_records = transcode_privacy_records::<_, SharedDpiaRecord, _>(
+        dpia_records.values(),
+        "DPIA records",
+        |record| record.id,
+    )?;
+    let shared_breach_playbooks = transcode_privacy_records::<_, SharedBreachPlaybookRecord, _>(
+        breach_playbooks.values(),
+        "breach playbooks",
+        |record| record.id,
+    )?;
+    let shared_transfer_controls = transcode_privacy_records::<_, SharedTransferControlRecord, _>(
+        transfer_controls.values(),
+        "transfer controls",
+        |record| record.id,
+    )?;
+    let shared_dispatch_evidence = generated_dispatch_evidence
+        .iter()
+        .map(|snapshot| SharedGeneratedDispatchEvidenceSnapshot {
+            document: snapshot.document.clone(),
+            evidence: snapshot.evidence.clone(),
+        })
+        .collect::<Vec<_>>();
+    let reminders = shared_dashboard_reminders(
+        SharedReminderInputs {
             entities,
             books,
             acts,
             follow_ups,
-            generated_dispatch_evidence: &generated_dispatch_evidence,
+            generated_dispatch_evidence: &shared_dispatch_evidence,
             imported_documents: &imported_documents,
             registry_extracts: &registry_extracts,
-            dpia_records: &dpia_records,
-            breach_playbooks: &breach_playbooks,
-            transfer_controls: &transfer_controls,
+            dpia_records: &shared_dpia_records,
+            breach_playbooks: &shared_breach_playbooks,
+            transfer_controls: &shared_transfer_controls,
         },
         today,
-        &reminder_policy,
+        &shared_reminder_policy,
     );
 
-    search_actionables_from_rows(alerts, reminders)
+    Ok(search_actionables_from_rows(alerts, reminders)?)
 }
 
-fn stable_search_actionable_id<T: Serialize>(
-    prefix: &str,
-    semantic_identity: &T,
-) -> Result<String, ApiError> {
-    let canonical = serde_json::to_vec(semantic_identity).map_err(ApiError::from)?;
-    let digest: [u8; 32] = Sha256::digest(canonical).into();
-    Ok(format!("{prefix}:{}", crate::hex::hex(&digest)))
+fn transcode_projection_input<T, U>(value: &T, label: &str) -> Result<U, ApiError>
+where
+    T: serde::Serialize,
+    U: serde::de::DeserializeOwned,
+{
+    let encoded = serde_json::to_value(value)
+        .map_err(|error| ApiError::Internal(format!("{label} serialization failed: {error}")))?;
+    serde_json::from_value(encoded)
+        .map_err(|error| ApiError::Internal(format!("{label} decoding failed: {error}")))
 }
 
-fn search_actionables_from_rows(
-    mut alerts: Vec<DashboardAlert>,
-    mut reminders: Vec<DashboardReminder>,
-) -> Result<Vec<DashboardSearchActionable>, ApiError> {
-    sort_dashboard_alerts(&mut alerts);
-    sort_dashboard_reminders(&mut reminders);
-    let mut out = Vec::with_capacity(alerts.len() + reminders.len());
-    for alert in alerts {
-        let required_permission = if alert.category == "LedgerIntegrity" {
-            Permission::LedgerRead
-        } else if alert.code.starts_with("backup.") {
-            Permission::DataBackup
-        } else if alert.target.act_id.is_some() {
-            Permission::ActRead
-        } else if alert.target.book_id.is_some() {
-            Permission::BookRead
-        } else if alert.target.entity_id.is_some() {
-            Permission::EntityRead
-        } else {
-            Permission::ActRead
-        };
-        let body = if matches!(
-            required_permission,
-            Permission::ActRead | Permission::BookRead | Permission::EntityRead
-        ) {
-            serde_json::to_string(&serde_json::json!({
-                "code": &alert.code,
-                "label": &alert.label,
-                "severity": &alert.severity,
-                "category": &alert.category,
-                "source": &alert.source,
-                "law_refs": &alert.law_refs,
-                "action": &alert.action,
-                "i18n": &alert.i18n,
-            }))
-            .map_err(ApiError::from)?
-        } else {
-            serde_json::to_string(&alert).map_err(ApiError::from)?
-        };
-        let id = stable_search_actionable_id(
-            "alert",
-            &(
-                &alert.code,
-                &alert.target.entity_id,
-                &alert.target.book_id,
-                &alert.target.act_id,
-                &alert.params,
-                &alert.source,
-            ),
-        )?;
-        out.push(DashboardSearchActionable {
-            id,
-            title: alert.code.clone(),
-            body,
-            status: alert.severity.clone(),
-            due_date: None,
-            entity_id: alert.target.entity_id.clone(),
-            book_id: alert.target.book_id.clone(),
-            act_id: alert.target.act_id.clone(),
-            required_permission,
-        });
-    }
-    for reminder in reminders {
-        let act_id = reminder.params.get("act_id").cloned();
-        let book_id = reminder.params.get("book_id").cloned();
-        let required_permission = if reminder.source_rule.starts_with("privacy.")
-            || reminder.source_rule.contains("dpia")
-            || reminder.source_rule.contains("breach")
-            || reminder.source_rule.contains("transfer")
-        {
-            Permission::PrivacyManage
-        } else {
-            Permission::ActRead
-        };
-        let (title, body) = if required_permission == Permission::ActRead {
-            (
-                reminder.source_rule.clone(),
-                serde_json::to_string(&serde_json::json!({
-                    "due_date": &reminder.due_date,
-                    "severity": &reminder.severity,
-                    "status": &reminder.status,
-                    "source_rule": &reminder.source_rule,
-                    "source_profile": &reminder.source_profile,
-                    "law_refs": &reminder.law_refs,
-                    "action": &reminder.action,
-                    "i18n": &reminder.i18n,
-                }))
-                .map_err(ApiError::from)?,
-            )
-        } else {
-            (
-                reminder.reason.clone(),
-                serde_json::to_string(&reminder).map_err(ApiError::from)?,
-            )
-        };
-        let id = stable_search_actionable_id(
-            "reminder",
-            &(
-                &reminder.source_rule,
-                &reminder.source_profile,
-                &reminder.entity_id,
-                &reminder.due_date,
-                &reminder.params,
-            ),
-        )?;
-        out.push(DashboardSearchActionable {
-            id,
-            title,
-            body,
-            status: reminder.status.clone(),
-            due_date: Some(reminder.due_date.clone()),
-            entity_id: Some(reminder.entity_id.clone()),
-            book_id,
-            act_id,
-            required_permission,
-        });
-    }
-    Ok(out)
+fn transcode_privacy_records<'a, S, T, K>(
+    records: impl Iterator<Item = &'a S>,
+    label: &str,
+    id: impl Fn(&T) -> K,
+) -> Result<HashMap<K, T>, ApiError>
+where
+    S: serde::Serialize + 'a,
+    T: serde::de::DeserializeOwned,
+    K: Eq + std::hash::Hash,
+{
+    records
+        .map(|record| {
+            let record = transcode_projection_input(record, label)?;
+            Ok((id(&record), record))
+        })
+        .collect()
 }
 
 async fn load_generated_dispatch_evidence_snapshots(
@@ -860,27 +811,6 @@ fn dashboard_alerts(
 
     sort_dashboard_alerts(&mut alerts);
     alerts
-}
-
-fn sort_dashboard_alerts(alerts: &mut [DashboardAlert]) {
-    alerts.sort_by(|a, b| {
-        a.label
-            .cmp(&b.label)
-            .then_with(|| a.category.cmp(&b.category))
-            .then_with(|| a.code.cmp(&b.code))
-            .then_with(|| a.target.entity_id.cmp(&b.target.entity_id))
-            .then_with(|| a.target.book_id.cmp(&b.target.book_id))
-            .then_with(|| a.target.act_id.cmp(&b.target.act_id))
-            .then_with(|| a.params.cmp(&b.params))
-            .then_with(|| a.source.cmp(&b.source))
-            .then_with(|| a.severity.cmp(&b.severity))
-            .then_with(|| a.message.cmp(&b.message))
-            .then_with(|| canonical_dashboard_sort_key(a).cmp(&canonical_dashboard_sort_key(b)))
-    });
-}
-
-fn canonical_dashboard_sort_key<T: Serialize>(value: &T) -> Vec<u8> {
-    serde_json::to_vec(value).expect("dashboard DTO serialization is infallible")
 }
 
 fn backup_recovery_freshness_alert(
@@ -1535,20 +1465,6 @@ fn fold_ascii(value: &str) -> String {
         .collect()
 }
 
-fn parse_dashboard_date(value: &str) -> Option<Date> {
-    let (year, rest) = value.split_once('-')?;
-    let (month, day) = rest.split_once('-')?;
-    let year = year.parse::<i32>().ok()?;
-    let month = Month::try_from(month.parse::<u8>().ok()?).ok()?;
-    let day = day.parse::<u8>().ok()?;
-    Date::from_calendar_date(year, month, day).ok()
-}
-
-fn dashboard_reminder_due_date_sort_key(reminder: &DashboardReminder) -> (bool, Option<Date>) {
-    let due_date = parse_dashboard_date(reminder.due_date.trim());
-    (due_date.is_none(), due_date)
-}
-
 fn rfc3339(value: OffsetDateTime) -> String {
     value.format(&Rfc3339).unwrap_or_default()
 }
@@ -1739,22 +1655,6 @@ fn dashboard_reminders_with_generated_dispatch_evidence(
     sort_dashboard_reminders(&mut reminders);
     reminders.truncate(policy.dashboard_limit as usize);
     reminders
-}
-
-fn sort_dashboard_reminders(reminders: &mut [DashboardReminder]) {
-    reminders.sort_by(|a, b| {
-        dashboard_reminder_due_date_sort_key(a)
-            .cmp(&dashboard_reminder_due_date_sort_key(b))
-            .then_with(|| a.entity_name.cmp(&b.entity_name))
-            .then_with(|| a.entity_id.cmp(&b.entity_id))
-            .then_with(|| a.source_profile.cmp(&b.source_profile))
-            .then_with(|| a.source_rule.cmp(&b.source_rule))
-            .then_with(|| a.params.cmp(&b.params))
-            .then_with(|| a.status.cmp(&b.status))
-            .then_with(|| a.severity.cmp(&b.severity))
-            .then_with(|| a.reason.cmp(&b.reason))
-            .then_with(|| canonical_dashboard_sort_key(a).cmp(&canonical_dashboard_sort_key(b)))
-    });
 }
 
 fn follow_up_reminders(

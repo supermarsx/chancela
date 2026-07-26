@@ -23,7 +23,7 @@ sqlcipher = ["chancela-store/sqlcipher"]
 # and the plain `cargo build` stay SQLite-only with an unchanged dependency graph. wp16 P1 additionally
 # pulls in the synchronous `postgres` crate directly so the follower change-feed can run its own
 # dedicated `LISTEN chancela_ledger` connection (never the store's writer / read pool).
-postgres = ["chancela-store/postgres", "dep:postgres"]
+postgres = ["chancela-runtime-config/postgres", "chancela-store/postgres", "dep:postgres"]
 # wp14 Phase 4: enable the OPTIONAL Redis cache-aside backend. OFF by default; when on, the cache is
 # still inert unless `REDIS_URL`/`REDIS_URL_FILE` is set at runtime (else NullCache). The in-process
 # `Ledger::verify()` memo (the real single-node win) needs NO feature — it is always compiled.
@@ -31,6 +31,7 @@ redis = ["dep:redis"]
 
 [dependencies]
 chancela-apikey = { workspace = true }
+chancela-action-center = { workspace = true }
 chancela-archive = { workspace = true }
 chancela-authz = { workspace = true }
 chancela-zk = { workspace = true }
@@ -43,6 +44,8 @@ chancela-cae = { workspace = true }
 chancela-law = { workspace = true }
 chancela-store = { workspace = true }
 chancela-search = { workspace = true }
+chancela-search-projection = { workspace = true }
+chancela-runtime-config = { workspace = true }
 chancela-templates = { workspace = true }
 chancela-doc = { workspace = true }
 chancela-signing = { workspace = true }

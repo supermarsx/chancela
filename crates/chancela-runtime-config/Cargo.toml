@@ -1,0 +1,21 @@
+[package]
+name = "chancela-runtime-config"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license-file.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Shared durable-store runtime configuration for Chancela services."
+
+[features]
+default = []
+postgres = ["chancela-store/postgres"]
+sqlcipher = ["chancela-store/sqlcipher"]
+
+[dependencies]
+chancela-action-center.workspace = true
+chancela-search.workspace = true
+chancela-store.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -24,20 +24,21 @@ use chancela_authz::{
     ActId as AuthzActId, BookId as AuthzBookId, EntityId as AuthzEntityId, Permission, Scope,
     TenantId as AuthzTenantId,
 };
-use chancela_core::Book;
+#[cfg(test)]
+use chancela_search::SearchDocumentContent;
 #[cfg(test)]
 use chancela_search::SearchProjectionPublishRejection;
 use chancela_search::{
-    InMemoryIndex, IndexOperation, SearchAccess, SearchDocument, SearchDocumentContent,
-    SearchFilters, SearchIndexPhase, SearchIndexState, SearchKind, SearchPage,
-    SearchProjectionCheckpoint, SearchProjectionCommand, SearchProjectionControl,
-    SearchProjectionPublishOutcome, SearchProjectorLease, SearchQuery,
+    InMemoryIndex, IndexOperation, SearchAccess, SearchDocument, SearchFilters, SearchIndexPhase,
+    SearchIndexState, SearchKind, SearchPage, SearchProjectionCheckpoint, SearchProjectionCommand,
+    SearchProjectionControl, SearchProjectionPublishOutcome, SearchProjectorLease, SearchQuery,
 };
 use chancela_store::{
     Store, StoreError, StoredDocumentSearchMetadata, StoredImportedDocumentMeta,
     StoredImportedDocumentReviewHistoryEntry, StoredPaperBookImportMeta, StoredPaperBookOcrDraft,
 };
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use time::format_description::well_known::Rfc3339;
@@ -46,7 +47,8 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, OwnedSemaphorePermit, Semaphore};
 use uuid::Uuid;
 
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::dto::{ActView, BookView, EntityView, REDACTED, ReadRedaction};
+#[cfg(test)]
+use crate::dto::REDACTED;
 use crate::{ApiError, AppState, Authorizer, authorizer};
 
 const MAX_CURSOR_BYTES: usize = 1_024;
@@ -2591,6 +2593,7 @@ fn bounded_projector_diagnostic(raw: &str) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
+#[cfg(test)]
 fn bounded_projection_error(context: &str, error: impl std::fmt::Display) -> String {
     let detail = bounded_projector_diagnostic(&error.to_string())
         .unwrap_or_else(|| "unknown validation failure".to_owned());
@@ -2619,12 +2622,14 @@ struct CorpusBuild {
     projection_utc_date: time::Date,
 }
 
+#[cfg(test)]
 struct CorpusContentBudget {
     remaining: usize,
     retained: u64,
     exhausted: bool,
 }
 
+#[cfg(test)]
 impl CorpusContentBudget {
     fn new(max_chars: u64) -> Self {
         Self {
@@ -2657,6 +2662,7 @@ impl CorpusContentBudget {
     }
 }
 
+#[cfg(test)]
 fn apply_global_content_budget(
     mut documents: Vec<SearchDocument>,
     max_chars: u64,
@@ -2671,6 +2677,7 @@ fn apply_global_content_budget(
 }
 
 #[derive(Clone, Default)]
+#[cfg(test)]
 struct Relation {
     tenant_id: Option<String>,
     entity_id: Option<String>,
@@ -2786,10 +2793,6 @@ async fn build_corpus(
     projection_as_of: OffsetDateTime,
 ) -> Result<CorpusBuild, String> {
     ensure_projection_active(shutdown)?;
-    let default_template_registry = chancela_templates::load_registry()
-        .map_err(|error| bounded_projection_error("default template registry is invalid", error))?;
-    // Snapshot one bounded chunk at a time. Serialization and tokenization happen only after all
-    // request-facing locks are released.
     let entities = snapshot_map_bounded(&state.entities, shutdown).await?;
     let books = snapshot_map_bounded(&state.books, shutdown).await?;
     let acts = snapshot_map_bounded(&state.acts, shutdown).await?;
@@ -2813,678 +2816,38 @@ async fn build_corpus(
     )
     .await
     .map_err(|error| format!("Action Center search projection failed: {error:?}"))?;
-
-    let mut entity_relations = HashMap::new();
-    for entity in entities.values() {
-        ensure_projection_active(shutdown)?;
-        entity_relations.insert(
-            entity.id.to_string(),
-            Relation {
-                tenant_id: Some(entity.tenant_id.to_string()),
-                entity_id: Some(entity.id.to_string()),
-                entity_name: Some(entity.name.clone()),
-                ..Relation::default()
+    let build = chancela_search_projection::build_corpus(
+        chancela_search_projection::ProjectionInputs {
+            entities,
+            books,
+            acts,
+            follow_ups,
+            template_libraries,
+            template_revisions,
+            events,
+            durable: chancela_search_projection::DurableCorpusRows {
+                imported_documents: durable.imported_documents,
+                imported_review_history: durable.imported_review_history,
+                paper_imports: durable.paper_imports,
+                generated_documents: durable.generated_documents,
+                user_templates: durable.user_templates,
             },
-        );
-    }
-    let mut book_relations = HashMap::new();
-    let mut privileged_book_relations = HashMap::new();
-    for book in books.values() {
-        ensure_projection_active(shutdown)?;
-        let mut relation = entity_relations
-            .get(&book.entity_id.to_string())
-            .cloned()
-            .unwrap_or_default();
-        relation.book_id = Some(book.id.to_string());
-        relation.book_label = Some(book_label(book));
-        book_relations.insert(book.id.to_string(), relation.clone());
-        relation.book_label = Some(privileged_book_label(book));
-        privileged_book_relations.insert(book.id.to_string(), relation);
-    }
-    let mut act_relations = HashMap::new();
-    let mut privileged_act_relations = HashMap::new();
-    for act in acts.values() {
-        ensure_projection_active(shutdown)?;
-        let mut relation = book_relations
-            .get(&act.book_id.to_string())
-            .cloned()
-            .unwrap_or_default();
-        relation.act_id = Some(act.id.to_string());
-        act_relations.insert(act.id.to_string(), relation);
-        let mut privileged_relation = privileged_book_relations
-            .get(&act.book_id.to_string())
-            .cloned()
-            .unwrap_or_default();
-        privileged_relation.act_id = Some(act.id.to_string());
-        privileged_act_relations.insert(act.id.to_string(), privileged_relation);
-    }
-
-    let mut documents = Vec::with_capacity(
-        entities.len()
-            + books.len()
-            + acts.len()
-            + follow_ups.len()
-            + events.len().saturating_mul(2),
-    );
-    let mut ordered_entities: Vec<_> = entities.values().collect();
-    ordered_entities.sort_by_key(|entity| entity.id.0);
-    let mut ordered_books: Vec<_> = books.values().collect();
-    ordered_books.sort_by_key(|book| book.id.0);
-    let mut ordered_acts: Vec<_> = acts.values().collect();
-    ordered_acts.sort_by_key(|act| act.id.0);
-    let mut ordered_follow_ups: Vec<_> = follow_ups.values().collect();
-    ordered_follow_ups.sort_by(|left, right| left.id.cmp(&right.id));
-    let mut ordered_libraries: Vec<_> = template_libraries.values().collect();
-    ordered_libraries.sort_by_key(|library| library.id);
-    let mut ordered_revisions: Vec<_> = template_revisions.values().collect();
-    ordered_revisions.sort_by_key(|revision| (revision.library_id, revision.revision));
-
-    for entity in ordered_entities {
-        ensure_projection_active(shutdown)?;
-        let public_view = EntityView::build(entity, ReadRedaction::Guest);
-        let public = project_serializable(
-            format!("entity:{}", entity.id),
-            SearchKind::Entity,
-            entity_relations
-                .get(&entity.id.to_string())
-                .cloned()
-                .unwrap_or_default(),
-            entity.name.clone(),
-            &public_view,
-            None,
-            None,
-            Some(format!("{:?}", entity.kind)),
-            None,
-            settings.max_content_chars as usize,
-        )?;
-        let privileged = project_serializable(
-            format!("entity:{}", entity.id),
-            SearchKind::Entity,
-            entity_relations
-                .get(&entity.id.to_string())
-                .cloned()
-                .unwrap_or_default(),
-            entity.name.clone(),
-            entity,
-            None,
-            None,
-            Some(format!("{:?}", entity.kind)),
-            None,
-            settings.max_content_chars as usize,
-        );
-        documents.push(with_privileged(public, privileged?));
-    }
-    for book in ordered_books {
-        ensure_projection_active(shutdown)?;
-        let public_view = BookView::build(book, ReadRedaction::Guest);
-        let public = project_serializable(
-            format!("book:{}", book.id),
-            SearchKind::Book,
-            book_relations
-                .get(&book.id.to_string())
-                .cloned()
-                .unwrap_or_default(),
-            book_label(book),
-            &public_view,
-            None,
-            None,
-            Some(format!("{:?}", book.state)),
-            None,
-            settings.max_content_chars as usize,
-        )?;
-        let privileged = project_serializable(
-            format!("book:{}", book.id),
-            SearchKind::Book,
-            privileged_book_relations
-                .get(&book.id.to_string())
-                .cloned()
-                .unwrap_or_default(),
-            privileged_book_label(book),
-            book,
-            None,
-            None,
-            Some(format!("{:?}", book.state)),
-            None,
-            settings.max_content_chars as usize,
-        );
-        documents.push(with_privileged(public, privileged?));
-    }
-    for act in ordered_acts {
-        ensure_projection_active(shutdown)?;
-        let public_view = ActView::build(act, ReadRedaction::Guest);
-        let public = project_serializable(
-            format!("act:{}", act.id),
-            SearchKind::Act,
-            act_relations
-                .get(&act.id.to_string())
-                .cloned()
-                .unwrap_or_default(),
-            public_view.title.clone(),
-            &public_view,
-            None,
-            None,
-            Some(format!("{:?}", act.state)),
-            act.meeting_date.map(|date| date.to_string()),
-            settings.max_content_chars as usize,
-        )?;
-        let privileged = project_serializable(
-            format!("act:{}", act.id),
-            SearchKind::Act,
-            privileged_act_relations
-                .get(&act.id.to_string())
-                .cloned()
-                .unwrap_or_default(),
-            act.title.clone(),
-            act,
-            None,
-            None,
-            Some(format!("{:?}", act.state)),
-            act.meeting_date.map(|date| date.to_string()),
-            settings.max_content_chars as usize,
-        );
-        documents.push(with_privileged(public, privileged?));
-    }
-    for follow_up in ordered_follow_ups {
-        ensure_projection_active(shutdown)?;
-        let relation = act_relations
-            .get(&follow_up.act_id.to_string())
-            .cloned()
-            .unwrap_or_else(|| Relation {
-                act_id: Some(follow_up.act_id.to_string()),
-                ..Relation::default()
-            });
-        let privileged_relation = privileged_act_relations
-            .get(&follow_up.act_id.to_string())
-            .cloned()
-            .unwrap_or_else(|| relation.clone());
-        let body = format!(
-            "{}\n{}\n{}",
-            REDACTED,
-            follow_up.status.as_str(),
-            follow_up
-                .due_date
-                .map(|date| date.to_string())
-                .unwrap_or_default()
-        );
-        let public = project_text(
-            format!("follow_up:{}", follow_up.id),
-            SearchKind::FollowUp,
-            relation,
-            REDACTED.to_owned(),
-            body.clone(),
-            None,
-            None,
-            Some(follow_up.status.as_str().to_owned()),
-            Some(
-                follow_up
-                    .due_date
-                    .map(|date| date.to_string())
-                    .unwrap_or_else(|| format_time(follow_up.created_at)),
-            ),
-            body.as_bytes(),
-            settings.max_content_chars as usize,
-        );
-        let privileged_body = format!(
-            "{}\n{}\n{}\n{}\n{}\n{}\n{}",
-            follow_up.title,
-            follow_up.detail.as_deref().unwrap_or_default(),
-            follow_up.assignee.as_deref().unwrap_or_default(),
-            follow_up.assignee_display.as_deref().unwrap_or_default(),
-            follow_up.status.as_str(),
-            follow_up
-                .due_date
-                .map(|date| date.to_string())
-                .unwrap_or_default(),
-            follow_up.created_by
-        );
-        let privileged = project_text(
-            format!("follow_up:{}", follow_up.id),
-            SearchKind::FollowUp,
-            privileged_relation,
-            follow_up.title.clone(),
-            privileged_body.clone(),
-            Some(follow_up.created_by.clone()),
-            None,
-            Some(follow_up.status.as_str().to_owned()),
-            Some(
-                follow_up
-                    .due_date
-                    .map(|date| date.to_string())
-                    .unwrap_or_else(|| format_time(follow_up.created_at)),
-            ),
-            privileged_body.as_bytes(),
-            settings.max_content_chars as usize,
-        );
-        documents.push(with_privileged(public, privileged));
-    }
-
-    documents.extend(project_default_template_registry(
-        Ok::<_, String>(default_template_registry),
+            actionables,
+        },
         settings,
         shutdown,
-    )?);
-    for (id, raw) in durable.user_templates {
-        ensure_projection_active(shutdown)?;
-        let value =
-            serde_json::from_str::<Value>(&raw).unwrap_or_else(|_| Value::String(raw.clone()));
-        let title = value
-            .get("name")
-            .and_then(Value::as_str)
-            .or_else(|| value.get("title").and_then(Value::as_str))
-            .unwrap_or(&id)
-            .to_owned();
-        let public_value = public_template_metadata(&value);
-        let public = project_value(
-            format!("template:user:{id}"),
-            SearchKind::Template,
-            Relation::default(),
-            title.clone(),
-            &public_value,
-            None,
-            None,
-            Some("user_created".to_owned()),
-            None,
-            raw.as_bytes(),
-            settings.max_content_chars as usize,
-        );
-        let privileged = project_value(
-            format!("template:user:{id}"),
-            SearchKind::Template,
-            Relation::default(),
-            title,
-            &value,
-            None,
-            None,
-            Some("user_created".to_owned()),
-            None,
-            raw.as_bytes(),
-            settings.max_content_chars as usize,
-        );
-        documents.push(with_privileged(public, privileged));
-    }
-    for library in ordered_libraries {
-        ensure_projection_active(shutdown)?;
-        let public_value = serde_json::json!({
-            "id": library.id,
-            "tenant_id": library.tenant_id,
-            "name": library.name,
-            "status": if library.is_archived() { "archived" } else { "active" },
-            "updated_at": format_time(library.updated_at),
-        });
-        let relation = Relation {
-            tenant_id: Some(library.tenant_id.to_string()),
-            ..Relation::default()
-        };
-        let public = project_serializable(
-            format!("template:library:{}", library.id),
-            SearchKind::Template,
-            relation.clone(),
-            library.name.clone(),
-            &public_value,
-            None,
-            None,
-            Some(if library.is_archived() {
-                "archived".to_owned()
-            } else {
-                "active".to_owned()
-            }),
-            Some(format_time(library.updated_at)),
-            settings.max_content_chars as usize,
-        )?;
-        let privileged = project_serializable(
-            format!("template:library:{}", library.id),
-            SearchKind::Template,
-            relation,
-            library.name.clone(),
-            library,
-            None,
-            None,
-            Some(if library.is_archived() {
-                "archived".to_owned()
-            } else {
-                "active".to_owned()
-            }),
-            Some(format_time(library.updated_at)),
-            settings.max_content_chars as usize,
-        )?;
-        documents.push(with_privileged(public, privileged));
-    }
-    for revision in ordered_revisions {
-        ensure_projection_active(shutdown)?;
-        let library_name = template_libraries
-            .get(&revision.library_id)
-            .map(|library| library.name.as_str())
-            .unwrap_or("Biblioteca de modelos");
-        let public_value = serde_json::json!({
-            "library_id": revision.library_id,
-            "tenant_id": revision.tenant_id,
-            "revision": revision.revision,
-            "created_at": format_time(revision.created_at),
-        });
-        let relation = Relation {
-            tenant_id: Some(revision.tenant_id.to_string()),
-            ..Relation::default()
-        };
-        let title = format!("{library_name} — revisão {}", revision.revision);
-        let public = project_serializable(
-            format!(
-                "template:library:{}:revision:{}",
-                revision.library_id, revision.revision
-            ),
-            SearchKind::Template,
-            relation.clone(),
-            title.clone(),
-            &public_value,
-            None,
-            None,
-            Some("revision".to_owned()),
-            Some(format_time(revision.created_at)),
-            settings.max_content_chars as usize,
-        )?;
-        let privileged = project_serializable(
-            format!(
-                "template:library:{}:revision:{}",
-                revision.library_id, revision.revision
-            ),
-            SearchKind::Template,
-            relation,
-            title,
-            revision,
-            Some(revision.created_by.clone()),
-            None,
-            Some("revision".to_owned()),
-            Some(format_time(revision.created_at)),
-            settings.max_content_chars as usize,
-        )?;
-        documents.push(with_privileged(public, privileged));
-    }
-
-    for diploma in chancela_law::LawCatalog::embedded().diplomas() {
-        for article in &diploma.articles {
-            ensure_projection_active(shutdown)?;
-            let body = format!(
-                "{}\n{}\n{}\n{}\n{}\n{}",
-                diploma.title,
-                diploma.reference,
-                article.label,
-                article.heading,
-                article.display_body(),
-                article.cross_refs.join(" ")
-            );
-            documents.push(project_text(
-                format!("law:{}:{}", diploma.id, article.number),
-                SearchKind::LawArticle,
-                Relation::default(),
-                format!("{} — {}", article.label, article.heading),
-                body.clone(),
-                None,
-                Some(diploma.reference.clone()),
-                Some(format!("{:?}", article.verification)),
-                article.source.dr_date.clone(),
-                body.as_bytes(),
-                settings.max_content_chars as usize,
-            ));
-        }
-    }
-
-    let mut last_event_seq = None;
-    for event in &events {
-        ensure_projection_active(shutdown)?;
-        last_event_seq = Some(last_event_seq.map_or(event.seq, |seq: u64| seq.max(event.seq)));
-        let relation = relation_from_scope(
-            &format!(
-                "{} {}",
-                event.scope,
-                event
-                    .links
-                    .iter()
-                    .map(|link| link.chain.to_string())
-                    .collect::<Vec<_>>()
-                    .join(" ")
-            ),
-            &entity_relations,
-            &book_relations,
-            &act_relations,
-        );
-        let public = project_serializable(
-            format!("ledger_event:{}", event.seq),
-            SearchKind::LedgerEvent,
-            relation.clone(),
-            REDACTED.to_owned(),
-            &serde_json::json!({
-                "seq": event.seq,
-                "timestamp": format_time(event.timestamp),
-                "content": REDACTED,
-            }),
-            None,
-            None,
-            Some(REDACTED.to_owned()),
-            Some(format_time(event.timestamp)),
-            settings.max_content_chars as usize,
-        )?;
-        let privileged = project_serializable(
-            format!("ledger_event:{}", event.seq),
-            SearchKind::LedgerEvent,
-            relation,
-            event.kind.clone(),
-            event,
-            Some(event.actor.clone()),
-            None,
-            Some(event.kind.clone()),
-            Some(format_time(event.timestamp)),
-            settings.max_content_chars as usize,
-        )?;
-        documents.push(with_privileged(public, privileged));
-    }
-
-    for actionable in actionables {
-        ensure_projection_active(shutdown)?;
-        let relation = actionable
-            .act_id
-            .as_deref()
-            .and_then(|id| act_relations.get(id).cloned())
-            .or_else(|| {
-                actionable
-                    .book_id
-                    .as_deref()
-                    .and_then(|id| book_relations.get(id).cloned())
-            })
-            .or_else(|| {
-                actionable
-                    .entity_id
-                    .as_deref()
-                    .and_then(|id| entity_relations.get(id).cloned())
-            })
-            .unwrap_or_default();
-        let mut document = project_text(
-            format!("operational_action:{}", actionable.id),
-            SearchKind::OperationalAction,
-            relation,
-            actionable.title,
-            actionable.body.clone(),
-            None,
-            None,
-            Some(actionable.status),
-            actionable.due_date,
-            actionable.body.as_bytes(),
-            settings.max_content_chars as usize,
-        );
-        document.required_permission = Some(actionable.required_permission.as_str().to_owned());
-        documents.push(document);
-    }
-
-    let mut imported_review_history = durable.imported_review_history;
-    for imported in durable.imported_documents {
-        ensure_projection_active(shutdown)?;
-        let relation = imported
-            .act_id
-            .and_then(|id| act_relations.get(&id.to_string()).cloned())
-            .unwrap_or_else(|| Relation {
-                act_id: imported.act_id.map(|id| id.to_string()),
-                ..Relation::default()
-            });
-        let report = serde_json::from_str::<Value>(&imported.technical_validation_report_json)
-            .unwrap_or_else(|_| Value::String(imported.technical_validation_report_json.clone()));
-        let mut body = flatten_value_to_text(&report);
-        for value in [
-            imported.filename.as_deref(),
-            imported.declared_content_type.as_deref(),
-            Some(imported.detected_content_type.as_str()),
-            imported.operator_review_note.as_deref(),
-            imported.operator_reviewed_by.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            body.push('\n');
-            body.push_str(value);
-        }
-        if let Some(history) = imported_review_history.remove(&imported.id) {
-            for entry in history {
-                body.push('\n');
-                body.push_str(entry.review_status.as_str());
-                if let Some(reviewed_at) = entry.reviewed_at {
-                    body.push('\n');
-                    body.push_str(&format_time(reviewed_at));
-                }
-                for value in [entry.reviewed_by.as_deref(), entry.review_note.as_deref()]
-                    .into_iter()
-                    .flatten()
-                {
-                    body.push('\n');
-                    body.push_str(value);
-                }
-                for guardrail_id in entry.acknowledged_guardrail_ids {
-                    body.push('\n');
-                    body.push_str(&guardrail_id);
-                }
-            }
-        }
-        let source = format!(
-            "{}:{}:{}",
-            imported.sha256,
-            imported.operator_review_status.as_str(),
-            body
-        );
-        documents.push(project_text(
-            format!("imported_document:{}", imported.id),
-            SearchKind::ImportedDocument,
-            relation,
-            imported
-                .filename
-                .clone()
-                .unwrap_or_else(|| format!("Documento importado {}", imported.id)),
-            body,
-            Some(imported.imported_by.clone()),
-            None,
-            Some(imported.operator_review_status.as_str().to_owned()),
-            Some(format_time(imported.imported_at)),
-            source.as_bytes(),
-            settings.max_content_chars as usize,
-        ));
-    }
-
-    for (paper, drafts) in durable.paper_imports {
-        ensure_projection_active(shutdown)?;
-        let relation = relation_for_paper(&paper, &entity_relations, &book_relations);
-        let body = format!(
-            "{}\n{}\n{}\n{}\n{}\n{}",
-            paper.entity_name,
-            paper.entity_nipc,
-            paper.book_ref,
-            paper.source_filename.as_deref().unwrap_or_default(),
-            paper.notes.as_deref().unwrap_or_default(),
-            paper.imported_by
-        );
-        documents.push(project_text(
-            format!("paper_book:{}", paper.import_id),
-            SearchKind::PaperBook,
-            relation.clone(),
-            paper
-                .source_filename
-                .clone()
-                .unwrap_or_else(|| format!("Livro em papel {}", paper.book_ref)),
-            body.clone(),
-            Some(paper.imported_by.clone()),
-            None,
-            Some(paper.ocr_status.as_str().to_owned()),
-            Some(format_time(paper.imported_at)),
-            format!("{}:{body}", paper.sha256).as_bytes(),
-            settings.max_content_chars as usize,
-        ));
-        for draft in drafts {
-            ensure_projection_active(shutdown)?;
-            let body = format!(
-                "{}\n{}\n{}\n{}\n{}",
-                draft.extracted_text.as_deref().unwrap_or_default(),
-                draft.review_note.as_deref().unwrap_or_default(),
-                draft.engine_name,
-                draft.engine_version.as_deref().unwrap_or_default(),
-                draft.reviewed_by.as_deref().unwrap_or_default()
-            );
-            documents.push(project_text(
-                format!("ocr_draft:{}", draft.draft_id),
-                SearchKind::OcrDraft,
-                relation.clone(),
-                format!("OCR {} — {}", paper.book_ref, draft.draft_id),
-                body.clone(),
-                Some(draft.created_by.clone()),
-                None,
-                Some(draft.review_status.as_str().to_owned()),
-                Some(format_time(draft.created_at)),
-                format!(
-                    "{}:{}:{body}",
-                    draft.text_digest.as_deref().unwrap_or_default(),
-                    draft.review_status.as_str()
-                )
-                .as_bytes(),
-                settings.max_content_chars as usize,
-            ));
-        }
-    }
-
-    for generated in durable.generated_documents {
-        ensure_projection_active(shutdown)?;
-        let relation = act_relations
-            .get(&generated.act_id.to_string())
-            .cloned()
-            .unwrap_or_else(|| Relation {
-                act_id: Some(generated.act_id.to_string()),
-                ..Relation::default()
-            });
-        // Generated bytes/spec/layout can carry the same narrative or custom header/footer text as
-        // the act. Search the non-content metadata only; the PDF is never loaded by this projection.
-        let body = format!(
-            "{}\n{}\n{}",
-            generated.template_id, generated.profile, generated.pdf_digest
-        );
-        documents.push(project_text(
-            format!("generated_document:{}", generated.id),
-            SearchKind::GeneratedDocument,
-            relation,
-            format!("Documento {}", generated.id),
-            body.clone(),
-            None,
-            None,
-            Some(generated.profile),
-            Some(format_time(generated.created_at)),
-            body.as_bytes(),
-            settings.max_content_chars as usize,
-        ));
-    }
-
-    ensure_projection_active(shutdown)?;
-    let (documents, indexed_content_chars, content_budget_exhausted) =
-        apply_global_content_budget(documents, settings.max_total_content_chars);
+        projection_as_of,
+    )?;
     Ok(CorpusBuild {
-        documents,
-        last_event_seq,
-        indexed_content_chars,
-        content_budget_exhausted,
-        projection_utc_date: projection_as_of.date(),
+        documents: build.documents,
+        last_event_seq: build.last_event_seq,
+        indexed_content_chars: build.indexed_content_chars,
+        content_budget_exhausted: build.content_budget_exhausted,
+        projection_utc_date: build.projection_utc_date,
     })
 }
 
+#[cfg(test)]
 fn project_default_template_registry<E: std::fmt::Display>(
     registry: Result<chancela_templates::Registry, E>,
     settings: &crate::settings::SearchSettings,
@@ -3695,6 +3058,7 @@ async fn load_durable_rows(state: &AppState) -> Result<DurableCorpusRows, String
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn project_serializable<T: Serialize>(
     id: String,
     kind: SearchKind,
@@ -3726,6 +3090,7 @@ fn project_serializable<T: Serialize>(
     ))
 }
 
+#[cfg(test)]
 fn with_privileged(mut public: SearchDocument, privileged: SearchDocument) -> SearchDocument {
     // The privileged serialization is the full source revision, so changes to hidden fields still
     // invalidate the durable projection even when the public view itself is unchanged.
@@ -3744,6 +3109,7 @@ fn with_privileged(mut public: SearchDocument, privileged: SearchDocument) -> Se
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn project_value(
     id: String,
     kind: SearchKind,
@@ -3773,6 +3139,7 @@ fn project_value(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn project_text(
     id: String,
     kind: SearchKind,
@@ -3809,6 +3176,7 @@ fn project_text(
     }
 }
 
+#[cfg(test)]
 fn cap_text(value: &str, max_chars: usize) -> (String, bool) {
     let mut chars = value.chars();
     let capped: String = chars.by_ref().take(max_chars).collect();
@@ -3816,20 +3184,7 @@ fn cap_text(value: &str, max_chars: usize) -> (String, bool) {
     (capped, truncated)
 }
 
-fn public_template_metadata(value: &Value) -> Value {
-    let mut public = serde_json::Map::new();
-    if let Value::Object(fields) = value {
-        for key in ["id", "name", "title", "family", "stage", "locale"] {
-            if let Some(value) = fields.get(key)
-                && (value.is_string() || value.is_number() || value.is_boolean())
-            {
-                public.insert(key.to_owned(), value.clone());
-            }
-        }
-    }
-    Value::Object(public)
-}
-
+#[cfg(test)]
 fn flatten_value_to_text(value: &Value) -> String {
     fn visit(value: &Value, key: Option<&str>, out: &mut Vec<String>) {
         if key.is_some_and(sensitive_projection_key) {
@@ -3862,6 +3217,7 @@ fn flatten_value_to_text(value: &Value) -> String {
     out.join("\n")
 }
 
+#[cfg(test)]
 fn sensitive_projection_key(key: &str) -> bool {
     let folded = key.to_ascii_lowercase();
     folded.contains("password")
@@ -3871,22 +3227,7 @@ fn sensitive_projection_key(key: &str) -> bool {
         || folded == "bytes"
 }
 
-fn book_label(book: &Book) -> String {
-    match book.book_number {
-        Some(number) => format!("{:?} n.º {number}", book.kind),
-        None => format!("{:?} {}", book.kind, book.id),
-    }
-}
-
-fn privileged_book_label(book: &Book) -> String {
-    book.kind_label
-        .as_deref()
-        .map(str::trim)
-        .filter(|label| !label.is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| book_label(book))
-}
-
+#[cfg(test)]
 fn relation_from_scope(
     scope: &str,
     entities: &HashMap<String, Relation>,
@@ -3925,18 +3266,6 @@ fn relation_from_scope(
         .or(resolved_book)
         .or(resolved_entity)
         .or(resolved_tenant)
-        .unwrap_or_default()
-}
-
-fn relation_for_paper(
-    paper: &StoredPaperBookImportMeta,
-    entities: &HashMap<String, Relation>,
-    books: &HashMap<String, Relation>,
-) -> Relation {
-    books
-        .get(&paper.book_ref)
-        .cloned()
-        .or_else(|| entities.get(&paper.entity_ref).cloned())
         .unwrap_or_default()
 }
 
@@ -4378,6 +3707,85 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[tokio::test]
+    async fn api_wrapper_and_external_projector_use_the_exact_shared_constructor() {
+        let state = AppState::default();
+        let settings = crate::settings::SearchSettings::default();
+        let projection_as_of = OffsetDateTime::parse("2026-07-26T12:00:00Z", &Rfc3339).unwrap();
+        let shutdown = AtomicBool::new(false);
+        let api_build = build_corpus(&state, &settings, &shutdown, projection_as_of)
+            .await
+            .unwrap();
+
+        let entities = state.entities.read().await.clone();
+        let books = state.books.read().await.clone();
+        let acts = state.acts.read().await.clone();
+        let follow_ups = state.follow_ups.read().await.clone();
+        let actionables = crate::dashboard::search_actionables_from_snapshot_at(
+            &state,
+            &entities,
+            &books,
+            &acts,
+            &follow_ups,
+            projection_as_of,
+        )
+        .await
+        .unwrap();
+        let shared_build = chancela_search_projection::build_corpus(
+            chancela_search_projection::ProjectionInputs {
+                entities,
+                books,
+                acts,
+                follow_ups,
+                template_libraries: state.group_template_libraries.read().await.clone(),
+                template_revisions: state.group_template_library_revisions.read().await.clone(),
+                events: state.ledger.read().await.events().to_vec(),
+                durable: chancela_search_projection::DurableCorpusRows::default(),
+                actionables,
+            },
+            &settings,
+            &shutdown,
+            projection_as_of,
+        )
+        .unwrap();
+
+        assert_eq!(api_build.documents, shared_build.documents);
+        assert_eq!(api_build.last_event_seq, shared_build.last_event_seq);
+        assert_eq!(
+            api_build.indexed_content_chars,
+            shared_build.indexed_content_chars
+        );
+        assert_eq!(
+            api_build.content_budget_exhausted,
+            shared_build.content_budget_exhausted
+        );
+        assert_eq!(
+            api_build.projection_utc_date,
+            shared_build.projection_utc_date
+        );
+    }
+
+    #[tokio::test]
+    async fn projector_runtime_settings_are_an_exact_partial_view_of_server_settings() {
+        let state = AppState::default();
+        let server = state.settings.read().await.clone();
+        let raw = serde_json::to_vec(&server).unwrap();
+        let projector: chancela_runtime_config::SearchProjectionRuntimeSettings =
+            serde_json::from_slice(&raw).unwrap();
+        assert_eq!(projector.search, server.search);
+
+        let reminders: chancela_action_center::WorkflowReminderSettings =
+            serde_json::from_value(serde_json::to_value(&server.workflow.reminders).unwrap())
+                .unwrap();
+        let backup_recovery: chancela_action_center::BackupRecoveryPolicySettings =
+            serde_json::from_value(
+                serde_json::to_value(&server.data_management.backup_recovery).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(projector.workflow.reminders, reminders);
+        assert_eq!(projector.data_management.backup_recovery, backup_recovery);
     }
 
     #[test]
