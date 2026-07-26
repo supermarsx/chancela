@@ -1079,6 +1079,239 @@ class ParallelSeedTests(unittest.TestCase):
         self.assertEqual(identifiers, ["id-1", "id-2"])
 
 
+class LocalCryptographicIsolationTests(unittest.TestCase):
+    @staticmethod
+    def settings_document() -> dict:
+        return {
+            "schema_version": 1,
+            "organization": {"name": "Preserve this organization"},
+            "signing": {
+                "preferred_family": "CartaoCidadao",
+                "tsa_url": "https://tsa.example.test",
+                "tsa_providers": [
+                    {
+                        "id": "tsa",
+                        "name": "Configured TSA",
+                        "enabled": True,
+                        "default": True,
+                    }
+                ],
+                "providers": [{"id": "runtime-before"}],
+                "require_qualified_for_seal": False,
+            },
+            "connectors": {
+                "allowed_hosts": ["api.example.test"],
+                "environment_ceiling": ["api.example.test"],
+            },
+            "documents": {
+                "locale": "pt-PT",
+                "numbering_scheme_default": "Sequential",
+            },
+            "appearance": {
+                "theme": "dark",
+                "leather_texture": False,
+                "texture_intensity": 42,
+                "button_texture": False,
+            },
+            "ui": {
+                "external_signature_notice_snooze_days": 90,
+                "phone_pairing_share_email_enabled": True,
+                "phone_pairing_share_whatsapp_enabled": False,
+            },
+        }
+
+    def test_tsa_override_retries_read_preserves_settings_and_returns_sanitized_evidence(
+        self,
+    ):
+        before = self.settings_document()
+        captured_put = []
+        get_results = [
+            harness.HttpResult(401, 1.0, b'{"error":"session pending"}'),
+            harness.HttpResult(200, 1.0, json.dumps(before).encode()),
+        ]
+
+        def request(method, path, body=None, *, authenticated=True):
+            self.assertTrue(authenticated)
+            if method == "GET":
+                self.assertEqual(path, "/v1/settings")
+                return get_results.pop(0)
+            self.assertEqual((method, path), ("PUT", "/v1/settings"))
+            captured_put.append(copy.deepcopy(body))
+            committed = copy.deepcopy(body)
+            committed["signing"]["providers"] = [{"id": "runtime-after"}]
+            committed["connectors"]["environment_ceiling"] = None
+            return harness.HttpResult(200, 1.0, json.dumps(committed).encode())
+
+        client = mock.Mock()
+        client.request.side_effect = request
+        with mock.patch.object(harness.time, "sleep") as sleep:
+            evidence = harness.disable_external_timestamping_for_local_signing(
+                client
+            )
+
+        self.assertEqual(evidence["get_statuses"], [401, 200])
+        self.assertEqual(evidence["put_status"], 200)
+        self.assertTrue(evidence["tsa_disabled"])
+        self.assertTrue(evidence["non_tsa_settings_preserved"])
+        self.assertEqual(evidence["before_tsa_provider_count"], 1)
+        self.assertEqual(evidence["effective_tsa_provider_count"], 0)
+        self.assertEqual(sleep.call_count, 1)
+        self.assertEqual(len(captured_put), 1)
+        expected = copy.deepcopy(before)
+        expected["signing"]["tsa_url"] = None
+        expected["signing"]["tsa_providers"] = []
+        self.assertEqual(captured_put[0], expected)
+        self.assertEqual(before["signing"]["tsa_url"], "https://tsa.example.test")
+        self.assertNotIn("tsa.example.test", json.dumps(evidence))
+        self.assertNotIn("Configured TSA", json.dumps(evidence))
+
+    def test_tsa_override_is_bounded_and_fails_closed(self):
+        client = mock.Mock()
+        client.request.return_value = harness.HttpResult(
+            401, 1.0, b'{"error":"session pending"}'
+        )
+        with (
+            mock.patch.object(harness.time, "sleep") as sleep,
+            self.assertRaisesRegex(harness.HarnessError, "statuses=\\[401, 401, 401\\]"),
+        ):
+            harness.disable_external_timestamping_for_local_signing(
+                client,
+                attempts=3,
+            )
+        self.assertEqual(client.request.call_count, 3)
+        self.assertEqual(sleep.call_count, 2)
+
+        invalid_documents = (
+            ({}, "no signing object"),
+            (
+                {"signing": {"tsa_url": None, "tsa_providers": {}}},
+                "tsa_providers is not an array",
+            ),
+        )
+        for document, message in invalid_documents:
+            with self.subTest(message=message):
+                malformed = mock.Mock()
+                malformed.request.return_value = harness.HttpResult(
+                    200, 1.0, json.dumps(document).encode()
+                )
+                with self.assertRaisesRegex(harness.HarnessError, message):
+                    harness.disable_external_timestamping_for_local_signing(
+                        malformed
+                    )
+                self.assertEqual(malformed.request.call_count, 1)
+
+        before = self.settings_document()
+        rejected = mock.Mock()
+        rejected.request.side_effect = [
+            harness.HttpResult(200, 1.0, json.dumps(before).encode()),
+            harness.HttpResult(
+                422,
+                1.0,
+                b'{"error":"refused https://sensitive.example.test/tsa"}',
+            ),
+        ]
+        with self.assertRaisesRegex(
+            harness.HarnessError,
+            "could not disable TSA",
+        ) as rejected_error:
+            harness.disable_external_timestamping_for_local_signing(rejected)
+        self.assertNotIn("sensitive.example.test", str(rejected_error.exception))
+
+        ineffective = mock.Mock()
+        ineffective.request.side_effect = [
+            harness.HttpResult(200, 1.0, json.dumps(before).encode()),
+            harness.HttpResult(200, 1.0, json.dumps(before).encode()),
+        ]
+        with self.assertRaisesRegex(
+            harness.HarnessError,
+            "did not disable both TSA selectors",
+        ):
+            harness.disable_external_timestamping_for_local_signing(ineffective)
+
+        malformed = mock.Mock()
+        malformed.request.return_value = harness.HttpResult(
+            200,
+            1.0,
+            b'not-json https://sensitive.example.test/tsa',
+        )
+        with self.assertRaisesRegex(
+            harness.HarnessError,
+            "response is not valid JSON",
+        ) as malformed_error:
+            harness.disable_external_timestamping_for_local_signing(malformed)
+        self.assertNotIn("sensitive.example.test", str(malformed_error.exception))
+
+    def test_valid_opt_in_crypto_disables_tsa_before_any_act_mutation(self):
+        with tempfile.TemporaryDirectory() as raw:
+            pfx = pathlib.Path(raw) / "identity.p12"
+            pfx.write_bytes(b"disposable-pfx")
+            config = {
+                "provider": "local-pkcs12",
+                "count": 1,
+                "concurrency": 1,
+                "pkcs12_path": str(pfx),
+                "passphrase_env": "CHANCELA_TEST_PFX_PASSPHRASE",
+                "friendly_name": "Disposable test identity",
+            }
+            timestamping = {
+                "tsa_disabled": True,
+                "non_tsa_settings_preserved": True,
+            }
+            events = []
+            client = mock.Mock()
+
+            def request(method, path, body=None, *, authenticated=True):
+                events.append((method, path))
+                return harness.HttpResult(200, 1.0, b'{"ok":true}')
+
+            client.request.side_effect = request
+
+            def disable(_client):
+                events.append(("TSA", "disabled"))
+                return timestamping
+
+            with (
+                mock.patch.dict(
+                    harness.os.environ,
+                    {"CHANCELA_TEST_PFX_PASSPHRASE": "not-recorded"},
+                    clear=False,
+                ),
+                mock.patch.object(
+                    harness,
+                    "disable_external_timestamping_for_local_signing",
+                    side_effect=disable,
+                ) as disable_mock,
+            ):
+                report = harness.run_cryptographic_signing(
+                    client,
+                    ["act-1"],
+                    config,
+                )
+
+            disable_mock.assert_called_once_with(client)
+            self.assertEqual(events[0], ("TSA", "disabled"))
+            self.assertEqual(report["timestamping"], timestamping)
+            self.assertTrue(report["exact"])
+            self.assertEqual(report["signed"], 1)
+            self.assertNotIn("not-recorded", json.dumps(report))
+
+    def test_invalid_crypto_config_does_not_mutate_settings(self):
+        with mock.patch.object(
+            harness,
+            "disable_external_timestamping_for_local_signing",
+        ) as disable:
+            with self.assertRaisesRegex(harness.HarnessError, "positive integer"):
+                harness.run_cryptographic_signing(
+                    mock.Mock(),
+                    ["act-1"],
+                    {
+                        "provider": "local-pkcs12",
+                        "count": 0,
+                    },
+                )
+        disable.assert_not_called()
+
+
 class SearchReadinessTests(unittest.TestCase):
     def index(self):
         return {

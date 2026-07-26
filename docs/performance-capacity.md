@@ -238,6 +238,27 @@ The example requests 10,000 local software-certificate signatures. Lower
 `count` for calibration. The PFX and passphrase are transient test inputs and
 must never be committed or reused for real records.
 
+The generator pins its disposable PFX to a SHA-1 MAC and 3DES PKCS#12 PBE
+profile because the application's bounded pure-Rust `p12` reader does not
+decrypt OpenSSL 3's default PBES2/AES PFX profile. This compatibility choice is
+strictly for the short-lived synthetic identity used by this harness. It is not
+a recommendation for exporting, storing, or transporting real certificates.
+The harness fails closed when the generator output or passphrase is unusable.
+
+Immediately before the opt-in cryptographic phase, and only after exact seeding
+and search-readiness checks complete, the harness reads the authenticated
+whole settings document, preserves every operator-authored field, and clears
+both `signing.tsa_url` and `signing.tsa_providers` through the normal settings
+API. Read retries are bounded to the short clustered-session propagation seam;
+the settings write and every signature are leader-routed. The returned settings
+document must prove that timestamping is disabled and that non-TSA settings
+were preserved, or the run stops before signing. The timestamp-override setup
+evidence records only sanitized status/count fields, never the settings
+document or provider URLs. This prevents the local-PKCS#12 measurement from
+silently becoming a public-TSA network test. `run-compose.sh` starts from fresh
+disposable volumes and removes them by default, so the override is scoped to
+that performance topology.
+
 When cryptographic signing is requested, proof classification additionally
 requires every reviewed threshold in `cryptographic_signing`: minimum completed
 count, maximum error rate, minimum throughput, p95, p99, maximum total duration,

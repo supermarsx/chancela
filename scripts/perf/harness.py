@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import concurrent.futures
 import dataclasses
 import datetime as dt
@@ -101,6 +102,8 @@ DURATION_BUDGET_SECONDS = {
     "cryptographic_per_signature": 0.75,
     "cleanup_and_artifact_upload": 1_800,
 }
+TSA_SETTINGS_READ_ATTEMPTS = 12
+TSA_SETTINGS_READ_RETRY_STATUSES = {401, 429, 503}
 DEFAULT_PASSWORD = "Perf-Only-Password-2026!"
 USER_NAMESPACE = uuid.UUID("7b0fb943-83ff-4e56-a670-0fd19fb46ee5")
 GITHUB_MAIN_REF = "refs/heads/main"
@@ -694,6 +697,167 @@ def safe_retry_request(
         if attempt + 1 < attempts:
             time.sleep(min(5.0, 0.1 * (2**attempt)))
     return result
+
+
+def _settings_without_tsa_or_server_metadata(
+    document: dict[str, Any],
+) -> dict[str, Any]:
+    """Normalize fields intentionally changed or re-stamped by the server.
+
+    The performance harness uses the whole-document settings API because there
+    is no narrow TSA-disable endpoint. The request must preserve every
+    operator-authored field. GET/PUT may legitimately re-stamp the provider
+    inventory and connector environment ceiling, so those server-owned values
+    are excluded from the preservation comparison alongside the two TSA fields
+    the harness deliberately clears.
+    """
+
+    normalized = copy.deepcopy(document)
+    signing = normalized.get("signing")
+    if isinstance(signing, dict):
+        signing["tsa_url"] = "<performance-tsa-override>"
+        signing["tsa_providers"] = "<performance-tsa-override>"
+        signing["providers"] = "<server-owned>"
+    connectors = normalized.get("connectors")
+    if isinstance(connectors, dict):
+        connectors["environment_ceiling"] = "<server-owned>"
+    return normalized
+
+
+def _decode_settings_document(result: HttpResult, context: str) -> dict[str, Any]:
+    """Decode settings without copying response contents into proof evidence."""
+
+    try:
+        value = json.loads(result.body)
+    except Exception as error:
+        raise HarnessError(
+            f"{context}: status={result.status}, response is not valid JSON"
+        ) from error
+    if not isinstance(value, dict):
+        raise HarnessError(
+            f"{context}: status={result.status}, response is not an object"
+        )
+    return value
+
+
+def disable_external_timestamping_for_local_signing(
+    client: ApiClient,
+    *,
+    attempts: int = TSA_SETTINGS_READ_ATTEMPTS,
+) -> dict[str, Any]:
+    """Disable TSA selection in the fresh disposable performance topology.
+
+    Local-PKCS#12 capacity explicitly excludes TSA capacity. A fresh Chancela
+    instance nevertheless defaults to a public TSA, so leaving settings alone
+    would make every measured local signature depend on that external service.
+    Read retries are bounded and idempotent because a just-created clustered
+    session can briefly reach a follower before its authorization view catches
+    up. The whole-document PUT is routed to the leader by the performance
+    gateway and uses the existing safe pre-commit retry policy.
+    """
+
+    if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts < 1:
+        raise HarnessError("TSA settings read attempts must be a positive integer")
+
+    get_statuses: list[int | None] = []
+    current_result: HttpResult | None = None
+    for attempt in range(attempts):
+        current_result = client.request("GET", "/v1/settings")
+        get_statuses.append(current_result.status)
+        if current_result.status == 200:
+            break
+        if current_result.status not in TSA_SETTINGS_READ_RETRY_STATUSES:
+            break
+        if attempt + 1 < attempts:
+            time.sleep(min(1.0, 0.1 * (attempt + 1)))
+
+    if current_result is None or current_result.status != 200:
+        raise HarnessError(
+            "could not read settings before local cryptographic signing; "
+            f"statuses={get_statuses}"
+        )
+
+    current = _decode_settings_document(
+        current_result,
+        "local signing TSA settings read",
+    )
+    updated = copy.deepcopy(current)
+    signing = updated.get("signing")
+    if not isinstance(signing, dict):
+        raise HarnessError(
+            "settings document has no signing object; refusing local cryptographic signing"
+        )
+    providers = signing.get("tsa_providers")
+    if not isinstance(providers, list):
+        raise HarnessError(
+            "settings signing.tsa_providers is not an array; "
+            "refusing local cryptographic signing"
+        )
+
+    before_tsa_configured = signing.get("tsa_url") is not None or bool(providers)
+    before_provider_count = len(providers)
+    signing["tsa_url"] = None
+    signing["tsa_providers"] = []
+    request_preserved = _settings_without_tsa_or_server_metadata(
+        current
+    ) == _settings_without_tsa_or_server_metadata(updated)
+    if not request_preserved:
+        raise HarnessError(
+            "local signing TSA override changed a non-TSA operator setting before PUT"
+        )
+
+    put_result = safe_retry_request(
+        client,
+        "PUT",
+        "/v1/settings",
+        updated,
+    )
+    if put_result.status != 200:
+        raise HarnessError(
+            "could not disable TSA before local cryptographic signing; "
+            f"status={put_result.status}"
+        )
+    committed = _decode_settings_document(
+        put_result,
+        "local signing TSA settings write",
+    )
+    committed_signing = committed.get("signing")
+    if not isinstance(committed_signing, dict):
+        raise HarnessError(
+            "settings PUT response has no signing object; "
+            "refusing local cryptographic signing"
+        )
+
+    tsa_disabled = (
+        committed_signing.get("tsa_url") is None
+        and committed_signing.get("tsa_providers") == []
+    )
+    non_tsa_settings_preserved = (
+        request_preserved
+        and _settings_without_tsa_or_server_metadata(updated)
+        == _settings_without_tsa_or_server_metadata(committed)
+    )
+    if not tsa_disabled or not non_tsa_settings_preserved:
+        raise HarnessError(
+            "settings PUT did not disable both TSA selectors while preserving "
+            "non-TSA operator settings"
+        )
+
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "mode": "disabled_for_local_pkcs12_capacity",
+        "ordering": "after_seed_and_search_before_cryptographic_signing",
+        "get_attempts": len(get_statuses),
+        "get_statuses": get_statuses,
+        "put_status": put_result.status,
+        "before_tsa_configured": before_tsa_configured,
+        "before_tsa_provider_count": before_provider_count,
+        "effective_tsa_configured": False,
+        "effective_tsa_provider_count": 0,
+        "non_tsa_settings_preserved": True,
+        "comparison_excludes_server_owned_metadata": True,
+        "tsa_disabled": True,
+    }
 
 
 @dataclasses.dataclass
@@ -2097,6 +2261,7 @@ def markdown_report(report: dict[str, Any]) -> str:
     workload = report["workload"]
     search_readiness = report["search_readiness"]
     cryptographic = report["cryptographic_signing"]
+    timestamping = cryptographic.get("timestamping", {})
     resources = report["resources"]
     topology = report["topology"]
     duration_budget = report["duration_budget"]
@@ -2175,6 +2340,8 @@ def markdown_report(report: dict[str, Any]) -> str:
             f"- Signed: `{cryptographic.get('signed', 0)}`",
             f"- Exact: `{cryptographic.get('exact', False)}`",
             f"- Throughput: `{cryptographic.get('throughput_per_second', 0):.3f} signatures/s`",
+            f"- External TSA disabled for local phase: `{timestamping.get('tsa_disabled', False)}`",
+            f"- Non-TSA operator settings preserved: `{timestamping.get('non_tsa_settings_preserved', False)}`",
             "",
             "## Resource and topology evidence",
             "",
@@ -2236,6 +2403,7 @@ def run_cryptographic_signing(
         raise HarnessError(f"cryptographic passphrase env {passphrase_env} is unset")
     pfx_base64 = base64.b64encode(pfx_path.read_bytes()).decode("ascii")
     friendly_name = str(config.get("friendly_name", "Chancela performance test identity"))
+    timestamping = disable_external_timestamping_for_local_signing(client)
     stats = OperationStats(Reservoir(max(count, 1), random.Random(99117)))
     setup_statuses: Counter = Counter()
     setup_errors: list[dict[str, Any]] = []
@@ -2323,6 +2491,7 @@ def run_cryptographic_signing(
         "sign_operation": result,
         "setup_statuses": dict(setup_statuses),
         "setup_errors": setup_errors,
+        "timestamping": timestamping,
         "claim_boundary": (
             "Exercises real local RSA/PKCS#12 PDF signing with an ephemeral test certificate. "
             "It does not measure CMD/CSC/QTSP, smart-card, TSA, revocation, or external-validator capacity."
