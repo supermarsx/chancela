@@ -80,6 +80,33 @@ async fn open_password_session(h: &ServerHarness, user_id: &str) -> String {
     token
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[cfg_attr(
+    not(feature = "e2e"),
+    ignore = "composed-system e2e: spawns the real server binary (run with --features e2e)"
+)]
+async fn concurrent_server_startups_keep_identical_bootstrap_users_isolated() {
+    let (left, right) = tokio::join!(ServerHarness::start(), ServerHarness::start());
+
+    assert_ne!(
+        left.base_url, right.base_url,
+        "concurrent harnesses must own distinct listening addresses"
+    );
+    assert_ne!(
+        left.data_dir, right.data_dir,
+        "concurrent harnesses must retain distinct persistent state"
+    );
+
+    let ((left_user, _), (right_user, _)) = tokio::join!(
+        bootstrap_password_session(&left),
+        bootstrap_password_session(&right)
+    );
+    assert_ne!(
+        left_user, right_user,
+        "the identical bootstrap username must be created independently in each server"
+    );
+}
+
 #[derive(Debug)]
 struct GeneratedDocRow {
     id: String,

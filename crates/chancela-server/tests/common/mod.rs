@@ -43,6 +43,13 @@ pub const SESSION_HEADER: &str = "x-chancela-session";
 /// Deterministic strong password used by the shared E2E user/session helpers.
 pub const E2E_TEST_PASSWORD: &str = "Teste-Forte7!X";
 
+/// Serializes only the short port-reservation → child-ready handoff inside an integration-test
+/// process. Rust's test runner may execute several journeys from the same test binary concurrently;
+/// without this gate, one child can claim another journey's just-released ephemeral port and make
+/// its `/health` probe accept the wrong server. The guard is released as soon as the selected child
+/// is still alive and answers its readiness probe, so the journeys themselves remain parallel.
+static SERVER_STARTUP: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 // ---------------------------------------------------------------------------------------------
 // Server harness
 // ---------------------------------------------------------------------------------------------
@@ -138,6 +145,7 @@ impl ServerHarness {
                 .expect("seed cae cache written");
         }
 
+        let startup_guard = SERVER_STARTUP.lock().await;
         let (child, base_url) = spawn_child(&data_dir, &opts);
         let mut harness = ServerHarness {
             child,
@@ -149,6 +157,7 @@ impl ServerHarness {
             default_login: std::sync::Mutex::new(None),
         };
         harness.wait_ready().await;
+        drop(startup_guard);
         harness
     }
 
@@ -213,10 +222,12 @@ impl ServerHarness {
         // (t64-E3). Journeys still signed out before the restart get no session.
         let had_session = self.default_token().is_some();
         *self.default_token.lock().expect("default_token lock") = None;
+        let startup_guard = SERVER_STARTUP.lock().await;
         let (child, base_url) = spawn_child(&self.data_dir, &self.opts);
         self.child = child;
         self.base_url = base_url;
         self.wait_ready().await;
+        drop(startup_guard);
         if had_session {
             self.reopen_default_session().await;
         }
@@ -261,7 +272,9 @@ impl ServerHarness {
         self.opts.cae_url = None;
     }
 
-    /// Poll `GET /health` until it answers `200`, failing fast if the child exits early.
+    /// Poll `GET /health` until it answers `200`, failing fast if the child exits early. Callers
+    /// hold [`SERVER_STARTUP`] through this probe, which prevents another journey in this process
+    /// from reserving the released port until this exact child has survived startup.
     async fn wait_ready(&mut self) {
         let deadline = Instant::now() + Duration::from_secs(20);
         loop {
@@ -275,6 +288,12 @@ impl ServerHarness {
                 .await
                 && resp.status().is_success()
             {
+                // A child that lost the bind race exits immediately. Only accept readiness while
+                // the selected process is still alive, so a stale listener cannot complete this
+                // harness's startup handoff.
+                if let Some(status) = self.child.try_wait().expect("try_wait after readiness") {
+                    panic!("server exited during readiness handoff (status {status})");
+                }
                 return;
             }
             if Instant::now() >= deadline {
@@ -413,7 +432,8 @@ impl Drop for ServerHarness {
 }
 
 /// Reserve a currently-free loopback port by binding `:0`, reading the assigned port, and dropping
-/// the listener. A negligible TOCTOU window before the child rebinds is acceptable for tests.
+/// the listener. [`SERVER_STARTUP`] serializes this handoff through the child readiness probe, so
+/// another concurrent journey in the same integration-test process cannot claim the released port.
 fn reserve_port() -> u16 {
     let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind ephemeral port");
     let port = listener.local_addr().expect("local_addr").port();
