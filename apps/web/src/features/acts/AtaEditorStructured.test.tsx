@@ -90,6 +90,7 @@ function stateful(
 ) {
   let act = initial;
   const patches: Record<string, unknown>[] = [];
+  const patchWaiters: Array<(patch: Record<string, unknown>) => void> = [];
   const seals: Record<string, unknown>[] = [];
   const verifications: Record<string, unknown>[] = [];
   const dispatches: Record<string, unknown>[] = [];
@@ -219,6 +220,7 @@ function stateful(
       if (method === 'PATCH') {
         const body = JSON.parse(init!.body as string) as Record<string, unknown>;
         patches.push(body);
+        patchWaiters.shift()?.(body);
         act = { ...act, ...(body as Partial<ActView>) };
         return json(act);
       }
@@ -226,7 +228,15 @@ function stateful(
     }
     return Promise.reject(new Error(`no stub for ${method} ${url}`));
   }) as typeof fetch;
-  return { fetchImpl, patches, seals, verifications, dispatches };
+  return {
+    fetchImpl,
+    patches,
+    seals,
+    verifications,
+    dispatches,
+    waitForNextPatch: () =>
+      new Promise<Record<string, unknown>>((resolve) => patchWaiters.push(resolve)),
+  };
 }
 
 function renderEditor(initialEntry = '/acts/act-1') {
@@ -624,10 +634,18 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
       screen.getByLabelText('Todos manifestaram a vontade de que a assembleia se constituísse'),
     );
     fireEvent.click(screen.getByLabelText('Todos acordaram nos assuntos deliberados'));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+    const save = screen.getByRole('button', { name: 'Guardar' });
+    const saveAndCapturePatch = async () => {
+      const patch = shared.waitForNextPatch();
+      fireEvent.click(save);
+      const body = await patch;
+      await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false), {
+        container: save,
+      });
+      return body;
+    };
 
-    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(0));
-    expect(shared.patches.at(-1)?.convening_waiver).toEqual({
+    expect((await saveAndCapturePatch()).convening_waiver).toEqual({
       basis: 'AssembleiaUniversal',
       grounds: null,
       all_agreed_to_meet: true,
@@ -638,16 +656,12 @@ describe('AtaEditorPage — mesa presidente unblocks the seal', () => {
     // An unspecified basis with nothing written in it is a 422 at the API, so the editor holds it
     // back rather than sending a record that says nothing.
     fireEvent.change(screen.getByLabelText('Fundamento'), { target: { value: 'Other' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(1));
-    expect(shared.patches.at(-1)?.convening_waiver).toBeNull();
+    expect((await saveAndCapturePatch()).convening_waiver).toBeNull();
 
     fireEvent.change(screen.getByLabelText('Fundamento registado'), {
       target: { value: 'Reunião do órgão realizada por acordo de todos os titulares.' },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
-    await waitFor(() => expect(shared.patches.length).toBeGreaterThan(2));
-    expect(shared.patches.at(-1)?.convening_waiver).toMatchObject({
+    expect((await saveAndCapturePatch()).convening_waiver).toMatchObject({
       basis: 'Other',
       grounds: 'Reunião do órgão realizada por acordo de todos os titulares.',
     });
