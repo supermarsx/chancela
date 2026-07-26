@@ -67,6 +67,20 @@ fn tenant_reachable_enumerations_retain_their_filters() {
         "list_books lost its per-row book.read tenant filter — cross-tenant leak risk"
     );
 
+    // books.rs — `list_books_page`: the richer catalog scan uses the same per-row book gate.
+    // Its optional entity-name join also has its own entity.read filter, so the page cannot
+    // disclose a cross-tenant entity name through a book the caller can enumerate.
+    let list_books_page = function_body(BOOKS, "pub async fn list_books_page");
+    assert!(
+        list_books_page.contains("authz.permits(Permission::BookRead, scope_of_book(book.id))"),
+        "list_books_page lost its per-row book.read tenant filter — cross-tenant leak risk"
+    );
+    assert!(
+        list_books_page
+            .contains("authz.permits(Permission::EntityRead, scope_of_entity(entity.id))"),
+        "list_books_page lost its entity.read join filter — cross-tenant entity-name leak risk"
+    );
+
     // groups.rs — `list_groups`: tenant gate + explicit tenant_id filter.
     let list_groups = function_body(GROUPS, "pub(crate) async fn list_groups");
     assert!(
@@ -126,10 +140,11 @@ fn tenant_reachable_enumerations_retain_their_filters() {
 fn values_scan_inventory_is_frozen() {
     // (file label, live count, frozen count). Bumping a count REQUIRES auditing the new scan for
     // cross-tenant leakage (route it through the Authorizer / an explicit tenant predicate) and
-    // recording the classification in `.orchestration/logs/wp27-e3.md`.
+    // recording the classification next to the frozen entry below.
     let inventory: &[(&str, usize, usize)] = &[
-        // books.rs: list_books (per-row authz) + list_book_acts (up-front authz + book filter).
-        ("books.rs", count(BOOKS, ".values()"), 2),
+        // books.rs: list_books + list_books_page (per-row authz) + list_book_acts (up-front authz
+        // + book filter). list_books_page also gates its optional entity-name join per entity.
+        ("books.rs", count(BOOKS, ".values()"), 3),
         // acts.rs: no read-lock scan (frozen at 0 so a new one trips).
         ("acts.rs", count(ACTS, ".values()"), 0),
         // documents.rs: load_documents_for_act (up-front act authz) + load_document_by_id
@@ -147,7 +162,8 @@ fn values_scan_inventory_is_frozen() {
             live, frozen,
             "`{file}` now has {live} `.values()` scans, inventory freezes {frozen}. A new scan must \
              be audited for cross-tenant leakage (Authorizer per-row filter or explicit tenant \
-             predicate) and this inventory + the wp27-e3 log updated before the count changes."
+             predicate) and its classification recorded beside this inventory before the count \
+             changes."
         );
     }
 }

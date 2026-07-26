@@ -6519,7 +6519,7 @@ mod tests {
                 reason: "Review the tied reminder".to_owned(),
                 entity_id: "00000000-0000-4000-8000-000000000001".to_owned(),
                 entity_name: "Entidade".to_owned(),
-                source_rule: "act.follow_up".to_owned(),
+                source_rule: "act-follow-up".to_owned(),
                 source_profile: "commercial".to_owned(),
                 params: dashboard_alert_params([
                     ("act_id", act_id.to_owned()),
