@@ -26,6 +26,14 @@ services:
           cpus: "${CHANCELA_PERF_SEARCH_PROJECTOR_CPUS:-1.5}"
           memory: "${CHANCELA_PERF_SEARCH_PROJECTOR_MEMORY:-1g}"
 
+  search-projector-role-init:
+    environment:
+      # This performance project always creates and later removes its own
+      # Chancela-only PostgreSQL volume. Keep the acknowledgement scoped to
+      # this disposable topology; normal and hardened deployments still fail
+      # closed until their operator explicitly opts in.
+      CHANCELA_PROJECTOR_DEDICATED_DATABASE: "true"
+
   perf-gateway:
     profiles: [performance]
     image: python:3.12-alpine

@@ -1,6 +1,7 @@
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -14,6 +15,43 @@ import topology  # noqa: E402
 
 
 class TopologyValidationTests(unittest.TestCase):
+    def test_dedicated_database_acknowledgement_is_performance_only(self):
+        repository = PERF_ROOT.parents[1]
+        performance_overlay = (
+            repository / "scripts/perf/docker-compose.perf.yml"
+        ).read_text(encoding="utf-8")
+        normal_compose = (
+            repository / "docker/docker-compose.yml"
+        ).read_text(encoding="utf-8")
+        hardened_compose = (
+            repository / "docker-compose.hardened.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertRegex(
+            performance_overlay,
+            re.compile(
+                r"^  search-projector-role-init:\n"
+                r"    environment:\n"
+                r"(?:      #.*\n)+"
+                r'      CHANCELA_PROJECTOR_DEDICATED_DATABASE: "true"$',
+                re.MULTILINE,
+            ),
+        )
+        fail_closed_default = (
+            "CHANCELA_PROJECTOR_DEDICATED_DATABASE: "
+            "${CHANCELA_PROJECTOR_DEDICATED_DATABASE:-}"
+        )
+        self.assertIn(fail_closed_default, normal_compose)
+        self.assertIn(fail_closed_default, hardened_compose)
+        self.assertNotIn(
+            'CHANCELA_PROJECTOR_DEDICATED_DATABASE: "true"',
+            normal_compose,
+        )
+        self.assertNotIn(
+            'CHANCELA_PROJECTOR_DEDICATED_DATABASE: "true"',
+            hardened_compose,
+        )
+
     def config(self):
         defaults = {
             "chancela-cluster": {"cpus": "2.0", "memory": "1g"},
@@ -204,6 +242,12 @@ class TopologyValidationTests(unittest.TestCase):
         )
         self.assertEqual(rendered.returncode, 0, rendered.stderr)
         config = json.loads(rendered.stdout)
+        self.assertEqual(
+            config["services"]["search-projector-role-init"]["environment"][
+                "CHANCELA_PROJECTOR_DEDICATED_DATABASE"
+            ],
+            "true",
+        )
         failures, limits = topology.validate_rendered_config(config)
         self.assertEqual(failures, [])
         self.assertEqual(set(limits), set(topology.REQUIRED_SERVICES))
