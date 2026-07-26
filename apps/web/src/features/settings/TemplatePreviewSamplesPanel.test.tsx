@@ -105,7 +105,9 @@ describe('TemplatePreviewSamplesPanel', () => {
     renderWithProviders(<PanelHarness onChange={onChange} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Ordem de trabalhos' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Adicionar a Pontos da ordem de trabalhos' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Adicionar a Pontos da ordem de trabalhos' }),
+    );
     const agendaDialog = screen.getByRole('dialog', {
       name: 'Adicionar a Pontos da ordem de trabalhos',
     });
@@ -162,8 +164,7 @@ describe('TemplatePreviewSamplesPanel', () => {
       expect.objectContaining({
         convening: expect.objectContaining({
           second_call: expect.objectContaining({
-            reduced_quorum:
-              !DEFAULT_TEMPLATE_PREVIEW_SAMPLES.convening.second_call.reduced_quorum,
+            reduced_quorum: !DEFAULT_TEMPLATE_PREVIEW_SAMPLES.convening.second_call.reduced_quorum,
           }),
         }),
       }),
@@ -173,8 +174,7 @@ describe('TemplatePreviewSamplesPanel', () => {
     expect(onChange).toHaveBeenLastCalledWith(
       expect.objectContaining({
         convening_waiver: expect.objectContaining({
-          all_agreed_to_meet:
-            !DEFAULT_TEMPLATE_PREVIEW_SAMPLES.convening_waiver.all_agreed_to_meet,
+          all_agreed_to_meet: !DEFAULT_TEMPLATE_PREVIEW_SAMPLES.convening_waiver.all_agreed_to_meet,
         }),
       }),
     );
