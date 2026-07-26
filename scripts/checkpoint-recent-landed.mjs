@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `65fe793` (2026-07-26)",
+    "The current substantive checkpoint is `b7a083a` (2026-07-26)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `65fe793`",
+    "Updated 2026-07-26 from the current CI configuration and reachable\nimplementation snapshot `b7a083a`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `65fe793`",
+    "Focused Gate Snapshot Through `b7a083a`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `65fe793`",
+    "Current checkpoint metadata/static checks through `b7a083a`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `65fe793b55b8b269c35680fff829960fdeb33275`",
+    "implementation snapshot `b7a083a3a497cba9be2be0ca7bd998eba33a448b`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `65fe793`",
+    "Current checkpoint metadata/static checks through `b7a083a`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16765,7 +16765,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `65fe793` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `b7a083a` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -16810,7 +16810,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `65fe793` (2026-07-26)",
+    "The current substantive checkpoint is `b7a083a` (2026-07-26)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(
@@ -16860,7 +16860,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
-    "The prior `c9c1b19` `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `65fe793`",
+    "The prior `c9c1b19` `cargo test --workspace --locked` gate also exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `b7a083a`",
     "CI checkpoints prior Rust workspace evidence boundary",
   );
   assertFileContainsNormalized(
@@ -16875,7 +16875,7 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "The prior `c9c1b19` `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `65fe793`",
+    "The prior `c9c1b19` `cargo test --workspace --locked` gate exited 0 in 1136.5 seconds; no aggregate test count is inferred from Cargo's per-target output. That result is not relabelled as full-workspace validation of `b7a083a`",
     "CI/E2E prior Rust workspace evidence boundary",
   );
   assertFileContainsNormalized(
