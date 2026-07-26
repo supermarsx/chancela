@@ -2909,14 +2909,30 @@ describe('SettingsPage', () => {
     // The backup-recovery policy editor moved to Operações › Cópias e recuperação (t28).
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/backups']);
 
-    expect(
-      await screen.findByRole('heading', {
-        name: 'Política local de recuperação de backups',
-      }),
-    ).toBeTruthy();
-    expect((screen.getByLabelText('Idade máxima do ensaio') as HTMLInputElement).value).toBe('90');
-    expect((screen.getByLabelText('RPO alvo') as HTMLInputElement).value).toBe('1440');
-    expect((screen.getByLabelText('RTO alvo') as HTMLInputElement).value).toBe('240');
+    const heading = await screen.findByRole('heading', {
+      name: 'Política local de recuperação de backups',
+    });
+    const card = heading.closest('.panel');
+    const rows = card?.querySelector('.backup-recovery-policy-rows.settings-rows');
+    const maxDrillAge = screen.getByLabelText('Idade máxima do ensaio') as HTMLInputElement;
+    const targetRpo = screen.getByLabelText('RPO alvo') as HTMLInputElement;
+    const targetRto = screen.getByLabelText('RTO alvo') as HTMLInputElement;
+
+    // One shared settings-row composition: the honesty note spans the table, and every policy
+    // field is a DIRECT row so the stable label/control tracks and responsive collapse reach it.
+    expect(rows).toBeTruthy();
+    expect(rows?.querySelectorAll(':scope > .field')).toHaveLength(3);
+    expect(rows?.querySelector(':scope > .registry-auto-update-grid')).toBeNull();
+    expect(rows?.firstElementChild?.classList.contains('field__hint')).toBe(true);
+    for (const input of [maxDrillAge, targetRpo, targetRto]) {
+      expect(input.closest('.field')?.parentElement).toBe(rows);
+      expect(input.min).toBe('1');
+      expect(input.max).not.toBe('');
+    }
+
+    expect(maxDrillAge.value).toBe('90');
+    expect(targetRpo.value).toBe('1440');
+    expect(targetRto.value).toBe('240');
     expect(screen.getByText(/não provam custódia off-site/i)).toBeTruthy();
     expect(screen.getByText(/não certificam RPO\/RTO/i)).toBeTruthy();
 

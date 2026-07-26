@@ -2982,82 +2982,80 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   <DataManagementSection tab="backups" />
                   <fieldset className="settings-fieldset" disabled={!canManageSettings}>
                     <Card title={t('settings.backupRecovery.cardTitle')}>
-                      <div className="form settings-rows">
+                      <div className="form settings-rows backup-recovery-policy-rows">
                         <p className="field__hint">{t('settings.backupRecovery.note')}</p>
-                        <div className="registry-auto-update-grid">
-                          <Field
-                            label={t('settings.backupRecovery.maxDrillAge.label')}
-                            htmlFor="backup-recovery-max-drill-age-days"
-                            hint={t('settings.backupRecovery.maxDrillAge.hint')}
-                          >
-                            <Input
-                              id="backup-recovery-max-drill-age-days"
-                              type="number"
-                              min={1}
-                              max={BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS}
-                              value={backupRecoveryPolicy.max_drill_age_days}
-                              onChange={(e) =>
-                                setBackupRecoveryPolicy(
-                                  'max_drill_age_days',
-                                  boundedNumberValue(
-                                    e.target.value,
-                                    backupRecoveryPolicy.max_drill_age_days,
-                                    1,
-                                    BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
-                          <Field
-                            label={t('settings.backupRecovery.targetRpo.label')}
-                            htmlFor="backup-recovery-target-rpo-minutes"
-                            hint={t('settings.backupRecovery.targetRpo.hint')}
-                          >
-                            <Input
-                              id="backup-recovery-target-rpo-minutes"
-                              type="number"
-                              min={1}
-                              max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
-                              value={backupRecoveryPolicy.target_rpo_minutes}
-                              onChange={(e) =>
-                                setBackupRecoveryPolicy(
-                                  'target_rpo_minutes',
-                                  boundedNumberValue(
-                                    e.target.value,
-                                    backupRecoveryPolicy.target_rpo_minutes,
-                                    1,
-                                    BACKUP_RECOVERY_MAX_TARGET_MINUTES,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
-                          <Field
-                            label={t('settings.backupRecovery.targetRto.label')}
-                            htmlFor="backup-recovery-target-rto-minutes"
-                            hint={t('settings.backupRecovery.targetRto.hint')}
-                          >
-                            <Input
-                              id="backup-recovery-target-rto-minutes"
-                              type="number"
-                              min={1}
-                              max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
-                              value={backupRecoveryPolicy.target_rto_minutes}
-                              onChange={(e) =>
-                                setBackupRecoveryPolicy(
-                                  'target_rto_minutes',
-                                  boundedNumberValue(
-                                    e.target.value,
-                                    backupRecoveryPolicy.target_rto_minutes,
-                                    1,
-                                    BACKUP_RECOVERY_MAX_TARGET_MINUTES,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
-                        </div>
+                        <Field
+                          label={t('settings.backupRecovery.maxDrillAge.label')}
+                          htmlFor="backup-recovery-max-drill-age-days"
+                          hint={t('settings.backupRecovery.maxDrillAge.hint')}
+                        >
+                          <Input
+                            id="backup-recovery-max-drill-age-days"
+                            type="number"
+                            min={1}
+                            max={BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS}
+                            value={backupRecoveryPolicy.max_drill_age_days}
+                            onChange={(e) =>
+                              setBackupRecoveryPolicy(
+                                'max_drill_age_days',
+                                boundedNumberValue(
+                                  e.target.value,
+                                  backupRecoveryPolicy.max_drill_age_days,
+                                  1,
+                                  BACKUP_RECOVERY_MAX_DRILL_AGE_DAYS,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label={t('settings.backupRecovery.targetRpo.label')}
+                          htmlFor="backup-recovery-target-rpo-minutes"
+                          hint={t('settings.backupRecovery.targetRpo.hint')}
+                        >
+                          <Input
+                            id="backup-recovery-target-rpo-minutes"
+                            type="number"
+                            min={1}
+                            max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                            value={backupRecoveryPolicy.target_rpo_minutes}
+                            onChange={(e) =>
+                              setBackupRecoveryPolicy(
+                                'target_rpo_minutes',
+                                boundedNumberValue(
+                                  e.target.value,
+                                  backupRecoveryPolicy.target_rpo_minutes,
+                                  1,
+                                  BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label={t('settings.backupRecovery.targetRto.label')}
+                          htmlFor="backup-recovery-target-rto-minutes"
+                          hint={t('settings.backupRecovery.targetRto.hint')}
+                        >
+                          <Input
+                            id="backup-recovery-target-rto-minutes"
+                            type="number"
+                            min={1}
+                            max={BACKUP_RECOVERY_MAX_TARGET_MINUTES}
+                            value={backupRecoveryPolicy.target_rto_minutes}
+                            onChange={(e) =>
+                              setBackupRecoveryPolicy(
+                                'target_rto_minutes',
+                                boundedNumberValue(
+                                  e.target.value,
+                                  backupRecoveryPolicy.target_rto_minutes,
+                                  1,
+                                  BACKUP_RECOVERY_MAX_TARGET_MINUTES,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
                       </div>
                     </Card>
                   </fieldset>
