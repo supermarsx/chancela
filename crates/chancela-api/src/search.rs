@@ -3709,6 +3709,18 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "postgres")]
+    fn block_on_postgres_search_test<F: std::future::Future>(future: F) -> F::Output {
+        // Keep the runtime scoped to async application calls. PostgreSQL stores remain owned by the
+        // outer synchronous test, so normal completion and panic unwinding both destroy the
+        // synchronous driver's runtime-bearing clients only after this runtime is gone.
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("build PostgreSQL search test runtime")
+            .block_on(future)
+    }
+
     #[tokio::test]
     async fn api_wrapper_and_external_projector_use_the_exact_shared_constructor() {
         let state = AppState::default();
@@ -5694,9 +5706,9 @@ mod tests {
     }
 
     #[cfg(feature = "postgres")]
-    #[tokio::test]
+    #[test]
     #[ignore = "requires a live PostgreSQL at DATABASE_URL"]
-    async fn postgres_two_node_search_promotion_discards_interrupted_generation() {
+    fn postgres_two_node_search_promotion_discards_interrupted_generation() {
         let Some(database_url) = std::env::var("DATABASE_URL")
             .ok()
             .filter(|value| !value.is_empty())
@@ -5749,11 +5761,10 @@ mod tests {
             ..AppState::default()
         };
         assert!(
-            follower
-                .search_index
-                .hydrate_from_store(&follower, true)
-                .await
-                .unwrap()
+            block_on_postgres_search_test(
+                follower.search_index.hydrate_from_store(&follower, true)
+            )
+            .unwrap()
         );
         assert_eq!(
             read_lock(&follower.search_index.inner.active)
@@ -5794,8 +5805,7 @@ mod tests {
                 &completed,
             )
             .unwrap();
-        confirm_search_snapshot_current(&follower)
-            .await
+        block_on_postgres_search_test(confirm_search_snapshot_current(&follower))
             .expect("a normal completed generation hydrates before the request is retried");
         let follower_active = read_lock(&follower.search_index.inner.active).clone();
         assert_eq!(follower_active.status.generation, 13);
@@ -5834,24 +5844,20 @@ mod tests {
             follower_store.cluster_try_promote().unwrap(),
             "follower wins the released advisory lock"
         );
-        follower
-            .cluster_promotion_handoff()
-            .await
+        block_on_postgres_search_test(follower.cluster_promotion_handoff())
             .expect("promotion handoff");
         follower_store.cluster_enable_writes();
         assert!(
-            follower
-                .search_index
-                .refresh_projection_role(&follower)
-                .await
+            block_on_postgres_search_test(follower.search_index.refresh_projection_role(&follower))
                 .unwrap()
         );
         assert!(
-            !follower
-                .search_index
-                .initialize_writer_projection(&follower)
-                .await
-                .unwrap(),
+            !block_on_postgres_search_test(
+                follower
+                    .search_index
+                    .initialize_writer_projection(&follower)
+            )
+            .unwrap(),
             "an interrupted durable generation must be discarded, never hydrated"
         );
         assert!(
