@@ -1242,8 +1242,6 @@ class SearchReadinessTests(unittest.TestCase):
 
 
 class FakeApiHandler(BaseHTTPRequestHandler):
-    counters = {"users": 0, "entities": 0, "books": 0, "acts": 0}
-
     def reply(self, status, value):
         body = json.dumps(value).encode("utf-8")
         self.send_response(status)
@@ -1256,6 +1254,8 @@ class FakeApiHandler(BaseHTTPRequestHandler):
         if self.path == "/health":
             self.reply(200, {"status": "ok"})
         elif self.path == "/v1/search/status":
+            with self.server.state_lock:
+                document_count = len(self.server.search_documents)
             self.reply(
                 200,
                 {
@@ -1265,7 +1265,7 @@ class FakeApiHandler(BaseHTTPRequestHandler):
                     "stale": False,
                     "phase": "idle",
                     "generation": 2,
-                    "document_count": 15,
+                    "document_count": document_count,
                     "indexed_content_chars": 1000,
                     "content_truncated": False,
                     "truncated_document_count": 0,
@@ -1273,33 +1273,37 @@ class FakeApiHandler(BaseHTTPRequestHandler):
             )
         elif self.path.startswith("/v1/search?"):
             query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            kind = query.get("kind", ["entity"])[0]
+            search_text = query.get("q", [""])[0].casefold()
+            kinds = set(query.get("kind", ["entity"])[0].split(","))
             cursor = query.get("cursor", [None])[0]
-            if "," in kind:
-                relation_key = "entity_id"
-                identifier = "entities-2" if cursor else "entities-1"
-                offset = 1 if cursor else 0
-                next_cursor = "test-cursor-2" if cursor else "test-cursor"
-                total = 15
-            elif kind == "book":
-                relation_key, identifier = "book_id", "books-1"
-                offset, next_cursor, total = 0, None, 1
-            elif kind == "act":
-                relation_key, identifier = "act_id", "acts-1"
-                offset, next_cursor, total = 0, None, 1
-            else:
-                relation_key, identifier = "entity_id", "entities-1"
-                offset, next_cursor, total = 0, None, 1
+            limit = int(query.get("limit", ["10"])[0])
+            offset = int(cursor.rsplit("-", 1)[-1]) if cursor else 0
+            with self.server.state_lock:
+                matching = [
+                    dict(document)
+                    for document in self.server.search_documents
+                    if document["kind"] in kinds
+                    and search_text in document["search_text"]
+                ]
+            page_documents = matching[offset : offset + limit]
+            has_more = offset + limit < len(matching)
+            next_cursor = f"test-cursor-{offset + limit}" if has_more else None
             self.reply(
                 200,
                 {
                     "page": {
-                        "total": total,
+                        "total": len(matching),
                         "offset": offset,
-                        "limit": 1,
-                        "has_more": next_cursor is not None,
+                        "limit": limit,
+                        "has_more": has_more,
                         "facets_truncated": False,
-                        "hits": [{relation_key: identifier, "kind": kind}],
+                        "hits": [
+                            {
+                                document["relation_key"]: document["identifier"],
+                                "kind": document["kind"],
+                            }
+                            for document in page_documents
+                        ],
                         "facets": {},
                     },
                     "next_cursor": next_cursor,
@@ -1341,8 +1345,28 @@ class FakeApiHandler(BaseHTTPRequestHandler):
         else:
             self.reply(404, {"error": self.path, "payload": payload})
             return
-        type(self).counters[kind] += 1
-        self.reply(201, {"id": f"{kind}-{type(self).counters[kind]}"})
+        with self.server.state_lock:
+            self.server.counters[kind] += 1
+            identifier = f"{kind}-{self.server.counters[kind]}"
+            searchable_fields = {
+                "entities": ("entity", "entity_id", ("name",)),
+                "books": ("book", "book_id", ("purpose",)),
+                "acts": ("act", "act_id", ("title",)),
+            }
+            if kind in searchable_fields:
+                search_kind, relation_key, fields = searchable_fields[kind]
+                search_text = " ".join(
+                    [identifier, *(str(payload.get(field, "")) for field in fields)]
+                ).casefold()
+                self.server.search_documents.append(
+                    {
+                        "kind": search_kind,
+                        "relation_key": relation_key,
+                        "identifier": identifier,
+                        "search_text": search_text,
+                    }
+                )
+        self.reply(201, {"id": identifier})
 
     def log_message(self, _format, *_args):
         pass
@@ -1377,6 +1401,9 @@ class ApiIntegrationTests(unittest.TestCase):
             dataset = root / "dataset"
             harness.generate_dataset(profile_path, dataset)
             server = ThreadingHTTPServer(("127.0.0.1", 0), FakeApiHandler)
+            server.counters = {"users": 0, "entities": 0, "books": 0, "acts": 0}
+            server.search_documents = []
+            server.state_lock = threading.Lock()
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             try:
