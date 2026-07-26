@@ -113,6 +113,7 @@ rustls-native-certs = "0.8"
 [dev-dependencies]
 tower = { workspace = true }
 zip = { workspace = true }
+lopdf = { workspace = true }
 chancela-cades = { workspace = true }
 der = { workspace = true }
 spki = { workspace = true }

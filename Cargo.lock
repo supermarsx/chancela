@@ -873,6 +873,7 @@ dependencies = [
  "ecdsa 0.16.9",
  "futures-core",
  "hmac 0.12.1",
+ "lopdf",
  "metrics",
  "metrics-exporter-prometheus",
  "moka",
