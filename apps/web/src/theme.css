@@ -8816,6 +8816,16 @@ a.btn--primary {
   line-height: 1.45;
 }
 
+.leg-citations__notice-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.leg-citations__notice-restore {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .leg-citations__list {
   display: grid;
   gap: 0.45rem;

@@ -52,6 +52,9 @@ import {
   useLawCorpusSearch,
   useLawDiploma,
   useResolveLawCitations,
+  useSettings,
+  useUpdateNoticeDismissal,
+  useUserPreferences,
 } from '../../api/hooks';
 import type {
   LawArticleView,
@@ -60,9 +63,11 @@ import type {
   LawDiplomaSummaryView,
   LawSearchHitView,
   LawVerification,
+  NoticeDismissal,
 } from '../../api/types';
 import { useT } from '../../i18n';
 import type { TFunction } from '../../i18n';
+import { useLegCitationsNoticeT } from '../../i18n/legCitationsNoticeFallback';
 import {
   Badge,
   Button,
@@ -80,6 +85,12 @@ import {
   useToast,
 } from '../../ui';
 import { formatTimestamp } from '../../format';
+import {
+  createNoticeDismissal,
+  informationalNoticeHideDays,
+  informationalNoticeIsHidden,
+  noticeDismissalFromPreferences,
+} from '../notices/informationalNotice';
 import { ExternalLink } from './links';
 
 /**
@@ -151,13 +162,29 @@ function CitationShelf({
   notice,
   onCopy,
   onClear,
+  noticeHidden,
+  noticeReady,
+  noticeUpdatePending,
+  temporaryHideDays,
+  onHideNotice,
+  onRestoreNotice,
 }: {
   citations: LawCitationView[];
   notice: string;
   onCopy: () => void;
   onClear: () => void;
+  /** Whether the caveat below is currently dismissed (snoozed still running, or permanent). */
+  noticeHidden: boolean;
+  /** The dismissal state has loaded, so the show/hide controls reflect the operator's real choice
+   *  rather than flashing "visible" for an instant while preferences are still loading. */
+  noticeReady: boolean;
+  noticeUpdatePending: boolean;
+  temporaryHideDays: number;
+  onHideNotice: (mode: NoticeDismissal['mode']) => void;
+  onRestoreNotice: () => void;
 }) {
   const t = useT();
+  const noticeT = useLegCitationsNoticeT();
 
   return (
     <aside className="leg-citations" aria-label={t('legislacao.citations.title')}>
@@ -178,7 +205,46 @@ function CitationShelf({
           </Button>
         </div>
       </div>
-      <p className="leg-citations__notice muted">{notice}</p>
+      {noticeReady && noticeHidden ? (
+        <div className="leg-citations__notice-restore">
+          <Button
+            type="button"
+            variant="ghost"
+            disabled={noticeUpdatePending}
+            onClick={onRestoreNotice}
+          >
+            {noticeT('legCitations.notice.restore')}
+          </Button>
+        </div>
+      ) : (
+        <div className="leg-citations__notice-row">
+          <p className="leg-citations__notice muted">{notice}</p>
+          {noticeReady ? (
+            <div
+              className="informational-notice__actions"
+              role="group"
+              aria-label={noticeT('legCitations.notice.dismissActions')}
+            >
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={noticeUpdatePending}
+                onClick={() => onHideNotice('snoozed')}
+              >
+                {noticeT('legCitations.notice.hideTemporary', { days: temporaryHideDays })}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={noticeUpdatePending}
+                onClick={() => onHideNotice('permanent')}
+              >
+                {noticeT('legCitations.notice.hidePermanent')}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      )}
       {citations.length === 0 ? (
         <p className="leg-citations__empty muted">{t('legislacao.citations.empty')}</p>
       ) : (
@@ -740,8 +806,42 @@ function ArticleIndex({
 export function CorpusReader() {
   const t: TFunction = useT();
   const toast = useToast();
+  const noticeT = useLegCitationsNoticeT();
   const [params, setParams] = useSearchParams();
   const resolver = useResolveLawCitations();
+  const settings = useSettings();
+  const preferences = useUserPreferences();
+  const updateCitationsNoticeDismissal = useUpdateNoticeDismissal('leg_citations');
+  const citationsNoticeHideDays = informationalNoticeHideDays(settings.data);
+  const citationsNoticeHidden = informationalNoticeIsHidden(
+    noticeDismissalFromPreferences(preferences.data, 'leg_citations'),
+  );
+
+  // Snoozed/permanent, same self-scoped registry as the External Signatures and platform-log-scope
+  // notices — persists across sessions and devices for this user. Global per user (not scoped to a
+  // diploma/citation): the caveat is a generic "these are informative, not a substitute for the
+  // official text or legal review" caution that applies identically no matter which citation was
+  // last pinned, so there is no per-resource meaning to key it on. A restore control stays reachable
+  // whenever the notice is hidden (mirroring the platform-log-scope pattern) rather than being a
+  // one-way permanent silence with no way back.
+  function hideCitationsNotice(mode: NoticeDismissal['mode']) {
+    updateCitationsNoticeDismissal.mutate(createNoticeDismissal(mode, citationsNoticeHideDays), {
+      onSuccess: () =>
+        toast.success(
+          mode === 'permanent'
+            ? noticeT('legCitations.notice.hiddenPermanent')
+            : noticeT('legCitations.notice.hiddenTemporary', { days: citationsNoticeHideDays }),
+        ),
+      onError: (error) => toast.error(error),
+    });
+  }
+
+  function restoreCitationsNotice() {
+    updateCitationsNoticeDismissal.mutate(null, {
+      onSuccess: () => toast.success(noticeT('legCitations.notice.restored')),
+      onError: (error) => toast.error(error),
+    });
+  }
 
   const diplomaId = params.get('diploma') ?? '';
   const articleNumber = params.get('artigo') ?? '';
@@ -932,6 +1032,12 @@ export function CorpusReader() {
           notice={citationNotice}
           onCopy={() => void copyCitations()}
           onClear={() => setCitations([])}
+          noticeHidden={citationsNoticeHidden}
+          noticeReady={!preferences.isLoading && preferences.isSuccess}
+          noticeUpdatePending={updateCitationsNoticeDismissal.isPending}
+          temporaryHideDays={citationsNoticeHideDays}
+          onHideNotice={hideCitationsNotice}
+          onRestoreNotice={restoreCitationsNotice}
         />
 
         <div className={`leg-corpus__layout${reading ? ' leg-corpus__layout--indexed' : ''}`}>

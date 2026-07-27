@@ -1,6 +1,6 @@
-//! Per-user, **non-ledger** UI preferences (t37): configurable table columns for the entities,
-//! books and templates tables plus a bounded registry of informational-notice dismissals,
-//! persisted server-side so a choice follows the operator across devices.
+//! Per-user, **non-ledger** UI preferences (t37): configurable table columns for a closed set of
+//! eleven tables (t54) plus a bounded registry of informational-notice dismissals, persisted
+//! server-side so a choice follows the operator across devices.
 //!
 //! ## Why this is its own sidecar, and deliberately not the ledger
 //!
@@ -57,8 +57,12 @@ pub const USER_PREFERENCES_FILE: &str = "user_preferences.json";
 /// an older/newer stored document still loads (unknown fields ignored, missing fields defaulted).
 pub const USER_PREFERENCES_SCHEMA_VERSION: u32 = 1;
 
-/// The three tables whose columns are configurable. Purely defensive: it bounds how large a single
-/// user's row can grow (the whole document is one user's three arrays at most).
+/// The number of tables whose columns are configurable (`TableColumnPreferences::tables`). Purely
+/// defensive: it bounds how large a single user's row can grow (the whole document is one user's
+/// eleven arrays at most). A twelfth key is a deliberate contract change, not a silent creep — see
+/// the compile-time assertion below.
+const MAX_TABLES: usize = 11;
+/// Per-table cap on the number of columns a preference list may carry.
 const MAX_COLUMNS_PER_TABLE: usize = 64;
 /// A column identifier is a short PascalCase enum name (e.g. `LastActivity`). This caps a malformed
 /// or hostile id well above any real one.
@@ -193,6 +197,12 @@ impl UserPreferences {
 pub enum NoticeKey {
     ExternalSigning,
     PlatformLogScope,
+    /// The legislation corpus reader's pinned-citations caveat (`CorpusReader`'s
+    /// `leg-citations__notice`): "informative references, not a substitute for the official
+    /// publication or legal review." Global per user, not scoped to a diploma/template — the
+    /// reader is a single tool surface, and the caveat's meaning does not depend on which
+    /// citation was last pinned.
+    LegCitations,
 }
 
 impl std::fmt::Display for NoticeKey {
@@ -200,6 +210,7 @@ impl std::fmt::Display for NoticeKey {
         formatter.write_str(match self {
             Self::ExternalSigning => "external_signing",
             Self::PlatformLogScope => "platform_log_scope",
+            Self::LegCitations => "leg_citations",
         })
     }
 }
@@ -236,10 +247,29 @@ impl NoticeDismissal {
 /// The visible-column choice per configurable table.
 ///
 /// Each field is an **ordered set of column ids**. `None` means "no personal override for this
-/// table" — the web then falls back to the org default (entities) or the product default (books,
-/// templates). This is why the fields are `Option`: it lets a user personalise one table without
+/// table" — the web then falls back to the org default (entities) or the product default (all
+/// others). This is why the fields are `Option`: it lets a user personalise one table without
 /// implying anything about the others. `PUT` replaces the whole object, so sending `null` (or
 /// omitting a field) clears that table's override.
+///
+/// ## A closed set of eleven keys, deliberately (t54)
+///
+/// This is **not** an open map. [`NoticeKey`] just above is a closed enum specifically so that
+/// "a hostile preferences document cannot grow an unbounded map" — an open
+/// `BTreeMap<String, Vec<String>>` here for table keys would reverse that same threat-model
+/// decision for a neighbouring field in the same document. The column **ids** inside each list are
+/// already opaque and shape-validated (`is_valid_column_id`); that is the correct locus of
+/// openness. The **table keys** are the bound, sized once to the full set of named consumers
+/// across every lane rather than grown key-by-key:
+/// - `entities`, `books`, `templates` — shipped (t37).
+/// - `acts`, `ledger` — the acts-in-book list and the ledger/Arquivo table (t54).
+/// - `users` — reserved for the users table; its picker is wired alongside bulk selection (t56).
+/// - `processors`, `dpias`, `breach_playbooks`, `transfer_controls`, `retention_policies` —
+///   reserved for the RGPD registers once they become addressable pages (t55 follow-on).
+///
+/// Reserving a key costs nothing and commits nothing: an absent field means "no override", and a
+/// key with no picker behind it yet is simply inert. Adding a twelfth key is a deliberate contract
+/// change (see [`MAX_TABLES`] and the compile-time assertion below it), not an open-ended surface.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TableColumnPreferences {
@@ -252,16 +282,49 @@ pub struct TableColumnPreferences {
     /// The templates/minutas catalog table (`TemplatesCatalogPage`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub templates: Option<Vec<String>>,
+    /// The acts-in-book list (`BookActsList`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub acts: Option<Vec<String>>,
+    /// The ledger/Arquivo table (`LedgerTable`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ledger: Option<Vec<String>>,
+    /// The users table (`UserListPage`). Key reserved here; the picker is t56's (D3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub users: Option<Vec<String>>,
+    /// The RGPD processing-activities register. Key reserved; adoption is a t55 follow-on once the
+    /// register has its own addressable page.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub processors: Option<Vec<String>>,
+    /// The DPIA register. Key reserved; see `processors`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dpias: Option<Vec<String>>,
+    /// The breach-playbooks register. Key reserved; see `processors`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub breach_playbooks: Option<Vec<String>>,
+    /// The transfer-controls register. Key reserved; see `processors`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transfer_controls: Option<Vec<String>>,
+    /// The retention-policies register. Key reserved; see `processors`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub retention_policies: Option<Vec<String>>,
 }
 
 impl TableColumnPreferences {
-    /// The three (table name, value) pairs, so validation and sanitisation iterate rather than
-    /// repeat themselves three times.
-    fn tables(&self) -> [(&'static str, &Option<Vec<String>>); 3] {
+    /// The eleven (table name, value) pairs, so validation and sanitisation iterate rather than
+    /// repeat themselves eleven times.
+    fn tables(&self) -> [(&'static str, &Option<Vec<String>>); MAX_TABLES] {
         [
             ("entities", &self.entities),
             ("books", &self.books),
             ("templates", &self.templates),
+            ("acts", &self.acts),
+            ("ledger", &self.ledger),
+            ("users", &self.users),
+            ("processors", &self.processors),
+            ("dpias", &self.dpias),
+            ("breach_playbooks", &self.breach_playbooks),
+            ("transfer_controls", &self.transfer_controls),
+            ("retention_policies", &self.retention_policies),
         ]
     }
 
@@ -279,9 +342,27 @@ impl TableColumnPreferences {
             entities: sanitize_columns(self.entities.as_deref()),
             books: sanitize_columns(self.books.as_deref()),
             templates: sanitize_columns(self.templates.as_deref()),
+            acts: sanitize_columns(self.acts.as_deref()),
+            ledger: sanitize_columns(self.ledger.as_deref()),
+            users: sanitize_columns(self.users.as_deref()),
+            processors: sanitize_columns(self.processors.as_deref()),
+            dpias: sanitize_columns(self.dpias.as_deref()),
+            breach_playbooks: sanitize_columns(self.breach_playbooks.as_deref()),
+            transfer_controls: sanitize_columns(self.transfer_controls.as_deref()),
+            retention_policies: sanitize_columns(self.retention_policies.as_deref()),
         }
     }
 }
+
+/// A twelfth key must be a deliberate act: bump [`MAX_TABLES`], extend the struct, `tables()` and
+/// `sanitized()` together, and re-check the document-size bound in the module doc below.
+const _: () = assert!(MAX_TABLES == 11);
+
+/// Worst-case document size sanity check: [`MAX_TABLES`] tables × [`MAX_COLUMNS_PER_TABLE`] columns
+/// × [`MAX_COLUMN_ID_BYTES`] bytes per id (plus JSON punctuation) is comfortably inside the small
+/// bodies this route is designed to accept — a few hundred KB at most, not an unbounded upload.
+/// If a body-size limit is ever added to `PUT /v1/me/preferences`, verify it against this bound.
+const _: usize = MAX_TABLES * MAX_COLUMNS_PER_TABLE * MAX_COLUMN_ID_BYTES;
 
 /// Whether a column id is a well-formed opaque identifier: non-empty, bounded, ASCII-alphanumeric.
 /// The server does not check it against any column enum (see the module note) — only its shape.
@@ -517,7 +598,7 @@ mod tests {
             table_columns: TableColumnPreferences {
                 entities: to_vec(entities),
                 books: to_vec(books),
-                templates: None,
+                ..Default::default()
             },
             notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
@@ -606,8 +687,7 @@ mod tests {
         let over = UserPreferences {
             table_columns: TableColumnPreferences {
                 entities: Some(distinct),
-                books: None,
-                templates: None,
+                ..Default::default()
             },
             notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
@@ -634,7 +714,7 @@ mod tests {
                     "Nipc".to_owned(),
                 ]),
                 books: Some(vec![]),
-                templates: None,
+                ..Default::default()
             },
             notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
@@ -646,6 +726,52 @@ mod tests {
         );
         // An explicitly-empty table folds back to "no override".
         assert_eq!(clean.table_columns.books, None);
+    }
+
+    /// t54-e0: the closed set is exactly these eleven snake_case wire keys, and each round-trips
+    /// independently. A twelfth key present on the wire is simply ignored (unknown-field tolerance
+    /// on this struct is unchanged from before t54), not accepted into the document.
+    #[test]
+    fn all_eleven_table_keys_round_trip_by_their_snake_case_wire_names() {
+        let body = serde_json::json!({
+            "table_columns": {
+                "entities": ["Name"],
+                "books": ["Kind"],
+                "templates": ["Family"],
+                "acts": ["Number"],
+                "ledger": ["Seq"],
+                "users": ["Username"],
+                "processors": ["Name"],
+                "dpias": ["Name"],
+                "breach_playbooks": ["Name"],
+                "transfer_controls": ["Name"],
+                "retention_policies": ["Name"],
+            }
+        });
+        let parsed: UserPreferences = serde_json::from_value(body).expect("all eleven keys parse");
+        assert!(parsed.validate().is_ok());
+        let tc = &parsed.table_columns;
+        assert_eq!(tc.entities.as_deref(), Some(["Name".to_owned()].as_slice()));
+        assert_eq!(tc.books.as_deref(), Some(["Kind".to_owned()].as_slice()));
+        assert_eq!(tc.templates.as_deref(), Some(["Family".to_owned()].as_slice()));
+        assert_eq!(tc.acts.as_deref(), Some(["Number".to_owned()].as_slice()));
+        assert_eq!(tc.ledger.as_deref(), Some(["Seq".to_owned()].as_slice()));
+        assert_eq!(tc.users.as_deref(), Some(["Username".to_owned()].as_slice()));
+        assert_eq!(tc.processors.as_deref(), Some(["Name".to_owned()].as_slice()));
+        assert_eq!(tc.dpias.as_deref(), Some(["Name".to_owned()].as_slice()));
+        assert_eq!(
+            tc.breach_playbooks.as_deref(),
+            Some(["Name".to_owned()].as_slice())
+        );
+        assert_eq!(
+            tc.transfer_controls.as_deref(),
+            Some(["Name".to_owned()].as_slice())
+        );
+        assert_eq!(
+            tc.retention_policies.as_deref(),
+            Some(["Name".to_owned()].as_slice())
+        );
+        assert_eq!(tc.tables().len(), MAX_TABLES);
     }
 
     #[test]

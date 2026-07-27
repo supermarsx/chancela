@@ -8239,14 +8239,31 @@ export type BookColumn = (typeof BOOK_COLUMNS)[number];
  *
  * Each `table_columns` field is an ordered, opaque list of column ids. A field is **omitted**
  * (not `null`) when the user has no override for that table, in which case the web falls back
- * (entities → the instance org default → the product default; books/templates → the product
+ * (entities → the instance org default → the product default; all others → the product
  * default). The server validates only the shape of the ids, never their meaning, so adding or
  * renaming a column never touches this contract.
+ *
+ * A **closed set of eleven keys** (t54), deliberately — mirrors the closed `NoticeKey` enum's
+ * anti-unbounded-growth rationale; the server rejects an open map here for the same reason. The
+ * column ids inside each list are the open, shape-validated part; the table keys are not.
+ * - `entities`, `books`, `templates` — shipped (t37).
+ * - `acts`, `ledger` — the acts-in-book list and the ledger/Arquivo table (t54).
+ * - `users` — reserved; picker wired alongside bulk selection (t56).
+ * - `processors`, `dpias`, `breach_playbooks`, `transfer_controls`, `retention_policies` —
+ *   reserved for the RGPD registers once they have addressable pages (t55 follow-on).
  */
 export interface TableColumnPreferences {
   entities?: string[];
   books?: string[];
   templates?: string[];
+  acts?: string[];
+  ledger?: string[];
+  users?: string[];
+  processors?: string[];
+  dpias?: string[];
+  breach_playbooks?: string[];
+  transfer_controls?: string[];
+  retention_policies?: string[];
 }
 
 /**
@@ -8256,7 +8273,7 @@ export interface TableColumnPreferences {
 export type NoticeDismissal = { mode: 'snoozed'; until: string } | { mode: 'permanent' };
 
 /** Bounded notice keys accepted by the preferences API; arbitrary user-supplied keys are refused. */
-export type NoticeKey = 'external_signing' | 'platform_log_scope';
+export type NoticeKey = 'external_signing' | 'platform_log_scope' | 'leg_citations';
 
 export interface UserPreferences {
   table_columns: TableColumnPreferences;

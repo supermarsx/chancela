@@ -19,7 +19,9 @@ import type {
   LawCorpusView,
   LawDiplomaDetailView,
   LawSearchView,
+  UserPreferences,
 } from '../../api/types';
+import { DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS } from '../notices/informationalNotice';
 
 // The law shelf links out through openExternal; mock it so a click is observable and
 // nothing tries to reach the OS / a real tab under jsdom.
@@ -552,10 +554,46 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     ],
   };
 
-  /** A fetch stub for the corpus endpoints (search / diploma detail / corpus list), in order. */
-  function corpusFetch(): typeof fetch {
+interface CorpusFetchOptions {
+    requests?: { url: string; init?: RequestInit }[];
+    preferences?: UserPreferences;
+    preferencesError?: boolean;
+    temporaryHideDays?: number;
+  }
+
+  /**
+   * A fetch stub for the corpus endpoints (search / diploma detail / corpus list), plus
+   * `/v1/me/preferences` and `/v1/settings` so the citations-notice dismissal round-trips like
+   * `externalSigningFetch` in `ExternalSigningWorkflowsPage.test.tsx`. `preferences` seeds the
+   * in-memory store (mutated by PUT, mirroring the real self-scoped whole-document replace);
+   * `preferencesError` simulates an old/unavailable preferences endpoint.
+   */
+  function corpusFetch(options: CorpusFetchOptions = {}): typeof fetch {
+    let preferences = options.preferences ?? { table_columns: {} };
     return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
+      options.requests?.push({ url, init });
+      const method = (init?.method ?? 'GET').toUpperCase();
+      if (url.includes('/v1/me/preferences')) {
+        if (method === 'GET' && options.preferencesError) {
+          return Promise.resolve(json({ error: 'preferences unavailable' }, 503));
+        }
+        if (method === 'PUT') preferences = JSON.parse(String(init?.body ?? '{}'));
+        return Promise.resolve(json(preferences));
+      }
+      if (url.includes('/v1/settings')) {
+        return Promise.resolve(
+          json({
+            ui: {
+              registered_entity_columns: [],
+              external_signature_notice_snooze_days:
+                options.temporaryHideDays ?? DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS,
+              phone_pairing_share_email_enabled: true,
+              phone_pairing_share_whatsapp_enabled: true,
+            },
+          }),
+        );
+      }
       if (url.includes('/v1/law/citations/resolve') && init?.method === 'POST') {
         const body = JSON.parse(String(init.body ?? '{}')) as {
           references?: { diploma_id: string; article: string }[];
@@ -717,6 +755,117 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     const copied = String(writeText.mock.calls[0][0]);
     expect(copied).toContain('[Por verificar - fonte pendente]');
     expect(copied).not.toContain('[Verificado]');
+  });
+
+  // --- Dismissing the pinned-citations caveat (t53-e2) -------------------------------------------
+  // Mirrors ExternalSigningWorkflowsPage.test.tsx's dismissal round-trip: same registry
+  // (notice_dismissals), same shared informationalNotice.ts mechanism, different NoticeKey.
+
+  it('dismisses the citations caveat temporarily, persists it, and keeps a way back after remount', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    const now = Date.parse('2026-07-25T12:00:00Z');
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    vi.stubGlobal('fetch', corpusFetch({ requests, temporaryHideDays: 30 }));
+    renderWithProviders(<CorpusReader />);
+
+    const actions = await screen.findByRole('group', { name: 'Opções para ocultar este aviso' });
+    expect(
+      within(actions).getByRole('button', { name: 'Ocultar permanentemente' }),
+    ).toBeTruthy();
+    fireEvent.click(within(actions).getByRole('button', { name: 'Ocultar durante 30 dias' }));
+
+    await waitFor(() =>
+      expect(
+        requests.some(
+          (request) =>
+            request.url.includes('/v1/me/preferences') &&
+            (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+        ),
+      ).toBe(true),
+    );
+    const put = requests.find(
+      (request) =>
+        request.url.includes('/v1/me/preferences') &&
+        (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+    );
+    expect(JSON.parse(String(put?.init?.body))).toEqual({
+      table_columns: {},
+      notice_dismissals: {
+        leg_citations: { mode: 'snoozed', until: '2026-08-24T12:00:00.000Z' },
+      },
+    });
+
+    // The dismiss actions are gone, but a restore control replaces them — a snoozed-away caveat is
+    // never a dead end, unlike a resolved transient error that simply clears itself.
+    await waitFor(() =>
+      expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull(),
+    );
+    const restore = await screen.findByRole('button', { name: 'Repor aviso sobre as citações' });
+    expect(restore).toBeTruthy();
+
+    // Persists across a fresh mount (server-side, not component state).
+    cleanup();
+    renderWithProviders(<CorpusReader />);
+    expect(await screen.findByText('Citações selecionadas')).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Repor aviso sobre as citações' })).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull();
+  });
+
+  it('dismisses the citations caveat permanently, and restoring brings the dismiss actions back', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', corpusFetch({ requests }));
+    renderWithProviders(<CorpusReader />);
+
+    const actions = await screen.findByRole('group', { name: 'Opções para ocultar este aviso' });
+    fireEvent.click(within(actions).getByRole('button', { name: 'Ocultar permanentemente' }));
+
+    await waitFor(() => {
+      const put = requests.find(
+        (request) =>
+          request.url.includes('/v1/me/preferences') &&
+          (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+      );
+      expect(JSON.parse(String(put?.init?.body))).toEqual({
+        table_columns: {},
+        notice_dismissals: { leg_citations: { mode: 'permanent' } },
+      });
+    });
+
+    const restore = await screen.findByRole('button', { name: 'Repor aviso sobre as citações' });
+    fireEvent.click(restore);
+
+    // Restoring is explicit and reachable — a permanent dismiss is not a one-way door.
+    await screen.findByRole('group', { name: 'Opções para ocultar este aviso' });
+    const put = requests.findLast(
+      (request) =>
+        request.url.includes('/v1/me/preferences') &&
+        (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+    );
+    expect(JSON.parse(String(put?.init?.body))).toEqual({
+      table_columns: {},
+      notice_dismissals: {},
+    });
+  });
+
+  it('keeps the citations caveat visible with no dismiss controls when preferences fail to load', async () => {
+    const requests: { url: string; init?: RequestInit }[] = [];
+    vi.stubGlobal('fetch', corpusFetch({ requests, preferencesError: true }));
+    renderWithProviders(<CorpusReader />);
+
+    expect(
+      await screen.findByText(/não substituem a publicação oficial nem revisão jurídica/),
+    ).toBeTruthy();
+    expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ocultar durante/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Ocultar permanentemente' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Repor aviso sobre as citações' })).toBeNull();
+    expect(
+      requests.some(
+        (request) =>
+          request.url.includes('/v1/me/preferences') &&
+          (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+      ),
+    ).toBe(false);
   });
 
   // --- Getting back out of a law's full text (t34) ---------------------------------------------
