@@ -211,6 +211,9 @@ fn old_shape_entity_json_deserializes_with_statute_none() {
         serde_json::from_str(OLD_SHAPE_ENTITY_JSON).expect("old-shape entity deserializes");
     assert!(entity.statute.is_none());
     assert!(entity.document_layout_override.is_none());
+    // t60: every entity stored before archiving existed reads back as active, never as an
+    // ambiguous or unreadable value.
+    assert!(entity.archived_at.is_none());
     assert!(
         entity.nipc.is_validated(),
         "a bare-string NIPC is validated"

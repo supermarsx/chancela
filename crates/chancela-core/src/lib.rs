@@ -68,7 +68,8 @@ pub use document_model::{
     Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,
 };
 pub use entity::{
-    Entity, EntityFamily, EntityId, EntityKind, Majority, Nipc, Quorum, StatuteOverrides,
+    Entity, EntityArchiveError, EntityFamily, EntityId, EntityKind, Majority, Nipc, Quorum,
+    StatuteOverrides,
 };
 pub use error::{ActError, BookError, CoreError, NipcError, SealError, TermoError};
 pub use external_signing::{

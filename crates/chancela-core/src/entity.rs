@@ -5,6 +5,8 @@
 //! carries its own selectable legal [`EntityKind`]s (ENT-01).
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use thiserror::Error;
+use time::OffsetDateTime;
 use uuid::Uuid;
 
 use crate::error::NipcError;
@@ -334,6 +336,51 @@ pub struct Entity {
     /// template/instance policy; old entity JSON therefore remains fully backward compatible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document_layout_override: Option<crate::document_layout::DocumentLayoutOverrides>,
+    /// When this entity was retired from **new authorship**, or `None` while it is active.
+    ///
+    /// Archiving is a lifecycle flag, never a delete and never a read filter. An archived entity
+    /// stays in the entity map, still resolves through the unfiltered `entities.get(...)` path every
+    /// act and document uses to name its parties, and every book, act, document, ledger row and
+    /// export written about it stays readable, searchable and exportable. The only thing withdrawn
+    /// is the invitation to start *new* work: opening a book on it, drafting a new act in its books,
+    /// editing its content, and its place in pickers that choose a target for new work. Work already
+    /// in flight still finishes, and a book already open can still be closed.
+    ///
+    /// # Digest stability (why `skip_serializing_if` is load-bearing here)
+    ///
+    /// `Entity` is a ledger payload: it is serialized whole as the digest preimage of
+    /// `entity.created`, of `entity.statute_updated`, and of the entity genesis appended on the
+    /// certidão-permanente import path. A field that always emitted bytes would therefore move every
+    /// future entity-event digest. Skipping the key when `None` keeps an unarchived entity
+    /// **byte-identical** to the pre-archiving shape, so no existing digest and no future digest of
+    /// an active entity moves at all; only an entity archived through its own, separately ledgered
+    /// event carries the key. The attribute block is copied verbatim from
+    /// [`crate::group::CompanyGroup::archived_at`], and `tests/entity_archive_freeze.rs` pins the
+    /// property rather than trusting it.
+    #[serde(
+        default,
+        with = "time::serde::rfc3339::option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub archived_at: Option<OffsetDateTime>,
+}
+
+/// A redundant entity archive transition was refused.
+///
+/// Both variants describe a no-op, not a corruption: the caller asked for a state the entity is
+/// already in. API callers are expected to translate them into the idempotent success the group
+/// archiving precedent uses (`204 No Content`) rather than surfacing them as failures.
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum EntityArchiveError {
+    /// Tried to archive an entity that is already archived.
+    #[error("entity was already archived at {since}")]
+    AlreadyArchived {
+        /// When it was archived.
+        since: OffsetDateTime,
+    },
+    /// Tried to unarchive an entity that is not archived.
+    #[error("entity is not archived; there is nothing to restore")]
+    NotArchived,
 }
 
 impl Entity {
@@ -361,6 +408,7 @@ impl Entity {
             fiscal_year_end: None,
             statute: None,
             document_layout_override: None,
+            archived_at: None,
         }
     }
 
@@ -382,14 +430,52 @@ impl Entity {
 
     /// True when `kind` is consistent with `family` (always true for entities built via
     /// [`Entity::new`], but worth checking for deserialized values).
+    ///
+    /// Deliberately unaffected by archiving: consistency is a statement about the entity's legal
+    /// classification, and retiring it from new authorship does not reclassify it.
     pub fn is_consistent(&self) -> bool {
         self.kind.family() == self.family
+    }
+
+    /// True once this entity has been retired from new authorship (see
+    /// [`archived_at`](Entity::archived_at) for exactly what that does and does not withdraw).
+    #[must_use]
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
+    }
+
+    /// Retire this entity from new authorship as of `now`.
+    ///
+    /// Refuses a redundant transition rather than silently restamping: overwriting `archived_at`
+    /// would move the recorded moment of retirement, and that moment is a fact the ledger already
+    /// carries an event for.
+    pub fn archive(&mut self, now: OffsetDateTime) -> Result<(), EntityArchiveError> {
+        if let Some(since) = self.archived_at {
+            return Err(EntityArchiveError::AlreadyArchived { since });
+        }
+        self.archived_at = Some(now);
+        Ok(())
+    }
+
+    /// Return this entity to active authorship.
+    ///
+    /// Restores exactly what archiving withdrew — pickers, book opening, act drafting, content
+    /// editability — and nothing evidentiary, because archiving removed nothing evidentiary. The
+    /// round trip is not a loss of history: archive and unarchive each append their own ledger
+    /// event, so reversing is strictly *more* audit record, never less.
+    pub fn unarchive(&mut self) -> Result<(), EntityArchiveError> {
+        if self.archived_at.is_none() {
+            return Err(EntityArchiveError::NotArchived);
+        }
+        self.archived_at = None;
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use time::macros::datetime;
 
     #[test]
     fn new_entity_defaults_to_the_default_tenant() {
@@ -610,5 +696,102 @@ mod tests {
             !serialized.contains("fiscal_year_end"),
             "absent fiscal year end should not be serialized: {serialized}"
         );
+    }
+
+    fn active_entity() -> Entity {
+        Entity::new(
+            "Encosto Estratégico, S.A.",
+            Nipc::parse("503004642").unwrap(),
+            "Lisboa",
+            EntityKind::SociedadeAnonima,
+        )
+    }
+
+    #[test]
+    fn a_new_entity_is_active() {
+        let entity = active_entity();
+        assert_eq!(entity.archived_at, None);
+        assert!(!entity.is_archived());
+    }
+
+    #[test]
+    fn archiving_records_the_moment_and_unarchiving_clears_it() {
+        let now = datetime!(2026-07-27 09:30:00 UTC);
+        let mut entity = active_entity();
+
+        entity.archive(now).expect("an active entity archives");
+        assert!(entity.is_archived());
+        assert_eq!(entity.archived_at, Some(now));
+
+        entity.unarchive().expect("an archived entity unarchives");
+        assert!(!entity.is_archived());
+        assert_eq!(entity.archived_at, None);
+    }
+
+    #[test]
+    fn a_redundant_transition_is_refused_rather_than_silently_restamped() {
+        // The recorded moment of retirement is a fact the ledger already carries an event for, so a
+        // second archive must not move it. Callers translate these into the idempotent 204 the
+        // group-archiving precedent returns; the core refuses so the caller gets to decide.
+        let first = datetime!(2026-07-27 09:30:00 UTC);
+        let later = datetime!(2026-08-01 09:30:00 UTC);
+        let mut entity = active_entity();
+
+        assert_eq!(entity.unarchive(), Err(EntityArchiveError::NotArchived));
+
+        entity.archive(first).unwrap();
+        assert_eq!(
+            entity.archive(later),
+            Err(EntityArchiveError::AlreadyArchived { since: first })
+        );
+        assert_eq!(
+            entity.archived_at,
+            Some(first),
+            "the refused second archive must not move the recorded moment"
+        );
+    }
+
+    #[test]
+    fn archiving_does_not_reclassify_the_entity() {
+        // Consistency is a statement about the entity's legal classification. Retiring it from new
+        // authorship is an administrative act, not a reclassification.
+        let mut entity = active_entity();
+        assert!(entity.is_consistent());
+        entity.archive(datetime!(2026-07-27 09:30:00 UTC)).unwrap();
+        assert!(entity.is_consistent());
+        assert_eq!(entity.family, EntityFamily::CommercialCompany);
+        assert_eq!(entity.kind, EntityKind::SociedadeAnonima);
+    }
+
+    #[test]
+    fn an_archived_entity_round_trips_through_json() {
+        let mut entity = active_entity();
+        entity.archive(datetime!(2026-07-27 09:30:00 UTC)).unwrap();
+
+        let json = serde_json::to_string(&entity).expect("serializes");
+        assert!(
+            json.contains("archived_at"),
+            "an archived entity must carry the key: {json}"
+        );
+        let back: Entity = serde_json::from_str(&json).expect("deserializes");
+        assert_eq!(back, entity);
+        assert!(back.is_archived());
+    }
+
+    #[test]
+    fn old_shape_entity_json_deserializes_as_active() {
+        // Every entity stored before archiving existed has no `archived_at` key, and must read back
+        // as active rather than as an unreadable or ambiguous value.
+        let json = r#"{
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "Encosto Estratégico, S.A.",
+            "nipc": "503004642",
+            "seat": "Lisboa",
+            "family": "CommercialCompany",
+            "kind": "SociedadeAnonima"
+        }"#;
+        let entity: Entity = serde_json::from_str(json).expect("old entity JSON deserializes");
+        assert_eq!(entity.archived_at, None);
+        assert!(!entity.is_archived());
     }
 }
