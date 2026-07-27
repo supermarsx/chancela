@@ -6,6 +6,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
@@ -161,6 +162,41 @@ fn unknown_article_coverage_fails_closed() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("absent from corpus"));
 }
 
+#[test]
+fn test_dirs_with_the_same_label_and_timestamp_are_unique_and_cleaned_on_drop() {
+    const DIR_COUNT: usize = 32;
+    const FIXED_TIMESTAMP_NANOS: u128 = 1_753_545_600_000_000_000;
+
+    let start = std::sync::Arc::new(std::sync::Barrier::new(DIR_COUNT));
+    let handles = (0..DIR_COUNT)
+        .map(|_| {
+            let start = std::sync::Arc::clone(&start);
+            std::thread::spawn(move || {
+                start.wait();
+                let dir = TestDir::new_at_timestamp("dre-approved-fixed", FIXED_TIMESTAMP_NANOS);
+                let path = dir.path.clone();
+                assert!(path.is_dir(), "DRE guard test directory should exist");
+                (dir, path)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let dirs = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("DRE guard test directory worker"))
+        .collect::<Vec<_>>();
+    let paths = dirs
+        .iter()
+        .map(|(_, path)| path.clone())
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(paths.len(), DIR_COUNT);
+    assert!(paths.iter().all(|path| path.is_dir()));
+
+    drop(dirs);
+    assert!(paths.iter().all(|path| !path.exists()));
+}
+
 fn run_guard<const N: usize>(args: [&str; N]) -> std::process::Output {
     let python = std::env::var("PYTHON")
         .or_else(|_| std::env::var("PYTHON3"))
@@ -176,13 +212,23 @@ struct TestDir {
     path: PathBuf,
 }
 
+static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
 impl TestDir {
     fn new(label: &str) -> Self {
         let unique = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let path = std::env::temp_dir().join(format!("{label}-{unique}"));
+        Self::new_at_timestamp(label, unique)
+    }
+
+    fn new_at_timestamp(label: &str, timestamp_nanos: u128) -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "{label}-{}-{timestamp_nanos}-{}",
+            std::process::id(),
+            NEXT_TEST_DIR_ID.fetch_add(1, Ordering::Relaxed)
+        ));
         fs::create_dir_all(&path).unwrap();
         Self { path }
     }

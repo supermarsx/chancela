@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use chancela_signing::{
     TimestampTrustDecision, TimestampTrustPolicy, TrustedListStatus, validate_timestamp_trust,
@@ -13,12 +14,19 @@ struct TestDir {
     path: PathBuf,
 }
 
+static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
 impl TestDir {
     fn new() -> Self {
+        Self::new_at_timestamp(OffsetDateTime::now_utc().unix_timestamp_nanos())
+    }
+
+    fn new_at_timestamp(timestamp_nanos: i128) -> Self {
         let path = std::env::temp_dir().join(format!(
-            "chancela-signing-tsa-trust-{}-{}",
+            "chancela-signing-tsa-trust-{}-{}-{}",
             std::process::id(),
-            OffsetDateTime::now_utc().unix_timestamp_nanos()
+            timestamp_nanos,
+            NEXT_TEST_DIR_ID.fetch_add(1, Ordering::Relaxed)
         ));
         std::fs::create_dir_all(&path).expect("create temp cert dir");
         Self { path }
@@ -166,6 +174,41 @@ fn qtst_details(root: Vec<u8>, authenticated: bool) -> QtstMatchDetails {
         trust_anchor_ders: vec![root],
         authenticated,
     }
+}
+
+#[test]
+fn test_dirs_with_the_same_timestamp_are_unique_and_cleaned_on_drop() {
+    const DIR_COUNT: usize = 32;
+    const FIXED_TIMESTAMP_NANOS: i128 = 1_753_545_600_000_000_000;
+
+    let start = std::sync::Arc::new(std::sync::Barrier::new(DIR_COUNT));
+    let handles = (0..DIR_COUNT)
+        .map(|_| {
+            let start = std::sync::Arc::clone(&start);
+            std::thread::spawn(move || {
+                start.wait();
+                let dir = TestDir::new_at_timestamp(FIXED_TIMESTAMP_NANOS);
+                let path = dir.path.clone();
+                assert!(path.is_dir(), "test certificate directory should exist");
+                (dir, path)
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let dirs = handles
+        .into_iter()
+        .map(|handle| handle.join().expect("test directory worker"))
+        .collect::<Vec<_>>();
+    let paths = dirs
+        .iter()
+        .map(|(_, path)| path.clone())
+        .collect::<std::collections::HashSet<_>>();
+
+    assert_eq!(paths.len(), DIR_COUNT);
+    assert!(paths.iter().all(|path| path.is_dir()));
+
+    drop(dirs);
+    assert!(paths.iter().all(|path| !path.exists()));
 }
 
 #[test]

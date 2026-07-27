@@ -2898,18 +2898,26 @@ fn strip_url_secrets(url: &str) -> String {
 mod tests {
     use super::*;
     use crate::settings::{SigningSettings, TsaProviderSettings, TslSourceSettings};
+    use std::sync::atomic::{AtomicU64, Ordering};
     use time::macros::datetime;
 
     const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
 
     struct TempDir(PathBuf);
 
+    static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
+
     impl TempDir {
         fn new() -> Self {
+            Self::new_at_timestamp(OffsetDateTime::now_utc().unix_timestamp_nanos())
+        }
+
+        fn new_at_timestamp(timestamp_nanos: i128) -> Self {
             let path = std::env::temp_dir().join(format!(
-                "chancela-trust-test-{}-{}",
+                "chancela-trust-test-{}-{}-{}",
                 std::process::id(),
-                OffsetDateTime::now_utc().unix_timestamp_nanos()
+                timestamp_nanos,
+                NEXT_TEMP_DIR_ID.fetch_add(1, Ordering::Relaxed)
             ));
             std::fs::create_dir_all(&path).expect("temp dir");
             Self(path)
@@ -2920,6 +2928,41 @@ mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.0);
         }
+    }
+
+    #[test]
+    fn temp_dirs_with_the_same_timestamp_are_unique_and_cleaned_on_drop() {
+        const DIR_COUNT: usize = 32;
+        const FIXED_TIMESTAMP_NANOS: i128 = 1_753_545_600_000_000_000;
+
+        let start = std::sync::Arc::new(std::sync::Barrier::new(DIR_COUNT));
+        let handles = (0..DIR_COUNT)
+            .map(|_| {
+                let start = std::sync::Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    let dir = TempDir::new_at_timestamp(FIXED_TIMESTAMP_NANOS);
+                    let path = dir.0.clone();
+                    assert!(path.is_dir(), "trust test directory should exist");
+                    (dir, path)
+                })
+            })
+            .collect::<Vec<_>>();
+
+        let dirs = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("trust test directory worker"))
+            .collect::<Vec<_>>();
+        let paths = dirs
+            .iter()
+            .map(|(_, path)| path.clone())
+            .collect::<std::collections::HashSet<_>>();
+
+        assert_eq!(paths.len(), DIR_COUNT);
+        assert!(paths.iter().all(|path| path.is_dir()));
+
+        drop(dirs);
+        assert!(paths.iter().all(|path| !path.exists()));
     }
 
     fn fixture() -> LoadedTsl {
