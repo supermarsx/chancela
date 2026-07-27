@@ -10,6 +10,7 @@ import { BOOK_KINDS, type BookKind, type BookState } from '../../api/types';
 import { useT, type MessageKey } from '../../i18n';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { resolveColumnOrigin } from '../tableColumns/columnOrigin';
 import {
   BOOKS_TABLE,
   dataColumns,
@@ -81,6 +82,12 @@ export function BooksPage() {
   const t = useT();
   const ct = useTableColumnsT();
   const columns = useTableColumns(BOOKS_COLUMN_SPEC);
+  // Books has no org-level default, so the picker states either the user's own choice or the
+  // shipped one — never a third party's.
+  const columnOrigin = resolveColumnOrigin(BOOKS_TABLE, {
+    overridden: columns.overridden,
+    fallback: BOOKS_COLUMN_SPEC.fallback,
+  });
   const [search, setSearch] = useState('');
   const debouncedSearch = useDebouncedValue(search);
   const [stateFilter, setStateFilter] = useState<BookStateFilter>('all');
@@ -255,6 +262,7 @@ export function BooksPage() {
               isVisible={columns.isVisible}
               onToggle={columns.toggle}
               columnLabel={(column) => t(BOOK_COLUMN_LABEL_KEYS[column])}
+              origin={columnOrigin}
             />
 
             {books.isPlaceholderData ? (

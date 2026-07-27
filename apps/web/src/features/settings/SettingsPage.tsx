@@ -94,6 +94,8 @@ import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
+import { ColumnToggleGrid } from '../tableColumns/ColumnToggleGrid';
+import { ENTITIES_TABLE, dataColumns } from '../tableColumns/tableColumnRegistry';
 import { type AdminCopyKey, useAdminT } from '../../i18n/adminFallback';
 import { usePlatformLogNoticeT } from '../../i18n/platformLogNoticeFallback';
 import { useTemplatePreviewSamplesT } from '../../i18n/templatePreviewSamplesFallback';
@@ -1091,6 +1093,13 @@ const ENTITY_COLUMN_LABEL_KEYS: Record<RegisteredEntityColumn, MessageKey> = {
   LastActivity: 'entities.columns.lastActivity',
   Actions: 'entities.columns.actions',
 };
+
+/**
+ * What the org-default card offers: the entities table's `data` columns, derived from the registry
+ * rather than restated here. `Actions` is a `control` — never offered, never storable in a user's
+ * preference — so an administrator is not shown a switch over something no user could ever hide.
+ */
+const ENTITY_ORG_DEFAULT_COLUMNS = dataColumns(ENTITIES_TABLE);
 
 const isSettingsSection = (v: string | undefined): v is SettingsSection =>
   SETTINGS_SECTIONS.some((s) => s.id === v);
@@ -3023,23 +3032,23 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                 value={draft.registry_auto_update}
                 onChange={setRegistryAutoUpdate}
               />
+              {/* The org default and the per-user picker on the entities page are the same control
+                  at two scopes, so they get the same aligned grid (t54). No `Origem` column here:
+                  this card *is* the organisation default, and stating that back on every row would
+                  say nothing. `Ações` is likewise absent — it is a control column, and the entities
+                  page shows it unconditionally, so offering an administrator a switch that changes
+                  nothing would be a lie about what this card governs. Its membership in the stored
+                  array is preserved untouched, not dropped. */}
               <Card title={t('settings.entityTable.title')}>
                 <div className="form settings-rows">
                   <p className="field__hint">{ct('tableColumns.entities.orgDefaultHint')}</p>
-                  <div
-                    className="checkbox-grid"
-                    role="group"
-                    aria-label={t('settings.entityTable.columns.aria')}
-                  >
-                    {REGISTERED_ENTITY_COLUMNS.map((column) => (
-                      <Toggle
-                        key={column}
-                        label={t(ENTITY_COLUMN_LABEL_KEYS[column])}
-                        checked={draft.ui.registered_entity_columns.includes(column)}
-                        onChange={(checked) => toggleEntityColumn(column, checked)}
-                      />
-                    ))}
-                  </div>
+                  <ColumnToggleGrid
+                    columns={ENTITY_ORG_DEFAULT_COLUMNS}
+                    ariaLabel={t('settings.entityTable.columns.aria')}
+                    isVisible={(column) => draft.ui.registered_entity_columns.includes(column)}
+                    onToggle={toggleEntityColumn}
+                    columnLabel={(column) => t(ENTITY_COLUMN_LABEL_KEYS[column])}
+                  />
                 </div>
               </Card>
             </div>

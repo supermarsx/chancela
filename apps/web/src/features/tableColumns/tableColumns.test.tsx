@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import { ColumnPicker } from './ColumnPicker';
+import { resolveColumnOrigin } from './columnOrigin';
 import {
   BOOKS_TABLE,
   ENTITIES_TABLE,
@@ -148,6 +149,133 @@ describe('ColumnPicker', () => {
     expect(state.checked).toBe(false);
     fireEvent.click(state);
     expect(onToggle).toHaveBeenCalledWith('State', true);
+  });
+
+  it('lays the toggles out as a control grid, not as a table', () => {
+    renderWithProviders(
+      <ColumnPicker
+        columns={['Kind', 'Purpose'] as Col[]}
+        label="Colunas"
+        isVisible={() => true}
+        onToggle={vi.fn()}
+        columnLabel={(column) => column}
+        origin="personal"
+      />,
+    );
+    // The regularity the user asked for is CSS, not semantics: no `<table>` and no `role="grid"`
+    // is what keeps a screen reader describing checkboxes rather than announcing cell coordinates
+    // for a form. If this ever fails, the layout has started claiming to be data.
+    expect(document.querySelector('.column-picker__grid')).toBeTruthy();
+    expect(document.querySelector('table')).toBeNull();
+    expect(document.querySelector('[role="grid"]')).toBeNull();
+    expect(document.querySelectorAll('.column-picker__row')).toHaveLength(2);
+    // Every row's control is a real checkbox with the column's own accessible name.
+    expect((screen.getByLabelText('Kind') as HTMLInputElement).type).toBe('checkbox');
+    // The header strip carries no information the controls do not, so it is decoration.
+    expect(document.querySelector('.column-picker__head')?.getAttribute('aria-hidden')).toBe(
+      'true',
+    );
+  });
+
+  it('describes each checkbox with the origin instead of renaming it', () => {
+    renderWithProviders(
+      <ColumnPicker
+        columns={['Kind'] as Col[]}
+        label="Colunas"
+        isVisible={() => true}
+        onToggle={vi.fn()}
+        columnLabel={(column) => column}
+        origin="org"
+      />,
+    );
+    const kind = screen.getByLabelText('Kind');
+    const describedBy = kind.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    // Announced after the name/role/state, not folded into the name.
+    expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
+      'Predefinição da organização',
+    );
+    expect(screen.getByText('Origem')).toBeTruthy();
+    expect(screen.getByText('Visível')).toBeTruthy();
+  });
+
+  it('drops the origin column entirely when the caller has no origin to state', () => {
+    renderWithProviders(
+      <ColumnPicker
+        columns={['Kind'] as Col[]}
+        label="Colunas"
+        isVisible={() => true}
+        onToggle={vi.fn()}
+        columnLabel={(column) => column}
+      />,
+    );
+    expect(document.querySelector('.column-picker__grid--origin')).toBeNull();
+    expect(document.querySelector('.column-picker__cell--origin')).toBeNull();
+    expect(screen.getByLabelText('Kind').getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('offers only the columns it is given — a control column has no way in', () => {
+    // The picker is handed `dataColumns(entry)`, and a control id is not a member of that type.
+    // This is the render-level half of the guarantee the registry makes at the type level.
+    renderWithProviders(
+      <ColumnPicker
+        columns={dataColumns(ENTITIES_TABLE)}
+        label="Colunas"
+        isVisible={() => true}
+        onToggle={vi.fn()}
+        columnLabel={(column) => column}
+        origin="product"
+      />,
+    );
+    expect(screen.getAllByRole('checkbox')).toHaveLength(13);
+    expect(screen.queryByLabelText('Actions')).toBeNull();
+  });
+});
+
+describe('resolveColumnOrigin', () => {
+  it('reports a stored personal preference as the user own choice', () => {
+    const spec = tableColumnsSpec(ENTITIES_TABLE);
+    expect(
+      resolveColumnOrigin(ENTITIES_TABLE, { overridden: true, fallback: spec.fallback }),
+    ).toBe('personal');
+  });
+
+  it('reports an untouched instance as the product default, not as the organisation one', () => {
+    // `settings.ui.registered_entity_columns` is always populated — an instance that has never
+    // been configured still serves the shipped list (with the inert `Actions` control on it).
+    // Calling that an administrator's decision would be a false statement about provenance.
+    const spec = tableColumnsSpec(ENTITIES_TABLE, {
+      fallback: ['Name', 'Nipc', 'Type', 'LastActivity', 'Actions'],
+    });
+    expect(
+      resolveColumnOrigin(ENTITIES_TABLE, { overridden: false, fallback: spec.fallback }),
+    ).toBe('product');
+  });
+
+  it('reports a narrowed instance default as the organisation one', () => {
+    const spec = tableColumnsSpec(ENTITIES_TABLE, { fallback: ['Name', 'Nipc'] });
+    expect(
+      resolveColumnOrigin(ENTITIES_TABLE, { overridden: false, fallback: spec.fallback }),
+    ).toBe('org');
+  });
+
+  it('never claims an organisation default for a table that has none', () => {
+    // Books and templates have no `orgDefaultSource`, so the only two truthful answers are the
+    // user's own choice and the shipped one.
+    const books = tableColumnsSpec(BOOKS_TABLE);
+    const templates = tableColumnsSpec(TEMPLATES_TABLE);
+    expect(
+      resolveColumnOrigin(BOOKS_TABLE, { overridden: false, fallback: books.fallback }),
+    ).toBe('product');
+    expect(resolveColumnOrigin(BOOKS_TABLE, { overridden: true, fallback: books.fallback })).toBe(
+      'personal',
+    );
+    expect(
+      resolveColumnOrigin(TEMPLATES_TABLE, { overridden: false, fallback: templates.fallback }),
+    ).toBe('product');
+    expect(
+      resolveColumnOrigin(TEMPLATES_TABLE, { overridden: true, fallback: templates.fallback }),
+    ).toBe('personal');
   });
 });
 

@@ -39,6 +39,7 @@ import {
 } from '../../ui';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton } from '../session/permissions';
+import { resolveColumnOrigin } from '../tableColumns/columnOrigin';
 import { TEMPLATES_TABLE, tableColumnsSpec } from '../tableColumns/tableColumnRegistry';
 import {
   DEFAULT_TEMPLATE_COLUMNS,
@@ -182,6 +183,12 @@ export function TemplatesCatalogPage() {
   // The visible columns are now a per-user server preference (t37), resolved through the shared
   // mechanism; the legacy device-local `localStorage` value is migrated once on first load below.
   const columns = useTableColumns(TEMPLATES_COLUMN_SPEC);
+  // Distinct from the `origin` filter above, which is a template's provenance: this is where the
+  // *column selection* comes from. Minutas has no org-level default, so it is personal or shipped.
+  const columnOrigin = resolveColumnOrigin(TEMPLATES_TABLE, {
+    overridden: columns.overridden,
+    fallback: TEMPLATES_COLUMN_SPEC.fallback,
+  });
   const seededRef = useRef(false);
   useEffect(() => {
     if (seededRef.current || columns.loading) return;
@@ -497,6 +504,7 @@ export function TemplatesCatalogPage() {
               isVisible={columns.isVisible}
               onToggle={columns.toggle}
               columnLabel={(column) => t(TEMPLATE_COLUMN_LABEL_KEYS[column])}
+              origin={columnOrigin}
             />
 
             {filtered.length === 0 ? (

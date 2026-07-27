@@ -34,6 +34,17 @@ export const tableColumnsPtPT = {
   // — Cartão de definições: agora a predefinição da organização ——————————————
   'tableColumns.entities.orgDefaultHint':
     'As colunas que os novos utilizadores veem por predefinição na lista de entidades. Cada utilizador pode depois personalizar as suas próprias colunas na página de entidades.',
+
+  // — Cabeçalhos da grelha de colunas (t54) ————————————————————————————————
+  'tableColumns.head.column': 'Coluna',
+  'tableColumns.head.visible': 'Visível',
+  'tableColumns.head.origin': 'Origem',
+
+  // De onde vem a escolha atual. Frases completas e independentes: nenhum nome é
+  // interpolado numa frase com concordância (memória `i18n-interpolated-nouns-break-agreement`).
+  'tableColumns.origin.personal': 'Pessoal',
+  'tableColumns.origin.org': 'Predefinição da organização',
+  'tableColumns.origin.product': 'Predefinição do produto',
 } as const;
 
 /** The key set the configurable-table copy resolves. */
@@ -47,6 +58,12 @@ export const tableColumnsEnglish = {
     'Choose which columns show in the books list. Your choice is saved to your account and follows you across devices.',
   'tableColumns.entities.orgDefaultHint':
     'The columns new users see by default in the entities list. Each user can then personalise their own columns on the entities page.',
+  'tableColumns.head.column': 'Column',
+  'tableColumns.head.visible': 'Visible',
+  'tableColumns.head.origin': 'Origin',
+  'tableColumns.origin.personal': 'Personal',
+  'tableColumns.origin.org': 'Organisation default',
+  'tableColumns.origin.product': 'Product default',
 } as const satisfies Record<TableColumnsCopyKey, string>;
 
 /**

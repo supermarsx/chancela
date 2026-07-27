@@ -12338,3 +12338,91 @@ input[type='radio']:disabled {
   text-transform: uppercase;
   align-self: start;
 }
+
+/* --- Column picker: the toggle control grid (t54) ---------------------------------
+   The per-user column picker beside a table and the org-default card in Configurações both
+   render `ColumnToggleGrid`. Before this, one was a wrapping cloud of `.checkline` chips and
+   the other a stack of `.toggle` switches; with thirteen entity columns neither lined up, which
+   is what "much more neatly displayed in a table like format" is about.
+
+   It is a CSS grid, not a `<table>`: these are form controls in a tabular *layout*, and the
+   markup deliberately does not claim tabular *semantics* (see `ColumnToggleGrid.tsx`). The rows
+   and the header strip are `display: contents` so every cell is a grid item of ONE grid — that
+   is what makes the checkbox column land in the same place on every row, which nesting a
+   per-row flexbox could not guarantee.
+
+   Every selector here is new and `.column-picker`-prefixed, so nothing above is reflowed and
+   nothing ties with an existing rule on specificity. */
+/* The width cap is the difference between a table and a ransom note: measured at 1280px the
+   name track stretched to 664px, leaving the eye to cross half a card to reach the checkbox it
+   belongs to. Capped, the pair reads as one row. `max-width` rather than a fixed track so a
+   narrow viewport simply gets less, never a horizontal scrollbar. */
+.column-picker__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1.25rem;
+  min-width: 0;
+  max-width: 34rem;
+  font-size: 0.85rem;
+}
+
+.column-picker__grid--origin {
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, max-content);
+  max-width: 46rem;
+}
+
+.column-picker__head,
+.column-picker__row {
+  display: contents;
+}
+
+.column-picker__cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent);
+}
+
+.column-picker__cell--center {
+  justify-content: center;
+}
+
+.column-picker__head > .column-picker__cell {
+  font-family: var(--font-sans);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* The row's name cell is its `<label>`: clicking the words toggles the checkbox, so the whole
+   width of the widest column stays a target rather than just the box. */
+.column-picker__name {
+  cursor: pointer;
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.column-picker__origin {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+/* Narrow viewports: the origin is the first thing to go — it is provenance, not the control,
+   and the picker is still usable without it. It stays in the DOM as each checkbox's
+   description, so it is not lost to assistive technology, only to the cramped layout. */
+@media (max-width: 40rem) {
+  .column-picker__grid--origin {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .column-picker__grid--origin .column-picker__cell--origin {
+    display: none;
+  }
+}

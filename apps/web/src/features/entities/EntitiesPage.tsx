@@ -39,6 +39,7 @@ import {
 } from '../../i18n';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { resolveColumnOrigin } from '../tableColumns/columnOrigin';
 import {
   ENTITIES_TABLE,
   dataColumns,
@@ -912,6 +913,12 @@ export function EntitiesPage() {
     [settings.data],
   );
   const entityColumns = useTableColumns(entityColumnSpec);
+  // Which link in that chain is actually in force — the picker states it, so a narrow list is
+  // never mistaken for someone else's decision (or for one's own).
+  const entityColumnOrigin = resolveColumnOrigin(ENTITIES_TABLE, {
+    overridden: entityColumns.overridden,
+    fallback: entityColumnSpec.fallback,
+  });
   // The control column is woven back in from the declaration, not from the stored preference: no
   // document, stale or hostile, can take the row's actions away.
   const visibleColumns = useMemo(
@@ -1136,6 +1143,7 @@ export function EntitiesPage() {
               isVisible={entityColumns.isVisible}
               onToggle={entityColumns.toggle}
               columnLabel={(column) => t(ENTITY_COLUMN_LABEL_KEYS[column])}
+              origin={entityColumnOrigin}
             />
 
             {entities.isPlaceholderData ? (

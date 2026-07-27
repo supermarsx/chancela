@@ -3943,8 +3943,12 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings/management']);
 
-    const seat = (await screen.findByRole('switch', { name: 'Sede' })) as HTMLInputElement;
+    // The card is now the shared column-toggle grid (t54): real checkboxes in an aligned
+    // Coluna/Visível layout, where it used to be a stack of `Toggle` switches.
+    const seat = (await screen.findByRole('checkbox', { name: 'Sede' })) as HTMLInputElement;
     expect(seat.checked).toBe(false);
+    // `Ações` is a control column — never offered here, because no user could ever hide it.
+    expect(screen.queryByRole('checkbox', { name: 'Ações' })).toBeNull();
     fireEvent.click(seat);
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
