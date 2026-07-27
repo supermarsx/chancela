@@ -1,11 +1,12 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `5a48089`,
+implementation snapshot `b5eb905`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
-performance harness with fail-closed local TSA isolation and generated-PFX
-runtime-loader signing coverage, bounded CI dependency, PostgreSQL
+performance harness with bounded topology-start readiness, fail-closed local
+TSA isolation and generated-PFX runtime-loader signing coverage, bounded CI
+dependency, PostgreSQL
 advisory-lock, composed-server startup-handoff, mock-TSA and broader
 test-fixture ownership determinism, bounded runtime temporary-artifact
 ownership, Compose-binary performance-memory envelope accounting, inherited
@@ -1007,11 +1008,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `5a48089`
+## Focused Gate Snapshot Through `b5eb905`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `5a48089`.
+metadata-refreshed on 2026-07-27 for current implementation head `b5eb905`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1020,7 +1021,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `5a48089` cover the accessible
+- Current landed-slice markers through `b5eb905` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1206,6 +1207,30 @@ above still apply.
   force/unchanged/delete behavior, invalid target ordering, and Unicode IDs.
   This is source-level remediation evidence, not a replacement exact run; no
   50,000-book result below 900,000,000 bytes is claimed yet.
+
+  A source-exact startup attempt at prior `896cabb3` stopped before the workload
+  because the strict initial topology snapshot saw the external projector still
+  `starting` approximately 3.55 seconds after container start, within its
+  30-second health start period. It was running with zero restarts and no OOM;
+  the transient state was not accepted as proof. Cleanup verified zero matching
+  containers, volumes, networks, or port 18081 listeners, removed temporary
+  input secrets, and retained the local evidence at
+  `.perf-work/capacity-896cabb3bacbf04cf2fd9cdccf13ee449895f7f3-20260727080529/`.
+  This failed startup-race run is not capacity, latency/soak, hosted-CI,
+  GHCR-publication, or 10,000-cryptographic-signature proof.
+
+  `b5eb905e` adds a separate readiness state machine with a default 120-second
+  hard monotonic deadline before the unchanged strict topology capture. Each
+  Docker command is capped at five seconds and by the remaining budget. Only
+  running containers with `starting` health retry; missing/malformed replica
+  shape, non-running, unhealthy or healthless state, restart, OOM, and running
+  forbidden services terminate immediately. Timeout reports preserve outcome,
+  actual attempts, elapsed time, command diagnostics, and a partial snapshot.
+  The existing exact `topology.py` gate remains separate and never uses
+  `--allow-degraded` for proof. The full performance suite passed 64/64, plus
+  Python byte-compilation, `bash -n`, and diff checks. These are bounded
+  implementation/test results only; there is still no replacement capacity
+  result, hosted-CI success, or GHCR publication claim.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2752,7 +2777,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `5a48089`
+- Current checkpoint metadata/static checks through `b5eb905`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

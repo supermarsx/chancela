@@ -1,11 +1,12 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `5a48089e32c401f7653d0d7ed7c7d9c22b3cdb36`,
+*Updated 2026-07-27 from current implementation snapshot `b5eb905e1933e7d9016f15f83ff693914aaa19b6`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
-exact-volume performance harness with fail-closed local-signing timestamp
-isolation and actual runtime-loader signing coverage; bounded CI dependency,
+exact-volume performance harness with bounded topology-start readiness,
+fail-closed local-signing timestamp isolation and actual runtime-loader
+signing coverage; bounded CI dependency,
 PostgreSQL advisory-lock, composed-server startup-handoff, mock-TSA and broader
 test-fixture ownership determinism, bounded runtime temporary-artifact
 ownership, and Compose-binary performance-memory envelope accounting; and the
@@ -335,7 +336,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `5a48089` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `b5eb905` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -480,6 +481,32 @@ Implementation checkpoints covered here:
   force/unchanged/delete behavior, invalid target ordering, and nontrivial
   Unicode IDs. This is implementation and regression evidence only: the exact
   target run has not yet proved 50,000 books below 900,000,000 bytes.
+
+  A source-exact startup attempt at prior `896cabb3` never reached the workload:
+  the strict initial topology capture observed the external projector health
+  still `starting` approximately 3.55 seconds after that container started,
+  inside its 30-second health start period. The projector was running with zero
+  restarts and no OOM; the strict preflight therefore failed instead of
+  accepting transient startup as proof. Cleanup left zero matching containers,
+  volumes, networks, or port 18081 listeners, removed the temporary input
+  secrets, and preserved the local evidence at
+  `.perf-work/capacity-896cabb3bacbf04cf2fd9cdccf13ee449895f7f3-20260727080529/`.
+  This is startup-race negative evidence, not capacity, latency/soak, hosted-CI,
+  GHCR-publication, or 10,000-cryptographic-signature proof.
+
+  `b5eb905e` adds a separate bounded readiness gate before the unchanged strict
+  `topology.py` evidence capture. Its default hard deadline is 120 seconds,
+  every Docker command is capped at five seconds and by the remaining
+  monotonic budget, and only running containers whose health is `starting` are
+  retryable. Missing or malformed replica shape, non-running, unhealthy or
+  healthless containers, restarts, OOM kills, and running forbidden services
+  fail immediately. Timeout evidence records the outcome, actual attempts,
+  elapsed time, command diagnostics, and the last partial snapshot; the final
+  exact topology gate still runs separately without `--allow-degraded`.
+  Validation passed the full 64/64 performance tests, Python byte-compilation,
+  `bash -n`, and diff checks. This is source and deterministic-regression
+  evidence only; no replacement capacity run, hosted CI, or GHCR publication
+  is claimed.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies

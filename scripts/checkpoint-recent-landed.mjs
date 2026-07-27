@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `5a48089` (2026-07-27)",
+    "The current substantive checkpoint is `b5eb905` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `5a48089`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `b5eb905`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `5a48089`",
+    "Focused Gate Snapshot Through `b5eb905`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `5a48089`",
+    "Current checkpoint metadata/static checks through `b5eb905`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `5a48089e32c401f7653d0d7ed7c7d9c22b3cdb36`",
+    "implementation snapshot `b5eb905e1933e7d9016f15f83ff693914aaa19b6`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `5a48089`",
+    "Current checkpoint metadata/static checks through `b5eb905`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17372,6 +17372,46 @@ function assertCheckpointMap() {
     "This is source-level remediation evidence, not a replacement exact run; no 50,000-book result below 900,000,000 bytes is claimed yet",
     "CI/E2E projector remediation no-proof boundary marker",
   );
+  assertFileContains(
+    "scripts/perf/run-compose.sh",
+    'TOPOLOGY_READY_TIMEOUT_SECONDS="${CHANCELA_PERF_TOPOLOGY_READY_TIMEOUT_SECONDS:-120}"',
+    "performance topology readiness default hard deadline marker",
+  );
+  assertFileContains(
+    "scripts/perf/readiness.py",
+    "MAX_COMMAND_SECONDS = 5.0",
+    "performance topology readiness Docker command cap marker",
+  );
+  assertFileContains(
+    "scripts/perf/readiness.py",
+    "class ReadinessDeadlineExceeded",
+    "performance topology readiness structured deadline marker",
+  );
+  assertFileContains(
+    "scripts/perf/readiness.py",
+    'if health == "starting":',
+    "performance topology readiness sole retryable health marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_readiness.py",
+    "test_run_compose_keeps_strict_gate_after_readiness",
+    "performance readiness separate strict topology gate regression marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "the strict initial topology capture observed the external projector health still `starting` approximately 3.55 seconds after that container started",
+    "spec coverage projector startup-race negative evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Structured timeout evidence retains actual attempts, elapsed time, the command diagnostic, and the partial snapshot; the subsequent exact topology gate remains mandatory and does not use `--allow-degraded`",
+    "CI checkpoints bounded readiness evidence and strict-gate marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "These are bounded implementation/test results only; there is still no replacement capacity result, hosted-CI success, or GHCR publication claim",
+    "CI/E2E readiness fix no-capacity-hosted-publication boundary marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "either direct single-platform or indexed `imagetools inspect` JSON",
@@ -17389,7 +17429,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `5a48089` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `b5eb905` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17519,7 +17559,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `5a48089` (2026-07-27)",
+    "The current substantive checkpoint is `b5eb905` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

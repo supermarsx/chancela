@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `5a48089` (2026-07-27). It records the
+The current substantive checkpoint is `b5eb905` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -172,6 +172,27 @@ following bounded concern groups in this guard:
   move/skip/delete/force behavior, invalid target order, and Unicode IDs. This
   is remediation evidence only; no completed exact 50,000-book run below
   900,000,000 bytes is claimed.
+- A source-exact startup attempt at prior `896cabb3` failed the strict initial
+  topology gate before any workload: the external projector was still
+  `starting` approximately 3.55 seconds after container start, inside its
+  30-second health start period, with zero restarts and no OOM. Cleanup verified
+  zero matching containers, volumes, networks, and port 18081 listeners,
+  removed the temporary input secrets, and preserved the local evidence at
+  `.perf-work/capacity-896cabb3bacbf04cf2fd9cdccf13ee449895f7f3-20260727080529/`.
+  This is startup-race negative evidence, not capacity, latency/soak, hosted-CI,
+  GHCR-publication, or 10,000-cryptographic-signature proof.
+- `b5eb905e` places a bounded readiness state machine before the unchanged
+  strict `topology.py` snapshot. The default hard deadline is 120 seconds;
+  Docker commands are capped at five seconds and by the remaining monotonic
+  budget. Only a running container with `starting` health is retryable.
+  Missing/malformed replica shape, non-running, unhealthy or healthless state,
+  restart, OOM, and a running forbidden service fail immediately. Structured
+  timeout evidence retains actual attempts, elapsed time, the command
+  diagnostic, and the partial snapshot; the subsequent exact topology gate
+  remains mandatory and does not use `--allow-degraded`. The full performance
+  suite passed 64/64, with Python byte-compilation, `bash -n`, and diff checks.
+  This is bounded source/regression evidence only; no replacement capacity run,
+  hosted-CI result, or GHCR publication is claimed.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;
