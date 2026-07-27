@@ -164,6 +164,19 @@ class DatasetTests(unittest.TestCase):
             with self.assertRaises(harness.HarnessError):
                 harness.validate_profile(profile)
 
+    def test_seed_concurrency_must_be_a_positive_integer(self):
+        with tempfile.TemporaryDirectory() as raw:
+            profile_path = self.profile(pathlib.Path(raw))
+            profile = json.loads(profile_path.read_text(encoding="utf-8"))
+            for invalid in (None, True, 0, -1, 1.5, "12"):
+                with self.subTest(invalid=invalid):
+                    profile["seed_concurrency"] = invalid
+                    with self.assertRaisesRegex(
+                        harness.HarnessError,
+                        "seed_concurrency must be a positive integer",
+                    ):
+                        harness.validate_profile(profile)
+
     def test_explicit_phases_require_a_nonzero_plateau_and_exact_duration(self):
         with tempfile.TemporaryDirectory() as raw:
             profile_path = self.profile(pathlib.Path(raw))
@@ -623,6 +636,37 @@ class MetricsTests(unittest.TestCase):
                 for value in policy["cryptographic_signing"].values()
             )
         )
+
+    def test_committed_capacity_profile_freezes_setup_and_proof_contract(self):
+        profile = json.loads(
+            (PERF_ROOT / "profiles" / "capacity.json").read_text(encoding="utf-8")
+        )
+        harness.validate_profile(profile)
+        self.assertTrue(profile["proof_eligible"])
+        self.assertEqual(
+            profile["dataset"],
+            {
+                "users": 15_000,
+                "entities": 10_000,
+                "books": 50_000,
+                "signatures": 10_000,
+            },
+        )
+        self.assertEqual(profile["seed_concurrency"], 12)
+        self.assertEqual(profile["workload"]["clients"], 64)
+        self.assertEqual(profile["workload"]["duration_seconds"], 1_800)
+        self.assertEqual(profile["workload"]["peak_plateau_seconds"], 1_080)
+
+        budget = harness.duration_budget_report(
+            profile,
+            workflow_timeout_seconds=21_600,
+            search_readiness_timeout_seconds=900,
+            cryptographic_config={"count": 10_000},
+        )
+        self.assertTrue(budget["budget_passed"])
+        self.assertEqual(budget["required_seconds"], 17_100)
+        self.assertEqual(budget["workflow_timeout_seconds"], 21_600)
+        self.assertEqual(budget["remaining_seconds"], 4_500)
 
     def test_committed_capacity_policy_boundaries_are_inclusive_and_breaches_fail(self):
         policy = copy.deepcopy(EXPECTED_CAPACITY_POLICY)

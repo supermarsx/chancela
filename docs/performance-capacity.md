@@ -21,6 +21,24 @@ does not replace any other proof prerequisite. Scheduled and manual jobs
 generate the exact full dataset from scratch and upload their reports even when
 the run fails or remains incomplete.
 
+### Setup pacing boundary
+
+Dataset seeding is setup, not the measured mixed workload. The `capacity`
+profile caps setup at 12 concurrent requests to leave CPU headroom on the
+elected leader, which receives every write. A local calibration run at commit
+`05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a` used 16 concurrent seed requests
+and reached 194.17% leader CPU during user creation, above the reviewed 190%
+ceiling, so it was stopped before the workload and is negative evidence rather
+than capacity proof.
+
+This setup pacing does not claim support for 16 concurrent product writers and
+does not relax the proof. The exact dataset volumes, 64-client workload,
+1,800-second duration, 1,080-second peak plateau, topology, resource sampler,
+resource ceilings, and all other SLO thresholds remain unchanged. Resource
+sampling and SLO enforcement still cover setup through mixed-workload
+completion; final topology and cleanup are evidenced separately. Only a
+complete fresh exact-source run can establish the capacity result.
+
 ### Signature boundary
 
 The base exact-volume fixture's `signatures` rows are **unsigned act subjects**.

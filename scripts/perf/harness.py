@@ -149,6 +149,13 @@ def validate_profile(profile: dict[str, Any]) -> None:
             raise HarnessError(f"profile.dataset.{name} must be a positive integer")
     if dataset["books"] < dataset["signatures"]:
         raise HarnessError("books must be >= signatures so each signature subject has an open book")
+    seed_concurrency = profile.get("seed_concurrency")
+    if (
+        isinstance(seed_concurrency, bool)
+        or not isinstance(seed_concurrency, int)
+        or seed_concurrency < 1
+    ):
+        raise HarnessError("profile.seed_concurrency must be a positive integer")
     workload = profile.get("workload")
     if not isinstance(workload, dict):
         raise HarnessError("profile.workload must be an object")

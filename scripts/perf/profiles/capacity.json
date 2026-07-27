@@ -9,7 +9,7 @@
     "books": 50000,
     "signatures": 10000
   },
-  "seed_concurrency": 16,
+  "seed_concurrency": 12,
   "workload": {
     "mode": "ramp",
     "duration_seconds": 1800,
