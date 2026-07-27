@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `b5eb905e1933e7d9016f15f83ff693914aaa19b6`,
+*Updated 2026-07-27 from current implementation snapshot `74465397919456ac430a71e75ccca046f6e73f63`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -336,7 +336,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `b5eb905` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `7446539` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -507,6 +507,37 @@ Implementation checkpoints covered here:
   `bash -n`, and diff checks. This is source and deterministic-regression
   evidence only; no replacement capacity run, hosted CI, or GHCR publication
   is claimed.
+
+  An exact-source run at `05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a`
+  then breached the unchanged 190% per-container CPU ceiling at
+  `2026-07-27T07:50:44.147561Z`: the elected writer
+  `chancela-cluster-2` reached 194.17% while creating users. That container used
+  93.3 MiB, and peak memory across the run was 177,838,489 bytes, below the
+  900,000,000-byte ceiling. The other services remained healthy, container IDs
+  stayed stable, and there were no restarts or OOM kills. The controlled stop
+  occurred before entity, book, act/signature-subject, search-readiness,
+  cryptographic-signing, or mixed-workload phases; no harness report or
+  capacity proof was produced. Cleanup verified zero project containers,
+  volumes, networks, run/monitor processes, or port 18081 listeners across both
+  Docker engines, and removed the disposable PKCS#12 input with zero passphrase
+  processes remaining. The preserved negative evidence at
+  `.perf-work/capacity-05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a-20260727083958/`
+  is bound by the 27-entry `sha256-manifest.txt` SHA-256
+  `4ea10ce9efd22b2ec39c22eb99dd3eb50fe5df03518ffbe377dce2f6a3d376f8`.
+  This interrupted run is not capacity, search-volume, cryptographic-signing,
+  latency, soak, hosted-CI, GHCR-publication, or production proof.
+
+  `74465397` calibrates setup pacing only: the proof-eligible `capacity`
+  profile's seed concurrency moves from 16 to 12, and profile validation now
+  rejects missing, boolean, non-integer, and non-positive seed concurrency.
+  Contract regressions retain the exact 15,000/10,000/50,000/10,000 fixture,
+  64-client 1,800-second workload with a 1,080-second peak plateau, unchanged
+  SLO/topology/resource-sampling behavior, and the unchanged deterministic
+  17,100-second budget inside the 21,600-second workflow timeout with 4,500
+  seconds remaining. The full performance suite passed 66/66, along with Python
+  byte-compilation and diff checks. This does not prove that 12 concurrent seed
+  requests remain below the ceiling: only a fresh, complete exact-source run
+  can establish the capacity result.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies

@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `b5eb905` (2026-07-27). It records the
+The current substantive checkpoint is `7446539` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -193,6 +193,34 @@ following bounded concern groups in this guard:
   suite passed 64/64, with Python byte-compilation, `bash -n`, and diff checks.
   This is bounded source/regression evidence only; no replacement capacity run,
   hosted-CI result, or GHCR publication is claimed.
+- The exact-source `05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a`
+  attempt breached the unchanged 190% per-container CPU ceiling at
+  `2026-07-27T07:50:44.147561Z` while the elected writer
+  `chancela-cluster-2` was creating users. It reached 194.17% CPU and used
+  93.3 MiB; peak memory across the run was 177,838,489 bytes, below the
+  900,000,000-byte ceiling. Other services stayed healthy, container IDs were
+  stable, and no container restarted or was OOM-killed. The run was stopped
+  before entities, books, acts/signature subjects, search readiness,
+  cryptographic signing, or mixed workload, so no harness report or proof
+  exists. Cleanup left zero project containers, volumes, networks, run/monitor
+  processes, or port 18081 listeners across both Docker engines; the disposable
+  PKCS#12 input was deleted and no passphrase process remained. The 27-entry
+  evidence manifest at
+  `.perf-work/capacity-05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a-20260727083958/sha256-manifest.txt`
+  has SHA-256
+  `4ea10ce9efd22b2ec39c22eb99dd3eb50fe5df03518ffbe377dce2f6a3d376f8`.
+  This is sealed negative evidence, not capacity, search-volume,
+  cryptographic-signing, latency, soak, hosted-CI, GHCR-publication, or
+  production proof.
+- `74465397` changes only capacity setup pacing from 16 to 12 concurrent seed
+  requests and adds strict positive-integer validation plus a committed-profile
+  regression. Exact volumes, the 64-client / 1,800-second workload and
+  1,080-second peak plateau, SLO thresholds, topology, resource sampler, and
+  budget constants remain unchanged. The deterministic budget remains
+  17,100 / 21,600 seconds with 4,500 seconds spare. The full performance suite
+  passed 66/66, with Python byte-compilation and diff checks. This calibration
+  remains unproven until a fresh exact-source run completes every proof phase
+  under the unchanged policy.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;

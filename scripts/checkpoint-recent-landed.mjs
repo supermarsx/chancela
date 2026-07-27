@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `b5eb905` (2026-07-27)",
+    "The current substantive checkpoint is `7446539` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `b5eb905`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `7446539`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `b5eb905`",
+    "Focused Gate Snapshot Through `7446539`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b5eb905`",
+    "Current checkpoint metadata/static checks through `7446539`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b5eb905e1933e7d9016f15f83ff693914aaa19b6`",
+    "implementation snapshot `74465397919456ac430a71e75ccca046f6e73f63`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b5eb905`",
+    "Current checkpoint metadata/static checks through `7446539`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17414,6 +17414,56 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
+    "An exact-source run at `05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a` then breached the unchanged 190% per-container CPU ceiling at `2026-07-27T07:50:44.147561Z`: the elected writer `chancela-cluster-2` reached 194.17% while creating users",
+    "spec coverage exact-source seed CPU breach marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "It reached 194.17% CPU and used 93.3 MiB; peak memory across the run was 177,838,489 bytes, below the 900,000,000-byte ceiling. Other services stayed healthy, container IDs were stable, and no container restarted or was OOM-killed",
+    "CI checkpoints seed breach bounded resource/topology marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "The stop preceded entity, book, act/signature-subject, search-readiness, cryptographic-signing, and mixed-workload phases, and therefore emitted no harness report or capacity proof",
+    "CI/E2E seed breach no-report boundary marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "The preserved negative evidence at `.perf-work/capacity-05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a-20260727083958/` is bound by the 27-entry `sha256-manifest.txt` SHA-256 `4ea10ce9efd22b2ec39c22eb99dd3eb50fe5df03518ffbe377dce2f6a3d376f8`",
+    "spec coverage seed breach sealed-evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Cleanup left zero project containers, volumes, networks, run/monitor processes, or port 18081 listeners across both Docker engines; the disposable PKCS#12 input was deleted and no passphrase process remained",
+    "CI checkpoints seed breach exact cleanup marker",
+  );
+  assertFileContains(
+    "scripts/perf/profiles/capacity.json",
+    '"seed_concurrency": 12',
+    "capacity setup pacing marker",
+  );
+  assertFileContains(
+    "scripts/perf/harness.py",
+    "profile.seed_concurrency must be a positive integer",
+    "capacity setup pacing validation marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_harness.py",
+    "test_committed_capacity_profile_freezes_setup_and_proof_contract",
+    "capacity setup pacing proof-contract regression marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Exact volumes, the 64-client / 1,800-second workload and 1,080-second peak plateau, SLO thresholds, topology, resource sampler, and budget constants remain unchanged. The deterministic budget remains 17,100 / 21,600 seconds with 4,500 seconds spare",
+    "CI checkpoints capacity calibration frozen-contract marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "This is configuration and regression evidence only: no passing capacity result exists until a fresh exact-source run completes all seed, readiness, cryptographic, workload, resource, and final-topology proof requirements under the unchanged policy",
+    "CI/E2E capacity calibration no-proof marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
     "either direct single-platform or indexed `imagetools inspect` JSON",
     "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
   );
@@ -17429,7 +17479,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `b5eb905` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `7446539` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17559,7 +17609,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `b5eb905` (2026-07-27)",
+    "The current substantive checkpoint is `7446539` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

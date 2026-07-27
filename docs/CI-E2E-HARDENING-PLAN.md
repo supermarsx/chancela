@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `b5eb905`,
+implementation snapshot `7446539`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with bounded topology-start readiness, fail-closed local
@@ -1008,11 +1008,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b5eb905`
+## Focused Gate Snapshot Through `7446539`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `b5eb905`.
+metadata-refreshed on 2026-07-27 for current implementation head `7446539`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1021,7 +1021,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `b5eb905` cover the accessible
+- Current landed-slice markers through `7446539` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1231,6 +1231,39 @@ above still apply.
   Python byte-compilation, `bash -n`, and diff checks. These are bounded
   implementation/test results only; there is still no replacement capacity
   result, hosted-CI success, or GHCR publication claim.
+
+  The next exact-source attempt at
+  `05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a` was stopped on an independent hard
+  SLO breach at `2026-07-27T07:50:44.147561Z`. During user seeding, the elected
+  writer `chancela-cluster-2` reached 194.17% CPU against the unchanged 190%
+  ceiling, with 93.3 MiB in that container. Peak run memory was 177,838,489
+  bytes, below 900,000,000 bytes; other services were healthy, container IDs
+  were stable, and restart/OOM counts stayed zero. The stop preceded entity,
+  book, act/signature-subject, search-readiness, cryptographic-signing, and
+  mixed-workload phases, and therefore emitted no harness report or capacity
+  proof. Exact cleanup found zero project containers, volumes, networks,
+  run/monitor processes, or port 18081 listeners on both Docker engines,
+  removed the disposable PKCS#12 input, and found zero residual passphrase
+  processes. The sealed evidence directory is
+  `.perf-work/capacity-05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a-20260727083958/`;
+  its 27-entry `sha256-manifest.txt` has SHA-256
+  `4ea10ce9efd22b2ec39c22eb99dd3eb50fe5df03518ffbe377dce2f6a3d376f8`.
+  This remains negative evidence only, not capacity, search-volume,
+  cryptographic-signing, latency, soak, hosted-CI, GHCR-publication, or
+  production proof.
+
+  `74465397` makes a single setup calibration in the capacity profile: seed
+  concurrency changes from 16 to 12. It also validates that the value is a
+  positive integer and freezes the committed proof contract in regression
+  coverage. Exact volumes, workload mode/shape and the 64-client,
+  1,800-second/1,080-second-plateau load, SLO thresholds, topology, whole-run
+  resource sampling, and budget constants are unchanged. The deterministic
+  budget remains 17,100 seconds within the 21,600-second workflow timeout,
+  leaving 4,500 seconds. The full performance suite passed 66/66, plus Python
+  byte-compilation and diff checks. This is configuration and regression
+  evidence only: no passing capacity result exists until a fresh exact-source
+  run completes all seed, readiness, cryptographic, workload, resource, and
+  final-topology proof requirements under the unchanged policy.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2777,7 +2810,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `b5eb905`
+- Current checkpoint metadata/static checks through `7446539`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
