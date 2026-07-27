@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `9358098` (2026-07-27)",
+    "The current substantive checkpoint is `5a48089` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `9358098`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `5a48089`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `9358098`",
+    "Focused Gate Snapshot Through `5a48089`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9358098`",
+    "Current checkpoint metadata/static checks through `5a48089`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `935809839f1349854ae593ff0e90473018e03d3f`",
+    "implementation snapshot `5a48089e32c401f7653d0d7ed7c7d9c22b3cdb36`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9358098`",
+    "Current checkpoint metadata/static checks through `5a48089`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17202,6 +17202,61 @@ function assertCheckpointMap() {
     2,
     "archive tamper fixtures populate the synthetic Ata fallback",
   );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "const MAX_SOURCE_DEBOUNCE_WAIT: Duration = Duration::from_secs(300);",
+    "search projector bounded source-churn debounce marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "fn source_debounce_coalesces_churn_but_attempts_at_the_hard_deadline()",
+    "search projector hard-deadline debounce regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "fn source_debounce_attempts_after_one_quiet_window_and_resets()",
+    "search projector quiet-window debounce regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-ledger/src/lib.rs",
+    "pub fn into_events(self) -> Vec<Event>",
+    "ledger consuming event move marker",
+  );
+  assertFileContains(
+    "crates/chancela-ledger/src/lib.rs",
+    "fn consuming_a_verified_ledger_moves_its_events_in_global_order()",
+    "ledger consuming event-order regression marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-search-projection/src/lib.rs",
+    "only one owned copy of each retained event survives",
+    "search projection retained-event move boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg.rs",
+    "fn for_each_query_row(",
+    "PostgreSQL streamed aggregate/event row marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg.rs",
+    'ORDER BY id COLLATE \\"C\\" ASC',
+    "PostgreSQL byte-ordered search baseline marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "fn sorted_projection_merge_moves_changes_and_streams_stale_deletes()",
+    "search baseline moved-allocation streamed merge regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "fn sorted_projection_merge_is_exact_forceable_and_rejects_bad_target_order()",
+    "search baseline exact merge and ordering regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/lib.rs",
+    "fn sorted_projection_merge_uses_rust_utf8_byte_order_for_nontrivial_ids()",
+    "search baseline Unicode byte-order regression marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "health reads are bounded to control C1 -> heartbeat -> control C2 with one retry only when the canonical lease identity/path changes",
@@ -17279,6 +17334,46 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
+    "the external projector reached 1,066,401,792 bytes (1017 MiB) during one-shot book seeding at 15,935 books",
+    "spec coverage projector memory breach evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "The run was deliberately SIGTERM-stopped before the hard limit; workload/search readiness and the cryptographic phase did not complete",
+    "CI checkpoints projector breach controlled-stop marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Cleanup verified zero matching containers, volumes, networks, port 18081 listeners, launcher PIDs, and run processes",
+    "CI/E2E projector breach exact cleanup marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`54092857e2e974bd6e0697bc4a2e6cf33b905004e326ed06a8d6c46964c7e49d`",
+    "spec coverage projector negative-evidence manifest marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "It is not 50,000-book, capacity/latency/soak, sub-900,000,000-byte, or 10,000-cryptographic-signature proof",
+    "CI checkpoints projector capacity no-proof marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`5a48089e` addresses the measured projector peak without relaxing the SLO",
+    "spec coverage projector memory remediation marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "a bounded quiet/hard-deadline debounce coalesces source churn, PostgreSQL aggregate/event reads stream rows, verified ledger events move through retention without a second owned copy, and an exact byte-ordered streamed baseline merge moves changed documents into publication operations",
+    "CI checkpoints projector memory remediation detail marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "This is source-level remediation evidence, not a replacement exact run; no 50,000-book result below 900,000,000 bytes is claimed yet",
+    "CI/E2E projector remediation no-proof boundary marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
     "either direct single-platform or indexed `imagetools inspect` JSON",
     "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
   );
@@ -17294,7 +17389,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `9358098` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `5a48089` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17424,7 +17519,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `9358098` (2026-07-27)",
+    "The current substantive checkpoint is `5a48089` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

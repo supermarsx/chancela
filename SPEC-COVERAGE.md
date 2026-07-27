@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `935809839f1349854ae593ff0e90473018e03d3f`,
+*Updated 2026-07-27 from current implementation snapshot `5a48089e32c401f7653d0d7ed7c7d9c22b3cdb36`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -335,7 +335,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `9358098` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `5a48089` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -449,6 +449,37 @@ Implementation checkpoints covered here:
   two exact tests passed 1/1 each, the full `archive_package` filter passed
   34/34, and rustfmt/diff checks passed. Production code and the rejection
   assertions are unchanged.
+
+  A subsequent exact-source attempt at `2b42150e` passed exact dataset
+  generation and validation plus initial topology, but the external projector
+  reached 1,066,401,792 bytes (1017 MiB) during one-shot book seeding at
+  15,935 books. That breached the reviewed 900,000,000-byte per-container
+  ceiling while the projector was still healthy, had no restart or OOM, and
+  reported `Building` generation 1 with 298 published documents. The run was
+  deliberately stopped with SIGTERM before a hard-limit OOM; workload/search
+  readiness and the cryptographic phase did not complete. Controlled-stop
+  topology remained healthy, and cleanup verified zero matching containers,
+  volumes, networks, port 18081 listeners, launcher PIDs, and run processes.
+  The preserved negative evidence at
+  `.perf-work/capacity-2b42150e878d5f2314d136da327d964143e9155c-20260727045858/`
+  is bound by `sha256-manifest.txt` SHA-256
+  `54092857e2e974bd6e0697bc4a2e6cf33b905004e326ed06a8d6c46964c7e49d`.
+  This is invalidated resource-breach evidence, not 50,000-book,
+  capacity/latency/soak, sub-900,000,000-byte, or
+  10,000-cryptographic-signature proof.
+
+  `5a48089e` addresses the measured projector peak without relaxing the SLO:
+  source churn is coalesced behind a quiet window bounded to 30 seconds and a
+  300-second overall debounce; PostgreSQL aggregate and ledger reads stream
+  rows instead of materializing complete driver-row vectors; verified ledger
+  events move into the retention filter instead of being cloned; and the
+  durable baseline is reconciled through an exact byte-ordered streamed merge
+  that moves changed documents into publication operations. Lease/checkpoint
+  fencing and publication CAS remain fail-closed. Source regressions cover the
+  quiet/deadline behavior, consuming-ledger order, moved-allocation merge,
+  force/unchanged/delete behavior, invalid target ordering, and nontrivial
+  Unicode IDs. This is implementation and regression evidence only: the exact
+  target run has not yet proved 50,000 books below 900,000,000 bytes.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies

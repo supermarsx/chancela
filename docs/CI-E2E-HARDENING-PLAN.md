@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `9358098`,
+implementation snapshot `5a48089`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
@@ -1007,11 +1007,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `9358098`
+## Focused Gate Snapshot Through `5a48089`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `9358098`.
+metadata-refreshed on 2026-07-27 for current implementation head `5a48089`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1020,7 +1020,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `9358098` cover the accessible
+- Current landed-slice markers through `5a48089` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1177,6 +1177,35 @@ above still apply.
   two exact tests passed 1/1 each, the full `archive_package` filter passed
   34/34, and rustfmt/diff checks passed. Production code and the rejection
   assertions are unchanged.
+
+  A subsequent exact-source attempt at `2b42150e` passed exact dataset
+  generation/validation and initial topology, but the external projector
+  reached 1,066,401,792 bytes (1017 MiB) during one-shot book seeding at
+  15,935 books. It exceeded the reviewed 900,000,000-byte ceiling while still
+  healthy, with zero restarts/OOM and `Building` generation 1 / 298 published
+  documents. The run was deliberately SIGTERM-stopped before the 1 GiB hard
+  limit; workload/search readiness and the cryptographic phase did not
+  complete. Controlled-stop topology remained healthy. Cleanup verified zero
+  matching containers, volumes, networks, port 18081 listeners, launcher PIDs,
+  and run processes. Preserved negative evidence at
+  `.perf-work/capacity-2b42150e878d5f2314d136da327d964143e9155c-20260727045858/`
+  is bound by `sha256-manifest.txt` SHA-256
+  `54092857e2e974bd6e0697bc4a2e6cf33b905004e326ed06a8d6c46964c7e49d`.
+  This invalidated resource breach is not 50,000-book,
+  capacity/latency/soak, sub-900,000,000-byte, or
+  10,000-cryptographic-signature proof.
+
+  `5a48089e` addresses that peak without relaxing the SLO. It coalesces source
+  churn behind a maximum 30-second quiet window with a 300-second hard
+  debounce, streams PostgreSQL aggregate/event rows, moves verified ledger
+  events through retention, and replaces full baseline/target maps plus
+  changed-document clones with an exact byte-ordered streamed merge that moves
+  changed documents into publication operations. Lease/checkpoint fences and
+  publication CAS remain fail-closed. Source regressions pin the debounce
+  quiet/deadline behavior, consuming-ledger order, moved-allocation merge,
+  force/unchanged/delete behavior, invalid target ordering, and Unicode IDs.
+  This is source-level remediation evidence, not a replacement exact run; no
+  50,000-book result below 900,000,000 bytes is claimed yet.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2723,7 +2752,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `9358098`
+- Current checkpoint metadata/static checks through `5a48089`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

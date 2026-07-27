@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `9358098` (2026-07-27). It records the
+The current substantive checkpoint is `5a48089` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -146,6 +146,32 @@ following bounded concern groups in this guard:
   two exact tests passed 1/1 each, the full `archive_package` filter passed
   34/34, and rustfmt/diff checks passed. Production code and the rejection
   assertions are unchanged.
+- A subsequent exact-source attempt at `2b42150e` passed exact dataset
+  generation/validation and initial topology, but the external projector
+  reached 1,066,401,792 bytes (1017 MiB) during one-shot book seeding at
+  15,935 books. This exceeded the reviewed 900,000,000-byte ceiling while the
+  projector remained healthy with zero restarts/OOM and reported `Building`
+  generation 1 with 298 published documents. The run was deliberately
+  SIGTERM-stopped before the hard limit; workload/search readiness and the
+  cryptographic phase did not complete. Controlled-stop topology was healthy,
+  and cleanup verified zero matching containers, volumes, networks, port
+  18081 listeners, launcher PIDs, and run processes. Preserved negative
+  evidence at
+  `.perf-work/capacity-2b42150e878d5f2314d136da327d964143e9155c-20260727045858/`
+  is bound by `sha256-manifest.txt` SHA-256
+  `54092857e2e974bd6e0697bc4a2e6cf33b905004e326ed06a8d6c46964c7e49d`.
+  It is not 50,000-book, capacity/latency/soak, sub-900,000,000-byte, or
+  10,000-cryptographic-signature proof.
+- `5a48089e` remediates the measured projector peak without weakening the
+  reviewed limit: a bounded quiet/hard-deadline debounce coalesces source
+  churn, PostgreSQL aggregate/event reads stream rows, verified ledger events
+  move through retention without a second owned copy, and an exact
+  byte-ordered streamed baseline merge moves changed documents into
+  publication operations. Lease/checkpoint fences and publication CAS stay
+  fail-closed. Source regressions cover debounce, event order, exact
+  move/skip/delete/force behavior, invalid target order, and Unicode IDs. This
+  is remediation evidence only; no completed exact 50,000-book run below
+  900,000,000 bytes is claimed.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;
