@@ -234,6 +234,14 @@ pub struct KvRowSpec {
 /// whitespace, and a structural block that yields zero rows/slots, are omitted** — this gives
 /// conditional blocks (`{% if channel == 'Telematic' %}…{% endif %}`) and optional sections for
 /// free, without a schema-level condition.
+///
+/// **`SignatureBlock` is the one exception, and deliberately so.** Omitting an unresolvable
+/// signature block means a legal instrument that declares where signatures belong comes out with
+/// none, and says nothing about it. So the block distinguishes *legitimately empty* — the context
+/// carries `source` and the list is empty, i.e. the instrument requires nobody — from
+/// *unresolvable*: no such path in the context, a `source` that is not a list, or entries that all
+/// render blank. The first still omits the block; the rest raise
+/// [`RenderError::UnresolvableSignatureBlock`].
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", deny_unknown_fields)]
 pub enum BlockSpec {
@@ -279,8 +287,14 @@ pub enum BlockSpec {
         unanimous_total: Option<String>,
     },
     /// The signature block. Projects each element of `source` into a [`SignatureSlot`] using the
-    /// `role` and `name` templates (element+parent scope). Slots that render fully empty are
-    /// skipped; a source with no elements omits the block.
+    /// `role` and `name` templates (element+parent scope).
+    ///
+    /// An element that renders with neither a role nor a name is skipped, and a `source` that
+    /// resolves to an **empty list** omits the block — the context answered "this instrument
+    /// requires no signatories". Anything else is a failure, not an omission: a `source` the
+    /// context does not carry, a `source` that is not a list, or a non-empty `source` whose
+    /// elements all render blank all raise [`RenderError::UnresolvableSignatureBlock`] rather than
+    /// letting the signature lines disappear from a legal instrument unremarked.
     SignatureBlock {
         /// Dotted context path to the signatory array (e.g. `"signatories"`).
         source: String,
@@ -631,6 +645,60 @@ pub enum RenderError {
     /// The template's authored document-layout override was outside the bounded core policy.
     #[error("invalid document layout: {0}")]
     InvalidDocumentLayout(String),
+    /// A declared [`BlockSpec::SignatureBlock`] could not be resolved into signature lines.
+    ///
+    /// **This is not the "no signatories" case.** An empty list at `source` is an answer — the
+    /// context knows the binding and states the instrument requires nobody — and it renders as no
+    /// block, exactly as before. This variant is the other case: the context carries nothing at
+    /// `source`, carries something that is not a list, or carries entries that every one of them
+    /// rendered with neither a role nor a name. A legal instrument that declares where signatures
+    /// belong and silently emits nothing there is the failure this refuses to commit.
+    // `source_path`, not `source`: thiserror reserves a field literally named `source` for the
+    // error cause, and this one is a context path.
+    #[error(
+        "template {template_id}: signature block source `{source_path}` {defect}; a declared signature block must not render as silence"
+    )]
+    UnresolvableSignatureBlock {
+        /// The id of the template that declared the block.
+        template_id: String,
+        /// The dotted context path the block declared as its signatory source.
+        source_path: String,
+        /// Which way the source failed to resolve.
+        defect: SignatureBlockDefect,
+    },
+}
+
+/// Why a declared signature block could not be resolved — see
+/// [`RenderError::UnresolvableSignatureBlock`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignatureBlockDefect {
+    /// Nothing at the declared `source` path: the render context does not supply this binding at
+    /// all (or supplies it as `null`). The template and the context disagree about what the
+    /// document is.
+    SourceMissing,
+    /// The `source` path resolves, but to a scalar or an object rather than a list of signatories.
+    SourceNotAList,
+    /// The list had entries and every one of them rendered blank, so real declared signatories
+    /// would have come out as no signature lines at all.
+    EveryEntryBlank {
+        /// How many entries the source carried.
+        entries: usize,
+    },
+}
+
+impl std::fmt::Display for SignatureBlockDefect {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SourceMissing => f.write_str("is not present in the render context"),
+            Self::SourceNotAList => {
+                f.write_str("is present in the render context but is not a list of signatories")
+            }
+            Self::EveryEntryBlank { entries } => write!(
+                f,
+                "carried {entries} entries and every one rendered with neither a role nor a name"
+            ),
+        }
+    }
 }
 
 /// Load the embedded template catalog (§3.2): parse every `assets/*.json`, reject duplicate ids,
@@ -755,7 +823,7 @@ pub fn render_with_body(
     };
 
     for block in &spec.blocks {
-        render_block(&env, block, ctx, body, &mut doc.blocks)?;
+        render_block(&env, block, ctx, body, &spec.id, &mut doc.blocks)?;
     }
 
     Ok(doc)
@@ -795,6 +863,7 @@ fn render_block(
     block: &BlockSpec,
     ctx: &Value,
     body: &[Block],
+    template_id: &str,
     out: &mut Vec<Block>,
 ) -> Result<(), RenderError> {
     match block {
@@ -862,18 +931,39 @@ fn render_block(
             }
         }
         BlockSpec::SignatureBlock { source, role, name } => {
-            let mut slots = Vec::new();
-            for item in array_at(ctx, source) {
+            let defect = |defect| RenderError::UnresolvableSignatureBlock {
+                template_id: template_id.to_owned(),
+                source_path: source.clone(),
+                defect,
+            };
+            // Unlike every other block kind, this one does not use `array_at`: that helper folds
+            // "the context has no such path" into the same empty vector as "the list is empty",
+            // which is the right default for an optional repeat-block and the wrong one here.
+            let entries = signatory_source(ctx, source).map_err(defect)?;
+            let declared = entries.len();
+            let mut slots = Vec::with_capacity(declared);
+            for item in entries {
                 let scope = merge_scope(ctx, item);
                 let role = render_str(env, role, &scope)?;
                 let name = render_str(env, name, &scope)?;
                 if role.trim().is_empty() && name.trim().is_empty() {
+                    // An entry with neither a role nor a name has nothing to print on a signature
+                    // line. Dropping one out of an otherwise-populated block stays filtering; if it
+                    // drains the block entirely, the source held real entries and the document
+                    // would come out with no signature lines at all — that is the silent drop, and
+                    // it errors below.
                     continue;
                 }
                 slots.push(SignatureSlot { role, name });
             }
-            if !slots.is_empty() {
-                out.push(Block::SignatureBlock { slots });
+            match (slots.is_empty(), declared) {
+                // The context supplied the binding and stated there is nobody to sign. That is an
+                // answer, not a gap: emit no block, exactly as before.
+                (true, 0) => {}
+                (true, entries) => {
+                    return Err(defect(SignatureBlockDefect::EveryEntryBlank { entries }));
+                }
+                (false, _) => out.push(Block::SignatureBlock { slots }),
             }
         }
         BlockSpec::PageBreak => out.push(Block::PageBreak),
@@ -987,6 +1077,33 @@ fn array_at<'a>(ctx: &'a Value, path: &str) -> Vec<&'a Value> {
     cur.as_array()
         .map(|a| a.iter().collect())
         .unwrap_or_default()
+}
+
+/// Resolve a [`BlockSpec::SignatureBlock`]'s `source` path, keeping the three outcomes apart that
+/// [`array_at`] collapses into one empty vector.
+///
+/// `Ok(vec![])` means the context carries the binding and the list is genuinely empty — the
+/// instrument requires no signatories, which is a legitimate state. The `Err` arms mean the block
+/// cannot be resolved at all: the template names a binding the context does not know
+/// ([`SignatureBlockDefect::SourceMissing`], which `null` also reaches, since no signatory list in
+/// this codebase serializes as `null`), or the path holds something that is not a list
+/// ([`SignatureBlockDefect::SourceNotAList`]).
+fn signatory_source<'a>(
+    ctx: &'a Value,
+    path: &str,
+) -> Result<Vec<&'a Value>, SignatureBlockDefect> {
+    let mut cur = ctx;
+    for seg in path.split('.') {
+        match cur.get(seg) {
+            Some(v) => cur = v,
+            None => return Err(SignatureBlockDefect::SourceMissing),
+        }
+    }
+    match cur {
+        Value::Null => Err(SignatureBlockDefect::SourceMissing),
+        Value::Array(items) => Ok(items.iter().collect()),
+        _ => Err(SignatureBlockDefect::SourceNotAList),
+    }
 }
 
 /// Overlay an array element's fields on the parent context so a per-element template can read both
@@ -3511,6 +3628,266 @@ mod tests {
         assert!(
             saw_threshold_marker,
             "expected at least one unresolved threshold marker somewhere in the catalog"
+        );
+    }
+
+    // --- SignatureBlock: silence is a failure, emptiness is an answer ---------------------------
+    //
+    // A template declares where signatures belong. Before this, a context that did not carry the
+    // declared `source` made the whole block vanish with no error and no diagnostic — a legal
+    // instrument came out with no signature lines and said nothing about it. The rule now is that
+    // only an *empty list* omits the block, because that is the context answering "nobody signs
+    // this"; everything else raises `RenderError::UnresolvableSignatureBlock`.
+
+    /// A one-block spec whose only content is a signature block over `source`.
+    fn signature_only_spec(id: &str, source: &str) -> TemplateSpec {
+        let mut spec = ata_spec();
+        spec.id = id.to_owned();
+        spec.blocks = vec![BlockSpec::SignatureBlock {
+            source: source.to_owned(),
+            role: "{{ capacity | role_label }}".to_owned(),
+            name: "{{ name }}".to_owned(),
+        }];
+        spec
+    }
+
+    fn signature_slots_of(doc: &DocumentModel) -> Option<&Vec<SignatureSlot>> {
+        doc.blocks.iter().find_map(|b| match b {
+            Block::SignatureBlock { slots } => Some(slots),
+            _ => None,
+        })
+    }
+
+    /// The legitimate empty case. The context carries the binding and states that the instrument
+    /// requires no signatories — an answer, not a gap — so the block is omitted and the render
+    /// succeeds. `coverage_ctx` relies on this for the catalog-wide sweep above.
+    #[test]
+    fn an_empty_signatory_list_omits_the_block_without_an_error() {
+        let spec = signature_only_spec("user-empty/v1", "signatories");
+        let ctx = json!({ "title": "Documento", "signatories": [] });
+
+        let doc = render(&spec, &ctx).expect("an explicitly empty list is a valid state");
+        assert!(
+            signature_slots_of(&doc).is_none(),
+            "no signatories means no signature block"
+        );
+    }
+
+    /// The defect this executor exists to remove: the context does not carry the declared source,
+    /// so nothing can be resolved. That must be loud, and the message must name both the template
+    /// and the binding so an operator or author can act on it.
+    #[test]
+    fn a_signature_source_absent_from_the_context_fails_loudly() {
+        let spec = signature_only_spec("user-absent/v1", "required_signatories");
+        let ctx = json!({ "title": "Documento", "signatories": [] });
+
+        let error = render(&spec, &ctx).expect_err("an unresolvable signature block must error");
+        assert!(
+            matches!(
+                error,
+                RenderError::UnresolvableSignatureBlock {
+                    defect: SignatureBlockDefect::SourceMissing,
+                    ..
+                }
+            ),
+            "expected SourceMissing, got {error:?}"
+        );
+        let message = error.to_string();
+        assert!(message.contains("user-absent/v1"), "{message}");
+        assert!(message.contains("required_signatories"), "{message}");
+    }
+
+    /// `null` is the same failure as an absent key: no signatory list in this codebase serializes
+    /// as `null`, so it means the context could not produce one.
+    #[test]
+    fn a_null_signature_source_is_treated_as_absent() {
+        let spec = signature_only_spec("user-null/v1", "required_signatories");
+        let ctx = json!({ "title": "Documento", "required_signatories": null });
+
+        let error = render(&spec, &ctx).expect_err("a null source is not an empty list");
+        assert!(
+            matches!(
+                error,
+                RenderError::UnresolvableSignatureBlock {
+                    defect: SignatureBlockDefect::SourceMissing,
+                    ..
+                }
+            ),
+            "expected SourceMissing, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn a_signature_source_that_is_not_a_list_fails_loudly() {
+        let spec = signature_only_spec("user-scalar/v1", "signatories");
+        let ctx = json!({ "title": "Documento", "signatories": "Amélia Marques" });
+
+        let error = render(&spec, &ctx).expect_err("a scalar source cannot yield slots");
+        assert!(
+            matches!(
+                error,
+                RenderError::UnresolvableSignatureBlock {
+                    defect: SignatureBlockDefect::SourceNotAList,
+                    ..
+                }
+            ),
+            "expected SourceNotAList, got {error:?}"
+        );
+    }
+
+    /// The subtler half of the same defect: the source held real entries, every one rendered
+    /// blank, and the block drained to nothing. The operator's data was there and the document
+    /// would have come out with no signature lines — so this errors rather than filtering.
+    #[test]
+    fn a_source_whose_every_entry_renders_blank_fails_loudly() {
+        let spec = signature_only_spec("user-blank/v1", "signatories");
+        let ctx = json!({
+            "title": "Documento",
+            "signatories": [
+                { "name": "", "capacity": "" },
+                { "name": "   ", "capacity": "" }
+            ]
+        });
+
+        let error = render(&spec, &ctx).expect_err("draining the block is not filtering");
+        assert!(
+            matches!(
+                error,
+                RenderError::UnresolvableSignatureBlock {
+                    defect: SignatureBlockDefect::EveryEntryBlank { entries: 2 },
+                    ..
+                }
+            ),
+            "expected EveryEntryBlank{{ entries: 2 }}, got {error:?}"
+        );
+    }
+
+    /// A blank entry alongside real ones stays *filtering*: the block still carries the signatories
+    /// that resolved, so the document is not silent about where signatures belong. The stricter
+    /// reading — erroring on any dropped entry — would refuse to render a draft that has a
+    /// half-filled signatory row, which is a normal state on the way to a complete instrument.
+    #[test]
+    fn a_blank_entry_among_real_ones_is_filtered_and_the_block_survives() {
+        let spec = signature_only_spec("user-partial/v1", "signatories");
+        let ctx = json!({
+            "title": "Documento",
+            "signatories": [
+                { "name": "Amélia Marques", "capacity": "Chair" },
+                { "name": "", "capacity": "" }
+            ]
+        });
+
+        let doc = render(&spec, &ctx).expect("a populated block still renders");
+        let slots = signature_slots_of(&doc).expect("a signature block");
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].role, "Presidente da mesa");
+        assert_eq!(slots[0].name, "Amélia Marques");
+    }
+
+    /// Catalog-wide net. Every shipped template that declares a signature block must fail loudly
+    /// when its declared source is not in the context — the exact condition under which the
+    /// `-transporte` family silently rendered no signature lines at all. Run over the whole
+    /// catalog so a newly authored template cannot reintroduce the silence.
+    #[test]
+    fn every_catalog_signature_block_fails_loudly_when_its_source_is_missing() {
+        let reg = load_registry().expect("the full catalog loads");
+        let base = coverage_ctx();
+        let mut checked = 0usize;
+
+        for spec in reg.specs() {
+            let sources: Vec<&str> = spec
+                .blocks
+                .iter()
+                .filter_map(|block| match block {
+                    BlockSpec::SignatureBlock { source, .. } => Some(source.as_str()),
+                    _ => None,
+                })
+                .collect();
+            for source in sources {
+                let mut ctx = base.clone();
+                ctx["title"] = json!(format!("Documento — {}", spec.id));
+                ctx.as_object_mut()
+                    .expect("the fixture is an object")
+                    .remove(source);
+                match render(spec, &ctx) {
+                    Err(RenderError::UnresolvableSignatureBlock {
+                        template_id,
+                        source_path,
+                        defect: SignatureBlockDefect::SourceMissing,
+                    }) => {
+                        assert_eq!(template_id, spec.id);
+                        assert_eq!(source_path, source);
+                    }
+                    Err(other) => {
+                        panic!(
+                            "{}: expected a loud signature failure, got {other:?}",
+                            spec.id
+                        )
+                    }
+                    Ok(doc) => panic!(
+                        "{}: rendered silently with no `{source}` in the context: {:#?}",
+                        spec.id, doc.blocks
+                    ),
+                }
+                checked += 1;
+            }
+        }
+        assert!(
+            checked >= 99,
+            "expected the sweep to cover every declared signature block, covered {checked}"
+        );
+    }
+
+    /// The `-transporte` family, rendered the way the on-demand path actually reaches it. This is
+    /// the instrument t50-e1 found renders with no signature block at all: `act_render_ctx`
+    /// supplies `signatories` (from the act) but the template binds `required_signatories`.
+    ///
+    /// With the binding supplied, the signature lines render. Without it, the render fails instead
+    /// of quietly producing a termo de transporte that nobody appears to have signed.
+    #[test]
+    fn the_transporte_instrument_renders_its_signature_lines_or_says_why_not() {
+        let reg = load_registry().expect("the full catalog loads");
+        let spec = reg
+            .get("csc-termo-transporte/v1")
+            .expect("csc-termo-transporte/v1 present");
+
+        // The shape `documents::act_render_ctx` produces for an on-demand book instrument.
+        let mut ctx = json!({
+            "title": "Termo de transporte do livro de atas",
+            "entity": {
+                "name": "Encosto Estratégico Lda",
+                "nipc": "515202030",
+                "seat": "Rua das Amoreiras, n.º 12, 1250-020 Lisboa"
+            },
+            "book": { "kind": "Assembleia geral", "predecessor": "Livro n.º 1" },
+            "closing_date": "2026-12-31",
+            "signatories": [
+                { "name": "Amélia Marques", "capacity": "Chair", "signed": false }
+            ],
+            "required_signatories": [
+                { "role": "Chair", "name": "Amélia Marques" },
+                { "role": "Secretary", "name": "Bruno Cardoso" }
+            ]
+        });
+
+        let doc = render(spec, &ctx).expect("the transporte renders");
+        let slots = signature_slots_of(&doc)
+            .unwrap_or_else(|| panic!("no signature block in {:#?}", doc.blocks));
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0].role, "Presidente da mesa");
+        assert_eq!(slots[0].name, "Amélia Marques");
+        assert_eq!(slots[1].role, "Secretário");
+        assert_eq!(slots[1].name, "Bruno Cardoso");
+
+        ctx.as_object_mut()
+            .expect("object")
+            .remove("required_signatories");
+        let error = render(spec, &ctx)
+            .expect_err("a transporte with no resolvable signatories must not render silently");
+        assert!(
+            error.to_string().contains("csc-termo-transporte/v1")
+                && error.to_string().contains("required_signatories"),
+            "{error}"
         );
     }
 }
