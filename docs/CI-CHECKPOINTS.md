@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `9bd1a56` (2026-07-27). It records the
+The current substantive checkpoint is `3168c1d` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -142,6 +142,15 @@ following bounded concern groups in this guard:
   attempt started from `7df0f6b2` was aborted and quarantined when its source
   identity became obsolete; there is still no capacity or
   10,000-cryptographic-signature evidence.
+- `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
+  semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
+  Compose render for the default three-replica topology requests
+  5,972,688,896 bytes (5.5625 GiB); exact per-service limits pass and a host
+  envelope one byte below that total fails. Focused Cygwin Python 3.9
+  validation passed 8/8 topology tests, including the exact live-render service
+  budgets and one-byte boundary. The 6 GiB minimum remains. This is bounded
+  parser, live-render, and boundary-regression evidence only, not a capacity
+  run, workload result, concurrency/HA proof, or production readiness.
 - `54529fb3` hardens normal, cluster, and hardened projector deployment with
   split secret exposure, backend-only data services, explicit
   dedicated-database acknowledgement, atomic no-clobber secret publication,

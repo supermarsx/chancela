@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `9bd1a56` (2026-07-27)",
+    "The current substantive checkpoint is `3168c1d` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `9bd1a56`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `3168c1d`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `9bd1a56`",
+    "Focused Gate Snapshot Through `3168c1d`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9bd1a56`",
+    "Current checkpoint metadata/static checks through `3168c1d`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `9bd1a5632bd85f0e48ea1d80bbacda75222485a3`",
+    "implementation snapshot `3168c1d6700ee3506bf00875c14f4163e69bcf80`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9bd1a56`",
+    "Current checkpoint metadata/static checks through `3168c1d`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16986,6 +16986,46 @@ function assertCheckpointMap() {
     "postgres_sidecar_stages_at_one_instant_have_exclusive_cleanup_ownership",
     "PostgreSQL restore sidecar fixed-time ownership regression marker",
   );
+  assertFileContains(
+    "scripts/perf/topology.py",
+    "bare suffixes and their optional B/iB spellings are all binary RAM units",
+    "performance Compose binary RAM semantics marker",
+  );
+  assertFileContains(
+    "scripts/perf/topology.py",
+    '"g": 1024**3,',
+    "performance Compose binary gigabyte parser marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_topology.py",
+    "DEFAULT_THREE_REPLICA_MEMORY_BYTES = 5_972_688_896",
+    "performance exact three-replica memory envelope marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_topology.py",
+    "test_memory_suffix_variants_follow_compose_binary_semantics",
+    "performance Compose RAM suffix regression marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_topology.py",
+    "test_real_compose_render_contract_when_docker_compose_is_available",
+    "performance live Compose render regression marker",
+  );
+  assertFileContains(
+    "scripts/perf/tests/test_topology.py",
+    "DEFAULT_THREE_REPLICA_MEMORY_BYTES - 1",
+    "performance one-byte-below envelope regression marker",
+  );
+  assertFileContainsNormalized(
+    "docs/performance-capacity.md",
+    "5,972,688,896 bytes (5.5625 GiB)",
+    "performance exact live-render memory documentation marker",
+  );
+  assertFileContainsNormalized(
+    "docs/performance-capacity.md",
+    "at least **12 CPUs and 6 GiB RAM**",
+    "performance retained 6 GiB minimum marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "This supplies the Linux build/runtime dependency needed by the generated-PFX loader test; it does not touch a reader, use a Citizen Card, or prove live PC/SC signing",
@@ -17018,7 +17058,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `9bd1a56` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `3168c1d` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17040,6 +17080,21 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "Public filename families/extensions and serialized schema contracts remain unchanged. This is bounded temporary-artifact ownership evidence, not full concurrency, cross-process HA, capacity, or production proof",
     "CI checkpoints runtime artifact contract and no-HA boundary",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Focused Cygwin Python 3.9 validation passed 8/8 topology tests, including the exact live-render service budgets and one-byte boundary",
+    "spec coverage Compose memory exact focused evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "The exact live Compose render for the default three-replica topology requests 5,972,688,896 bytes (5.5625 GiB)",
+    "CI checkpoints exact live Compose memory envelope",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "The 6 GiB minimum remains. This is bounded parser, live-render, and boundary-regression evidence only, not a capacity run, workload result, concurrency/HA proof, or production readiness",
+    "CI/E2E Compose memory retained minimum and no-claim boundary",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
@@ -17133,7 +17188,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `9bd1a56` (2026-07-27)",
+    "The current substantive checkpoint is `3168c1d` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

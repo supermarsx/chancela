@@ -1,14 +1,15 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `9bd1a5632bd85f0e48ea1d80bbacda75222485a3`,
+*Updated 2026-07-27 from current implementation snapshot `3168c1d6700ee3506bf00875c14f4163e69bcf80`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
 exact-volume performance harness with fail-closed local-signing timestamp
 isolation and actual runtime-loader signing coverage; bounded CI dependency,
 PostgreSQL advisory-lock, composed-server startup-handoff, mock-TSA and broader
-test-fixture ownership determinism, and bounded runtime temporary-artifact
-ownership; and the inherited
+test-fixture ownership determinism, bounded runtime temporary-artifact
+ownership, and Compose-binary performance-memory envelope accounting; and the
+inherited
 document-layout model, renderer, settings policy, stored resolved-layout
 snapshot, and web editors,
 plus committed packaging and release-trust contract evidence and
@@ -334,7 +335,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `9bd1a56` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `3168c1d` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -437,6 +438,16 @@ Implementation checkpoints covered here:
   attempt started from `7df0f6b2` was aborted and quarantined when its source
   identity became obsolete; there is still no capacity or
   10,000-cryptographic-signature evidence.
+
+  `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
+  semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
+  Compose render for the default three-replica topology requests
+  5,972,688,896 bytes (5.5625 GiB); exact per-service limits pass and a host
+  envelope one byte below that total fails. Focused Cygwin Python 3.9
+  validation passed 8/8 topology tests, including the exact live-render service
+  budgets and one-byte boundary. The 6 GiB minimum remains. This is bounded
+  parser, live-render, and boundary-regression evidence only, not a capacity
+  run, workload result, concurrency/HA proof, or production readiness.
 
   The inherited document-layout lane resolves the concrete instance ->
   template -> entity -> book cascade before render/page counting, atomically
