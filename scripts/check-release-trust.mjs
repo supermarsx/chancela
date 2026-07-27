@@ -1186,6 +1186,48 @@ function completeImageSetFixture() {
   };
 }
 
+function imagetoolsInspectLabels(document) {
+  const image = requireRecord(document.image, "imagetools inspect image");
+  const selected = image["linux/amd64"] ?? image;
+  const config = requireRecord(
+    selected.config,
+    "imagetools inspect selected image.config",
+  );
+  return requireRecord(
+    config.Labels,
+    "imagetools inspect selected image.config.Labels",
+  );
+}
+
+function directSinglePlatformImagetoolsFixture() {
+  return {
+    image: {
+      config: {
+        Labels: {
+          "org.opencontainers.image.revision": "b".repeat(40),
+          "org.opencontainers.image.created": "2026-01-15T00:00:00Z",
+        },
+      },
+    },
+  };
+}
+
+function indexedMultiPlatformImagetoolsFixture() {
+  return {
+    image: {
+      "linux/amd64": directSinglePlatformImagetoolsFixture().image,
+      "linux/arm64": {
+        config: {
+          Labels: {
+            "org.opencontainers.image.revision": "c".repeat(40),
+            "org.opencontainers.image.created": "2026-01-16T00:00:00Z",
+          },
+        },
+      },
+    },
+  };
+}
+
 function buildKitSlsaV1Fixture() {
   return {
     buildDefinition: {
@@ -1622,6 +1664,7 @@ function guardCiGhcrPublishWorkflow(ciText) {
     "node scripts/check-release-trust.mjs buildkit-attestations",
     'validate_attestation_payloads "$reference"',
     "expected exactly one non-attestation linux/amd64 platform manifest",
+    '(.image["linux/amd64"] // .image).config.Labels[',
     "all($attestations[];",
     "workflow-green-and-image-set-manifest-present",
     "chancela-image-set.json",
@@ -1656,6 +1699,15 @@ function guardCiGhcrPublishWorkflow(ciText) {
     [...publishJob.matchAll(/\(\$runnable\s*\|\s*length\)\s*==\s*1/gmu)].length,
     2,
     `${workflowPath} jobs.publish-ghcr must require exactly one non-attestation descriptor in digest extraction and contract validation`,
+  );
+  assert.equal(
+    [
+      ...publishJob.matchAll(
+        /\(\.image\["linux\/amd64"\]\s*\/\/\s*\.image\)\.config\.Labels\[/gmu,
+      ),
+    ].length,
+    2,
+    `${workflowPath} jobs.publish-ghcr must read both OCI labels from direct single-platform or indexed image shapes`,
   );
   assert.equal(
     [...publishJob.matchAll(/\.platform\.os\s*==\s*"unknown"/gmu)].length,
@@ -2112,6 +2164,24 @@ function runSelfTest() {
   });
   const imageSet = completeImageSetFixture();
   validateImageSet(imageSet, { expectedCommit: imageSet.source.commitSha });
+  const expectedImagetoolsLabels = {
+    "org.opencontainers.image.revision": "b".repeat(40),
+    "org.opencontainers.image.created": "2026-01-15T00:00:00Z",
+  };
+  assert.deepEqual(
+    imagetoolsInspectLabels(directSinglePlatformImagetoolsFixture()),
+    expectedImagetoolsLabels,
+    "direct single-platform imagetools output must expose OCI labels",
+  );
+  assert.deepEqual(
+    imagetoolsInspectLabels(indexedMultiPlatformImagetoolsFixture()),
+    expectedImagetoolsLabels,
+    "indexed imagetools output must select linux/amd64 OCI labels",
+  );
+  expectFail(
+    () => imagetoolsInspectLabels({ image: {} }),
+    "selected image.config must be an object",
+  );
   const imageSetBoundStatus = publishedUnsignedDockerFixture();
   imageSetBoundStatus.image = imageSet.images[1].reference;
   imageSetBoundStatus.platformDigest = imageSet.images[1].platformDigest;
@@ -2234,6 +2304,16 @@ function runSelfTest() {
   );
 
   const ciText = readRepoText(".github/workflows/ci.yml");
+  expectFail(
+    () =>
+      guardCiGhcrPublishWorkflow(
+        ciText.replace(
+          '(.image["linux/amd64"] // .image).config.Labels[',
+          '.image["linux/amd64"].config.Labels[',
+        ),
+      ),
+    "read both OCI labels from direct single-platform or indexed image shapes",
+  );
   expectFail(
     () =>
       guardCiGhcrPublishWorkflow(

@@ -2173,14 +2173,14 @@ jobs:
             platform="$(platform_digest "$document")"
             revision="$(
               jq -er '
-                .image["linux/amd64"].config.Labels[
+                (.image["linux/amd64"] // .image).config.Labels[
                   "org.opencontainers.image.revision"
                 ]
               ' "$document"
             )"
             created="$(
               jq -er '
-                .image["linux/amd64"].config.Labels[
+                (.image["linux/amd64"] // .image).config.Labels[
                   "org.opencontainers.image.created"
                 ]
               ' "$document"
