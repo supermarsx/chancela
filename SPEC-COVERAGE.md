@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `c0161eabc6bf270755f498b0896d0f2d755e2838`,
+*Updated 2026-07-27 from current implementation snapshot `7158fe69745566a7ad7fecccd7f746b5b731a80f`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -336,7 +336,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `c0161ea` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `7158fe6` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
