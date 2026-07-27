@@ -5222,8 +5222,18 @@ pub async fn preview_document(
 }
 
 /// The full act render context for non-seal templates: [`act_ctx`] overlaid with the `book` object
-/// (`book.kind`, `book.predecessor`) that the certidão / extrato / transporte instruments recite.
-/// The ata spine templates ignore `book`, so this is a strict superset safe for every stage.
+/// (`book.kind`, `book.predecessor`) that the certidão / extrato / transporte instruments recite,
+/// plus the `required_signatories` binding the book-instrument templates declare.
+/// The ata spine templates ignore both, so this is a strict superset safe for every stage.
+///
+/// **Why `required_signatories` is here.** The five `*-termo-transporte` templates are off the
+/// spine — [`spine_template_id`] maps `TermoEncerramento` to `*-termo-encerramento/v1` for every
+/// family — so they are only ever reached on demand, through this function. They declare a
+/// signature block over `required_signatories`, which nothing here supplied: the block resolved to
+/// nothing and the renderer dropped it, so a termo de transporte came out with no signature lines
+/// at all and no diagnostic. The renderer now refuses to render that silence
+/// ([`chancela_templates::RenderError::UnresolvableSignatureBlock`]), and this is the other half —
+/// the binding those templates already declare now actually resolves.
 fn act_render_ctx(act: &Act, book: &Book, entity: &Entity) -> Result<Value, ApiError> {
     let mut ctx = act_ctx(act, entity)?;
     if let Some(obj) = ctx.as_object_mut() {
@@ -5231,14 +5241,74 @@ fn act_render_ctx(act: &Act, book: &Book, entity: &Entity) -> Result<Value, ApiE
             "book".to_string(),
             json!({
                 "kind": book_kind_label(book.kind),
-                "predecessor": book
-                    .predecessor
-                    .map(|p| p.to_string())
-                    .map_or(Value::Null, Value::String),
+                "predecessor": predecessor_binding(book, entity.family),
             }),
+        );
+        obj.insert(
+            "required_signatories".to_string(),
+            Value::Array(act_signature_slots(&act.signatories)),
         );
     }
     Ok(ctx)
+}
+
+/// The `book.predecessor` binding for the on-demand book instruments, in the shape the consuming
+/// template actually reads.
+///
+/// The catalog carries two shapes for this one binding: `csc-termo-transporte` reads
+/// `{{ book.predecessor }}` as a flat value, and the assoc / condomínio / cooperativa / fundação
+/// transportes read `{{ book.predecessor.book_reference }}`. Supplying one flat string for all five
+/// meant the four structured ones resolved their row to nothing and silently dropped it — even for
+/// a book that *has* a predecessor. `template_preview_sample_context` already branches on the
+/// family for exactly this reason; this is the same branch on the live path.
+///
+/// **Absent renders as absent, never as a word.** A `None` predecessor previously reached the
+/// template as JSON `null`, which minijinja prints as the literal `"none"` — so a Portuguese legal
+/// instrument stated "Livro anterior: none". An empty value renders as an empty row, which the
+/// engine omits: the document says nothing about a predecessor it does not have, instead of saying
+/// something false about it. The key itself must stay present, because `{{ book.predecessor.… }}`
+/// against an *undefined* fails the whole render.
+///
+/// The value is the predecessor's [`chancela_core::book::BookId`]. It is not a human-readable
+/// reference, but it is a true and verifiable one; this function holds only the successor book, so
+/// there is no honest way to produce a better label here and inventing one is not an option.
+fn predecessor_binding(book: &Book, family: EntityFamily) -> Value {
+    let reference = book
+        .predecessor
+        .map(|id| id.to_string())
+        .unwrap_or_default();
+    if family == EntityFamily::CommercialCompany {
+        Value::String(reference)
+    } else {
+        json!({ "book_reference": reference })
+    }
+}
+
+/// Reshape an act's declared [`chancela_core::act::SignatorySlot`]s into the `{role, name}` slots a
+/// `SignatureBlock` over `required_signatories` binds.
+///
+/// Same contract as the termo's [`signature_slots`]: `role` carries the capacity's **serialized
+/// name** (`"Chair"`), which the book-instrument templates map to pt-PT through `role_label`. It is
+/// never a Rust `Debug` spelling and never a legacy label.
+///
+/// An act with no declared signatories yields an empty list, which is a statement the renderer
+/// accepts — the instrument requires nobody — as distinct from this binding being absent, which is
+/// the failure the renderer now refuses.
+fn act_signature_slots(slots: &[chancela_core::act::SignatorySlot]) -> Vec<Value> {
+    slots
+        .iter()
+        .map(|slot| {
+            let role = serde_json::to_value(slot.capacity)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                // A fieldless enum with a derived `Serialize` always yields a JSON string, so this
+                // arm is unreachable. It falls back to the `Debug` spelling rather than to an empty
+                // string so that an impossible serde failure could never silently blank the
+                // qualidade off a signature line in a legal instrument.
+                .unwrap_or_else(|| format!("{:?}", slot.capacity));
+            json!({ "role": role, "name": slot.name })
+        })
+        .collect()
 }
 
 /// Query for `POST /v1/acts/{id}/document/generate` — the catalog template id to render + persist.
@@ -14887,6 +14957,155 @@ mod tests {
             text.contains("segunda convoca"),
             "reduced-quorum second-call recital rendered"
         );
+    }
+
+    /// The off-spine book instruments — `-transporte` and `-retificacao` — are only ever reached
+    /// through `act_render_ctx`, and the `-transporte` family declares its signature block over
+    /// `required_signatories`, which nothing supplied. The block resolved to nothing and the
+    /// renderer dropped it: a termo de transporte came out with no signature lines and no
+    /// diagnostic. Both halves are asserted here — the binding now resolves, and an act that
+    /// declares nobody is a legitimate answer rather than a silent gap.
+    #[test]
+    fn the_transporte_instrument_binds_its_signature_lines_through_act_render_ctx() {
+        use chancela_core::act::SignatorySlot;
+
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut act = Act::draft(
+            book.id,
+            "Termo de transporte do livro de atas",
+            MeetingChannel::Physical,
+        );
+        act.signatories = vec![
+            SignatorySlot {
+                name: "Amélia Marques".to_string(),
+                email: None,
+                capacity: SignatoryCapacity::Chair,
+                signed: false,
+                permilage: None,
+            },
+            SignatorySlot {
+                name: "Bruno Cardoso".to_string(),
+                email: None,
+                capacity: SignatoryCapacity::Secretary,
+                signed: false,
+                permilage: None,
+            },
+        ];
+
+        let ctx = act_render_ctx(&act, &book, &entity).expect("ctx builds");
+        // The capacity's serialized name, which `role_label` maps to pt-PT — never a Rust `Debug`
+        // spelling and never a legacy label.
+        assert_eq!(ctx["required_signatories"][0]["role"], "Chair");
+        assert_eq!(ctx["required_signatories"][0]["name"], "Amélia Marques");
+        assert_eq!(ctx["required_signatories"][1]["role"], "Secretary");
+
+        let spec = registry()
+            .get("csc-termo-transporte/v1")
+            .expect("the transporte instrument is in the catalog");
+        let doc = chancela_templates::render(spec, &ctx).expect("the transporte renders");
+        let slots = doc
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                chancela_core::Block::SignatureBlock { slots } => Some(slots),
+                _ => None,
+            })
+            .unwrap_or_else(|| {
+                panic!(
+                    "the transporte rendered with no signature block: {:#?}",
+                    doc.blocks
+                )
+            });
+        assert_eq!(slots.len(), 2);
+        assert_eq!(slots[0].role, "Presidente da mesa");
+        assert_eq!(slots[0].name, "Amélia Marques");
+        assert_eq!(slots[1].role, "Secretário");
+        assert_eq!(slots[1].name, "Bruno Cardoso");
+
+        // An act that declares no signatories renders without the block and without an error: the
+        // context carried the binding and answered "nobody". That is the case the fail-loud rule
+        // must NOT collapse into a failure, or every draft instrument stops rendering.
+        act.signatories.clear();
+        let empty_ctx = act_render_ctx(&act, &book, &entity).expect("ctx builds");
+        assert_eq!(empty_ctx["required_signatories"], serde_json::json!([]));
+        let doc = chancela_templates::render(spec, &empty_ctx).expect(
+            "an act with no declared signatories is a valid state, not an unresolvable one",
+        );
+        assert!(
+            !doc.blocks
+                .iter()
+                .any(|block| matches!(block, chancela_core::Block::SignatureBlock { .. })),
+            "no declared signatories means no signature block"
+        );
+    }
+
+    /// The whole `-transporte` family, both predecessor states. Two silent drops were observed on
+    /// the rendered output of every one of these before the fix: no signature block at all, and a
+    /// "Livro anterior" row that either vanished (the four families that read
+    /// `book.predecessor.book_reference` against a flat string) or printed the literal English word
+    /// "none" (the CSC template reading a JSON `null`).
+    #[test]
+    fn every_transporte_instrument_renders_signature_lines_and_an_honest_predecessor_row() {
+        use chancela_core::act::SignatorySlot;
+
+        let predecessor_row = |doc: &DocumentModel| -> Option<String> {
+            doc.blocks.iter().find_map(|block| match block {
+                chancela_core::Block::KeyValue { rows } => rows
+                    .iter()
+                    .find(|row| row.key == "Livro anterior")
+                    .map(|row| row.value.clone()),
+                _ => None,
+            })
+        };
+
+        for (kind, template_id) in [
+            (EntityKind::SociedadePorQuotas, "csc-termo-transporte/v1"),
+            (EntityKind::Associacao, "assoc-termo-transporte/v1"),
+            (EntityKind::Condominio, "condominio-termo-transporte/v1"),
+            (EntityKind::Cooperativa, "cooperativa-termo-transporte/v1"),
+            (EntityKind::Fundacao, "fundacao-termo-transporte/v1"),
+        ] {
+            let entity = entity_of(kind);
+            let predecessor = Book::new(entity.id, BookKind::AssembleiaGeral);
+            let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+            let mut act = Act::draft(book.id, "Termo de transporte", MeetingChannel::Physical);
+            act.signatories = vec![SignatorySlot {
+                name: "Amélia Marques".to_string(),
+                email: None,
+                capacity: SignatoryCapacity::Chair,
+                signed: false,
+                permilage: None,
+            }];
+            let spec = registry().get(template_id).expect("in the catalog");
+
+            // No predecessor: the row is omitted entirely. Never the word "none", and never a
+            // fabricated reference.
+            let ctx = act_render_ctx(&act, &book, &entity).expect("ctx builds");
+            let doc = chancela_templates::render(spec, &ctx).expect("renders");
+            assert_eq!(
+                predecessor_row(&doc),
+                None,
+                "{template_id}: a book with no predecessor must say nothing about one"
+            );
+            assert!(
+                doc.blocks
+                    .iter()
+                    .any(|block| matches!(block, chancela_core::Block::SignatureBlock { .. })),
+                "{template_id}: rendered with no signature block: {:#?}",
+                doc.blocks
+            );
+
+            // With a predecessor: the row renders for every family, not just the CSC one.
+            book.predecessor = Some(predecessor.id);
+            let ctx = act_render_ctx(&act, &book, &entity).expect("ctx builds");
+            let doc = chancela_templates::render(spec, &ctx).expect("renders");
+            assert_eq!(
+                predecessor_row(&doc).as_deref(),
+                Some(predecessor.id.to_string().as_str()),
+                "{template_id}: the recorded predecessor must reach the document"
+            );
+        }
     }
 
     // --- deterministic default mapping + override ----------------------------------------------
