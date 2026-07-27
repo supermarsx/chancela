@@ -27,6 +27,10 @@ import type {
 } from '../../api/types';
 import { useT, type MessageKey, type TFunction, type TParams } from '../../i18n';
 import {
+  isPrivacyReviewReminderKey,
+  privacyReviewReminderT,
+} from '../../i18n/privacyReviewReminderFallback';
+import {
   Badge,
   Card,
   EmptyState,
@@ -497,6 +501,19 @@ export function dashboardMessageKey(value: string | null | undefined): MessageKe
   return value?.trim() ? (value.trim() as MessageKey) : undefined;
 }
 
+/**
+ * Resolve a server-supplied i18n key, the same duplicated concern `notifications.ts` has to
+ * handle for `NotificationBell`/`NotificationsPage`. The privacy review reminder's
+ * `title_key`/`body_key` point at `notifications.reminder.privacy.review.*`, which lives in
+ * `privacyReviewReminderFallback.ts` rather than the shared catalogs (see that module for why)
+ * — every other dynamic key still goes through `t()`. `dashboardMessageKey()` above casts any
+ * server string to `MessageKey` on faith, so an unrouted key here crashes `interpolate` on a
+ * missing template instead of rendering blank text.
+ */
+function resolveDashboardMessageKey(key: MessageKey, t: TFunction, params?: TParams): string {
+  return isPrivacyReviewReminderKey(key) ? privacyReviewReminderT(key, params) : t(key, params);
+}
+
 export function dashboardFrontendRouteFromApi(path: string | null | undefined): string | undefined {
   if (!path) return undefined;
   // The server still emits the Portuguese addresses (`/configuracoes?sec=dados`), and these
@@ -778,9 +795,11 @@ export function dashboardAlertWorkQueueItem(
     sortTime: null,
     badge: t('notifications.badge.alert'),
     tone: dashboardAlertTone(alert),
-    title: titleKey ? t(titleKey, params) : t('notifications.alert.unknown.title', params),
+    title: titleKey
+      ? resolveDashboardMessageKey(titleKey, t, params)
+      : t('notifications.alert.unknown.title', params),
     detail: bodyKey
-      ? t(bodyKey, params)
+      ? resolveDashboardMessageKey(bodyKey, t, params)
       : alert.message.trim() || t('notifications.alert.fallbackDetail'),
     meta: [
       ...(alert.source
@@ -869,15 +888,15 @@ export function buildDashboardWorkQueue({
       sortTime,
       badge: dashboardReminderStatusLabel(reminder.status, t),
       tone: dashboardReminderTone(reminder),
-      title: effectiveTitleKey ? t(effectiveTitleKey, params) : entityName,
-      detail: effectiveBodyKey ? t(effectiveBodyKey, params) : reason,
+      title: effectiveTitleKey ? resolveDashboardMessageKey(effectiveTitleKey, t, params) : entityName,
+      detail: effectiveBodyKey ? resolveDashboardMessageKey(effectiveBodyKey, t, params) : reason,
       meta: [
         dashboardReminderDateMeta(reminder.due_date, t),
         dashboardReminderSourceMeta(reminder, t),
         ...(planMeta ? [planMeta] : []),
       ],
       href: routeFromDashboardReminder(reminder),
-      actionLabel: actionKey ? t(actionKey, params) : undefined,
+      actionLabel: actionKey ? resolveDashboardMessageKey(actionKey, t, params) : undefined,
     });
   }
 

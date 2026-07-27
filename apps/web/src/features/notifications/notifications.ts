@@ -12,7 +12,20 @@ import type {
 } from '../../api/types';
 import { normalizeLegacyRoute } from '../../app/legacySlugs';
 import type { MessageKey, TFunction, TParams } from '../../i18n';
+import { isPrivacyReviewReminderKey, privacyReviewReminderT } from '../../i18n/privacyReviewReminderFallback';
 import { actConveningGuidanceRoute } from '../acts/anchors';
+
+/**
+ * Resolve a server-supplied i18n key. The privacy review reminder's `title_key`/`body_key`/
+ * `action_key` point at `notifications.reminder.privacy.review.*`, which lives in
+ * `privacyReviewReminderFallback.ts` rather than the shared catalogs (see that module for why) —
+ * every other dynamic key still goes through `t()`. `messageKey()` below casts any server string
+ * to `MessageKey` on faith, so an unrouted key here crashes `interpolate` on a missing template
+ * instead of rendering blank text.
+ */
+function resolveMessageKey(key: MessageKey, t: TFunction, params?: TParams): string {
+  return isPrivacyReviewReminderKey(key) ? privacyReviewReminderT(key, params) : t(key, params);
+}
 
 export type NotificationKind = 'alert' | 'reminder' | 'operation';
 export type NotificationTone = 'neutral' | 'accent' | 'warn' | 'error';
@@ -391,7 +404,7 @@ function routeAction(
   t: TFunction,
   params?: TParams,
 ): NotificationAction {
-  return { href, label: t(label, params) };
+  return { href, label: resolveMessageKey(label, t, params) };
 }
 
 function messageKey(value: string | null | undefined): MessageKey | undefined {
@@ -429,7 +442,7 @@ function actionFromMetadata(
           : (frontendRouteFromApi(action.route) ?? frontendRouteFromApi(action.api_href));
   const labelKey = messageKey(action.label_key);
   if (!href || !labelKey) return undefined;
-  return { href, label: t(labelKey, params) };
+  return { href, label: resolveMessageKey(labelKey, t, params) };
 }
 
 function actionFromTarget(
@@ -594,12 +607,12 @@ function buildAlertNotification(
     tone,
     badge: t('notifications.badge.alert'),
     title: i18nTitle
-      ? t(i18nTitle, params)
+      ? resolveMessageKey(i18nTitle, t, params)
       : copy
         ? t(copy.title, params)
         : t('notifications.alert.unknown.title', unknownParams),
     detail: i18nBody
-      ? t(i18nBody, params)
+      ? resolveMessageKey(i18nBody, t, params)
       : copy
         ? t(copy.body, params)
         : t('notifications.alert.unknown.body', unknownParams),
@@ -706,12 +719,12 @@ export function buildDashboardNotifications(
       tone: reminderTone(reminder),
       badge: reminderStatusLabel(reminder.status, t),
       title: i18nTitle
-        ? t(i18nTitle, params)
+        ? resolveMessageKey(i18nTitle, t, params)
         : copy
           ? t(copy.title, params)
           : t('notifications.reminder.unknown.title', params),
       detail: i18nBody
-        ? t(i18nBody, params)
+        ? resolveMessageKey(i18nBody, t, params)
         : copy
           ? t(copy.body, params)
           : t('notifications.reminder.unknown.body', params),
