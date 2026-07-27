@@ -2180,8 +2180,22 @@ mod tests {
         let email_env = crypto
             .encrypt_field(&dek, subject, "email", email.as_bytes())
             .expect("encrypt email");
-        // Ciphertext must not leak the plaintext.
-        assert!(!name_env.ciphertext_b64.contains("Am"));
+        // Inspect the decoded AEAD payload rather than searching its Base64 representation:
+        // arbitrary Base64 can legitimately contain a short plaintext fragment such as "Am".
+        let name_ciphertext = B64
+            .decode(&name_env.ciphertext_b64)
+            .expect("display_name ciphertext is valid base64");
+        assert_eq!(
+            name_ciphertext.len(),
+            display_name.len() + AEAD_TAG_BYTES,
+            "ciphertext must contain the encrypted field plus its authentication tag"
+        );
+        assert!(
+            name_ciphertext
+                .windows(display_name.len())
+                .all(|window| window != display_name.as_bytes()),
+            "decoded ciphertext must not contain the complete plaintext field"
+        );
 
         // Re-derive the DEK from the at-rest blob, then decrypt.
         let dek2 = crypto
