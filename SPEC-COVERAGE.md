@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `3168c1d6700ee3506bf00875c14f4163e69bcf80`,
+*Updated 2026-07-27 from current implementation snapshot `b3d54389933fb24c9a584cbb249e9881640e4256`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -335,7 +335,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `3168c1d` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `b3d5438` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -367,6 +367,17 @@ Implementation checkpoints covered here:
   target so a renamed, added, removed, or unguarded source-map writer fails the
   dynamic guard.
 
+  `b3d54389` hardens projector liveness without weakening publication or query
+  trust: health reads are bounded to control C1 -> heartbeat -> control C2 with
+  one retry only when the canonical lease identity/path changes, and both
+  container health and API diagnostics accept only a present, non-future
+  heartbeat source revision. Fence, command, lease, freshness, and applicable
+  generation checks remain exact; query staleness and projection publication
+  CAS remain independently fail-closed. Local validation passed 24/24 projector
+  tests, 55/55 API search tests, a 1,024-commit source-churn test in 0.879
+  seconds, 10/10 repeated stress iterations, Clippy with `-D warnings`, and
+  formatting/diff checks.
+
   `20008d37`, `4efd1956`, `eff9866d`, and `18a346ee` define exact-volume
   profiles for 15,000 users, 10,000 entities, 50,000 books, and 10,000
   unsigned signature subjects, plus a separate opt-in local PKCS#12 signing
@@ -384,6 +395,17 @@ Implementation checkpoints covered here:
   runtime-compatibility safeguards, not recorded capacity, latency, soak,
   10,000 cryptographic-signature, public-TSA, live-provider, composed-API, or
   hosted-CI results.
+
+  A bounded live attempt at `a3b6ffc5` validated the exact-volume manifest and
+  duration budget and passed its initial topology check. Under sustained
+  authoritative writes, projector health then oscillated because the fresh
+  heartbeat revision lagged the continually advancing durable source revision;
+  the candidate stopped at 13,147 users/events and its final topology check
+  failed on projector health. Cleanup verified zero matching containers,
+  volumes, and networks, and the partial evidence was quarantined at
+  `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`.
+  This invalidated candidate is explicitly not capacity, latency/soak, or
+  10,000-cryptographic-signature proof.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies

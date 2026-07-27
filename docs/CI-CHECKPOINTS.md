@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `3168c1d` (2026-07-27). It records the
+The current substantive checkpoint is `b3d5438` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -79,6 +79,15 @@ following bounded concern groups in this guard:
   exception inventory with the settings-gated restore/reload helpers; the
   checkpoint now executes the dedicated one-test
   `search_source_mutation_guards` integration target.
+- `b3d54389` makes projector health use a bounded control C1 -> heartbeat ->
+  control C2 read with one retry only when the canonical lease identity/path
+  changes. Container health and API diagnostics accept only a present,
+  non-future source revision; fence, command, lease, freshness, and applicable
+  generation checks remain exact, while query staleness and projection
+  publication CAS remain unchanged and fail-closed. Validation passed 24/24
+  projector tests, 55/55 API search tests, a 1,024-commit source-churn test in
+  0.879 seconds, 10/10 repeated stress iterations, Clippy with `-D warnings`,
+  and formatting/diff checks.
 - `20008d37`/`4efd1956`/`eff9866d`/`18a346ee` govern the exact-volume
   performance harness for 15,000 users, 10,000 entities, 50,000 books, and
   10,000 unsigned signature subjects. The opt-in local PKCS#12 phase now
@@ -90,6 +99,16 @@ following bounded concern groups in this guard:
   Capacity/soak evidence is proof-eligible only with the committed complete SLO
   policy, stable topology/resource evidence, an exact clean source identity,
   and the dedicated runner labels; PR smoke is always non-proof.
+- A bounded live attempt at `a3b6ffc5` validated the exact-volume manifest and
+  duration budget and passed its initial topology check. Sustained
+  authoritative writes then made projector health oscillate because its fresh
+  heartbeat revision lagged the advancing durable source revision. The
+  candidate stopped at 13,147 users/events; final topology failed on projector
+  health. Cleanup verified zero matching containers, volumes, and networks,
+  and the partial evidence is quarantined at
+  `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`.
+  This invalidated candidate is explicitly not capacity, latency/soak, or
+  10,000-cryptographic-signature proof.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;

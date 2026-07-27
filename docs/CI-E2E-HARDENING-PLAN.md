@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `3168c1d`,
+implementation snapshot `b3d5438`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
@@ -1007,11 +1007,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `3168c1d`
+## Focused Gate Snapshot Through `b3d5438`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `3168c1d`.
+metadata-refreshed on 2026-07-27 for current implementation head `b3d5438`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1020,7 +1020,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `3168c1d` cover the accessible
+- Current landed-slice markers through `b3d5438` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1058,6 +1058,16 @@ above still apply.
   boundary. The selected fail-fast web matrix includes
   `AtaEditorStructured.test.tsx`. This is deterministic test-harness evidence,
   not a runtime editor behavior change or interactive browser proof.
+
+  `b3d54389` makes projector liveness use a bounded control C1 -> heartbeat ->
+  control C2 read and one retry only when the canonical lease identity/path
+  changes. Container health and API diagnostics accept only present,
+  non-future source revisions; fence, command, lease, freshness, and applicable
+  generation checks stay exact. Query staleness and publication CAS remain
+  unchanged and independently fail-closed. Focused validation passed 24/24
+  projector tests, 55/55 API search tests, a 1,024-commit source-churn test in
+  0.879 seconds, 10/10 repeated stress iterations, Clippy with `-D warnings`,
+  and formatting/diff checks.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
@@ -1114,6 +1124,17 @@ above still apply.
   attempt started from `7df0f6b2` was aborted and quarantined when its source
   identity became obsolete; there is still no capacity or
   10,000-cryptographic-signature evidence.
+
+  A bounded live attempt at `a3b6ffc5` validated the exact-volume manifest and
+  duration budget and passed its initial topology check. Under sustained
+  authoritative writes, projector health oscillated because the fresh
+  heartbeat revision lagged the advancing durable source revision. The
+  candidate stopped at 13,147 users/events and final topology failed on
+  projector health. Cleanup verified zero matching containers, volumes, and
+  networks; partial evidence is quarantined at
+  `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`.
+  This invalidated candidate is explicitly not capacity, latency/soak, or
+  10,000-cryptographic-signature proof.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2660,7 +2681,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `3168c1d`
+- Current checkpoint metadata/static checks through `b3d5438`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

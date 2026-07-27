@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `3168c1d` (2026-07-27)",
+    "The current substantive checkpoint is `b3d5438` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `3168c1d`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `b3d5438`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `3168c1d`",
+    "Focused Gate Snapshot Through `b3d5438`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3168c1d`",
+    "Current checkpoint metadata/static checks through `b3d5438`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3168c1d6700ee3506bf00875c14f4163e69bcf80`",
+    "implementation snapshot `b3d54389933fb24c9a584cbb249e9881640e4256`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3168c1d`",
+    "Current checkpoint metadata/static checks through `b3d5438`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17057,8 +17057,78 @@ function assertCheckpointMap() {
     "CI/E2E obsolete capacity run no-claim boundary",
   );
   assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "fn healthcheck_with_control_reader(",
+    "projector bounded healthcheck control reader marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "source_revision <= control.checkpoint.source_revision",
+    "projector nonfuture source revision marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "durable projector lease changed while reading its heartbeat",
+    "projector bounded lease retry error marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "fn healthcheck_bounds_lease_retry_and_preserves_stable_path_errors()",
+    "projector bounded lease retry regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-search-projector/src/lib.rs",
+    "fn projector_liveness_survives_source_revision_churn()",
+    "projector source churn liveness regression marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/search.rs",
+    ".is_some_and(|revision| revision <= control.checkpoint.source_revision)",
+    "API projector nonfuture diagnostic trust marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/search.rs",
+    "let mut idle_lag = redacted_idle_status();",
+    "API projector Idle lag status regression setup marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/search.rs",
+    "assert_eq!(idle_lag.phase, SearchIndexPhase::Idle);",
+    "API projector Idle lag remains Idle regression marker",
+  );
+  assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
-    "Current `3168c1d` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "health reads are bounded to control C1 -> heartbeat -> control C2 with one retry only when the canonical lease identity/path changes",
+    "spec coverage projector monotonic liveness fix marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "the candidate stopped at 13,147 users/events and its final topology check failed on projector health",
+    "spec coverage invalidated a3b capacity candidate marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Validation passed 24/24 projector tests, 55/55 API search tests, a 1,024-commit source-churn test in 0.879 seconds, 10/10 repeated stress iterations",
+    "CI checkpoints projector liveness validation marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Cleanup verified zero matching containers, volumes, and networks, and the partial evidence is quarantined at `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`",
+    "CI checkpoints invalidated capacity cleanup and quarantine marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Query staleness and publication CAS remain unchanged and independently fail-closed",
+    "CI/E2E projector query and publication boundary marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "This invalidated candidate is explicitly not capacity, latency/soak, or 10,000-cryptographic-signature proof",
+    "CI/E2E invalidated capacity no-proof marker",
+  );
+  assertFileContains(
+    "SPEC-COVERAGE.md",
+    "Current `b3d5438` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17188,7 +17258,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `3168c1d` (2026-07-27)",
+    "The current substantive checkpoint is `b3d5438` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(
