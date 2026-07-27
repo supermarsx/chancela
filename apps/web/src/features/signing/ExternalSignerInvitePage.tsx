@@ -25,6 +25,7 @@ import {
 } from '../../ui';
 import { TitleBar } from '../../desktop/TitleBar';
 import { useT, type TFunction } from '../../i18n';
+import { useExternalInviteSlotNoticeT } from '../../i18n/externalInviteSlotNoticeFallback';
 import { hasTemplateName, templateDisplayName } from '../templates/templateNames';
 
 type LoadState =
@@ -65,7 +66,10 @@ export function externalInviteSlotStatusLabel(
 }
 
 export function externalInviteSlotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
-  if (status === 'signed') return <Badge tone="ok">{slotStatusLabel(status, t)}</Badge>;
+  // `signed` is a recorded workflow state, not a verified signature: no cryptography runs on the
+  // act co-signature path. `info` is the reviewed-but-not-human-verified tone (see theme.css),
+  // which keeps it visually distinct from `pending`/`initiated` without reading as green/validated.
+  if (status === 'signed') return <Badge tone="info">{slotStatusLabel(status, t)}</Badge>;
   if (status === 'pending' || status === 'initiated')
     return <Badge tone="accent">{slotStatusLabel(status, t)}</Badge>;
   return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
@@ -149,6 +153,7 @@ const canUploadSignedPdf = canUploadExternalInviteSignedPdf;
 
 export function ExternalSignerInvitePage() {
   const t = useT();
+  const slotNoticeT = useExternalInviteSlotNoticeT();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const toast = useToast();
@@ -409,22 +414,35 @@ export function ExternalSignerInvitePage() {
                   <div className="stack--tight" data-testid="external-invite-technical-result">
                     <p className="card__label">{t('externalInvite.technical.title')}</p>
                     {envelope.external_envelope ? (
-                      <dl className="deflist external-signature-deflist">
-                        <div>
-                          <dt>{t('externalInvite.technical.envelope')}</dt>
-                          <dd className="mono">{envelope.external_envelope.id}</dd>
-                        </div>
-                        <div>
-                          <dt>{t('externalInvite.technical.slot')}</dt>
-                          <dd className="mono">{envelope.external_envelope.slot_id}</dd>
-                        </div>
-                        {envelope.external_envelope.slot_status ? (
+                      <>
+                        <dl className="deflist external-signature-deflist">
                           <div>
-                            <dt>{t('externalInvite.technical.slotStatus')}</dt>
-                            <dd>{slotStatusBadge(envelope.external_envelope.slot_status, t)}</dd>
+                            <dt>{t('externalInvite.technical.envelope')}</dt>
+                            <dd className="mono">{envelope.external_envelope.id}</dd>
                           </div>
+                          <div>
+                            <dt>{t('externalInvite.technical.slot')}</dt>
+                            <dd className="mono">{envelope.external_envelope.slot_id}</dd>
+                          </div>
+                          {envelope.external_envelope.slot_status ? (
+                            <div>
+                              <dt>{t('externalInvite.technical.slotStatus')}</dt>
+                              <dd>{slotStatusBadge(envelope.external_envelope.slot_status, t)}</dd>
+                            </div>
+                          ) : null}
+                        </dl>
+                        {/* The counterparty never sees the operator guardrail, so the badge above
+                            has to explain itself here — for every slot status, not only when the
+                            technical auto-sign is blocked below. */}
+                        {envelope.external_envelope.slot_status ? (
+                          <InlineWarning
+                            tone="info"
+                            title={slotNoticeT('externalInviteSlot.notice.title')}
+                          >
+                            {slotNoticeT('externalInviteSlot.notice.body')}
+                          </InlineWarning>
                         ) : null}
-                      </dl>
+                      </>
                     ) : null}
                     {envelope.external_envelope?.technical_upload_auto_sign?.status ===
                     'blocked' ? (

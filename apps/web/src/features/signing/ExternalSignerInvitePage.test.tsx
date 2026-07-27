@@ -183,7 +183,13 @@ describe('ExternalSignerInvitePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carregar PDF e aceitar' }));
 
     await waitFor(() => expect(screen.getByText('Artefacto técnico preservado')).toBeTruthy());
-    expect(screen.getByText('Assinado')).toBeTruthy();
+    // A recorded slot is workflow tracking, not a verified signature: the label says so and the
+    // badge must not be the green `ok` tone that elsewhere means human-verified.
+    const slotBadge = screen.getByText('Assinatura registada');
+    expect(slotBadge.className).toContain('badge--info');
+    expect(slotBadge.className).not.toContain('badge--ok');
+    expect(screen.getByText('O que significa este estado')).toBeTruthy();
+    expect(screen.getByText(/a Chancela não cria aqui qualquer assinatura/)).toBeTruthy();
     expect(getByRevealedText(signedDigest)).toBeTruthy();
     expect(screen.getByText('technical_evidence_only')).toBeTruthy();
     expect(JSON.parse(fetchMock.mock.calls[1][1]?.body as string)).toEqual({
@@ -271,6 +277,9 @@ describe('ExternalSignerInvitePage', () => {
     );
     expect(screen.getByText(/identity requirements are present/)).toBeTruthy();
     expect(screen.getByText('Iniciado')).toBeTruthy();
+    // The slot-status explanation is tied to the badge, not to the blocked state: it renders for
+    // every status the counterparty can be shown.
+    expect(screen.getByText('O que significa este estado')).toBeTruthy();
     expect(document.body.textContent).not.toContain('cxi_identity_token');
   });
 
