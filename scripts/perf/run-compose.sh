@@ -16,9 +16,12 @@ REPLICAS="${CHANCELA_CLUSTER_REPLICAS:-3}"
 PERF_PROJECT="${CHANCELA_PERF_PROJECT_NAME:-chancela-perf}"
 TOPOLOGY_INITIAL="$REPORT_DIR/topology-initial.json"
 TOPOLOGY_FINAL="$REPORT_DIR/topology-final.json"
+TOPOLOGY_READINESS="$REPORT_DIR/topology-readiness.json"
 DURATION_BUDGET="$REPORT_DIR/duration-budget.json"
 WORKFLOW_TIMEOUT_SECONDS="${CHANCELA_PERF_JOB_TIMEOUT_SECONDS:-21600}"
 SEARCH_READY_TIMEOUT_SECONDS="${CHANCELA_PERF_SEARCH_READY_TIMEOUT_SECONDS:-900}"
+TOPOLOGY_READY_TIMEOUT_SECONDS="${CHANCELA_PERF_TOPOLOGY_READY_TIMEOUT_SECONDS:-120}"
+TOPOLOGY_READY_POLL_SECONDS="${CHANCELA_PERF_TOPOLOGY_READY_POLL_SECONDS:-2}"
 mkdir -p "$DATASET_DIR" "$REPORT_DIR" "$LOG_DIR"
 
 if ! [[ "$REPLICAS" =~ ^[0-9]+$ ]] || (( REPLICAS < 1 || REPLICAS > 9 )); then
@@ -55,6 +58,20 @@ TOPOLOGY_ARGS=(
   --profile cluster
   --profile performance
   --expected-replicas "$REPLICAS"
+)
+READINESS_ARGS=(
+  python scripts/perf/readiness.py
+  --project-name "$PERF_PROJECT"
+  --compose-file docker/docker-compose.yml
+  --compose-file docker/docker-compose.cluster.yml
+  --compose-file scripts/perf/docker-compose.perf.yml
+  --profile postgres
+  --profile cluster
+  --profile performance
+  --expected-replicas "$REPLICAS"
+  --timeout-seconds "$TOPOLOGY_READY_TIMEOUT_SECONDS"
+  --poll-seconds "$TOPOLOGY_READY_POLL_SECONDS"
+  --output "$TOPOLOGY_READINESS"
 )
 
 cleanup() {
@@ -104,6 +121,14 @@ for _ in $(seq 1 120); do
 done
 if [ "$ready" != "1" ]; then
   echo "performance topology did not become ready" >&2
+  exit 1
+fi
+if ! "${READINESS_ARGS[@]}" > "$LOG_DIR/topology-readiness.log" 2>&1; then
+  "${COMPOSE[@]}" ps --all > "$LOG_DIR/topology-readiness-compose-ps.log" 2>&1 || true
+  "${COMPOSE[@]}" logs --no-color --tail 200 \
+    > "$LOG_DIR/topology-readiness-compose.log" 2>&1 || true
+  cat "$LOG_DIR/topology-readiness.log" >&2
+  echo "performance topology failed bounded container readiness" >&2
   exit 1
 fi
 "${TOPOLOGY_ARGS[@]}" --output "$TOPOLOGY_INITIAL" \
