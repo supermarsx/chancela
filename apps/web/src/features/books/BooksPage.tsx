@@ -216,7 +216,7 @@ export function BooksPage() {
                   </Field>
                   <IconButton
                     className="books-filterbar__clear"
-                    icon={<Icon.Close />}
+                    icon={<Icon.FilterClear />}
                     label={t('books.filters.clear.aria')}
                     disabled={!hasFilters}
                     onClick={clearFilters}

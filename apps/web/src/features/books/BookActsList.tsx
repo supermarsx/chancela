@@ -292,7 +292,7 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
             </span>
             <IconButton
               className="acts-filterbar__clear"
-              icon={<Icon.Close />}
+              icon={<Icon.FilterClear />}
               label={at('acts.filters.clear.aria')}
               disabled={!hasFilters}
               onClick={clearFilters}

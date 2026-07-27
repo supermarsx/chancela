@@ -210,7 +210,7 @@ export function NotificationsPage() {
                     </Field>
                     <IconButton
                       className="acts-filterbar__clear"
-                      icon={<Icon.Close />}
+                      icon={<Icon.FilterClear />}
                       label={nt('notifications.filter.clear.aria')}
                       disabled={!hasFilters}
                       onClick={clearFilters}

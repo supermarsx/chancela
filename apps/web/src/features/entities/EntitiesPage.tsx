@@ -1019,7 +1019,7 @@ export function EntitiesPage() {
                     />
                   </Field>
                   <IconButton
-                    icon={<Icon.Close />}
+                    icon={<Icon.FilterClear />}
                     label={t('entities.filters.clear.aria')}
                     disabled={!hasFilters}
                     onClick={clearFilters}

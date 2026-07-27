@@ -373,7 +373,7 @@ function PrivacyFilterBar({
           {children}
           <IconButton
             className="privacy-filterbar__clear"
-            icon={<Icon.Close />}
+            icon={<Icon.FilterClear />}
             label={t('settings.privacy.filters.clear')}
             disabled={!hasFilters}
             onClick={onClear}
