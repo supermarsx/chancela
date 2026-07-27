@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `247a8eb00ff08db0adc996e8774c9c2271d49760`,
+*Updated 2026-07-27 from current implementation snapshot `935809839f1349854ae593ff0e90473018e03d3f`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -335,7 +335,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `247a8eb` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `9358098` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -441,6 +441,14 @@ Implementation checkpoints covered here:
   one-shot book/termo regression, plus Clippy with `-D warnings`, rustfmt, and
   diff checks. This remediation is regression evidence, not a replacement
   capacity run.
+
+  The full checkpoint then exposed two archive-package tamper fixtures that
+  assumed durable publication populated the process cache. `93580983` seeds
+  the persisted abertura and Ata into their synthetic in-memory fallback
+  before the original duplicate-ID and path-traversal-like-ID mutations. The
+  two exact tests passed 1/1 each, the full `archive_package` filter passed
+  34/34, and rustfmt/diff checks passed. Production code and the rejection
+  assertions are unchanged.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies

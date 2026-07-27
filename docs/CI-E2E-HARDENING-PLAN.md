@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `247a8eb`,
+implementation snapshot `9358098`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
@@ -1007,11 +1007,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `247a8eb`
+## Focused Gate Snapshot Through `9358098`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `247a8eb`.
+metadata-refreshed on 2026-07-27 for current implementation head `9358098`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1020,7 +1020,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `247a8eb` cover the accessible
+- Current landed-slice markers through `9358098` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1169,6 +1169,14 @@ above still apply.
   one-shot book/termo regression, plus Clippy with `-D warnings`, rustfmt, and
   diff checks. This remediation is regression evidence, not a replacement
   capacity run.
+
+  The full checkpoint then exposed two archive-package tamper fixtures that
+  assumed durable publication populated the process cache. `93580983` seeds
+  the persisted abertura and Ata into their synthetic in-memory fallback
+  before the original duplicate-ID and path-traversal-like-ID mutations. The
+  two exact tests passed 1/1 each, the full `archive_package` filter passed
+  34/34, and rustfmt/diff checks passed. Production code and the rejection
+  assertions are unchanged.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2715,7 +2723,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `247a8eb`
+- Current checkpoint metadata/static checks through `9358098`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

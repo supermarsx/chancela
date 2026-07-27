@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `247a8eb` (2026-07-27)",
+    "The current substantive checkpoint is `9358098` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `247a8eb`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `9358098`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `247a8eb`",
+    "Focused Gate Snapshot Through `9358098`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `247a8eb`",
+    "Current checkpoint metadata/static checks through `9358098`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `247a8eb00ff08db0adc996e8774c9c2271d49760`",
+    "implementation snapshot `935809839f1349854ae593ff0e90473018e03d3f`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `247a8eb`",
+    "Current checkpoint metadata/static checks through `9358098`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17168,6 +17168,40 @@ function assertCheckpointMap() {
     "in_memory_replace_still_caches_and_serves_pdf_bytes",
     "in-memory generated-document replace regression marker",
   );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "async fn archive_package_rejects_duplicate_document_ids_before_manifest_build()",
+    "archive duplicate-document-id tamper regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/archive_package.rs",
+    "async fn archive_package_rejects_path_traversal_like_document_id_metadata()",
+    "archive path-like-document-id tamper regression marker",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/tests/archive_package.rs",
+    "let act_document = stored_document(&state, act_owner, &sealed.document_id);",
+    2,
+    "archive tamper fixtures clone the durable Ata before synthetic fallback",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/tests/archive_package.rs",
+    ".document_for_act(book_owner)",
+    2,
+    "archive tamper fixtures clone the durable abertura before synthetic fallback",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/tests/archive_package.rs",
+    ".insert(book_owner, book_document);",
+    2,
+    "archive tamper fixtures populate the synthetic abertura fallback",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/tests/archive_package.rs",
+    ".insert(act_owner, act_document);",
+    2,
+    "archive tamper fixtures populate the synthetic Ata fallback",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "health reads are bounded to control C1 -> heartbeat -> control C2 with one retry only when the canonical lease identity/path changes",
@@ -17230,6 +17264,21 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
+    "The full checkpoint then exposed two archive-package tamper fixtures that assumed durable publication populated the process cache. `93580983` seeds the persisted abertura and Ata into their synthetic in-memory fallback before the original duplicate-ID and path-traversal-like-ID mutations",
+    "spec coverage archive tamper fixture fallback marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "The two exact tests passed 1/1 each, the full `archive_package` filter passed 34/34, and rustfmt/diff checks passed",
+    "CI checkpoints archive tamper fixture validation marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Production code and the rejection assertions are unchanged",
+    "CI/E2E archive tamper fixture production-boundary marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
     "either direct single-platform or indexed `imagetools inspect` JSON",
     "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
   );
@@ -17245,7 +17294,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `247a8eb` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `9358098` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17375,7 +17424,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `247a8eb` (2026-07-27)",
+    "The current substantive checkpoint is `9358098` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

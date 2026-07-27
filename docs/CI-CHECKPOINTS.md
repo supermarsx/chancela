@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `247a8eb` (2026-07-27). It records the
+The current substantive checkpoint is `9358098` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -139,6 +139,13 @@ following bounded concern groups in this guard:
   with 2 ignored, including the existing one-shot book/termo regression, plus
   Clippy with `-D warnings`, rustfmt, and diff checks. This is regression
   evidence, not a replacement capacity run.
+- The full checkpoint then exposed two archive-package tamper fixtures that
+  assumed durable publication populated the process cache. `93580983` seeds
+  the persisted abertura and Ata into their synthetic in-memory fallback
+  before the original duplicate-ID and path-traversal-like-ID mutations. The
+  two exact tests passed 1/1 each, the full `archive_package` filter passed
+  34/34, and rustfmt/diff checks passed. Production code and the rejection
+  assertions are unchanged.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;
