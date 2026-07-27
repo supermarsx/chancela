@@ -1225,7 +1225,7 @@ dependencies = [
  "chancela-zk",
  "ecdsa 0.16.9",
  "futures-core",
- "hmac 0.12.1",
+ "hmac 0.13.0",
  "metrics",
  "metrics-exporter-prometheus",
  "moka",
