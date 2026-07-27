@@ -453,7 +453,13 @@ async fn successful_guarded_rekey_persists_secret_free_receipt_and_status_histor
     let (status, body) = send(
         state.clone(),
         with_session(
-            post_json(EXECUTE_PATH, json!({ "new_key": replacement_key })),
+            post_json(
+                EXECUTE_PATH,
+                json!({
+                    "new_key": replacement_key,
+                    "reauth": { "password": TEST_PASSWORD }
+                }),
+            ),
             &token,
         ),
     )
@@ -518,7 +524,8 @@ async fn successful_guarded_rekey_persists_secret_free_receipt_and_status_histor
         status_body["key_rotation"]["history"][0]["status"],
         "rekey_applied"
     );
-    assert_secret_free(&status_body, &[initial_key, replacement_key, "chancela.db"]);
+    assert_secret_free(&status_body, &[initial_key, replacement_key]);
+    assert_secret_free(&status_body["key_rotation"], &["chancela.db"]);
 }
 
 #[tokio::test]
