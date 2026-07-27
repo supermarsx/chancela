@@ -45,6 +45,14 @@ const APP_ID: &str = "CHANCELA-APP-0001";
 const PHONE: &str = "+351 912345678";
 const PROCESS_ID: &str = "b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b";
 
+/// The 19-byte PKCS#1 v1.5 `DigestInfo` prefix for SHA-256, transcribed independently from
+/// RFC 8017 §9.2 — deliberately **not** imported from the crate, so this test pins the bytes
+/// rather than agreeing with whatever the production constant happens to say.
+const EXPECTED_SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+    0x00, 0x04, 0x20,
+];
+
 #[test]
 fn full_request_otp_retrieve_round_trip() {
     let mut rng = TestRng::new();
@@ -77,7 +85,14 @@ fn full_request_otp_retrieve_round_trip() {
     let mock = client.transport();
     let sign_env = mock.last_envelope_for(ACTION_CCMOVEL_SIGN).unwrap();
     assert!(sign_env.contains(&STANDARD.encode(APP_ID.as_bytes())));
-    assert!(sign_env.contains(&STANDARD.encode([0xAB; 32])));
+    // The `Hash` element carries the DER `DigestInfo`, not the bare digest (RFC 8017 §9.2 step 2).
+    let mut expected_digest_info = EXPECTED_SHA256_DIGEST_INFO_PREFIX.to_vec();
+    expected_digest_info.extend_from_slice(&[0xAB; 32]);
+    assert!(sign_env.contains(&STANDARD.encode(&expected_digest_info)));
+    assert!(
+        !sign_env.contains(&STANDARD.encode([0xAB; 32])),
+        "the bare 32-byte digest must not appear on the wire"
+    );
     assert!(
         sign_env.contains("<d:Pin>1234</d:Pin>"),
         "preprod PIN is cleartext"
@@ -94,6 +109,84 @@ fn full_request_otp_retrieve_round_trip() {
         .filter(|c| c.action == ACTION_GET_CERTIFICATE)
         .count();
     assert_eq!(get_cert_calls, 2);
+}
+
+/// The value submitted to `CCMovelSign` is the RFC 8017 §9.2 `DigestInfo`: 51 raw bytes / 68
+/// base64 characters, opening with the SHA-256 prefix and closing with the digest verbatim.
+///
+/// This is the assertion that constrains the wire format. It decodes what the flow actually sent
+/// rather than re-deriving it, so it fails if the prefix is dropped, doubled, or misencoded.
+#[test]
+fn ccmovel_sign_submits_the_der_digest_info_not_the_bare_digest() {
+    let mut rng = TestRng::new();
+    let client = ScmdClient::new(MockScmdTransport::preprod_success(), APP_ID);
+    let digest = [0x5Au8; 32];
+    client
+        .request_signature(
+            &mut rng,
+            &SignRequest {
+                user_id: PHONE.to_string(),
+                pin: "1234".to_string(),
+                doc_name: "livro-de-atas.pdf".to_string(),
+                hash: digest.to_vec(),
+            },
+        )
+        .unwrap();
+
+    let sign_env = client
+        .transport()
+        .last_envelope_for(ACTION_CCMOVEL_SIGN)
+        .expect("CCMovelSign was called");
+    let start = sign_env.find("<d:Hash>").expect("Hash element") + "<d:Hash>".len();
+    let end = sign_env[start..].find("</d:Hash>").expect("Hash close") + start;
+    let hash_b64 = &sign_env[start..end];
+
+    assert_eq!(
+        hash_b64.len(),
+        68,
+        "51 raw bytes base64-encode to 68 characters; got {hash_b64:?}"
+    );
+    let submitted = STANDARD.decode(hash_b64).expect("Hash is base64");
+    assert_eq!(submitted.len(), 51, "19-byte DigestInfo prefix + 32-byte digest");
+    assert_eq!(
+        &submitted[..19],
+        &EXPECTED_SHA256_DIGEST_INFO_PREFIX,
+        "submitted value must open with the RFC 8017 §9.2 SHA-256 DigestInfo prefix"
+    );
+    assert_eq!(
+        &submitted[19..],
+        &digest,
+        "the digest must be carried through unaltered after the prefix"
+    );
+}
+
+/// A digest that is not 32 bytes is rejected outright rather than padded, truncated, or sent as
+/// is — the wire value that gets signed must never be silently reshaped.
+#[test]
+fn ccmovel_sign_rejects_a_wrong_length_digest() {
+    let mut rng = TestRng::new();
+    let client = ScmdClient::new(MockScmdTransport::preprod_success(), APP_ID);
+    for bad in [vec![0u8; 31], vec![0u8; 33], Vec::new(), vec![0u8; 51]] {
+        let len = bad.len();
+        let err = client
+            .request_signature(
+                &mut rng,
+                &SignRequest {
+                    user_id: PHONE.to_string(),
+                    pin: "1234".to_string(),
+                    doc_name: "d.pdf".to_string(),
+                    hash: bad,
+                },
+            )
+            .unwrap_err();
+        match err {
+            CmdError::RequestBuild(msg) => {
+                assert!(msg.contains("32-byte"), "unexpected message: {msg}");
+                assert!(msg.contains(&len.to_string()), "message names the length: {msg}");
+            }
+            other => panic!("expected RequestBuild for a {len}-byte digest, got {other:?}"),
+        }
+    }
 }
 
 #[test]

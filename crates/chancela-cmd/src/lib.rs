@@ -32,7 +32,10 @@ pub mod transport;
 pub use config::{CmdBasicAuth, CmdConfig, CmdEnv, PREPROD_ENDPOINT, PROD_ENDPOINT};
 pub use error::CmdError;
 pub use field_encryption::FieldEncryptor;
-pub use flow::{CertificateChain, ProcessHandle, ScmdClient, SignRequest};
+pub use flow::{
+    CCMOVEL_SIGN_HASH_LEN, CertificateChain, ProcessHandle, SHA256_DIGEST_INFO_PREFIX, ScmdClient,
+    SignRequest, ccmovel_sign_hash,
+};
 pub use mock::MockScmdTransport;
 pub use transport::{HttpScmdTransport, ScmdTransport};
 

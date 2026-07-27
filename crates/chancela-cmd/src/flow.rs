@@ -4,10 +4,15 @@
 //! two factors — the **PIN** (knowledge) sent in `CCMovelSign`, and the **OTP**
 //! (possession) confirmed in `ValidateOtp` — which together establish sole control
 //! (spec 04 SIG-02). The OTP is a confirmation *step inside* the qualified flow; it is
-//! **never** the signature. `ValidateOtp` returns a raw RSA-PKCS#1v1.5 signature value
-//! over the DigestInfo of the hash we sent; this crate packages it (with the certificate
-//! chain from `GetCertificate`) as a [`RawSignature`], and CMS/CAdES assembly happens in
-//! `chancela-cades` / `chancela-signing`.
+//! **never** the signature.
+//!
+//! **The value submitted to `CCMovelSign` is the DER `DigestInfo`, not a bare digest.** AMA
+//! specifies it as RFC 8017 §9.2 (EMSA-PKCS1-v1_5) stopping at step 2, so the 19-byte SHA-256
+//! prefix is ours to prepend: 51 bytes on the wire. [`ccmovel_sign_hash`] builds it and
+//! [`ScmdClient::request_signature`] applies it, so a caller hands over the bare 32-byte digest.
+//! `ValidateOtp` then returns the raw RSA-PKCS#1 v1.5 signature value over exactly that
+//! `DigestInfo`; this crate packages it (with the certificate chain from `GetCertificate`) as a
+//! [`RawSignature`], and CMS/CAdES assembly happens in `chancela-cades` / `chancela-signing`.
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
@@ -37,6 +42,48 @@ fn is_success(code: &str) -> bool {
     code == CODE_OK
 }
 
+/// PKCS#1 v1.5 `DigestInfo` prefix for SHA-256 (RFC 8017 §9.2), 19 bytes:
+/// `SEQUENCE { SEQUENCE { OID sha-256, NULL }, OCTET STRING (32) }`.
+///
+/// Exported so callers and tests can assert the shape of the value submitted to `CCMovelSign`
+/// without re-deriving it. `chancela-smartcard` carries an independent copy of the same constant
+/// for the on-card `CKM_RSA_PKCS` path.
+pub const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
+    0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+    0x00, 0x04, 0x20,
+];
+
+/// Length of the value `CCMovelSign` receives: the 19-byte `DigestInfo` prefix + a 32-byte digest.
+pub const CCMOVEL_SIGN_HASH_LEN: usize = SHA256_DIGEST_INFO_PREFIX.len() + 32;
+
+/// Build the DER `DigestInfo` that `CCMovelSign` expects in its `Hash` field.
+///
+/// AMA's CMD service specification defines the submitted value per RFC 8017 §9.2
+/// (EMSA-PKCS1-v1_5) **stopping at step 2** — the `DigestInfo` DER encoding, *not* the bare
+/// digest. The signer applies only the padding and the raw RSA operation on top, so the 19-byte
+/// SHA-256 prefix has to be present in what we send: 51 bytes on the wire, 68 base64 characters.
+///
+/// This is applied here, at the wire boundary, rather than at each call site so that every
+/// [`ScmdClient::request_signature`] caller is covered by construction. [`SignRequest::hash`]
+/// therefore stays the *bare* 32-byte signed-attributes digest.
+///
+/// # Errors
+/// [`CmdError::RequestBuild`] if `digest` is not exactly 32 bytes. A wrong-length digest is
+/// rejected rather than padded or truncated: silently reshaping the value that gets signed is
+/// precisely the failure this function exists to prevent.
+pub fn ccmovel_sign_hash(digest: &[u8]) -> Result<[u8; CCMOVEL_SIGN_HASH_LEN], CmdError> {
+    let digest: &[u8; 32] = digest.try_into().map_err(|_| {
+        CmdError::RequestBuild(format!(
+            "CCMovelSign hash must be a 32-byte SHA-256 digest, got {} bytes",
+            digest.len()
+        ))
+    })?;
+    let mut out = [0u8; CCMOVEL_SIGN_HASH_LEN];
+    out[..SHA256_DIGEST_INFO_PREFIX.len()].copy_from_slice(&SHA256_DIGEST_INFO_PREFIX);
+    out[SHA256_DIGEST_INFO_PREFIX.len()..].copy_from_slice(digest);
+    Ok(out)
+}
+
 /// Inputs to [`ScmdClient::request_signature`].
 #[derive(Debug, Clone)]
 pub struct SignRequest {
@@ -46,8 +93,12 @@ pub struct SignRequest {
     pub pin: String,
     /// A human-readable document name shown to the user on their device.
     pub doc_name: String,
-    /// The digest to be signed (raw bytes; base64-encoded on the wire). In the CAdES flow
-    /// this is the SHA-256 of the SignedAttributes computed by `chancela-cades`.
+    /// The **bare** 32-byte digest to be signed. In the CAdES flow this is the SHA-256 of the
+    /// SignedAttributes computed by `chancela-cades`.
+    ///
+    /// This is *not* what goes on the wire: [`ScmdClient::request_signature`] wraps it in the
+    /// PKCS#1 v1.5 `DigestInfo` AMA expects (see [`ccmovel_sign_hash`]) before base64-encoding.
+    /// Any other length is rejected with [`CmdError::RequestBuild`].
     pub hash: Vec<u8>,
 }
 
@@ -159,6 +210,14 @@ impl<T: ScmdTransport> ScmdClient<T> {
     /// `CCMovelSign` — start a qualified signature over `req.hash`. Dispatches the OTP to the
     /// citizen's device and returns a [`ProcessHandle`]. The PIN and mobile number are passed
     /// through the field encryptor (`rng` is used only when encrypting).
+    ///
+    /// `req.hash` is the **bare** 32-byte digest; this method wraps it in the PKCS#1 v1.5
+    /// `DigestInfo` AMA expects ([`ccmovel_sign_hash`]) before encoding, so the `Hash` element
+    /// carries 51 bytes / 68 base64 characters.
+    ///
+    /// # Errors
+    /// [`CmdError::RequestBuild`] if `req.hash` is not exactly 32 bytes; plus the transport,
+    /// SOAP-fault and [`CmdError::ServiceStatus`] paths.
     pub fn request_signature<R: CryptoRngCore>(
         &self,
         rng: &mut R,
@@ -166,7 +225,8 @@ impl<T: ScmdTransport> ScmdClient<T> {
     ) -> Result<ProcessHandle, CmdError> {
         let pin_field = self.encryptor.encrypt(rng, &req.pin)?;
         let user_field = self.encryptor.encrypt(rng, &req.user_id)?;
-        let hash_b64 = STANDARD.encode(&req.hash);
+        // RFC 8017 §9.2 steps 1-2: the wire value is the DER `DigestInfo`, not the bare digest.
+        let hash_b64 = STANDARD.encode(ccmovel_sign_hash(&req.hash)?);
         let envelope = soap::ccmovel_sign_envelope(
             &self.application_id_b64(),
             &req.doc_name,
