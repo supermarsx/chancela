@@ -1647,7 +1647,26 @@ async fn archive_package_rejects_duplicate_document_ids_before_manifest_build() 
     let token = bootstrap(&state).await;
     let sealed = seal_act(&state, &token).await;
     let book_owner = parse_act_id(&sealed.book_id);
+    let act_owner = parse_act_id(&sealed.act_id);
+    let act_document = stored_document(&state, act_owner, &sealed.document_id);
+    let book_document = state
+        .store
+        .as_ref()
+        .expect("store")
+        .document_for_act(book_owner)
+        .expect("book opening document lookup")
+        .expect("book opening document exists");
     state.store = None;
+    state
+        .documents
+        .write()
+        .await
+        .insert(book_owner, book_document);
+    state
+        .documents
+        .write()
+        .await
+        .insert(act_owner, act_document);
 
     {
         let mut documents = state.documents.write().await;
@@ -1681,7 +1700,26 @@ async fn archive_package_rejects_path_traversal_like_document_id_metadata() {
     let token = bootstrap(&state).await;
     let sealed = seal_act(&state, &token).await;
     let book_owner = parse_act_id(&sealed.book_id);
+    let act_owner = parse_act_id(&sealed.act_id);
+    let act_document = stored_document(&state, act_owner, &sealed.document_id);
+    let book_document = state
+        .store
+        .as_ref()
+        .expect("store")
+        .document_for_act(book_owner)
+        .expect("book opening document lookup")
+        .expect("book opening document exists");
     state.store = None;
+    state
+        .documents
+        .write()
+        .await
+        .insert(book_owner, book_document);
+    state
+        .documents
+        .write()
+        .await
+        .insert(act_owner, act_document);
 
     {
         let mut documents = state.documents.write().await;
