@@ -893,7 +893,7 @@ dependencies = [
  "der 0.7.10",
  "ecdsa 0.16.9",
  "futures-core",
- "hmac 0.12.1",
+ "hmac 0.13.0",
  "lopdf",
  "metrics",
  "metrics-exporter-prometheus",
