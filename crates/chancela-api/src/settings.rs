@@ -32,7 +32,7 @@ use chancela_cmd::{CmdBasicAuth, CmdConfig, CmdEnv};
 use chancela_connectors::{
     ALLOWED_HOSTS_ENV, MAX_RUNTIME_ALLOWLIST_ENTRIES, NetworkPolicy, RuntimeAllowlist,
 };
-use chancela_core::{DocumentLayoutPolicy, NumberingScheme};
+use chancela_core::{DocumentLayoutPolicy, EntityKind, NumberingScheme};
 use chancela_csc::{CscAuthorization, CscConfig, CscSecrets};
 use chancela_ledger::Ledger;
 pub use chancela_search::SearchSettings;
@@ -111,6 +111,11 @@ pub struct Settings {
     pub ui: UiSettings,
     /// First-use onboarding state (plan t29 §4.1): the authoritative "is the app set up?" signal.
     pub onboarding: OnboardingSettings,
+    /// Which entity legal types this instance may register (t54 §6.2). Empty — the default — means
+    /// every kind, so the whole slice is skipped on the wire while it is untouched and an existing
+    /// `settings.json` — and `contracts/settings.json` — are unchanged by its arrival.
+    #[serde(default, skip_serializing_if = "EntitiesSettings::is_default")]
+    pub entities: EntitiesSettings,
 }
 
 impl Default for Settings {
@@ -133,7 +138,108 @@ impl Default for Settings {
             appearance: AppearanceSettings::default(),
             ui: UiSettings::default(),
             onboarding: OnboardingSettings::default(),
+            entities: EntitiesSettings::default(),
         }
+    }
+}
+
+/// Every [`EntityKind`], in the canonical declaration order the web client's `ENTITY_KINDS` also
+/// uses. This is the single place that answers "what does an empty
+/// [`EntitiesSettings::enabled_kinds`] mean?", so the list cannot drift between the two readings.
+pub const ALL_ENTITY_KINDS: [EntityKind; 10] = [
+    EntityKind::SociedadeEmNomeColetivo,
+    EntityKind::SociedadePorQuotas,
+    EntityKind::SociedadeUnipessoalPorQuotas,
+    EntityKind::SociedadeAnonima,
+    EntityKind::SociedadeEmComanditaSimples,
+    EntityKind::SociedadeEmComanditaPorAcoes,
+    EntityKind::Condominio,
+    EntityKind::Associacao,
+    EntityKind::Fundacao,
+    EntityKind::Cooperativa,
+];
+
+/// Which entity legal types an instance may **register** (t54 §6.2). An installation that only ever
+/// keeps books for, say, condomínios can narrow the create form to that one type instead of
+/// offering all ten.
+///
+/// 🔒 **This is an admissions policy at the front door, not a statement about the archive.** It
+/// gates creation and nothing else — never read, list, filter, export or render. Entities already
+/// registered under a kind that is later disabled stay listed, readable and editable, their books
+/// and acts keep working, and every existing seal is untouched: [`EntityKind`] is baked into
+/// `ActSealMetadata.profile` and drives the per-family rule pack, so a seal carries the kind that
+/// was in force when it was made. Disabling a kind must never retroactively touch that.
+///
+/// Additive and serde-defaulted, so an older settings document loads with no migration.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EntitiesSettings {
+    /// The legal types entity creation accepts.
+    ///
+    /// **Empty means every kind**, exactly like
+    /// [`RegistryAutoUpdateEntityDefaults::enabled_profiles`]. That reading is
+    /// load-bearing rather than cosmetic: every settings document written before this field existed
+    /// deserializes to `[]`, so an upgrade neither migrates anything nor changes behaviour. The
+    /// fail-closed reading (`[]` ⇒ nothing) would brick entity creation on every existing
+    /// deployment the moment it upgraded.
+    pub enabled_kinds: Vec<EntityKind>,
+}
+
+impl EntitiesSettings {
+    /// Whether the slice is entirely at its defaults. Drives `skip_serializing_if`, so a
+    /// `GET /v1/settings` on an instance that has never narrowed its entity types is byte-identical
+    /// to one from before this slice existed.
+    pub(crate) fn is_default(&self) -> bool {
+        self == &EntitiesSettings::default()
+    }
+
+    /// The kinds this instance may create right now, resolving the `[]` ⇒ all reading.
+    ///
+    /// **Never empty.** "No kind at all" is unrepresentable by construction: the only value that
+    /// could express it is `[]`, and `[]` is the "every kind" default. An instance therefore cannot
+    /// end up unable to register anything through this setting.
+    #[must_use]
+    pub fn effective_enabled_kinds(&self) -> Vec<EntityKind> {
+        if self.enabled_kinds.is_empty() {
+            ALL_ENTITY_KINDS.to_vec()
+        } else {
+            self.enabled_kinds.clone()
+        }
+    }
+
+    /// Whether `kind` may be used to create a new entity. Total, and safe on a hand-edited
+    /// `settings.json` that never went through [`validate`](Self::validate).
+    #[must_use]
+    pub fn permits(&self, kind: EntityKind) -> bool {
+        self.enabled_kinds.is_empty() || self.enabled_kinds.contains(&kind)
+    }
+
+    pub(crate) fn validate(&self) -> Result<(), ApiError> {
+        // A repeated kind is a client bug, not an intent we can guess at. Refusing keeps the stored
+        // list a faithful record of what the administrator chose; silently de-duplicating would
+        // store something the caller never sent.
+        for (i, kind) in self.enabled_kinds.iter().enumerate() {
+            if self.enabled_kinds[..i].contains(kind) {
+                return Err(ApiError::Unprocessable(format!(
+                    "entities.enabled_kinds[{i}] repeats {kind:?}; each entity kind may appear at \
+                     most once"
+                )));
+            }
+        }
+        // The instance must always be able to register *something*. `[]` means "every kind", so an
+        // all-disabled document is unrepresentable today and this arm cannot fire — which is the
+        // point of writing it: if the representation ever grows a way to say "none", it refuses
+        // loudly with a named reason instead of silently permitting everything (the `[]` trap) or
+        // silently permitting nothing.
+        if self.effective_enabled_kinds().is_empty() {
+            return Err(ApiError::Unprocessable(
+                "entities.enabled_kinds would leave no entity kind enabled, and an instance that \
+                 permits no legal type can never register an entity; send an empty list to permit \
+                 every kind"
+                    .to_owned(),
+            ));
+        }
+        Ok(())
     }
 }
 
@@ -2470,6 +2576,7 @@ impl Settings {
         self.email.validate()?;
         self.platform.validate()?;
         self.auth.validate()?;
+        self.entities.validate()?;
         self.validate_auth_prerequisites()?;
         Ok(())
     }
@@ -4052,6 +4159,14 @@ pub async fn put_settings(
     if raw.get("auth").is_none() {
         settings.auth = previous.auth.clone();
     }
+    // Same reasoning for the entity-type allowlist (t54 §6.2). It is skipped on the wire while it is
+    // at its defaults, so a client that has never seen it simply will not echo it back — and
+    // `[]` ⇒ "every kind" means the default it would otherwise arrive as is the *widest* possible
+    // value. Without this carry-forward, saving an unrelated tab from a stale form would quietly
+    // re-open every legal type an administrator had deliberately narrowed away.
+    if raw.get("entities").is_none() {
+        settings.entities = previous.entities.clone();
+    }
     // `/v1/search/settings` is the sole writer for this separately-authorized operational slice.
     // A broad settings client may be stale, malicious, or simply unaware of the narrow endpoint;
     // it can echo any value here, but it must never overwrite the authoritative search policy.
@@ -4216,6 +4331,107 @@ pub async fn put_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// t54 §6.2 — `[]` means **every kind**, and it is the default. This is the property that makes
+    /// the slice's arrival a no-op for every deployment: a settings document written before the
+    /// field existed deserializes to `[]`, which permits exactly what it permitted yesterday.
+    #[test]
+    fn entity_allowlist_empty_means_every_kind_and_is_the_default() {
+        let settings = EntitiesSettings::default();
+        assert!(settings.enabled_kinds.is_empty());
+        assert!(settings.is_default());
+        assert_eq!(settings.effective_enabled_kinds(), ALL_ENTITY_KINDS.to_vec());
+        for kind in ALL_ENTITY_KINDS {
+            assert!(settings.permits(kind), "{kind:?} must be permitted by default");
+        }
+
+        // A settings document that predates the slice loads with the same reading.
+        let old = serde_json::json!({ "schema_version": 1 });
+        let parsed: Settings = serde_json::from_value(old).expect("old document deserializes");
+        assert!(parsed.entities.is_default());
+        assert!(parsed.entities.permits(EntityKind::Fundacao));
+    }
+
+    /// A narrowed allowlist permits exactly what it names — nothing wider, nothing narrower.
+    #[test]
+    fn entity_allowlist_narrowed_permits_only_the_named_kinds() {
+        let settings = EntitiesSettings {
+            enabled_kinds: vec![EntityKind::Condominio, EntityKind::SociedadePorQuotas],
+        };
+        assert!(!settings.is_default());
+        settings.validate().expect("a narrowed allowlist is valid");
+        assert!(settings.permits(EntityKind::Condominio));
+        assert!(settings.permits(EntityKind::SociedadePorQuotas));
+        assert!(!settings.permits(EntityKind::Fundacao));
+        assert!(!settings.permits(EntityKind::SociedadeAnonima));
+        assert_eq!(
+            settings.effective_enabled_kinds(),
+            vec![EntityKind::Condominio, EntityKind::SociedadePorQuotas]
+        );
+    }
+
+    /// t54 §6.3 — an instance can never be left unable to register anything. "No kind at all" is
+    /// unrepresentable: the only value that could express it is `[]`, and `[]` is "every kind". The
+    /// guarantee is structural, so assert it over every list the type can hold.
+    #[test]
+    fn entity_allowlist_never_resolves_to_no_kind_at_all() {
+        assert!(
+            !EntitiesSettings::default()
+                .effective_enabled_kinds()
+                .is_empty()
+        );
+        for kind in ALL_ENTITY_KINDS {
+            let single = EntitiesSettings {
+                enabled_kinds: vec![kind],
+            };
+            assert_eq!(single.effective_enabled_kinds(), vec![kind]);
+            assert!(!single.effective_enabled_kinds().is_empty());
+        }
+        let every = EntitiesSettings {
+            enabled_kinds: ALL_ENTITY_KINDS.to_vec(),
+        };
+        every.validate().expect("naming every kind is valid");
+        assert_eq!(every.effective_enabled_kinds().len(), ALL_ENTITY_KINDS.len());
+    }
+
+    /// A repeated kind is refused, not silently de-duplicated: the stored list must stay a faithful
+    /// record of what the administrator sent.
+    #[test]
+    fn entity_allowlist_rejects_a_repeated_kind() {
+        let settings = EntitiesSettings {
+            enabled_kinds: vec![
+                EntityKind::Condominio,
+                EntityKind::Fundacao,
+                EntityKind::Condominio,
+            ],
+        };
+        let error = settings.validate().expect_err("a repeat is a 422");
+        let rendered = format!("{error:?}");
+        assert!(
+            rendered.contains("entities.enabled_kinds[2]") && rendered.contains("Condominio"),
+            "the error must name the offending index and kind: {rendered}"
+        );
+    }
+
+    /// t54 §6.2.1 — the slice is skipped on the wire while it is at its default, so an instance that
+    /// never narrows its entity types serialises byte-identically to one from before the slice
+    /// existed. This is what keeps `contracts/settings.json` untouched.
+    #[test]
+    fn entity_allowlist_is_skipped_on_the_wire_at_its_default() {
+        let rendered = serde_json::to_value(Settings::default()).expect("settings serialize");
+        assert!(
+            rendered.get("entities").is_none(),
+            "the default document must not carry an entities section: {rendered}"
+        );
+
+        let mut narrowed = Settings::default();
+        narrowed.entities.enabled_kinds = vec![EntityKind::Condominio];
+        let rendered = serde_json::to_value(&narrowed).expect("settings serialize");
+        assert_eq!(
+            rendered["entities"]["enabled_kinds"],
+            serde_json::json!(["Condominio"])
+        );
+    }
 
     #[test]
     fn production_settings_writers_use_the_coordinator_or_authoritative_reload_gate() {

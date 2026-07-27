@@ -39,6 +39,37 @@ use crate::error::ApiError;
 /// in the audit trail.
 const NIPC_OVERRIDE_JUSTIFICATION: &str = "nipc validation overridden (stored unvalidated)";
 
+/// Refuse a creation whose legal type this instance has narrowed away
+/// (`settings.entities.enabled_kinds`, t54 §6.3).
+///
+/// **The API is the enforcement point**; narrowing the create form's `<Select>` is a UX courtesy, not
+/// a control. Rejecting with a `422` that names the kind is the only honest answer: coercing to a
+/// permitted kind or dropping the field would store an entity whose legal type is not the one the
+/// caller asked for, and an entity's kind determines its rule pack and every seal made under it.
+///
+/// The gate is **creation only**. It never touches read, list, filter, export or render, and it says
+/// nothing about entities already registered under a now-disabled kind — those stay fully usable.
+pub(crate) async fn ensure_entity_kind_enabled(
+    state: &AppState,
+    kind: EntityKind,
+) -> Result<(), ApiError> {
+    let enabled = {
+        let settings = state.settings.read().await;
+        if settings.entities.permits(kind) {
+            return Ok(());
+        }
+        settings.entities.effective_enabled_kinds()
+    };
+    let enabled = enabled
+        .iter()
+        .map(|kind| format!("{kind:?}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(ApiError::Unprocessable(format!(
+        "entity kind {kind:?} is not enabled on this instance; enabled kinds: {enabled}"
+    )))
+}
+
 /// Request body for `POST /v1/entities`.
 ///
 /// The [`EntityId`] and [`chancela_core::EntityFamily`] are derived server-side (the family
@@ -96,6 +127,9 @@ pub async fn create_entity(
     if req.tenant_id.is_some() && !state.tenants.read().await.contains_key(&tenant_id) {
         return Err(ApiError::NotFound);
     }
+    // The instance's entity-type allowlist. After the authz/tenant checks so a caller who may not
+    // create here never learns which legal types this instance permits.
+    ensure_entity_kind_enabled(&state, req.kind).await?;
     // A parseable NIPC is always stored validated; the override only rescues a parse failure.
     let nipc = match Nipc::parse(&req.nipc) {
         Ok(nipc) => nipc,
@@ -2304,5 +2338,179 @@ mod tests {
                 )
         }));
         assert!(ledger.verify().is_ok());
+    }
+
+    /// t54 §6.3 — the entity-type allowlist is enforced **by the API**, not by the create form.
+    /// A kind the instance has narrowed away is refused with a `422` that names it; it is never
+    /// coerced to a permitted kind and the field is never dropped, because either would store an
+    /// entity whose legal type is not the one the caller asked for.
+    #[tokio::test]
+    async fn create_entity_refuses_a_kind_the_instance_has_disabled() {
+        let state = AppState::default();
+        let token = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, Scope::Global).await;
+        state.settings.write().await.entities.enabled_kinds = vec![EntityKind::Condominio];
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Encosto Estratégico, Lda",
+                        "nipc": "503004642",
+                        "seat": "Lisboa",
+                        "kind": "SociedadePorQuotas",
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        let error = body["error"].as_str().expect("error is a string");
+        assert!(
+            error.contains("SociedadePorQuotas") && error.contains("Condominio"),
+            "the refusal must name the rejected kind and what is enabled: {error}"
+        );
+        // A refusal is not a partial creation: nothing stored, nothing ledgered.
+        assert!(state.entities.read().await.is_empty());
+        assert!(
+            !state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .any(|event| event.kind == "entity.created")
+        );
+
+        // The enabled kind still creates normally.
+        let (status, created) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Condomínio do Edifício Aurora",
+                        "nipc": "500000000",
+                        "seat": "Porto",
+                        "kind": "Condominio",
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        assert_eq!(created["kind"], "Condominio");
+    }
+
+    /// The default (`[]`) permits every kind, so an instance that never narrows its types behaves
+    /// exactly as it did before the allowlist existed.
+    #[tokio::test]
+    async fn create_entity_permits_every_kind_while_the_allowlist_is_untouched() {
+        let state = AppState::default();
+        let token = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, Scope::Global).await;
+        assert!(state.settings.read().await.entities.enabled_kinds.is_empty());
+
+        for (nipc, kind) in [("503004642", "Fundacao"), ("500000000", "SociedadeAnonima")] {
+            let (status, created) = send_raw(
+                state.clone(),
+                with_session(
+                    post_json(
+                        "/v1/entities",
+                        json!({
+                            "name": "Encosto Estratégico",
+                            "nipc": nipc,
+                            "seat": "Lisboa",
+                            "kind": kind,
+                        }),
+                    ),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{kind}: {created}");
+            assert_eq!(created["kind"], kind);
+        }
+    }
+
+    /// 🔒 t54 §6.4 — **hiding is not deleting.** The allowlist gates creation and nothing else: an
+    /// entity registered under a kind that is later disabled stays listed, readable and reachable by
+    /// the kind filter. Narrowing it out of the list would make existing records unreachable, which
+    /// is the failure this rule exists to prevent.
+    #[tokio::test]
+    async fn disabling_a_kind_leaves_its_existing_records_listed_readable_and_filterable() {
+        use chancela_core::{Entity, Nipc};
+
+        let state = AppState::default();
+        let token = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, Scope::Global).await;
+        let entity = Entity::new(
+            "Fundação Encosto Estratégico",
+            Nipc::unvalidated("F-0001"),
+            "Braga",
+            EntityKind::Fundacao,
+        );
+        let id = entity.id;
+        state.entities.write().await.insert(id, entity);
+
+        // The instance later narrows to condomínios only. The fundação is unaffected.
+        state.settings.write().await.entities.enabled_kinds = vec![EntityKind::Condominio];
+
+        let (status, list) =
+            send_raw(state.clone(), with_session(get("/v1/entities"), &token)).await;
+        assert_eq!(status, StatusCode::OK);
+        let ids: Vec<&str> = list
+            .as_array()
+            .expect("list is an array")
+            .iter()
+            .map(|row| row["id"].as_str().expect("row id"))
+            .collect();
+        assert_eq!(
+            ids,
+            vec![id.to_string().as_str()],
+            "a record of a disabled kind must stay listed, got {ids:?}"
+        );
+
+        let (status, read) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id}")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(read["kind"], "Fundacao");
+        assert_eq!(read["family"], "Foundation");
+
+        // Reachable by the kind filter, which is what keeps it findable in a long list.
+        let (status, filtered) = send_raw(
+            state.clone(),
+            with_session(get("/v1/entities?kind=Fundacao"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            filtered.as_array().expect("list is an array").len(),
+            1,
+            "the kind filter must still reach a disabled kind: {filtered}"
+        );
+
+        // And creating a *new* one is what is refused.
+        let (status, body) = send_raw(
+            state,
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": "Fundação Nova",
+                        "nipc": "503004642",
+                        "seat": "Braga",
+                        "kind": "Fundacao",
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     }
 }

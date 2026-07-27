@@ -1031,6 +1031,12 @@ pub async fn import_from_registry(
         }
     };
 
+    // The instance's entity-type allowlist (t54 §6.3) gates **every** creation path, not just the
+    // manual `POST /v1/entities`. A certidão naming a legal type this instance has narrowed away is
+    // still a valid certidão — it just is not an entity this instance registers, and saying so is
+    // better than a control with a second door left open.
+    crate::entities::ensure_entity_kind_enabled(&state, kind).await?;
+
     let seat = eff_sede.clone().unwrap_or_default();
     let entity = Entity::new(firma, nipc, seat, kind).in_tenant(tenant_id);
     let eid = entity.id;

@@ -185,7 +185,11 @@ fn sample_settings() -> Value {
             "registered_entity_columns": ["Name", "Nipc", "Type", "LastActivity", "Actions"]
         },
         "ai": { "enabled": false },
-        "onboarding": { "completed": false, "completed_at": null }
+        "onboarding": { "completed": false, "completed_at": null },
+        // t54 §6.2: the entity-type allowlist, narrowed, so the composed system proves it
+        // round-trips through the real server and survives a restart. `[]` (its default) is skipped
+        // on the wire and would prove nothing.
+        "entities": { "enabled_kinds": ["SociedadePorQuotas", "Condominio"] }
     })
 }
 
@@ -264,6 +268,13 @@ async fn settings_round_trip_validation_and_persistence() {
     assert_eq!(defaults["documents"]["locale"], "pt-PT");
     assert_eq!(defaults["appearance"]["theme"], "system");
     assert_eq!(defaults["appearance"]["texture_intensity"], 60);
+    // t54 §6.2.1: the entity-type allowlist is skipped on the wire while it is at its default, so a
+    // never-narrowed instance serves byte-identically to one from before the slice existed — which
+    // is what keeps `contracts/settings.json` unchanged.
+    assert!(
+        defaults.get("entities").is_none(),
+        "an untouched entities allowlist must not appear in the settings document: {defaults}"
+    );
     assert_eq!(
         defaults["workflow"]["reminders"],
         json!({
@@ -310,12 +321,16 @@ async fn settings_round_trip_validation_and_persistence() {
     );
 
     // Validation: out-of-range intensity/reminder policy, a bad locale, and a non-http URL each 422.
-    let cases: [fn(&mut Value); 4] = [
+    let cases: [fn(&mut Value); 6] = [
         |s| s["appearance"]["texture_intensity"] = json!(150),
         |s| s["workflow"]["reminders"]["dashboard_limit"] = json!(51),
         // `fr-FR` is now a supported locale; use a tag outside the 14-locale set.
         |s| s["documents"]["locale"] = json!("zz-ZZ"),
         |s| s["signing"]["tsa_url"] = json!("ftp://tsa.example.pt"),
+        // t54 §6.3: an unknown legal type and a repeated one are both refused rather than
+        // quietly dropped from the allowlist.
+        |s| s["entities"]["enabled_kinds"] = json!(["SociedadeLimitadaImaginaria"]),
+        |s| s["entities"]["enabled_kinds"] = json!(["Condominio", "Condominio"]),
     ];
     for mutate in cases {
         let mut bad = sample_settings();

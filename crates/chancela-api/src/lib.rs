@@ -11897,7 +11897,11 @@ mod tests {
                     "target_rto_minutes": 240
                 }
             },
-            "onboarding": { "completed": false, "completed_at": null }
+            "onboarding": { "completed": false, "completed_at": null },
+            // t54 §6.2: a narrowed entity-type allowlist, so the round-trip proves the section
+            // survives a PUT/GET/restart cycle. `[]` (the default) would be skipped on the wire and
+            // prove nothing.
+            "entities": { "enabled_kinds": ["SociedadePorQuotas", "Condominio"] }
         })
     }
 
@@ -12875,6 +12879,71 @@ mod tests {
         let (status, got) = send(state, get("/v1/settings")).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(got, sample_settings());
+    }
+
+    /// t54 §6.2.1 — the entity-type allowlist is invisible until it is used, and once used a stale
+    /// client cannot un-use it. Both halves matter: the first is what keeps `contracts/settings.json`
+    /// unchanged by this slice's arrival, the second is what stops "save the appearance tab" from
+    /// quietly re-opening every legal type an administrator narrowed away.
+    #[tokio::test]
+    async fn settings_entity_kind_allowlist_is_skipped_at_default_and_carried_forward_when_omitted()
+    {
+        let state = AppState::default();
+
+        // (1) Untouched: the section does not appear on the wire at all.
+        let (status, defaults) = send(state.clone(), get("/v1/settings")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            defaults.get("entities").is_none(),
+            "an untouched allowlist must not appear in the document: {defaults}"
+        );
+
+        // (2) Narrowed by an administrator.
+        let mut narrowed = sample_settings();
+        narrowed["entities"]["enabled_kinds"] = json!(["Condominio"]);
+        let (status, stored) = send(state.clone(), put_json("/v1/settings", narrowed)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(stored["entities"]["enabled_kinds"], json!(["Condominio"]));
+
+        // (3) A stale client that has never heard of the section PUTs the whole document without
+        // it. The narrowing survives — an absent key means "unchanged", not "reset to every kind".
+        let mut stale = sample_settings();
+        stale.as_object_mut().expect("object").remove("entities");
+        let (status, stored) = send(state.clone(), put_json("/v1/settings", stale)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(stored["entities"]["enabled_kinds"], json!(["Condominio"]));
+
+        // (4) An explicit empty list is the documented way back to "every kind", and it returns the
+        // document to its skipped-on-the-wire default.
+        let mut widened = sample_settings();
+        widened["entities"]["enabled_kinds"] = json!([]);
+        let (status, stored) = send(state, put_json("/v1/settings", widened)).await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(
+            stored.get("entities").is_none(),
+            "an allowlist reset to every kind is at its default again: {stored}"
+        );
+    }
+
+    /// t54 §6.3 — the allowlist rejects rather than silently repairs. An unknown legal type and a
+    /// repeated one are both client errors, and a `422` says so; de-duplicating or dropping the bad
+    /// entry would store an admissions policy the administrator never chose.
+    #[tokio::test]
+    async fn settings_entity_kind_allowlist_rejects_unknown_and_duplicate_kinds() {
+        for bad in [
+            json!(["SociedadeLimitadaImaginaria"]),
+            json!(["Condominio", "Condominio"]),
+        ] {
+            let mut doc = sample_settings();
+            doc["entities"]["enabled_kinds"] = bad.clone();
+            let (status, body) = send(AppState::default(), put_json("/v1/settings", doc)).await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "{bad} must be refused: {body}"
+            );
+            assert!(body["error"].is_string());
+        }
     }
 
     #[tokio::test]
