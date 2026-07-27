@@ -862,6 +862,15 @@ impl Ledger {
         &self.events
     }
 
+    /// Consume the ledger and return its event log in append (global) order.
+    ///
+    /// Read-only projection workers use this after the store has already verified the complete
+    /// chain. Moving the events avoids retaining one full verified ledger while cloning a second
+    /// retention-filtered event vector.
+    pub fn into_events(self) -> Vec<Event> {
+        self.events
+    }
+
     /// The hash of the most recent event, i.e. the current global chain head (`None` if empty).
     pub fn head(&self) -> Option<[u8; 32]> {
         self.events.last().map(|e| e.hash)
@@ -1755,6 +1764,21 @@ mod tests {
     }
     fn book(bid: &str) -> ChainId {
         ChainId::Book(bid.to_owned())
+    }
+
+    #[test]
+    fn consuming_a_verified_ledger_moves_its_events_in_global_order() {
+        let ledger = sample_ledger();
+        let expected_ids = ledger
+            .events()
+            .iter()
+            .map(|event| event.id)
+            .collect::<Vec<_>>();
+        let events = ledger.into_events();
+        assert_eq!(
+            events.iter().map(|event| event.id).collect::<Vec<_>>(),
+            expected_ids
+        );
     }
 
     /// A small realistic ledger: entity → book (termo genesis) → two sealed acts, plus two

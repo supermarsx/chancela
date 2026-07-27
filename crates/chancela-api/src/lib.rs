@@ -2481,7 +2481,9 @@ impl AppState {
                     data_dir: dir.clone(),
                     source,
                 })?;
-        let healthy = loaded.integrity.healthy;
+        // The search-only snapshot already ran the ledger's complete global + per-link verifier.
+        // Avoid constructing the much larger diagnostic IntegrityReport solely to read this bool.
+        let healthy = loaded.chain_status.is_ok();
         let verify_cache = cache::VerifyMemo::default();
         verify_cache.prime(&loaded.ledger, &loaded.chain_status);
 

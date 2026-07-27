@@ -4,17 +4,15 @@
 //! refreshes authoritative application state, builds the search corpus, and publishes one complete
 //! durable generation through the store's lease/checkpoint CAS boundary.
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use chancela_search::{
-    ExternalSearchProjectorConfig, IndexOperation, SearchDocument, SearchIndexPhase,
-    SearchIndexState, SearchProjectionCommand, SearchProjectionControl,
-    SearchProjectionPublishOutcome, SearchProjectionPublishRejection, SearchProjectorLease,
-    SearchSettings,
+    ExternalSearchProjectorConfig, SearchIndexPhase, SearchIndexState, SearchProjectionCommand,
+    SearchProjectionControl, SearchProjectionPublishOutcome, SearchProjectionPublishRejection,
+    SearchProjectorLease, SearchSettings,
 };
 use chancela_store::Store;
 use serde::{Deserialize, Serialize};
@@ -43,6 +41,13 @@ const HEARTBEAT_PRUNE_MAX_REMOVED: usize = 32;
 const HEARTBEAT_RETENTION_MILLIS: i64 = 24 * 60 * 60 * 1_000;
 const CHILD_SHUTDOWN_GRACE: Duration = Duration::from_secs(4);
 const OWNED_SHUTDOWN_RELEASE_GRACE: Duration = Duration::from_millis(500);
+/// Bound the quiet-source window so a very relaxed reconciliation cadence cannot violate the
+/// operational catch-up SLO after writes stop.
+const MAX_SOURCE_SETTLE_INTERVAL: Duration = Duration::from_secs(30);
+/// Continuous source churn may defer expensive hydration, but never indefinitely. After this
+/// overall debounce bound the latest observed checkpoint gets one candidate attempt; normal
+/// capture-after-hydration and publication CAS checks still reject it if writes supersede it.
+const MAX_SOURCE_DEBOUNCE_WAIT: Duration = Duration::from_secs(300);
 /// Process-level grace after a shutdown signal before the projector supervisor is aborted.
 pub const PROCESS_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
@@ -348,9 +353,43 @@ fn configured_reconciliation_interval(config: &ExternalSearchProjectorConfig) ->
     Duration::from_secs(u64::from(config.interval_seconds.clamp(5, 86_400)))
 }
 
+fn source_settle_interval(reconciliation_interval: Duration) -> Duration {
+    reconciliation_interval.min(MAX_SOURCE_SETTLE_INTERVAL)
+}
+
+#[derive(Default)]
+struct SourceDebounce {
+    started_at: Option<Instant>,
+}
+
+impl SourceDebounce {
+    fn wait_duration(&mut self, now: Instant, settle_interval: Duration) -> Duration {
+        let started_at = *self.started_at.get_or_insert(now);
+        let elapsed = now.saturating_duration_since(started_at);
+        settle_interval.min(MAX_SOURCE_DEBOUNCE_WAIT.saturating_sub(elapsed))
+    }
+
+    fn should_attempt(&mut self, now: Instant, checkpoint_unchanged: bool) -> bool {
+        let deadline_reached = self.started_at.is_some_and(|started_at| {
+            now.saturating_duration_since(started_at) >= MAX_SOURCE_DEBOUNCE_WAIT
+        });
+        if checkpoint_unchanged || deadline_reached {
+            self.reset();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn reset(&mut self) {
+        self.started_at = None;
+    }
+}
+
 struct ReconciliationState {
     interval: Duration,
     startup_pending: bool,
+    source_debounce: SourceDebounce,
 }
 
 /// Run continuously, or perform at most one required generation for `Once`.
@@ -367,6 +406,7 @@ pub async fn run_projector(
     let mut reconciliation = ReconciliationState {
         interval: configured_reconciliation_interval(&bootstrap.config),
         startup_pending: true,
+        source_debounce: SourceDebounce::default(),
     };
     let heartbeat = Arc::new(Mutex::new(ProjectorHeartbeat::new(options.owner.clone())));
 
@@ -524,13 +564,14 @@ async fn run_with_lease(
             }
 
             let control_store = provider.current().await?;
-            let before = read_control(&control_store).await?;
+            let mut before = read_control(&control_store).await?;
             ensure_current_lease(&before, &lease)?;
             update_owned_heartbeat(&options.runtime_dir, heartbeat, &before, &lease, |value| {
                 value.observe_control(&before);
                 value.last_error = None;
             })?;
             if before.command == SearchProjectionCommand::Pause {
+                reconciliation.source_debounce.reset();
                 update_owned_heartbeat(
                     &options.runtime_dir,
                     heartbeat,
@@ -550,6 +591,7 @@ async fn run_with_lease(
             let current_config = load_projector_config(&control_store).await?;
             reconciliation.interval = configured_reconciliation_interval(&current_config);
             if !current_config.enabled {
+                reconciliation.source_debounce.reset();
                 update_heartbeat_if_still_owned(
                     provider,
                     &options.runtime_dir,
@@ -575,6 +617,7 @@ async fn run_with_lease(
                 reconciliation.startup_pending,
             );
             if !projection_required {
+                reconciliation.source_debounce.reset();
                 update_heartbeat_if_still_owned(
                     provider,
                     &options.runtime_dir,
@@ -595,6 +638,45 @@ async fn run_with_lease(
                 wait_or_shutdown(reconciliation.interval, shutdown).await;
                 continue;
             }
+
+            // Avoid hydrating and rebuilding the complete corpus for every revision while a bulk
+            // import advances the durable checkpoint. A quiet reconciliation window coalesces the
+            // normal case; the overall debounce deadline still permits one guarded attempt during
+            // uninterrupted writes. The lease heartbeat remains active throughout, and the same
+            // checkpoint/command checks still fence hydration and publication.
+            update_owned_heartbeat(&options.runtime_dir, heartbeat, &before, &lease, |value| {
+                value.phase = ProjectorPhase::Starting;
+            })?;
+            let settle_interval = source_settle_interval(reconciliation.interval);
+            let settle_wait = reconciliation
+                .source_debounce
+                .wait_duration(Instant::now(), settle_interval);
+            wait_or_shutdown(settle_wait, shutdown).await;
+            if shutdown.load(Ordering::Acquire) {
+                return Ok(true);
+            }
+            if lease_lost.load(Ordering::Acquire) {
+                return Err(ProjectorError::Store("projector lease lost".to_owned()));
+            }
+            let settled_store = provider.current().await?;
+            let settled = read_control(&settled_store).await?;
+            ensure_current_lease(&settled, &lease)?;
+            if settled.command == SearchProjectionCommand::Pause {
+                reconciliation.source_debounce.reset();
+                continue;
+            }
+            let checkpoint_unchanged =
+                before.checkpoint == settled.checkpoint && before.command == settled.command;
+            if !reconciliation
+                .source_debounce
+                .should_attempt(Instant::now(), checkpoint_unchanged)
+            {
+                continue;
+            }
+            // At the hard debounce deadline this may be newer than the checkpoint observed before
+            // the wait. Hydrate the latest snapshot once; any following write cancels the candidate
+            // through the existing after-refresh comparison and lease/checkpoint CAS.
+            before = settled;
 
             // Capture-before-refresh + capture-after-refresh closes the gap between independent
             // source-table/sidecar reads. A commit during snapshot hydration changes the revision
@@ -659,6 +741,7 @@ async fn run_with_lease(
                 refreshed_search_settings.interval_seconds.clamp(5, 86_400),
             ));
             if !refreshed_search_settings.enabled {
+                reconciliation.source_debounce.reset();
                 update_heartbeat_if_still_owned(
                     provider,
                     &options.runtime_dir,
@@ -955,58 +1038,37 @@ async fn build_and_publish_projection(
         .current()
         .await
         .map_err(|error| error.to_string())?;
-    let existing = store
-        .read_blocking_async(|store| {
+    let last_event_seq = build.last_event_seq;
+    let indexed_content_chars = build.indexed_content_chars;
+    let content_budget_exhausted = build.content_budget_exhausted;
+    let projection_utc_date = build.projection_utc_date;
+    let reconciled = store
+        .read_blocking_async(move |store| {
+            let existing_status = store.search_index_state()?;
+            let (operations, target_count, truncated_document_count) =
+                store.reconcile_search_projection_documents(build.documents, force_rebuild)?;
             Ok::<_, chancela_store::StoreError>((
-                store.search_documents()?,
-                store.search_index_state()?,
+                operations,
+                target_count,
+                truncated_document_count,
+                existing_status,
             ))
         })
         .await
         .map_err(|error| format!("search projection baseline load failed: {error}"))?;
-    let (existing_documents, existing_status) = existing;
-    let existing_by_id: HashMap<String, SearchDocument> = existing_documents
-        .into_iter()
-        .map(|document| (document.id.clone(), document))
-        .collect();
-    let target_by_id: HashMap<String, SearchDocument> = build
-        .documents
-        .into_iter()
-        .map(|document| (document.id.clone(), document))
-        .collect();
-    let mut operations = Vec::with_capacity(
-        target_by_id
-            .len()
-            .saturating_add(existing_by_id.len().saturating_sub(target_by_id.len())),
-    );
-    for (id, document) in &target_by_id {
-        if force_rebuild || existing_by_id.get(id) != Some(document) {
-            operations.push(IndexOperation::Upsert(Box::new(document.clone())));
-        }
-    }
-    for id in existing_by_id.keys() {
-        if !target_by_id.contains_key(id) {
-            operations.push(IndexOperation::Delete(id.clone()));
-        }
-    }
-    operations.sort_by(|left, right| operation_id(left).cmp(operation_id(right)));
+    let (operations, target_count, truncated_document_count, existing_status) = reconciled;
 
-    let target_count = target_by_id.len() as u64;
-    let truncated_document_count = target_by_id
-        .values()
-        .filter(|document| document.content_truncated)
-        .count() as u64;
     let now = format_projection_time(projection_as_of);
     let mut completed = existing_status.unwrap_or_default();
     completed.phase = SearchIndexPhase::Idle;
     completed.generation = completed.generation.saturating_add(1);
     completed.document_count = target_count;
     completed.truncated_document_count = truncated_document_count;
-    completed.indexed_content_chars = build.indexed_content_chars;
-    completed.content_budget_exhausted = build.content_budget_exhausted;
+    completed.indexed_content_chars = indexed_content_chars;
+    completed.content_budget_exhausted = content_budget_exhausted;
     completed.processed = operations.len() as u64;
     completed.total = operations.len() as u64;
-    completed.last_event_seq = build.last_event_seq;
+    completed.last_event_seq = last_event_seq;
     completed.last_started_at = Some(now.clone());
     completed.last_completed_at = Some(now.clone());
     completed.last_error = None;
@@ -1016,7 +1078,7 @@ async fn build_and_publish_projection(
     if shutdown.load(Ordering::Acquire) {
         return Err("search projection cancelled for shutdown".to_owned());
     }
-    ensure_projection_date_current(build.projection_utc_date)?;
+    ensure_projection_date_current(projection_utc_date)?;
     store
         .read_blocking_async(move |store| {
             store.publish_search_projection(&lease, checkpoint, &operations, &completed)
@@ -1030,13 +1092,6 @@ fn ensure_projection_date_current(projection_utc_date: time::Date) -> Result<(),
         return Err(SEARCH_PROJECTION_UTC_BUCKET_CHANGED.to_owned());
     }
     Ok(())
-}
-
-fn operation_id(operation: &IndexOperation) -> &str {
-    match operation {
-        IndexOperation::Upsert(document) => &document.id,
-        IndexOperation::Delete(id) => id,
-    }
 }
 
 fn format_projection_time(value: OffsetDateTime) -> String {
@@ -2445,6 +2500,65 @@ mod tests {
         assert_eq!(
             configured_reconciliation_interval(&config),
             Duration::from_secs(86_400)
+        );
+        assert_eq!(
+            source_settle_interval(Duration::from_secs(5)),
+            Duration::from_secs(5)
+        );
+        assert_eq!(
+            source_settle_interval(Duration::from_secs(86_400)),
+            MAX_SOURCE_SETTLE_INTERVAL,
+            "bulk-write quiescence never delays catch-up by an administrator's day-long poll cadence"
+        );
+    }
+
+    #[test]
+    fn source_debounce_coalesces_churn_but_attempts_at_the_hard_deadline() {
+        let base = Instant::now();
+        let settle = Duration::from_secs(30);
+        let mut debounce = SourceDebounce::default();
+        for elapsed_seconds in (0..300).step_by(30) {
+            let observed_at = base + Duration::from_secs(elapsed_seconds);
+            assert_eq!(debounce.wait_duration(observed_at, settle), settle);
+            let after_wait = observed_at + settle;
+            let before_revision = elapsed_seconds / 30;
+            let after_revision = before_revision + 1;
+            let should_attempt =
+                debounce.should_attempt(after_wait, before_revision == after_revision);
+            assert_eq!(
+                should_attempt,
+                elapsed_seconds == 270,
+                "continuous checkpoint changes coalesce until exactly the overall deadline"
+            );
+        }
+        assert_eq!(
+            debounce.wait_duration(base + MAX_SOURCE_DEBOUNCE_WAIT, settle),
+            settle,
+            "a forced attempt resets the debounce window for subsequent churn"
+        );
+    }
+
+    #[test]
+    fn source_debounce_attempts_after_one_quiet_window_and_resets() {
+        let base = Instant::now();
+        let settle = Duration::from_secs(30);
+        let mut debounce = SourceDebounce::default();
+        assert_eq!(debounce.wait_duration(base, settle), settle);
+        let before_revision = 7;
+        let after_revision = 7;
+        assert!(
+            debounce.should_attempt(base + settle, before_revision == after_revision),
+            "one unchanged checkpoint window starts the candidate"
+        );
+        assert_eq!(
+            debounce.wait_duration(base + settle, settle),
+            settle,
+            "the next candidate gets an independent bounded debounce window"
+        );
+        let after_revision = 8;
+        assert!(
+            !debounce.should_attempt(base + settle + settle, before_revision == after_revision),
+            "a changing checkpoint is still coalesced before the new hard deadline"
         );
     }
 

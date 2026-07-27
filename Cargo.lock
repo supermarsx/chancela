@@ -1334,6 +1334,7 @@ dependencies = [
  "chancela-ledger",
  "chancela-registry",
  "chancela-search",
+ "fallible-iterator 0.2.0",
  "postgres",
  "r2d2",
  "r2d2_postgres",

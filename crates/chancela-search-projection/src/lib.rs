@@ -384,11 +384,7 @@ pub fn build_corpus(
     }
 
     let mut documents = Vec::with_capacity(
-        entities.len()
-            + books.len()
-            + acts.len()
-            + follow_ups.len()
-            + events.len().saturating_mul(2),
+        entities.len() + books.len() + acts.len() + follow_ups.len() + events.len(),
     );
     let mut ordered_entities: Vec<_> = entities.values().collect();
     ordered_entities.sort_by_key(|entity| entity.id.0);
@@ -1021,12 +1017,13 @@ pub fn load_projection_inputs(
         .map_err(|error| format!("search source snapshot load failed: {error}"))?;
     let cutoff = projection_as_of.to_offset(UtcOffset::UTC)
         - time::Duration::days(i64::from(settings.search.event_retention_days));
+    // Consume the already-verified ledger while applying retention. The snapshot's other fields
+    // remain independently available, and only one owned copy of each retained event survives.
     let events = source
         .ledger
-        .events()
-        .iter()
+        .into_events()
+        .into_iter()
         .filter(|event| event.timestamp >= cutoff)
-        .cloned()
         .collect::<Vec<_>>();
     let durable = load_durable_rows(store)?;
 

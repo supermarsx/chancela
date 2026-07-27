@@ -121,6 +121,87 @@ fn search_projection_tombstone() -> SearchIndexState {
     }
 }
 
+fn decode_search_document_row(id: String, json: String) -> Result<SearchDocument, StoreError> {
+    let document: SearchDocument = serde_json::from_str(&json)?;
+    if document.id != id {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "search document row id {id:?} does not match payload id {:?}",
+                document.id
+            ),
+        )));
+    }
+    Ok(document)
+}
+
+pub(crate) fn reconcile_sorted_search_documents(
+    target_documents: Vec<SearchDocument>,
+    force_rebuild: bool,
+    mut next_existing: impl FnMut() -> Result<Option<SearchDocument>, StoreError>,
+) -> Result<(Vec<SearchIndexOperation>, u64, u64), StoreError> {
+    if let Some(pair) = target_documents
+        .windows(2)
+        .find(|pair| pair[0].id >= pair[1].id)
+    {
+        return Err(StoreError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "search projection target ids are not strictly ordered at {:?}",
+                pair[1].id
+            ),
+        )));
+    }
+    let target_count = target_documents.len() as u64;
+    let truncated_document_count = target_documents
+        .iter()
+        .filter(|document| document.content_truncated)
+        .count() as u64;
+    let mut target = target_documents.into_iter().peekable();
+    let mut existing = next_existing()?;
+    let mut operations = Vec::with_capacity(target.len());
+
+    loop {
+        match (target.peek(), existing.as_ref()) {
+            (Some(target_document), Some(existing_document)) => {
+                match target_document.id.cmp(&existing_document.id) {
+                    std::cmp::Ordering::Less => {
+                        let document = target.next().expect("peeked target exists");
+                        operations.push(SearchIndexOperation::Upsert(Box::new(document)));
+                    }
+                    std::cmp::Ordering::Equal => {
+                        let document = target.next().expect("peeked target exists");
+                        let previous = existing.take().expect("matched existing row exists");
+                        if force_rebuild || document != previous {
+                            operations.push(SearchIndexOperation::Upsert(Box::new(document)));
+                        }
+                        existing = next_existing()?;
+                    }
+                    std::cmp::Ordering::Greater => {
+                        let stale = existing.take().expect("compared existing row exists");
+                        operations.push(SearchIndexOperation::Delete(stale.id));
+                        existing = next_existing()?;
+                    }
+                }
+            }
+            (Some(_), None) => {
+                operations.extend(
+                    target.map(|document| SearchIndexOperation::Upsert(Box::new(document))),
+                );
+                break;
+            }
+            (None, Some(_)) => {
+                let stale = existing.take().expect("remaining existing row exists");
+                operations.push(SearchIndexOperation::Delete(stale.id));
+                existing = next_existing()?;
+            }
+            (None, None) => break,
+        }
+    }
+
+    Ok((operations, target_count, truncated_document_count))
+}
+
 fn search_projection_control_tombstone() -> SearchProjectionControl {
     SearchProjectionControl {
         checkpoint: SearchProjectionCheckpoint {
@@ -1258,8 +1339,6 @@ pub struct SearchCorpusSnapshot {
     pub ledger: Ledger,
     /// Result of verifying the complete ledger chain.
     pub chain_status: Result<u64, LedgerError>,
-    /// Rich integrity report derived from the complete ledger.
-    pub integrity: IntegrityReport,
 }
 
 /// wp16 P1 — just the aggregate read-models a follower re-reads when it applies a change-feed delta,
@@ -2942,7 +3021,6 @@ impl Store {
             follow_ups: loaded.follow_ups,
             ledger: loaded.ledger,
             chain_status: loaded.chain_status,
-            integrity: loaded.integrity,
         })
     }
 
@@ -3857,20 +3935,38 @@ impl Store {
     pub fn search_documents(&self) -> Result<Vec<SearchDocument>, StoreError> {
         self.document_rows("search_documents")?
             .into_iter()
-            .map(|(id, json)| {
-                let document: SearchDocument = serde_json::from_str(&json)?;
-                if document.id != id {
-                    return Err(StoreError::Io(std::io::Error::new(
-                        std::io::ErrorKind::InvalidData,
-                        format!(
-                            "search document row id {id:?} does not match payload id {:?}",
-                            document.id
-                        ),
-                    )));
-                }
-                Ok(document)
-            })
+            .map(|(id, json)| decode_search_document_row(id, json))
             .collect()
+    }
+
+    /// Compare one complete, id-sorted target corpus against durable rows without materializing a
+    /// second full corpus. Changed targets are moved into upsert operations, unchanged targets are
+    /// dropped as the ordered cursor advances, and stale durable ids become deletes.
+    ///
+    /// The returned batch is still published atomically by [`Self::publish_search_projection`];
+    /// this read-only merge only reduces projector peak memory and never weakens lease/checkpoint
+    /// CAS semantics.
+    pub fn reconcile_search_projection_documents(
+        &self,
+        target_documents: Vec<SearchDocument>,
+        force_rebuild: bool,
+    ) -> Result<(Vec<SearchIndexOperation>, u64, u64), StoreError> {
+        #[cfg(feature = "postgres")]
+        if let Backend::Postgres(backend) = &self.backend {
+            return backend.reconcile_search_projection_documents(target_documents, force_rebuild);
+        }
+        let guard = self.locked_conn()?;
+        let mut stmt = guard.prepare("SELECT id, json FROM search_documents ORDER BY id ASC")?;
+        let mut rows = stmt.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        reconcile_sorted_search_documents(target_documents, force_rebuild, || {
+            rows.next()
+                .transpose()
+                .map_err(StoreError::from)?
+                .map(|(id, json)| decode_search_document_row(id, json))
+                .transpose()
+        })
     }
 
     /// Load the durable background-index lifecycle/progress state, if indexing has ever started.
@@ -9477,6 +9573,125 @@ mod tests {
             source_version: "v1".to_owned(),
             privileged: None,
         }
+    }
+
+    #[test]
+    fn sorted_projection_merge_moves_changes_and_streams_stale_deletes() {
+        let mut moved = search_document("act:a", "moved allocation");
+        moved.content_truncated = true;
+        let moved_body_pointer = moved.body.as_ptr();
+        let unchanged = search_document("act:b", "unchanged");
+        let stale = search_document("act:c", "delete me");
+        let mut existing = std::collections::VecDeque::from(vec![unchanged.clone(), stale]);
+
+        let (operations, target_count, truncated_count) =
+            reconcile_sorted_search_documents(vec![moved, unchanged], false, || {
+                Ok(existing.pop_front())
+            })
+            .unwrap();
+        assert_eq!(target_count, 2);
+        assert_eq!(truncated_count, 1);
+        assert_eq!(
+            operations
+                .iter()
+                .map(|operation| match operation {
+                    SearchIndexOperation::Upsert(document) => document.id.as_str(),
+                    SearchIndexOperation::Delete(id) => id.as_str(),
+                })
+                .collect::<Vec<_>>(),
+            vec!["act:a", "act:c"]
+        );
+        let SearchIndexOperation::Upsert(document) = &operations[0] else {
+            panic!("changed target must be an upsert");
+        };
+        assert_eq!(
+            document.body.as_ptr(),
+            moved_body_pointer,
+            "the target body allocation is moved into publication instead of cloned"
+        );
+        assert!(existing.is_empty(), "the durable cursor was fully consumed");
+    }
+
+    #[test]
+    fn sorted_projection_merge_is_exact_forceable_and_rejects_bad_target_order() {
+        let target = search_document("act:a", "same");
+        let previous = target.clone();
+        let mut existing = Some(previous);
+        let (operations, _, _) =
+            reconcile_sorted_search_documents(vec![target.clone()], false, || Ok(existing.take()))
+                .unwrap();
+        assert!(operations.is_empty(), "exactly unchanged rows are skipped");
+
+        let mut existing = Some(target.clone());
+        let (forced, _, _) =
+            reconcile_sorted_search_documents(vec![target], true, || Ok(existing.take())).unwrap();
+        assert!(matches!(
+            forced.as_slice(),
+            [SearchIndexOperation::Upsert(document)] if document.id == "act:a"
+        ));
+
+        for targets in [
+            vec![
+                search_document("act:a", "first"),
+                search_document("act:a", "duplicate"),
+            ],
+            vec![
+                search_document("act:b", "first"),
+                search_document("act:a", "unsorted"),
+            ],
+        ] {
+            let error = reconcile_sorted_search_documents(targets, false, || Ok(None))
+                .expect_err("bad target ordering must fail closed");
+            assert!(error.to_string().contains("not strictly ordered"));
+        }
+    }
+
+    #[test]
+    fn sorted_projection_merge_uses_rust_utf8_byte_order_for_nontrivial_ids() {
+        let ids = [
+            "template:Z",
+            "template:a",
+            "template:z",
+            "template:Á",
+            "template:ß",
+            "template:😀",
+        ];
+        let mut shuffled = ids;
+        shuffled.reverse();
+        shuffled.sort();
+        assert_eq!(shuffled, ids, "the merge contract is Rust String order");
+
+        let target = ids
+            .iter()
+            .map(|id| search_document(id, id))
+            .collect::<Vec<_>>();
+        let mut existing = std::collections::VecDeque::from(target.clone());
+        let (unchanged, _, _) =
+            reconcile_sorted_search_documents(target, false, || Ok(existing.pop_front())).unwrap();
+        assert!(unchanged.is_empty());
+        assert!(existing.is_empty());
+
+        let target = vec![
+            search_document("template:a", "new-a"),
+            search_document("template:Á", "new-accent"),
+        ];
+        let mut existing = std::collections::VecDeque::from(vec![
+            search_document("template:Z", "old-z"),
+            search_document("template:ß", "old-eszett"),
+        ]);
+        let (operations, _, _) =
+            reconcile_sorted_search_documents(target, false, || Ok(existing.pop_front())).unwrap();
+        assert_eq!(
+            operations
+                .iter()
+                .map(|operation| match operation {
+                    SearchIndexOperation::Upsert(document) => document.id.as_str(),
+                    SearchIndexOperation::Delete(id) => id.as_str(),
+                })
+                .collect::<Vec<_>>(),
+            vec!["template:Z", "template:a", "template:Á", "template:ß"],
+            "upserts and deletes remain globally ordered across ASCII and Unicode ids"
+        );
     }
 
     #[test]

@@ -82,9 +82,11 @@ use chancela_core::{
 use chancela_ledger::Ledger;
 use chancela_registry::RegistryExtract;
 use chancela_search::{
-    IndexOperation as SearchIndexOperation, SearchIndexState, SearchProjectionCheckpoint,
-    SearchProjectionControl, SearchProjectionPublishOutcome, SearchProjectorLease,
+    IndexOperation as SearchIndexOperation, SearchDocument, SearchIndexState,
+    SearchProjectionCheckpoint, SearchProjectionControl, SearchProjectionPublishOutcome,
+    SearchProjectorLease,
 };
+use fallible_iterator::FallibleIterator;
 use postgres::types::ToSql;
 use postgres::{Client, Row};
 use r2d2_postgres::PostgresConnectionManager;
@@ -107,6 +109,11 @@ use crate::{
 /// derived from "chancela-writer"; two instances contend on the same key.
 pub(crate) const WRITER_ADVISORY_LOCK_KEY: i64 = 0x0C_1A_17_CE_1A_17_CE_11u64 as i64;
 const FOLLOWER_SCHEMA_READY_TIMEOUT: Duration = Duration::from_secs(30);
+/// PostgreSQL database/default column collations may be locale-sensitive. The projector merge is
+/// keyed by Rust `String::cmp` (UTF-8 byte order), so the durable cursor must use the bytewise C
+/// collation to remain a valid sorted merge for every Unicode id.
+const SEARCH_DOCUMENTS_ORDERED_SELECT_PG: &str =
+    "SELECT id, json FROM search_documents ORDER BY id COLLATE \"C\" ASC";
 const FOLLOWER_SCHEMA_READY_POLL: Duration = Duration::from_millis(100);
 const LOCK_SCHEMA_MARKER_TABLE: &str = "LOCK TABLE meta IN ACCESS EXCLUSIVE MODE";
 const INVALIDATE_SCHEMA_VERSION_MARKER: &str = "DELETE FROM meta WHERE key = 'schema_version'";
@@ -616,14 +623,7 @@ impl PostgresBackend {
         let mut client = self.resources.pool.get()?;
         let aggregates = load_aggregate_maps(&mut client, true)?;
 
-        let mut events = Vec::new();
-        for row in client.query(
-            "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
-             prev_hash, hash, links FROM events ORDER BY seq",
-            &[],
-        )? {
-            events.push(raw_event_row(&row).into_event()?);
-        }
+        let events = load_all_events(&mut client)?;
 
         let (ledger, chain_status) = Ledger::try_from_events(events);
         let integrity = ledger.integrity_report();
@@ -645,16 +645,8 @@ impl PostgresBackend {
     pub(crate) fn load_search_corpus_snapshot(&self) -> Result<SearchCorpusSnapshot, StoreError> {
         let mut client = self.resources.pool.get()?;
         let aggregates = load_aggregate_maps(&mut client, false)?;
-        let mut events = Vec::new();
-        for row in client.query(
-            "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
-             prev_hash, hash, links FROM events ORDER BY seq",
-            &[],
-        )? {
-            events.push(raw_event_row(&row).into_event()?);
-        }
+        let events = load_all_events(&mut client)?;
         let (ledger, chain_status) = Ledger::try_from_events(events);
-        let integrity = ledger.integrity_report();
         Ok(SearchCorpusSnapshot {
             group_template_libraries: aggregates.group_template_libraries,
             group_template_library_revisions: aggregates.group_template_library_revisions,
@@ -665,7 +657,6 @@ impl PostgresBackend {
             follow_ups: aggregates.follow_ups,
             ledger,
             chain_status,
-            integrity,
         })
     }
 
@@ -841,6 +832,28 @@ impl PostgresBackend {
             ],
         )?;
         Ok(changed == 1)
+    }
+
+    pub(crate) fn reconcile_search_projection_documents(
+        &self,
+        target_documents: Vec<SearchDocument>,
+        force_rebuild: bool,
+    ) -> Result<(Vec<SearchIndexOperation>, u64, u64), StoreError> {
+        let mut client = self.read()?;
+        let mut rows = client.query_raw(
+            SEARCH_DOCUMENTS_ORDERED_SELECT_PG,
+            std::iter::empty::<&(dyn ToSql + Sync)>(),
+        )?;
+        crate::reconcile_sorted_search_documents(target_documents, force_rebuild, || {
+            rows.next()?
+                .map(|row| {
+                    crate::decode_search_document_row(
+                        row.get::<_, String>(0),
+                        row.get::<_, String>(1),
+                    )
+                })
+                .transpose()
+        })
     }
 
     pub(crate) fn publish_search_projection(
@@ -1798,91 +1811,108 @@ fn load_aggregate_maps(
 
     let mut company_groups = HashMap::new();
     if include_company_groups {
-        for row in client.query("SELECT json FROM company_groups", &[])? {
+        for_each_query_row(client, "SELECT json FROM company_groups", |row| {
             let json: String = row.get(0);
             let group: CompanyGroup = serde_json::from_str(&json)?;
             company_groups.insert(group.id, group);
-        }
+            Ok(())
+        })?;
     }
 
     let mut group_template_libraries = HashMap::new();
-    for row in client.query("SELECT json FROM group_template_libraries", &[])? {
+    for_each_query_row(client, "SELECT json FROM group_template_libraries", |row| {
         let json: String = row.get(0);
         let library: GroupTemplateLibrary = serde_json::from_str(&json)?;
         group_template_libraries.insert(library.id, library);
-    }
+        Ok(())
+    })?;
 
     let mut group_template_library_revisions = HashMap::new();
-    for row in client.query("SELECT json FROM group_template_library_revisions", &[])? {
-        let json: String = row.get(0);
-        let revision: GroupTemplateLibraryRevision = serde_json::from_str(&json)?;
-        group_template_library_revisions.insert(
-            (revision.group_id, revision.library_id, revision.revision),
-            revision,
-        );
-    }
+    for_each_query_row(
+        client,
+        "SELECT json FROM group_template_library_revisions",
+        |row| {
+            let json: String = row.get(0);
+            let revision: GroupTemplateLibraryRevision = serde_json::from_str(&json)?;
+            group_template_library_revisions.insert(
+                (revision.group_id, revision.library_id, revision.revision),
+                revision,
+            );
+            Ok(())
+        },
+    )?;
 
     let mut entities = HashMap::new();
-    for row in client.query("SELECT json FROM entities", &[])? {
+    for_each_query_row(client, "SELECT json FROM entities", |row| {
         let json: String = row.get(0);
         let entity: Entity = serde_json::from_str(&json)?;
         entities.insert(entity.id, entity);
-    }
+        Ok(())
+    })?;
 
     let mut books = HashMap::new();
-    for row in client.query("SELECT json FROM books", &[])? {
+    for_each_query_row(client, "SELECT json FROM books", |row| {
         let json: String = row.get(0);
         let book: Book = serde_json::from_str(&json)?;
         books.insert(book.id, book);
-    }
+        Ok(())
+    })?;
 
     let mut acts = HashMap::new();
-    for row in client.query("SELECT json FROM acts", &[])? {
+    for_each_query_row(client, "SELECT json FROM acts", |row| {
         let json: String = row.get(0);
         let act: Act = serde_json::from_str(&json)?;
         acts.insert(act.id, act);
-    }
+        Ok(())
+    })?;
 
     let mut registry_extracts = HashMap::new();
-    for row in client.query("SELECT entity_id, json FROM registry_extracts", &[])? {
-        let entity_id_raw: String = row.get(0);
-        let json: String = row.get(1);
-        let entity_id: EntityId = parse_uuid_newtype(&entity_id_raw)?;
-        let extract: RegistryExtract = serde_json::from_str(&json)?;
-        registry_extracts.insert(entity_id, extract);
-    }
+    for_each_query_row(
+        client,
+        "SELECT entity_id, json FROM registry_extracts",
+        |row| {
+            let entity_id_raw: String = row.get(0);
+            let json: String = row.get(1);
+            let entity_id: EntityId = parse_uuid_newtype(&entity_id_raw)?;
+            let extract: RegistryExtract = serde_json::from_str(&json)?;
+            registry_extracts.insert(entity_id, extract);
+            Ok(())
+        },
+    )?;
 
     let mut follow_ups = HashMap::new();
-    for row in client.query(
+    for_each_query_row(
+        client,
         "SELECT id, act_id, agenda_number, deliberation_index, title, detail, due_date, \
          assignee, assignee_display, status, created_at, created_by, completed_at, \
          completed_by FROM follow_ups",
-        &[],
-    )? {
-        let agenda_number_raw: Option<i64> = row.get(2);
-        let deliberation_index_raw: Option<i64> = row.get(3);
-        let due_date_raw: Option<String> = row.get(6);
-        let status_raw: String = row.get(9);
-        let created_at_raw: String = row.get(10);
-        let completed_at_raw: Option<String> = row.get(12);
-        let follow_up = StoredFollowUp {
-            id: row.get(0),
-            act_id: parse_uuid_newtype(&row.get::<_, String>(1))?,
-            agenda_number: agenda_number_raw.map(int_to_u32).transpose()?,
-            deliberation_index: deliberation_index_raw.map(int_to_u32).transpose()?,
-            title: row.get(4),
-            detail: row.get(5),
-            due_date: due_date_raw.as_deref().map(parse_date).transpose()?,
-            assignee: row.get(7),
-            assignee_display: row.get(8),
-            status: StoredFollowUpStatus::parse(&status_raw)?,
-            created_at: parse_rfc3339(&created_at_raw)?,
-            created_by: row.get(11),
-            completed_at: completed_at_raw.as_deref().map(parse_rfc3339).transpose()?,
-            completed_by: row.get(13),
-        };
-        follow_ups.insert(follow_up.id.clone(), follow_up);
-    }
+        |row| {
+            let agenda_number_raw: Option<i64> = row.get(2);
+            let deliberation_index_raw: Option<i64> = row.get(3);
+            let due_date_raw: Option<String> = row.get(6);
+            let status_raw: String = row.get(9);
+            let created_at_raw: String = row.get(10);
+            let completed_at_raw: Option<String> = row.get(12);
+            let follow_up = StoredFollowUp {
+                id: row.get(0),
+                act_id: parse_uuid_newtype(&row.get::<_, String>(1))?,
+                agenda_number: agenda_number_raw.map(int_to_u32).transpose()?,
+                deliberation_index: deliberation_index_raw.map(int_to_u32).transpose()?,
+                title: row.get(4),
+                detail: row.get(5),
+                due_date: due_date_raw.as_deref().map(parse_date).transpose()?,
+                assignee: row.get(7),
+                assignee_display: row.get(8),
+                status: StoredFollowUpStatus::parse(&status_raw)?,
+                created_at: parse_rfc3339(&created_at_raw)?,
+                created_by: row.get(11),
+                completed_at: completed_at_raw.as_deref().map(parse_rfc3339).transpose()?,
+                completed_by: row.get(13),
+            };
+            follow_ups.insert(follow_up.id.clone(), follow_up);
+            Ok(())
+        },
+    )?;
 
     Ok(crate::AggregateSnapshot {
         company_groups,
@@ -1894,6 +1924,32 @@ fn load_aggregate_maps(
         registry_extracts,
         follow_ups,
     })
+}
+
+fn for_each_query_row(
+    client: &mut Client,
+    sql: &str,
+    mut consume: impl FnMut(Row) -> Result<(), StoreError>,
+) -> Result<(), StoreError> {
+    let mut rows = client.query_raw(sql, std::iter::empty::<&(dyn ToSql + Sync)>())?;
+    while let Some(row) = rows.next()? {
+        consume(row)?;
+    }
+    Ok(())
+}
+
+fn load_all_events(client: &mut Client) -> Result<Vec<chancela_ledger::Event>, StoreError> {
+    let mut events = Vec::new();
+    for_each_query_row(
+        client,
+        "SELECT seq, id, actor, justification, timestamp, scope, kind, payload_digest, \
+         prev_hash, hash, links FROM events ORDER BY seq",
+        |row| {
+            events.push(raw_event_row(&row).into_event()?);
+            Ok(())
+        },
+    )?;
+    Ok(events)
 }
 
 fn notify_append_sql(max_seq: i64) -> String {
@@ -2310,6 +2366,14 @@ mod tests {
         assert!(
             PAPER_BOOK_OCR_DRAFTS_ALL_SELECT
                 .ends_with("import_id ASC, created_at DESC, draft_id DESC")
+        );
+        assert_eq!(
+            SEARCH_DOCUMENTS_ORDERED_SELECT_PG,
+            "SELECT id, json FROM search_documents ORDER BY id COLLATE \"C\" ASC"
+        );
+        assert!(
+            !SEARCH_DOCUMENTS_ORDERED_SELECT_PG.contains("ctid"),
+            "the byte-deterministic baseline cursor stays on grantable logical columns"
         );
     }
 
