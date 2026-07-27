@@ -99,7 +99,10 @@ describe('RouteLoading', () => {
     // Sizes must be relative. `border-width` is exempt and only that: a hairline rule is a
     // device pixel by intent, and the table head's 2px matches the real `<Table>` head.
     expect(rules.replace(/border[^;]*;/g, '')).not.toMatch(/\d+px/);
-    expect(rules).toContain('var(--accent)');
+    // The shimmer highlight is its own token (--skeleton-highlight), deliberately not
+    // --accent: --accent resolves to the DARK --gold-deep in light theme, which made the
+    // sweep read as a darkening instead of a shine there (t53).
+    expect(rules).toContain('var(--skeleton-highlight)');
   });
 
   it('leaves no rule behind for the removed bar', async () => {
