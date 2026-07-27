@@ -11,6 +11,8 @@ mod auth_settings_slice;
 mod create_user_role;
 #[path = "first_admin_bootstrap.rs"]
 mod first_admin_bootstrap;
+#[path = "permission_enforcement_parity.rs"]
+mod permission_enforcement_parity;
 #[path = "recovery_rbac.rs"]
 mod recovery_rbac;
 #[path = "signup_and_invites.rs"]
