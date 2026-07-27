@@ -59,8 +59,8 @@ test('seal designer: place a visible seal and carry it into the sign request', a
   await test.step('precise placement applies and summarizes the seal', async () => {
     await page.getByLabel('X (pontos)').fill('72');
     await page.getByLabel('Y (pontos)').fill('144');
-    await page.getByLabel('Largura (pontos)').fill('180');
-    await page.getByLabel('Altura (pontos)').fill('60');
+    await page.getByRole('spinbutton', { name: 'Largura (pontos)', exact: true }).fill('180');
+    await page.getByRole('spinbutton', { name: 'Altura (pontos)', exact: true }).fill('60');
     await page.getByRole('textbox', { name: 'Nome', exact: true }).fill('Amélia Marques');
     await page.getByRole('button', { name: 'Aplicar selo' }).click();
     await expect(page.getByText('Selo visível posicionado na página 1.')).toBeVisible();
