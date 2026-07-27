@@ -31,6 +31,75 @@ and reached 194.17% leader CPU during user creation, above the reviewed 190%
 ceiling, so it was stopped before the workload and is negative evidence rather
 than capacity proof.
 
+The next exact-source run at
+`165521bd7c28faa257bebc7158de25593cc509dd` generated and validated the
+deterministic 15,000-user, 10,000-entity, 50,000-book, and
+10,000-signature-subject fixture, and both readiness and strict topology passed.
+API seeding was then stopped during `seed_users`: at
+`2026-07-27T08:25:23.354158Z`, with 7,030 users created, the elected `cluster-2`
+container `d3ccf514c75d` reached 196.84% CPU, above the unchanged 190% ceiling.
+Its memory was 95,063,900 bytes and the run-wide container maximum was
+194,196,275 bytes, both below the 900,000,000-byte ceiling. The remaining seed,
+search, cryptographic-signing, and mixed-workload proof stages did not run; no
+report or capacity proof was produced.
+
+That negative evidence is sealed under
+`.perf-work/capacity-165521bd7c28faa257bebc7158de25593cc509dd-20260727081213`.
+Its SHA manifest covers 33 evidence files; the preserved directory is
+25,613,360 bytes including that manifest, whose SHA-256 is
+`4888cd58d06dc8bf35af1b5976606674303426ed4b27817aa13d7aabc9979c15`.
+The key evidence hashes are
+`cc91ffab1cad0e964f4656b9f7fdcef57879a39b8d1915eaebdb1f360c865b70`
+for `hard-breach.json`,
+`63227f6abca4749b1eee066139c8403e61a76ba2c25b3f7d856a676464711453`
+for `monitor-negative-evidence.json`, and
+`0fce13a1f1a5f83c4c06c0769d74a169464b34a923754c1b54af4f3c6abdc6d4`
+for `termination-cleanup-evidence.json`. Cleanup left no project
+containers, volumes, or networks in either Docker engine, no runner, monitor,
+or wrapper processes, no listener on the test port, and no disposable signing
+inputs or secrets.
+
+The 12-request setup-concurrency calibration was therefore insufficient and
+must not be ratcheted down again. `73dbd1665a8c41d6cccebd70f6553df209f8915e`
+instead fixes production account-KDF scheduling with a per-`AppState` gate that
+admits at most 32 jobs and allows one active job. The two unchanged Argon2
+operations run in `spawn_blocking`; both owned permits move into that task so
+cancelling the HTTP waiter cannot release still-running work. All three account
+creation routes move the password into `Zeroizing<String>` before their first
+await and revalidate current authorization, policy, and role state after KDF
+work.
+
+Focused local KDF gates passed 7/7, 75/75, and 8/8. The first all-feature
+attempt then exposed stale `SessionStore::put` tests plus `collapsible_if` and
+`bool_assert_comparison` warnings; `9ac24f52` fixes those checks mechanically.
+Cluster tests then passed 14/14 with default features and 15/15 with all
+features, with two live-Redis tests ignored.
+
+The feature-gated guarded-rekey success fixture was also stale: it omitted
+required step-up reauthentication and applied path-secrecy checking too broadly.
+`db624ba8` changes only that test input and assertion scope. Its focused test
+passed 1/1 and the full all-feature `data_key_ops` target passed 10/10.
+
+Hosted CI for exact prior source
+`165521bd7c28faa257bebc7158de25593cc509dd` passed 20/21 CI jobs. Only coverage
+`Measure` failed: `secretstore::tests::subject_dek_roundtrip` searched random
+Base64 ciphertext for the short plaintext fragment `Am`, which occurred by
+chance. That target recorded 1,328 passed, 1 failed, and 2 ignored; GHCR publish
+was skipped. `c0161eab` replaces the probabilistic check with decoded-ciphertext
+length equal to plaintext length plus the 16-byte authentication tag and
+absence of the complete plaintext byte sequence. Round-trip and AAD-binding
+coverage remain.
+
+At exact current source `c0161eabc6bf270755f498b0896d0f2d755e2838`, the
+exact regression passed 1/1 plus 100/100 repetitions, and the full
+`secretstore` filter passed 21/21. The all-target, all-feature
+`cargo clippy -p chancela-api --all-targets --all-features --locked -- -D warnings`
+command remains green; rustfmt and diff checks passed. Argon2 parameters, the
+committed profile, volumes, workload, and SLO policy are unchanged. This is
+source and regression evidence only: no new hosted-CI, GHCR-publication, or
+capacity result is claimed, and a complete fresh exact-source run is still
+required for capacity proof.
+
 This setup pacing does not claim support for 16 concurrent product writers and
 does not relax the proof. The exact dataset volumes, 64-client workload,
 1,800-second duration, 1,080-second peak plateau, topology, resource sampler,

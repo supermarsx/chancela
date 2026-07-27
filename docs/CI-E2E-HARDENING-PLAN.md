@@ -1,12 +1,12 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `7446539`,
+implementation snapshot `c0161ea`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
-performance harness with bounded topology-start readiness, fail-closed local
-TSA isolation and generated-PFX runtime-loader signing coverage, bounded CI
-dependency, PostgreSQL
+performance harness with bounded topology-start readiness and production
+account-KDF scheduling, fail-closed local TSA isolation and generated-PFX
+runtime-loader signing coverage, bounded CI dependency, PostgreSQL
 advisory-lock, composed-server startup-handoff, mock-TSA and broader
 test-fixture ownership determinism, bounded runtime temporary-artifact
 ownership, Compose-binary performance-memory envelope accounting, inherited
@@ -1008,11 +1008,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `7446539`
+## Focused Gate Snapshot Through `c0161ea`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `7446539`.
+metadata-refreshed on 2026-07-27 for current implementation head `c0161ea`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1021,7 +1021,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `7446539` cover the accessible
+- Current landed-slice markers through `c0161ea` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1264,6 +1264,71 @@ above still apply.
   evidence only: no passing capacity result exists until a fresh exact-source
   run completes all seed, readiness, cryptographic, workload, resource, and
   final-topology proof requirements under the unchanged policy.
+
+  The exact-source `165521bd7c28faa257bebc7158de25593cc509dd`
+  attempt generated and validated the deterministic
+  15,000/10,000/50,000/10,000 fixture, and readiness plus strict topology
+  passed. At `2026-07-27T08:25:23.354158Z`, during `seed_users` with 7,030 users
+  created, elected `cluster-2` container `d3ccf514c75d` reached 196.84% CPU
+  against the unchanged 190% ceiling. It used 95,063,900 bytes; the run-wide
+  container maximum was 194,196,275 bytes, below 900,000,000 bytes. The hard
+  stop preceded the rest of the seed and every proof phase, so no harness
+  report or capacity proof exists.
+
+  The sealed evidence directory is
+  `.perf-work/capacity-165521bd7c28faa257bebc7158de25593cc509dd-20260727081213/`.
+  Its manifest covers 33 evidence files; the directory totals 25,613,360 bytes
+  including that manifest. The manifest SHA-256 is
+  `4888cd58d06dc8bf35af1b5976606674303426ed4b27817aa13d7aabc9979c15`;
+  the hashes for `hard-breach.json`, `monitor-negative-evidence.json`, and
+  `termination-cleanup-evidence.json` are
+  `cc91ffab1cad0e964f4656b9f7fdcef57879a39b8d1915eaebdb1f360c865b70`,
+  `63227f6abca4749b1eee066139c8403e61a76ba2c25b3f7d856a676464711453`,
+  and
+  `0fce13a1f1a5f83c4c06c0769d74a169464b34a923754c1b54af4f3c6abdc6d4`.
+  Cleanup left zero project containers, volumes, or networks in both Docker
+  engines, zero runner/monitor/wrapper processes or test-port listeners, and no
+  disposable signing input or secret. This is sealed negative evidence, not
+  capacity, hosted-CI, GHCR-publication, or production proof.
+
+  Seed concurrency 12 was insufficient and must not be ratcheted down again.
+  `73dbd1665a8c41d6cccebd70f6553df209f8915e` instead fixes production
+  account-KDF scheduling with a per-`AppState` gate: fixed admission is 32 jobs,
+  one job is active, and both owned permits move into `spawn_blocking` so
+  cancellation cannot release active non-cancellable work. `POST /v1/users`,
+  public signup, and invitation acceptance place the password in
+  `Zeroizing<String>` before their first await, then revalidate current
+  authorization, signup policy, and role state after queued KDF work. Both
+  Argon2 operations and parameters remain unchanged; the capacity profile and
+  SLO are unchanged. Focused local KDF gates passed 7/7, 75/75, and 8/8. The
+  first all-feature attempt exposed two stale `SessionStore::put` call sites
+  plus `collapsible_if` and `bool_assert_comparison` warnings; `9ac24f52`
+  fixes those checks mechanically. Cluster tests then passed 14/14 with default
+  features and 15/15 with all features, with two live-Redis tests ignored.
+
+  The feature-gated guarded-rekey success fixture still omitted required
+  step-up reauthentication and applied path-secrecy checking too broadly.
+  `db624ba8` changes only its test request and assertion scope. Its focused test
+  passed 1/1 and the full all-feature `data_key_ops` target passed 10/10.
+
+  Hosted CI for exact prior source
+  `165521bd7c28faa257bebc7158de25593cc509dd` passed 20/21 CI jobs. Only coverage
+  `Measure` failed: `secretstore::tests::subject_dek_roundtrip` rejected random
+  Base64 ciphertext because it happened to contain the short plaintext
+  fragment `Am`. The target recorded 1,328 passed, 1 failed, and 2 ignored;
+  GHCR publish was skipped.
+
+  `c0161eab` makes the check deterministic: decoded ciphertext must have
+  plaintext length plus the 16-byte authentication tag and must not contain the
+  complete plaintext byte sequence. Existing round-trip and AAD-binding tests
+  remain. At exact current source
+  `c0161eabc6bf270755f498b0896d0f2d755e2838`, the exact regression passed 1/1
+  plus 100/100 repetitions and the full `secretstore` filter passed 21/21.
+  Exact
+  `cargo clippy -p chancela-api --all-targets --all-features --locked -- -D warnings`
+  remains green; rustfmt and diff checks passed. This is bounded test/regression
+  evidence only: no new hosted-CI, GHCR-publication, or capacity result is
+  claimed.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2810,7 +2875,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `7446539`
+- Current checkpoint metadata/static checks through `c0161ea`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

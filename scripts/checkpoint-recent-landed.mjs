@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `7446539` (2026-07-27)",
+    "The current substantive checkpoint is `c0161ea` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `7446539`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `c0161ea`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `7446539`",
+    "Focused Gate Snapshot Through `c0161ea`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `7446539`",
+    "Current checkpoint metadata/static checks through `c0161ea`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `74465397919456ac430a71e75ccca046f6e73f63`",
+    "implementation snapshot `c0161eabc6bf270755f498b0896d0f2d755e2838`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `7446539`",
+    "Current checkpoint metadata/static checks through `c0161ea`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17464,6 +17464,228 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
+    "The exact-source `165521bd7c28faa257bebc7158de25593cc509dd` attempt generated and validated the deterministic 15,000/10,000/50,000/10,000 fixture, and both readiness and strict topology passed",
+    "spec coverage second exact-source capacity attempt marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "At `2026-07-27T08:25:23.354158Z`, during `seed_users` with 7,030 users created, elected `cluster-2` container `d3ccf514c75d` reached 196.84% CPU against the unchanged 190% ceiling. It used 95,063,900 bytes; the run-wide container maximum was 194,196,275 bytes, below 900,000,000 bytes",
+    "CI checkpoints second seed breach exact resource marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Its manifest covers 33 evidence files; the directory totals 25,613,360 bytes including that manifest. The manifest SHA-256 is `4888cd58d06dc8bf35af1b5976606674303426ed4b27817aa13d7aabc9979c15`",
+    "CI/E2E second seed breach sealed manifest marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "cc91ffab1cad0e964f4656b9f7fdcef57879a39b8d1915eaebdb1f360c865b70",
+    "CI/E2E second seed hard-breach hash marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "63227f6abca4749b1eee066139c8403e61a76ba2c25b3f7d856a676464711453",
+    "CI/E2E second seed negative-summary hash marker",
+  );
+  assertFileContains(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "0fce13a1f1a5f83c4c06c0769d74a169464b34a923754c1b54af4f3c6abdc6d4",
+    "CI/E2E second seed cleanup hash marker",
+  );
+  assertFileContainsNormalized(
+    "docs/performance-capacity.md",
+    "Cleanup left no project containers, volumes, or networks in either Docker engine, no runner, monitor, or wrapper processes, no listener on the test port, and no disposable signing inputs or secrets",
+    "performance second seed exact cleanup marker",
+  );
+  assertFileContainsNormalized(
+    "docs/performance-capacity.md",
+    "The remaining seed, search, cryptographic-signing, and mixed-workload proof stages did not run; no report or capacity proof was produced",
+    "performance second seed no-report boundary marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "const USER_CREATE_KDF_ADMISSION_CAPACITY: usize = 32;",
+    "account KDF fixed admission marker",
+  );
+  assertFileContains(
+    "docs/CI-CHECKPOINTS.md",
+    "73dbd1665a8c41d6cccebd70f6553df209f8915e",
+    "account KDF concern commit history marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/users.rs",
+    "serial: Arc<tokio::sync::Mutex<()>>",
+    "account KDF one-active-job marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/users.rs",
+    "let guard = self.serial.clone().lock_owned().await; tokio::task::spawn_blocking(move || { let _admission = admission; let _guard = guard; operation() })",
+    "account KDF cancellation-owned blocking permits marker",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/users.rs",
+    "let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password));",
+    1,
+    "managed user-create password zeroizing marker",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/signup.rs",
+    "let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password));",
+    2,
+    "signup and invitation password zeroizing markers",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/users.rs",
+    "Json(mut req): Json<CreateUser>, ) -> Result<(StatusCode, Json<UserView>), ApiError> { let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password)); let session_token = parts",
+    "managed user-create zeroizing-before-await marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/signup.rs",
+    "Json(mut req): Json<SignupRequest>, ) -> Result<(StatusCode, Json<SignupAccepted>), ApiError> { let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password)); refuse_on_an_uninitialised_instance(&state).await?;",
+    "self-signup zeroizing-before-await marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/signup.rs",
+    "Json(mut req): Json<AcceptInvite>, ) -> Result<(StatusCode, Json<UserView>), ApiError> { let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password)); refuse_on_an_uninitialised_instance(&state).await?;",
+    "invitation acceptance zeroizing-before-await marker",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/signup.rs",
+    "let account = prepare_account(",
+    2,
+    "signup and invitation shared KDF path markers",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/users.rs",
+    "authorize_user_creation(",
+    3,
+    "managed user-create pre/post-KDF authorization markers",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/signup.rs",
+    "resolve_current_self_signup_role(",
+    2,
+    "self-signup post-KDF policy revalidation marker",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/signup.rs",
+    "resolve_invited_role(",
+    3,
+    "invitation pre/post-KDF role revalidation markers",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Both Argon2 operations and their parameters, the committed capacity profile, and its SLO remain unchanged. Focused local KDF gates passed 7/7, 75/75, and 8/8",
+    "spec coverage KDF security and local-gate marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "The first all-feature attempt exposed two stale `SessionStore::put` call sites plus `collapsible_if` and `bool_assert_comparison` warnings; `9ac24f52` fixes those checks mechanically",
+    "CI checkpoints all-feature repair history marker",
+  );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/cluster_shared_state.rs",
+    "SessionPut::identity(uid, issued_at_unix)",
+    2,
+    "cluster session-store current API test markers",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/cluster_shared_state.rs",
+    "if let Some(event) = InvalidationEvent::parse(&payload) && tx.blocking_send(event).is_err() { return; }",
+    "cluster invalidation collapsible-if repair marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    'assert!(receipt["actor_user_id"].is_string());',
+    "data-key bool-assert repair marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Cluster tests then passed 14/14 with default features and 15/15 with all features, with two live-Redis tests ignored",
+    "CI/E2E all-feature cluster-test marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    '"reauth": { "password": TEST_PASSWORD }',
+    "guarded-rekey step-up reauthentication fixture marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    "assert_secret_free(&status_body, &[initial_key, replacement_key]);",
+    "guarded-rekey response secrecy scope marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/tests/data_key_ops.rs",
+    'assert_secret_free(&status_body["key_rotation"], &["chancela.db"]);',
+    "guarded-rekey path secrecy scope marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "The feature-gated guarded-rekey success fixture still omitted required step-up reauthentication and applied path-secrecy checking too broadly. `db624ba8` changes only the test request and assertion scope",
+    "CI checkpoints guarded-rekey fixture-only repair marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`db624ba8` changes only the test request and assertion scope. Its focused test passed 1/1 and the full all-feature `data_key_ops` target passed 10/10",
+    "spec coverage guarded-rekey historical focused and full-target marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "const AEAD_TAG_BYTES: usize = 16;",
+    "subject-DEK authentication-tag length marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/secretstore.rs",
+    "name_ciphertext.len(), display_name.len() + AEAD_TAG_BYTES",
+    "subject-DEK deterministic ciphertext-length marker",
+  );
+  assertFileContainsNormalized(
+    "crates/chancela-api/src/secretstore.rs",
+    ".windows(display_name.len()) .all(|window| window != display_name.as_bytes())",
+    "subject-DEK complete-plaintext absence marker",
+  );
+  assertFileDoesNotContain(
+    "crates/chancela-api/src/secretstore.rs",
+    'ciphertext_b64.contains("Am")',
+    "subject-DEK probabilistic Base64 substring assertion removal",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "fn subject_dek_roundtrip()",
+    "subject-DEK round-trip regression retention marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/secretstore.rs",
+    "fn subject_dek_aad_binding()",
+    "subject-DEK AAD-binding regression retention marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Hosted CI for exact prior source `165521bd7c28faa257bebc7158de25593cc509dd` passed 20/21 CI jobs. Only coverage `Measure` failed: `secretstore::tests::subject_dek_roundtrip` rejected random Base64 ciphertext because it happened to contain the short plaintext fragment `Am`. The target recorded 1,328 passed, 1 failed, and 2 ignored; GHCR publish was skipped",
+    "CI checkpoints exact prior hosted coverage failure marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "`c0161eab` makes that assertion deterministic by checking decoded-ciphertext length against plaintext length plus the 16-byte authentication tag and requiring the complete plaintext byte sequence to be absent. Existing round-trip and AAD-binding coverage remains",
+    "spec coverage deterministic subject-DEK assertion marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "At exact current source `c0161eabc6bf270755f498b0896d0f2d755e2838`, the exact regression passed 1/1 plus 100/100 repetitions and the full `secretstore` filter passed 21/21",
+    "CI/E2E exact subject-DEK repeated and filter validation marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Exact `cargo clippy -p chancela-api --all-targets --all-features --locked -- -D warnings` remains green; rustfmt and diff checks passed",
+    "CI/E2E current all-feature Clippy and formatting marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "This is bounded test/regression evidence only: no new hosted-CI, GHCR-publication, or capacity result is claimed",
+    "CI/E2E current hosted-publication-capacity no-claim marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
     "either direct single-platform or indexed `imagetools inspect` JSON",
     "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
   );
@@ -17479,7 +17701,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `7446539` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `c0161ea` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17609,7 +17831,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `7446539` (2026-07-27)",
+    "The current substantive checkpoint is `c0161ea` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

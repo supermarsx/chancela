@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `7446539` (2026-07-27). It records the
+The current substantive checkpoint is `c0161ea` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -221,6 +221,66 @@ following bounded concern groups in this guard:
   passed 66/66, with Python byte-compilation and diff checks. This calibration
   remains unproven until a fresh exact-source run completes every proof phase
   under the unchanged policy.
+- The exact-source `165521bd7c28faa257bebc7158de25593cc509dd`
+  attempt generated and validated the deterministic
+  15,000/10,000/50,000/10,000 fixture, and readiness plus strict topology
+  passed. At `2026-07-27T08:25:23.354158Z`, during `seed_users` with 7,030 users
+  created, elected `cluster-2` container `d3ccf514c75d` reached 196.84% CPU
+  against the unchanged 190% ceiling. It used 95,063,900 bytes; the run-wide
+  container maximum was 194,196,275 bytes, below 900,000,000 bytes. Enforcement
+  stopped the run before the remaining seed and every proof phase, so no
+  harness report or capacity proof exists.
+- The sealed directory
+  `.perf-work/capacity-165521bd7c28faa257bebc7158de25593cc509dd-20260727081213/`
+  contains 33 manifest-covered evidence files and totals 25,613,360 bytes
+  including the manifest. Its manifest SHA-256 is
+  `4888cd58d06dc8bf35af1b5976606674303426ed4b27817aa13d7aabc9979c15`;
+  `hard-breach.json`,
+  `monitor-negative-evidence.json`, and
+  `termination-cleanup-evidence.json` are respectively bound by
+  `cc91ffab1cad0e964f4656b9f7fdcef57879a39b8d1915eaebdb1f360c865b70`,
+  `63227f6abca4749b1eee066139c8403e61a76ba2c25b3f7d856a676464711453`,
+  and
+  `0fce13a1f1a5f83c4c06c0769d74a169464b34a923754c1b54af4f3c6abdc6d4`.
+  Cleanup left zero project containers, volumes, or networks in either Docker
+  engine, zero runner/monitor/wrapper processes or test-port listeners, and no
+  disposable signing input or secret. This is sealed negative evidence, not
+  capacity, hosted-CI, GHCR-publication, or production proof.
+- Seed concurrency 12 was therefore insufficient and must not be ratcheted down
+  again. `73dbd1665a8c41d6cccebd70f6553df209f8915e` instead fixes the production
+  account-KDF scheduler: a per-`AppState` gate admits a fixed 32 jobs and runs
+  one job at a time, with both owned permits moved into `spawn_blocking` so
+  cancellation cannot release active work. `POST /v1/users`, public signup, and
+  invitation acceptance place the password in `Zeroizing<String>` before their
+  first await and revalidate authorization, signup policy, and role state after
+  queued KDF work. Both Argon2 operations and their parameters remain
+  unchanged; the capacity profile and SLO are also unchanged. Focused local KDF
+  gates passed 7/7, 75/75, and 8/8. The first all-feature attempt exposed two
+  stale `SessionStore::put` call sites plus `collapsible_if` and
+  `bool_assert_comparison` warnings; `9ac24f52` fixes those checks mechanically.
+  Cluster tests then passed 14/14 with default features and 15/15 with all
+  features, with two live-Redis tests ignored.
+- The feature-gated guarded-rekey success fixture still omitted required
+  step-up reauthentication and applied path-secrecy checking too broadly.
+  `db624ba8` changes only the test request and assertion scope. Its focused test
+  passed 1/1 and the full all-feature `data_key_ops` target passed 10/10.
+- Hosted CI for exact prior source
+  `165521bd7c28faa257bebc7158de25593cc509dd` passed 20/21 CI jobs. Only coverage
+  `Measure` failed: `secretstore::tests::subject_dek_roundtrip` rejected random
+  Base64 ciphertext because it happened to contain the short plaintext
+  fragment `Am`. The target recorded 1,328 passed, 1 failed, and 2 ignored;
+  GHCR publish was skipped.
+- `c0161eab` replaces that probabilistic assertion with decoded-ciphertext
+  length equal to plaintext length plus the 16-byte authentication tag and an
+  absence check for the complete plaintext byte sequence. Existing round-trip
+  and AAD-binding coverage remains. At exact current source
+  `c0161eabc6bf270755f498b0896d0f2d755e2838`, the exact regression passed 1/1
+  plus 100/100 repetitions and the full `secretstore` filter passed 21/21.
+  Exact
+  `cargo clippy -p chancela-api --all-targets --all-features --locked -- -D warnings`
+  remains green; rustfmt and diff checks passed. This is bounded test/regression
+  evidence only: no new hosted-CI, GHCR-publication, or capacity result is
+  claimed.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;
