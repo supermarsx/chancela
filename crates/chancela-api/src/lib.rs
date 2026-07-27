@@ -113,6 +113,7 @@ mod cae;
 mod chronology;
 mod collection_page;
 pub mod confirmation;
+pub mod confirmation;
 mod connector_jobs;
 mod cors;
 pub use connector_jobs::{ConnectorTargetMap, ConnectorTargetRecord};
@@ -137,6 +138,7 @@ mod cluster_watchdog;
 // resilience suite (test-only; live multi-node scenarios `#[ignore]` requiring DATABASE_URL).
 #[cfg(test)]
 mod cluster_chaos_tests;
+mod cmd_test_signature;
 #[allow(dead_code)]
 mod credential_resolve;
 mod dashboard;
@@ -869,6 +871,16 @@ pub struct AppState {
     /// Backed by the durable `pending_cmd_sessions` table (rehydrated on boot), so a session survives
     /// a restart.
     pub pending_signatures: Arc<RwLock<HashMap<String, PendingCmdSession>>>,
+    /// In-flight **CMD production test signatures** (t51-e3), keyed by session id. Deliberately a
+    /// separate map from [`Self::pending_signatures`]: a test signature belongs to no act and no
+    /// instrument, and letting it share the act-signature bookkeeping is precisely the confusion
+    /// this feature must not create. Like that map it holds no PIN and no OTP.
+    ///
+    /// **Not durable, on purpose.** An abandoned `CCMovelSign` produces nothing — the signature
+    /// only comes into existence when `ValidateOtp` succeeds — so losing a pending test session
+    /// across a restart costs one re-run and can never strand a real signature. The *confirmed*
+    /// outcome is durable: it is retained on disk and appended to the ledger.
+    pub pending_cmd_test_signatures: cmd_test_signature::PendingCmdTestSignatures,
     /// External signer invitation tracking records, keyed by invite id. This is an envelope
     /// workflow only: records retain a token hash and redacted hint, never the plaintext token, and
     /// do not represent a completed legal signature.
@@ -3041,6 +3053,21 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/signature/cc/batch-sign",
             post(batch_signing::sign_cc_batch),
+        )
+        // The CMD production test signature (t51-e3). Two-phase, like every CMD flow, because
+        // there is no other way: `CCMovelSign` dispatches the OTP and `ValidateOtp` produces the
+        // signature. Every completed pair is a real qualified signature — see the module docs.
+        .route(
+            "/v1/signature/cmd/test-signature/initiate",
+            post(cmd_test_signature::initiate_cmd_test_signature),
+        )
+        .route(
+            "/v1/signature/cmd/test-signature/confirm",
+            post(cmd_test_signature::confirm_cmd_test_signature),
+        )
+        .route(
+            "/v1/signature/cmd/test-signature/{test_id}/document",
+            get(cmd_test_signature::get_cmd_test_signature_document),
         )
         .route(
             "/v1/acts/{id}/signature/dss/attach",

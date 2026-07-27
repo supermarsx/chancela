@@ -183,3 +183,7 @@ path = "tests/termo_pkcs12_signing.rs"
 [[test]]
 name = "search_source_mutation_guards"
 path = "tests/search_source_mutation_guards.rs"
+
+[[test]]
+name = "cmd_test_signature"
+path = "tests/cmd_test_signature.rs"

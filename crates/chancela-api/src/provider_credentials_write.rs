@@ -63,7 +63,8 @@ use crate::error::ApiError;
 use crate::secretstore::SecretStoreError;
 use crate::secretstore_persist::{
     CredentialEntryMetadataView, DecryptedCredentialEntry, FIELD_ACCESS_TOKEN,
-    FIELD_APPLICATION_ID, FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_SECRET,
+    FIELD_APPLICATION_ID, FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD,
+    FIELD_HTTP_BASIC_USERNAME, FIELD_SECRET,
 };
 use crate::{AppState, CredentialMode, EntryMetadata, EntrySelectors, ProviderCredentialError};
 
@@ -704,10 +705,15 @@ pub async fn probe_entry(
 
     let started = Instant::now();
     let probe_provider = provider_id.clone();
-    let outcome =
-        tokio::task::spawn_blocking(move || probe_stored_entry(mode, &probe_provider, entry))
-            .await
-            .map_err(|_| ApiError::Internal("provider credential probe task failed".to_owned()))?;
+    // The CMD preflight must judge the entry against the environment the deployment is actually
+    // configured for (prod demands the AMA certificate and BasicAuth that preprod does not), so the
+    // settings slice is read here and moved into the blocking probe rather than re-read inside it.
+    let cmd_settings = { state.settings.read().await.signing.cmd.clone() };
+    let outcome = tokio::task::spawn_blocking(move || {
+        probe_stored_entry(mode, &probe_provider, &cmd_settings, entry)
+    })
+    .await
+    .map_err(|_| ApiError::Internal("provider credential probe task failed".to_owned()))?;
     let tested_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default();
@@ -821,6 +827,7 @@ fn skipped(name: &'static str, detail: impl Into<String>) -> ProviderProbeCheck 
 fn probe_stored_entry(
     mode: CredentialMode,
     provider_id: &str,
+    cmd_settings: &crate::settings::SigningCmdSettings,
     entry: DecryptedCredentialEntry,
 ) -> ProbeOutcome {
     if !entry.enabled {
@@ -836,7 +843,7 @@ fn probe_stored_entry(
         );
     }
     match mode {
-        CredentialMode::Cmd => probe_cmd(entry),
+        CredentialMode::Cmd => probe_cmd(cmd_settings, entry),
         CredentialMode::CscQtsp => probe_csc(provider_id, entry),
         CredentialMode::Scap => probe_scap(entry),
         CredentialMode::LocalPkcs12 => probe_pkcs12(entry),
@@ -853,33 +860,191 @@ fn probe_stored_entry(
     }
 }
 
-fn probe_cmd(entry: DecryptedCredentialEntry) -> ProbeOutcome {
-    let configured = entry
-        .fields
-        .get(FIELD_APPLICATION_ID)
-        .is_some_and(|value| !value.trim().is_empty());
-    let checks = vec![
+/// How long the endpoint-reachability check waits for the TLS handshake before giving up.
+const CMD_REACHABILITY_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Production preflight for one stored Chave Móvel Digital entry (t51-e3 §4.2).
+///
+/// # Why this is a preflight and not a health check
+///
+/// CMD's protocol is `GetCertificate → CCMovelSign → ValidateOtp`. There is no ping: the first
+/// call that would prove the provider answers is the one that dispatches an SMS OTP to a real
+/// citizen and starts a real qualified signature. So `live_provider_operation` stays **skipped**
+/// with its original wording, and `provider_contacted` stays `false` — no SCMD protocol operation
+/// is invoked here, ever.
+///
+/// What this *does* answer is "is production CMD wired up?", and it answers it against **the same
+/// material a signature would use**: the entry is assembled through
+/// [`crate::signature::cmd_config_from_entry`], the identical function the signing path calls, so a
+/// preflight cannot pass over a config that would then fail to sign. A partial entry surfaces the
+/// missing **admin-panel field names** (`application_id`, `http_basic_username`,
+/// `http_basic_password`, `ama_cert_pem`) that the operator can go and fill, rather than
+/// environment-variable names they never set.
+///
+/// The one network touch is an optional TLS handshake against the fixed AMA **production**
+/// endpoint constant. A handshake is not a protocol operation — it starts nothing, signs nothing
+/// and needs no citizen — so it is reported as its own `endpoint_reachable` check and does not
+/// flip `provider_contacted`. It runs only when the deployment is configured for production,
+/// because "can this server reach AMA production?" is the question the preflight exists to answer.
+fn probe_cmd(
+    cmd: &crate::settings::SigningCmdSettings,
+    entry: DecryptedCredentialEntry,
+) -> ProbeOutcome {
+    let is_prod = matches!(cmd.env, crate::settings::CmdEnvSetting::Prod);
+    let mut checks = vec![
         check(
             "entry_enabled",
             true,
             "The stored credential entry is enabled.",
         ),
         check(
-            "application_id_configured",
-            configured,
-            if configured {
-                "The CMD application identifier is configured."
-            } else {
-                "The CMD application identifier is missing."
-            },
-        ),
-        skipped(
-            "live_provider_operation",
-            "CMD has no safe non-signing health operation in this integration. A live attempt \
-             would initiate the interactive signature flow, so it was not performed.",
+            "configured_environment",
+            true,
+            format!(
+                "The deployment resolves Chave Móvel Digital to the {} environment.",
+                if is_prod { "prod" } else { "preprod" }
+            ),
         ),
     ];
-    if configured {
+
+    // Assemble through the SIGNING path's own resolver, so what the preflight reports is what a
+    // signature would actually use. Its error already names the admin-panel fields that are missing.
+    let cfg = match crate::signature::cmd_config_from_entry(cmd, &entry) {
+        Ok(cfg) => cfg,
+        Err(err) => {
+            checks.push(check(
+                "stored_credential_fields",
+                false,
+                credential_assembly_detail(err),
+            ));
+            checks.push(cmd_live_operation_skipped());
+            return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
+        }
+    };
+    checks.push(check(
+        "stored_credential_fields",
+        true,
+        "Every credential field this environment requires is present in the stored entry.",
+    ));
+
+    // Field encryption. `cmd_config_from_entry` already refuses a config whose encryptor cannot be
+    // built, so reaching here means the AMA certificate parsed; report which mode that implies.
+    checks.push(match (&cfg.ama_cert_pem, is_prod) {
+        (Some(_), _) => check(
+            "ama_certificate_parseable",
+            true,
+            "The stored AMA field-encryption certificate parsed and the field encryptor was built.",
+        ),
+        (None, false) => check(
+            "ama_certificate_parseable",
+            true,
+            "No AMA field-encryption certificate is stored; preprod accepts cleartext fields.",
+        ),
+        // Unreachable: prod without a certificate fails assembly above. Kept as a fail-closed arm
+        // rather than an `unreachable!()` so a future change in the assembler degrades honestly.
+        (None, true) => check(
+            "ama_certificate_parseable",
+            false,
+            "Production requires the AMA field-encryption certificate (ama_cert_pem).",
+        ),
+    });
+
+    // HTTP BasicAuth. Optional in preprod, mandatory for the real production transport.
+    let has_basic_auth = cfg.basic_auth.is_some();
+    checks.push(check(
+        "http_basic_configured",
+        has_basic_auth || !is_prod,
+        match (has_basic_auth, is_prod) {
+            (true, _) => "HTTP BasicAuth credentials are configured.".to_owned(),
+            (false, false) => {
+                "No HTTP BasicAuth credentials are stored; preprod may accept unauthenticated calls."
+                    .to_owned()
+            }
+            (false, true) => format!(
+                "Production requires HTTP BasicAuth: fill {FIELD_HTTP_BASIC_USERNAME} and \
+                 {FIELD_HTTP_BASIC_PASSWORD} on this credential entry."
+            ),
+        },
+    ));
+
+    // The transport-level gate the real HTTP client applies before it will talk to AMA at all.
+    match cfg.validate_http_transport() {
+        Ok(()) => checks.push(check(
+            "http_transport_ready",
+            true,
+            "The resolved configuration satisfies the real AMA HTTP transport's requirements.",
+        )),
+        Err(_) => {
+            checks.push(check(
+                "http_transport_ready",
+                false,
+                "The resolved configuration cannot drive the real AMA HTTP transport.",
+            ));
+            checks.push(cmd_live_operation_skipped());
+            return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
+        }
+    }
+
+    // The endpoint is a compiled-in constant per environment, never operator-supplied. Assert it is
+    // the one this environment names, over HTTPS, and acceptable to the outbound-network policy.
+    let endpoint = cfg.endpoint();
+    let expected_endpoint = if is_prod {
+        chancela_cmd::PROD_ENDPOINT
+    } else {
+        chancela_cmd::PREPROD_ENDPOINT
+    };
+    let vetted = match crate::trust::validate_outbound_http_url(endpoint) {
+        Ok(vetted) if endpoint == expected_endpoint => vetted,
+        _ => {
+            checks.push(check(
+                "endpoint_matches_environment",
+                false,
+                "The resolved SCMD endpoint is not the constant this environment names, or it \
+                 failed the outbound-network safety policy.",
+            ));
+            checks.push(cmd_live_operation_skipped());
+            return ProbeOutcome::failed(false, false, checks, "unsafe_endpoint");
+        }
+    };
+    if let Err(detail) = require_https_probe_endpoint(&vetted, "CMD") {
+        checks.push(check("endpoint_matches_environment", false, detail));
+        checks.push(cmd_live_operation_skipped());
+        return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
+    }
+    checks.push(check(
+        "endpoint_matches_environment",
+        true,
+        format!("The SCMD endpoint is the pinned {expected_endpoint} constant, over HTTPS."),
+    ));
+
+    // Reachability. Production only, and explicitly NOT a protocol operation.
+    let reachable = if is_prod {
+        match cmd_endpoint_reachable(&vetted) {
+            Ok(()) => {
+                checks.push(check(
+                    "endpoint_reachable",
+                    true,
+                    "A TLS connection to the AMA production endpoint succeeded. No SCMD operation \
+                     was invoked: nothing was signed and no OTP was dispatched.",
+                ));
+                true
+            }
+            Err(detail) => {
+                checks.push(check("endpoint_reachable", false, detail));
+                false
+            }
+        }
+    } else {
+        checks.push(skipped(
+            "endpoint_reachable",
+            "Reachability is probed only for the AMA production endpoint; this deployment is \
+             configured for preprod.",
+        ));
+        true
+    };
+
+    checks.push(cmd_live_operation_skipped());
+    if reachable {
         ProbeOutcome {
             status: "interactive_required",
             provider_contacted: false,
@@ -888,7 +1053,44 @@ fn probe_cmd(entry: DecryptedCredentialEntry) -> ProbeOutcome {
             error: Some("interactive_required"),
         }
     } else {
-        ProbeOutcome::failed(false, false, checks, "configuration_incomplete")
+        ProbeOutcome::failed(false, false, checks, "endpoint_unreachable")
+    }
+}
+
+/// Surface the assembler's own message, which already names the missing **admin-panel credential
+/// fields** an operator can go and fill. [`ApiError`] has no `Display`, and the messages that reach
+/// here are the sanitized `stored_credentials_*` strings, which carry no secret value — only field
+/// names. Any other variant degrades to a generic line rather than guessing at its content.
+fn credential_assembly_detail(err: ApiError) -> String {
+    match err {
+        ApiError::Unprocessable(message) | ApiError::Conflict(message) => message,
+        _ => "The stored credential entry could not be assembled into a usable CMD configuration."
+            .to_owned(),
+    }
+}
+
+/// The skipped-check text that states, verbatim, why no live CMD operation is ever performed by a
+/// probe. Kept as one constant so every early return carries the identical explanation.
+fn cmd_live_operation_skipped() -> ProviderProbeCheck {
+    skipped(
+        "live_provider_operation",
+        "CMD has no safe non-signing health operation in this integration. A live attempt \
+         would initiate the interactive signature flow, so it was not performed.",
+    )
+}
+
+/// Open and immediately drop a bounded TLS connection to the AMA endpoint. Sends no SOAP body and
+/// invokes no SCMD action; a `405`/`404`/any HTTP status all prove reachability equally well, so
+/// only a transport-level failure is reported as unreachable.
+fn cmd_endpoint_reachable(vetted: &crate::trust::VettedHttpUrl) -> Result<(), String> {
+    let client = vetted
+        .client(CMD_REACHABILITY_TIMEOUT)
+        .map_err(|_| "The bounded outbound client could not be created.".to_owned())?;
+    match client.head(vetted.as_str()).send() {
+        Ok(_) => Ok(()),
+        Err(_) => Err("The AMA production endpoint could not be reached from this server. No \
+                       SCMD operation was invoked."
+            .to_owned()),
     }
 }
 
@@ -943,6 +1145,7 @@ fn require_https_probe_endpoint(
     } else {
         Err(match provider {
             "CSC" => "The CSC base URL must use HTTPS before stored credentials can be sent.",
+            "CMD" => "The SCMD endpoint must use HTTPS before stored credentials can be sent.",
             _ => "The SCAP base URL must use HTTPS before stored credentials can be sent.",
         })
     }
@@ -2103,6 +2306,95 @@ mod tests {
         let owner = seed_token(&state, OWNER_ROLE_ID).await;
         let (status, b) = send_with(state, body_req("POST", uri, body), Some(&owner)).await;
         assert_eq!(status, StatusCode::CREATED, "{b}");
+    }
+
+    /// The CMD preflight judges an entry against the environment the deployment is configured for,
+    /// and reports what a signature would actually need — using the **admin-panel field names** an
+    /// operator can go and fill, never the environment variables they never set.
+    ///
+    /// This stays entirely offline: a production entry missing its AMA certificate fails at
+    /// assembly, long before the endpoint-reachability check that only a complete production
+    /// config reaches.
+    #[tokio::test]
+    async fn cmd_preflight_names_the_admin_panel_field_a_production_entry_is_missing() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        state.settings.write().await.signing.cmd.env = crate::settings::CmdEnvSetting::Prod;
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let (status, created) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                "/v1/signature/provider-credentials/cmd/_/entries",
+                json!({
+                    "label": "CMD produção",
+                    "set": {
+                        "application_id": "CHANCELA-PROD-0001",
+                        "http_basic_username": "ama-user",
+                        "http_basic_password": "ama-password",
+                    },
+                }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                &format!("/v1/signature/provider-credentials/cmd/_/entries/{entry_id}/probe"),
+                json!({}),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "failed", "{body}");
+        assert_eq!(body["error"], "configuration_incomplete", "{body}");
+        // No SCMD operation, ever — the honest negatives are unchanged by the preflight.
+        assert_eq!(body["provider_contacted"], false, "{body}");
+        assert_eq!(body["document_signed"], false, "{body}");
+        assert_eq!(body["qualified_status_determined"], false, "{body}");
+
+        let checks = body["checks"].as_array().expect("checks");
+        let named = |name: &str| -> &Value {
+            checks
+                .iter()
+                .find(|check| check["name"] == name)
+                .unwrap_or_else(|| panic!("check {name} is reported: {body}"))
+        };
+        assert_eq!(named("configured_environment")["status"], "passed", "{body}");
+        assert!(
+            named("configured_environment")["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("prod"),
+            "the preflight says which environment it judged against: {body}"
+        );
+        let missing = named("stored_credential_fields");
+        assert_eq!(missing["status"], "failed", "{body}");
+        let detail = missing["detail"].as_str().unwrap_or_default();
+        assert!(
+            detail.contains(crate::secretstore_persist::FIELD_AMA_CERT_PEM),
+            "the preflight names the admin-panel field that is missing: {body}"
+        );
+        assert!(
+            !detail.contains("CHANCELA_CMD_"),
+            "an operator who filled a form must not be pointed at environment variables: {body}"
+        );
+        // The reason CMD has no health check is unchanged and still reported on every path.
+        let live = named("live_provider_operation");
+        assert_eq!(live["status"], "skipped", "{body}");
+        assert!(
+            live["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("no safe non-signing health operation"),
+            "{body}"
+        );
     }
 
     #[tokio::test]

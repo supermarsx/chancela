@@ -8255,7 +8255,7 @@ pub(crate) async fn run_cmd_confirm(
 /// Build the trusted-list policy: the injected factory (tests), else a real `TslTrustPolicy` over
 /// the selected configured TSL source (production). The qualified path MUST have a policy (ruling
 /// 7), so no selected source is a client-actionable 422.
-fn build_trust_policy(
+pub(crate) fn build_trust_policy(
     factory: Option<Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync>>,
     tsl_source: Option<RuntimeTslSource>,
 ) -> Result<Box<dyn TrustPolicy + Send>, ApiError> {
@@ -8390,7 +8390,7 @@ fn cmd_config_from_stored(
 }
 
 /// Assemble a CMD config from one stored **multi-entry** entry (the failover read path).
-fn cmd_config_from_entry(
+pub(crate) fn cmd_config_from_entry(
     cmd: &crate::settings::SigningCmdSettings,
     entry: &DecryptedCredentialEntry,
 ) -> Result<CmdConfig, ApiError> {
@@ -9064,7 +9064,7 @@ async fn consume_pending(state: &AppState, session_id: &str) {
 /// Map a [`chancela_signing::SigningError`] to an [`ApiError`] with a client-safe status, never
 /// echoing a secret (the error type carries none). Trust/SCMD failures are 502; an OTP rejection is
 /// 422; a missing issuer / untrusted service is a clean, honest error.
-fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
+pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
     match e {
         S::UntrustedService { status } => ApiError::Unprocessable(format!(
@@ -9087,7 +9087,7 @@ fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
 }
 
 /// A CMD configuration failure (bad env/ApplicationId/AMA cert) is a client-actionable 422.
-fn cmd_config_err(e: chancela_cmd::CmdError) -> ApiError {
+pub(crate) fn cmd_config_err(e: chancela_cmd::CmdError) -> ApiError {
     ApiError::Unprocessable(format!("configuração CMD inválida: {e}"))
 }
 
@@ -9111,13 +9111,13 @@ fn subject_dn(der: &[u8]) -> Option<String> {
 
 /// A loose SCMD phone-format check (`+` country prefix, at least 9 digits). Not a full validator —
 /// the SCMD service is authoritative — just enough to reject an obviously-wrong value early.
-fn looks_like_scmd_phone(phone: &str) -> bool {
+pub(crate) fn looks_like_scmd_phone(phone: &str) -> bool {
     let digits = phone.chars().filter(|c| c.is_ascii_digit()).count();
     phone.trim_start().starts_with('+') && digits >= 9
 }
 
 /// Mask the middle digits of a phone for display (keep the country/leading + last three).
-fn mask_phone(phone: &str) -> String {
+pub(crate) fn mask_phone(phone: &str) -> String {
     let chars: Vec<char> = phone.chars().collect();
     if chars.len() <= 8 {
         return "•".repeat(chars.len());
@@ -9136,7 +9136,7 @@ fn mask_phone(phone: &str) -> String {
 }
 
 /// A PDF `/M` date string (`D:YYYYMMDDHHMMSSZ`) for the signature dictionary.
-fn pdf_time(t: OffsetDateTime) -> String {
+pub(crate) fn pdf_time(t: OffsetDateTime) -> String {
     format!(
         "D:{:04}{:02}{:02}{:02}{:02}{:02}Z",
         t.year(),

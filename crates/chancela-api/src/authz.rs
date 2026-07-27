@@ -772,6 +772,18 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/signature/cc/bridge/test", RouteClass::Gated), // POST signing.configure+signing.perform@Global (bodyless ephemeral challenge)
     ("/v1/signature/cc/batch-sign", RouteClass::Gated), // POST signing.perform@Book(each requested act) / co-located permission checks
     (
+        "/v1/signature/cmd/test-signature/initiate",
+        RouteClass::Gated,
+    ), // POST signing.configure+signing.perform@Global + T3 typed-phrase confirmation (produces a REAL qualified signature)
+    (
+        "/v1/signature/cmd/test-signature/confirm",
+        RouteClass::Gated,
+    ), // POST signing.configure+signing.perform@Global + T3 typed-phrase confirmation (produces a REAL qualified signature)
+    (
+        "/v1/signature/cmd/test-signature/{test_id}/document",
+        RouteClass::Gated,
+    ), // GET signing.configure@Global (the retained test signature, read-only)
+    (
         "/v1/acts/{id}/signature/local/pkcs12/sign",
         RouteClass::Gated,
     ), // POST signing.perform@Book (local software certificate)

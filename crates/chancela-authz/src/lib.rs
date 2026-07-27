@@ -29,6 +29,7 @@
 mod assignment;
 mod delegation;
 mod permission;
+mod permission_description;
 mod role;
 mod scope;
 
@@ -39,6 +40,7 @@ use time::OffsetDateTime;
 pub use assignment::RoleAssignment;
 pub use delegation::{Delegation, UserId};
 pub use permission::Permission;
+pub use permission_description::PermissionEnforcement;
 pub use role::{
     API_CLIENT_ROLE_ID, AUDITOR_ROLE_ID, COMPANY_OWNER_ROLE_ID, CORPORATE_SECRETARY_ROLE_ID,
     GUEST_ROLE_ID, LEGAL_COUNSEL_ROLE_ID, OWNER_ROLE_ID, PLATFORM_ADMIN_ROLE_ID, READER_ROLE_ID,
