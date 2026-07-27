@@ -36,6 +36,12 @@
      that clears 3:1 against the field fill, the card surface, AND the leather (t35). */
   --field-border: #7d6a38;
   --rule: #cbb079;
+  /* Dedicated `.skeleton` shimmer highlight — deliberately NOT `--accent`. `--accent`
+     resolves to `--gold-deep` in light theme, a DARK ochre, which made the sweep read as
+     a faint darkening instead of a shine (t53). Baked-in alpha (not a `color-mix()` at
+     the use site) so light/dark can each carry their own contrast without duplicating the
+     mix logic in `.skeleton`'s gradient. */
+  --skeleton-highlight: rgba(255, 255, 255, 0.5);
 
   --font-display: 'Playfair Display', Georgia, 'Times New Roman', serif;
   --font-body: 'Noto Serif', 'Iowan Old Style', Georgia, 'Times New Roman', serif;
@@ -91,6 +97,10 @@
     /* Firmer interactive-edge hairline for dark (≥3:1 on field fill, surface, leather). */
     --field-border: #5f8070;
     --rule: #4a3d1f;
+    /* Preserves the shimmer exactly as it rendered before the token split: dark theme's
+       `--accent` was already `--gold-bright`, which already read as a proper shine (t53) —
+       this is the identical colour, just named independently of `--accent` now. */
+    --skeleton-highlight: color-mix(in srgb, var(--gold-bright) 16%, transparent);
   }
 }
 
@@ -9472,7 +9482,7 @@ a.btn--primary {
   background-image: linear-gradient(
     100deg,
     transparent 30%,
-    color-mix(in srgb, var(--accent) 16%, transparent) 50%,
+    var(--skeleton-highlight) 50%,
     transparent 70%
   );
   background-size: 220% 100%;
