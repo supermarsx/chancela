@@ -6,17 +6,17 @@
 import { useState } from 'react';
 import { useBooksPage } from '../../api/hooks';
 import { bookKindLabels, bookStateLabels } from '../../api/labels';
-import {
-  BOOK_COLUMNS,
-  BOOK_KINDS,
-  type BookColumn,
-  type BookKind,
-  type BookState,
-} from '../../api/types';
+import { BOOK_KINDS, type BookKind, type BookState } from '../../api/types';
 import { useT, type MessageKey } from '../../i18n';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
-import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
+import {
+  BOOKS_TABLE,
+  dataColumns,
+  renderedColumns,
+  tableColumnsSpec,
+} from '../tableColumns/tableColumnRegistry';
+import { useTableColumns } from '../tableColumns/useTableColumns';
 import {
   Card,
   EmptyState,
@@ -55,12 +55,10 @@ const KIND_FILTER_OPTIONS: { value: BookKindFilter; labelKey?: MessageKey; label
   ...BOOK_KINDS.map((value) => ({ value, label: bookKindLabels[value] })),
 ];
 
-/** The hideable book columns (Actions is structural), and the header label each answers to. */
-const BOOK_HIDEABLE_COLUMNS = BOOK_COLUMNS.filter(
-  (column): column is Exclude<BookColumn, 'Actions'> => column !== 'Actions',
-);
+/** The toggleable book columns, derived from the registry's roles, and the label each answers to. */
+const BOOK_HIDEABLE_COLUMNS = dataColumns(BOOKS_TABLE);
 
-const BOOK_COLUMN_LABEL_KEYS: Record<Exclude<BookColumn, 'Actions'>, MessageKey> = {
+const BOOK_COLUMN_LABEL_KEYS: Record<(typeof BOOK_HIDEABLE_COLUMNS)[number], MessageKey> = {
   Kind: 'books.th.type',
   Purpose: 'books.th.purpose',
   State: 'books.th.state',
@@ -68,13 +66,8 @@ const BOOK_COLUMN_LABEL_KEYS: Record<Exclude<BookColumn, 'Actions'>, MessageKey>
   LastAct: 'books.th.lastAct',
 };
 
-/** The books table's column spec: all shown by default (the product default), Actions always. */
-const BOOKS_COLUMN_SPEC: TableColumnsSpec<BookColumn> = {
-  table: 'books',
-  columns: BOOK_COLUMNS,
-  hideable: BOOK_HIDEABLE_COLUMNS,
-  fallback: BOOK_COLUMNS,
-};
+/** All five data columns show by default; `Actions` is a control, so it shows unconditionally. */
+const BOOKS_COLUMN_SPEC = tableColumnsSpec(BOOKS_TABLE);
 
 const ADVANCED_FILTER_OPTIONS: { value: AdvancedFilter; labelKey: MessageKey }[] = [
   { value: 'all', labelKey: 'books.filters.activity.all' },
@@ -273,7 +266,11 @@ export function BooksPage() {
                 <p>{t('books.filters.empty.body')}</p>
               </EmptyState>
             ) : (
-              <BooksTable books={visibleBooks} showEntity visibleColumns={columns.visible} />
+              <BooksTable
+                books={visibleBooks}
+                showEntity
+                visibleColumns={renderedColumns(BOOKS_TABLE, columns.visible)}
+              />
             )}
             {!books.isPlaceholderData ? (
               <CollectionPager

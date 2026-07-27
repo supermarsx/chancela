@@ -38,7 +38,12 @@ export const DEFAULT_TEMPLATE_COLUMNS: readonly TemplateColumn[] = TEMPLATE_COLU
 
 const STORAGE_KEY = 'chancela.minutas.columns';
 
-const isTemplateColumn = (value: unknown): value is TemplateColumn =>
+/**
+ * Whether a value is one of the seven optional catalog columns. `Name` and `Actions` are declared
+ * in `tableColumnRegistry` (structural / control) and rendered by the table itself, so the catalog
+ * page uses this to narrow the resolved column set down to what `<TemplatesTable>` accepts.
+ */
+export const isTemplateColumn = (value: unknown): value is TemplateColumn =>
   typeof value === 'string' && (TEMPLATE_COLUMNS as readonly string[]).includes(value);
 
 /**

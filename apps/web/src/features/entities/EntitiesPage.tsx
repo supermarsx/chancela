@@ -19,7 +19,6 @@ import {
   BOOK_KINDS,
   DEFAULT_SETTINGS,
   ENTITY_KINDS,
-  REGISTERED_ENTITY_COLUMNS,
   type BookKind,
   type BookState,
   type BookView,
@@ -40,7 +39,13 @@ import {
 } from '../../i18n';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
-import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
+import {
+  ENTITIES_TABLE,
+  dataColumns,
+  renderedColumns,
+  tableColumnsSpec,
+} from '../tableColumns/tableColumnRegistry';
+import { useTableColumns } from '../tableColumns/useTableColumns';
 import { NO_DATE, formatDate, formatTimestamp } from '../../format';
 import {
   Badge,
@@ -673,10 +678,12 @@ function tableFloor(columns: readonly RegisteredEntityColumn[]): string {
   return `calc(${terms.join(' + ')})`;
 }
 
-/** The hideable entity columns — every column except the structural, always-shown `Actions`. */
-const ENTITY_HIDEABLE_COLUMNS = REGISTERED_ENTITY_COLUMNS.filter(
-  (column): column is Exclude<RegisteredEntityColumn, 'Actions'> => column !== 'Actions',
-);
+/**
+ * The toggleable entity columns, derived from the registry's roles. `Actions` is absent because it
+ * is a `control` — it renders the row's open button, not a fact about the entity — so it is never
+ * offered and never stored.
+ */
+const ENTITY_HIDEABLE_COLUMNS = dataColumns(ENTITIES_TABLE);
 
 function EntityColumnCell({
   column,
@@ -895,19 +902,22 @@ export function EntitiesPage() {
   // The per-user column set (t37). The fallback chain is: personal override → the instance org
   // default (`settings.ui.registered_entity_columns`, set by an admin in Configurações) → the
   // product default. `useTableColumns` resolves the override; the fallback here supplies the rest.
-  const entityColumnSpec = useMemo<TableColumnsSpec<RegisteredEntityColumn>>(
-    () => ({
-      table: 'entities',
-      columns: REGISTERED_ENTITY_COLUMNS,
-      hideable: ENTITY_HIDEABLE_COLUMNS,
-      fallback:
-        settings.data?.ui?.registered_entity_columns ??
-        DEFAULT_SETTINGS.ui.registered_entity_columns,
-    }),
+  const entityColumnSpec = useMemo(
+    () =>
+      tableColumnsSpec(ENTITIES_TABLE, {
+        fallback:
+          settings.data?.ui?.registered_entity_columns ??
+          DEFAULT_SETTINGS.ui.registered_entity_columns,
+      }),
     [settings.data],
   );
   const entityColumns = useTableColumns(entityColumnSpec);
-  const visibleColumns = entityColumns.visible;
+  // The control column is woven back in from the declaration, not from the stored preference: no
+  // document, stale or hostile, can take the row's actions away.
+  const visibleColumns = useMemo(
+    () => renderedColumns(ENTITIES_TABLE, entityColumns.visible),
+    [entityColumns.visible],
+  );
 
   const hasFilters =
     search.trim() !== '' ||

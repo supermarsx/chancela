@@ -9,10 +9,19 @@
  * for entities that is the instance org default (then the product default); for books and templates
  * it is the product default.
  *
- * The persisted array always carries the structural columns (or, for a table whose structural
- * columns live outside its column set, an `anchor` id), so an ordinary toggle never sends an empty
- * list — the server folds `[]` to "no override", which would silently discard a deliberate
- * "hide every optional column" choice.
+ * The persisted array always carries the structural columns (or, for a table that declares none, an
+ * `anchor` id), so an ordinary toggle never sends an empty list — the server folds `[]` to "no
+ * override", which would silently discard a deliberate "hide every optional column" choice.
+ *
+ * ## What this hook does NOT see
+ *
+ * A table's `control` columns — its row-actions cell, a bulk-selection checkbox — never reach here.
+ * `tableColumnRegistry` builds the spec from a table's declaration and hands over only the
+ * *storable* columns (`structural` + `data`), so a control id is outside `C` and outside `columns`:
+ * unwritable, untoggleable, and not something a stored document can name. The page weaves its
+ * control columns back into the render order from the declaration, not from the preference. That is
+ * a stronger guarantee than force-keeping them here would be, and it is why this hook has no notion
+ * of a control column at all. Build a real table's spec with `tableColumnsSpec`, never by hand.
  */
 import { useCallback, useMemo } from 'react';
 import { useUpdateTableColumns, useUserPreferences } from '../../api/hooks';
@@ -21,7 +30,7 @@ import type { TableColumnPreferences } from '../../api/types';
 export interface TableColumnsSpec<C extends string> {
   /** Which table this configures — the key under `table_columns`. */
   table: keyof TableColumnPreferences;
-  /** Every column in canonical render order (both hideable and structural). */
+  /** The table's storable columns in canonical order: `structural` + `data`, never `control`. */
   columns: readonly C[];
   /** The subset the picker offers as checkboxes; the rest are structural and always shown. */
   hideable: readonly C[];
@@ -29,10 +38,9 @@ export interface TableColumnsSpec<C extends string> {
   fallback: readonly C[];
   /**
    * A storage-only id kept at the head of the persisted array so it is never empty. Only needed
-   * for a table whose structural columns live OUTSIDE `columns` (templates render `Name`/`Actions`
-   * themselves, so a "hide every optional column" choice would otherwise persist as `[]` and fold
-   * to "no override"). Must be a valid column id (ASCII-alphanumeric) and must not be a member of
-   * `columns` — it is stripped on read.
+   * for a table that declares NO structural column: with nothing force-kept, a "hide every
+   * optional column" choice would persist as `[]` and fold to "no override". Must be a valid
+   * column id (ASCII-alphanumeric) and must not be a member of `columns` — it is stripped on read.
    */
   anchor?: string;
 }
@@ -52,7 +60,7 @@ export interface TableColumnsResult<C extends string> {
   pending: boolean;
 }
 
-/** The columns that are structural — present in the render order but not offered as toggles. */
+/** The structural columns — stored and always visible, but never offered as toggles. */
 function structuralColumns<C extends string>(columns: readonly C[], hideable: readonly C[]): C[] {
   return columns.filter((column) => !hideable.includes(column));
 }

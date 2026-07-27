@@ -7,6 +7,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { renderWithProviders } from '../../test/utils';
 import { ColumnPicker } from './ColumnPicker';
+import {
+  BOOKS_TABLE,
+  ENTITIES_TABLE,
+  PREFERENCE_ANCHOR,
+  TEMPLATES_TABLE,
+  allColumns,
+  assertTableColumnRegistry,
+  controlColumns,
+  dataColumns,
+  renderedColumns,
+  storableColumns,
+  structuralColumns,
+  tableColumnsSpec,
+  type ConfigurableTable,
+  type StorableColumnOf,
+} from './tableColumnRegistry';
 import { useTableColumns, type TableColumnsSpec } from './useTableColumns';
 
 type Col = 'Kind' | 'Purpose' | 'State' | 'Opening' | 'LastAct' | 'Actions';
@@ -132,5 +148,152 @@ describe('ColumnPicker', () => {
     expect(state.checked).toBe(false);
     fireEvent.click(state);
     expect(onToggle).toHaveBeenCalledWith('State', true);
+  });
+});
+
+/**
+ * A table shaped like the one bulk selection lands on (t56): a control column FIRST, an
+ * identity-bearing structural column, two data columns, and a trailing control. It exists to prove
+ * the guarantee on a leading control, which none of the three shipped tables can exercise.
+ *
+ * It borrows the `books` preference key so the assertions run against a real key.
+ */
+const SELECTION_TABLE = {
+  table: 'books',
+  mode: 'configurable',
+  columns: [
+    { id: 'Select', role: 'control' },
+    { id: 'Username', role: 'structural' },
+    { id: 'State', role: 'data' },
+    { id: 'Access', role: 'data' },
+    { id: 'Actions', role: 'control' },
+  ],
+  productDefault: ['Username', 'State', 'Access'],
+} as const satisfies ConfigurableTable;
+
+type SelectionColumn = StorableColumnOf<typeof SELECTION_TABLE>;
+
+/** Renders what the page would render: the resolved set with the controls woven back in. */
+function SelectionProbe() {
+  const columns = useTableColumns(tableColumnsSpec(SELECTION_TABLE));
+  return (
+    <div>
+      <span data-testid="rendered">
+        {renderedColumns(SELECTION_TABLE, columns.visible).join(',')}
+      </span>
+      <ColumnPicker
+        columns={dataColumns(SELECTION_TABLE)}
+        label="Colunas"
+        isVisible={columns.isVisible}
+        onToggle={columns.toggle}
+        columnLabel={(column) => column}
+      />
+    </div>
+  );
+}
+
+describe('tableColumnRegistry', () => {
+  it('holds a consistent model for every declared table', () => {
+    expect(() => assertTableColumnRegistry()).not.toThrow();
+  });
+
+  it('derives hideable from the role instead of restating it per page', () => {
+    // `Actions` is a control on all three, so no picker offers it; templates additionally keeps
+    // `Name` out of the picker because it is structural.
+    expect(dataColumns(ENTITIES_TABLE)).not.toContain('Actions');
+    expect(dataColumns(ENTITIES_TABLE)).toHaveLength(13);
+    expect(dataColumns(BOOKS_TABLE)).toEqual(['Kind', 'Purpose', 'State', 'Opening', 'LastAct']);
+    expect(dataColumns(TEMPLATES_TABLE)).not.toContain('Name');
+    expect(dataColumns(TEMPLATES_TABLE)).not.toContain('Actions');
+  });
+
+  it('leaves control columns out of the storable set on every table', () => {
+    for (const entry of [ENTITIES_TABLE, BOOKS_TABLE, TEMPLATES_TABLE]) {
+      for (const control of controlColumns(entry)) {
+        expect(storableColumns(entry)).not.toContain(control);
+        expect(entry.productDefault).not.toContain(control);
+        // Still rendered, though — a control is always shown, it is just never stored.
+        expect(allColumns(entry)).toContain(control);
+      }
+    }
+  });
+
+  it('keeps control ids out of the storable column type', () => {
+    // @ts-expect-error — `Select` is a control, so it is not a member of the storable union at
+    // all. This is the compile-time half of the guarantee: the persistence hook is instantiated
+    // over this type, so a control id cannot even be named in a payload.
+    const rejected: SelectionColumn = 'Select';
+    expect(rejected).toBe('Select');
+  });
+
+  it('anchors only the tables that declare no structural column', () => {
+    // Entities and books are all data + a control, so hiding everything would persist as `[]`.
+    expect(structuralColumns(ENTITIES_TABLE)).toEqual([]);
+    expect(tableColumnsSpec(ENTITIES_TABLE).anchor).toBe(PREFERENCE_ANCHOR);
+    expect(tableColumnsSpec(BOOKS_TABLE).anchor).toBe(PREFERENCE_ANCHOR);
+    // Templates declares `Name` structural, which force-keeps the array non-empty by itself —
+    // this is the `anchor` hack retiring.
+    expect(structuralColumns(TEMPLATES_TABLE)).toEqual(['Name']);
+    expect(tableColumnsSpec(TEMPLATES_TABLE).anchor).toBeUndefined();
+  });
+
+  it('narrows an org default to the storable set, dropping the inert control id', () => {
+    // `settings.ui.registered_entity_columns` still lists `Actions`; saying so expresses nothing.
+    const spec = tableColumnsSpec(ENTITIES_TABLE, {
+      fallback: ['LastActivity', 'Actions', 'Name', 'Bogus'],
+    });
+    expect(spec.fallback).toEqual(['Name', 'LastActivity']);
+  });
+});
+
+describe('control columns', () => {
+  it('renders a control even when the stored preference names only one data column', async () => {
+    vi.stubGlobal('fetch', preferencesFetch({ table_columns: { books: ['State'] } }).fn);
+    renderWithProviders(<SelectionProbe />);
+    // `Select` leads and `Actions` trails regardless of what the document says, and `Username`
+    // is force-kept because it is structural.
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered').textContent).toBe('Select,Username,State,Actions'),
+    );
+  });
+
+  it('ignores a stored document that tries to speak about controls', async () => {
+    // A stale or hostile payload naming the controls changes nothing: they are not in the
+    // table's storable set, so they are dropped on read exactly like `Bogus`.
+    vi.stubGlobal(
+      'fetch',
+      preferencesFetch({ table_columns: { books: ['Select', 'Actions', 'Bogus', 'Access'] } }).fn,
+    );
+    renderWithProviders(<SelectionProbe />);
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered').textContent).toBe('Select,Username,Access,Actions'),
+    );
+  });
+
+  it('never writes a control id back, even when every data column is hidden', async () => {
+    const stub = preferencesFetch();
+    vi.stubGlobal('fetch', stub.fn);
+    renderWithProviders(<SelectionProbe />);
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered').textContent).toBe(
+        'Select,Username,State,Access,Actions',
+      ),
+    );
+    fireEvent.click(screen.getByLabelText('State'));
+    fireEvent.click(await screen.findByLabelText('Access'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('rendered').textContent).toBe('Select,Username,Actions'),
+    );
+    const puts = stub.calls.filter((call) => call.method === 'PUT');
+    for (const put of puts) {
+      expect(put.body).not.toContain('Select');
+      expect(put.body).not.toContain('Actions');
+    }
+    // The structural column keeps the array non-empty, so "hide everything" survives a reload.
+    expect(JSON.parse(puts.at(-1)?.body ?? '{}')).toEqual({
+      table_columns: { books: ['Username'] },
+    });
   });
 });

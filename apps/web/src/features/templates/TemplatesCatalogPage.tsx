@@ -1,7 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { useDeleteTemplate, useExportTemplate, useTemplates } from '../../api/hooks';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
-import { useTableColumns, type TableColumnsSpec } from '../tableColumns/useTableColumns';
+import { useTableColumns } from '../tableColumns/useTableColumns';
 import {
   entityFamilyLabels,
   lifecycleStageLabels,
@@ -39,9 +39,11 @@ import {
 } from '../../ui';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton } from '../session/permissions';
+import { TEMPLATES_TABLE, tableColumnsSpec } from '../tableColumns/tableColumnRegistry';
 import {
   DEFAULT_TEMPLATE_COLUMNS,
   TEMPLATE_COLUMNS,
+  isTemplateColumn,
   loadTemplateColumns,
   type TemplateColumn,
 } from './templateColumns';
@@ -63,19 +65,17 @@ const TEMPLATE_COLUMN_LABEL_KEYS: Record<TemplateColumn, MessageKey> = {
 };
 
 /**
- * The templates table's column spec (t37). Migrated off the device-local `localStorage` to the
- * per-user server store, seeded once from the legacy value (see the mount effect below). `Name` and
- * `Actions` are structural (rendered by the table itself, never in the toggle set), so the store
- * needs the `Name` anchor: a "hide every optional column" choice must persist as a non-empty array,
- * which the server would otherwise fold to "no override".
+ * The templates table's column spec (t37, generalized in t54). Migrated off the device-local
+ * `localStorage` to the per-user server store, seeded once from the legacy value (see the mount
+ * effect below).
+ *
+ * The table renders `Name` and `Actions` itself, so neither belongs in the set handed to
+ * `<TemplatesTable>` — but they are still declared, as `structural` and `control` respectively.
+ * `Name` being structural is what retires this table's old `anchor` hack: it is force-kept, so a
+ * "hide every optional column" choice already persists as a non-empty array rather than as `[]`,
+ * which the server would fold back to "no override".
  */
-const TEMPLATES_COLUMN_SPEC: TableColumnsSpec<TemplateColumn> = {
-  table: 'templates',
-  columns: TEMPLATE_COLUMNS,
-  hideable: TEMPLATE_COLUMNS,
-  fallback: DEFAULT_TEMPLATE_COLUMNS,
-  anchor: 'Name',
-};
+const TEMPLATES_COLUMN_SPEC = tableColumnsSpec(TEMPLATES_TABLE);
 
 /** Order-insensitive set comparison of two column selections. */
 function sameColumns(a: readonly TemplateColumn[], b: readonly TemplateColumn[]): boolean {
@@ -192,6 +192,8 @@ export function TemplatesCatalogPage() {
     const legacy = loadTemplateColumns();
     if (!sameColumns(legacy, DEFAULT_TEMPLATE_COLUMNS)) columns.set(legacy);
   }, [columns]);
+  // `<TemplatesTable>` renders `Name` and `Actions` itself, so it takes only the optional seven.
+  const visibleColumns = useMemo(() => columns.visible.filter(isTemplateColumn), [columns.visible]);
 
   const allTemplates = useMemo(
     () => [...(templates.data ?? [])].sort(sortTemplates),
@@ -348,7 +350,7 @@ export function TemplatesCatalogPage() {
       >
         {templates.isLoading ? (
           <SkeletonRegion>
-            <SkeletonTable cols={columns.visible.length + 2} />
+            <SkeletonTable cols={visibleColumns.length + 2} />
           </SkeletonRegion>
         ) : templates.error ? (
           <ErrorNote error={templates.error} />
@@ -504,7 +506,7 @@ export function TemplatesCatalogPage() {
             ) : (
               <TemplatesTable
                 templates={filtered}
-                visibleColumns={columns.visible}
+                visibleColumns={visibleColumns}
                 page={currentPage}
                 pageSize={TEMPLATES_PAGE_SIZE}
                 onPageChange={setPage}
