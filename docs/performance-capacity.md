@@ -135,13 +135,14 @@ The topology is intentionally explicit:
   `CHANCELA_PERF_RATE_LIMIT_BURST`.
 
 With three default application replicas, the required services request an
-aggregate **11.5 CPUs** and **5,576,000,000 bytes** of memory. Compose `g`/`m`
-resource suffixes are decimal units for this envelope calculation. Use a Docker
-host with at least **12 CPUs and 6 GiB RAM** for the default topology; larger
-hosts are appropriate when runner overhead or resource sampling headroom also
-matters. The workflow's `cpu-12-plus` label is an operator assertion of this
-minimum; the topology preflight still measures and enforces the live host
-envelope.
+aggregate **11.5 CPUs** and **5,972,688,896 bytes (5.5625 GiB)** of memory.
+Compose `g`/`m` RAM suffixes use binary multipliers here (`1g` is 1 GiB and
+`320m` is 320 MiB). Use a Docker host with at least **12 CPUs and 6 GiB RAM**
+for the default topology; that leaves 0.5 CPU and 448 MiB of aggregate-envelope
+headroom, while larger hosts remain appropriate for runner overhead and
+resource-sampling headroom. The workflow's `cpu-12-plus` label is an operator
+assertion of this minimum; the topology preflight still measures and enforces
+the live host envelope.
 
 The wrapper defaults those test-edge limits to 1,000 requests/s and burst 2,000
 so exact-volume seeding is not principally a test of the default 50 requests/s

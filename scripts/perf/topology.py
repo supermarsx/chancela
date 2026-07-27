@@ -78,19 +78,21 @@ def parse_memory_bytes(value: Any) -> int:
         return 0
     number = float(match.group(1))
     unit = (match.group(2) or "b").lower()
+    # Compose's UnitBytes parser delegates to Docker's RAMInBytes semantics:
+    # bare suffixes and their optional B/iB spellings are all binary RAM units.
     factors = {
         "b": 1,
-        "k": 1000,
-        "kb": 1000,
-        "m": 1000**2,
-        "mb": 1000**2,
-        "g": 1000**3,
-        "gb": 1000**3,
-        "t": 1000**4,
-        "tb": 1000**4,
+        "k": 1024,
+        "kb": 1024,
         "kib": 1024,
+        "m": 1024**2,
+        "mb": 1024**2,
         "mib": 1024**2,
+        "g": 1024**3,
+        "gb": 1024**3,
         "gib": 1024**3,
+        "t": 1024**4,
+        "tb": 1024**4,
         "tib": 1024**4,
     }
     return int(number * factors[unit])

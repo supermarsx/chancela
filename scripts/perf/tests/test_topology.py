@@ -14,6 +14,16 @@ sys.path.insert(0, str(PERF_ROOT))
 import topology  # noqa: E402
 
 
+DEFAULT_SERVICE_MEMORY_BYTES = {
+    "chancela-cluster": 1024**3,
+    "search-projector-postgres": 1024**3,
+    "postgres": 1024**3,
+    "redis": 320 * 1024**2,
+    "perf-gateway": 256 * 1024**2,
+}
+DEFAULT_THREE_REPLICA_MEMORY_BYTES = 5_972_688_896
+
+
 class TopologyValidationTests(unittest.TestCase):
     def test_dedicated_database_acknowledgement_is_performance_only(self):
         repository = PERF_ROOT.parents[1]
@@ -78,7 +88,7 @@ class TopologyValidationTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertEqual(
             limits["chancela-cluster"]["memory_bytes"],
-            1_000_000_000,
+            1024**3,
         )
 
         invalid = self.config()
@@ -90,6 +100,25 @@ class TopologyValidationTests(unittest.TestCase):
             "chancela-cluster has no positive memory limit",
             failures,
         )
+
+    def test_memory_suffix_variants_follow_compose_binary_semantics(self):
+        cases = {
+            "1k": 1024,
+            "1KB": 1024,
+            "1KiB": 1024,
+            "1m": 1024**2,
+            "1MB": 1024**2,
+            "1MiB": 1024**2,
+            "1g": 1024**3,
+            "1GB": 1024**3,
+            "1GiB": 1024**3,
+            "1t": 1024**4,
+            "1TB": 1024**4,
+            "1TiB": 1024**4,
+        }
+        for value, expected in cases.items():
+            with self.subTest(value=value):
+                self.assertEqual(topology.parse_memory_bytes(value), expected)
 
     def test_inactive_forbidden_services_may_remain_declared(self):
         for forbidden in topology.FORBIDDEN_CLUSTER_SERVICES:
@@ -172,16 +201,43 @@ class TopologyValidationTests(unittest.TestCase):
         self.assertEqual(failures, [])
         self.assertTrue(envelope["within_envelope"])
         self.assertEqual(envelope["requested_cpus"], 11.5)
-        self.assertEqual(envelope["requested_memory_bytes"], 5_576_000_000)
+        self.assertEqual(
+            envelope["requested_memory_bytes"],
+            DEFAULT_THREE_REPLICA_MEMORY_BYTES,
+        )
 
         failures, envelope = topology.validate_host_envelope(
             limits,
             3,
-            {"docker_host": {"cpus": 11, "memory_bytes": 5_500_000_000}},
+            {
+                "docker_host": {
+                    "cpus": 12,
+                    "memory_bytes": DEFAULT_THREE_REPLICA_MEMORY_BYTES - 1,
+                }
+            },
+        )
+        self.assertFalse(envelope["within_envelope"])
+        self.assertEqual(
+            failures,
+            [
+                "aggregate requested memory limit 5972688896 exceeds "
+                "Docker host envelope 5972688895"
+            ],
+        )
+
+        failures, envelope = topology.validate_host_envelope(
+            limits,
+            3,
+            {
+                "docker_host": {
+                    "cpus": 11,
+                    "memory_bytes": DEFAULT_THREE_REPLICA_MEMORY_BYTES,
+                }
+            },
         )
         self.assertFalse(envelope["within_envelope"])
         self.assertTrue(any("CPU" in failure for failure in failures))
-        self.assertTrue(any("memory" in failure for failure in failures))
+        self.assertFalse(any("memory" in failure for failure in failures))
 
         failures, envelope = topology.validate_host_envelope(limits, 3, {})
         self.assertFalse(envelope["available"])
@@ -251,6 +307,35 @@ class TopologyValidationTests(unittest.TestCase):
         failures, limits = topology.validate_rendered_config(config)
         self.assertEqual(failures, [])
         self.assertEqual(set(limits), set(topology.REQUIRED_SERVICES))
+        for service, expected in DEFAULT_SERVICE_MEMORY_BYTES.items():
+            with self.subTest(service=service):
+                self.assertEqual(limits[service]["memory_bytes"], expected)
+
+        host = {
+            "docker_host": {
+                "cpus": 12,
+                "memory_bytes": 6 * 1024**3,
+            }
+        }
+        failures, envelope = topology.validate_host_envelope(limits, 3, host)
+        self.assertEqual(failures, [])
+        self.assertEqual(
+            envelope["requested_memory_bytes"],
+            DEFAULT_THREE_REPLICA_MEMORY_BYTES,
+        )
+
+        host["docker_host"]["memory_bytes"] = (
+            DEFAULT_THREE_REPLICA_MEMORY_BYTES - 1
+        )
+        failures, envelope = topology.validate_host_envelope(limits, 3, host)
+        self.assertFalse(envelope["within_envelope"])
+        self.assertEqual(
+            failures,
+            [
+                "aggregate requested memory limit 5972688896 exceeds "
+                "Docker host envelope 5972688895"
+            ],
+        )
 
 
 if __name__ == "__main__":
