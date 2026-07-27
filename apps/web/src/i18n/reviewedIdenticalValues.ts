@@ -358,7 +358,6 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Assembleia geral anual pendente',
     'Assembleia Geral Ordinária',
     'Assembleia universal — todos presentes e todos de acordo (CSC art. 54.º)',
-    'Assinado',
     'Assinado por',
     'Assinar a ata como signatário externo',
     'Assinar com atributo',

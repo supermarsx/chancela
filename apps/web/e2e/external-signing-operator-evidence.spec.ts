@@ -52,7 +52,7 @@ test('signed-in operator records external signer slot evidence as technical evid
   ).toBeVisible();
   await expect(envelopeSection).toContainText('Envelope 1');
   await expect(envelopeSection).toContainText('Aberto');
-  await expect(envelopeSection).toContainText('0 de 1 assinados');
+  await expect(envelopeSection).toContainText('0 de 1 com assinatura registada');
   await expect(envelopeSection).toContainText(SLOT_ID);
   await expect(envelopeSection).toContainText('Marta Representante');
   await expect(envelopeSection).toContainText('Pendente');
@@ -73,7 +73,7 @@ test('signed-in operator records external signer slot evidence as technical evid
   await expectNoPositiveClaimText(page);
 
   const submit = envelopeSection.getByRole('button', {
-    name: 'Registar evidência e marcar slot assinado',
+    name: 'Registar evidência e marcar o slot com assinatura registada',
   });
   await expect(submit).toBeDisabled();
 
@@ -127,9 +127,11 @@ test('signed-in operator records external signer slot evidence as technical evid
 
   await expect(page.getByText('Evidência técnica do slot registada.')).toBeVisible();
   await expect(envelopeSection).toContainText('Aberto');
-  await expect(envelopeSection).toContainText('1 de 1 assinados');
+  await expect(envelopeSection).toContainText('1 de 1 com assinatura registada');
   await expect(envelopeSection).toContainText('Nenhum');
-  await expect(envelopeSection).toContainText('Assinado');
+  // The slot badge names the register, never a bare «Assinado» in the green verified tone.
+  await expect(envelopeSection.locator('.badge--info')).toContainText('Assinatura registada');
+  await expect(envelopeSection.locator('.badge--ok')).toHaveCount(0);
   await expect(envelopeSection).toContainText('Evidência técnica do operador');
   await expect(envelopeSection).toContainText('operator-log:slot-1');
   await expect(

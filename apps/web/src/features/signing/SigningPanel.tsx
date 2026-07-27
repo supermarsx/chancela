@@ -117,6 +117,7 @@ import {
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { GateButton, scopeBook, useCan, type CanScope } from '../session/permissions';
 import { useT, type TFunction } from '../../i18n';
+import { useEnvelopeSlotStatusT } from '../../i18n/envelopeSlotStatusFallback';
 import {
   Badge,
   Button,
@@ -1411,8 +1412,11 @@ export function slotStatusLabel(status: ExternalSignerSlotStatus, t: TFunction):
   return t('signing.envelopes.slot.status.expired');
 }
 
+// A `signed` slot is a workflow record, not a verification this panel performed: the green `ok`
+// tone is reserved for the act's own qualified signature above. `info` keeps it visually distinct
+// from the `accent` of a slot still awaiting a response.
 function slotStatusBadge(status: ExternalSignerSlotStatus, t: TFunction) {
-  if (status === 'signed') return <Badge tone="ok">{slotStatusLabel(status, t)}</Badge>;
+  if (status === 'signed') return <Badge tone="info">{slotStatusLabel(status, t)}</Badge>;
   if (status === 'pending' || status === 'initiated')
     return <Badge tone="accent">{slotStatusLabel(status, t)}</Badge>;
   return <Badge tone="warn">{slotStatusLabel(status, t)}</Badge>;
@@ -1509,6 +1513,7 @@ export function inviteSlotOptions(envelopes: ExternalSigningEnvelopeView[], t: T
 
 function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
   const t = useT();
+  const slotStatusT = useEnvelopeSlotStatusT();
   const toast = useToast();
   const can = useCan();
   const bookScope = scopeBook(act.book_id);
@@ -1892,6 +1897,7 @@ function ExternalSigningEnvelopesSection({ act }: { act: ActView }) {
                   </tr>
                 ))}
               </Table>
+              <p className="muted">{slotStatusT('signing.envelopes.slot.status.signed.hint')}</p>
               {selectedEnvelope?.id === envelope.id && selectedSlot ? (
                 <form className="form" onSubmit={onSubmitEvidence}>
                   <InlineWarning tone="info" title={t('signing.envelopes.evidence.formTitle')}>

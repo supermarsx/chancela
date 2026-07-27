@@ -955,10 +955,15 @@ describe('SigningPanel — external signer invites', () => {
 
     renderWithProviders(<SigningPanel act={sealedAct} />);
 
-    expect(await screen.findByText('1 de 1 assinados')).toBeTruthy();
-    expect(screen.getByText('Concluído')).toBeTruthy();
+    expect(await screen.findByText('1 de 1 com assinatura registada')).toBeTruthy();
+    expect(screen.getByText('Recolha concluída')).toBeTruthy();
     expect(screen.getByText('Nenhum')).toBeTruthy();
-    expect(screen.getByText('Assinado')).toBeTruthy();
+    // A recorded slot must never read as a verified signature: the label names the register, and
+    // the badge carries the informational tone, not the green `ok` of the act's own signature.
+    const recordedBadge = screen.getByText('Assinatura registada');
+    expect(recordedBadge.className).toContain('badge--info');
+    expect(recordedBadge.className).not.toContain('badge--ok');
+    expect(screen.getByText(/não é, por si só, uma verificação criptográfica/)).toBeTruthy();
     expect(screen.getByText('Signed PDF SHA-256')).toBeTruthy();
     expect(screen.getByText('technical upload')).toBeTruthy();
     expect(getByRevealedText('f'.repeat(64))).toBeTruthy();
@@ -1073,7 +1078,7 @@ describe('SigningPanel — external signer invites', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Registar evidência' }));
     const submit = screen.getByRole('button', {
-      name: 'Registar evidência e marcar slot assinado',
+      name: 'Registar evidência e marcar o slot com assinatura registada',
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
 
