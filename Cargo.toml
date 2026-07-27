@@ -112,6 +112,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 time = { version = "0.3", features = ["serde", "formatting", "parsing", "macros"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
+libc = "0.2"
 tower = "0.5"
 tower-http = { version = "0.7", features = ["cors", "fs"] }
 # minijinja (t48 D1): runtime text-interpolation for the template catalog. Templates are shippable,

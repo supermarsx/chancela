@@ -51,6 +51,89 @@ const MAX_SOURCE_DEBOUNCE_WAIT: Duration = Duration::from_secs(300);
 /// Process-level grace after a shutdown signal before the projector supervisor is aborted.
 pub const PROCESS_SHUTDOWN_GRACE: Duration = Duration::from_secs(5);
 
+/// Return allocator arenas left behind by a completed/discarded corpus candidate to the OS.
+///
+/// The production projector image is Debian/glibc. During sustained source churn, each hard
+/// debounce attempt briefly owns a complete source snapshot; dropping that snapshot alone can
+/// leave hundreds of MiB resident in glibc arenas for the next attempt. `malloc_trim(0)` is
+/// process-wide and thread-safe, and this service invokes it only after the large ownership
+/// boundary has been dropped or its task has been fully joined. The trim is intentionally
+/// synchronous: these are infrequent candidate-lifecycle boundaries in an isolated projector
+/// process, not request paths, and the capacity rerun observes projector latency as well as RSS.
+/// Other targets retain normal allocator behavior.
+fn release_unused_projector_heap() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: `malloc_trim` takes no pointers, glibc documents it as thread-safe, and libc is
+        // the active allocator in the Linux-gnu projector image.
+        let _ = unsafe { libc::malloc_trim(0) };
+    }
+}
+
+fn drop_candidate_then_release_heap_with<T>(candidate: T, release: impl FnOnce()) {
+    drop(candidate);
+    release();
+}
+
+fn drop_candidate_then_release_heap<T>(candidate: T) {
+    drop_candidate_then_release_heap_with(candidate, release_unused_projector_heap);
+}
+
+fn finish_joined_refresh_with<T, J>(
+    joined: Result<Result<T, ProjectorError>, J>,
+    map_join_error: impl FnOnce(J) -> ProjectorError,
+    release: impl FnOnce(),
+) -> Result<T, ProjectorError> {
+    match joined {
+        // A successful refresh still owns the hydrated corpus. Its caller must decide when that
+        // ownership ends, so trimming here would be both premature and misleading.
+        Ok(Ok(value)) => Ok(value),
+        // ProjectorError is deliberately small and cannot retain projection inputs. Once the task
+        // has returned it, all partially hydrated task-local state has already been dropped.
+        Ok(Err(error)) => {
+            release();
+            Err(error)
+        }
+        // A JoinError means the wrapper has fully completed (including panic unwinding), so no
+        // task-local projection input remains live.
+        Err(error) => {
+            let error = map_join_error(error);
+            release();
+            Err(error)
+        }
+    }
+}
+
+fn finish_joined_refresh<T>(
+    joined: Result<Result<T, ProjectorError>, tokio::task::JoinError>,
+) -> Result<T, ProjectorError> {
+    finish_joined_refresh_with(
+        joined,
+        |error| ProjectorError::State(format!("state refresh wrapper panicked: {error}")),
+        release_unused_projector_heap,
+    )
+}
+
+type JoinedCandidateOutcome =
+    Result<Result<SearchProjectionPublishOutcome, String>, ProjectorError>;
+
+/// Release only after the candidate task is fully joined.
+///
+/// This deliberately accepts the narrow publish outcome/error envelope: neither variant can own
+/// the hydrated corpus or reconciliation operations. Keep that ownership invariant if the build
+/// task's return contract changes.
+fn release_heap_after_joined_candidate_with(
+    joined: JoinedCandidateOutcome,
+    release: impl FnOnce(),
+) -> JoinedCandidateOutcome {
+    release();
+    joined
+}
+
+fn release_heap_after_joined_candidate(joined: JoinedCandidateOutcome) -> JoinedCandidateOutcome {
+    release_heap_after_joined_candidate_with(joined, release_unused_projector_heap)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectorRunMode {
     Run,
@@ -721,9 +804,7 @@ async fn run_with_lease(
             });
             let refreshed = tokio::select! {
                 result = &mut refresh_task => {
-                    result.map_err(|error| {
-                        ProjectorError::State(format!("state refresh wrapper panicked: {error}"))
-                    })??
+                    finish_joined_refresh(result)?
                 }
                 () = wait_for_shutdown_requested(shutdown) => {
                     return finish_task_after_supervisor(
@@ -741,6 +822,7 @@ async fn run_with_lease(
                 refreshed_search_settings.interval_seconds.clamp(5, 86_400),
             ));
             if !refreshed_search_settings.enabled {
+                drop_candidate_then_release_heap(projection_inputs);
                 reconciliation.source_debounce.reset();
                 update_heartbeat_if_still_owned(
                     provider,
@@ -758,16 +840,31 @@ async fn run_with_lease(
                 wait_or_shutdown(reconciliation.interval, shutdown).await;
                 continue;
             }
-            let after = read_control(&refreshed_store).await?;
-            ensure_current_lease(&after, &lease)?;
+            let after = match read_control(&refreshed_store).await {
+                Ok(after) => after,
+                Err(error) => {
+                    drop_candidate_then_release_heap(projection_inputs);
+                    return Err(error);
+                }
+            };
+            if let Err(error) = ensure_current_lease(&after, &lease) {
+                drop_candidate_then_release_heap(projection_inputs);
+                return Err(error);
+            }
             if before.checkpoint != after.checkpoint || before.command != after.command {
+                drop_candidate_then_release_heap(projection_inputs);
                 continue;
             }
 
-            update_owned_heartbeat(&options.runtime_dir, heartbeat, &after, &lease, |value| {
-                value.phase = ProjectorPhase::Building;
-                value.observe_control(&after);
-            })?;
+            if let Err(error) =
+                update_owned_heartbeat(&options.runtime_dir, heartbeat, &after, &lease, |value| {
+                    value.phase = ProjectorPhase::Building;
+                    value.observe_control(&after);
+                })
+            {
+                drop_candidate_then_release_heap(projection_inputs);
+                return Err(error);
+            }
             let candidate_cancel = Arc::new(AtomicBool::new(false));
             // Independent of the supervisor's current await: if it is stuck in provider/control
             // I/O and the process-level grace later aborts it, the candidate still observes global
@@ -864,9 +961,10 @@ async fn run_with_lease(
             }
             let build_result =
                 build_result.expect("candidate result exists without supervisor exit");
-            let build_result = build_result.map_err(|error| {
-                ProjectorError::Projection(format!("candidate task panicked: {error}"))
-            })?;
+            let build_result =
+                release_heap_after_joined_candidate(build_result.map_err(|error| {
+                    ProjectorError::Projection(format!("candidate task panicked: {error}"))
+                }))?;
             if shutdown.load(Ordering::Acquire) {
                 return Ok(true);
             }
@@ -1290,11 +1388,16 @@ async fn finish_task_after_supervisor<T>(
     if let Some(cancellation) = cancellation {
         cancellation.store(true, Ordering::Release);
     }
-    if tokio::time::timeout(grace, &mut *task).await.is_err() {
-        task.abort();
-        // Async wrappers acknowledge abort promptly. Keep even this acknowledgement bounded so a
-        // runtime regression cannot make the shutdown grace self-defeating.
-        let _ = tokio::time::timeout(Duration::from_millis(100), &mut *task).await;
+    match tokio::time::timeout(grace, &mut *task).await {
+        Ok(joined) => drop_candidate_then_release_heap(joined),
+        Err(_) => {
+            task.abort();
+            // Async wrappers acknowledge abort promptly. Keep even this acknowledgement bounded so
+            // a runtime regression cannot make the shutdown grace self-defeating. A detached
+            // blocking closure may still own its candidate, so there is deliberately no heap trim
+            // on this branch; the process-level supervisor is already exiting.
+            let _ = tokio::time::timeout(Duration::from_millis(100), &mut *task).await;
+        }
     }
     supervisor_outcome
 }
@@ -1307,7 +1410,8 @@ async fn finish_candidate_after_error<T>(
     error: ProjectorError,
 ) -> Result<bool, ProjectorError> {
     cancellation.store(true, Ordering::Release);
-    let _ = task.await;
+    let joined = task.await;
+    drop_candidate_then_release_heap(joined);
     Err(error)
 }
 
@@ -2656,6 +2760,339 @@ mod tests {
         assert!(
             !completed_in_utc_date(Some(&completed), now),
             "the local offset date must not mask a previous UTC date"
+        );
+    }
+
+    #[test]
+    fn candidate_heap_release_observes_drop_and_preserves_joined_results() {
+        struct DropSignal(Arc<AtomicBool>);
+
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let released = AtomicBool::new(false);
+        drop_candidate_then_release_heap_with(DropSignal(dropped.clone()), || {
+            assert!(
+                dropped.load(Ordering::Acquire),
+                "the hydrated candidate must be dropped before allocator release"
+            );
+            released.store(true, Ordering::Release);
+        });
+        assert!(released.load(Ordering::Acquire));
+
+        let releases = std::sync::atomic::AtomicUsize::new(0);
+        let outcome = SearchProjectionPublishOutcome::Published {
+            checkpoint: chancela_search::SearchProjectionCheckpoint {
+                source_revision: 1,
+                fence_token: 2,
+                command_generation: 3,
+            },
+            generation: 4,
+            document_count: 5,
+        };
+        let published = release_heap_after_joined_candidate_with(Ok(Ok(outcome.clone())), || {
+            releases.fetch_add(1, Ordering::AcqRel);
+        });
+        assert_eq!(published.unwrap().unwrap(), outcome);
+        let failed = release_heap_after_joined_candidate_with(
+            Ok(Err("projection failed".to_owned())),
+            || {
+                releases.fetch_add(1, Ordering::AcqRel);
+            },
+        );
+        assert_eq!(failed.unwrap(), Err("projection failed".to_owned()));
+        assert_eq!(
+            releases.load(Ordering::Acquire),
+            2,
+            "both successful and failed joined outcomes release unused arenas"
+        );
+    }
+
+    #[tokio::test]
+    async fn joined_candidate_releases_only_after_task_ownership_is_gone() {
+        struct DropSignal(Arc<AtomicBool>);
+
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let task_dropped = dropped.clone();
+        let task = tokio::spawn(async move {
+            let _owned_candidate = DropSignal(task_dropped);
+            Err::<SearchProjectionPublishOutcome, String>(
+                SEARCH_PROJECTION_UTC_BUCKET_CHANGED.to_owned(),
+            )
+        });
+        let joined = task
+            .await
+            .map_err(|error| ProjectorError::Projection(error.to_string()));
+        assert!(
+            dropped.load(Ordering::Acquire),
+            "a completed JoinHandle must have dropped the task-owned corpus"
+        );
+
+        let released = AtomicBool::new(false);
+        let joined = release_heap_after_joined_candidate_with(joined, || {
+            assert!(
+                dropped.load(Ordering::Acquire),
+                "allocator release cannot precede the candidate task join"
+            );
+            released.store(true, Ordering::Release);
+        });
+        assert_eq!(
+            joined.unwrap(),
+            Err(SEARCH_PROJECTION_UTC_BUCKET_CHANGED.to_owned())
+        );
+        assert!(released.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn joined_refresh_releases_error_results_but_preserves_success_ownership() {
+        struct DropSignal(Arc<AtomicBool>);
+
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let dropped = Arc::new(AtomicBool::new(false));
+        let releases = std::sync::atomic::AtomicUsize::new(0);
+        let refreshed = finish_joined_refresh_with::<_, &'static str>(
+            Ok(Ok(DropSignal(dropped.clone()))),
+            |error| ProjectorError::State(error.to_owned()),
+            || {
+                releases.fetch_add(1, Ordering::AcqRel);
+            },
+        )
+        .unwrap();
+        assert!(
+            !dropped.load(Ordering::Acquire),
+            "a successful refresh must retain its hydrated snapshot"
+        );
+        assert_eq!(
+            releases.load(Ordering::Acquire),
+            0,
+            "a successful refresh must not trim while its snapshot is live"
+        );
+        drop(refreshed);
+        assert!(dropped.load(Ordering::Acquire));
+
+        let inner_error = finish_joined_refresh_with::<(), &'static str>(
+            Ok(Err(ProjectorError::State("refresh failed".to_owned()))),
+            |error| ProjectorError::State(error.to_owned()),
+            || {
+                releases.fetch_add(1, Ordering::AcqRel);
+            },
+        );
+        assert!(matches!(
+            inner_error,
+            Err(ProjectorError::State(message)) if message == "refresh failed"
+        ));
+
+        let outer_error = finish_joined_refresh_with::<(), &'static str>(
+            Err("wrapper failed"),
+            |error| ProjectorError::State(error.to_owned()),
+            || {
+                releases.fetch_add(1, Ordering::AcqRel);
+            },
+        );
+        assert!(matches!(
+            outer_error,
+            Err(ProjectorError::State(message)) if message == "wrapper failed"
+        ));
+        assert_eq!(
+            releases.load(Ordering::Acquire),
+            2,
+            "both fully joined refresh error envelopes release unused arenas"
+        );
+    }
+
+    #[tokio::test]
+    async fn joined_refresh_errors_release_only_after_partial_task_state_is_dropped() {
+        struct DropSignal(Arc<AtomicBool>);
+
+        impl Drop for DropSignal {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Release);
+            }
+        }
+
+        let errored_drop = Arc::new(AtomicBool::new(false));
+        let task_drop = errored_drop.clone();
+        let task = tokio::spawn(async move {
+            let _partial_inputs = DropSignal(task_drop);
+            Err::<(), ProjectorError>(ProjectorError::State("refresh failed".to_owned()))
+        });
+        let joined = task.await;
+        let errored_release = AtomicBool::new(false);
+        let result = finish_joined_refresh_with(
+            joined,
+            |error| ProjectorError::State(error.to_string()),
+            || {
+                assert!(
+                    errored_drop.load(Ordering::Acquire),
+                    "refresh task state must be dropped before allocator release"
+                );
+                errored_release.store(true, Ordering::Release);
+            },
+        );
+        assert!(matches!(result, Err(ProjectorError::State(_))));
+        assert!(errored_release.load(Ordering::Acquire));
+
+        let panicked_drop = Arc::new(AtomicBool::new(false));
+        let task_drop = panicked_drop.clone();
+        let task = tokio::spawn(async move {
+            let _partial_inputs = DropSignal(task_drop);
+            panic!("expected refresh wrapper panic");
+            #[allow(unreachable_code)]
+            Ok::<(), ProjectorError>(())
+        });
+        let joined = task.await;
+        let panicked_release = AtomicBool::new(false);
+        let result = finish_joined_refresh_with(
+            joined,
+            |error| ProjectorError::State(error.to_string()),
+            || {
+                assert!(
+                    panicked_drop.load(Ordering::Acquire),
+                    "panic unwinding must drop refresh state before allocator release"
+                );
+                panicked_release.store(true, Ordering::Release);
+            },
+        );
+        assert!(matches!(result, Err(ProjectorError::State(_))));
+        assert!(panicked_release.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn heap_release_hooks_precede_discard_and_every_post_join_early_path() {
+        let source = include_str!("lib.rs");
+        let run_start = source.find("async fn run_with_lease(").unwrap();
+        let run_end = source[run_start..]
+            .find("\nasync fn acquire_lease(")
+            .unwrap()
+            + run_start;
+        let run = &source[run_start..run_end];
+
+        assert!(
+            run.contains("finish_joined_refresh(result)?"),
+            "the refresh JoinHandle result must pass through the ownership-aware release helper"
+        );
+        let refresh_helper_start = source.find("fn finish_joined_refresh_with").unwrap();
+        let refresh_helper_end = source[refresh_helper_start..]
+            .find("\nfn finish_joined_refresh<T>(")
+            .unwrap()
+            + refresh_helper_start;
+        let refresh_helper = &source[refresh_helper_start..refresh_helper_end];
+        let success_arm = refresh_helper.find("Ok(Ok(value)) => Ok(value),").unwrap();
+        let inner_error_arm = refresh_helper.find("Ok(Err(error)) => {").unwrap();
+        let outer_error_arm = refresh_helper.find("Err(error) => {").unwrap();
+        assert!(
+            !refresh_helper[success_arm..inner_error_arm].contains("release();"),
+            "successful hydration must retain ownership without trimming"
+        );
+        assert!(
+            refresh_helper[inner_error_arm..outer_error_arm].contains("release();"),
+            "a fully joined refresh error must release unused arenas"
+        );
+        assert!(
+            refresh_helper[outer_error_arm..].contains("release();"),
+            "a fully joined refresh panic must release unused arenas"
+        );
+
+        let read_control = run
+            .find("let after = match read_control(&refreshed_store).await")
+            .unwrap();
+        let ensure_lease = run
+            .find("if let Err(error) = ensure_current_lease(&after, &lease)")
+            .unwrap();
+        let checkpoint_changed = run
+            .find("if before.checkpoint != after.checkpoint || before.command != after.command")
+            .unwrap();
+        let heartbeat = run[checkpoint_changed..]
+            .find("if let Err(error) =")
+            .unwrap()
+            + checkpoint_changed;
+        let candidate_start = run.find("let candidate_cancel =").unwrap();
+        for (label, region) in [
+            (
+                "post-refresh control read",
+                &run[read_control..ensure_lease],
+            ),
+            (
+                "post-refresh lease validation",
+                &run[ensure_lease..checkpoint_changed],
+            ),
+            (
+                "pre-build heartbeat update",
+                &run[heartbeat..candidate_start],
+            ),
+        ] {
+            let discard = region
+                .find("drop_candidate_then_release_heap(projection_inputs);")
+                .unwrap_or_else(|| panic!("{label} must drop/release hydrated inputs on error"));
+            let returned = region
+                .find("return Err(error);")
+                .unwrap_or_else(|| panic!("{label} must return the original error"));
+            assert!(
+                discard < returned,
+                "{label} must drop/release hydrated inputs before returning"
+            );
+        }
+
+        let changed = run
+            .find("if before.checkpoint != after.checkpoint || before.command != after.command")
+            .unwrap();
+        let changed_tail = &run[changed..];
+        let discard = changed_tail
+            .find("drop_candidate_then_release_heap(projection_inputs);")
+            .unwrap();
+        let retry = changed_tail.find("continue;").unwrap();
+        assert!(
+            discard < retry,
+            "a superseded hydrated snapshot must be dropped/released before retry"
+        );
+
+        let joined = run
+            .find("release_heap_after_joined_candidate(build_result.map_err")
+            .unwrap();
+        let joined_tail = &run[joined..];
+        for early_path in [
+            "if shutdown.load(Ordering::Acquire)",
+            "if lease_lost.load(Ordering::Acquire)",
+            "if superseded",
+            "Err(error) if error == SEARCH_PROJECTION_UTC_BUCKET_CHANGED",
+            "match outcome",
+        ] {
+            assert!(
+                joined_tail.contains(early_path),
+                "joined heap release must dominate post-join path {early_path}"
+            );
+        }
+
+        let error_join_start = source
+            .find("async fn finish_candidate_after_error<T>(")
+            .unwrap();
+        let error_join_end = source[error_join_start..]
+            .find("\nasync fn wait_for_shutdown_requested(")
+            .unwrap()
+            + error_join_start;
+        let error_join = &source[error_join_start..error_join_end];
+        let awaited = error_join.find("let joined = task.await;").unwrap();
+        let released = error_join
+            .find("drop_candidate_then_release_heap(joined);")
+            .unwrap();
+        assert!(
+            awaited < released,
+            "the non-shutdown error path must join before allocator release"
         );
     }
 

@@ -30,6 +30,7 @@ chancela-search-projection.workspace = true
 chancela-runtime-config.workspace = true
 chancela-store.workspace = true
 clap.workspace = true
+libc.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

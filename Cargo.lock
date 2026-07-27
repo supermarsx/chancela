@@ -1245,6 +1245,7 @@ dependencies = [
  "chancela-search-projection",
  "chancela-store",
  "clap",
+ "libc",
  "serde",
  "serde_json",
  "thiserror",
