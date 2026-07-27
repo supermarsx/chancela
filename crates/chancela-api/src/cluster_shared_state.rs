@@ -1057,10 +1057,10 @@ fn invalidation_listen_thread(dsn: String, tx: tokio::sync::mpsc::Sender<Invalid
                 Ok(p) => p,
                 Err(_) => continue,
             };
-            if let Some(event) = InvalidationEvent::parse(&payload) {
-                if tx.blocking_send(event).is_err() {
-                    return;
-                }
+            if let Some(event) = InvalidationEvent::parse(&payload)
+                && tx.blocking_send(event).is_err()
+            {
+                return;
             }
         }
     }
@@ -1588,7 +1588,9 @@ mod tests {
 
             // Minted on "node A".
             let issued_at_unix = time::OffsetDateTime::now_utc().unix_timestamp();
-            node_a.sessions.put(&token, uid, issued_at_unix, ttl);
+            node_a
+                .sessions
+                .put(&token, SessionPut::identity(uid, issued_at_unix), ttl);
             // Visible on "node B" (a session minted on the leader is recognised on a follower).
             assert_eq!(
                 node_b.sessions.resolve(&token, ttl),
@@ -1605,7 +1607,9 @@ mod tests {
             );
 
             let replacement = format!("wp16-p3a-replacement-{}", Uuid::new_v4());
-            node_a.sessions.put(&replacement, uid, issued_at_unix, ttl);
+            node_a
+                .sessions
+                .put(&replacement, SessionPut::identity(uid, issued_at_unix), ttl);
             assert_eq!(node_a.sessions.clear_all(), SessionMutation::Stored);
             assert_eq!(
                 node_b.sessions.resolve(&replacement, ttl),

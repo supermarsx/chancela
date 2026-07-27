@@ -482,7 +482,7 @@ async fn successful_guarded_rekey_persists_secret_free_receipt_and_status_histor
             .is_some_and(|id| !id.is_empty())
     );
     assert!(receipt["rotated_at"].as_str().is_some());
-    assert_eq!(receipt["actor_user_id"].is_string(), true);
+    assert!(receipt["actor_user_id"].is_string());
     assert_eq!(receipt["mode"], "guarded_sqlcipher_rekey");
     assert_eq!(receipt["status"], "rekey_applied");
     assert_eq!(receipt["backend_family"], "sqlite");
