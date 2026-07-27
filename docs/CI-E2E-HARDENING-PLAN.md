@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `b3d5438`,
+implementation snapshot `9a6b0f9`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
@@ -1007,11 +1007,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `b3d5438`
+## Focused Gate Snapshot Through `9a6b0f9`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `b3d5438`.
+metadata-refreshed on 2026-07-27 for current implementation head `9a6b0f9`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1020,7 +1020,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `b3d5438` cover the accessible
+- Current landed-slice markers through `9a6b0f9` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1068,6 +1068,16 @@ above still apply.
   projector tests, 55/55 API search tests, a 1,024-commit source-churn test in
   0.879 seconds, 10/10 repeated stress iterations, Clippy with `-D warnings`,
   and formatting/diff checks.
+
+  `7ef0f074` makes GHCR reconciliation select OCI revision/created labels from
+  direct single-platform or indexed `imagetools inspect` JSON. Deterministic
+  release-trust fixtures cover both shapes, missing config, and rejection of
+  the indexed-only regression; digest, platform, attestation, provenance, and
+  SBOM checks remain fail-closed. Syntax, self-test, YAML, Actionlint,
+  formatting, and static checkpoint checks passed. `9a6b0f90` selects the seal
+  width and height controls through exact accessible `spinbutton` names. Two
+  consecutive focused Chromium runs passed, together with web typecheck and
+  focused seal-designer tests.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
@@ -2681,7 +2691,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `b3d5438`
+- Current checkpoint metadata/static checks through `9a6b0f9`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

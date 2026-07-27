@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `b3d54389933fb24c9a584cbb249e9881640e4256`,
+*Updated 2026-07-27 from current implementation snapshot `9a6b0f90a369de8c3650cfdcbd6170e7a5dd22cc`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -335,7 +335,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `b3d5438` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `9a6b0f9` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -377,6 +377,16 @@ Implementation checkpoints covered here:
   tests, 55/55 API search tests, a 1,024-commit source-churn test in 0.879
   seconds, 10/10 repeated stress iterations, Clippy with `-D warnings`, and
   formatting/diff checks.
+
+  `7ef0f074` makes GHCR reconciliation read OCI revision/created labels from
+  either direct single-platform or indexed `imagetools inspect` JSON while
+  retaining fail-closed digest, platform, attestation, provenance, and SBOM
+  checks. Release-trust fixtures cover both shapes, missing config, and
+  rejection of the indexed-only regression; syntax, self-test, YAML,
+  Actionlint, formatting, and static checkpoint checks passed.
+  `9a6b0f90` targets the seal width and height inputs by exact accessible
+  `spinbutton` names. Two consecutive focused Chromium runs passed, as did web
+  typecheck and focused seal-designer tests.
 
   `20008d37`, `4efd1956`, `eff9866d`, and `18a346ee` define exact-volume
   profiles for 15,000 users, 10,000 entities, 50,000 books, and 10,000

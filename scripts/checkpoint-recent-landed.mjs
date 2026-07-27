@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `b3d5438` (2026-07-27)",
+    "The current substantive checkpoint is `9a6b0f9` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `b3d5438`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `9a6b0f9`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `b3d5438`",
+    "Focused Gate Snapshot Through `9a6b0f9`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b3d5438`",
+    "Current checkpoint metadata/static checks through `9a6b0f9`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `b3d54389933fb24c9a584cbb249e9881640e4256`",
+    "implementation snapshot `9a6b0f90a369de8c3650cfdcbd6170e7a5dd22cc`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `b3d5438`",
+    "Current checkpoint metadata/static checks through `9a6b0f9`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17096,6 +17096,52 @@ function assertCheckpointMap() {
     "assert_eq!(idle_lag.phase, SearchIndexPhase::Idle);",
     "API projector Idle lag remains Idle regression marker",
   );
+  assertFileOccurrenceCount(
+    ".github/workflows/ci.yml",
+    '(.image["linux/amd64"] // .image).config.Labels[',
+    2,
+    "GHCR direct/indexed imagetools label fallback selectors",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "function directSinglePlatformImagetoolsFixture()",
+    "release trust direct single-platform imagetools fixture marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "function indexedMultiPlatformImagetoolsFixture()",
+    "release trust indexed multi-platform imagetools fixture marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "direct single-platform imagetools output must expose OCI labels",
+    "release trust direct single-platform imagetools self-test marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "indexed imagetools output must select linux/amd64 OCI labels",
+    "release trust indexed multi-platform imagetools self-test marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "selected image.config must be an object",
+    "release trust missing imagetools config fail-closed marker",
+  );
+  assertFileContains(
+    "scripts/check-release-trust.mjs",
+    "read both OCI labels from direct single-platform or indexed image shapes",
+    "release trust indexed-only fallback regression marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/seal-designer.spec.ts",
+    "page.getByRole('spinbutton', { name: 'Largura (pontos)', exact: true }).fill('180')",
+    "seal designer exact width spinbutton selector marker",
+  );
+  assertFileContains(
+    "apps/web/e2e/seal-designer.spec.ts",
+    "page.getByRole('spinbutton', { name: 'Altura (pontos)', exact: true }).fill('60')",
+    "seal designer exact height spinbutton selector marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "health reads are bounded to control C1 -> heartbeat -> control C2 with one retry only when the canonical lease identity/path changes",
@@ -17126,9 +17172,24 @@ function assertCheckpointMap() {
     "This invalidated candidate is explicitly not capacity, latency/soak, or 10,000-cryptographic-signature proof",
     "CI/E2E invalidated capacity no-proof marker",
   );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "either direct single-platform or indexed `imagetools inspect` JSON",
+    "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "digest/platform/attestation/provenance/SBOM checks remain fail-closed",
+    "CI checkpoints GHCR fail-closed evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Two consecutive focused Chromium runs passed, together with web typecheck and focused seal-designer tests",
+    "CI/E2E exact seal spinbutton validation evidence marker",
+  );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `b3d5438` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `9a6b0f9` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17258,7 +17319,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `b3d5438` (2026-07-27)",
+    "The current substantive checkpoint is `9a6b0f9` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(
@@ -17422,6 +17483,17 @@ function assertFileContainsNormalized(relativePath, needle, label) {
   assert.ok(
     normalizeWhitespace(body).includes(normalizeWhitespace(needle)),
     `${label} missing expected marker ${needle}`,
+  );
+}
+
+function assertFileOccurrenceCount(relativePath, needle, expectedCount, label) {
+  assertFileExists(relativePath, label);
+  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  const actualCount = body.split(needle).length - 1;
+  assert.equal(
+    actualCount,
+    expectedCount,
+    `${label} expected ${expectedCount} occurrences of ${needle}, found ${actualCount}`,
   );
 }
 

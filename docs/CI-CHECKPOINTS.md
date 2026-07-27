@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `b3d5438` (2026-07-27). It records the
+The current substantive checkpoint is `9a6b0f9` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -88,6 +88,15 @@ following bounded concern groups in this guard:
   projector tests, 55/55 API search tests, a 1,024-commit source-churn test in
   0.879 seconds, 10/10 repeated stress iterations, Clippy with `-D warnings`,
   and formatting/diff checks.
+- `7ef0f074` reads GHCR OCI revision/created labels from direct
+  single-platform or indexed `imagetools inspect` JSON. Release-trust fixtures
+  cover both shapes, missing config, and rejection of the indexed-only
+  regression; digest/platform/attestation/provenance/SBOM checks remain
+  fail-closed. Syntax, self-test, YAML, Actionlint, formatting, and static
+  checkpoint checks passed.
+- `9a6b0f90` selects seal width and height by exact accessible `spinbutton`
+  names. Two consecutive focused Chromium runs passed, along with web
+  typecheck and focused seal-designer tests.
 - `20008d37`/`4efd1956`/`eff9866d`/`18a346ee` govern the exact-volume
   performance harness for 15,000 users, 10,000 entities, 50,000 books, and
   10,000 unsigned signature subjects. The opt-in local PKCS#12 phase now
