@@ -177,10 +177,10 @@ describe('ColumnPicker', () => {
     );
   });
 
-  it('describes each checkbox with the origin instead of renaming it', () => {
+  it('states the origin once, as the group description rather than per row', () => {
     renderWithProviders(
       <ColumnPicker
-        columns={['Kind'] as Col[]}
+        columns={['Kind', 'Purpose', 'State'] as Col[]}
         label="Colunas"
         isVisible={() => true}
         onToggle={vi.fn()}
@@ -188,18 +188,24 @@ describe('ColumnPicker', () => {
         origin="org"
       />,
     );
-    const kind = screen.getByLabelText('Kind');
-    const describedBy = kind.getAttribute('aria-describedby');
+    // Once — not once per row. The origin is a property of the selection: a preference is stored
+    // as one array, so a per-row column would repeat one value and describe nothing extra.
+    expect(screen.getAllByText('Predefinição da organização')).toHaveLength(1);
+    expect(screen.getAllByText('Origem')).toHaveLength(1);
+    // Still reachable: it is the fieldset's description, so a screen reader meets it on entering
+    // the group — after the group's name, before the controls.
+    const fieldset = document.querySelector('fieldset');
+    const describedBy = fieldset?.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
-    // Announced after the name/role/state, not folded into the name.
     expect(document.getElementById(describedBy ?? '')?.textContent).toBe(
-      'Predefinição da organização',
+      'OrigemPredefinição da organização',
     );
-    expect(screen.getByText('Origem')).toBeTruthy();
+    // And it never becomes part of a checkbox's accessible name.
+    expect(screen.getByLabelText('Kind')).toBeTruthy();
     expect(screen.getByText('Visível')).toBeTruthy();
   });
 
-  it('drops the origin column entirely when the caller has no origin to state', () => {
+  it('says nothing about the origin when the caller has none to state', () => {
     renderWithProviders(
       <ColumnPicker
         columns={['Kind'] as Col[]}
@@ -209,9 +215,9 @@ describe('ColumnPicker', () => {
         columnLabel={(column) => column}
       />,
     );
-    expect(document.querySelector('.column-picker__grid--origin')).toBeNull();
-    expect(document.querySelector('.column-picker__cell--origin')).toBeNull();
-    expect(screen.getByLabelText('Kind').getAttribute('aria-describedby')).toBeNull();
+    expect(document.querySelector('.column-picker__origin')).toBeNull();
+    expect(screen.queryByText('Origem')).toBeNull();
+    expect(document.querySelector('fieldset')?.getAttribute('aria-describedby')).toBeNull();
   });
 
   it('offers only the columns it is given — a control column has no way in', () => {

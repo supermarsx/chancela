@@ -19,35 +19,30 @@
  *
  * So: real `<label>`/`<input type="checkbox">` pairs, laid out with CSS grid, wrapped by the
  * caller's `<fieldset>`/`<legend>` or `role="group"`. The header strip is `aria-hidden` — it repeats
- * information every control already conveys (the name is the label, "visible" is the checked state,
- * the origin is the control's description), so to assistive technology it is decoration and to
- * everyone else it is the alignment cue the layout needs.
+ * information every control already conveys (the name is the label, "visible" is the checked state),
+ * so to assistive technology it is decoration and to everyone else it is the alignment cue the
+ * layout needs.
  *
- * The `Origem` column is wired as each checkbox's `aria-describedby`, which places it after the
- * name, role and state in the announcement — "Nome, caixa de verificação, marcada, Pessoal" — rather
- * than swallowing it into the accessible name.
+ * ## Two columns, because the third would have said one thing thirteen times
  *
- * Presentational only: visibility, persistence and the origin derivation all live outside. The
- * per-column labels are still passed in (they belong to the table), while the grid's own chrome —
- * the three headers and the three origin values — is read from the module this feature owns, since
- * it is identical at every call site and duplicating it across them would be nothing but drift.
+ * An earlier revision carried a per-row `Origem` cell. It was dropped: the origin is a property of
+ * the *selection*, not of a column — a preference is stored and resolved as one array — so the value
+ * was identical on every row by construction. A column that repeats itself works against the very
+ * regularity this grid exists to provide, and it made a screen reader recite the same phrase once
+ * per checkbox. {@link ColumnPicker} now states it once, as the group's accessible description.
+ *
+ * Presentational only: visibility and persistence live outside. The per-column labels are passed in
+ * (they belong to the table), while the grid's own two headers are read from the module this feature
+ * owns, since they are identical at every call site.
  */
 import { useId, type ReactNode } from 'react';
-import { useTableColumnsT, type TableColumnsCopyKey } from '../../i18n/tableColumnsFallback';
-import type { ColumnOrigin } from './columnOrigin';
-
-const ORIGIN_KEYS: Record<ColumnOrigin, TableColumnsCopyKey> = {
-  personal: 'tableColumns.origin.personal',
-  org: 'tableColumns.origin.org',
-  product: 'tableColumns.origin.product',
-};
+import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 
 export function ColumnToggleGrid<C extends string>({
   columns,
   isVisible,
   onToggle,
   columnLabel,
-  origin,
   ariaLabel,
 }: {
   /**
@@ -59,21 +54,15 @@ export function ColumnToggleGrid<C extends string>({
   isVisible: (column: C) => boolean;
   onToggle: (column: C, checked: boolean) => void;
   columnLabel: (column: C) => ReactNode;
-  /**
-   * Where the current selection comes from. Omitted on a surface that *is* the source — the org
-   * default card would otherwise state its own name back to the administrator on every row.
-   */
-  origin?: ColumnOrigin;
   /** Names the grid as a group. Omit when the caller already names it (a `<fieldset>`/`<legend>`). */
   ariaLabel?: string;
 }) {
   const ct = useTableColumnsT();
   const id = useId();
-  const showOrigin = origin !== undefined;
 
   return (
     <div
-      className={showOrigin ? 'column-picker__grid column-picker__grid--origin' : 'column-picker__grid'}
+      className="column-picker__grid"
       role={ariaLabel === undefined ? undefined : 'group'}
       aria-label={ariaLabel}
     >
@@ -82,15 +71,9 @@ export function ColumnToggleGrid<C extends string>({
         <span className="column-picker__cell column-picker__cell--center">
           {ct('tableColumns.head.visible')}
         </span>
-        {showOrigin ? (
-          <span className="column-picker__cell column-picker__cell--origin">
-            {ct('tableColumns.head.origin')}
-          </span>
-        ) : null}
       </div>
       {columns.map((column) => {
         const inputId = `${id}${column}`;
-        const originId = `${inputId}-origin`;
         return (
           <div key={column} className="column-picker__row">
             <label className="column-picker__cell column-picker__name" htmlFor={inputId}>
@@ -101,18 +84,9 @@ export function ColumnToggleGrid<C extends string>({
                 id={inputId}
                 type="checkbox"
                 checked={isVisible(column)}
-                aria-describedby={showOrigin ? originId : undefined}
                 onChange={(event) => onToggle(column, event.target.checked)}
               />
             </span>
-            {origin === undefined ? null : (
-              <span
-                id={originId}
-                className="column-picker__cell column-picker__cell--origin column-picker__origin"
-              >
-                {ct(ORIGIN_KEYS[origin])}
-              </span>
-            )}
           </div>
         );
       })}

@@ -38,10 +38,12 @@ export const tableColumnsPtPT = {
   // — Cabeçalhos da grelha de colunas (t54) ————————————————————————————————
   'tableColumns.head.column': 'Coluna',
   'tableColumns.head.visible': 'Visível',
-  'tableColumns.head.origin': 'Origem',
 
-  // De onde vem a escolha atual. Frases completas e independentes: nenhum nome é
-  // interpolado numa frase com concordância (memória `i18n-interpolated-nouns-break-agreement`).
+  // De onde vem a escolha atual — dito uma vez acima da grelha, não por linha: a origem é uma
+  // propriedade da escolha, não de cada coluna. Rótulo e valor são elementos separados, nunca
+  // uma frase composta: nenhum nome é interpolado numa frase que teria de concordar com ele
+  // (memória `i18n-interpolated-nouns-break-agreement`).
+  'tableColumns.origin.label': 'Origem',
   'tableColumns.origin.personal': 'Pessoal',
   'tableColumns.origin.org': 'Predefinição da organização',
   'tableColumns.origin.product': 'Predefinição do produto',
@@ -60,7 +62,7 @@ export const tableColumnsEnglish = {
     'The columns new users see by default in the entities list. Each user can then personalise their own columns on the entities page.',
   'tableColumns.head.column': 'Column',
   'tableColumns.head.visible': 'Visible',
-  'tableColumns.head.origin': 'Origin',
+  'tableColumns.origin.label': 'Origin',
   'tableColumns.origin.personal': 'Personal',
   'tableColumns.origin.org': 'Organisation default',
   'tableColumns.origin.product': 'Product default',
