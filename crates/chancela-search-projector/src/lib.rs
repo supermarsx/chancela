@@ -1576,26 +1576,94 @@ pub fn healthcheck(
     runtime_dir: &Path,
     max_age: Duration,
 ) -> Result<ProjectorHeartbeat, ProjectorError> {
-    let control = store
-        .search_projection_control()
-        .map_err(|error| ProjectorError::Store(error.to_string()))?;
-    let lease = control
-        .lease
-        .as_ref()
-        .ok_or_else(|| ProjectorError::UnhealthyHeartbeat {
-            path: heartbeat_directory(runtime_dir),
-            reason: "durable projector lease is absent".to_owned(),
-        })?;
-    let path = heartbeat_path(runtime_dir, &lease.lease_id)?;
-    let bytes = std::fs::read(&path).map_err(|source| ProjectorError::HeartbeatIo {
-        path: path.clone(),
-        source,
-    })?;
-    let heartbeat: ProjectorHeartbeat =
-        serde_json::from_slice(&bytes).map_err(|source| ProjectorError::HeartbeatJson {
-            path: path.clone(),
-            source,
-        })?;
+    healthcheck_with_control_reader(runtime_dir, max_age, || {
+        store
+            .search_projection_control()
+            .map_err(|error| ProjectorError::Store(error.to_string()))
+    })
+}
+
+fn healthcheck_with_control_reader(
+    runtime_dir: &Path,
+    max_age: Duration,
+    mut read_control: impl FnMut() -> Result<SearchProjectionControl, ProjectorError>,
+) -> Result<ProjectorHeartbeat, ProjectorError> {
+    let mut selected_control = read_control()?;
+    for attempt in 0..=1 {
+        let selected_lease =
+            selected_control
+                .lease
+                .as_ref()
+                .ok_or_else(|| ProjectorError::UnhealthyHeartbeat {
+                    path: heartbeat_directory(runtime_dir),
+                    reason: "durable projector lease is absent".to_owned(),
+                })?;
+        let path = heartbeat_path(runtime_dir, &selected_lease.lease_id)?;
+        let heartbeat = std::fs::read(&path)
+            .map_err(|source| ProjectorError::HeartbeatIo {
+                path: path.clone(),
+                source,
+            })
+            .and_then(|bytes| {
+                serde_json::from_slice::<ProjectorHeartbeat>(&bytes).map_err(|source| {
+                    ProjectorError::HeartbeatJson {
+                        path: path.clone(),
+                        source,
+                    }
+                })
+            });
+        let current_control = read_control()?;
+        if !same_lease_identity(
+            selected_control.lease.as_ref(),
+            current_control.lease.as_ref(),
+        ) {
+            if attempt == 0 {
+                selected_control = current_control;
+                continue;
+            }
+            return Err(ProjectorError::UnhealthyHeartbeat {
+                path,
+                reason: "durable projector lease changed while reading its heartbeat".to_owned(),
+            });
+        }
+        let current_lease =
+            current_control
+                .lease
+                .as_ref()
+                .ok_or_else(|| ProjectorError::UnhealthyHeartbeat {
+                    path: heartbeat_directory(runtime_dir),
+                    reason: "durable projector lease is absent".to_owned(),
+                })?;
+        let heartbeat = heartbeat?;
+        return validate_projector_heartbeat(
+            heartbeat,
+            &current_control,
+            current_lease,
+            path,
+            max_age,
+        );
+    }
+    unreachable!("bounded healthcheck retry always returns")
+}
+
+fn same_lease_identity(
+    selected: Option<&SearchProjectorLease>,
+    current: Option<&SearchProjectorLease>,
+) -> bool {
+    matches!(
+        (selected, current),
+        (Some(selected), Some(current))
+            if selected.lease_id == current.lease_id && selected.owner == current.owner
+    )
+}
+
+fn validate_projector_heartbeat(
+    heartbeat: ProjectorHeartbeat,
+    control: &SearchProjectionControl,
+    lease: &SearchProjectorLease,
+    path: PathBuf,
+    max_age: Duration,
+) -> Result<ProjectorHeartbeat, ProjectorError> {
     if heartbeat.schema_version != HEARTBEAT_SCHEMA_VERSION
         || heartbeat.service != SERVICE_NAME
         || heartbeat.lease_id != lease.lease_id
@@ -1646,7 +1714,10 @@ pub fn healthcheck(
             reason: "heartbeat does not match the current unexpired durable lease".to_owned(),
         });
     }
-    if heartbeat.source_revision != Some(control.checkpoint.source_revision)
+    let source_revision_matches = heartbeat
+        .source_revision
+        .is_some_and(|source_revision| source_revision <= control.checkpoint.source_revision);
+    if !source_revision_matches
         || heartbeat.fence_token != Some(control.checkpoint.fence_token)
         || heartbeat.command_generation != Some(control.checkpoint.command_generation)
     {
@@ -1720,6 +1791,283 @@ mod tests {
         assert_eq!(loaded.owner, "test-owner");
         assert_eq!(loaded.lease_id, lease.lease_id);
         assert_eq!(loaded.service, SERVICE_NAME);
+    }
+
+    #[test]
+    fn accepted_heartbeat_phases_allow_source_lag_but_reject_future_and_missing_revisions() {
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let lease = store
+            .try_acquire_search_projector_lease("test-owner", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let initial_control = store.search_projection_control().unwrap();
+        let mut heartbeat = ProjectorHeartbeat::new(lease.owner.clone());
+        heartbeat.observe_lease(&lease);
+        heartbeat.observe_control(&initial_control);
+        for _ in 0..32 {
+            store.persist(|_| Ok(())).expect("advance source revision");
+        }
+        let advanced_control = store.search_projection_control().unwrap();
+        assert!(
+            advanced_control.checkpoint.source_revision
+                > initial_control.checkpoint.source_revision
+        );
+        for phase in [
+            ProjectorPhase::Starting,
+            ProjectorPhase::Standby,
+            ProjectorPhase::Building,
+            ProjectorPhase::Idle,
+            ProjectorPhase::Paused,
+            ProjectorPhase::Disabled,
+        ] {
+            heartbeat.phase = phase;
+            heartbeat.source_revision = Some(initial_control.checkpoint.source_revision);
+            write_heartbeat_atomic(&dir.0, &lease.lease_id, &heartbeat).unwrap();
+            let loaded = healthcheck(&store, &dir.0, Duration::from_secs(60))
+                .expect("an accepted fresh heartbeat phase may lag the durable source revision");
+            assert_eq!(loaded.phase, phase);
+            assert_eq!(
+                loaded.source_revision,
+                Some(initial_control.checkpoint.source_revision)
+            );
+        }
+
+        let assert_checkpoint_mismatch = |heartbeat: &ProjectorHeartbeat| {
+            write_heartbeat_atomic(&dir.0, &lease.lease_id, heartbeat).unwrap();
+            let error = healthcheck(&store, &dir.0, Duration::from_secs(60))
+                .expect_err("mismatched checkpoint must fail closed");
+            assert!(matches!(
+                error,
+                ProjectorError::UnhealthyHeartbeat { reason, .. }
+                    if reason == "heartbeat checkpoint does not match durable projector control"
+            ));
+        };
+
+        heartbeat.observe_control(&advanced_control);
+        heartbeat.source_revision = Some(
+            advanced_control
+                .checkpoint
+                .source_revision
+                .saturating_add(1),
+        );
+        assert_checkpoint_mismatch(&heartbeat);
+
+        heartbeat.source_revision = None;
+        assert_checkpoint_mismatch(&heartbeat);
+
+        heartbeat.observe_control(&advanced_control);
+        heartbeat.phase = ProjectorPhase::Building;
+        heartbeat.fence_token = Some(advanced_control.checkpoint.fence_token.saturating_add(1));
+        assert_checkpoint_mismatch(&heartbeat);
+
+        heartbeat.observe_control(&advanced_control);
+        heartbeat.command_generation = Some(
+            advanced_control
+                .checkpoint
+                .command_generation
+                .saturating_add(1),
+        );
+        assert_checkpoint_mismatch(&heartbeat);
+    }
+
+    #[test]
+    fn healthcheck_retries_an_absent_path_after_canonical_lease_changes() {
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let old_lease = store
+            .try_acquire_search_projector_lease("old-owner", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let old_control = store.search_projection_control().unwrap();
+        let old_path = heartbeat_path(&dir.0, &old_lease.lease_id).unwrap();
+        assert!(!old_path.exists(), "the stale lease path starts absent");
+
+        assert!(store.release_search_projector_lease(&old_lease).unwrap());
+        let new_lease = store
+            .try_acquire_search_projector_lease("new-owner", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let new_control = store.search_projection_control().unwrap();
+        let mut heartbeat = ProjectorHeartbeat::new(new_lease.owner.clone());
+        heartbeat.observe_lease(&new_lease);
+        heartbeat.observe_control(&new_control);
+        heartbeat.phase = ProjectorPhase::Idle;
+        write_heartbeat_atomic(&dir.0, &new_lease.lease_id, &heartbeat).unwrap();
+
+        let mut controls =
+            std::collections::VecDeque::from([old_control, new_control.clone(), new_control]);
+        let loaded = healthcheck_with_control_reader(&dir.0, Duration::from_secs(60), || {
+            Ok(controls
+                .pop_front()
+                .expect("bounded healthcheck consumes three control snapshots"))
+        })
+        .expect("healthcheck retries the new canonical lease path once");
+        assert_eq!(loaded.lease_id, new_lease.lease_id);
+        assert_eq!(loaded.owner, new_lease.owner);
+        assert!(
+            controls.is_empty(),
+            "healthcheck performs only the bounded retry"
+        );
+    }
+
+    #[test]
+    fn healthcheck_requires_exact_fence_and_command_in_both_directions() {
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let lease = store
+            .try_acquire_search_projector_lease("test-owner", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let mut control = store.search_projection_control().unwrap();
+        control.checkpoint.fence_token = 3;
+        control.checkpoint.command_generation = 11;
+        control.lease.as_mut().unwrap().checkpoint = control.checkpoint;
+        let mut heartbeat = ProjectorHeartbeat::new(lease.owner.clone());
+        heartbeat.observe_lease(&lease);
+        heartbeat.observe_control(&control);
+        heartbeat.phase = ProjectorPhase::Idle;
+
+        let assert_checkpoint_mismatch = |heartbeat: &ProjectorHeartbeat| {
+            write_heartbeat_atomic(&dir.0, &lease.lease_id, heartbeat).unwrap();
+            let error = healthcheck_with_control_reader(&dir.0, Duration::from_secs(60), || {
+                Ok(control.clone())
+            })
+            .expect_err("fence and command mismatches must fail closed");
+            assert!(matches!(
+                error,
+                ProjectorError::UnhealthyHeartbeat { reason, .. }
+                    if reason == "heartbeat checkpoint does not match durable projector control"
+            ));
+        };
+
+        for fence_token in [2, 4] {
+            heartbeat.observe_control(&control);
+            heartbeat.fence_token = Some(fence_token);
+            assert_checkpoint_mismatch(&heartbeat);
+        }
+        for command_generation in [10, 12] {
+            heartbeat.observe_control(&control);
+            heartbeat.command_generation = Some(command_generation);
+            assert_checkpoint_mismatch(&heartbeat);
+        }
+    }
+
+    #[test]
+    fn healthcheck_bounds_lease_retry_and_preserves_stable_path_errors() {
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let lease_a = store
+            .try_acquire_search_projector_lease("owner-a", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let control_a = store.search_projection_control().unwrap();
+        assert!(store.release_search_projector_lease(&lease_a).unwrap());
+        let lease_b = store
+            .try_acquire_search_projector_lease("owner-b", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let control_b = store.search_projection_control().unwrap();
+        assert!(store.release_search_projector_lease(&lease_b).unwrap());
+        let lease_c = store
+            .try_acquire_search_projector_lease("owner-c", Duration::from_secs(30))
+            .unwrap()
+            .unwrap();
+        let control_c = store.search_projection_control().unwrap();
+
+        let mut changing_controls =
+            std::collections::VecDeque::from([control_a, control_b, control_c.clone()]);
+        let error = healthcheck_with_control_reader(&dir.0, Duration::from_secs(60), || {
+            Ok(changing_controls
+                .pop_front()
+                .expect("bounded retry consumes three changing controls"))
+        })
+        .expect_err("a second canonical lease change must fail closed");
+        assert!(matches!(
+            error,
+            ProjectorError::UnhealthyHeartbeat { reason, .. }
+                if reason == "durable projector lease changed while reading its heartbeat"
+        ));
+        assert!(changing_controls.is_empty());
+
+        let stable_path = heartbeat_path(&dir.0, &lease_c.lease_id).unwrap();
+        let missing = healthcheck_with_control_reader(&dir.0, Duration::from_secs(60), || {
+            Ok(control_c.clone())
+        })
+        .expect_err("a missing stable canonical heartbeat must propagate");
+        assert!(matches!(
+            missing,
+            ProjectorError::HeartbeatIo { path, .. } if path == stable_path
+        ));
+
+        let mut heartbeat = ProjectorHeartbeat::new(lease_c.owner.clone());
+        heartbeat.observe_lease(&lease_c);
+        heartbeat.observe_control(&control_c);
+        write_heartbeat_atomic(&dir.0, &lease_c.lease_id, &heartbeat).unwrap();
+        std::fs::write(&stable_path, b"{not-json").unwrap();
+        let malformed = healthcheck_with_control_reader(&dir.0, Duration::from_secs(60), || {
+            Ok(control_c.clone())
+        })
+        .expect_err("a malformed stable canonical heartbeat must propagate");
+        assert!(matches!(
+            malformed,
+            ProjectorError::HeartbeatJson { path, .. } if path == stable_path
+        ));
+    }
+
+    #[test]
+    fn projector_liveness_survives_source_revision_churn() {
+        let started = std::time::Instant::now();
+        let dir = TempDir::new();
+        let store = Store::open(&dir.0.join("store")).expect("open store");
+        let lease = store
+            .try_acquire_search_projector_lease("churn-owner", Duration::from_secs(600))
+            .unwrap()
+            .unwrap();
+        let mut control = store.search_projection_control().unwrap();
+        let mut heartbeat = ProjectorHeartbeat::new(lease.owner.clone());
+        heartbeat.observe_lease(&lease);
+        heartbeat.observe_control(&control);
+        heartbeat.phase = ProjectorPhase::Building;
+        heartbeat.touch();
+        write_heartbeat_atomic(&dir.0, &lease.lease_id, &heartbeat).unwrap();
+
+        for commit in 1..=1_024 {
+            store.persist(|_| Ok(())).expect("advance source revision");
+            if commit % 32 == 0 {
+                control = store.search_projection_control().unwrap();
+                heartbeat.observe_control(&control);
+                heartbeat.phase = if (commit / 32) % 2 == 0 {
+                    ProjectorPhase::Building
+                } else {
+                    ProjectorPhase::Idle
+                };
+                heartbeat.touch();
+                write_heartbeat_atomic(&dir.0, &lease.lease_id, &heartbeat).unwrap();
+            }
+
+            let loaded = healthcheck(&store, &dir.0, Duration::from_secs(600))
+                .expect("source churn must not make a live projector unhealthy");
+            let durable = store.search_projection_control().unwrap();
+            assert!(
+                loaded.source_revision.unwrap() <= durable.checkpoint.source_revision,
+                "heartbeat revision must never be in the durable future"
+            );
+            assert_eq!(
+                loaded.fence_token,
+                Some(durable.checkpoint.fence_token),
+                "fence remains exact under source churn"
+            );
+            assert_eq!(
+                loaded.command_generation,
+                Some(durable.checkpoint.command_generation),
+                "command generation remains exact under source churn"
+            );
+        }
+        eprintln!(
+            "projector_liveness_survives_source_revision_churn: {:?}",
+            started.elapsed()
+        );
     }
 
     #[tokio::test]

@@ -2369,7 +2369,9 @@ fn managed_projector_heartbeat_is_trusted(
                 && lease.lease_id == heartbeat.lease_id
                 && lease.owner == heartbeat.owner
         })
-        && heartbeat.source_revision == Some(control.checkpoint.source_revision)
+        && heartbeat
+            .source_revision
+            .is_some_and(|revision| revision <= control.checkpoint.source_revision)
         && heartbeat.fence_token == Some(control.checkpoint.fence_token)
         && heartbeat.command_generation == Some(control.checkpoint.command_generation)
         && (!matches!(heartbeat.phase, ManagedProjectorPhase::Idle)
@@ -3830,7 +3832,7 @@ mod tests {
     }
 
     #[test]
-    fn managed_heartbeat_must_match_live_lease_checkpoint_and_generation() {
+    fn managed_heartbeat_requires_live_lease_monotonic_checkpoint_and_idle_generation() {
         const LEASE_A: &str = "00000000-0000-0000-0000-00000000000a";
         const LEASE_B: &str = "00000000-0000-0000-0000-00000000000b";
         let checkpoint = SearchProjectionCheckpoint {
@@ -3872,6 +3874,25 @@ mod tests {
             1_000,
             Some(4)
         ));
+        heartbeat.source_revision = Some(6);
+        for phase in [
+            ManagedProjectorPhase::Starting,
+            ManagedProjectorPhase::Standby,
+            ManagedProjectorPhase::Building,
+            ManagedProjectorPhase::Idle,
+            ManagedProjectorPhase::Paused,
+            ManagedProjectorPhase::Disabled,
+            ManagedProjectorPhase::Error,
+            ManagedProjectorPhase::ShuttingDown,
+        ] {
+            heartbeat.phase = phase;
+            assert!(
+                managed_projector_heartbeat_is_trusted(&heartbeat, true, &control, 1_000, Some(4)),
+                "{phase:?} heartbeat with a present earlier source revision remains authentic"
+            );
+        }
+        heartbeat.phase = ManagedProjectorPhase::Idle;
+        heartbeat.source_revision = Some(7);
         let mut reacquired = control.clone();
         reacquired.lease.as_mut().unwrap().lease_id = LEASE_B.to_owned();
         assert!(
@@ -3895,7 +3916,46 @@ mod tests {
             1_000,
             Some(4)
         ));
+        heartbeat.source_revision = None;
+        assert!(!managed_projector_heartbeat_is_trusted(
+            &heartbeat,
+            true,
+            &control,
+            1_000,
+            Some(4)
+        ));
         heartbeat.source_revision = Some(7);
+        for fence_token in [2, 4] {
+            heartbeat.fence_token = Some(fence_token);
+            assert!(!managed_projector_heartbeat_is_trusted(
+                &heartbeat,
+                true,
+                &control,
+                1_000,
+                Some(4)
+            ));
+        }
+        heartbeat.fence_token = Some(3);
+        for command_generation in [10, 12] {
+            heartbeat.command_generation = Some(command_generation);
+            assert!(!managed_projector_heartbeat_is_trusted(
+                &heartbeat,
+                true,
+                &control,
+                1_000,
+                Some(4)
+            ));
+        }
+        heartbeat.command_generation = Some(11);
+        heartbeat.generation = Some(5);
+        assert!(!managed_projector_heartbeat_is_trusted(
+            &heartbeat,
+            true,
+            &control,
+            1_000,
+            Some(4)
+        ));
+        heartbeat.generation = Some(4);
         assert!(!managed_projector_heartbeat_is_trusted(
             &heartbeat,
             true,
@@ -3986,6 +4046,42 @@ mod tests {
         assert!(!healthy.stale);
         assert_eq!(healthy.phase, SearchIndexPhase::Idle);
         assert_projector_details_redacted(&healthy);
+
+        let mut building_control = control.clone();
+        building_control.published_checkpoint = Some(SearchProjectionCheckpoint {
+            source_revision: 6,
+            ..control.checkpoint
+        });
+        let mut building_heartbeat = heartbeat.clone();
+        building_heartbeat.phase = ManagedProjectorPhase::Building;
+        building_heartbeat.source_revision = Some(6);
+        let mut building = redacted_idle_status();
+        apply_projector_trust_evidence(
+            &mut building,
+            false,
+            &building_control,
+            4,
+            1_000,
+            Ok(Some((building_heartbeat, true))),
+        );
+        assert!(building.stale);
+        assert_eq!(building.phase, SearchIndexPhase::Rebuilding);
+        assert_projector_details_redacted(&building);
+
+        let mut idle_heartbeat = heartbeat.clone();
+        idle_heartbeat.source_revision = Some(6);
+        let mut idle_lag = redacted_idle_status();
+        apply_projector_trust_evidence(
+            &mut idle_lag,
+            false,
+            &building_control,
+            4,
+            1_000,
+            Ok(Some((idle_heartbeat, true))),
+        );
+        assert!(idle_lag.stale);
+        assert_eq!(idle_lag.phase, SearchIndexPhase::Idle);
+        assert_projector_details_redacted(&idle_lag);
 
         let mut missing = redacted_idle_status();
         apply_projector_trust_evidence(&mut missing, false, &control, 4, 1_000, Ok(None));
