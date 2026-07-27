@@ -89,6 +89,36 @@ const PDF_CONTENT_TYPE: &str = "application/pdf";
 const SIGNED_PDF_B_B_PROFILE: &str = "application/pdf; profile=PAdES-B-B";
 const SIGNED_PDF_B_T_PROFILE: &str = "application/pdf; profile=PAdES-B-T";
 
+fn next_book_export_path(exports: &Path, book_id: BookId, at: OffsetDateTime) -> PathBuf {
+    exports.join(format!(
+        "book-{book_id}-{}-{}.zip",
+        utc_stamp(at),
+        uuid::Uuid::new_v4()
+    ))
+}
+
+fn write_owned_book_export(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(path)?;
+    if let Err(error) = file.write_all(bytes) {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(StoreError::Io(error));
+    }
+    Ok(())
+}
+
+#[cfg(any(feature = "postgres", test))]
+fn next_restore_sidecar_stage_path(data_dir: &Path, at: OffsetDateTime) -> PathBuf {
+    data_dir.join(format!(
+        ".restore-sidecars-{}-{}",
+        utc_stamp(at),
+        uuid::Uuid::new_v4()
+    ))
+}
+
 // =================================================================================================
 // Bundle format (export) — §2.4
 // =================================================================================================
@@ -696,8 +726,8 @@ impl Store {
         // Retain under <data_dir>/exports/ (§8-C) and keep the bytes for download.
         let exports = data_dir.join("exports");
         std::fs::create_dir_all(&exports)?;
-        let path = exports.join(format!("book-{book_id}-{}.zip", utc_stamp(at)));
-        std::fs::write(&path, &export.bytes)?;
+        let path = next_book_export_path(&exports, book_id, at);
+        write_owned_book_export(&path, &export.bytes)?;
 
         // Chained ledger.exported (scope recovery ⇒ Application chain; keeps the book sign-chain pure).
         let record = ExportRecord {
@@ -1522,11 +1552,11 @@ impl Store {
             // committed. Every error from this point is explicitly classified as applied.
             let sidecar_members = crate::pg_backup::sidecar_members(&verified.members);
             if !sidecar_members.is_empty() || !sidecars.is_empty() {
-                let stage = data_dir.join(format!(".restore-sidecars-{}", utc_stamp(at)));
-                let _ = std::fs::remove_dir_all(&stage);
+                let stage = next_restore_sidecar_stage_path(data_dir, at);
+                std::fs::create_dir(&stage)?;
+                let _stage_cleanup = RestoreStageCleanup::new(stage.clone());
                 let staged_roots = stage_backup_sidecars(&stage, &sidecar_members)?;
                 replace_live_sidecars(data_dir, &stage, &staged_roots, sidecars)?;
-                let _ = std::fs::remove_dir_all(&stage);
             }
 
             // 4. Reload the restored chain, record the restore (chained), and hand back the new
@@ -2837,6 +2867,100 @@ fn reconstruct_verdict(
         None => tamper_break(book_id, "quarantined (break detail unavailable)"),
     };
     Ok(ImportVerdict::Quarantined { break_ })
+}
+
+#[cfg(test)]
+mod temporary_artifact_tests {
+    use std::collections::HashSet;
+    use std::sync::{Arc, Barrier};
+
+    use super::*;
+
+    fn fixed_time() -> OffsetDateTime {
+        OffsetDateTime::from_unix_timestamp(1_780_000_000).expect("fixed timestamp")
+    }
+
+    fn owned_test_root(label: &str) -> (PathBuf, RestoreStageCleanup) {
+        let path = std::env::temp_dir().join(format!(
+            "chancela-recovery-{label}-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir(&path).expect("create uniquely owned test root");
+        let cleanup = RestoreStageCleanup::new(path.clone());
+        (path, cleanup)
+    }
+
+    #[test]
+    fn repeated_book_exports_at_one_instant_are_distinct_and_never_overwrite() {
+        const EXPORT_COUNT: usize = 24;
+        let (root, _cleanup) = owned_test_root("parallel-book-exports");
+        let exports = Arc::new(root.join("exports"));
+        std::fs::create_dir(&*exports).expect("create exports directory");
+        let book_id = BookId(uuid::Uuid::nil());
+        let start = Arc::new(Barrier::new(EXPORT_COUNT));
+        let handles = (0..EXPORT_COUNT)
+            .map(|index| {
+                let exports = Arc::clone(&exports);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    let path = next_book_export_path(&exports, book_id, fixed_time());
+                    let bytes = format!("export-{index}").into_bytes();
+                    write_owned_book_export(&path, &bytes).expect("write owned export");
+                    (path, bytes)
+                })
+            })
+            .collect::<Vec<_>>();
+        let written = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("book-export worker"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            written
+                .iter()
+                .map(|(path, _)| path)
+                .collect::<HashSet<_>>()
+                .len(),
+            EXPORT_COUNT
+        );
+        for (path, expected) in written {
+            assert_eq!(std::fs::read(path).expect("read retained export"), expected);
+        }
+    }
+
+    #[test]
+    fn postgres_sidecar_stages_at_one_instant_have_exclusive_cleanup_ownership() {
+        const STAGE_COUNT: usize = 24;
+        let (root, _cleanup) = owned_test_root("parallel-sidecar-stages");
+        let root = Arc::new(root);
+        let start = Arc::new(Barrier::new(STAGE_COUNT));
+        let handles = (0..STAGE_COUNT)
+            .map(|_| {
+                let root = Arc::clone(&root);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    let path = next_restore_sidecar_stage_path(&root, fixed_time());
+                    std::fs::create_dir(&path).expect("claim unique sidecar stage");
+                    (RestoreStageCleanup::new(path.clone()), path)
+                })
+            })
+            .collect::<Vec<_>>();
+        let stages = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("sidecar-stage worker"))
+            .collect::<Vec<_>>();
+        let paths = stages
+            .iter()
+            .map(|(_, path)| path.clone())
+            .collect::<HashSet<_>>();
+
+        assert_eq!(paths.len(), STAGE_COUNT);
+        assert!(paths.iter().all(|path| path.is_dir()));
+        drop(stages);
+        assert!(paths.iter().all(|path| !path.exists()));
+    }
 }
 
 #[cfg(test)]

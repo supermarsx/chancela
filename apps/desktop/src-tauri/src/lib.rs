@@ -252,43 +252,61 @@ fn safe_mode_requested() -> bool {
 }
 
 /// Install a best-effort panic hook that writes each panic to
-/// `<crash_dir>/crash/panic-<stamp>.log` (t26), then defers to the previously installed
+/// `<crash_dir>/crash/panic-<stamp>-<pid>-<nonce>.log` (t26), then defers to the previously installed
 /// hook (so the normal stderr backtrace still happens). The crash screen references this
 /// path pattern generically.
 ///
 /// It MUST never panic itself — a panic inside a panic hook aborts the process — so every
 /// fallible step (dir creation, file open, write) is ignored on error.
 #[cfg(feature = "embedded-server")]
-fn install_panic_hook(crash_base: std::path::PathBuf) {
+static NEXT_PANIC_LOG_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+#[cfg(feature = "embedded-server")]
+fn write_owned_panic_log(
+    dir: &std::path::Path,
+    stamp_ms: u128,
+    location: &str,
+    message: &str,
+) -> std::io::Result<std::path::PathBuf> {
     use std::io::Write;
+    use std::sync::atomic::Ordering;
+
+    std::fs::create_dir_all(dir)?;
+    let id = NEXT_PANIC_LOG_ID.fetch_add(1, Ordering::Relaxed);
+    let path = dir.join(format!("panic-{stamp_ms}-{}-{id}.log", std::process::id()));
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&path)?;
+    writeln!(
+        file,
+        "Chancela — panic\nstamp_ms: {stamp_ms}\nlocal: {location}\nmensagem: {message}"
+    )?;
+    Ok(path)
+}
+
+#[cfg(feature = "embedded-server")]
+fn install_panic_hook(crash_base: std::path::PathBuf) {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let dir = crash_base.join("crash");
-        if std::fs::create_dir_all(&dir).is_ok() {
-            let stamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0);
-            let path = dir.join(format!("panic-{stamp}.log"));
-            if let Ok(mut file) = std::fs::File::create(&path) {
-                let location = info
-                    .location()
-                    .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-                    .unwrap_or_else(|| "local desconhecido".to_owned());
-                let message = info
-                    .payload()
-                    .downcast_ref::<&str>()
-                    .map(|s| (*s).to_owned())
-                    .or_else(|| info.payload().downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "(payload não textual)".to_owned());
-                let _ = writeln!(
-                    file,
-                    "Chancela — panic\nstamp_ms: {stamp}\nlocal: {location}\nmensagem: {message}"
-                );
-            }
-        }
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "local desconhecido".to_owned());
+        let message = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_owned())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "(payload não textual)".to_owned());
+        let _ = write_owned_panic_log(&dir, stamp, &location, &message);
         // Preserve the standard behaviour (stderr backtrace, abort/unwind policy).
         default_hook(info);
     }));
@@ -702,9 +720,14 @@ fn resolve_web_dist_from_candidates(
 
 #[cfg(all(test, feature = "embedded-server"))]
 mod tests {
-    use super::resolve_web_dist_from_candidates;
+    use super::{resolve_web_dist_from_candidates, write_owned_panic_log};
+    use std::collections::HashSet;
     use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);
 
     struct TempDir {
         path: PathBuf,
@@ -716,11 +739,16 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .expect("system clock should be after the Unix epoch")
                 .as_nanos();
+            Self::new_at(name, stamp)
+        }
+
+        fn new_at(name: &str, stamp: u128) -> Self {
+            let id = NEXT_TEMP_DIR_ID.fetch_add(1, Ordering::Relaxed);
             let path = std::env::temp_dir().join(format!(
-                "chancela-desktop-{name}-{}-{stamp}",
+                "chancela-desktop-{name}-{}-{stamp}-{id}",
                 std::process::id()
             ));
-            std::fs::create_dir_all(&path).expect("test temp dir should be created");
+            std::fs::create_dir(&path).expect("test temp dir should be uniquely owned");
             Self { path }
         }
     }
@@ -735,6 +763,68 @@ mod tests {
         std::fs::create_dir_all(dir).expect("web dist dir should be created");
         std::fs::write(dir.join("index.html"), "<!doctype html>")
             .expect("index.html should be written");
+    }
+
+    #[test]
+    fn labeled_temp_dirs_are_unique_at_a_fixed_clock_reading_and_cleaned_on_drop() {
+        const DIR_COUNT: usize = 24;
+        let handles = (0..DIR_COUNT)
+            .map(|_| std::thread::spawn(|| TempDir::new_at("parallel", 1_780_000_000)))
+            .collect::<Vec<_>>();
+        let dirs = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("temp-dir worker"))
+            .collect::<Vec<_>>();
+        let paths = dirs
+            .iter()
+            .map(|dir| dir.path.clone())
+            .collect::<HashSet<_>>();
+        assert_eq!(paths.len(), DIR_COUNT);
+        assert!(paths.iter().all(|path| path.is_dir()));
+        drop(dirs);
+        assert!(paths.iter().all(|path| !path.exists()));
+    }
+
+    #[test]
+    fn panic_logs_at_one_millisecond_are_distinct_and_preserve_every_message() {
+        const LOG_COUNT: usize = 24;
+        let tmp = TempDir::new("panic-logs");
+        let crash = Arc::new(tmp.path.join("crash"));
+        let start = Arc::new(Barrier::new(LOG_COUNT));
+        let handles = (0..LOG_COUNT)
+            .map(|index| {
+                let crash = Arc::clone(&crash);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    let message = format!("parallel panic {index}");
+                    let path = write_owned_panic_log(
+                        &crash,
+                        1_780_000_000_123,
+                        "parallel.rs:1:1",
+                        &message,
+                    )
+                    .expect("write uniquely owned panic log");
+                    (path, message)
+                })
+            })
+            .collect::<Vec<_>>();
+        let logs = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("panic-log worker"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            logs.iter()
+                .map(|(path, _)| path.clone())
+                .collect::<HashSet<_>>()
+                .len(),
+            LOG_COUNT
+        );
+        for (path, message) in logs {
+            let contents = std::fs::read_to_string(path).expect("read panic log");
+            assert!(contents.contains(&message));
+            assert!(contents.contains("stamp_ms: 1780000000123"));
+        }
     }
 
     #[test]

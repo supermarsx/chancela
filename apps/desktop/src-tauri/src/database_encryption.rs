@@ -1,6 +1,9 @@
 use std::fmt;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use chancela_api::{
     DB_KEY_ENV, DB_KEY_FILE_ENV, DatabaseEncryptionConfig, DatabaseEncryptionConfigError,
@@ -12,6 +15,8 @@ pub(crate) const ALLOW_PLAINTEXT_DB_ENV: &str = "CHANCELA_DESKTOP_ALLOW_PLAINTEX
 const KEY_FILE_NAME: &str = "database-key.current-user-dpapi.json";
 const KEY_FILE_FORMAT: &str = "chancela-desktop-sqlcipher-key/v1";
 const GENERATED_KEY_BYTES: usize = 32;
+static PROTECTED_KEY_CREATE_LOCK: Mutex<()> = Mutex::new(());
+static NEXT_PROTECTED_KEY_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(windows)]
 const WINDOWS_DPAPI_PROVIDER: &str = "windows-current-user-dpapi";
@@ -257,6 +262,13 @@ where
         &self,
         generate_key: impl FnOnce() -> Result<String, DesktopDatabaseEncryptionError>,
     ) -> Result<LoadedDatabaseKey, DesktopDatabaseEncryptionError> {
+        // Key creation is a once-per-install operation. Serialize the existence check through
+        // installation so concurrent startup paths in this process agree on one winning key.
+        // Recover a poisoned lock because this path reports its own typed errors and must not turn
+        // a prior caller panic into a permanent startup panic.
+        let _create_guard = PROTECTED_KEY_CREATE_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         if self.path.is_file() {
             return self.load_key(false);
         }
@@ -337,6 +349,25 @@ struct ProtectedKeyEnvelope {
     protected_key_hex: String,
 }
 
+fn protected_key_temp_path_at(path: &Path, nanos: u128) -> PathBuf {
+    let id = NEXT_PROTECTED_KEY_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+    path.with_file_name(format!(
+        ".{}.{}.{nanos}.{id}.tmp",
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(KEY_FILE_NAME),
+        std::process::id()
+    ))
+}
+
+fn protected_key_temp_path(path: &Path) -> PathBuf {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    protected_key_temp_path_at(path, nanos)
+}
+
 fn write_key_envelope(
     path: &Path,
     envelope: &ProtectedKeyEnvelope,
@@ -355,13 +386,7 @@ fn write_key_envelope(
             source,
         }
     })?;
-    let tmp_path = path.with_file_name(format!(
-        ".{}.{}.tmp",
-        path.file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or(KEY_FILE_NAME),
-        std::process::id()
-    ));
+    let tmp_path = protected_key_temp_path(path);
     let mut tmp = std::fs::OpenOptions::new()
         .create_new(true)
         .write(true)
@@ -392,15 +417,25 @@ fn write_key_envelope(
         let _ = std::fs::remove_file(&tmp_path);
         return Ok(false);
     }
-    std::fs::rename(&tmp_path, path).map_err(|source| {
-        let _ = std::fs::remove_file(&tmp_path);
-        DesktopDatabaseEncryptionError::Io {
-            action: "install protected database-key file",
-            path: path.to_path_buf(),
-            source,
+    match std::fs::rename(&tmp_path, path) {
+        Ok(()) => Ok(true),
+        // A separately launched process can win after the existence check. Windows rename is
+        // no-replace, so adopt the installed key instead of treating that benign race as startup
+        // corruption. The desktop single-instance boundary prevents an overwrite-capable Unix
+        // production path; non-Windows builds never use this platform-key implementation.
+        Err(_) if path.is_file() => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Ok(false)
         }
-    })?;
-    Ok(true)
+        Err(source) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(DesktopDatabaseEncryptionError::Io {
+                action: "install protected database-key file",
+                path: path.to_path_buf(),
+                source,
+            })
+        }
+    }
 }
 
 fn generate_sqlcipher_key() -> Result<String, DesktopDatabaseEncryptionError> {
@@ -577,8 +612,10 @@ fn dpapi_unprotect(protected: &[u8]) -> Result<Vec<u8>, DesktopDatabaseEncryptio
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
@@ -667,6 +704,85 @@ mod tests {
         assert_eq!(loaded.key, "first-generated-key");
         assert_eq!(loaded.provider, "test-protector");
         assert!(!loaded.created);
+    }
+
+    #[test]
+    fn protected_key_temp_paths_are_unique_for_a_fixed_clock_reading() {
+        const PATH_COUNT: usize = 32;
+        let target = PathBuf::from(KEY_FILE_NAME);
+        let handles = (0..PATH_COUNT)
+            .map(|_| {
+                let target = target.clone();
+                std::thread::spawn(move || {
+                    protected_key_temp_path_at(&target, 1_780_000_000_000_000_000)
+                })
+            })
+            .collect::<Vec<_>>();
+        let paths = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("protected-key temp-path worker"))
+            .collect::<HashSet<_>>();
+        assert_eq!(paths.len(), PATH_COUNT);
+    }
+
+    #[test]
+    fn stale_pid_only_temp_file_neither_blocks_creation_nor_gets_deleted_as_owned() {
+        let tmp = TempDir::new("stale-temp");
+        let path = tmp.path().join("db-key.json");
+        let stale = path.with_file_name(format!(".db-key.json.{}.tmp", std::process::id()));
+        std::fs::write(&stale, b"stale other operation").expect("write stale temp");
+
+        let loaded = ProtectedDatabaseKeyFile::new(path.clone(), TestProtector)
+            .load_or_create_key_with(|| Ok("fresh-generated-key".to_owned()))
+            .expect("create key despite stale legacy temp");
+
+        assert!(loaded.created);
+        assert_eq!(loaded.key, "fresh-generated-key");
+        assert!(path.is_file());
+        assert_eq!(
+            std::fs::read(&stale).expect("stale temp remains untouched"),
+            b"stale other operation"
+        );
+    }
+
+    #[test]
+    fn concurrent_protected_key_creation_adopts_one_winner_without_temp_collisions() {
+        const CREATOR_COUNT: usize = 16;
+        let tmp = TempDir::new("parallel-create");
+        let path = tmp.path().join("db-key.json");
+        let start = Arc::new(Barrier::new(CREATOR_COUNT));
+        let handles = (0..CREATOR_COUNT)
+            .map(|index| {
+                let path = path.clone();
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    ProtectedDatabaseKeyFile::new(path, TestProtector)
+                        .load_or_create_key_with(|| Ok(format!("generated-key-{index}")))
+                        .expect("load or create protected key")
+                })
+            })
+            .collect::<Vec<_>>();
+        let loaded = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("protected-key creation worker"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            loaded.iter().filter(|result| result.created).count(),
+            1,
+            "exactly one caller must install the protected key"
+        );
+        assert!(
+            loaded.iter().all(|result| result.key == loaded[0].key),
+            "every caller must adopt the installed key"
+        );
+        let leftovers = std::fs::read_dir(tmp.path())
+            .expect("read protected-key directory")
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_name().to_string_lossy().ends_with(".tmp"))
+            .count();
+        assert_eq!(leftovers, 0, "owned temporary files must be cleaned");
     }
 
     #[test]

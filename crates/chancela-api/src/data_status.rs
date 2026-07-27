@@ -9,6 +9,7 @@ use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Json;
@@ -2783,15 +2784,22 @@ fn relative_display(base: &Path, path: &Path) -> String {
     }
 }
 
+static NEXT_PERMISSION_PROBE_ID: AtomicU64 = AtomicU64::new(0);
+
+fn probe_file_name_at(nanos: u128) -> String {
+    let id = NEXT_PERMISSION_PROBE_ID.fetch_add(1, Ordering::Relaxed);
+    format!(
+        ".chancela-data-status-probe-{}-{nanos}-{id}.tmp",
+        std::process::id()
+    )
+}
+
 fn probe_file_name() -> String {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_nanos())
         .unwrap_or(0);
-    format!(
-        ".chancela-data-status-probe-{}-{nanos}.tmp",
-        std::process::id()
-    )
+    probe_file_name_at(nanos)
 }
 
 fn now_rfc3339() -> String {
@@ -2875,6 +2883,50 @@ mod tests {
             .expect("open test file for timestamp update");
         file.set_times(std::fs::FileTimes::new().set_modified(modified))
             .expect("set test file modified timestamp");
+    }
+
+    #[test]
+    fn concurrent_permission_probes_with_a_fixed_clock_own_distinct_files() {
+        const PROBE_COUNT: usize = 32;
+
+        let names = (0..PROBE_COUNT)
+            .map(|_| std::thread::spawn(|| probe_file_name_at(1_780_000_000_000_000_000)))
+            .map(|handle| handle.join().expect("probe-name worker"))
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            names.len(),
+            PROBE_COUNT,
+            "the process-local suffix must disambiguate an identical clock reading"
+        );
+
+        let tmp = TempDir::new("parallel-permission-probes");
+        let handles = (0..PROBE_COUNT)
+            .map(|_| {
+                let dir = tmp.dir.clone();
+                std::thread::spawn(move || probe_permissions(&dir, true))
+            })
+            .collect::<Vec<_>>();
+        for handle in handles {
+            let status = handle.join().expect("permission-probe worker");
+            assert!(
+                status.create_file.ok,
+                "create check: {:?}",
+                status.create_file
+            );
+            assert!(status.write_file.ok, "write check: {:?}", status.write_file);
+            assert!(
+                status.delete_probe_file.ok,
+                "delete check: {:?}",
+                status.delete_probe_file
+            );
+        }
+        assert_eq!(
+            std::fs::read_dir(&tmp.dir)
+                .expect("read probe directory")
+                .count(),
+            0,
+            "every probe must delete only its owned file"
+        );
     }
 
     #[test]

@@ -68,6 +68,27 @@ pub(crate) use crate::schema::LOGICAL_BACKUP_TABLES as PG_BACKUP_TABLES;
 /// identity sequence realigned afterwards.
 const IDENTITY_TABLE: &str = "imported_document_review_history";
 
+fn next_pg_backup_paths(backups_dir: &Path, stamp: &str) -> (PathBuf, PathBuf) {
+    let nonce = uuid::Uuid::new_v4();
+    (
+        backups_dir.join(format!("chancela-backup-{stamp}-{nonce}.zip")),
+        backups_dir.join(format!(".chancela-backup-{stamp}-{nonce}.zip.tmp")),
+    )
+}
+
+fn write_owned_pg_backup_temp(path: &Path, bytes: &[u8]) -> Result<(), StoreError> {
+    let mut file = std::fs::OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(path)?;
+    if let Err(error) = file.write_all(bytes) {
+        drop(file);
+        let _ = std::fs::remove_file(path);
+        return Err(StoreError::Io(error));
+    }
+    Ok(())
+}
+
 /// Per-table fixity recorded in a [`PgBackupManifest`].
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PgBackupTable {
@@ -379,9 +400,8 @@ impl crate::Store {
         let bundle = assemble_pg_bundle(&manifest, &all_members)?;
 
         // Write via a temp file + atomic rename, mirroring the SQLite backup.
-        let final_path = backups_dir.join(format!("chancela-backup-{stamp}.zip"));
-        let tmp_path = backups_dir.join(format!(".chancela-backup-{stamp}.zip.tmp"));
-        std::fs::write(&tmp_path, &bundle)?;
+        let (final_path, tmp_path) = next_pg_backup_paths(&backups_dir, &stamp);
+        write_owned_pg_backup_temp(&tmp_path, &bundle)?;
         std::fs::rename(&tmp_path, &final_path).inspect_err(|_| {
             let _ = std::fs::remove_file(&tmp_path);
         })?;
@@ -795,7 +815,55 @@ fn parse_meta_kv(json: &str) -> Option<(String, String)> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+    use std::sync::{Arc, Barrier};
+
     use super::*;
+
+    #[test]
+    fn logical_backup_paths_are_unique_for_concurrent_fixed_stamp_exports() {
+        const BACKUP_COUNT: usize = 32;
+        let backups_dir = Arc::new(PathBuf::from("backups"));
+        let start = Arc::new(Barrier::new(BACKUP_COUNT));
+        let handles = (0..BACKUP_COUNT)
+            .map(|_| {
+                let backups_dir = Arc::clone(&backups_dir);
+                let start = Arc::clone(&start);
+                std::thread::spawn(move || {
+                    start.wait();
+                    next_pg_backup_paths(&backups_dir, "20260727T004500Z")
+                })
+            })
+            .collect::<Vec<_>>();
+        let paths = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("backup-path worker"))
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            paths
+                .iter()
+                .map(|(final_path, _)| final_path)
+                .collect::<HashSet<_>>()
+                .len(),
+            BACKUP_COUNT
+        );
+        assert_eq!(
+            paths
+                .iter()
+                .map(|(_, temp_path)| temp_path)
+                .collect::<HashSet<_>>()
+                .len(),
+            BACKUP_COUNT
+        );
+        for (final_path, temp_path) in paths {
+            let final_name = final_path.to_string_lossy();
+            let temp_name = temp_path.to_string_lossy();
+            assert!(final_name.starts_with("backups"));
+            assert!(final_name.ends_with(".zip"));
+            assert!(temp_name.ends_with(".zip.tmp"));
+        }
+    }
 
     #[test]
     fn logical_backup_contract_covers_the_complete_group_graph() {
