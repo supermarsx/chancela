@@ -112,6 +112,7 @@ mod cache;
 mod cae;
 mod chronology;
 mod collection_page;
+pub mod confirmation;
 mod connector_jobs;
 mod cors;
 pub use connector_jobs::{ConnectorTargetMap, ConnectorTargetRecord};
@@ -3553,6 +3554,14 @@ pub fn router(state: AppState) -> Router {
                 .post(roles::apply_seeded_role_reconciliation),
         )
         .route("/v1/permissions", get(roles::list_permissions))
+        // t56: the resolved per-action confirmation policy. Its own endpoint, NOT a field on
+        // `auth.confirmation` — a computed map is never "default", so hanging it off `AuthSettings`
+        // would break `skip_serializing_if = "AuthSettings::is_default"` and move
+        // `contracts/settings.json`, which has no `auth` key at all.
+        .route(
+            "/v1/confirmation-policy",
+            get(confirmation::get_confirmation_policy),
+        )
         .route(
             "/v1/users/{id}/roles",
             post(roles::assign_role).delete(roles::unassign_role),

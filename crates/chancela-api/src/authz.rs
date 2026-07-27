@@ -529,6 +529,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/health/{*rest}", RouteClass::Exempt),
     // --- Any valid session (introspection for the web permissions context) ----------------------
     ("/v1/session/permissions", RouteClass::Session),
+    // t56 confirmation policy: the resolved per-action floor/effective strictness the web needs to
+    // render the right gate. UI-shaping metadata exactly like `/v1/permissions` — it exposes no
+    // instance data, only the policy shape, so any valid session may read it.
+    ("/v1/confirmation-policy", RouteClass::Session),
     // t95 active sign-ins: self-scoped list / revoke / revoke-others. A valid session that acts only
     // on its own owner's sessions (handler-enforced), so `Session`, not a permission verb.
     ("/v1/sessions", RouteClass::Session),
