@@ -1120,6 +1120,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Mais filtros',
     'manifesto',
     'Manifesto de arquivo',
+    'Manifesto DGLAB local',
     'Manutenção',
     'Manutenção concluída',
     'Matiz',

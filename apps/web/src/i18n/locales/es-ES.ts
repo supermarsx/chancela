@@ -5687,6 +5687,7 @@ export const esES: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'En la respuesta:',
   'uiLiteral.bookDetailPage.noArtefacto': 'En el artefacto:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· en el evento del libro mayor:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Manifiesto DGLAB local',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'El manifiesto DGLAB local es un andamio JSON derivado del paquete interno. No es una exportación oficial de DGLAB, presentación gubernamental, certificación de archivo legal, certificación PDF/A, PAdES o PDF-UA, ni un registro de eliminación destructiva.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

@@ -5645,6 +5645,7 @@ export const daDK: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'I svaret:',
   'uiLiteral.bookDetailPage.noArtefacto': 'I artefakten:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· i hovedbogsbegivenheden:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Lokalt DGLAB-manifest',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'Det lokale DGLAB-manifest er et JSON-stillads afledt af den interne pakke. Det er ikke en officiel DGLAB-eksport, offentlig indsendelse, juridisk arkiveringscertificering, PDF/A, PAdES eller PDF-UA-certificering, ej heller en registrering af destruktiv bortskaffelse.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

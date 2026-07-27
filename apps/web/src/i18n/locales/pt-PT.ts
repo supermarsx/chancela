@@ -5680,6 +5680,7 @@ export const ptPT: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'Na resposta:',
   'uiLiteral.bookDetailPage.noArtefacto': 'No artefacto:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· no evento de ledger:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Manifesto DGLAB local',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'O manifesto DGLAB local é um scaffold JSON derivado do pacote interno. Não é exportação oficial DGLAB, submissão governamental, certificação arquivística legal, certificação PDF/A, PAdES ou PDF-UA, nem registo de descarte destrutivo.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

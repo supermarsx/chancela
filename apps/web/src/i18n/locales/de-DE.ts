@@ -5714,6 +5714,7 @@ export const deDE: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'In der Antwort:',
   'uiLiteral.bookDetailPage.noArtefacto': 'Im Artefakt:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· im Ledger-Ereignis:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Lokales DGLAB-Manifest',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'Das lokale DGLAB-Manifest ist ein vom internen Paket abgeleitetes JSON-Gerüst. Es handelt sich nicht um einen offiziellen DGLAB-Export, eine behördliche Einreichung, eine gesetzliche Archivzertifizierung, eine PDF/A-, PAdES- oder PDF-UA-Zertifizierung und auch nicht um eine Aufzeichnung einer destruktiven Entsorgung.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

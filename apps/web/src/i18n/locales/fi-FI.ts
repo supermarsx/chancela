@@ -5657,6 +5657,7 @@ export const fiFI: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'Vastauksessa:',
   'uiLiteral.bookDetailPage.noArtefacto': 'Artefaktissa:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· pääkirjatapahtumassa:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Paikallinen DGLAB-luettelo',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'Paikallinen DGLAB-luettelo on JSON-teline, joka on johdettu sisäisestä paketista. Se ei ole virallinen DGLAB-vienti, viranomainen, laillinen arkistointitodistus, PDF/A-, PAdES- tai PDF-UA-sertifikaatti eikä tietue tuhoavasta hävityksestä.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

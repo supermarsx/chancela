@@ -5694,6 +5694,7 @@ export const itIT: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'Nella risposta:',
   'uiLiteral.bookDetailPage.noArtefacto': 'Nel manufatto:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': "· nell'evento contabile:",
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Manifest DGLAB locale',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     "Il manifest DGLAB locale è un'impalcatura JSON derivata dal pacchetto interno. Non si tratta di un'esportazione ufficiale DGLAB, di una presentazione governativa, di una certificazione di archiviazione legale, di una certificazione PDF/A, PAdES o PDF-UA, né di una registrazione di smaltimento distruttivo.",
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

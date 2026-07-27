@@ -5694,6 +5694,7 @@ export const nlNL: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'In het antwoord:',
   'uiLiteral.bookDetailPage.noArtefacto': 'In het artefact:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· in de grootboekgebeurtenis:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Lokaal DGLAB-manifest',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'Het lokale DGLAB-manifest is een JSON-scaffold die is afgeleid van het interne pakket. Het is geen officiële DGLAB-export, overheidsinzending, wettelijke archiefcertificering, PDF/A-, PAdES- of PDF-UA-certificering, noch een record van destructieve verwijdering.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

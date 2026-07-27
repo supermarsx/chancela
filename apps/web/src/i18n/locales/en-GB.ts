@@ -5585,6 +5585,7 @@ export const enGB: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'In the answer:',
   'uiLiteral.bookDetailPage.noArtefacto': 'In the artifact:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· in the ledger event:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Local DGLAB manifest',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'The local DGLAB manifest is a JSON scaffold derived from the internal package. It is not an official DGLAB export, government submission, legal archival certification, PDF/A, PAdES or PDF-UA certification, nor a record of destructive disposal.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

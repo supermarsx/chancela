@@ -5652,6 +5652,7 @@ export const svFI: Catalog = {
   'uiLiteral.bookDetailPage.naResposta': 'I svaret:',
   'uiLiteral.bookDetailPage.noArtefacto': 'I artefakten:',
   'uiLiteral.bookDetailPage.noEventoDeLedger': '· i reskontrahändelsen:',
+  'uiLiteral.bookDetailPage.manifestoDglabLocal': 'Lokalt DGLAB-manifest',
   'uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson':
     'Det lokala DGLAB-manifestet är en JSON-ställning som kommer från det interna paketet. Det är inte en officiell DGLAB-export, myndighetsinlämning, juridisk arkivcertifiering, PDF/A, PAdES eller PDF-UA-certifiering, och inte heller ett register över destruktiv kassering.',
   'uiLiteral.bookDetailPage.oResultadoSeraUmRascunhoOcrAuxiliarNao':

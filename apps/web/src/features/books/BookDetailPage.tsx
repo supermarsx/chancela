@@ -2323,7 +2323,7 @@ export function BookDetailPage() {
             >
               <BookExportRows bookId={b.id} />
               <tr>
-                <th scope="row">Manifesto DGLAB local</th>
+                <th scope="row">{t('uiLiteral.bookDetailPage.manifestoDglabLocal')}</th>
                 <td>
                   <InlineWarning tone="info" title={t('books.detail.dglab.warningTitle')}>
                     {t('uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson')}
