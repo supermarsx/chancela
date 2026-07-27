@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "throughput",
+  "pass_criteria": {
+    "target_rate_per_second": 10000.0,
+    "min_sustained_seconds": 60.0,
+    "max_error_rate": 0.005,
+    "max_p99_ms": 1000.0
+  },
+  "notes": [
+    "t57 plan section 5, criterion B3, transcribed verbatim. These values are",
+    "fixed BEFORE the run. loadgen.py verify-slo asserts them against constants",
+    "compiled into the tool, so this file cannot be edited to make a run pass.",
+    "They were NOT softened because the container CPU quota was raised: raising",
+    "the quota buys a fair measurement, not a lower bar.",
+    "Compound criterion. A throughput number without an error rate and a latency",
+    "bound is not a result. 10 000 req/s 'achieved' with an error rate above",
+    "0.5 percent is not 10 000 req/s; the compliant rate is reported instead.",
+    "min_sustained_seconds means 60 seconds CONTINUOUS, measured as the longest",
+    "run of consecutive whole seconds at or above target. Not a peak, not a mean.",
+    "max_p99_ms applies to the coordinated-omission-corrected latency, which is",
+    "measured from the INTENDED send time. Service-time p99 is reported alongside",
+    "but does not satisfy this criterion.",
+    "A step whose bottleneck is any client_* outcome is not a server capacity",
+    "result and cannot pass, whatever rate it reached.",
+    "Passing every criterion still flips no SPEC-COVERAGE claim: this runs a",
+    "non-proof profile on loopback with raised limits, by design."
+  ]
+}

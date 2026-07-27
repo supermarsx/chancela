@@ -1,0 +1,156 @@
+{
+  "schema_version": 1,
+  "name": "throughput-10k",
+  "proof_eligible": false,
+  "seed": 20260727,
+  "notes": [
+    "t57 B3. Consumed by scripts/perf/loadgen.py, NOT by harness.py: this is an",
+    "open-loop arrival-rate ladder, which the closed-loop harness workload cannot",
+    "express. The governed capacity profile and slo.capacity.json are untouched.",
+    "proof_eligible is false and stays false: a raised container CPU quota can",
+    "never support a SPEC-COVERAGE claim.",
+    "CPU budget measured on this box, not assumed. Host: 2x Xeon Gold 6138 =",
+    "40 cores / 80 logical CPUs. The Docker Desktop WSL2 VM is allocated only 26",
+    "of those 80, so the container budget below is bounded by 26, not by 80.",
+    "raised-quota stage: 3 x 5.0 app + 3.0 projector + 1.0 gateway = 19 of the",
+    "VM's 26 CPUs, leaving ~7 for Postgres, Redis and the VM kernel.",
+    "Generator: 24 host CPUs outside the VM allocation, 16 processes x 64",
+    "persistent connections = 1024 keep-alive sockets. Connection count is now",
+    "constant instead of proportional to request rate, which is what removes the",
+    "~136 new-connections/second ephemeral-port ceiling."
+  ],
+  "generator": {
+    "worker_processes": 16,
+    "connections_per_worker": 64,
+    "cpu_allocation": 24,
+    "cpu_index_base": 8,
+    "request_timeout_seconds": 30
+  },
+  "thresholds": {
+    "generator_cpu_saturation_fraction": 0.85,
+    "max_dispatch_deficit_fraction": 0.01,
+    "max_dispatch_blocked_fraction": 0.01,
+    "max_dispatch_lag_p99_ms": 50.0,
+    "min_connection_reuse_ratio": 0.95,
+    "max_time_wait_fraction_of_ephemeral_range": 0.5,
+    "min_achieved_fraction_of_offered": 0.99
+  },
+  "stages": [
+    {
+      "name": "governed-baseline",
+      "app_cpus": 2.0,
+      "app_replicas": 3,
+      "search_projector_cpus": 1.5,
+      "purpose": "Short ladder at the governed 2.0-CPU compose quota, same tooling and same endpoint mix as the raised-quota stage, so every raised-quota figure has a production-shaped comparator (t57 D2).",
+      "weights": {
+        "health": 20,
+        "entity_get": 30,
+        "book_get": 30,
+        "signature_status": 15,
+        "entity_list": 5
+      },
+      "steps": [
+        {
+          "name": "baseline-250",
+          "target_rate_per_second": 250,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "baseline-500",
+          "target_rate_per_second": 500,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "baseline-1000",
+          "target_rate_per_second": 1000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        }
+      ]
+    },
+    {
+      "name": "raised-quota",
+      "app_cpus": 5.0,
+      "app_replicas": 3,
+      "search_projector_cpus": 3.0,
+      "purpose": "The same ladder with the compose quota raised from 2.0 to 5.0 CPUs per app node. Numbers from this stage are NOT production-shaped numbers and must never be presented as such.",
+      "weights": {
+        "health": 20,
+        "entity_get": 30,
+        "book_get": 30,
+        "signature_status": 15,
+        "entity_list": 5
+      },
+      "steps": [
+        {
+          "name": "raised-1000",
+          "target_rate_per_second": 1000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "raised-2500",
+          "target_rate_per_second": 2500,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "raised-5000",
+          "target_rate_per_second": 5000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "raised-7500",
+          "target_rate_per_second": 7500,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "raised-10000",
+          "target_rate_per_second": 10000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "raised-10000-sustain",
+          "target_rate_per_second": 10000,
+          "duration_seconds": 210,
+          "warmup_seconds": 30
+        }
+      ]
+    },
+    {
+      "name": "client-ceiling",
+      "app_cpus": 5.0,
+      "app_replicas": 3,
+      "search_projector_cpus": 3.0,
+      "purpose": "Identifier-free /health-only ladder. Establishes what the generator itself can offer before the application is meaningfully involved, so a later shortfall can be attributed to the right side of the wire.",
+      "weights": {
+        "health": 1
+      },
+      "steps": [
+        {
+          "name": "ceiling-5000",
+          "target_rate_per_second": 5000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "ceiling-10000",
+          "target_rate_per_second": 10000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        },
+        {
+          "name": "ceiling-15000",
+          "target_rate_per_second": 15000,
+          "duration_seconds": 90,
+          "warmup_seconds": 30
+        }
+      ]
+    }
+  ]
+}
