@@ -25,7 +25,6 @@ import {
 } from '../../api/hooks';
 import {
   type BreachPlaybookView,
-  type BreachEvidenceKind,
   type CloseRetentionExecutionReviewBody,
   type CreateBreachPlaybookBody,
   PRIVACY_RECORD_STATUSES,
@@ -37,7 +36,6 @@ import {
   type CreateProcessorRecordBody,
   type CreateRetentionPolicyBody,
   type CreateTransferControlBody,
-  type DpiaEvidenceKind,
   type DpiaRecordView,
   type DpiaTemplateNoClaims,
   type DpiaTemplateView,
@@ -47,15 +45,11 @@ import {
   type PatchRetentionPolicyBody,
   type PatchTransferControlBody,
   PRIVACY_ADVISORY_REVIEW_STATUSES,
-  type PrivacyAdvisoryReviewStatus,
-  type PrivacyAdvisoryReviewSummary,
   type PrivacyRecordStatus,
   type PrivacyRiskLevel,
-  type ProcessorRecordView,
   type RetentionCandidateDisposition,
   type RetentionCandidateResolutionBody,
   type RetentionCandidateResolutionRecord,
-  type RetentionDisposalAction,
   type RetentionDryRunBody,
   type RetentionDryRunReport,
   type RetentionDueCandidate,
@@ -66,7 +60,6 @@ import {
   type RetentionExecutionRecord,
   type RetentionExecutionStatus,
   type RetentionOperatorReviewDecision,
-  type RetentionPolicyStatus,
   type RetentionPolicyView,
   type RetentionReviewClosureDecision,
   type TransferControlView,
@@ -89,7 +82,6 @@ import {
   SkeletonTable,
   SubNav,
   Table,
-  TextArea,
   useToast,
 } from '../../ui';
 import { PermissionDeniedNote, useCan } from '../session/permissions';
@@ -102,66 +94,51 @@ import {
 } from '../../i18n/dpiaTemplateLabels';
 import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
 import { RegisterEditModal } from './RegisterEditModal';
-
-type RegisterKind = 'processor' | 'dpia';
-type RegisterRecord = ProcessorRecordView | DpiaRecordView;
-type PrivacyCreateBody = CreateProcessorRecordBody | CreateDpiaRecordBody;
-type PrivacyPatchBody = PatchProcessorRecordBody | PatchDpiaRecordBody;
-
-interface RegisterFormState {
-  primary: string;
-  purpose: string;
-  legalBasis: string;
-  dataCategories: string;
-  subprocessors: string;
-  riskLevel: PrivacyRiskLevel;
-  status: PrivacyRecordStatus;
-  evidenceType: DpiaEvidenceKind;
-  evidenceNotes: string;
-}
-
-interface BreachPlaybookFormState {
-  title: string;
-  scope: string;
-  detectionChannels: string;
-  containmentSteps: string;
-  notificationRoles: string;
-  authorityNotificationWindow: string;
-  subjectNotificationGuidance: string;
-  riskLevel: PrivacyRiskLevel;
-  status: PrivacyRecordStatus;
-  reviewNotes: string;
-  evidenceType: BreachEvidenceKind;
-  evidenceNotes: string;
-}
-
-interface TransferControlFormState {
-  name: string;
-  purpose: string;
-  legalBasis: string;
-  dataCategories: string;
-  recipient: string;
-  destinationCountry: string;
-  transferMechanism: string;
-  safeguards: string;
-  riskLevel: PrivacyRiskLevel;
-  status: PrivacyRecordStatus;
-  reviewNotes: string;
-  evidenceNotes: string;
-}
-
-interface RetentionPolicyFormState {
-  name: string;
-  scope: string;
-  category: string;
-  scheduleId: string;
-  retentionPeriod: string;
-  legalBasis: string;
-  disposalAction: RetentionDisposalAction;
-  status: RetentionPolicyStatus;
-  active: boolean;
-  notes: string;
-}
+// The record editors are real pages now (t55). The form shapes, the record↔form↔body conversions,
+// the labels and the four forms themselves moved into `privacy/`, so the list panels below and the
+// five record pages share ONE definition of each rather than two that can drift.
+import {
+  EMPTY_BREACH_FORM,
+  EMPTY_FORM,
+  EMPTY_RETENTION_FORM,
+  EMPTY_TRANSFER_FORM,
+  breachCreateBody,
+  breachFormFromRecord,
+  createBody,
+  formFromRecord,
+  optionalText,
+  patchBody,
+  primaryValue,
+  retentionCreateBody,
+  retentionFormFromRecord,
+  transferCreateBody,
+  transferFormFromRecord,
+  type BreachPlaybookFormState,
+  type PrivacyCreateBody,
+  type PrivacyPatchBody,
+  type RegisterFormState,
+  type RegisterKind,
+  type RegisterRecord,
+  type RetentionPolicyFormState,
+  type TransferControlFormState,
+} from './privacy/privacyFormState';
+import {
+  AdvisoryReviewBadge,
+  advisoryReviewLabel,
+  retentionDisposalLabel,
+  retentionStatusLabel,
+  retentionStatusTone,
+  riskLabel,
+  riskSelectOptionsFor,
+  riskTone,
+  statusLabel,
+  statusSelectOptionsFor,
+  statusTone,
+} from './privacy/privacyLabels';
+import { BreachPlaybookForm } from './privacy/forms/BreachPlaybookForm';
+import { RegisterForm } from './privacy/forms/RegisterForm';
+import { RetentionPolicyForm } from './privacy/forms/RetentionPolicyForm';
+import { TransferControlForm } from './privacy/forms/TransferControlForm';
 
 interface RetentionDryRunFormState {
   scope: string;
@@ -169,115 +146,10 @@ interface RetentionDryRunFormState {
   recordId: string;
 }
 
-const EMPTY_FORM: RegisterFormState = {
-  primary: '',
-  purpose: '',
-  legalBasis: '',
-  dataCategories: '',
-  subprocessors: '',
-  riskLevel: 'medium',
-  status: 'draft',
-  evidenceType: 'review',
-  evidenceNotes: '',
-};
-
-const EMPTY_BREACH_FORM: BreachPlaybookFormState = {
-  title: '',
-  scope: '',
-  detectionChannels: '',
-  containmentSteps: '',
-  notificationRoles: '',
-  authorityNotificationWindow: '',
-  subjectNotificationGuidance: '',
-  riskLevel: 'high',
-  status: 'draft',
-  reviewNotes: '',
-  evidenceType: 'review',
-  evidenceNotes: '',
-};
-
-const EMPTY_TRANSFER_FORM: TransferControlFormState = {
-  name: '',
-  purpose: '',
-  legalBasis: '',
-  dataCategories: '',
-  recipient: '',
-  destinationCountry: '',
-  transferMechanism: '',
-  safeguards: '',
-  riskLevel: 'medium',
-  status: 'draft',
-  reviewNotes: '',
-  evidenceNotes: '',
-};
-
-const EMPTY_RETENTION_FORM: RetentionPolicyFormState = {
-  name: '',
-  scope: '',
-  category: '',
-  scheduleId: '',
-  retentionPeriod: '',
-  legalBasis: '',
-  disposalAction: 'review',
-  status: 'draft',
-  active: true,
-  notes: '',
-};
-
 const EMPTY_RETENTION_DRY_RUN_FORM: RetentionDryRunFormState = {
   scope: '',
   category: '',
   recordId: '',
-};
-
-const STATUS_LABEL_KEYS: Record<PrivacyRecordStatus, MessageKey> = {
-  draft: 'settings.privacy.status.draft',
-  active: 'settings.privacy.status.active',
-  under_review: 'settings.privacy.status.underReview',
-  retired: 'settings.privacy.status.retired',
-};
-
-const RISK_LABEL_KEYS: Record<PrivacyRiskLevel, MessageKey> = {
-  low: 'settings.privacy.risk.low',
-  medium: 'settings.privacy.risk.medium',
-  high: 'settings.privacy.risk.high',
-  critical: 'settings.privacy.risk.critical',
-};
-
-const ADVISORY_REVIEW_LABEL_KEYS: Record<PrivacyAdvisoryReviewStatus, MessageKey> = {
-  no_receipt: 'settings.privacy.advisory.noReceipt',
-  current: 'settings.privacy.advisory.current',
-  due_soon: 'settings.privacy.advisory.dueSoon',
-  overdue: 'settings.privacy.advisory.overdue',
-  under_review: 'settings.privacy.advisory.underReview',
-};
-
-function statusLabel(t: TFunction, status: PrivacyRecordStatus): string {
-  return t(STATUS_LABEL_KEYS[status]);
-}
-
-function riskLabel(t: TFunction, risk: PrivacyRiskLevel): string {
-  return t(RISK_LABEL_KEYS[risk]);
-}
-
-function advisoryReviewLabel(t: TFunction, status: PrivacyAdvisoryReviewStatus): string {
-  return t(ADVISORY_REVIEW_LABEL_KEYS[status]);
-}
-
-const RETENTION_STATUS_LABEL_KEYS: Record<RetentionPolicyStatus, MessageKey> = {
-  draft: 'settings.privacy.retention.status.draft',
-  active: 'settings.privacy.retention.status.active',
-  suspended: 'settings.privacy.retention.status.suspended',
-  retired: 'settings.privacy.retention.status.retired',
-};
-
-const RETENTION_DISPOSAL_LABEL_KEYS: Record<RetentionDisposalAction, MessageKey> = {
-  review: 'settings.privacy.retention.disposal.review',
-  archive: 'settings.privacy.retention.disposal.archive',
-  anonymize: 'settings.privacy.retention.disposal.anonymize',
-  delete: 'settings.privacy.retention.disposal.delete',
-  legal_hold: 'settings.privacy.retention.disposal.legal_hold',
-  no_action: 'settings.privacy.retention.disposal.no_action',
 };
 
 const RETENTION_EXECUTION_STATUS_LABEL_KEYS: Record<RetentionExecutionStatus, MessageKey> = {
@@ -437,32 +309,6 @@ function matchesPresence(filter: string, present: boolean): boolean {
   return filter === 'with' ? present : !present;
 }
 
-function statusSelectOptionsFor(t: TFunction) {
-  return PRIVACY_RECORD_STATUSES.map((status) => ({
-    value: status,
-    label: statusLabel(t, status),
-  }));
-}
-
-function riskSelectOptionsFor(t: TFunction) {
-  return PRIVACY_RISK_LEVELS.map((risk) => ({ value: risk, label: riskLabel(t, risk) }));
-}
-
-function breachEvidenceOptionsFor(t: TFunction): { value: BreachEvidenceKind; label: string }[] {
-  return [
-    { value: 'review', label: t('settings.privacy.evidence.kind.review') },
-    { value: 'drill', label: t('settings.privacy.evidence.kind.drill') },
-  ];
-}
-
-function retentionStatusLabel(t: TFunction, status: RetentionPolicyStatus): string {
-  return t(RETENTION_STATUS_LABEL_KEYS[status]);
-}
-
-function retentionDisposalLabel(t: TFunction, action: RetentionDisposalAction): string {
-  return t(RETENTION_DISPOSAL_LABEL_KEYS[action]);
-}
-
 function retentionExecutionStatusLabel(t: TFunction, status: RetentionExecutionStatus): string {
   return t(RETENTION_EXECUTION_STATUS_LABEL_KEYS[status]);
 }
@@ -578,193 +424,11 @@ function retentionCandidateResolutionBody(
   };
 }
 
-function primaryValue(kind: RegisterKind, record: RegisterRecord): string {
-  return kind === 'processor'
-    ? (record as ProcessorRecordView).name
-    : (record as DpiaRecordView).title;
-}
-
 function normalizeSearch(value: string): string {
   return value
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
-}
-
-function splitList(value: string): string[] {
-  const items = value
-    .split(/[\n,]/)
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0);
-  return [...new Set(items)];
-}
-
-function joinList(items: string[]): string {
-  return items.join('\n');
-}
-
-function formFromRecord(kind: RegisterKind, record: RegisterRecord): RegisterFormState {
-  return {
-    primary: primaryValue(kind, record),
-    purpose: record.purpose,
-    legalBasis: record.legal_basis,
-    dataCategories: joinList(record.data_categories),
-    subprocessors: joinList(record.subprocessors),
-    riskLevel: record.risk_level,
-    status: record.status,
-    evidenceType: 'review',
-    evidenceNotes: '',
-  };
-}
-
-function breachFormFromRecord(record: BreachPlaybookView): BreachPlaybookFormState {
-  return {
-    title: record.title,
-    scope: record.scope,
-    detectionChannels: joinList(record.detection_channels),
-    containmentSteps: joinList(record.containment_steps),
-    notificationRoles: joinList(record.notification_roles),
-    authorityNotificationWindow: record.authority_notification_window ?? '',
-    subjectNotificationGuidance: record.subject_notification_guidance ?? '',
-    riskLevel: record.risk_level,
-    status: record.status,
-    reviewNotes: record.review_notes ?? '',
-    evidenceType: 'review',
-    evidenceNotes: '',
-  };
-}
-
-function transferFormFromRecord(record: TransferControlView): TransferControlFormState {
-  return {
-    name: record.name,
-    purpose: record.purpose,
-    legalBasis: record.legal_basis,
-    dataCategories: joinList(record.data_categories),
-    recipient: record.recipient,
-    destinationCountry: record.destination_country,
-    transferMechanism: record.transfer_mechanism,
-    safeguards: joinList(record.safeguards),
-    riskLevel: record.risk_level,
-    status: record.status,
-    reviewNotes: record.review_notes ?? '',
-    evidenceNotes: '',
-  };
-}
-
-function retentionFormFromRecord(record: RetentionPolicyView): RetentionPolicyFormState {
-  return {
-    name: record.name,
-    scope: record.scope,
-    category: record.category,
-    scheduleId: record.schedule_id,
-    retentionPeriod: record.retention_period,
-    legalBasis: record.legal_basis,
-    disposalAction: record.disposal_action,
-    status: record.status,
-    active: record.active,
-    notes: record.notes ?? '',
-  };
-}
-
-function createBody(kind: RegisterKind, form: RegisterFormState): PrivacyCreateBody {
-  const base = {
-    purpose: form.purpose.trim(),
-    legal_basis: form.legalBasis.trim(),
-    data_categories: splitList(form.dataCategories),
-    subprocessors: splitList(form.subprocessors),
-    risk_level: form.riskLevel,
-    status: form.status,
-  };
-  if (kind === 'processor') {
-    return { ...base, name: form.primary.trim() };
-  }
-  return {
-    ...base,
-    title: form.primary.trim(),
-    evidence_receipt: optionalText(form.evidenceNotes)
-      ? {
-          evidence_type: form.evidenceType,
-          notes: form.evidenceNotes.trim(),
-          authority_filing_completed: false,
-          legal_review_accepted: false,
-          legal_certification_completed: false,
-          external_delivery_completed: false,
-          dpia_completed: false,
-          compliance_certification_completed: false,
-        }
-      : undefined,
-  };
-}
-
-function patchBody(kind: RegisterKind, form: RegisterFormState): PrivacyPatchBody {
-  const body = createBody(kind, form);
-  return body;
-}
-
-function optionalText(value: string): string | undefined {
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
-function breachCreateBody(form: BreachPlaybookFormState): CreateBreachPlaybookBody {
-  return {
-    title: form.title.trim(),
-    scope: form.scope.trim(),
-    detection_channels: splitList(form.detectionChannels),
-    containment_steps: splitList(form.containmentSteps),
-    notification_roles: splitList(form.notificationRoles),
-    authority_notification_window: optionalText(form.authorityNotificationWindow),
-    subject_notification_guidance: optionalText(form.subjectNotificationGuidance),
-    risk_level: form.riskLevel,
-    status: form.status,
-    review_notes: optionalText(form.reviewNotes),
-    evidence_receipt: optionalText(form.evidenceNotes)
-      ? {
-          evidence_type: form.evidenceType,
-          notes: form.evidenceNotes.trim(),
-          authority_notified: false,
-          subjects_notified: false,
-        }
-      : undefined,
-  };
-}
-
-function transferCreateBody(form: TransferControlFormState): CreateTransferControlBody {
-  return {
-    name: form.name.trim(),
-    purpose: form.purpose.trim(),
-    legal_basis: form.legalBasis.trim(),
-    data_categories: splitList(form.dataCategories),
-    recipient: form.recipient.trim(),
-    destination_country: form.destinationCountry.trim(),
-    transfer_mechanism: form.transferMechanism.trim(),
-    safeguards: splitList(form.safeguards),
-    risk_level: form.riskLevel,
-    status: form.status,
-    review_notes: optionalText(form.reviewNotes),
-    evidence_receipt: optionalText(form.evidenceNotes)
-      ? {
-          notes: form.evidenceNotes.trim(),
-          transfer_approved: false,
-          data_transfer_executed: false,
-        }
-      : undefined,
-  };
-}
-
-function retentionCreateBody(form: RetentionPolicyFormState): CreateRetentionPolicyBody {
-  return {
-    name: form.name.trim(),
-    scope: form.scope.trim(),
-    category: form.category.trim(),
-    schedule_id: form.scheduleId.trim(),
-    retention_period: form.retentionPeriod.trim(),
-    legal_basis: form.legalBasis.trim(),
-    disposal_action: form.disposalAction,
-    status: form.status,
-    active: form.active,
-    notes: optionalText(form.notes),
-  };
 }
 
 function breachSearchText(record: BreachPlaybookView): string {
@@ -944,53 +608,6 @@ function recordSearchText(kind: RegisterKind, record: RegisterRecord): string {
   );
 }
 
-function riskTone(risk: PrivacyRiskLevel): 'neutral' | 'warn' | 'error' | 'ok' {
-  if (risk === 'low') return 'ok';
-  if (risk === 'high') return 'warn';
-  if (risk === 'critical') return 'error';
-  return 'neutral';
-}
-
-function statusTone(status: PrivacyRecordStatus): 'neutral' | 'warn' | 'ok' {
-  if (status === 'active') return 'ok';
-  if (status === 'under_review') return 'warn';
-  return 'neutral';
-}
-
-function advisoryReviewTone(
-  status: PrivacyAdvisoryReviewStatus,
-): 'neutral' | 'accent' | 'warn' | 'ok' {
-  if (status === 'current') return 'ok';
-  if (status === 'due_soon') return 'accent';
-  if (status === 'overdue' || status === 'under_review') return 'warn';
-  return 'neutral';
-}
-
-function advisoryReviewDetail(t: TFunction, review: PrivacyAdvisoryReviewSummary): string {
-  if (review.status === 'no_receipt') return t('settings.privacy.advisory.detail.noReceipt');
-  if (review.status === 'under_review') return t('settings.privacy.advisory.detail.underReview');
-  const due = review.next_review_due_at
-    ? t('settings.privacy.advisory.detail.nextReview', { date: review.next_review_due_at })
-    : '';
-  const last = review.last_reviewed_at ?? review.last_drill_at;
-  const lastText = last
-    ? t('settings.privacy.advisory.detail.lastEvidence', { date: formatDateTime(last) })
-    : '';
-  return [due, lastText, t('settings.privacy.advisory.detail.noClaims')].filter(Boolean).join(' ');
-}
-
-function AdvisoryReviewBadge({ review }: { review: PrivacyAdvisoryReviewSummary }) {
-  const t = useT();
-  return (
-    <div className="stack--tight">
-      <Badge tone={advisoryReviewTone(review.status)}>
-        {advisoryReviewLabel(t, review.status)}
-      </Badge>
-      <span className="muted">{advisoryReviewDetail(t, review)}</span>
-    </div>
-  );
-}
-
 function DpiaTemplateGuidancePanel({
   template,
   loading,
@@ -1156,12 +773,6 @@ function DpiaTemplateGuidancePanel({
       </div>
     </Card>
   );
-}
-
-function retentionStatusTone(status: RetentionPolicyStatus): 'neutral' | 'warn' | 'ok' {
-  if (status === 'active') return 'ok';
-  if (status === 'suspended') return 'warn';
-  return 'neutral';
 }
 
 function retentionExecutionStatusTone(
@@ -1347,191 +958,6 @@ function RetentionLegalHoldDisposalStatusPanel({
         <p className="field__hint">{t('settings.privacy.legalHold.source')}</p>
       </div>
     </Card>
-  );
-}
-
-function RegisterForm({
-  kind,
-  form,
-  setForm,
-  editing,
-  saving,
-  onCancel,
-  onSubmit,
-}: {
-  kind: RegisterKind;
-  form: RegisterFormState;
-  setForm: (next: RegisterFormState) => void;
-  editing: boolean;
-  saving: boolean;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  const t = useT();
-  const idPrefix = `privacy-${kind}-${editing ? 'edit' : 'new'}`;
-  const primaryLabel =
-    kind === 'processor'
-      ? t('settings.privacy.register.field.processorName')
-      : t('settings.privacy.register.field.dpiaTitle');
-  const parsedCategories = splitList(form.dataCategories);
-  const canSubmit =
-    form.primary.trim().length > 0 &&
-    form.purpose.trim().length > 0 &&
-    form.legalBasis.trim().length > 0 &&
-    parsedCategories.length > 0 &&
-    !saving;
-
-  return (
-    <form
-      className="form settings-rows"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        if (canSubmit) onSubmit();
-      }}
-    >
-      <Field
-        label={primaryLabel}
-        htmlFor={`${idPrefix}-primary`}
-        help={
-          kind === 'processor'
-            ? t('settings.privacy.help.processor')
-            : t('settings.privacy.help.dpia')
-        }
-      >
-        <Input
-          id={`${idPrefix}-primary`}
-          value={form.primary}
-          onChange={(e) => setForm({ ...form, primary: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-
-      <Field
-        label={t('settings.privacy.register.field.purpose')}
-        htmlFor={`${idPrefix}-purpose`}
-        help={t('settings.privacy.help.purpose')}
-      >
-        <TextArea
-          id={`${idPrefix}-purpose`}
-          value={form.purpose}
-          onChange={(e) => setForm({ ...form, purpose: e.target.value })}
-          rows={3}
-        />
-      </Field>
-
-      <Field
-        label={t('settings.privacy.register.field.legalBasis')}
-        htmlFor={`${idPrefix}-legal-basis`}
-        help={t('settings.privacy.help.legalBasis')}
-      >
-        <Input
-          id={`${idPrefix}-legal-basis`}
-          value={form.legalBasis}
-          onChange={(e) => setForm({ ...form, legalBasis: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-
-      <Field
-        label={t('settings.privacy.register.field.categories')}
-        htmlFor={`${idPrefix}-data-categories`}
-        hint={t('settings.privacy.register.hint.categories')}
-      >
-        <TextArea
-          id={`${idPrefix}-data-categories`}
-          value={form.dataCategories}
-          onChange={(e) => setForm({ ...form, dataCategories: e.target.value })}
-          rows={3}
-        />
-      </Field>
-
-      <Field
-        label={t('settings.privacy.register.field.subprocessors')}
-        htmlFor={`${idPrefix}-subprocessors`}
-        hint={t('settings.privacy.register.hint.subprocessors')}
-      >
-        <TextArea
-          id={`${idPrefix}-subprocessors`}
-          value={form.subprocessors}
-          onChange={(e) => setForm({ ...form, subprocessors: e.target.value })}
-          rows={3}
-        />
-      </Field>
-
-      <div className="api-key-rate-grid">
-        <Field
-          label={t('settings.privacy.field.risk')}
-          htmlFor={`${idPrefix}-risk`}
-          help={t('settings.privacy.help.risk')}
-        >
-          <Select
-            id={`${idPrefix}-risk`}
-            value={form.riskLevel}
-            onChange={(e) => setForm({ ...form, riskLevel: e.target.value as PrivacyRiskLevel })}
-            options={riskSelectOptionsFor(t)}
-          />
-        </Field>
-        <Field
-          label={t('settings.privacy.field.status')}
-          htmlFor={`${idPrefix}-status`}
-          help={t('settings.privacy.help.status')}
-        >
-          <Select
-            id={`${idPrefix}-status`}
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as PrivacyRecordStatus })}
-            options={statusSelectOptionsFor(t)}
-          />
-        </Field>
-      </div>
-
-      {kind === 'dpia' ? (
-        <>
-          <InlineWarning tone="info" title={t('settings.privacy.evidence.operator.title')}>
-            {t('settings.privacy.evidence.operator.dpiaBody')}
-          </InlineWarning>
-          <div className="api-key-rate-grid">
-            <Field
-              label={t('settings.privacy.evidence.field.type')}
-              htmlFor={`${idPrefix}-evidence-type`}
-            >
-              <Select
-                id={`${idPrefix}-evidence-type`}
-                value={form.evidenceType}
-                onChange={(e) =>
-                  setForm({ ...form, evidenceType: e.target.value as DpiaEvidenceKind })
-                }
-                options={breachEvidenceOptionsFor(t)}
-              />
-            </Field>
-            <Field
-              label={t('settings.privacy.evidence.field.notes')}
-              htmlFor={`${idPrefix}-evidence-notes`}
-            >
-              <TextArea
-                id={`${idPrefix}-evidence-notes`}
-                value={form.evidenceNotes}
-                onChange={(e) => setForm({ ...form, evidenceNotes: e.target.value })}
-                rows={2}
-              />
-            </Field>
-          </div>
-        </>
-      ) : null}
-
-      <div className="form__actions">
-        <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
-          {t('settings.privacy.action.cancel')}
-        </Button>
-        <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
-          {saving
-            ? t('settings.privacy.action.saving')
-            : editing
-              ? t('settings.privacy.action.save')
-              : t('settings.privacy.action.create')}
-        </Button>
-      </div>
-    </form>
   );
 }
 
@@ -1917,183 +1343,6 @@ function RegisterPanel({
   );
 }
 
-function BreachPlaybookForm({
-  form,
-  setForm,
-  editing,
-  saving,
-  onCancel,
-  onSubmit,
-}: {
-  form: BreachPlaybookFormState;
-  setForm: (next: BreachPlaybookFormState) => void;
-  editing: boolean;
-  saving: boolean;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  const t = useT();
-  const idPrefix = `privacy-breach-${editing ? 'edit' : 'new'}`;
-  const canSubmit =
-    form.title.trim().length > 0 &&
-    form.scope.trim().length > 0 &&
-    splitList(form.detectionChannels).length > 0 &&
-    splitList(form.containmentSteps).length > 0 &&
-    !saving;
-
-  return (
-    <form
-      className="form settings-rows"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        if (canSubmit) onSubmit();
-      }}
-    >
-      <Field label={t('settings.privacy.breach.field.title')} htmlFor={`${idPrefix}-title`}>
-        <Input
-          id={`${idPrefix}-title`}
-          value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <Field label={t('settings.privacy.breach.field.scope')} htmlFor={`${idPrefix}-scope`}>
-        <Input
-          id={`${idPrefix}-scope`}
-          value={form.scope}
-          onChange={(e) => setForm({ ...form, scope: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.breach.field.detection')}
-        htmlFor={`${idPrefix}-detection`}
-        hint={t('settings.privacy.listHint')}
-      >
-        <TextArea
-          id={`${idPrefix}-detection`}
-          value={form.detectionChannels}
-          onChange={(e) => setForm({ ...form, detectionChannels: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.breach.field.containment')}
-        htmlFor={`${idPrefix}-containment`}
-        hint={t('settings.privacy.listHint')}
-      >
-        <TextArea
-          id={`${idPrefix}-containment`}
-          value={form.containmentSteps}
-          onChange={(e) => setForm({ ...form, containmentSteps: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.breach.field.roles')}
-        htmlFor={`${idPrefix}-roles`}
-        hint={t('settings.privacy.listHintOptional')}
-      >
-        <TextArea
-          id={`${idPrefix}-roles`}
-          value={form.notificationRoles}
-          onChange={(e) => setForm({ ...form, notificationRoles: e.target.value })}
-          rows={2}
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.breach.field.authorityWindow')}
-        htmlFor={`${idPrefix}-authority-window`}
-      >
-        <Input
-          id={`${idPrefix}-authority-window`}
-          value={form.authorityNotificationWindow}
-          onChange={(e) => setForm({ ...form, authorityNotificationWindow: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.breach.field.subjectGuidance')}
-        htmlFor={`${idPrefix}-subject-guidance`}
-      >
-        <TextArea
-          id={`${idPrefix}-subject-guidance`}
-          value={form.subjectNotificationGuidance}
-          onChange={(e) => setForm({ ...form, subjectNotificationGuidance: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <div className="api-key-rate-grid">
-        <Field label={t('settings.privacy.field.risk')} htmlFor={`${idPrefix}-risk`}>
-          <Select
-            id={`${idPrefix}-risk`}
-            value={form.riskLevel}
-            onChange={(e) => setForm({ ...form, riskLevel: e.target.value as PrivacyRiskLevel })}
-            options={riskSelectOptionsFor(t)}
-          />
-        </Field>
-        <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
-          <Select
-            id={`${idPrefix}-status`}
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as PrivacyRecordStatus })}
-            options={statusSelectOptionsFor(t)}
-          />
-        </Field>
-      </div>
-      <Field label={t('settings.privacy.field.reviewNotes')} htmlFor={`${idPrefix}-notes`}>
-        <TextArea
-          id={`${idPrefix}-notes`}
-          value={form.reviewNotes}
-          onChange={(e) => setForm({ ...form, reviewNotes: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <InlineWarning tone="info" title={t('settings.privacy.evidence.operator.title')}>
-        {t('settings.privacy.evidence.operator.breachBody')}
-      </InlineWarning>
-      <div className="api-key-rate-grid">
-        <Field
-          label={t('settings.privacy.evidence.field.type')}
-          htmlFor={`${idPrefix}-evidence-type`}
-        >
-          <Select
-            id={`${idPrefix}-evidence-type`}
-            value={form.evidenceType}
-            onChange={(e) =>
-              setForm({ ...form, evidenceType: e.target.value as BreachEvidenceKind })
-            }
-            options={breachEvidenceOptionsFor(t)}
-          />
-        </Field>
-        <Field
-          label={t('settings.privacy.evidence.field.notes')}
-          htmlFor={`${idPrefix}-evidence-notes`}
-        >
-          <TextArea
-            id={`${idPrefix}-evidence-notes`}
-            value={form.evidenceNotes}
-            onChange={(e) => setForm({ ...form, evidenceNotes: e.target.value })}
-            rows={2}
-          />
-        </Field>
-      </div>
-      <div className="form__actions">
-        <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
-          {t('settings.privacy.action.cancel')}
-        </Button>
-        <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
-          {saving
-            ? t('settings.privacy.action.saving')
-            : editing
-              ? t('settings.privacy.action.save')
-              : t('settings.privacy.action.create')}
-        </Button>
-      </div>
-    </form>
-  );
-}
-
 function BreachPlaybookPanel({
   records,
   loading,
@@ -2357,181 +1606,6 @@ function BreachPlaybookPanel({
         </div>
       </Card>
     </div>
-  );
-}
-
-function TransferControlForm({
-  form,
-  setForm,
-  editing,
-  saving,
-  onCancel,
-  onSubmit,
-}: {
-  form: TransferControlFormState;
-  setForm: (next: TransferControlFormState) => void;
-  editing: boolean;
-  saving: boolean;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  const t = useT();
-  const idPrefix = `privacy-transfer-${editing ? 'edit' : 'new'}`;
-  const canSubmit =
-    form.name.trim().length > 0 &&
-    form.purpose.trim().length > 0 &&
-    form.legalBasis.trim().length > 0 &&
-    form.recipient.trim().length > 0 &&
-    form.destinationCountry.trim().length > 0 &&
-    form.transferMechanism.trim().length > 0 &&
-    splitList(form.dataCategories).length > 0 &&
-    splitList(form.safeguards).length > 0 &&
-    !saving;
-
-  return (
-    <form
-      className="form settings-rows"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        if (canSubmit) onSubmit();
-      }}
-    >
-      <Field label={t('settings.privacy.transfer.field.name')} htmlFor={`${idPrefix}-name`}>
-        <Input
-          id={`${idPrefix}-name`}
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <Field label={t('settings.privacy.transfer.field.purpose')} htmlFor={`${idPrefix}-purpose`}>
-        <TextArea
-          id={`${idPrefix}-purpose`}
-          value={form.purpose}
-          onChange={(e) => setForm({ ...form, purpose: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <Field label={t('settings.privacy.transfer.field.legalBasis')} htmlFor={`${idPrefix}-legal`}>
-        <Input
-          id={`${idPrefix}-legal`}
-          value={form.legalBasis}
-          onChange={(e) => setForm({ ...form, legalBasis: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.transfer.field.categories')}
-        htmlFor={`${idPrefix}-categories`}
-        hint={t('settings.privacy.listHint')}
-      >
-        <TextArea
-          id={`${idPrefix}-categories`}
-          value={form.dataCategories}
-          onChange={(e) => setForm({ ...form, dataCategories: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <div className="api-key-rate-grid">
-        <Field
-          label={t('settings.privacy.transfer.field.recipient')}
-          htmlFor={`${idPrefix}-recipient`}
-        >
-          <Input
-            id={`${idPrefix}-recipient`}
-            value={form.recipient}
-            onChange={(e) => setForm({ ...form, recipient: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-        <Field
-          label={t('settings.privacy.transfer.field.destination')}
-          htmlFor={`${idPrefix}-destination`}
-        >
-          <Input
-            id={`${idPrefix}-destination`}
-            value={form.destinationCountry}
-            onChange={(e) => setForm({ ...form, destinationCountry: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-      </div>
-      <Field
-        label={t('settings.privacy.transfer.field.mechanism')}
-        htmlFor={`${idPrefix}-mechanism`}
-      >
-        <Input
-          id={`${idPrefix}-mechanism`}
-          value={form.transferMechanism}
-          onChange={(e) => setForm({ ...form, transferMechanism: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <Field
-        label={t('settings.privacy.transfer.field.safeguards')}
-        htmlFor={`${idPrefix}-safeguards`}
-        hint={t('settings.privacy.listHint')}
-      >
-        <TextArea
-          id={`${idPrefix}-safeguards`}
-          value={form.safeguards}
-          onChange={(e) => setForm({ ...form, safeguards: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <div className="api-key-rate-grid">
-        <Field label={t('settings.privacy.field.risk')} htmlFor={`${idPrefix}-risk`}>
-          <Select
-            id={`${idPrefix}-risk`}
-            value={form.riskLevel}
-            onChange={(e) => setForm({ ...form, riskLevel: e.target.value as PrivacyRiskLevel })}
-            options={riskSelectOptionsFor(t)}
-          />
-        </Field>
-        <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
-          <Select
-            id={`${idPrefix}-status`}
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as PrivacyRecordStatus })}
-            options={statusSelectOptionsFor(t)}
-          />
-        </Field>
-      </div>
-      <Field label={t('settings.privacy.field.reviewNotes')} htmlFor={`${idPrefix}-notes`}>
-        <TextArea
-          id={`${idPrefix}-notes`}
-          value={form.reviewNotes}
-          onChange={(e) => setForm({ ...form, reviewNotes: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <InlineWarning tone="info" title={t('settings.privacy.evidence.operator.title')}>
-        {t('settings.privacy.evidence.operator.transferBody')}
-      </InlineWarning>
-      <Field
-        label={t('settings.privacy.evidence.field.notes')}
-        htmlFor={`${idPrefix}-evidence-notes`}
-      >
-        <TextArea
-          id={`${idPrefix}-evidence-notes`}
-          value={form.evidenceNotes}
-          onChange={(e) => setForm({ ...form, evidenceNotes: e.target.value })}
-          rows={2}
-        />
-      </Field>
-      <div className="form__actions">
-        <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
-          {t('settings.privacy.action.cancel')}
-        </Button>
-        <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
-          {saving
-            ? t('settings.privacy.action.saving')
-            : editing
-              ? t('settings.privacy.action.save')
-              : t('settings.privacy.action.create')}
-        </Button>
-      </div>
-    </form>
   );
 }
 
@@ -2811,167 +1885,6 @@ function TransferControlPanel({
         </div>
       </Card>
     </div>
-  );
-}
-
-function RetentionPolicyForm({
-  form,
-  setForm,
-  editing,
-  saving,
-  onCancel,
-  onSubmit,
-}: {
-  form: RetentionPolicyFormState;
-  setForm: (next: RetentionPolicyFormState) => void;
-  editing: boolean;
-  saving: boolean;
-  onCancel: () => void;
-  onSubmit: () => void;
-}) {
-  const t = useT();
-  const idPrefix = `privacy-retention-${editing ? 'edit' : 'new'}`;
-  const retentionStatusOptions = RETENTION_POLICY_STATUSES.map((status) => ({
-    value: status,
-    label: retentionStatusLabel(t, status),
-  }));
-  const retentionDisposalOptions = RETENTION_DISPOSAL_ACTIONS.map((action) => ({
-    value: action,
-    label: retentionDisposalLabel(t, action),
-  }));
-  const canSubmit =
-    form.name.trim().length > 0 &&
-    form.scope.trim().length > 0 &&
-    form.category.trim().length > 0 &&
-    form.scheduleId.trim().length > 0 &&
-    form.retentionPeriod.trim().length > 0 &&
-    form.legalBasis.trim().length > 0 &&
-    !saving;
-
-  return (
-    <form
-      className="form settings-rows"
-      onSubmit={(e: FormEvent) => {
-        e.preventDefault();
-        if (canSubmit) onSubmit();
-      }}
-    >
-      <Field label={t('settings.privacy.retention.field.name')} htmlFor={`${idPrefix}-name`}>
-        <Input
-          id={`${idPrefix}-name`}
-          value={form.name}
-          onChange={(e) => setForm({ ...form, name: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <div className="api-key-rate-grid">
-        <Field label={t('settings.privacy.retention.field.scope')} htmlFor={`${idPrefix}-scope`}>
-          <Input
-            id={`${idPrefix}-scope`}
-            value={form.scope}
-            onChange={(e) => setForm({ ...form, scope: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-        <Field
-          label={t('settings.privacy.retention.field.category')}
-          htmlFor={`${idPrefix}-category`}
-        >
-          <Input
-            id={`${idPrefix}-category`}
-            value={form.category}
-            onChange={(e) => setForm({ ...form, category: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-      </div>
-      <div className="api-key-rate-grid">
-        <Field
-          label={t('settings.privacy.retention.field.scheduleId')}
-          htmlFor={`${idPrefix}-schedule`}
-        >
-          <Input
-            id={`${idPrefix}-schedule`}
-            value={form.scheduleId}
-            onChange={(e) => setForm({ ...form, scheduleId: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-        <Field
-          label={t('settings.privacy.retention.field.retentionPeriod')}
-          htmlFor={`${idPrefix}-period`}
-        >
-          <Input
-            id={`${idPrefix}-period`}
-            value={form.retentionPeriod}
-            onChange={(e) => setForm({ ...form, retentionPeriod: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-      </div>
-      <Field label={t('settings.privacy.retention.field.legalBasis')} htmlFor={`${idPrefix}-legal`}>
-        <Input
-          id={`${idPrefix}-legal`}
-          value={form.legalBasis}
-          onChange={(e) => setForm({ ...form, legalBasis: e.target.value })}
-          autoComplete="off"
-        />
-      </Field>
-      <div className="api-key-rate-grid">
-        <Field
-          label={t('settings.privacy.retention.field.disposalAction')}
-          htmlFor={`${idPrefix}-action`}
-        >
-          <Select
-            id={`${idPrefix}-action`}
-            value={form.disposalAction}
-            onChange={(e) =>
-              setForm({ ...form, disposalAction: e.target.value as RetentionDisposalAction })
-            }
-            options={retentionDisposalOptions}
-          />
-        </Field>
-        <Field label={t('settings.privacy.field.status')} htmlFor={`${idPrefix}-status`}>
-          <Select
-            id={`${idPrefix}-status`}
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value as RetentionPolicyStatus })}
-            options={retentionStatusOptions}
-          />
-        </Field>
-      </div>
-      <label className="checkbox-row">
-        <input
-          type="checkbox"
-          checked={form.active}
-          onChange={(e) => setForm({ ...form, active: e.target.checked })}
-        />
-        {t('settings.privacy.retention.field.active')}
-      </label>
-      <Field label={t('settings.privacy.retention.field.notes')} htmlFor={`${idPrefix}-notes`}>
-        <TextArea
-          id={`${idPrefix}-notes`}
-          value={form.notes}
-          onChange={(e) => setForm({ ...form, notes: e.target.value })}
-          rows={3}
-        />
-      </Field>
-      <InlineWarning tone="info" title={t('settings.privacy.retention.notice.title')}>
-        {t('settings.privacy.retention.notice.body')}
-      </InlineWarning>
-      <div className="form__actions">
-        <Button type="button" variant="ghost" disabled={saving} onClick={onCancel}>
-          {t('settings.privacy.action.cancel')}
-        </Button>
-        <Button type="submit" variant="primary" icon={<Icon.Check />} disabled={!canSubmit}>
-          {saving
-            ? t('settings.privacy.action.saving')
-            : editing
-              ? t('settings.privacy.action.save')
-              : t('settings.privacy.action.create')}
-        </Button>
-      </div>
-    </form>
   );
 }
 

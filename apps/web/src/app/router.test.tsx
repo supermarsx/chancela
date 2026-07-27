@@ -56,6 +56,55 @@ describe('route error fallback', () => {
     expect(matches?.at(-1)?.route.path).toBe('admin/signing/citizen-card');
   });
 
+  it('ranks the five privacy register record pages ahead of the settings catch-all', () => {
+    // Four segments each; `settings/:sec?/:sub?` matches at most three, so these can neither
+    // shadow it nor be shadowed by it. `new` is static, so it always beats `:id`.
+    const cases: [address: string, path: string][] = [
+      ['/settings/privacy/processors/new', 'settings/privacy/processors/new'],
+      ['/settings/privacy/processors/proc-1', 'settings/privacy/processors/:id'],
+      ['/settings/privacy/dpias/new', 'settings/privacy/dpias/new'],
+      ['/settings/privacy/dpias/dpia-1', 'settings/privacy/dpias/:id'],
+      ['/settings/privacy/breach-playbooks/new', 'settings/privacy/breach-playbooks/new'],
+      ['/settings/privacy/breach-playbooks/pb-1', 'settings/privacy/breach-playbooks/:id'],
+      ['/settings/privacy/transfer-controls/new', 'settings/privacy/transfer-controls/new'],
+      ['/settings/privacy/transfer-controls/tc-1', 'settings/privacy/transfer-controls/:id'],
+      ['/settings/privacy/retention-policies/new', 'settings/privacy/retention-policies/new'],
+      ['/settings/privacy/retention-policies/rp-1', 'settings/privacy/retention-policies/:id'],
+    ];
+    for (const [address, path] of cases) {
+      expect(matchRoutes(router.routes, address)?.at(-1)?.route.path).toBe(path);
+    }
+    // The register slug and the Retenção sub-tab sit at the same position and must stay distinct:
+    // three segments still reaches SettingsPage.
+    expect(matchRoutes(router.routes, '/settings/privacy/retention')?.at(-1)?.route.path).toBe(
+      'settings/:sec?/:sub?',
+    );
+  });
+
+  it('gives the privacy record pages NO navDepth, so the unsaved-changes guard stays awake', () => {
+    // 🔒 REGRESSION GUARD. `navDepth` is how many leading segments identify the PAGE; `pageKey`
+    // falls back to the full pathname without it. Adding `navDepth: 1` here would make these
+    // routes share `/settings`'s page key, so leaving a half-written DPIA for the list would no
+    // longer look like a page change and the guard would go SILENT — losing the typed work the
+    // move off the modal exists to protect.
+    const addresses = [
+      '/settings/privacy/processors/new',
+      '/settings/privacy/processors/proc-1',
+      '/settings/privacy/dpias/new',
+      '/settings/privacy/dpias/dpia-1',
+      '/settings/privacy/breach-playbooks/new',
+      '/settings/privacy/breach-playbooks/pb-1',
+      '/settings/privacy/transfer-controls/new',
+      '/settings/privacy/transfer-controls/tc-1',
+      '/settings/privacy/retention-policies/new',
+      '/settings/privacy/retention-policies/rp-1',
+    ];
+    for (const address of addresses) {
+      const matched = matchRoutes(router.routes, address)?.at(-1)?.route;
+      expect(matched?.handle).toBeUndefined();
+    }
+  });
+
   it('renders CrashScreen for a lazy route rejection instead of React Router default UI', async () => {
     const router = createMemoryRouter(
       [

@@ -179,6 +179,10 @@ export const routeModuleLoaders = {
   ledger: () => import('../features/ledger/LedgerPage'),
   notifications: () => import('../features/notifications/NotificationsPage'),
   providerCredential: () => import('../features/settings/ProviderCredentialPage'),
+  privacyRegisterRecord: () => import('../features/settings/privacy/RegisterRecordPage'),
+  privacyBreachPlaybook: () => import('../features/settings/privacy/BreachPlaybookPage'),
+  privacyTransferControl: () => import('../features/settings/privacy/TransferControlPage'),
+  privacyRetentionPolicy: () => import('../features/settings/privacy/RetentionPolicyPage'),
   citizenCardBridge: () => import('../features/signing/CitizenCardBridgePage'),
   admin: () => import('../features/admin/AdminPage'),
   tools: () => import('../features/tools/ToolsPage'),
@@ -357,6 +361,61 @@ export const router = createBrowserRouter([
         path: 'tools/:tool?/:sec?',
         handle: { navDepth: 1 },
         element: lazyRoute(routeModuleLoaders.tools, 'ToolsPage'),
+      },
+      // The five RGPD compliance registers get real record pages (t55). Each is a create address
+      // and an edit address; edit reuses the create page, because these records have no read-only
+      // detail view — the record's only screen IS its editor (the t89 `/users/:id` argument).
+      //
+      // Every one of these is FOUR segments, and the settings catch-all below is
+      // `settings/:sec?/:sub?`, which matches at most THREE. So they can neither shadow nor be
+      // shadowed by it, the position of this block is cosmetic, and no RETIRED_* entry is needed.
+      // They are English-only slugs that never had a pt-PT spelling, so `legacySlugs` is untouched
+      // too. `retention` (the sub-tab, 3 segments) and `retention-policies` (the register, 4)
+      // therefore coexist at the same position without colliding.
+      //
+      // NO `handle.navDepth`, deliberately. `pageKey` then falls back to the full pathname, so
+      // leaving an editor for the list IS a page change and `UnsavedChangesGuard` challenges a
+      // dirty exit. Giving these `navDepth: 1` would make them share `/settings`'s page key and
+      // silence the guard — the exact failure moving off the modal exists to fix.
+      {
+        path: 'settings/privacy/processors/new',
+        element: lazyRoute(routeModuleLoaders.privacyRegisterRecord, 'ProcessorRecordPage'),
+      },
+      {
+        path: 'settings/privacy/processors/:id',
+        element: lazyRoute(routeModuleLoaders.privacyRegisterRecord, 'ProcessorRecordPage'),
+      },
+      {
+        path: 'settings/privacy/dpias/new',
+        element: lazyRoute(routeModuleLoaders.privacyRegisterRecord, 'DpiaRecordPage'),
+      },
+      {
+        path: 'settings/privacy/dpias/:id',
+        element: lazyRoute(routeModuleLoaders.privacyRegisterRecord, 'DpiaRecordPage'),
+      },
+      {
+        path: 'settings/privacy/breach-playbooks/new',
+        element: lazyRoute(routeModuleLoaders.privacyBreachPlaybook, 'BreachPlaybookPage'),
+      },
+      {
+        path: 'settings/privacy/breach-playbooks/:id',
+        element: lazyRoute(routeModuleLoaders.privacyBreachPlaybook, 'BreachPlaybookPage'),
+      },
+      {
+        path: 'settings/privacy/transfer-controls/new',
+        element: lazyRoute(routeModuleLoaders.privacyTransferControl, 'TransferControlPage'),
+      },
+      {
+        path: 'settings/privacy/transfer-controls/:id',
+        element: lazyRoute(routeModuleLoaders.privacyTransferControl, 'TransferControlPage'),
+      },
+      {
+        path: 'settings/privacy/retention-policies/new',
+        element: lazyRoute(routeModuleLoaders.privacyRetentionPolicy, 'RetentionPolicyPage'),
+      },
+      {
+        path: 'settings/privacy/retention-policies/:id',
+        element: lazyRoute(routeModuleLoaders.privacyRetentionPolicy, 'RetentionPolicyPage'),
       },
       {
         path: 'settings/:sec?/:sub?',
