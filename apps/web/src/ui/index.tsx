@@ -324,7 +324,7 @@ export function Card({
       {(title || actions) && (
         <header className="panel__head">
           {title ? <h3 className="panel__title">{title}</h3> : <span />}
-          {actions}
+          {actions ? <div className="panel__actions">{actions}</div> : null}
         </header>
       )}
       <div className="panel__body">{children}</div>

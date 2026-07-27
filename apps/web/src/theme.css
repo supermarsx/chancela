@@ -664,6 +664,13 @@ a:focus-visible {
   margin: 0;
 }
 
+.panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .panel__body {
   padding: 1.25rem;
 }
