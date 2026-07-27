@@ -420,7 +420,7 @@ export function TemplatesCatalogPage() {
                   </Field>
                   <IconButton
                     className="templates-filterbar__clear"
-                    icon={<Icon.Close />}
+                    icon={<Icon.FilterClear />}
                     label={t('templates.clearFilters')}
                     disabled={!hasFilters}
                     onClick={clearFilters}

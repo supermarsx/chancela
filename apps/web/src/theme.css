@@ -1510,12 +1510,27 @@ a.btn.btn--iconOnly {
   font-size: 0.92rem;
 }
 
-/* Inline warnings / callouts. */
+/* Inline warnings / callouts.
+   `margin-top` gives the primitive its own healthy gap from whatever precedes it — today
+   spacing is accidental, present only when a caller happens to wrap the component in
+   `.stack`/`.stack--tight` (t53). The `:first-child` guard keeps that margin from adding
+   unwanted space when the warning is the first (or only) thing in its container — e.g.
+   flush under a Card's own padding. When a caller DOES wrap this in `.stack`/
+   `.stack--tight`, `.stack > * + *` (two classes + combinator) outranks this single-class
+   selector, so the stack's own rhythm wins outright — the two never add together, only one
+   `margin-top` value is ever applied. 1rem matches the codebase's other "own margin
+   because `.panel__body` has no child-spacing rule" fixes (`.settings-notes`,
+   `.email-card .panel__body > * + *`). */
 .inline-warning {
   border: 1px solid var(--border);
   border-left-width: 4px;
   border-radius: var(--radius);
   padding: 0.85rem 1rem;
+  margin-top: 1rem;
+}
+
+.inline-warning:first-child {
+  margin-top: 0;
 }
 
 .inline-warning--warn {
@@ -9269,6 +9284,32 @@ a.btn--primary {
   max-width: 100%;
   overflow-x: clip;
   padding-bottom: 0;
+}
+
+.templates-filterbar__primary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+
+.templates-filterbar__primary .field {
+  flex: 1 1 10rem;
+  min-width: min(100%, 10rem);
+  max-width: 100%;
+}
+
+.templates-filterbar__primary .field:first-child {
+  flex: 2 1 18rem;
+  min-width: min(100%, 18rem);
+  max-width: 100%;
+}
+
+.templates-filterbar__clear {
+  align-self: flex-end;
 }
 
 /* The catalog is a table, not a card wall: the metadata lines up in columns so two
