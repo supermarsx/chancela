@@ -100,6 +100,7 @@ import {
   dpiaSectionPromptKey,
   dpiaSectionTitleKey,
 } from '../../i18n/dpiaTemplateLabels';
+import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
 import { RegisterEditModal } from './RegisterEditModal';
 
 type RegisterKind = 'processor' | 'dpia';
@@ -1255,6 +1256,31 @@ function retentionLegalHoldDisposalStatusSummary(
   };
 }
 
+/**
+ * The `no_claims` flags this panel states, paired with the value it states for each.
+ *
+ * 🔒 These three identifiers name legal claims **this product does not make**. The absence of the
+ * claim IS the fact on record, which is why every one of them is pinned to the literal type `false`
+ * — a later edit that flips one to `true` fails `tsc` here rather than shipping a false assurance.
+ *
+ * Render rules, and they are not stylistic:
+ * - **Verbatim.** They are backend wire names, not copy. Never translate them, never sentence-case
+ *   them, never expand them into prose. Same boundary the guidance panel's no-claims table draws
+ *   above (`settings.privacy.guidance.noClaims`): the column headers carry the translation, the
+ *   identifier stays the backend's own name.
+ * - **Not a badge.** A green/red pass-fail chip reads as a compliance verdict the product is not
+ *   entitled to give. The bare `false` says only what it says.
+ *
+ * An "improvement" to any of the above turns a disclaimer into an assurance and breaks an
+ * evidentiary surface. `PrivacyComplianceSection.test.tsx` asserts the rendered text of all three
+ * so such a change fails loudly.
+ */
+const RETENTION_LEGAL_HOLD_NO_CLAIMS: readonly (readonly [flag: string, claimed: false])[] = [
+  ['destructive_disposal_completed', false],
+  ['disposal_approved', false],
+  ['legal_compliance_claimed', false],
+];
+
 function RetentionLegalHoldDisposalStatusPanel({
   report,
   records,
@@ -1263,6 +1289,7 @@ function RetentionLegalHoldDisposalStatusPanel({
   records: RetentionExecutionRecord[];
 }) {
   const t = useT();
+  const lt = usePrivacyLegalHoldT();
   const summary = retentionLegalHoldDisposalStatusSummary(report, records);
   return (
     <Card
@@ -1277,27 +1304,46 @@ function RetentionLegalHoldDisposalStatusPanel({
         <InlineWarning tone="info" title={t('settings.privacy.legalHold.evidence.title')}>
           {t('settings.privacy.legalHold.evidence.body')}
         </InlineWarning>
-        <dl className="deflist">
-          <div>
-            <dt>{t('settings.privacy.legalHold.dl.candidates')}</dt>
-            <dd>{summary.dueCandidateLegalHoldBlockers}</dd>
-          </div>
-          <div>
-            <dt>{t('settings.privacy.legalHold.dl.executions')}</dt>
-            <dd>{summary.executionLegalHoldBlocks}</dd>
-          </div>
-          <div>
-            <dt>{t('settings.privacy.legalHold.dl.openReviews')}</dt>
-            <dd>{summary.openBlockedReviews}</dd>
-          </div>
-          <div>
-            <dt>{t('settings.privacy.legalHold.dl.flags')}</dt>
-            <dd className="mono">
-              destructive_disposal_completed: false · disposal_approved: false ·
-              legal_compliance_claimed: false
-            </dd>
-          </div>
-        </dl>
+        {/*
+          A real table, not the `.deflist` auto-fit grid this used to be: three integers and a
+          run-on `·`-joined blob of flags were being tiled into wildly uneven cells. Each flag now
+          gets a row of its own, which is what it always was — one identifier, one stated value.
+
+          No `caption`: the Card title above already names this table, and a visually hidden
+          caption repeating it would announce the same phrase twice — the same reason the guidance
+          panel's no-claims table in this file is captionless.
+        */}
+        <Table
+          className="data-status-table"
+          head={
+            <tr>
+              <th scope="col">{lt('settings.privacy.legalHold.column.indicator')}</th>
+              <th scope="col">{lt('settings.privacy.legalHold.column.value')}</th>
+            </tr>
+          }
+        >
+          <tr>
+            <th scope="row">{t('settings.privacy.legalHold.dl.candidates')}</th>
+            <td className="mono">{summary.dueCandidateLegalHoldBlockers}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('settings.privacy.legalHold.dl.executions')}</th>
+            <td className="mono">{summary.executionLegalHoldBlocks}</td>
+          </tr>
+          <tr>
+            <th scope="row">{t('settings.privacy.legalHold.dl.openReviews')}</th>
+            <td className="mono">{summary.openBlockedReviews}</td>
+          </tr>
+          {RETENTION_LEGAL_HOLD_NO_CLAIMS.map(([flag, claimed]) => (
+            <tr key={flag}>
+              {/* Identifier verbatim, value bare — see RETENTION_LEGAL_HOLD_NO_CLAIMS. */}
+              <th scope="row" className="mono">
+                {flag}
+              </th>
+              <td className="mono">{String(claimed)}</td>
+            </tr>
+          ))}
+        </Table>
         <p className="field__hint">{t('settings.privacy.legalHold.source')}</p>
       </div>
     </Card>

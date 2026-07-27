@@ -6,6 +6,10 @@ import type {
   DpiaTemplateView,
   PrivacyAdvisoryReviewSummary,
   ProcessorRecordView,
+  RetentionDueCandidate,
+  RetentionDueCandidatesReport,
+  RetentionExecutionRecord,
+  RetentionLegalHoldBlocker,
   RetentionPolicyView,
   TransferControlView,
 } from '../../api/types';
@@ -269,6 +273,135 @@ const dpiaTemplate: DpiaTemplateView = {
     secrets_included: false,
   },
 };
+
+const legalHoldBlocker: RetentionLegalHoldBlocker = {
+  policy_id: 'retention-1',
+  name: 'Board preservation hold',
+  schedule_id: 'legal-10y',
+  retention_period: 'P10Y',
+  reason: 'legal hold active on archived book',
+};
+
+function dueCandidate(
+  id: string,
+  legal_hold_blockers: RetentionLegalHoldBlocker[],
+): RetentionDueCandidate {
+  return {
+    candidate_id: id,
+    candidate_fingerprint: id.padEnd(64, '0'),
+    scope: 'book_archive',
+    category: 'documents',
+    record_id: `archive-${id}`,
+    book_id: `book-${id}`,
+    entity_id: 'entity-1',
+    closing_date: '2024-06-01',
+    due_date: '2026-06-01',
+    overdue: true,
+    policy_id: 'retention-1',
+    policy_name: 'Closed books archive',
+    schedule_id: 'legal-10y',
+    retention_period: 'P10Y',
+    disposal_action: 'review',
+    destructive_action: false,
+    legal_hold_blockers,
+    required_approvals: [],
+    blockers: [],
+    findings: [],
+    outcome: 'manual_review_required',
+    status: 'awaiting_manual_review',
+    candidate_evidence_state: 'review_queued',
+    evidence_next_step: 'Review evidence only; no deletion or anonymization is performed.',
+    would_execute: false,
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    candidate_resolution_record_count: 0,
+    next_step: 'Review evidence only; no deletion or anonymization is performed.',
+  };
+}
+
+function dueCandidatesReport(candidates: RetentionDueCandidate[]): RetentionDueCandidatesReport {
+  return {
+    generated_at: '2026-07-09T14:00:00Z',
+    scope: 'book_archive',
+    category: 'documents',
+    candidate_count: candidates.length,
+    suppressed_candidate_count: 0,
+    suppressed_by_bounded_evidence_count: 0,
+    candidate_resolution_record_count: 0,
+    candidates_with_resolution_count: 0,
+    candidates,
+  };
+}
+
+function executionRecord(
+  id: string,
+  overrides: Partial<RetentionExecutionRecord> = {},
+): RetentionExecutionRecord {
+  return {
+    id,
+    requested_at: '2026-07-08T09:00:00Z',
+    actor: 'owner',
+    execution_intent: 'review_only',
+    execution_status: 'awaiting_review',
+    operator_review_decision: 'review_required',
+    decision_state: 'open',
+    review_closure_evidence: [],
+    requested_policy: {
+      id: 'retention-1',
+      found: true,
+      name: 'Closed books archive',
+      scope: 'book_archive',
+      category: 'documents',
+      schedule_id: 'legal-10y',
+      retention_period: 'P10Y',
+      disposal_action: 'review',
+      status: 'active',
+      active: true,
+      stale: false,
+      matches_candidate: true,
+      destructive_action: false,
+    },
+    candidate: { scope: 'book_archive', category: 'documents', record_id: `archive-${id}` },
+    matched_records_summary: {
+      scope: 'book_archive',
+      category: 'documents',
+      record_id: `archive-${id}`,
+      record_count: 1,
+      policy_match_count: 1,
+      destructive_policy_count: 0,
+      policy_ids: ['retention-1'],
+    },
+    legal_hold_blockers: [],
+    audit_evidence: [],
+    outcome: 'manual_review_required',
+    block_reason: '',
+    evidence_state: 'review_queued',
+    evidence_next_step: 'Review evidence only; no deletion or anonymization is performed.',
+    workflow: {
+      status: 'awaiting_manual_review',
+      blockers: [],
+      required_approvals: [],
+      next_step: 'Review evidence only.',
+    },
+    execution_result: {
+      bounded_executor: true,
+      targets_considered: [],
+      targets_acted: [],
+      targets_skipped: [],
+      reason_codes: [],
+      next_step: 'Review evidence only.',
+      destructive_disposal_completed: false,
+      full_erasure_completed: false,
+      blocker_metadata: [],
+    },
+    would_execute: false,
+    destructive_disposal_completed: false,
+    full_erasure_completed: false,
+    legal_hold_mutated: false,
+    retention_policy_mutated: false,
+    ...overrides,
+  };
+}
 
 function resetQuery(query: { data: unknown; isLoading: boolean; error: unknown }, data: unknown) {
   query.data = data;
@@ -675,5 +808,103 @@ describe('PrivacyComplianceSection', () => {
       });
     });
     expect(hooks.executionHook).toHaveBeenCalledWith('all', true);
+  });
+
+  /**
+   * The legal-hold panel used to be a `<dl className="deflist">` auto-fit grid and had no test
+   * coverage at all. These two cases are the whole CI guard for it (t54-e3).
+   */
+  function legalHoldTable(): HTMLElement {
+    fireEvent.click(screen.getByRole('button', { name: 'Retenção' }));
+    // The table is captionless by design — the Card title names it — so it is reached through the
+    // panel, the same way SettingsPage.test.tsx reaches it.
+    const panel = screen
+      .getByText('Estado local de legal hold e descarte')
+      .closest('section') as HTMLElement;
+    return within(panel).getByRole('table');
+  }
+
+  function legalHoldRow(table: HTMLElement, label: string): HTMLElement {
+    return within(table).getByRole('rowheader', { name: label }).closest('tr') as HTMLElement;
+  }
+
+  it('derives the legal-hold counts from the due-candidates report and the execution records', () => {
+    // 3 candidates, 2 of them held. 3 held executions (one held via the workflow blocker rather
+    // than the outcome), 2 of which have had their review closed — so 2 / 3 / 1, three distinct
+    // numbers, which a row wired to the wrong summary field cannot accidentally satisfy.
+    hooks.dueCandidates.data = dueCandidatesReport([
+      dueCandidate('cand-1', [legalHoldBlocker]),
+      dueCandidate('cand-2', [legalHoldBlocker]),
+      dueCandidate('cand-3', []),
+    ]);
+    hooks.executions.data = [
+      executionRecord('exec-1', {
+        outcome: 'blocked_legal_hold',
+        execution_status: 'blocked',
+        decision_state: 'review_closed',
+      }),
+      executionRecord('exec-2', {
+        legal_hold_blockers: [legalHoldBlocker],
+        execution_status: 'blocked',
+        decision_state: 'review_closed',
+      }),
+      executionRecord('exec-3', {
+        execution_status: 'blocked',
+        workflow: {
+          status: 'blocked',
+          blockers: [{ code: 'legal_hold_release', message: 'Release the legal hold first.' }],
+          required_approvals: [],
+          next_step: 'Release the legal hold first.',
+        },
+      }),
+      executionRecord('exec-4'),
+    ];
+    renderWithProviders(<PrivacyComplianceSection />);
+    const table = legalHoldTable();
+
+    const rowValue = (label: string) =>
+      within(legalHoldRow(table, label)).getAllByRole('cell')[0].textContent;
+    expect(rowValue('Candidatos bloqueados por legal hold')).toBe('2');
+    expect(rowValue('Registos de execução bloqueados por legal hold')).toBe('3');
+    expect(rowValue('Revisões bloqueadas ainda abertas')).toBe('1');
+
+    // Six body rows: the three counts above and the three no-claim flags below. The flags used to
+    // share one `·`-joined cell with the counts' sibling; that blob must not come back.
+    expect(table.querySelectorAll('tbody tr')).toHaveLength(6);
+    expect(table.textContent).not.toContain('destructive_disposal_completed: ');
+    expect(table.textContent).not.toContain('·');
+  });
+
+  it('states the three no_claims flags verbatim, untranslated, and false', () => {
+    // 🔒 REGRESSION GUARD — read before "improving" this test or the rows it covers.
+    //
+    // These three identifiers name legal claims the product does NOT make. The gap is the
+    // decision, deliberately taken. The dangerous change here is a well-meaning one — an i18n
+    // sweep that translates them, a badge cleanup that turns them into a green/red verdict, a
+    // tidy-up that sentence-cases them — and any of those silently converts a disclaimer into an
+    // assurance about legal compliance. That is a misstatement on an evidentiary surface, not a
+    // styling regression. If this test fails, the fix is almost certainly to revert the change,
+    // not to relax the assertion.
+    renderWithProviders(<PrivacyComplianceSection />);
+    const table = legalHoldTable();
+
+    for (const flag of [
+      'destructive_disposal_completed',
+      'disposal_approved',
+      'legal_compliance_claimed',
+    ]) {
+      const header = within(table).getByRole('rowheader', { name: flag });
+      // Exact text: catches translation, sentence-casing, and a re-appended `: ` suffix alike.
+      expect(header.textContent).toBe(flag);
+      const cells = within(header.closest('tr') as HTMLElement).getAllByRole('cell');
+      expect(cells).toHaveLength(1);
+      expect(cells[0].textContent).toBe('false');
+    }
+
+    // Not a badge, and not a translated claim-state. The sibling guidance table renders its own
+    // no-claims flags as a `Não alegado` chip; this panel deliberately does not, because a bare
+    // `false` asserts nothing beyond itself.
+    expect(table.querySelectorAll('.badge')).toHaveLength(0);
+    expect(within(table).queryByText('Não alegado')).toBeNull();
   });
 });

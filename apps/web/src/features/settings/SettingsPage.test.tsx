@@ -4688,11 +4688,20 @@ describe('SettingsPage', () => {
     expect(
       within(legalHoldStatusPanel!).getByText(/não aprova descarte, não resolve candidatos/i),
     ).toBeTruthy();
-    expect(
-      within(legalHoldStatusPanel!).getByText(
-        /destructive_disposal_completed:\s*false.*disposal_approved:\s*false.*legal_compliance_claimed:\s*false/,
-      ),
-    ).toBeTruthy();
+    // t54-e3: these three `no_claims` identifiers are a row each in a real table now, not the one
+    // `·`-joined blob this used to match. They name legal claims the product does NOT make, so
+    // each stays verbatim and untranslated and states a bare `false` — never a pass/fail badge.
+    for (const flag of [
+      'destructive_disposal_completed',
+      'disposal_approved',
+      'legal_compliance_claimed',
+    ]) {
+      const flagHeader = within(legalHoldStatusPanel!).getByRole('rowheader', { name: flag });
+      expect(flagHeader.textContent).toBe(flag);
+      expect(
+        within(flagHeader.closest('tr') as HTMLElement).getByRole('cell').textContent,
+      ).toBe('false');
+    }
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(
       'section',
