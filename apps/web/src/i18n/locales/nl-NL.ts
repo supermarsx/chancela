@@ -6024,6 +6024,7 @@ export const nlNL: Catalog = {
   'pairing.revokedToast': 'Apparaat ingetrokken',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importen',
+  'books.detail.subnav.export': 'Export',
   'books.detail.subnav.aria': 'Secties van het boek',
   'books.detail.termo.pending.title': 'Vastgelegde openingsakte',
   'books.detail.termo.pending.body':

@@ -155,6 +155,12 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
   await test.step('download the book preservation package separately from document copies', async () => {
     await page.getByRole('link', { name: 'Livro', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/books/${escapeRegExp(bookId)}$`));
+    // The preservation package button now lives in the book's own Export tab (t52), not the
+    // page header.
+    await page
+      .getByRole('group', { name: 'Secções do livro' })
+      .getByRole('button', { name: 'Exportação', exact: true })
+      .click();
     await expect(
       page.getByRole('button', { name: 'Pacote de preservação Chancela' }),
     ).toBeEnabled();

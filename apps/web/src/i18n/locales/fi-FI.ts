@@ -5981,6 +5981,7 @@ export const fiFI: Catalog = {
   'pairing.revokedToast': 'Laite peruttu',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Tuonnit',
+  'books.detail.subnav.export': 'Vienti',
   'books.detail.subnav.aria': 'Kirjan osiot',
   'books.detail.termo.pending.title': 'Kirjattu avausmerkintä',
   'books.detail.termo.pending.body':

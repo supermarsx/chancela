@@ -96,7 +96,9 @@ test('book preservation package export starts a zip browser download', async ({ 
   await installBrowserDownloadFallback(page);
   const mutations = await routeExportFixtures(page);
 
-  await page.goto(`/books/${BOOK_ID}`);
+  // The preservation package button now lives in the book's own Export tab (t52), not the
+  // page header — deep-link straight there.
+  await page.goto(`/books/${BOOK_ID}/export`);
   await expect(page.getByRole('heading', { name: /Assembleia Geral/ })).toBeVisible();
 
   const downloadButton = page.getByRole('button', { name: 'Pacote de preservação Chancela' });

@@ -646,12 +646,14 @@ describe('BooksPage', () => {
 });
 
 describe('BookDetailPage — preservation package download', () => {
+  // The Chancela packages and the portability bundle now live in their own Export tab (t52)
+  // rather than the page header, so every test in this block deep-links straight there.
   function renderAtBook() {
     renderWithProviders(
       <Routes>
         <Route path="/books/:id/:sec?" element={<BookDetailPage />} />
       </Routes>,
-      ['/books/book-1'],
+      ['/books/book-1/export'],
     );
   }
 
@@ -852,6 +854,82 @@ describe('BookDetailPage — preservation package download', () => {
 
     expect(await screen.findByText('sem documentos preservados para empacotar')).toBeTruthy();
     expect(saveFileMock.saveBlobAs).not.toHaveBeenCalled();
+  });
+
+  // Mirrors LedgerPage.test.tsx's own legal-hold-toggle coverage: the Export tab renders the
+  // SAME shared `<BookExportRows>` LedgerPage's Arquivo → Exportação tab does (t52), so the
+  // export-time legal-hold guard is exercised here too, just already scoped to this book.
+  it('downloads the preservation package with the export-time legal hold it was given', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'chancela-preservation-book-book-1.zip',
+      contentType: 'application/zip',
+      bytes: 15,
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url.startsWith('/v1/books/book-1/archive/package') && method === 'GET') {
+        return new Response('zipbytes', {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' },
+        });
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByRole('button', { name: 'Pacote de preservação Chancela' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }));
+    // A blank reason is a server 422, so the export is held back and the field says why.
+    fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));
+    expect(screen.getByText('Indique o motivo antes de marcar a retenção legal.')).toBeTruthy();
+    expect(calls.some((c) => c.url.includes('/archive/package'))).toBe(false);
+
+    fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
+      target: { value: 'Processo 44/26' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    expect(calls.find((c) => c.url.includes('/archive/package'))?.url).toBe(
+      '/v1/books/book-1/archive/package?legal_hold=true&legal_hold_reason=Processo+44%2F26',
+    );
+    expect(saveFileMock.saveBlobAs.mock.calls[0][0].filename).toBe(
+      'chancela-preservation-book-book-1.zip',
+    );
+  });
+
+  // Mirrors LedgerPage.test.tsx's own bundle-download coverage, again through the shared
+  // `<BookExportRows>` (t52) — the SAME `InlineWarning` ("Esta exportação fica registada")
+  // that marks this export as mutating/retained survives the extraction and renders here too.
+  it('exports the portability bundle through the POST endpoint the importer accepts', async () => {
+    saveFileMock.saveBlobAs.mockResolvedValue({
+      kind: 'browser-download',
+      filename: 'book-book-1.zip',
+      contentType: 'application/zip',
+      bytes: 9,
+    });
+    const { fn, calls } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/book-1/export' && method === 'POST') {
+        return new Response('zipbytes', {
+          status: 200,
+          headers: { 'Content-Type': 'application/zip' },
+        });
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+
+    expect(await screen.findByText('Esta exportação fica registada')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Exportar pacote de portabilidade' }));
+
+    await waitFor(() => expect(saveFileMock.saveBlobAs).toHaveBeenCalledTimes(1));
+    const bundleCall = calls.find((c) => c.url === '/v1/books/book-1/export');
+    expect(bundleCall?.method).toBe('POST');
+    expect(saveFileMock.saveBlobAs.mock.calls[0][0].filename).toBe('book-book-1.zip');
   });
 });
 
@@ -2536,7 +2614,7 @@ describe('BookDetailPage — sub-tabs', () => {
     );
   }
 
-  it('reuses the shared SubNav pill with the five sections in the requested order', async () => {
+  it('reuses the shared SubNav pill with the six sections in the requested order', async () => {
     vi.stubGlobal('fetch', bookDetailFetch().fn);
     renderAtBook();
 
@@ -2545,7 +2623,14 @@ describe('BookDetailPage — sub-tabs', () => {
       within(subnav)
         .getAllByRole('button')
         .map((b) => b.textContent),
-    ).toEqual(['Atas', 'Termo de abertura', 'Documentos', 'Retenção legal', 'Importações']);
+    ).toEqual([
+      'Atas',
+      'Termo de abertura',
+      'Documentos',
+      'Retenção legal',
+      'Importações',
+      'Exportação',
+    ]);
   });
 
   it('stores only explicit book layout leaves while inherit remains the default', async () => {

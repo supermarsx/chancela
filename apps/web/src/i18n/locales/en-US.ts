@@ -5924,6 +5924,7 @@ export const enUS = {
   'pairing.revokedToast': 'Device revoked',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Imports',
+  'books.detail.subnav.export': 'Export',
   'books.detail.subnav.aria': 'Book sections',
   'books.detail.termo.pending.title': 'Opening term on record',
   'books.detail.termo.pending.body':

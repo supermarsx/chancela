@@ -6025,6 +6025,7 @@ export const itIT: Catalog = {
   'pairing.revokedToast': 'Dispositivo revocato',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importazioni',
+  'books.detail.subnav.export': 'Esportazione',
   'books.detail.subnav.aria': 'Sezioni del libro',
   'books.detail.termo.pending.title': 'Termine di apertura registrato',
   'books.detail.termo.pending.body':

@@ -6038,6 +6038,7 @@ export const frFR: Catalog = {
   'pairing.revokedToast': 'Appareil révoqué',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importations',
+  'books.detail.subnav.export': 'Exportation',
   'books.detail.subnav.aria': 'Sections du livre',
   'books.detail.termo.pending.title': "Terme d'ouverture enregistré",
   'books.detail.termo.pending.body':

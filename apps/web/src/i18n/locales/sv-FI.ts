@@ -5977,6 +5977,7 @@ export const svFI: Catalog = {
   'pairing.revokedToast': 'Enheten återkallad',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importer',
+  'books.detail.subnav.export': 'Export',
   'books.detail.subnav.aria': 'Avsnitt i boken',
   'books.detail.termo.pending.title': 'Registrerad öppningsanteckning',
   'books.detail.termo.pending.body':

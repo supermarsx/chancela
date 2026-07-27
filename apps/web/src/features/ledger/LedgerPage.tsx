@@ -12,10 +12,8 @@
 import { useDeferredValue, useMemo, useState } from 'react';
 import {
   useBooks,
-  useDownloadBookArchivePackage,
   useDownloadLedgerArchiveDocument,
   useEntities,
-  useExportBook,
   useLedgerPages,
   useLedgerIntegrity,
   useLedgerVerify,
@@ -33,12 +31,7 @@ import { bookKindLabels } from '../../api/labels';
 import { abbreviateId } from './scopeLabel';
 import { useT, type TFunction } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
-import {
-  GateButton,
-  PermissionDeniedNote,
-  scopeBook,
-  usePermissions,
-} from '../session/permissions';
+import { PermissionDeniedNote, usePermissions } from '../session/permissions';
 import {
   Badge,
   Button,
@@ -48,7 +41,6 @@ import {
   Field,
   IconButton,
   Icon,
-  InlineWarning,
   Input,
   PageHeader,
   Select,
@@ -57,11 +49,11 @@ import {
   SkeletonRegion,
   SubNav,
   Table,
-  Toggle,
   useToast,
 } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { LedgerTable } from './LedgerTable';
+import { BookExportRows } from '../books/BookExportRows';
 
 const DEFAULT_PAGE_LIMIT = 100;
 
@@ -76,22 +68,6 @@ function isLedgerSection(value: string | undefined): value is LedgerSection {
 /** An unknown segment falls back to Registo rather than blanking the panel. */
 const parseLedgerSection = (raw: string | undefined): LedgerSection =>
   isLedgerSection(raw) ? raw : 'register';
-
-/**
- * The two per-book ZIP profiles, spelled out because picking the wrong one is a real operator
- * error: the preservation package is a read-only archival/evidence deposit that the importer does
- * NOT accept, the bundle is the portability format that it does.
- */
-const PRESERVATION_PACKAGE_PROFILE = 'chancela-internal-preservation-package/v1';
-const BOOK_BUNDLE_PROFILE = 'chancela-book-bundle/v1';
-
-function preservationPackageFilename(bookId: string): string {
-  return `chancela-preservation-book-${bookId}.zip`;
-}
-
-function bookBundleFilename(bookId: string): string {
-  return `book-${bookId}.zip`;
-}
 
 interface LedgerFilters {
   search: string;
@@ -208,14 +184,6 @@ function isActiveFilterDefault(filters: LedgerFilters): boolean {
   );
 }
 
-function showSaveResultVia(toast: ReturnType<typeof useToast>, result: SaveBlobResult) {
-  if (result.kind === 'cancelled') {
-    toast.info(saveBlobResultMessage(result));
-    return;
-  }
-  toast.success(saveBlobResultMessage(result));
-}
-
 /**
  * The per-book ZIP exports. Both are gated `book.export@Book`; when the principal holds it at no
  * scope at all the book list is never even requested (so no 403 is provoked) and an honest
@@ -250,7 +218,6 @@ function resolveChoice(current: string, options: readonly { value: string }[]): 
 
 function BookExportControls() {
   const t = useT();
-  const toast = useToast();
   const books = useBooks();
   const entities = useEntities();
   // The three cascade choices. Each `onChange` clears the levels below it; `resolveChoice` then
@@ -258,9 +225,6 @@ function BookExportControls() {
   const [entityId, setEntityId] = useState('');
   const [kind, setKind] = useState('');
   const [bookId, setBookId] = useState('');
-  const [legalHold, setLegalHold] = useState(false);
-  const [legalHoldReason, setLegalHoldReason] = useState('');
-  const [reasonTouched, setReasonTouched] = useState(false);
 
   const bookList = useMemo(() => books.data ?? [], [books.data]);
   const entityList = useMemo(() => entities.data ?? [], [entities.data]);
@@ -318,61 +282,6 @@ function BookExportControls() {
     label: t('ledger.export.book.selectPlaceholder'),
     disabled: true,
   };
-
-  const preservation = useDownloadBookArchivePackage(selectedBookId);
-  const bundle = useExportBook();
-
-  const trimmedReason = legalHoldReason.trim();
-  // Mirrors the server rule: `legal_hold=true` without a non-blank reason is a 422, so the button
-  // is held back rather than sending a request that is known to fail.
-  const reasonMissing = legalHold && trimmedReason === '';
-
-  function onDownloadPreservationPackage() {
-    if (!selectedBookId || reasonMissing) {
-      setReasonTouched(true);
-      return;
-    }
-    preservation.mutate(legalHold ? { legal_hold: true, legal_hold_reason: trimmedReason } : {}, {
-      onSuccess: async (blob) => {
-        try {
-          showSaveResultVia(
-            toast,
-            await saveBlobAs({
-              blob,
-              filename: preservationPackageFilename(selectedBookId),
-              contentType: 'application/zip',
-              preferBrowserSavePicker: true,
-            }),
-          );
-        } catch (e) {
-          toast.error(e);
-        }
-      },
-      onError: (e) => toast.error(e),
-    });
-  }
-
-  function onDownloadBundle() {
-    if (!selectedBookId) return;
-    bundle.mutate(selectedBookId, {
-      onSuccess: async ({ blob }) => {
-        try {
-          showSaveResultVia(
-            toast,
-            await saveBlobAs({
-              blob,
-              filename: bookBundleFilename(selectedBookId),
-              contentType: 'application/zip',
-              preferBrowserSavePicker: true,
-            }),
-          );
-        } catch (e) {
-          toast.error(e);
-        }
-      },
-      onError: (e) => toast.error(e),
-    });
-  }
 
   if (books.isLoading || entities.isLoading) {
     return (
@@ -447,90 +356,7 @@ function BookExportControls() {
           </tr>
         }
       >
-        <tr>
-          <th scope="row">{t('ledger.export.preservation.title')}</th>
-          <td>
-            <p className="field__hint">
-              {t('ledger.export.preservation.body')} <code>{PRESERVATION_PACKAGE_PROFILE}</code>
-            </p>
-            <p className="field__hint">{t('ledger.export.preservation.contents')}</p>
-          </td>
-          <td>
-            <div className="stack--tight">
-              <Toggle
-                id="ledger-export-legal-hold"
-                checked={legalHold}
-                onChange={(next) => {
-                  setLegalHold(next);
-                  if (!next) setReasonTouched(false);
-                }}
-                label={t('ledger.export.legalHold.label')}
-              />
-              <p className="field__hint">{t('ledger.export.legalHold.help')}</p>
-              {legalHold ? (
-                <Field
-                  label={t('ledger.export.legalHold.reason.label')}
-                  htmlFor="ledger-export-legal-hold-reason"
-                  error={
-                    reasonTouched && reasonMissing
-                      ? t('ledger.export.legalHold.reason.required')
-                      : undefined
-                  }
-                >
-                  <Input
-                    id="ledger-export-legal-hold-reason"
-                    value={legalHoldReason}
-                    placeholder={t('ledger.export.legalHold.reason.placeholder')}
-                    onChange={(e) => setLegalHoldReason(e.target.value)}
-                    onBlur={() => setReasonTouched(true)}
-                  />
-                </Field>
-              ) : null}
-              <GateButton
-                perm="book.export"
-                scope={scopeBook(selectedBookId)}
-                type="button"
-                variant="primary"
-                icon={<Icon.Archive />}
-                disabled={!selectedBookId || preservation.isPending}
-                onClick={onDownloadPreservationPackage}
-              >
-                {preservation.isPending
-                  ? t('books.preservationPackage.downloading')
-                  : t('books.preservationPackage.download')}
-              </GateButton>
-            </div>
-          </td>
-        </tr>
-
-        <tr>
-          <th scope="row">{t('ledger.export.bundle.title')}</th>
-          <td>
-            <p className="field__hint">
-              {t('ledger.export.bundle.body')} <code>{BOOK_BUNDLE_PROFILE}</code>
-            </p>
-            <InlineWarning tone="info" title={t('ledger.export.bundle.retainedTitle')}>
-              {t('ledger.export.bundle.retained')}
-            </InlineWarning>
-          </td>
-          <td>
-            <div className="stack--tight">
-              <GateButton
-                perm="book.export"
-                scope={scopeBook(selectedBookId)}
-                type="button"
-                variant="secondary"
-                icon={<Icon.Tray />}
-                disabled={!selectedBookId || bundle.isPending}
-                onClick={onDownloadBundle}
-              >
-                {bundle.isPending
-                  ? t('ledger.export.bundle.downloading')
-                  : t('ledger.export.bundle.download')}
-              </GateButton>
-            </div>
-          </td>
-        </tr>
+        <BookExportRows bookId={selectedBookId} />
       </Table>
     </div>
   );

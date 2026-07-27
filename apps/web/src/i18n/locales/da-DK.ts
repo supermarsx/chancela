@@ -5968,6 +5968,7 @@ export const daDK: Catalog = {
   'pairing.revokedToast': 'Enhed tilbagekaldt',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Import',
+  'books.detail.subnav.export': 'Eksport',
   'books.detail.subnav.aria': 'Bogens afsnit',
   'books.detail.termo.pending.title': 'Registreret åbningspåtegning',
   'books.detail.termo.pending.body':

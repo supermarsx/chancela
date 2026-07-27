@@ -5996,6 +5996,7 @@ export const plPL: Catalog = {
   'pairing.revokedToast': 'Urządzenie unieważnione',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importy',
+  'books.detail.subnav.export': 'Eksport',
   'books.detail.subnav.aria': 'Sekcje księgi',
   'books.detail.termo.pending.title': 'Zapisana formuła otwarcia',
   'books.detail.termo.pending.body':

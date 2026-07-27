@@ -235,9 +235,6 @@ test('paper-book import preserves non-canonical package, OCR review, and dossier
     ).toBeVisible();
     await expect(section.getByText(/Texto autoritativo: não/i)).toBeVisible();
     await expect(section.getByText(/documento canónico: não/i).first()).toBeVisible();
-    await expect(
-      page.getByRole('button', { name: 'Pacote de preservação Chancela' }),
-    ).toBeVisible();
 
     const retainedPackage = await downloadFrom(
       rowForImport(page, reviewedImport.filename).getByRole('button', {
@@ -245,6 +242,16 @@ test('paper-book import preserves non-canonical package, OCR review, and dossier
       }),
     );
     await expectPackageDownload(retainedPackage, reviewedImport.filename, reviewedImport.bytes);
+
+    // The book-level Chancela preservation package now lives in its own Export tab (t52), kept
+    // distinct from the per-import retained package downloaded above.
+    await page
+      .getByRole('group', { name: 'Secções do livro' })
+      .getByRole('button', { name: 'Exportação', exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', { name: 'Pacote de preservação Chancela' }),
+    ).toBeVisible();
   });
 });
 

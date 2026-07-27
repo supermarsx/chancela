@@ -5984,6 +5984,7 @@ export const ptBR: Catalog = {
   'pairing.revokedToast': 'Aparelho revogado',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importações',
+  'books.detail.subnav.export': 'Exportações',
   'books.detail.subnav.aria': 'Seções do livro',
   'books.detail.termo.pending.title': 'Termo de abertura registrado',
   'books.detail.termo.pending.body':

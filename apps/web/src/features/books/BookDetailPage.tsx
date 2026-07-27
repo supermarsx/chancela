@@ -27,7 +27,6 @@ import {
   useClearBookLegalHold,
   useCreatePaperBookOcrDraft,
   useCreatePaperBookOcrDraftActDraft,
-  useDownloadBookArchivePackage,
   useDownloadBookLocalDglabInterchangeManifest,
   useDownloadPaperBookImport,
   useEntity,
@@ -103,6 +102,7 @@ import {
   useCan,
 } from '../session/permissions';
 import { BookActsList, type OpeningTermRecord } from './BookActsList';
+import { BookExportRows } from './BookExportRows';
 import { TermoAberturaEditor } from './TermoAberturaEditor';
 import { TermoEncerramentoEditor } from './TermoEncerramentoEditor';
 import { useEncerramentoT } from './termoEncerramentoStrings';
@@ -112,7 +112,7 @@ import { BookDocumentLayoutPanel } from '../documents/DocumentLayoutOverridePane
  * The book sub-tabs, in the order the operator asked for. Labels reuse the section titles
  * they head (identical text), exactly as the Configurações sub-nav does.
  */
-type BookSection = 'acts' | 'opening' | 'layout' | 'retention' | 'imports';
+type BookSection = 'acts' | 'opening' | 'layout' | 'retention' | 'imports' | 'export';
 
 const BOOK_SECTIONS: { id: BookSection; label: MessageKey; icon: ReactNode }[] = [
   { id: 'acts', label: 'books.atas', icon: <Icon.Layers /> },
@@ -121,6 +121,9 @@ const BOOK_SECTIONS: { id: BookSection; label: MessageKey; icon: ReactNode }[] =
   { id: 'retention', label: 'books.detail.legalHold.title', icon: <Icon.Scale /> },
   // Short label: the imports card title is a full sentence, too long for a pill.
   { id: 'imports', label: 'books.detail.subnav.imports', icon: <Icon.Tray /> },
+  // Every export affordance this book has, in one place — the read-only preservation package,
+  // the read-only local DGLAB manifest, and the mutating/retained portability bundle (t52).
+  { id: 'export', label: 'books.detail.subnav.export', icon: <Icon.Archive /> },
 ];
 
 const isBookSection = (value: string | undefined): value is BookSection =>
@@ -129,10 +132,6 @@ const isBookSection = (value: string | undefined): value is BookSection =>
 /** An unknown segment falls back to Atas rather than blanking the panel. */
 const parseBookSection = (raw: string | undefined): BookSection =>
   isBookSection(raw) ? raw : 'acts';
-
-function preservationPackageFilename(bookId: string): string {
-  return `chancela-preservation-book-${bookId}.zip`;
-}
 
 const LOCAL_DGLAB_MANIFEST_CONTENT_TYPE = 'application/json';
 
@@ -2102,7 +2101,6 @@ export function BookDetailPage() {
   // The opening instrument belongs in the Atas chronology even though it deliberately remains a
   // distinct unnumbered domain record. The same query also feeds the dedicated Opening tab.
   const abertura = useBookTermoAbertura(id, section === 'acts' || section === 'opening');
-  const packageDownload = useDownloadBookArchivePackage(id);
   const localDglabManifestDownload = useDownloadBookLocalDglabInterchangeManifest(id);
 
   if (book.isLoading) {
@@ -2163,26 +2161,6 @@ export function BookDetailPage() {
     toast.success(saveBlobResultMessage(result));
   }
 
-  function onDownloadPackage() {
-    packageDownload.mutate(undefined, {
-      onSuccess: async (blob) => {
-        try {
-          showSaveResult(
-            await saveBlobAs({
-              blob,
-              filename: preservationPackageFilename(b.id),
-              contentType: 'application/zip',
-              preferBrowserSavePicker: true,
-            }),
-          );
-        } catch (e) {
-          toast.error(e);
-        }
-      },
-      onError: (e) => toast.error(e),
-    });
-  }
-
   function onDownloadLocalDglabManifest() {
     localDglabManifestDownload.mutate(undefined, {
       onSuccess: async (manifest) => {
@@ -2218,36 +2196,6 @@ export function BookDetailPage() {
             <Badge tone={isOpen ? 'ok' : 'neutral'}>{bookStateLabels[b.state]}</Badge>
           </>
         }
-        actions={
-          <div className="row-wrap">
-            <GateButton
-              perm="book.export"
-              scope={scopeBook(b.id)}
-              type="button"
-              variant="secondary"
-              icon={<Icon.Archive />}
-              disabled={packageDownload.isPending}
-              onClick={onDownloadPackage}
-            >
-              {packageDownload.isPending
-                ? t('books.preservationPackage.downloading')
-                : t('books.preservationPackage.download')}
-            </GateButton>
-            <GateButton
-              perm="book.export"
-              scope={scopeBook(b.id)}
-              type="button"
-              variant="secondary"
-              icon={<Icon.FileText />}
-              disabled={localDglabManifestDownload.isPending}
-              onClick={onDownloadLocalDglabManifest}
-            >
-              {localDglabManifestDownload.isPending
-                ? 'A descarregar manifesto DGLAB local'
-                : 'Manifesto DGLAB local (metadados JSON)'}
-            </GateButton>
-          </div>
-        }
       >
         <SubNav
           items={BOOK_SECTIONS.map((s) => ({ id: s.id, label: t(s.label), icon: s.icon }))}
@@ -2256,11 +2204,6 @@ export function BookDetailPage() {
           ariaLabel={t('books.detail.subnav.aria')}
         />
       </PageHeader>
-
-      <InlineWarning tone="info" title={t('books.detail.dglab.warningTitle')}>
-        {' '}
-        {t('uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson')}{' '}
-      </InlineWarning>
 
       {/* One section at a time; the panel replays the route-enter fade on each switch, as
           the Configurações sub-nav does. The opening panel alone opts into the shared wide
@@ -2357,6 +2300,54 @@ export function BookDetailPage() {
         {section === 'layout' ? <BookDocumentLayoutPanel book={b} /> : null}
 
         {section === 'imports' ? <PaperBookImportsPanel book={b} /> : null}
+
+        {/* Every export affordance this book has, in one place: the two read-only Chancela
+            packages (the preservation ZIP and the metadata-only local DGLAB manifest) plus the
+            mutating, ledger-retained portability bundle. The preservation package and the bundle
+            rows are the SAME shared `<BookExportRows>` `LedgerPage.tsx`'s own Arquivo →
+            Exportação tab renders for any book — extracted so the toggle-validation and download
+            wiring live exactly once (t52). The DGLAB manifest row has no Ledger-page counterpart
+            and stays book-detail-only. */}
+        {section === 'export' ? (
+          <Card title={t('ledger.export.book.title')}>
+            <Table
+              className="book-export-table"
+              caption={t('ledger.export.book.title')}
+              head={
+                <tr>
+                  <th scope="col">{t('ledger.export.table.package')}</th>
+                  <th scope="col">{t('ledger.export.table.purpose')}</th>
+                  <th scope="col" />
+                </tr>
+              }
+            >
+              <BookExportRows bookId={b.id} />
+              <tr>
+                <th scope="row">Manifesto DGLAB local</th>
+                <td>
+                  <InlineWarning tone="info" title={t('books.detail.dglab.warningTitle')}>
+                    {t('uiLiteral.bookDetailPage.oManifestoDglabLocalEUmScaffoldJson')}
+                  </InlineWarning>
+                </td>
+                <td>
+                  <GateButton
+                    perm="book.export"
+                    scope={scopeBook(b.id)}
+                    type="button"
+                    variant="secondary"
+                    icon={<Icon.FileText />}
+                    disabled={localDglabManifestDownload.isPending}
+                    onClick={onDownloadLocalDglabManifest}
+                  >
+                    {localDglabManifestDownload.isPending
+                      ? 'A descarregar manifesto DGLAB local'
+                      : 'Manifesto DGLAB local (metadados JSON)'}
+                  </GateButton>
+                </td>
+              </tr>
+            </Table>
+          </Card>
+        ) : null}
 
         {section === 'acts' ? (
           <>

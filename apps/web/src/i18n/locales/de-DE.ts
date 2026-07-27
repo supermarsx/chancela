@@ -6045,6 +6045,7 @@ export const deDE: Catalog = {
   'pairing.revokedToast': 'Gerät widerrufen',
   // --- Book detail sub-tabs (t25) ------------------------------------------------
   'books.detail.subnav.imports': 'Importe',
+  'books.detail.subnav.export': 'Export',
   'books.detail.subnav.aria': 'Abschnitte des Buchs',
   'books.detail.termo.pending.title': 'Erfasster Eröffnungsvermerk',
   'books.detail.termo.pending.body':
