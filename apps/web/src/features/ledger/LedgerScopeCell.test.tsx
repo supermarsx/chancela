@@ -149,11 +149,9 @@ describe('the Arquivo chains column', () => {
     stubLists();
     // The chains vocabulary says `company:` where a scope says `entity:` — it must still resolve
     // to the entity's name, and the book to its (kind) name, both `·`-separated like Âmbito.
+    // Chains renders unconditionally here: an unwired `<LedgerTable>` defaults to every column.
     renderWithProviders(
-      <LedgerTable
-        events={[event('act:1', ['global', `company:${ENTITY}`, `book:${BOOK}`])]}
-        showChains
-      />,
+      <LedgerTable events={[event('act:1', ['global', `company:${ENTITY}`, `book:${BOOK}`])]} />,
     );
 
     await waitFor(() => expect(screen.getByText('Entidade Encosto Estratégico Lda')).toBeTruthy());
@@ -164,9 +162,7 @@ describe('the Arquivo chains column', () => {
 
   it('names the application-audit chain distinctly from the global spine', async () => {
     stubLists();
-    renderWithProviders(
-      <LedgerTable events={[event('settings', ['application', 'global'])]} showChains />,
-    );
+    renderWithProviders(<LedgerTable events={[event('settings', ['application', 'global'])]} />);
 
     await waitFor(() => expect(screen.getByText('Aplicação')).toBeTruthy());
     expect(screen.getByText('Registo global')).toBeTruthy();
@@ -175,9 +171,7 @@ describe('the Arquivo chains column', () => {
   it('keeps the exact chain id reachable and labels an unresolvable membership rather than blanking', async () => {
     stubLists();
     const missing = 'deadbeef-0000-4000-8000-000000000000';
-    renderWithProviders(
-      <LedgerTable events={[event('act:1', [`company:${missing}`])]} showChains />,
-    );
+    renderWithProviders(<LedgerTable events={[event('act:1', [`company:${missing}`])]} />);
 
     // Deleted, or outside this viewer's authority: an abbreviated id under the type, never blank,
     // never a bare `company:{uuid}` — and the exact chain id stays one focus away for an auditor.

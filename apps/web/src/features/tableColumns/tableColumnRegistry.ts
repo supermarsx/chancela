@@ -302,6 +302,54 @@ export const TEMPLATES_TABLE = {
 } as const satisfies ConfigurableTable<TemplatesTableColumn>;
 
 /**
+ * Atas within a book (`BookActsList`). `Number` is the ata number: an ata without one is not yet
+ * identifiable — a draft in progress, not a missing fact — so it is `structural`, not merely shown
+ * first. `Actions` is the row's open action, a control. The three remaining columns are `data` and
+ * all show by default: at five columns total the table never needed hiding out of the box, but the
+ * `data-act-column` attributes on every cell were pre-wired for exactly this by an earlier author.
+ */
+export type ActsTableColumn = 'Number' | 'Title' | 'Channel' | 'State' | 'Actions';
+
+export const ACTS_TABLE = {
+  table: 'acts',
+  mode: 'configurable',
+  columns: [
+    { id: 'Number', role: 'structural' },
+    { id: 'Title', role: 'data' },
+    { id: 'Channel', role: 'data' },
+    { id: 'State', role: 'data' },
+    { id: 'Actions', role: 'control' },
+  ],
+  productDefault: ['Number', 'Title', 'Channel', 'State'],
+} as const satisfies ConfigurableTable<ActsTableColumn>;
+
+/**
+ * Ledger events. The Arquivo page and the dashboard's recent-events widget both render this table
+ * and share this one declaration and one per-user preference — they are two views of the same
+ * collection, not two tables. `Seq` and `Event` are structural: a ledger row without its sequence
+ * number or event kind is not a usable audit record. `Chains` defaults OFF, replacing the ad-hoc
+ * `showChains` prop the two call sites used to pass by hand (`true` on Arquivo, the default `false`
+ * on the dashboard) with one resolved default; the toggle still reaches it either way. `Hash` — the
+ * evidence column — stays hideable but defaults ON, unlike `Chains`.
+ */
+export type LedgerTableColumn = 'Seq' | 'Event' | 'Scope' | 'Chains' | 'Actor' | 'Date' | 'Hash';
+
+export const LEDGER_TABLE = {
+  table: 'ledger',
+  mode: 'configurable',
+  columns: [
+    { id: 'Seq', role: 'structural' },
+    { id: 'Event', role: 'structural' },
+    { id: 'Scope', role: 'data' },
+    { id: 'Chains', role: 'data' },
+    { id: 'Actor', role: 'data' },
+    { id: 'Date', role: 'data' },
+    { id: 'Hash', role: 'data' },
+  ],
+  productDefault: ['Seq', 'Event', 'Scope', 'Actor', 'Date', 'Hash'],
+} as const satisfies ConfigurableTable<LedgerTableColumn>;
+
+/**
  * Every table with a declared column model. A table joins this map when it is wired, so that a
  * lookup here is always a lookup of something real.
  */
@@ -309,6 +357,8 @@ export const TABLE_COLUMN_REGISTRY = {
   entities: ENTITIES_TABLE,
   books: BOOKS_TABLE,
   templates: TEMPLATES_TABLE,
+  acts: ACTS_TABLE,
+  ledger: LEDGER_TABLE,
 } as const;
 
 /**

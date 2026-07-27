@@ -29,7 +29,7 @@ import type {
 import { BOOK_KINDS } from '../../api/types';
 import { bookKindLabels } from '../../api/labels';
 import { abbreviateId } from './scopeLabel';
-import { useT, type TFunction } from '../../i18n';
+import { useT, type MessageKey, type TFunction } from '../../i18n';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { PermissionDeniedNote, usePermissions } from '../session/permissions';
 import {
@@ -52,8 +52,31 @@ import {
   useToast,
 } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
+import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
+import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import {
+  dataColumns,
+  LEDGER_TABLE,
+  renderedColumns,
+  tableColumnsSpec,
+} from '../tableColumns/tableColumnRegistry';
+import { useTableColumns } from '../tableColumns/useTableColumns';
 import { LedgerTable } from './LedgerTable';
 import { BookExportRows } from '../books/BookExportRows';
+
+/** The toggleable ledger columns, and the label each answers to (reuses the table's own `th` copy). */
+const LEDGER_HIDEABLE_COLUMNS = dataColumns(LEDGER_TABLE);
+
+const LEDGER_COLUMN_LABEL_KEYS: Record<(typeof LEDGER_HIDEABLE_COLUMNS)[number], MessageKey> = {
+  Scope: 'ledger.th.scope',
+  Chains: 'ledger.th.chains',
+  Actor: 'ledger.th.actor',
+  Date: 'ledger.th.date',
+  Hash: 'ledger.th.hash',
+};
+
+/** All storable columns visible by default except `Chains` — matches the old `showChains=false`. */
+const LEDGER_COLUMN_SPEC = tableColumnsSpec(LEDGER_TABLE);
 
 const DEFAULT_PAGE_LIMIT = 100;
 
@@ -364,7 +387,10 @@ function BookExportControls() {
 
 export function LedgerPage() {
   const t = useT();
+  const ct = useTableColumnsT();
   const toast = useToast();
+  const ledgerColumns = useTableColumns(LEDGER_COLUMN_SPEC);
+  const ledgerVisibleColumns = renderedColumns(LEDGER_TABLE, ledgerColumns.visible);
   // `/archive/export`; Registo is the default, so it stays at the bare `/archive`.
   const { section, select: selectSection } = useSectionNav<LedgerSection>({
     base: '/archive',
@@ -693,6 +719,14 @@ export function LedgerPage() {
                 </details>
               </div>
 
+              <ColumnPicker
+                columns={LEDGER_HIDEABLE_COLUMNS}
+                label={ct('tableColumns.summary')}
+                isVisible={ledgerColumns.isVisible}
+                onToggle={ledgerColumns.toggle}
+                columnLabel={(column) => t(LEDGER_COLUMN_LABEL_KEYS[column])}
+              />
+
               {!eventsQuery.isLoading && !eventsQuery.error ? (
                 <div className="ledger-resultbar">
                   <Badge tone="accent">{t('ledger.order.newestFirst')}</Badge>
@@ -718,7 +752,12 @@ export function LedgerPage() {
                 </EmptyState>
               ) : (
                 <>
-                  <LedgerTable events={events} showChains compact rowCount={ledgerRowCount} />
+                  <LedgerTable
+                    events={events}
+                    visibleColumns={ledgerVisibleColumns}
+                    compact
+                    rowCount={ledgerRowCount}
+                  />
                   {eventsQuery.hasNextPage ? (
                     <div className="ledger-load-more">
                       <Button

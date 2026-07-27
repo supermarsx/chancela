@@ -172,12 +172,15 @@ describe('BookActsList', () => {
   });
 
   it('filters by state, and shows the filtered-empty note when nothing matches', () => {
-    render(
+    const { container } = render(
       <Wrapper>
         <BookActsList acts={acts} opening={OPENING} />
       </Wrapper>,
     );
-    const stateSelect = screen.getByLabelText('Estado');
+    // Scoped to the primary filterbar: the "Estado" filter and the column picker's "Estado"
+    // checkbox (t54) would otherwise both answer to the same accessible name.
+    const primaryFilters = container.querySelector('.acts-filterbar__primary') as HTMLElement;
+    const stateSelect = within(primaryFilters).getByLabelText('Estado');
     fireEvent.change(stateSelect, { target: { value: 'Draft' } });
     expect(rowNumbers()).toEqual(['—']);
     expect(screen.getByText('Rascunho em curso')).toBeTruthy();

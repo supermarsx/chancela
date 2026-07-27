@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { cleanup, screen } from '@testing-library/react';
 import { getByRevealedText, renderWithProviders } from '../../test/utils';
 import type { LedgerEventView } from '../../api/types';
+import { allColumns, LEDGER_TABLE } from '../tableColumns/tableColumnRegistry';
 import { LedgerTable } from './LedgerTable';
+
+const ALL_LEDGER_COLUMNS = allColumns(LEDGER_TABLE);
 
 function makeEvent(seq: number, patch: Partial<LedgerEventView> = {}): LedgerEventView {
   return {
@@ -99,7 +102,7 @@ describe('LedgerTable', () => {
   it('renders an event whose payload omits the chain list', () => {
     const events = [makeEvent(3, { chains: undefined as unknown as string[] })];
 
-    renderWithProviders(<LedgerTable events={events} showChains />);
+    renderWithProviders(<LedgerTable events={events} visibleColumns={ALL_LEDGER_COLUMNS} />);
 
     expect(screen.getByText('event.3')).toBeTruthy();
   });

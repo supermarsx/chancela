@@ -3,21 +3,36 @@
  * Arquivo page). Hashes are hex strings, shown through the abbreviated `Digest`
  * component (first/last eight, full value on hover, click-to-copy) so the table stays
  * legible without hiding the evidence.
+ *
+ * Presentational only (t54): which columns show is the caller's decision, resolved from the
+ * per-user `ledger` table-column preference (`tableColumnRegistry`'s `LEDGER_TABLE`) rather than
+ * the ad-hoc `showChains` boolean this component used to take. `visibleColumns` defaults to every
+ * column (mirroring `BooksTable`'s own default): a caller that does not personalize — a test, some
+ * future embed — sees the table unchanged rather than an evidence column silently hidden. Both real
+ * call sites (Arquivo, the dashboard widget) always pass an explicit resolved set.
  */
 import { ledgerEventKindLabel } from '../../api/labels';
 import type { LedgerEventView } from '../../api/types';
 import { useT } from '../../i18n';
 import { Badge, DateTime, Digest, EmptyState, Table, TooltipText } from '../../ui';
+import { allColumns, LEDGER_TABLE, type LedgerTableColumn } from '../tableColumns/tableColumnRegistry';
 import { chainSummaryLabel, LedgerScopeCell, useLedgerScopeNames } from './LedgerScopeCell';
+
+/** Every ledger column, in canonical order — the default for a caller that does not personalize. */
+const LEDGER_ALL_COLUMNS = allColumns(LEDGER_TABLE);
 
 export function LedgerTable({
   events,
-  showChains = false,
+  visibleColumns = LEDGER_ALL_COLUMNS,
   compact = false,
   rowCount,
 }: {
   events: LedgerEventView[];
-  showChains?: boolean;
+  /**
+   * The per-user resolved visible set (t54), in canonical order. Defaults to every column, so a
+   * caller that does not personalize — a test, a future embed — renders the table unchanged.
+   */
+  visibleColumns?: readonly LedgerTableColumn[];
   /**
    * The Arquivo reading mode: hundreds of rows scanned in one sitting, so the row is tightened
    * to the floor the digest copy control sets (see `.ledger-table` in `theme.css`). The
@@ -28,6 +43,7 @@ export function LedgerTable({
   rowCount?: number;
 }) {
   const t = useT();
+  const shows = (column: LedgerTableColumn) => visibleColumns.includes(column);
   // One pair of list queries for the whole table — never one per row. Both are shared query keys
   // and both are skipped when the viewer holds no such permission, so an unauthorized visit costs
   // nothing and every scope simply keeps its id.
@@ -47,11 +63,11 @@ export function LedgerTable({
         <tr aria-rowindex={rowCount === undefined ? undefined : 1}>
           <th>{t('ledger.th.seq')}</th>
           <th>{t('ledger.th.event')}</th>
-          <th>{t('ledger.th.scope')}</th>
-          {showChains ? <th>{t('ledger.th.chains')}</th> : null}
-          <th>{t('ledger.th.actor')}</th>
-          <th>{t('ledger.th.date')}</th>
-          <th>{t('ledger.th.hash')}</th>
+          {shows('Scope') ? <th>{t('ledger.th.scope')}</th> : null}
+          {shows('Chains') ? <th>{t('ledger.th.chains')}</th> : null}
+          {shows('Actor') ? <th>{t('ledger.th.actor')}</th> : null}
+          {shows('Date') ? <th>{t('ledger.th.date')}</th> : null}
+          {shows('Hash') ? <th>{t('ledger.th.hash')}</th> : null}
         </tr>
       }
     >
@@ -69,13 +85,15 @@ export function LedgerTable({
               <TooltipText label={e.kind}>{ledgerEventKindLabel(e.kind)}</TooltipText>
             </Badge>
           </td>
-          <td>
-            {/* The raw scope was a bare id — `0a20de34-…` told a reader nothing. It now reads as
-                `Tipo — Nome`, resolved only against records this viewer may already read, with
-                the exact scope string one focus away for an auditor. */}
-            <LedgerScopeCell scope={e.scope} names={scopeNames} />
-          </td>
-          {showChains ? (
+          {shows('Scope') ? (
+            <td>
+              {/* The raw scope was a bare id — `0a20de34-…` told a reader nothing. It now reads as
+                  `Tipo — Nome`, resolved only against records this viewer may already read, with
+                  the exact scope string one focus away for an auditor. */}
+              <LedgerScopeCell scope={e.scope} names={scopeNames} />
+            </td>
+          ) : null}
+          {shows('Chains') ? (
             <td>
               {/* Mirrors the Âmbito column: friendly, `·`-separated names in normal case rather
                   than the raw `company:{uuid}` / `book:{uuid}` tokens (which, as uppercase pills,
@@ -93,23 +111,29 @@ export function LedgerTable({
               </span>
             </td>
           ) : null}
-          <td>
-            {e.actor === 'api' ? (
-              <TooltipText className="muted" label={t('ledger.actor.systemTooltip')}>
-                {e.actor}
-              </TooltipText>
-            ) : (
-              e.actor
-            )}
-          </td>
+          {shows('Actor') ? (
+            <td>
+              {e.actor === 'api' ? (
+                <TooltipText className="muted" label={t('ledger.actor.systemTooltip')}>
+                  {e.actor}
+                </TooltipText>
+              ) : (
+                e.actor
+              )}
+            </td>
+          ) : null}
           {/* The ledger is the evidentiary record: seconds and the zone abbreviation, with
               the core's unrounded instant kept in the `datetime` attribute for a verifier. */}
-          <td>
-            <DateTime value={e.timestamp} evidentiary />
-          </td>
-          <td>
-            <Digest value={e.hash} />
-          </td>
+          {shows('Date') ? (
+            <td>
+              <DateTime value={e.timestamp} evidentiary />
+            </td>
+          ) : null}
+          {shows('Hash') ? (
+            <td>
+              <Digest value={e.hash} />
+            </td>
+          ) : null}
         </tr>
       ))}
     </Table>

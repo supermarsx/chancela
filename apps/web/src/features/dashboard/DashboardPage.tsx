@@ -44,6 +44,8 @@ import {
   Tooltip,
   TooltipText,
 } from '../../ui';
+import { LEDGER_TABLE, renderedColumns, tableColumnsSpec } from '../tableColumns/tableColumnRegistry';
+import { useTableColumns } from '../tableColumns/useTableColumns';
 import { LedgerTable } from '../ledger/LedgerTable';
 import { scopeSummaryLabel, useLedgerScopeNames } from '../ledger/LedgerScopeCell';
 import { parseScope } from '../ledger/scopeLabel';
@@ -53,6 +55,13 @@ import {
   type DashboardActivityCopyKey,
 } from '../../i18n/dashboardActivityFallback';
 import './DashboardPage.css';
+
+/**
+ * The recent-events widget renders the same `ledger` table as Arquivo (t54) — no picker here (the
+ * widget is compact and has no room for one), but it honors whatever the user has chosen there, so
+ * a personal override reads the same on both surfaces rather than the widget silently disagreeing.
+ */
+const LEDGER_COLUMN_SPEC = tableColumnsSpec(LEDGER_TABLE);
 
 const NO_ACT_COUNTS: DashboardActStateCounts = {
   Draft: 0,
@@ -1311,6 +1320,8 @@ function ReminderDatesSummary({ reminders }: { reminders: DashboardReminder[] })
 export function DashboardPage() {
   const t = useT();
   const { data: payload, isLoading, error } = useDashboard();
+  const ledgerColumns = useTableColumns(LEDGER_COLUMN_SPEC);
+  const ledgerVisibleColumns = renderedColumns(LEDGER_TABLE, ledgerColumns.visible);
   const { section: tab, select: selectTab } = useSectionNav<DashboardTab>({
     base: DASHBOARD_TAB_BASE,
     parse: dashboardTabFromParam,
@@ -1422,7 +1433,7 @@ export function DashboardPage() {
               </Tooltip>
             }
           >
-            <LedgerTable events={recentEvents} />
+            <LedgerTable events={recentEvents} visibleColumns={ledgerVisibleColumns} />
           </Card>
         ) : null}
       </div>

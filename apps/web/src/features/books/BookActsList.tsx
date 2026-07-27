@@ -26,8 +26,9 @@ import {
 } from '../../api/types';
 import { saveBlobAs } from '../../desktop/saveFile';
 import { formatDate } from '../../format';
-import { useT } from '../../i18n';
+import { useT, type MessageKey } from '../../i18n';
 import { useAtasFilterT } from '../../i18n/atasFilterFallback';
+import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import {
   Badge,
   DateOnly,
@@ -42,10 +43,31 @@ import {
   Truncate,
   useToast,
 } from '../../ui';
+import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import {
+  ACTS_TABLE,
+  dataColumns,
+  renderedColumns,
+  tableColumnsSpec,
+  type ActsTableColumn,
+} from '../tableColumns/tableColumnRegistry';
+import { useTableColumns } from '../tableColumns/useTableColumns';
 import { useTermoT } from './termoStrings';
 
 type ActStateFilter = 'all' | ActState | TermoState;
 type ActChannelFilter = 'all' | MeetingChannel;
+
+/** The toggleable act columns, derived from the registry's roles, and the label each answers to. */
+const ACTS_HIDEABLE_COLUMNS = dataColumns(ACTS_TABLE);
+
+const ACTS_COLUMN_LABEL_KEYS: Record<(typeof ACTS_HIDEABLE_COLUMNS)[number], MessageKey> = {
+  Title: 'books.th.actTitle',
+  Channel: 'books.th.channel',
+  State: 'books.th.actState',
+};
+
+/** All four storable columns show by default; `Actions` is a control, shown unconditionally. */
+const ACTS_COLUMN_SPEC = tableColumnsSpec(ACTS_TABLE);
 
 export interface OpeningTermRecord {
   bookId: string;
@@ -107,12 +129,16 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
   const t = useT();
   const at = useAtasFilterT();
   const tt = useTermoT();
+  const ct = useTableColumnsT();
   const toast = useToast();
   const downloadOpening = useDownloadBookTermoAberturaDocument(opening.bookId);
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [stateFilter, setStateFilter] = useState<ActStateFilter>('all');
   const [channelFilter, setChannelFilter] = useState<ActChannelFilter>('all');
+  const columns = useTableColumns(ACTS_COLUMN_SPEC);
+  const visibleColumns = renderedColumns(ACTS_TABLE, columns.visible);
+  const shows = (column: ActsTableColumn) => visibleColumns.includes(column);
 
   const ordered = useMemo(() => [...acts].sort(compareActs), [acts]);
 
@@ -191,28 +217,34 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
       <td className="acts-table__cell--truncate" data-act-column="Number">
         <Truncate text="—" mono />
       </td>
-      <td className="acts-table__cell--truncate" data-act-column="Title">
-        <div className="stack--tight">
-          <Truncate text={opening.title} />
-          <span className="field__hint">
-            <DateOnly value={opening.instrumentDate} />
-            {' · '}
-            {opening.legacy
-              ? tt('books.termo.atas.legacyRecord')
-              : `${opening.availableSignatures}/${opening.requiredSignatures} ${tt(
-                  'books.termo.atas.padesAvailable',
-                )}`}
+      {shows('Title') ? (
+        <td className="acts-table__cell--truncate" data-act-column="Title">
+          <div className="stack--tight">
+            <Truncate text={opening.title} />
+            <span className="field__hint">
+              <DateOnly value={opening.instrumentDate} />
+              {' · '}
+              {opening.legacy
+                ? tt('books.termo.atas.legacyRecord')
+                : `${opening.availableSignatures}/${opening.requiredSignatures} ${tt(
+                    'books.termo.atas.padesAvailable',
+                  )}`}
+            </span>
+          </div>
+        </td>
+      ) : null}
+      {shows('Channel') ? (
+        <td className="acts-table__cell--truncate" data-act-column="Channel">
+          <Truncate text="—" />
+        </td>
+      ) : null}
+      {shows('State') ? (
+        <td data-act-column="State">
+          <span className="acts-table__state">
+            <Badge tone={stateTone(opening.state)}>{tt(`books.termo.state.${opening.state}`)}</Badge>
           </span>
-        </div>
-      </td>
-      <td className="acts-table__cell--truncate" data-act-column="Channel">
-        <Truncate text="—" />
-      </td>
-      <td data-act-column="State">
-        <span className="acts-table__state">
-          <Badge tone={stateTone(opening.state)}>{tt(`books.termo.state.${opening.state}`)}</Badge>
-        </span>
-      </td>
+        </td>
+      ) : null}
       <td className="acts-table__cell--actions" data-act-column="Actions">
         <span className="acts-table__actions">
           {opening.documentAvailable ? (
@@ -301,6 +333,14 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
         </div>
       </div>
 
+      <ColumnPicker
+        columns={ACTS_HIDEABLE_COLUMNS}
+        label={ct('tableColumns.summary')}
+        isVisible={columns.isVisible}
+        onToggle={columns.toggle}
+        columnLabel={(column) => t(ACTS_COLUMN_LABEL_KEYS[column])}
+      />
+
       {visibleRecordCount === 0 ? (
         <EmptyState title={t('books.filters.empty.title')}>
           <p>{at('acts.filters.empty.body')}</p>
@@ -311,9 +351,11 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
             head={
               <tr>
                 <th data-act-column="Number">{t('books.th.number')}</th>
-                <th data-act-column="Title">{t('books.th.actTitle')}</th>
-                <th data-act-column="Channel">{t('books.th.channel')}</th>
-                <th data-act-column="State">{t('books.th.actState')}</th>
+                {shows('Title') ? <th data-act-column="Title">{t('books.th.actTitle')}</th> : null}
+                {shows('Channel') ? (
+                  <th data-act-column="Channel">{t('books.th.channel')}</th>
+                ) : null}
+                {shows('State') ? <th data-act-column="State">{t('books.th.actState')}</th> : null}
                 <th data-act-column="Actions" />
               </tr>
             }
@@ -324,17 +366,23 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
                 <td className="acts-table__cell--truncate" data-act-column="Number">
                   <Truncate text={act.ata_number != null ? String(act.ata_number) : '—'} mono />
                 </td>
-                <td className="acts-table__cell--truncate" data-act-column="Title">
-                  <Truncate text={act.title} />
-                </td>
-                <td className="acts-table__cell--truncate" data-act-column="Channel">
-                  <Truncate text={meetingChannelLabels[act.channel]} />
-                </td>
-                <td data-act-column="State">
-                  <span className="acts-table__state">
-                    <Badge tone={stateTone(act.state)}>{actStateLabels[act.state]}</Badge>
-                  </span>
-                </td>
+                {shows('Title') ? (
+                  <td className="acts-table__cell--truncate" data-act-column="Title">
+                    <Truncate text={act.title} />
+                  </td>
+                ) : null}
+                {shows('Channel') ? (
+                  <td className="acts-table__cell--truncate" data-act-column="Channel">
+                    <Truncate text={meetingChannelLabels[act.channel]} />
+                  </td>
+                ) : null}
+                {shows('State') ? (
+                  <td data-act-column="State">
+                    <span className="acts-table__state">
+                      <Badge tone={stateTone(act.state)}>{actStateLabels[act.state]}</Badge>
+                    </span>
+                  </td>
+                ) : null}
                 <td className="acts-table__cell--actions" data-act-column="Actions">
                   <span className="acts-table__actions">
                     <Tooltip label={openLabel} placement="left">

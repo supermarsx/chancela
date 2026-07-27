@@ -357,11 +357,26 @@ describe('LedgerPage', () => {
       target: { value: 'act:88' },
     });
     fireEvent.click(screen.getByText('Filtros avançados'));
-    fireEvent.change(screen.getByLabelText('Tipo de evento'), { target: { value: 'act.sealed' } });
-    fireEvent.change(screen.getByLabelText('Autor'), { target: { value: 'amelia.marques' } });
-    fireEvent.change(screen.getByLabelText('Desde'), { target: { value: '2026-07-01' } });
-    fireEvent.change(screen.getByLabelText('Até'), { target: { value: '2026-07-31' } });
-    fireEvent.change(screen.getByLabelText('Eventos por página'), { target: { value: '50' } });
+    // Scoped to the advanced-filters body: the "Autor" filter and the column picker's "Autor"
+    // checkbox (t54) would otherwise both answer to the same accessible name.
+    const advancedBody = document.querySelector(
+      '.ledger-advanced-filters__body',
+    ) as HTMLElement;
+    fireEvent.change(within(advancedBody).getByLabelText('Tipo de evento'), {
+      target: { value: 'act.sealed' },
+    });
+    fireEvent.change(within(advancedBody).getByLabelText('Autor'), {
+      target: { value: 'amelia.marques' },
+    });
+    fireEvent.change(within(advancedBody).getByLabelText('Desde'), {
+      target: { value: '2026-07-01' },
+    });
+    fireEvent.change(within(advancedBody).getByLabelText('Até'), {
+      target: { value: '2026-07-31' },
+    });
+    fireEvent.change(within(advancedBody).getByLabelText('Eventos por página'), {
+      target: { value: '50' },
+    });
 
     await waitFor(() =>
       expect(
@@ -519,7 +534,14 @@ describe('LedgerPage', () => {
 
     expect(await screen.findByText('Sem eventos')).toBeTruthy();
     fireEvent.click(screen.getByText('Filtros avançados'));
-    fireEvent.change(screen.getByLabelText('Autor'), { target: { value: 'nobody' } });
+    // Scoped to the advanced-filters body: the "Autor" filter and the column picker's "Autor"
+    // checkbox (t54) would otherwise both answer to the same accessible name.
+    const advancedBody = document.querySelector(
+      '.ledger-advanced-filters__body',
+    ) as HTMLElement;
+    fireEvent.change(within(advancedBody).getByLabelText('Autor'), {
+      target: { value: 'nobody' },
+    });
 
     expect(await screen.findByText('Sem resultados')).toBeTruthy();
     expect(
