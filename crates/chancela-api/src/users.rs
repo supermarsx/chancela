@@ -18,7 +18,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, Query, State};
@@ -46,6 +46,81 @@ use crate::session::{Backoff, backoff_secs};
 use crate::settings::Locale;
 
 pub const USERS_FILE: &str = "users.json";
+
+const USER_CREATE_KDF_ADMISSION_CAPACITY: usize = 32;
+const USER_CREATE_KDF_BUSY: &str =
+    "a preparação de credenciais está temporariamente ocupada; tente novamente";
+
+/// Clone-shared, one-at-a-time admission for the two Argon2 operations that prepare a new account.
+///
+/// At most [`USER_CREATE_KDF_ADMISSION_CAPACITY`] requests may occupy the active slot or its bounded
+/// queue. Both owned permits are moved into the blocking task so cancelling the HTTP waiter cannot
+/// release admission while its non-cancellable KDF work is still running.
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct UserCreateKdfGate {
+    admission: Arc<tokio::sync::Semaphore>,
+    serial: Arc<tokio::sync::Mutex<()>>,
+}
+
+impl Default for UserCreateKdfGate {
+    fn default() -> Self {
+        Self {
+            admission: Arc::new(tokio::sync::Semaphore::new(
+                USER_CREATE_KDF_ADMISSION_CAPACITY,
+            )),
+            serial: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
+}
+
+impl UserCreateKdfGate {
+    async fn run_blocking<T, F>(&self, operation: F) -> Result<T, ApiError>
+    where
+        T: Send + 'static,
+        F: FnOnce() -> Result<T, ApiError> + Send + 'static,
+    {
+        let admission = self
+            .admission
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ApiError::Unavailable(USER_CREATE_KDF_BUSY.to_owned()))?;
+        let guard = self.serial.clone().lock_owned().await;
+        tokio::task::spawn_blocking(move || {
+            let _admission = admission;
+            let _guard = guard;
+            operation()
+        })
+        .await
+        .map_err(|error| {
+            tracing::error!(
+                ?error,
+                "the user credential preparation worker terminated unexpectedly"
+            );
+            ApiError::Internal("user credential preparation task failed".to_owned())
+        })?
+    }
+}
+
+/// Prepare the verifier and default attestation key for any newly-created account.
+///
+/// Both production-strength Argon2 costs remain unchanged and run sequentially in one blocking
+/// task. The verifier seed is cloned under its brief read lock before admission; no async state lock
+/// is held while the request waits or while cryptographic work runs.
+pub(crate) async fn prepare_new_user_credentials(
+    state: &AppState,
+    password: zeroize::Zeroizing<String>,
+) -> Result<(String, AttestationKeyBlob), ApiError> {
+    let seed = state.verifier_seed.read().await.clone();
+    state
+        .user_create_kdf_gate
+        .run_blocking(move || {
+            let password_hash = attestation::hash_secret_with_seed(password.as_str(), &seed)?;
+            let attestation_key = AttestationKeyBlob::generate(password.as_str())?;
+            Ok((password_hash, attestation_key))
+        })
+        .await
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct UserId(pub Uuid);
@@ -581,6 +656,49 @@ async fn persist(state: &AppState, user: &User) -> Result<(), ApiError> {
     crate::sidecar_store::persist_user(state, user).await
 }
 
+/// Resolve the creator's current authority and the exact assignment that may be inserted.
+///
+/// This is called once before expensive credential work for a fast refusal and again after that
+/// work so a queued request cannot commit authority from a stale role or user snapshot.
+async fn authorize_user_creation(
+    state: &AppState,
+    session_username: Option<&str>,
+    is_bootstrap: bool,
+    requested_role: Option<&crate::roles::RoleAssignmentInput>,
+) -> Result<Option<RoleAssignment>, ApiError> {
+    if is_bootstrap {
+        if requested_role.is_some() {
+            return Err(ApiError::Unprocessable(
+                "the first user is always Owner at global scope; omit `role`".to_owned(),
+            ));
+        }
+        return Ok(None);
+    }
+
+    let actor =
+        CurrentActor::from_session_username(session_username.map(std::borrow::ToOwned::to_owned));
+    let authz = crate::authz::authorizer(state, &actor).await?;
+    authz.require(Permission::UserManage, Scope::Global)?;
+
+    let Some(input) = requested_role else {
+        return Ok(None);
+    };
+    let scope: Scope = input.scope.into();
+    let role_id = chancela_authz::RoleId(input.role_id);
+    authz.require(Permission::RoleAssign, scope)?;
+    let role = state
+        .roles
+        .read()
+        .await
+        .get(role_id)
+        .cloned()
+        .ok_or(ApiError::NotFound)?;
+    if !authz.can_assign_role(&role, scope) {
+        return Err(crate::authz::forbidden());
+    }
+    Ok(Some(RoleAssignment::new(role_id, scope)))
+}
+
 /// `POST /v1/users` — create a profile. **Bootstrap (t41):** on a genuinely uninitialised instance
 /// (no users AND no durable user directory — see [`is_uninitialised_instance`]) this is callable
 /// WITHOUT a session and the created user is the instance's Owner\@Global. Once the instance is
@@ -589,19 +707,21 @@ pub async fn create_user(
     State(state): State<AppState>,
     parts: axum::http::HeaderMap,
     attestor: CurrentAttestor,
-    Json(req): Json<CreateUser>,
+    Json(mut req): Json<CreateUser>,
 ) -> Result<(StatusCode, Json<UserView>), ApiError> {
+    let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password));
+    let session_token = parts
+        .get(crate::actor::SESSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_owned);
     let (session_username, is_bootstrap) = {
         let user_count = state.users.read().await.len();
         if user_count == 0 && is_uninitialised_instance(&state) {
             (None, true)
         } else {
-            let token = parts
-                .get(crate::actor::SESSION_HEADER)
-                .and_then(|v| v.to_str().ok())
-                .map(str::trim)
-                .filter(|t| !t.is_empty());
-            let username = match token {
+            let username = match session_token.as_deref() {
                 Some(t) => resolve_session_actor(&state, t).await?,
                 None => return Err(ApiError::Unauthorized("sessão requerida".to_owned())),
             };
@@ -612,11 +732,6 @@ pub async fn create_user(
     // requires `user.manage` at Global. Resolve the manually-extracted session into an actor so the
     // gate composes with the same principal seam as every other endpoint. This intentionally runs
     // before password policy/hash work for non-bootstrap requests.
-    if !is_bootstrap {
-        let actor = CurrentActor::from_session_username(session_username.clone());
-        require_permission(&state, &actor, Permission::UserManage, Scope::Global).await?;
-    }
-
     // t71: resolve and AUTHORIZE the requested role before any validation that costs work and,
     // crucially, before the write lock — so a refusal leaves no user behind. This is the same pair
     // of checks `roles::assign_role` applies, in the same order, deliberately reusing
@@ -625,32 +740,13 @@ pub async fn create_user(
     // authority covering that scope). So creation can never grant authority the creator lacks.
     // The 403 is the uniform, non-enumerating `forbidden()` its sibling endpoint returns; the UI
     // names the offending role, having only offered roles it knows are grantable.
-    let requested_assignment = match &req.role {
-        None => None,
-        Some(input) => {
-            if is_bootstrap {
-                return Err(ApiError::Unprocessable(
-                    "the first user is always Owner at global scope; omit `role`".to_owned(),
-                ));
-            }
-            let scope: Scope = input.scope.into();
-            let role_id = chancela_authz::RoleId(input.role_id);
-            let actor = CurrentActor::from_session_username(session_username.clone());
-            let authz = crate::authz::authorizer(&state, &actor).await?;
-            authz.require(Permission::RoleAssign, scope)?;
-            let role = state
-                .roles
-                .read()
-                .await
-                .get(role_id)
-                .cloned()
-                .ok_or(ApiError::NotFound)?;
-            if !authz.can_assign_role(&role, scope) {
-                return Err(crate::authz::forbidden());
-            }
-            Some(RoleAssignment::new(role_id, scope))
-        }
-    };
+    authorize_user_creation(
+        &state,
+        session_username.as_deref(),
+        is_bootstrap,
+        req.role.as_ref(),
+    )
+    .await?;
 
     let username = validate_username(&req.username)?;
     let display_name = req
@@ -659,15 +755,12 @@ pub async fn create_user(
         .filter(|d| !d.is_empty())
         .unwrap_or_else(|| username.clone());
     let email = crate::email::normalize_optional_email(req.email, "email")?;
-    validate_secret(&req.password)?;
+    validate_secret(password.as_str())?;
     crate::password_policy::enforce(
-        &req.password,
+        password.as_str(),
         &username,
         crate::password_policy::ALLOW_WEAK_PASSWORDS,
     )?;
-    let seed = state.verifier_seed.read().await.clone();
-    let password_hash = attestation::hash_secret_with_seed(&req.password, &seed)?;
-
     // t88: the audit (attestation) key is generated HERE, at creation, wrapped under the password
     // being set in this same request. Account creation is the only moment the key's wrapping secret
     // is legitimately in hand without asking the user for it again — `generate_attestation_key`
@@ -675,12 +768,32 @@ pub async fn create_user(
     // later by the user doing it themselves. Generating now is what makes the key the default
     // rather than an opt-in nobody exercises.
     //
-    // Both argon2 costs (the verifier hash above and this KEK derivation) run OUTSIDE the write
-    // lock, per t41 H2 — and, per t71, before it, so a failure here writes nothing at all. A crypto
-    // fault therefore fails the create loudly with no account left behind, rather than yielding an
-    // account that silently lacks a key. `AttestationKeyBlob::generate` fails only on an RNG or
-    // serialization fault (never on a bad password), so this is a genuine 500, not a user error.
-    let attestation_key = AttestationKeyBlob::generate(&req.password)?;
+    // Both argon2 costs (the verifier hash and the attestation-key KEK derivation) run together on
+    // the bounded blocking worker OUTSIDE the write lock, per t41 H2 — and, per t71, before it, so a
+    // failure here writes nothing at all. A crypto fault therefore fails the create loudly with no
+    // account left behind, rather than yielding an account that silently lacks a key.
+    // `AttestationKeyBlob::generate` fails only on an RNG or serialization fault (never on a bad
+    // password), so this is a genuine 500, not a user error.
+    let (password_hash, attestation_key) = prepare_new_user_credentials(&state, password).await?;
+
+    // Credential work may have queued long enough for the session, user, role catalog or
+    // assignments to change. Re-resolve the token and repeat every mutation-authority check before
+    // taking the users write lock.
+    let session_username = if is_bootstrap {
+        None
+    } else {
+        match session_token.as_deref() {
+            Some(token) => resolve_session_actor(&state, token).await?,
+            None => return Err(ApiError::Unauthorized("sessão requerida".to_owned())),
+        }
+    };
+    let requested_assignment = authorize_user_creation(
+        &state,
+        session_username.as_deref(),
+        is_bootstrap,
+        req.role.as_ref(),
+    )
+    .await?;
 
     let has_authenticated_actor = session_username.is_some();
     let request_actor = session_username.unwrap_or_else(|| "api".to_owned());
@@ -877,6 +990,7 @@ fn validate_secret(secret: &str) -> Result<(), ApiError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
     fn stored_user(username: &str) -> User {
         User {
@@ -916,6 +1030,238 @@ mod tests {
             ApiError::Unauthorized(message) if message == "sessão requerida"
         ));
         assert!(!bootstrap_state_for_insert(&users, false, true).unwrap());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn user_create_kdf_gate_serializes_blocking_jobs() {
+        let gate = UserCreateKdfGate::default();
+        let in_flight = Arc::new(AtomicUsize::new(0));
+        let max_in_flight = Arc::new(AtomicUsize::new(0));
+        let mut tasks = Vec::new();
+
+        for _ in 0..6 {
+            let gate = gate.clone();
+            let in_flight = in_flight.clone();
+            let max_in_flight = max_in_flight.clone();
+            tasks.push(tokio::spawn(async move {
+                gate.run_blocking(move || {
+                    let current = in_flight.fetch_add(1, Ordering::AcqRel) + 1;
+                    max_in_flight.fetch_max(current, Ordering::AcqRel);
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    in_flight.fetch_sub(1, Ordering::AcqRel);
+                    Ok(())
+                })
+                .await
+            }));
+        }
+
+        for task in tasks {
+            task.await
+                .expect("gate waiter task completes")
+                .expect("blocking job completes");
+        }
+        assert_eq!(max_in_flight.load(Ordering::Acquire), 1);
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn user_create_kdf_gate_refuses_work_beyond_bounded_admission() {
+        let gate = UserCreateKdfGate::default();
+        let (first_started_tx, first_started_rx) = tokio::sync::oneshot::channel();
+        let (release_first_tx, release_first_rx) = std::sync::mpsc::channel();
+        let first = tokio::spawn({
+            let gate = gate.clone();
+            async move {
+                gate.run_blocking(move || {
+                    let _ = first_started_tx.send(());
+                    release_first_rx
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .map_err(|_| ApiError::Internal("test release timed out".to_owned()))?;
+                    Ok(())
+                })
+                .await
+            }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), first_started_rx)
+            .await
+            .expect("first blocking job starts")
+            .expect("first start sender remains alive");
+
+        let mut queued = Vec::new();
+        for _ in 1..USER_CREATE_KDF_ADMISSION_CAPACITY {
+            let gate = gate.clone();
+            queued.push(tokio::spawn(
+                async move { gate.run_blocking(|| Ok(())).await },
+            ));
+        }
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while gate.admission.available_permits() != 0 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("all bounded admission slots become occupied");
+
+        let overflow_ran = Arc::new(AtomicBool::new(false));
+        let overflow_ran_in_job = overflow_ran.clone();
+        let error = gate
+            .run_blocking(move || {
+                overflow_ran_in_job.store(true, Ordering::Release);
+                Ok(())
+            })
+            .await
+            .expect_err("work beyond the fixed admission capacity must fail fast");
+        assert!(matches!(
+            error,
+            ApiError::Unavailable(message) if message == USER_CREATE_KDF_BUSY
+        ));
+        assert!(
+            !overflow_ran.load(Ordering::Acquire),
+            "refused overflow work must never reach the blocking pool"
+        );
+
+        release_first_tx
+            .send(())
+            .expect("release first blocking job");
+        first
+            .await
+            .expect("first gate waiter task completes")
+            .expect("first blocking job completes");
+        for task in queued {
+            task.await
+                .expect("queued gate waiter task completes")
+                .expect("queued blocking job completes");
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn cancelled_waiter_keeps_kdf_gate_until_blocking_job_exits() {
+        let gate = UserCreateKdfGate::default();
+        let (first_started_tx, first_started_rx) = tokio::sync::oneshot::channel();
+        let (release_first_tx, release_first_rx) = std::sync::mpsc::channel();
+        let first = tokio::spawn({
+            let gate = gate.clone();
+            async move {
+                gate.run_blocking(move || {
+                    let _ = first_started_tx.send(());
+                    release_first_rx
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .map_err(|_| ApiError::Internal("test release timed out".to_owned()))?;
+                    Ok(())
+                })
+                .await
+            }
+        });
+        tokio::time::timeout(std::time::Duration::from_secs(5), first_started_rx)
+            .await
+            .expect("first blocking job starts")
+            .expect("first start sender remains alive");
+        first.abort();
+
+        let (second_started_tx, second_started_rx) = tokio::sync::oneshot::channel();
+        let mut second_started_rx = second_started_rx;
+        let second = tokio::spawn({
+            let gate = gate.clone();
+            async move {
+                gate.run_blocking(move || {
+                    let _ = second_started_tx.send(());
+                    Ok(())
+                })
+                .await
+            }
+        });
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(75), &mut second_started_rx)
+                .await
+                .is_err(),
+            "cancelling the HTTP waiter must not release a still-running blocking job"
+        );
+
+        release_first_tx
+            .send(())
+            .expect("release first blocking job");
+        tokio::time::timeout(std::time::Duration::from_secs(5), &mut second_started_rx)
+            .await
+            .expect("second blocking job starts after the first exits")
+            .expect("second start sender remains alive");
+        second
+            .await
+            .expect("second gate waiter task completes")
+            .expect("second blocking job completes");
+        let _ = first.await;
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn blocking_kdf_job_does_not_stall_async_runtime() {
+        let gate = UserCreateKdfGate::default();
+        let (started_tx, started_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let task = tokio::spawn(async move {
+            gate.run_blocking(move || {
+                let _ = started_tx.send(());
+                release_rx
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .map_err(|_| ApiError::Internal("test release timed out".to_owned()))?;
+                Ok(())
+            })
+            .await
+        });
+
+        tokio::time::timeout(std::time::Duration::from_secs(5), started_rx)
+            .await
+            .expect("blocking job starts without occupying the async worker")
+            .expect("start sender remains alive");
+        assert!(
+            !task.is_finished(),
+            "the blocking job remains held while the async worker continues"
+        );
+        tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            tokio::time::sleep(std::time::Duration::from_millis(10)),
+        )
+        .await
+        .expect("the current-thread async runtime remains responsive");
+        assert!(
+            !task.is_finished(),
+            "the blocking job must still be held after the async timer advances"
+        );
+        release_tx.send(()).expect("release blocking job");
+        task.await
+            .expect("gate waiter task completes")
+            .expect("blocking job completes");
+    }
+
+    #[tokio::test]
+    async fn blocking_kdf_worker_failure_maps_to_stable_internal_error() {
+        let error = UserCreateKdfGate::default()
+            .run_blocking(|| -> Result<(), ApiError> {
+                panic!("synthetic user KDF worker panic");
+            })
+            .await
+            .expect_err("worker panic must fail the request");
+        assert!(matches!(
+            error,
+            ApiError::Internal(message)
+                if message == "user credential preparation task failed"
+        ));
+    }
+
+    #[tokio::test]
+    async fn prepared_user_credentials_keep_both_security_outputs() {
+        let state = AppState::default();
+        let password = "Conta-Forte7!X";
+        let (verifier, attestation_key) =
+            prepare_new_user_credentials(&state, zeroize::Zeroizing::new(password.to_owned()))
+                .await
+                .expect("credential preparation succeeds");
+        let seed = state.verifier_seed.read().await.clone();
+        let verification = crate::attestation::verify_secret_with_seed(password, &verifier, &seed);
+
+        assert!(verification.verified);
+        assert!(verifier.starts_with(crate::attestation::HARDENED_VERIFIER_PREFIX));
+        assert!(!verifier.contains(password));
+        attestation_key
+            .unlock(password)
+            .expect("default attestation key remains wrapped by the account password");
     }
 }
 

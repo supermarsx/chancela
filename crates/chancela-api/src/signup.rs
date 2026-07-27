@@ -61,13 +61,15 @@ use chancela_authz::{Permission, Role, RoleAssignment, RoleId, Scope};
 
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
-use crate::attestation::{self, AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LEN};
+use crate::attestation::{AttestationKeyBlob, MAX_SECRET_LEN, MIN_SECRET_LEN};
 use crate::auth_token::{AuthTokenPurpose, AuthTokenSubject};
 use crate::error::ApiError;
 use crate::roles::RoleAssignmentInput;
 use crate::session::ScopeView;
 use crate::settings::SignupMode;
-use crate::users::{SecretSource, User, UserId, UserLanguage, UserView};
+use crate::users::{
+    SecretSource, User, UserId, UserLanguage, UserView, prepare_new_user_credentials,
+};
 
 /// The per-invitation detail that must **not** live on the token record.
 ///
@@ -333,6 +335,47 @@ async fn resolve_self_signup_role(state: &AppState, id: RoleId) -> Result<Role, 
     Ok(role)
 }
 
+/// Re-read every setting and role that controls a public signup immediately before commit.
+async fn resolve_current_self_signup_role(state: &AppState, email: &str) -> Result<Role, ApiError> {
+    let policy = signup_policy(state).await;
+    policy.refuse_when_disabled()?;
+    if matches!(policy.mode, SignupMode::InviteOnly) {
+        return Err(ApiError::Forbidden(
+            "esta instância só aceita novas contas por convite".to_owned(),
+        ));
+    }
+    if policy.require_email_verification {
+        return Err(ApiError::Conflict(
+            "auth.signup.require_email_verification está ativo e a verificação do endereço por \
+             e-mail ainda não está disponível; desative-a explicitamente para permitir inscrições"
+                .to_owned(),
+        ));
+    }
+    if matches!(policy.mode, SignupMode::DomainAllowlist) {
+        let domain = domain_of(email);
+        if !policy
+            .allowed_domains
+            .iter()
+            .any(|allowed| allowed == domain)
+        {
+            return Err(ApiError::Forbidden(format!(
+                "o domínio {domain:?} não consta da lista de domínios autorizados para inscrição"
+            )));
+        }
+    }
+    resolve_self_signup_role(state, policy.default_role).await
+}
+
+/// Resolve an invitation's role from the live catalog. Invitations carry an id, never a stale role
+/// value; deleting that role before acceptance therefore fails closed.
+async fn resolve_invited_role(state: &AppState, id: RoleId) -> Result<Role, ApiError> {
+    state.roles.read().await.get(id).cloned().ok_or_else(|| {
+        ApiError::Conflict(
+            "a função associada a este convite já não existe; peça um novo convite".to_owned(),
+        )
+    })
+}
+
 /// Ceiling site 2 — **role edit**. Refuse an edit that would leave the *configured self-signup
 /// default role* holding authority a stranger may not be handed.
 ///
@@ -399,11 +442,11 @@ struct NewAccount {
 /// **This is the constant-work anchor for the anti-enumeration property of signup** (§2.1): it runs
 /// identically whether or not the address turns out to be claimed, and it dominates the request by
 /// two orders of magnitude, so the branch taken afterwards is not visible in the response time.
-fn prepare_account(
-    state_seed: &crate::attestation::VerifierSeed,
+async fn prepare_account(
+    state: &AppState,
     email: String,
     username_for_policy: &str,
-    password: &str,
+    password: zeroize::Zeroizing<String>,
     display_name: Option<String>,
     language: UserLanguage,
 ) -> Result<NewAccount, ApiError> {
@@ -419,12 +462,11 @@ fn prepare_account(
         )));
     }
     crate::password_policy::enforce(
-        password,
+        password.as_str(),
         username_for_policy,
         crate::password_policy::ALLOW_WEAK_PASSWORDS,
     )?;
-    let password_hash = attestation::hash_secret_with_seed(password, state_seed)?;
-    let attestation_key = AttestationKeyBlob::generate(password)?;
+    let (password_hash, attestation_key) = prepare_new_user_credentials(state, password).await?;
     Ok(NewAccount {
         email,
         display_name,
@@ -519,8 +561,9 @@ async fn record_account_created(
 pub async fn signup(
     State(state): State<AppState>,
     attestor: CurrentAttestor,
-    Json(req): Json<SignupRequest>,
+    Json(mut req): Json<SignupRequest>,
 ) -> Result<(StatusCode, Json<SignupAccepted>), ApiError> {
+    let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password));
     refuse_on_an_uninitialised_instance(&state).await?;
 
     let policy = signup_policy(&state).await;
@@ -549,19 +592,23 @@ pub async fn signup(
     }
 
     // §2.6 ceiling, third site. Before any account state is touched.
-    let role = resolve_self_signup_role(&state, policy.default_role).await?;
+    resolve_self_signup_role(&state, policy.default_role).await?;
 
     let base = derive_username_base(&email);
-    let seed = state.verifier_seed.read().await.clone();
     // The constant-work anchor. Runs on both branches below.
     let account = prepare_account(
-        &seed,
+        &state,
         email.clone(),
         &base,
-        &req.password,
+        password,
         req.display_name,
         req.language,
-    )?;
+    )
+    .await?;
+
+    // KDF admission is bounded and may queue. Re-read the entire public-signup policy and resolve
+    // the default role again so both the claimed and unclaimed branches use the same current gate.
+    let role = resolve_current_self_signup_role(&state, &email).await?;
 
     let created = {
         let mut users = state.users.write().await;
@@ -771,8 +818,9 @@ pub async fn issue_invite(
 pub async fn accept_invite(
     State(state): State<AppState>,
     attestor: CurrentAttestor,
-    Json(req): Json<AcceptInvite>,
+    Json(mut req): Json<AcceptInvite>,
 ) -> Result<(StatusCode, Json<UserView>), ApiError> {
+    let password = zeroize::Zeroizing::new(std::mem::take(&mut req.password));
     refuse_on_an_uninitialised_instance(&state).await?;
 
     let policy = signup_policy(&state).await;
@@ -807,28 +855,24 @@ pub async fn accept_invite(
     // permission holder, already subset-checked against that holder's own authority at issue time.
     // The role must still exist — a role deleted between issue and accept grants nothing, and
     // silently creating an account with a dangling assignment would be worse than refusing.
-    let role = state
-        .roles
-        .read()
-        .await
-        .get(grant.role_id)
-        .cloned()
-        .ok_or_else(|| {
-            ApiError::Conflict(
-                "a função associada a este convite já não existe; peça um novo convite".to_owned(),
-            )
-        })?;
+    resolve_invited_role(&state, grant.role_id).await?;
 
     let base = derive_username_base(&grant.email);
-    let seed = state.verifier_seed.read().await.clone();
     let account = prepare_account(
-        &seed,
+        &state,
         grant.email.clone(),
         &base,
-        &req.password,
+        password,
         req.display_name,
         req.language,
-    )?;
+    )
+    .await?;
+
+    // A queued request must not create an account after signup was disabled or with a role that was
+    // removed while its credential work ran. The invitation itself remains single-use: do not
+    // redeem it a second time.
+    signup_policy(&state).await.refuse_when_disabled()?;
+    let role = resolve_invited_role(&state, grant.role_id).await?;
 
     let user = {
         let mut users = state.users.write().await;

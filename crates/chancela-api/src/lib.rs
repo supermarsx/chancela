@@ -313,6 +313,8 @@ pub use settings::{
 pub use template_preview_samples::TemplatePreviewSampleSettings;
 #[cfg(debug_assertions)]
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
+#[doc(hidden)]
+pub use users::UserCreateKdfGate;
 pub use users::{User, UserId};
 
 #[cfg(feature = "e2e")]
@@ -721,6 +723,11 @@ pub struct AppState {
     /// lazily save it as a seed config sidecar; API/ledger payloads carry only user views and never
     /// this material.
     pub verifier_seed: Arc<RwLock<VerifierSeed>>,
+    /// Serializes the two CPU-heavy Argon2 operations required to prepare a new account. Every
+    /// clone of one application state shares this gate, so concurrent create/signup requests queue
+    /// without occupying Tokio request workers or oversubscribing the process CPU quota.
+    #[doc(hidden)]
+    pub user_create_kdf_gate: UserCreateKdfGate,
     /// The scoped RBAC role catalog (t64): the seeded defaults + any custom roles. `Default` empty;
     /// [`AppState::with_data_dir`] loads `roles.json` and **ensures the seeded defaults are present**
     /// (Owner forced canonical/locked). Mirrors `users`.
