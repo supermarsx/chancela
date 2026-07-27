@@ -1525,13 +1525,18 @@ a.btn.btn--iconOnly {
    spacing is accidental, present only when a caller happens to wrap the component in
    `.stack`/`.stack--tight` (t53). The `:first-child` guard keeps that margin from adding
    unwanted space when the warning is the first (or only) thing in its container — e.g.
-   flush under a Card's own padding. When a caller DOES wrap this in `.stack`/
-   `.stack--tight`, `.stack > * + *` (two classes + combinator) outranks this single-class
-   selector, so the stack's own rhythm wins outright — the two never add together, only one
-   `margin-top` value is ever applied. 1rem matches the codebase's other "own margin
-   because `.panel__body` has no child-spacing rule" fixes (`.settings-notes`,
+   flush under a Card's own padding.
+   Both rules are wrapped in `:where()` to pin their specificity at (0,0,0) on purpose:
+   `.stack > * + *` / `.stack--tight > * + *` are (0,1,0) — one class, the `*` combinators
+   contribute nothing — so without `:where()` a plain `.inline-warning { margin-top }`
+   would TIE that specificity and win on source order (measured: it did, silently
+   shrinking a `.stack`'s 1.5rem gap down to this rule's 1rem). Pinning to zero specificity
+   guarantees the stack's own rhythm always wins when a caller opts into one, regardless of
+   which rule appears later in the file — the two never add, only one `margin-top` is ever
+   applied. 1rem (used only when nothing else claims the gap) matches the codebase's other
+   "own margin because `.panel__body` has no child-spacing rule" fixes (`.settings-notes`,
    `.email-card .panel__body > * + *`). */
-.inline-warning {
+:where(.inline-warning) {
   border: 1px solid var(--border);
   border-left-width: 4px;
   border-radius: var(--radius);
@@ -1539,7 +1544,7 @@ a.btn.btn--iconOnly {
   margin-top: 1rem;
 }
 
-.inline-warning:first-child {
+:where(.inline-warning:first-child) {
   margin-top: 0;
 }
 
