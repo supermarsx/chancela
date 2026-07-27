@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `fdfb396` (2026-07-27). It records the
+The current substantive checkpoint is `9bd1a56` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -116,9 +116,32 @@ following bounded concern groups in this guard:
   filter passed 9/9 and the full `api-signatures` target passed 96/96. This is
   test-temporary-directory isolation only: it does not contact or prove a
   production TSA/provider, exercise production signing, or establish a
-  hosted-CI fix. The capacity run started from `428127fc` was aborted and
-  quarantined after its source identity became obsolete; it is not capacity,
-  soak, or 10,000-cryptographic-signature evidence.
+  hosted-CI fix.
+- `6bdd7896` extends PID + timestamp + process-local `AtomicU64` `Relaxed`
+  ownership to the API trust/signature, signing timestamp-trust, and DRE law
+  guard fixture directories, retaining drop cleanup. Each surface has a
+  fixed-time 32-owner regression requiring distinct directories and complete
+  cleanup. Focused local evidence recorded timestamp-trust stress 40/40, the
+  full signing suite at 124 passed / 1 ignored, trust stress 140/140, the
+  signature filter 5/5, and the DRE law guard stress 30/30. This is test-fixture
+  ownership and determinism evidence only; it does not contact or prove a
+  provider, exercise production signing, or establish production or hosted-CI
+  readiness.
+- `9bd1a563` gives concurrent runtime temporary artifacts distinct ownership:
+  permission probes use PID + timestamp + an atomic suffix; desktop DPAPI key
+  temporary files use the same shape with one in-process winner and adoption of
+  an already-installed cross-process winner; panic logs use no-clobber owned
+  names; PostgreSQL backup final/temp path pairs share one UUID; restore
+  sidecar stages use UUID ownership with immediate RAII cleanup; and retained
+  book exports use UUID names and exclusive creation. Focused local validation
+  recorded API 1/1, store recovery 2/2, PostgreSQL backup 1/1, desktop
+  encryption 9/9 including Windows DPAPI, desktop artifacts 2/2, and clippy.
+  Public filename families/extensions and serialized schema contracts remain
+  unchanged. This is bounded temporary-artifact ownership evidence, not full
+  concurrency, cross-process HA, capacity, or production proof. The capacity
+  attempt started from `7df0f6b2` was aborted and quarantined when its source
+  identity became obsolete; there is still no capacity or
+  10,000-cryptographic-signature evidence.
 - `54529fb3` hardens normal, cluster, and hardened projector deployment with
   split secret exposure, backend-only data services, explicit
   dedicated-database acknowledgement, atomic no-clobber secret publication,

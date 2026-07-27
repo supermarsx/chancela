@@ -1,13 +1,14 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `fdfb3966ee2f8edefd04f3717d0e063e221653e5`,
+*Updated 2026-07-27 from current implementation snapshot `9bd1a5632bd85f0e48ea1d80bbacda75222485a3`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
 exact-volume performance harness with fail-closed local-signing timestamp
 isolation and actual runtime-loader signing coverage; bounded CI dependency,
-PostgreSQL advisory-lock, composed-server startup-handoff, and mock-TSA
-test-workspace determinism; and the inherited
+PostgreSQL advisory-lock, composed-server startup-handoff, mock-TSA and broader
+test-fixture ownership determinism, and bounded runtime temporary-artifact
+ownership; and the inherited
 document-layout model, renderer, settings policy, stored resolved-layout
 snapshot, and web editors,
 plus committed packaging and release-trust contract evidence and
@@ -333,7 +334,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `fdfb396` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `9bd1a56` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -408,9 +409,34 @@ Implementation checkpoints covered here:
   hosted filter passed 9/9 and the full `api-signatures` target passed 96/96.
   This is test-temporary-directory isolation only: it does not contact or prove
   a production TSA/provider, exercise production signing, or establish a
-  hosted-CI fix. The capacity run started from `428127fc` was aborted and
-  quarantined after its source identity became obsolete; it is not capacity,
-  soak, or 10,000-cryptographic-signature evidence.
+  hosted-CI fix.
+
+  `6bdd7896` extends PID + timestamp + process-local `AtomicU64` `Relaxed`
+  ownership to the API trust/signature, signing timestamp-trust, and DRE law
+  guard fixture directories, retaining drop cleanup. Each surface has a
+  fixed-time 32-owner regression requiring distinct directories and complete
+  cleanup. Focused local evidence recorded timestamp-trust stress 40/40, the
+  full signing suite at 124 passed / 1 ignored, trust stress 140/140, the
+  signature filter 5/5, and the DRE law guard stress 30/30. This is test-fixture
+  ownership and determinism evidence only; it does not contact or prove a
+  provider, exercise production signing, or establish production or hosted-CI
+  readiness.
+
+  `9bd1a563` gives concurrent runtime temporary artifacts distinct ownership:
+  permission probes use PID + timestamp + an atomic suffix; desktop DPAPI key
+  temporary files use the same shape with one in-process winner and adoption of
+  an already-installed cross-process winner; panic logs use no-clobber owned
+  names; PostgreSQL backup final/temp path pairs share one UUID; restore
+  sidecar stages use UUID ownership with immediate RAII cleanup; and retained
+  book exports use UUID names and exclusive creation. Focused local validation
+  recorded API 1/1, store recovery 2/2, PostgreSQL backup 1/1, desktop
+  encryption 9/9 including Windows DPAPI, desktop artifacts 2/2, and clippy.
+  Public filename families/extensions and serialized schema contracts remain
+  unchanged. This is bounded temporary-artifact ownership evidence, not full
+  concurrency, cross-process HA, capacity, or production proof. The capacity
+  attempt started from `7df0f6b2` was aborted and quarantined when its source
+  identity became obsolete; there is still no capacity or
+  10,000-cryptographic-signature evidence.
 
   The inherited document-layout lane resolves the concrete instance ->
   template -> entity -> book cascade before render/page counting, atomically

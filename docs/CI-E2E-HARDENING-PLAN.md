@@ -1,13 +1,14 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `fdfb396`,
+implementation snapshot `9bd1a56`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
 runtime-loader signing coverage, bounded CI dependency, PostgreSQL
-advisory-lock, composed-server startup-handoff, and mock-TSA test-workspace
-determinism, inherited document layouts, committed
+advisory-lock, composed-server startup-handoff, mock-TSA and broader
+test-fixture ownership determinism, bounded runtime temporary-artifact
+ownership, inherited document layouts, committed
 packaging and release contracts, and the earlier official pdfjs legacy main/worker
 compatibility path, the blocking core template PDF preview proof, the
 continuous template document editor, and the mobile companion foundation docs/scripts,
@@ -1005,11 +1006,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `fdfb396`
+## Focused Gate Snapshot Through `9bd1a56`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `fdfb396`.
+metadata-refreshed on 2026-07-27 for current implementation head `9bd1a56`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1018,7 +1019,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `fdfb396` cover the accessible
+- Current landed-slice markers through `9bd1a56` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1084,9 +1085,34 @@ above still apply.
   filter passed 9/9 and the full `api-signatures` target passed 96/96. This is
   test-temporary-directory isolation only: it does not contact or prove a
   production TSA/provider, exercise production signing, or establish a
-  hosted-CI fix. The capacity run started from `428127fc` was aborted and
-  quarantined after its source identity became obsolete; it is not capacity,
-  soak, or 10,000-cryptographic-signature evidence.
+  hosted-CI fix.
+
+  `6bdd7896` extends PID + timestamp + process-local `AtomicU64` `Relaxed`
+  ownership to the API trust/signature, signing timestamp-trust, and DRE law
+  guard fixture directories, retaining drop cleanup. Each surface has a
+  fixed-time 32-owner regression requiring distinct directories and complete
+  cleanup. Focused local evidence recorded timestamp-trust stress 40/40, the
+  full signing suite at 124 passed / 1 ignored, trust stress 140/140, the
+  signature filter 5/5, and the DRE law guard stress 30/30. This is test-fixture
+  ownership and determinism evidence only; it does not contact or prove a
+  provider, exercise production signing, or establish production or hosted-CI
+  readiness.
+
+  `9bd1a563` gives concurrent runtime temporary artifacts distinct ownership:
+  permission probes use PID + timestamp + an atomic suffix; desktop DPAPI key
+  temporary files use the same shape with one in-process winner and adoption of
+  an already-installed cross-process winner; panic logs use no-clobber owned
+  names; PostgreSQL backup final/temp path pairs share one UUID; restore
+  sidecar stages use UUID ownership with immediate RAII cleanup; and retained
+  book exports use UUID names and exclusive creation. Focused local validation
+  recorded API 1/1, store recovery 2/2, PostgreSQL backup 1/1, desktop
+  encryption 9/9 including Windows DPAPI, desktop artifacts 2/2, and clippy.
+  Public filename families/extensions and serialized schema contracts remain
+  unchanged. This is bounded temporary-artifact ownership evidence, not full
+  concurrency, cross-process HA, capacity, or production proof. The capacity
+  attempt started from `7df0f6b2` was aborted and quarantined when its source
+  identity became obsolete; there is still no capacity or
+  10,000-cryptographic-signature evidence.
 
   Focused current validation passed 46 web tests (drawer/search/search
   settings), 30 API preview tests, 1 API search-source mutation-guard
@@ -2623,7 +2649,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `fdfb396`
+- Current checkpoint metadata/static checks through `9bd1a56`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `fdfb396` (2026-07-27)",
+    "The current substantive checkpoint is `9bd1a56` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `fdfb396`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `9bd1a56`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `fdfb396`",
+    "Focused Gate Snapshot Through `9bd1a56`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `fdfb396`",
+    "Current checkpoint metadata/static checks through `9bd1a56`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `fdfb3966ee2f8edefd04f3717d0e063e221653e5`",
+    "implementation snapshot `9bd1a5632bd85f0e48ea1d80bbacda75222485a3`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `fdfb396`",
+    "Current checkpoint metadata/static checks through `9bd1a56`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -16833,6 +16833,159 @@ function assertCheckpointMap() {
     "assert!(paths.iter().all(|path| !path.exists()));",
     "mock TSA drop cleanup regression marker",
   );
+  assertFileContains(
+    "crates/chancela-signing/tests/timestamp_trust.rs",
+    "static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);",
+    "timestamp trust fixture atomic directory suffix marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/timestamp_trust.rs",
+    '"chancela-signing-tsa-trust-{}-{}-{}"',
+    "timestamp trust PID timestamp counter directory shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-signing/tests/timestamp_trust.rs",
+    "test_dirs_with_the_same_timestamp_are_unique_and_cleaned_on_drop",
+    "timestamp trust fixed-time ownership regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);",
+    "API trust fixture atomic directory suffix marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    '"chancela-trust-test-{}-{}-{}"',
+    "API trust PID timestamp counter directory shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/trust.rs",
+    "temp_dirs_with_the_same_timestamp_are_unique_and_cleaned_on_drop",
+    "API trust fixed-time ownership regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "static NEXT_TEMP_DIR_ID: AtomicU64 = AtomicU64::new(0);",
+    "API signature fixture atomic directory suffix marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    '"chancela-signature-test-{}-{}-{}"',
+    "API signature PID timestamp counter directory shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/signature.rs",
+    "temp_dirs_with_the_same_timestamp_are_unique_and_cleaned_on_drop",
+    "API signature fixed-time ownership regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-law/tests/dre_approved_artifact_guard.rs",
+    "static NEXT_TEST_DIR_ID: AtomicU64 = AtomicU64::new(0);",
+    "DRE law fixture atomic directory suffix marker",
+  );
+  assertFileContains(
+    "crates/chancela-law/tests/dre_approved_artifact_guard.rs",
+    '"{label}-{}-{timestamp_nanos}-{}"',
+    "DRE law PID timestamp counter directory shape marker",
+  );
+  assertFileContains(
+    "crates/chancela-law/tests/dre_approved_artifact_guard.rs",
+    "test_dirs_with_the_same_label_and_timestamp_are_unique_and_cleaned_on_drop",
+    "DRE law fixed-time ownership regression marker",
+  );
+  for (const [path, label] of [
+    [
+      "crates/chancela-signing/tests/timestamp_trust.rs",
+      "timestamp trust",
+    ],
+    ["crates/chancela-api/src/trust.rs", "API trust"],
+    ["crates/chancela-api/src/signature.rs", "API signature"],
+    [
+      "crates/chancela-law/tests/dre_approved_artifact_guard.rs",
+      "DRE law",
+    ],
+  ]) {
+    assertFileContains(
+      path,
+      "const DIR_COUNT: usize = 32;",
+      `${label} 32-owner regression marker`,
+    );
+    assertFileContains(
+      path,
+      "fetch_add(1, Ordering::Relaxed)",
+      `${label} relaxed atomic ownership marker`,
+    );
+    assertFileContains(
+      path,
+      "assert!(paths.iter().all(|path| !path.exists()));",
+      `${label} drop cleanup marker`,
+    );
+  }
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "static NEXT_PERMISSION_PROBE_ID: AtomicU64 = AtomicU64::new(0);",
+    "data-status permission-probe atomic suffix marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/data_status.rs",
+    "concurrent_permission_probes_with_a_fixed_clock_own_distinct_files",
+    "data-status concurrent permission-probe ownership regression marker",
+  );
+  assertFileContains(
+    "apps/desktop/src-tauri/src/database_encryption.rs",
+    "static PROTECTED_KEY_CREATE_LOCK: Mutex<()> = Mutex::new(());",
+    "desktop protected-key one-winner lock marker",
+  );
+  assertFileContains(
+    "apps/desktop/src-tauri/src/database_encryption.rs",
+    "static NEXT_PROTECTED_KEY_TEMP_ID: AtomicU64 = AtomicU64::new(0);",
+    "desktop protected-key temporary atomic suffix marker",
+  );
+  assertFileContains(
+    "apps/desktop/src-tauri/src/database_encryption.rs",
+    "concurrent_protected_key_creation_adopts_one_winner_without_temp_collisions",
+    "desktop protected-key one-winner regression marker",
+  );
+  assertFileContains(
+    "apps/desktop/src-tauri/src/lib.rs",
+    "static NEXT_PANIC_LOG_ID: std::sync::atomic::AtomicU64",
+    "desktop panic-log atomic suffix marker",
+  );
+  assertFileContains(
+    "apps/desktop/src-tauri/src/lib.rs",
+    "panic_logs_at_one_millisecond_are_distinct_and_preserve_every_message",
+    "desktop no-clobber panic-log regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_backup.rs",
+    "let nonce = uuid::Uuid::new_v4();",
+    "PostgreSQL backup shared final/temp UUID marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/pg_backup.rs",
+    "logical_backup_paths_are_unique_for_concurrent_fixed_stamp_exports",
+    "PostgreSQL fixed-stamp backup path ownership regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
+    "fn next_book_export_path(",
+    "retained book-export UUID path helper marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
+    "let _stage_cleanup = RestoreStageCleanup::new(stage.clone());",
+    "PostgreSQL restore sidecar immediate RAII cleanup marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
+    "repeated_book_exports_at_one_instant_are_distinct_and_never_overwrite",
+    "retained book-export fixed-time ownership regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-store/src/recovery.rs",
+    "postgres_sidecar_stages_at_one_instant_have_exclusive_cleanup_ownership",
+    "PostgreSQL restore sidecar fixed-time ownership regression marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "This supplies the Linux build/runtime dependency needed by the generated-PFX loader test; it does not touch a reader, use a Citizen Card, or prove live PC/SC signing",
@@ -16860,13 +17013,33 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "The capacity run started from `428127fc` was aborted and quarantined after its source identity became obsolete; it is not capacity, soak, or 10,000-cryptographic-signature evidence",
+    "The capacity attempt started from `7df0f6b2` was aborted and quarantined when its source identity became obsolete; there is still no capacity or 10,000-cryptographic-signature evidence",
     "CI/E2E obsolete capacity run no-claim boundary",
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `fdfb396` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `9bd1a56` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "Focused local evidence recorded timestamp-trust stress 40/40, the full signing suite at 124 passed / 1 ignored, trust stress 140/140, the signature filter 5/5, and the DRE law guard stress 30/30",
+    "spec coverage fixture ownership exact focused evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "This is test-fixture ownership and determinism evidence only; it does not contact or prove a provider, exercise production signing, or establish production or hosted-CI readiness",
+    "CI checkpoints fixture ownership no-provider boundary",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Focused local validation recorded API 1/1, store recovery 2/2, PostgreSQL backup 1/1, desktop encryption 9/9 including Windows DPAPI, desktop artifacts 2/2, and clippy",
+    "CI/E2E runtime artifact exact focused evidence",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Public filename families/extensions and serialized schema contracts remain unchanged. This is bounded temporary-artifact ownership evidence, not full concurrency, cross-process HA, capacity, or production proof",
+    "CI checkpoints runtime artifact contract and no-HA boundary",
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
@@ -16960,7 +17133,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `fdfb396` (2026-07-27)",
+    "The current substantive checkpoint is `9bd1a56` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(
