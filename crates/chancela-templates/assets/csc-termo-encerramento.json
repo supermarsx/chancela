@@ -33,7 +33,7 @@
         },
         {
           "key": "Motivo",
-          "value": "{{ reason }}"
+          "value": "{% if reason == 'BookFull' %}livro esgotado{% elif reason == 'EntityDissolved' %}extinção da sociedade{% elif reason == 'MigrationToSuccessor' %}migração para livro sucessor{% elif reason.Other is defined %}{{ reason.Other.note }}{% else %}{{ reason }}{% endif %}"
         },
         {
           "key": "Data de encerramento",
@@ -58,7 +58,7 @@
     {
       "kind": "SignatureBlock",
       "source": "required_signatories",
-      "role": "{{ role }}",
+      "role": "{{ role | role_label }}",
       "name": "{{ name }}"
     }
   ],

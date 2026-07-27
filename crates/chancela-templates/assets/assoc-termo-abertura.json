@@ -31,7 +31,7 @@
     {
       "kind": "SignatureBlock",
       "source": "required_signatories",
-      "role": "{{ role }}",
+      "role": "{{ role | role_label }}",
       "name": "{{ name }}"
     }
   ],

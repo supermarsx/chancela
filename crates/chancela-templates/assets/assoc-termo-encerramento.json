@@ -15,7 +15,7 @@
         { "key": "NIPC", "value": "{{ entity.nipc }}" },
         { "key": "Órgão", "value": "{{ book.kind }}" },
         { "key": "N.º de atas contidas", "value": "{{ ata_count }}" },
-        { "key": "Motivo", "value": "{% if reason == 'BookFull' %}livro esgotado{% elif reason == 'EntityDissolved' %}extinção da associação{% elif reason == 'MigrationToSuccessor' %}migração para livro sucessor{% else %}{{ reason }}{% endif %}" },
+        { "key": "Motivo", "value": "{% if reason == 'BookFull' %}livro esgotado{% elif reason == 'EntityDissolved' %}extinção da associação{% elif reason == 'MigrationToSuccessor' %}migração para livro sucessor{% elif reason.Other is defined %}{{ reason.Other.note }}{% else %}{{ reason }}{% endif %}" },
         { "key": "Data de encerramento", "value": "{{ closing_date | long_date }}" }
       ]
     },
@@ -28,7 +28,7 @@
     {
       "kind": "SignatureBlock",
       "source": "required_signatories",
-      "role": "{{ role }}",
+      "role": "{{ role | role_label }}",
       "name": "{{ name }}"
     }
   ],

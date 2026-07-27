@@ -805,16 +805,73 @@ fn convening_object(c: &Convening) -> Value {
     v
 }
 
-/// Build the render context for a termo de abertura (book-opening instrument). The termo carries
-/// its own entity snapshot; `book.kind` names the organ. `required_signatories` are reshaped into
-/// signature slots (`{role, name}`) so the `SignatureBlock` template binds one blank-name line per
-/// required signatory. `created_at` derives from the opening date (deterministic, no clock).
-fn termo_ctx(termo: &TermoDeAbertura, book: &Book) -> Value {
-    let signatories: Vec<Value> = termo
-        .required_signatories
+/// Reshape a termo's declared signatories into the `{role, name}` slots a `SignatureBlock` binds.
+///
+/// `role` carries the capacity's **serialized name** (`"Manager"`), which the book-instrument
+/// templates map to pt-PT through the `role_label` filter — the same contract the ata templates
+/// already use via `{{ capacity | role_label }}`.
+///
+/// It must never carry [`chancela_core::book::TermoSignatory::legacy_label`]'s output. That string
+/// is part of the **genesis digest preimage** (it is what `required_signatories` stores, and
+/// `TermoDeAbertura` is serialized directly into the `book.opened` event), and it is documented as a
+/// backward-compatible label for legacy readers — never as display copy. Rendering it verbatim is
+/// what put the Rust `Debug` spelling "Manager" under a Portuguese signature line. We fix the
+/// render, not the record: `legacy_label` and the sealed payload keep their exact bytes.
+///
+/// For [`chancela_core::act::SignatoryCapacity::Other`] carrying a `capacity_note`, the note is the
+/// informative value and takes the role slot, mirroring `legacy_label`'s own precedence.
+///
+/// Falls back to the legacy string list for a pre-t8 stored termo that carries no structured
+/// records. `role_label` ends in `other => other`, so those strings pass through the filter
+/// unchanged and such a book renders exactly as it did before — no retro-translation, and no
+/// parsing of a legacy label back into structure.
+fn signature_slots(
+    records: &[chancela_core::book::TermoSignatory],
+    legacy: &[String],
+) -> Vec<Value> {
+    use chancela_core::act::SignatoryCapacity;
+
+    if records.is_empty() {
+        return legacy
+            .iter()
+            .map(|role| json!({ "role": role, "name": "" }))
+            .collect();
+    }
+    records
         .iter()
-        .map(|role| json!({ "role": role, "name": "" }))
-        .collect();
+        .map(|record| {
+            let role = match (record.capacity, record.capacity_note.as_deref()) {
+                (Some(SignatoryCapacity::Other), Some(note)) if !note.trim().is_empty() => {
+                    note.trim().to_owned()
+                }
+                (Some(capacity), _) => serde_json::to_value(capacity)
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_owned))
+                    // A fieldless enum with a derived `Serialize` always yields a JSON string, so
+                    // this arm is unreachable. It falls back to the `Debug` spelling rather than to
+                    // an empty string so that an impossible serde failure could never silently
+                    // blank the qualidade off a signature line in a legal instrument.
+                    .unwrap_or_else(|| format!("{capacity:?}")),
+                // A record with no modelled capacity has only a name to show; the role line stays
+                // empty rather than repeating the name, and `SignatureBlock` keeps the slot because
+                // the name is non-empty.
+                (None, _) => String::new(),
+            };
+            json!({ "role": role, "name": record.name })
+        })
+        .collect()
+}
+
+/// Build the render context for a termo de abertura (book-opening instrument). The termo carries
+/// its own entity snapshot; `book.kind` names the organ. `required_signatories` are reshaped by
+/// [`signature_slots`] into `{role, name}` slots so the `SignatureBlock` template binds the
+/// qualidade and the signatory's name as separate lines. `created_at` derives from the opening date
+/// (deterministic, no clock).
+fn termo_ctx(termo: &TermoDeAbertura, book: &Book) -> Value {
+    let signatories = signature_slots(
+        &termo.required_signatory_records,
+        &termo.required_signatories,
+    );
     json!({
         "title": "Termo de abertura do livro de atas",
         "created_at": format_date(termo.opening_date),
@@ -1230,14 +1287,19 @@ pub(crate) fn encerramento_template_id(family: EntityFamily) -> Option<&'static 
 /// Build the render context for a termo de encerramento (book-closing instrument). Unlike the
 /// abertura, the encerramento carries no entity snapshot, so the entity is supplied separately;
 /// `book.kind` names the organ, `reason` keeps its bare `ClosingReason` name (templates map it to
-/// PT), and `required_signatories` become blank-name signature slots. `created_at` derives from the
-/// closing date (deterministic, no clock).
+/// PT), and `required_signatories` are reshaped by [`signature_slots`] into `{role, name}` slots.
+/// `created_at` derives from the closing date (deterministic, no clock).
+///
+/// ⚠️ This context feeds the close path's **stale-fact guard** (`crate::termo::close_from_termo`),
+/// which re-renders the encerramento and compares its `pdf_digest` against the snapshot the
+/// signatories signed at advance. Any change here moves those bytes, so an encerramento frozen for
+/// signing before the change and closed after it will be refused. That is the fail-closed direction,
+/// but it means a render change on this path must be landed deliberately, not incidentally.
 fn encerramento_ctx(termo: &TermoDeEncerramento, book: &Book, entity: &Entity) -> Value {
-    let signatories: Vec<Value> = termo
-        .required_signatories
-        .iter()
-        .map(|role| json!({ "role": role, "name": "" }))
-        .collect();
+    let signatories = signature_slots(
+        &termo.required_signatory_records,
+        &termo.required_signatories,
+    );
     json!({
         "title": "Termo de encerramento do livro de atas",
         "created_at": format_date(termo.closing_date),
@@ -10225,11 +10287,11 @@ mod spec_binding_tests {
             ),
             (
                 "assoc-termo-abertura/v1",
-                "bacd3f9b7bd04ac5fc876f64e3d4cedf66891daf46b835ce500fc283483ac83a",
+                "b4f7a9a4a8647313b1cca47a14034c527a896ef50e5bdb754415983f9515b9ca",
             ),
             (
                 "assoc-termo-encerramento/v1",
-                "51d2aa219091df75d63827f3231c803150db4b04a46621b6d56e652bc2a78417",
+                "15e20a35c7cf4c2eaf54015b3a5f5aba3a1cf96a4edc3aa9f5eb31905186e487",
             ),
             (
                 "assoc-termo-retificacao/v1",
@@ -10237,7 +10299,7 @@ mod spec_binding_tests {
             ),
             (
                 "assoc-termo-transporte/v1",
-                "d93fd515b2d1249759d2dfeb67341a1e1e0b2258db93ebd1e056b820eb84e742",
+                "b79a6d37fc472880964ed3d3b76bae90263be293d522f8128c6275384e96e1f6",
             ),
             (
                 "condominio-anexo-acordo-email/v1",
@@ -10281,11 +10343,11 @@ mod spec_binding_tests {
             ),
             (
                 "condominio-termo-abertura/v1",
-                "0434177f86403d1eb25615db8f7c86f1090e62aad0d266d5f4513a614e5f7278",
+                "c6dafe79560973a58a679d9115b08e6e0d7f6c23391347f63dad22be247789cf",
             ),
             (
                 "condominio-termo-encerramento/v1",
-                "2f3da615f0cd66d68761f26957c70e2a3f3872dc9bd24776bbff88182cb3246c",
+                "b8a9c0277368fae50cf89d7faea2f7bb12b193b9a3de812b601723d099e2d6f3",
             ),
             (
                 "condominio-termo-retificacao/v1",
@@ -10293,7 +10355,7 @@ mod spec_binding_tests {
             ),
             (
                 "condominio-termo-transporte/v1",
-                "3c0692cae3d906207a172fbab87a337ce7e56fe8a05a325bf5585b2dcebedf12",
+                "84fb754893b1b070adfe2c318b08baec6c692d572587071915121da6ee95d1bc",
             ),
             (
                 "cooperativa-ata-ag/v1",
@@ -10337,11 +10399,11 @@ mod spec_binding_tests {
             ),
             (
                 "cooperativa-termo-abertura/v1",
-                "757891a8580709acf4d4eb5aa538bec45b171765f9040ac998995d323e1a27da",
+                "f98d2c35a1ff7d06d47fbfcefcf92ef612894a4cf8ab46e9296685bd7fabd803",
             ),
             (
                 "cooperativa-termo-encerramento/v1",
-                "bd25de47a560be9f09fd47148501ddab7268344ee6131cf430244d7545c5624c",
+                "b0644ef5aa8e6b3c6401440a624e4cd587a7b55b68bac9ff971f0c60f5d8fff0",
             ),
             (
                 "cooperativa-termo-retificacao/v1",
@@ -10349,7 +10411,7 @@ mod spec_binding_tests {
             ),
             (
                 "cooperativa-termo-transporte/v1",
-                "2f73d885d2913d38b9c391fc8277278ab98c9d479c0022451e3e451f5a992eea",
+                "a34a07c5a266da8d0eb41680853c856053b95ee7fdccc3b9b0d87973066136f3",
             ),
             (
                 "csc-ata-ag/v1",
@@ -10513,11 +10575,11 @@ mod spec_binding_tests {
             ),
             (
                 "csc-termo-abertura/v1",
-                "7c2e7943165b839889dc00f1d829efef6cb6223fa070956f1a5daead3f29c34c",
+                "8a0a9bff43d9f243cde37cccd91fb8e52153027ce79319ba33c84f07235e6d20",
             ),
             (
                 "csc-termo-encerramento/v1",
-                "ab068e5a59a9ecdb94ea6e1769278f28c81a4362c97e939d058ed0678e60f56d",
+                "bac01ebf10ebbfccacc166db6673f18a9b0215b485b0b908590df707a67172c5",
             ),
             (
                 "csc-termo-retificacao/v1",
@@ -10525,7 +10587,7 @@ mod spec_binding_tests {
             ),
             (
                 "csc-termo-transporte/v1",
-                "b2a779fe1e2a61019632dab65e0aec330392502a32c87452c8cf66ede1bfac71",
+                "37f5a064faf703690e14874e87fe1caee8a3cd321bac53efdf43276c7351308b",
             ),
             (
                 "fundacao-ata-ca/v1",
@@ -10569,11 +10631,11 @@ mod spec_binding_tests {
             ),
             (
                 "fundacao-termo-abertura/v1",
-                "9e8346afd497104aef117c2f6296cbb0cd4a10a6408838b919dd8adba31b263c",
+                "af18a692de0e5b35183ed97ab7ba6e1b29b2a12cd5e29affbd4cc95d4bc0d0d5",
             ),
             (
                 "fundacao-termo-encerramento/v1",
-                "d10d178979946bc43db6cbdb73947e12c7cc42247807924cd324f8261daae954",
+                "0e586fee39dceef8251048da74a6783fca3b7387219e6adffa77b9daf55bdc3f",
             ),
             (
                 "fundacao-termo-retificacao/v1",
@@ -10581,7 +10643,7 @@ mod spec_binding_tests {
             ),
             (
                 "fundacao-termo-transporte/v1",
-                "5dad142ed934bf3c9e7f1853a30a08aaaead35b3534085b494b4dbeeb64c58af",
+                "a3a3c5bafc5fec9408f6b182f799c182783e7bcc116614c5e8663defe95365d1",
             ),
         ];
         let reg = registry();
@@ -14962,6 +15024,356 @@ mod tests {
         assert!(generated.stored.pdf_bytes.starts_with(b"%PDF-"));
         // Keyed by the book id cast into an ActId (book instruments have no owning act).
         assert_eq!(generated.stored.act_id, ActId(book.id.0));
+    }
+
+    // --- t50: the qualidade under a termo signature line renders in pt-PT ------------------------
+    //
+    // The bug these tests pin: `TermoSignatory::legacy_label` formats the capacity with `{capacity:?}`
+    // (the Rust `Debug` spelling) and the render path used to print that string verbatim, so a termo
+    // de abertura showed "Amélia Marques (Manager)" on the role line with a blank name line. That
+    // label is part of the **genesis digest preimage** and must keep its exact bytes, so the fix is
+    // in the render only: `signature_slots` emits the serialized capacity name and the templates map
+    // it through the `role_label` filter.
+
+    /// Build a termo de abertura carrying structured signatory records.
+    fn abertura_with(records: Vec<chancela_core::book::TermoSignatory>) -> TermoDeAbertura {
+        TermoDeAbertura {
+            entity_name: "Encosto Estratégico Lda".to_owned(),
+            entity_nipc: nipc().to_string(),
+            entity_seat: "Rua das Amoreiras, n.º 12, 1250-020 Lisboa".to_owned(),
+            purpose: "registar as atas da assembleia geral".to_owned(),
+            numbering_scheme: NumberingScheme::Sequential,
+            opening_date: time::Date::from_calendar_date(2026, time::Month::January, 5)
+                .expect("valid date"),
+            required_signatories: records
+                .iter()
+                .map(chancela_core::book::TermoSignatory::legacy_label)
+                .collect(),
+            required_signatory_records: records,
+            ..Default::default()
+        }
+    }
+
+    fn signatory(
+        name: &str,
+        capacity: Option<chancela_core::act::SignatoryCapacity>,
+        note: Option<&str>,
+    ) -> chancela_core::book::TermoSignatory {
+        chancela_core::book::TermoSignatory {
+            name: name.to_owned(),
+            capacity,
+            capacity_note: note.map(str::to_owned),
+            email: None,
+        }
+    }
+
+    /// The signature slots a spec produces for a context, as typed values (not template source).
+    fn rendered_slots(spec: &TemplateSpec, ctx: &Value) -> Vec<chancela_core::SignatureSlot> {
+        let model = chancela_templates::render_with_body(spec, ctx, &[]).expect("termo renders");
+        model
+            .blocks
+            .iter()
+            .find_map(|block| match block {
+                Block::SignatureBlock { slots } => Some(slots.clone()),
+                _ => None,
+            })
+            .unwrap_or_default()
+    }
+
+    fn abertura_spec() -> &'static TemplateSpec {
+        default_spec(
+            EntityFamily::CommercialCompany,
+            LifecycleStage::TermoAbertura,
+        )
+        .expect("csc termo abertura spec")
+    }
+
+    #[test]
+    fn termo_abertura_renders_the_capacity_in_portuguese_not_the_rust_debug_spelling() {
+        use chancela_core::act::SignatoryCapacity;
+
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = abertura_with(vec![signatory(
+            "Amélia Marques",
+            Some(SignatoryCapacity::Manager),
+            None,
+        )]);
+
+        // The sealed payload is untouched: it still carries the legacy English label, byte for byte.
+        assert_eq!(
+            termo.required_signatories,
+            vec!["Amélia Marques (Manager)".to_owned()],
+            "the genesis digest preimage must keep its exact bytes"
+        );
+
+        let slots = rendered_slots(abertura_spec(), &termo_ctx(&termo, &book));
+        assert_eq!(
+            slots,
+            vec![chancela_core::SignatureSlot {
+                role: "Gerente".to_owned(),
+                name: "Amélia Marques".to_owned(),
+            }],
+            "the qualidade must read as pt-PT and the name must occupy the name line"
+        );
+
+        // And read the real document: the English word must not survive into the PDF.
+        let generated =
+            generate_for_termo(&termo, &book, &entity, &DocumentLayoutPolicy::default())
+                .expect("generation ok")
+                .expect("a termo document");
+        let text = extract_pdf_text(&generated.stored.pdf_bytes);
+        assert!(text.contains("Gerente"), "rendered termo:\n{text}");
+        assert!(text.contains("Amélia Marques"), "rendered termo:\n{text}");
+        assert!(
+            !text.contains("Manager"),
+            "the Rust Debug spelling leaked into a Portuguese legal instrument:\n{text}"
+        );
+    }
+
+    #[test]
+    fn termo_abertura_renders_every_capacity_shape() {
+        use chancela_core::act::SignatoryCapacity;
+
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = abertura_with(vec![
+            signatory("Amélia Marques", Some(SignatoryCapacity::Chair), None),
+            // `Other` + a note: the note is the informative value and takes the role line, mirroring
+            // `legacy_label`'s own precedence.
+            signatory(
+                "Bruno Camposol",
+                Some(SignatoryCapacity::Other),
+                Some("Representante da entidade financiadora"),
+            ),
+            // `Other` with no note: the neutral term is all that can honestly be printed. Never blank.
+            signatory("Carla Vinhais", Some(SignatoryCapacity::Other), None),
+            // No modelled capacity: the name still gets its line, the role line stays empty rather
+            // than repeating the name.
+            signatory("Diogo Estrela", None, None),
+        ]);
+
+        let slots = rendered_slots(abertura_spec(), &termo_ctx(&termo, &book));
+        let seen: Vec<(&str, &str)> = slots
+            .iter()
+            .map(|s| (s.role.as_str(), s.name.as_str()))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![
+                ("Presidente da mesa", "Amélia Marques"),
+                ("Representante da entidade financiadora", "Bruno Camposol"),
+                ("Outra qualidade", "Carla Vinhais"),
+                ("", "Diogo Estrela"),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_legacy_termo_without_structured_records_renders_exactly_as_before() {
+        // Pre-t8 stored books carry only the legacy string list. `role_label` ends in
+        // `other => other`, so the string passes through untouched: no retro-translation, and no
+        // parsing of a legacy label back into structure.
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = abertura_with(Vec::new());
+        termo.required_signatories = vec!["Amélia Marques (Administrator)".to_owned()];
+        assert!(termo.required_signatory_records.is_empty());
+
+        let slots = rendered_slots(abertura_spec(), &termo_ctx(&termo, &book));
+        assert_eq!(
+            slots,
+            vec![chancela_core::SignatureSlot {
+                role: "Amélia Marques (Administrator)".to_owned(),
+                name: String::new(),
+            }],
+            "a legacy book must render byte-identically to before this change"
+        );
+    }
+
+    #[test]
+    fn encerramento_renders_the_closing_reason_and_qualidade_in_portuguese() {
+        use chancela_core::act::SignatoryCapacity;
+
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let spec = default_spec(
+            EntityFamily::CommercialCompany,
+            LifecycleStage::TermoEncerramento,
+        )
+        .expect("csc termo encerramento spec");
+
+        let motivo_of = |reason: ClosingReason| -> String {
+            let records = vec![signatory(
+                "Amélia Marques",
+                Some(SignatoryCapacity::Manager),
+                None,
+            )];
+            let termo = TermoDeEncerramento {
+                ata_count: 12,
+                reason,
+                closing_date: time::Date::from_calendar_date(2026, time::Month::December, 31)
+                    .expect("valid date"),
+                required_signatories: records
+                    .iter()
+                    .map(chancela_core::book::TermoSignatory::legacy_label)
+                    .collect(),
+                required_signatory_records: records,
+                ..Default::default()
+            };
+            let model = chancela_templates::render_with_body(
+                spec,
+                &encerramento_ctx(&termo, &book, &entity),
+                &[],
+            )
+            .expect("encerramento renders");
+            model
+                .blocks
+                .iter()
+                .find_map(|block| match block {
+                    Block::KeyValue { rows } => rows
+                        .iter()
+                        .find(|row| row.key == "Motivo")
+                        .map(|row| row.value.clone()),
+                    _ => None,
+                })
+                .expect("a Motivo row")
+        };
+
+        assert_eq!(motivo_of(ClosingReason::BookFull), "livro esgotado");
+        // Per-family wording: a sociedade is extinguished, not an associação.
+        assert_eq!(
+            motivo_of(ClosingReason::EntityDissolved),
+            "extinção da sociedade"
+        );
+        assert_eq!(
+            motivo_of(ClosingReason::MigrationToSuccessor),
+            "migração para livro sucessor"
+        );
+        // The operator's free text — not the serialized `{"Other":{"note":…}}` map that used to
+        // print here, which is structural garbage in a signed legal instrument.
+        assert_eq!(
+            motivo_of(ClosingReason::Other {
+                note: "novo exercício económico".to_owned(),
+            }),
+            "novo exercício económico"
+        );
+
+        // An unmodelled reason — a variant added to `ClosingReason` without the templates being
+        // updated — keeps printing its raw name. That is deliberately the LOUD outcome: visible
+        // English in a Portuguese instrument says the template is stale, where a blank Motivo row
+        // would silently drop a stated fact out of a signed legal instrument. It is also why the
+        // `Other` branch is guarded by `is defined` rather than dereferencing blind: minijinja
+        // errors on an attribute of an undefined, so an unguarded `reason.Other.note` fails the
+        // whole render for any reason shape that is not the `Other` map.
+        {
+            let records = vec![signatory(
+                "Amélia Marques",
+                Some(SignatoryCapacity::Manager),
+                None,
+            )];
+            let termo = TermoDeEncerramento {
+                ata_count: 12,
+                reason: ClosingReason::BookFull,
+                closing_date: time::Date::from_calendar_date(2026, time::Month::December, 31)
+                    .expect("valid date"),
+                required_signatories: records
+                    .iter()
+                    .map(chancela_core::book::TermoSignatory::legacy_label)
+                    .collect(),
+                required_signatory_records: records,
+                ..Default::default()
+            };
+            let mut ctx = encerramento_ctx(&termo, &book, &entity);
+            ctx["reason"] = json!("AVariantAddedLater");
+            let model = chancela_templates::render_with_body(spec, &ctx, &[])
+                .expect("an unmodelled reason must still render, not abort the document");
+            let motivo = model
+                .blocks
+                .iter()
+                .find_map(|block| match block {
+                    Block::KeyValue { rows } => rows
+                        .iter()
+                        .find(|row| row.key == "Motivo")
+                        .map(|row| row.value.clone()),
+                    _ => None,
+                })
+                .expect("a Motivo row");
+            assert_eq!(motivo, "AVariantAddedLater");
+        }
+
+        // The qualidade travels the same corrected path on the closing side.
+        let records = vec![signatory(
+            "Amélia Marques",
+            Some(SignatoryCapacity::Manager),
+            None,
+        )];
+        let termo = TermoDeEncerramento {
+            ata_count: 12,
+            reason: ClosingReason::BookFull,
+            closing_date: time::Date::from_calendar_date(2026, time::Month::December, 31)
+                .expect("valid date"),
+            required_signatories: records
+                .iter()
+                .map(chancela_core::book::TermoSignatory::legacy_label)
+                .collect(),
+            required_signatory_records: records,
+            ..Default::default()
+        };
+        let slots = rendered_slots(spec, &encerramento_ctx(&termo, &book, &entity));
+        assert_eq!(
+            slots,
+            vec![chancela_core::SignatureSlot {
+                role: "Gerente".to_owned(),
+                name: "Amélia Marques".to_owned(),
+            }],
+        );
+    }
+
+    #[test]
+    fn every_family_encerramento_names_its_own_dissolution() {
+        // Five independent sentences, one per family — never one interpolated shell, which would
+        // produce "extinção da condomínio". Gender is baked into each literal.
+        let cases = [
+            (EntityKind::SociedadePorQuotas, "extinção da sociedade"),
+            (EntityKind::Associacao, "extinção da associação"),
+            (EntityKind::Condominio, "extinção do condomínio"),
+            (EntityKind::Cooperativa, "extinção da cooperativa"),
+            (EntityKind::Fundacao, "extinção da entidade"),
+        ];
+        for (kind, expected) in cases {
+            let entity = entity_of(kind);
+            let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+            let spec = default_spec(kind.family(), LifecycleStage::TermoEncerramento)
+                .expect("family encerramento spec");
+            let termo = TermoDeEncerramento {
+                ata_count: 3,
+                reason: ClosingReason::EntityDissolved,
+                closing_date: time::Date::from_calendar_date(2026, time::Month::December, 31)
+                    .expect("valid date"),
+                required_signatories: vec!["Amélia Marques (Administrator)".to_owned()],
+                required_signatory_records: Vec::new(),
+                ..Default::default()
+            };
+            let model = chancela_templates::render_with_body(
+                spec,
+                &encerramento_ctx(&termo, &book, &entity),
+                &[],
+            )
+            .expect("encerramento renders");
+            let motivo = model
+                .blocks
+                .iter()
+                .find_map(|block| match block {
+                    Block::KeyValue { rows } => rows
+                        .iter()
+                        .find(|row| row.key == "Motivo")
+                        .map(|row| row.value.clone()),
+                    _ => None,
+                })
+                .expect("a Motivo row");
+            assert_eq!(motivo, expected, "{kind:?} names the wrong legal person");
+        }
     }
 
     // -----------------------------------------------------------------------------------------
