@@ -54,6 +54,7 @@ import {
 import { useSectionNav } from '../../app/navPath';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { resolveColumnOrigin } from '../tableColumns/columnOrigin';
 import {
   dataColumns,
   LEDGER_TABLE,
@@ -725,6 +726,10 @@ export function LedgerPage() {
                 isVisible={ledgerColumns.isVisible}
                 onToggle={ledgerColumns.toggle}
                 columnLabel={(column) => t(LEDGER_COLUMN_LABEL_KEYS[column])}
+                origin={resolveColumnOrigin(LEDGER_TABLE, {
+                  overridden: ledgerColumns.overridden,
+                  fallback: LEDGER_COLUMN_SPEC.fallback,
+                })}
               />
 
               {!eventsQuery.isLoading && !eventsQuery.error ? (

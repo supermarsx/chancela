@@ -44,6 +44,7 @@ import {
   useToast,
 } from '../../ui';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
+import { resolveColumnOrigin } from '../tableColumns/columnOrigin';
 import {
   ACTS_TABLE,
   dataColumns,
@@ -339,6 +340,10 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
         isVisible={columns.isVisible}
         onToggle={columns.toggle}
         columnLabel={(column) => t(ACTS_COLUMN_LABEL_KEYS[column])}
+        origin={resolveColumnOrigin(ACTS_TABLE, {
+          overridden: columns.overridden,
+          fallback: ACTS_COLUMN_SPEC.fallback,
+        })}
       />
 
       {visibleRecordCount === 0 ? (
