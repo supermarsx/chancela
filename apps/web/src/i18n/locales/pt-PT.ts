@@ -365,7 +365,7 @@ export const ptPT: Catalog = {
   'notFound.backLink': 'Voltar ao painel',
 
   // --- Client-authored errors ----------------------------------------------------
-  'error.requestFailed': 'Request failed with status {status}',
+  'error.requestFailed': 'O pedido falhou com o estado {status}',
   'error.unexpectedResponse':
     'Resposta inesperada do servidor ({detail}){suffix} — a versão do servidor pode estar desatualizada. Reinicie a aplicação/servidor. (estado {status})',
   'error.detail.html': 'HTML em vez de JSON',
