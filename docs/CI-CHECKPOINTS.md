@@ -51,7 +51,7 @@ claim.
 
 ## Recent Landed Areas
 
-The current substantive checkpoint is `9a6b0f9` (2026-07-27). It records the
+The current substantive checkpoint is `247a8eb` (2026-07-27). It records the
 following bounded concern groups in this guard:
 
 - `fb7e9dcd`/`c6c34e9a` replace inline block configurability with an accessible
@@ -118,6 +118,27 @@ following bounded concern groups in this guard:
   `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`.
   This invalidated candidate is explicitly not capacity, latency/soak, or
   10,000-cryptographic-signature proof.
+- A later final-source attempt at `fcea46fc` passed exact dataset generation
+  and validation, then OOM-killed the elected leader at its 1 GiB hard limit
+  during one-shot book seeding. The workload and cryptographic phase never
+  completed, final topology failed, and the run is invalid. Cleanup verified
+  zero matching containers, volumes, networks, port 18081 listeners, launcher
+  PIDs, and run processes. The preserved 20-file, 40,044,838-byte evidence set
+  is bound by `sha256-manifest.txt` SHA-256
+  `df28a1df7c2aeacdad1b5bb108ef9616316c5eea433b4f873e76c423ea4069d2`
+  at
+  `.perf-work/capacity-fcea46fc98e2b36a40354638657082ccc4b44d24-20260727034112/`.
+  This invalidated run is not capacity, latency/soak, or
+  10,000-cryptographic-signature proof.
+- The deterministic cause was durable leader retention of every full
+  generated PDF/A in the process document map; each one-shot PDF embedded the
+  complete uncompressed 616,196-byte Noto Serif program. `247a8eb0` makes
+  durable generated-document publish/replace skip byte retention while store
+  fallback remains loadable and pure in-memory behavior remains unchanged.
+  Focused validation passed 5/5 tests; the full API library passed 1,331 tests
+  with 2 ignored, including the existing one-shot book/termo regression, plus
+  Clippy with `-D warnings`, rustfmt, and diff checks. This is regression
+  evidence, not a replacement capacity run.
 - `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies
   the Linux build/runtime dependency needed by the generated-PFX loader test;

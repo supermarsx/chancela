@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `9a6b0f90a369de8c3650cfdcbd6170e7a5dd22cc`,
+*Updated 2026-07-27 from current implementation snapshot `247a8eb00ff08db0adc996e8774c9c2271d49760`,
 with committed evidence for the floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
@@ -335,7 +335,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `9a6b0f9` keeps Architecture/Data/Documents/Template Catalog/UX/CI
+- Current `247a8eb` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
   an accessible portaled drawer that exists only while a block is being
   configured, pins to the right edge, becomes full-width on narrow screens,
@@ -416,6 +416,31 @@ Implementation checkpoints covered here:
   `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`.
   This invalidated candidate is explicitly not capacity, latency/soak, or
   10,000-cryptographic-signature proof.
+
+  A later final-source attempt at `fcea46fc` passed exact dataset generation
+  and validation, then OOM-killed the elected leader at its 1 GiB hard limit
+  during one-shot book seeding. The workload and cryptographic phase never
+  completed, final topology failed, and the run is invalid. Cleanup verified
+  zero matching containers, volumes, networks, port 18081 listeners, launcher
+  PIDs, and run processes. The preserved 20-file, 40,044,838-byte evidence set
+  is bound by `sha256-manifest.txt` SHA-256
+  `df28a1df7c2aeacdad1b5bb108ef9616316c5eea433b4f873e76c423ea4069d2`
+  at
+  `.perf-work/capacity-fcea46fc98e2b36a40354638657082ccc4b44d24-20260727034112/`.
+  This invalidated run is not capacity, latency/soak, or
+  10,000-cryptographic-signature proof.
+
+  Root-cause analysis found deterministic linear retention: the durable
+  leader cached every full generated PDF/A in its process document map, and
+  each one-shot PDF embedded the complete uncompressed 616,196-byte Noto Serif
+  program. `247a8eb0` makes both generated-document publish/replace paths
+  return without retaining bytes when a durable store is present; durable
+  reads still load the committed bytes through the store fallback, while pure
+  in-memory behavior is unchanged. Focused validation passed 5/5 tests; the
+  full API library passed 1,331 tests with 2 ignored, including the existing
+  one-shot book/termo regression, plus Clippy with `-D warnings`, rustfmt, and
+  diff checks. This remediation is regression evidence, not a replacement
+  capacity run.
 
   `26d36aac` installs `libpcsclite-dev` and `pcscd` before the performance
   workflow's harness self-test, with a source-order regression. This supplies

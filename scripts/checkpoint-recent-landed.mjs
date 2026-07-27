@@ -4317,7 +4317,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `9a6b0f9` (2026-07-27)",
+    "The current substantive checkpoint is `247a8eb` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
   );
   assertFileContains(
@@ -11366,12 +11366,12 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `9a6b0f9`",
+    "Updated 2026-07-27 from the current CI configuration and reachable\nimplementation snapshot `247a8eb`",
     "CI/E2E hardening plan current head marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Focused Gate Snapshot Through `9a6b0f9`",
+    "Focused Gate Snapshot Through `247a8eb`",
     "CI/E2E hardening plan focused snapshot head marker",
   );
   assertFileContains(
@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9a6b0f9`",
+    "Current checkpoint metadata/static checks through `247a8eb`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `9a6b0f90a369de8c3650cfdcbd6170e7a5dd22cc`",
+    "implementation snapshot `247a8eb00ff08db0adc996e8774c9c2271d49760`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `9a6b0f9`",
+    "Current checkpoint metadata/static checks through `247a8eb`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -17142,6 +17142,32 @@ function assertCheckpointMap() {
     "page.getByRole('spinbutton', { name: 'Altura (pontos)', exact: true }).fill('60')",
     "seal designer exact height spinbutton selector marker",
   );
+  assertFileOccurrenceCount(
+    "crates/chancela-api/src/documents.rs",
+    "if state.store.is_some() {\n        return;\n    }",
+    2,
+    "durable generated-document byte-retention early returns",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "durable_publish_does_not_retain_pdf_bytes_and_store_load_remains_available",
+    "durable generated-document publish regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "durable_replace_does_not_retain_pdf_bytes_and_store_load_remains_available",
+    "durable generated-document replace regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "in_memory_publish_still_caches_and_serves_pdf_bytes",
+    "in-memory generated-document publish regression marker",
+  );
+  assertFileContains(
+    "crates/chancela-api/src/documents.rs",
+    "in_memory_replace_still_caches_and_serves_pdf_bytes",
+    "in-memory generated-document replace regression marker",
+  );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
     "health reads are bounded to control C1 -> heartbeat -> control C2 with one retry only when the canonical lease identity/path changes",
@@ -17174,6 +17200,36 @@ function assertCheckpointMap() {
   );
   assertFileContainsNormalized(
     "SPEC-COVERAGE.md",
+    "passed exact dataset generation and validation, then OOM-killed the elected leader at its 1 GiB hard limit during one-shot book seeding",
+    "spec coverage final-source capacity OOM evidence marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "Cleanup verified zero matching containers, volumes, networks, port 18081 listeners, launcher PIDs, and run processes",
+    "CI checkpoints final-source capacity exact cleanup marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "The preserved 20-file, 40,044,838-byte evidence set is bound by `sha256-manifest.txt` SHA-256 `df28a1df7c2aeacdad1b5bb108ef9616316c5eea433b4f873e76c423ea4069d2`",
+    "CI/E2E final-source capacity evidence manifest marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
+    "This invalidated run is not capacity, latency/soak, or 10,000-cryptographic-signature proof",
+    "spec coverage final-source capacity no-proof marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-CHECKPOINTS.md",
+    "complete uncompressed 616,196-byte Noto Serif program. `247a8eb0` makes durable generated-document publish/replace skip byte retention while store fallback remains loadable and pure in-memory behavior remains unchanged",
+    "CI checkpoints durable generated-document memory fix marker",
+  );
+  assertFileContainsNormalized(
+    "docs/CI-E2E-HARDENING-PLAN.md",
+    "Focused validation passed 5/5 tests; the full API library passed 1,331 tests with 2 ignored, including the existing one-shot book/termo regression, plus Clippy with `-D warnings`, rustfmt, and diff checks",
+    "CI/E2E durable generated-document validation marker",
+  );
+  assertFileContainsNormalized(
+    "SPEC-COVERAGE.md",
     "either direct single-platform or indexed `imagetools inspect` JSON",
     "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
   );
@@ -17189,7 +17245,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "Current `9a6b0f9` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
+    "Current `247a8eb` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
     "spec coverage current landed batch marker",
   );
   assertFileContainsNormalized(
@@ -17319,7 +17375,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
-    "The current substantive checkpoint is `9a6b0f9` (2026-07-27)",
+    "The current substantive checkpoint is `247a8eb` (2026-07-27)",
     "CI checkpoints current substantive marker",
   );
   assertFileContainsNormalized(

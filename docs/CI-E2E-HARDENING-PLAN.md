@@ -1,7 +1,7 @@
 # CI and E2E Hardening Plan
 
 Updated 2026-07-27 from the current CI configuration and reachable
-implementation snapshot `9a6b0f9`,
+implementation snapshot `247a8eb`,
 including coverage notes for the floating block-settings drawer, external
 search projector and isolated compile/image graph, proof-governed exact-volume
 performance harness with fail-closed local TSA isolation and generated-PFX
@@ -1007,11 +1007,11 @@ e2e/remote-signing-pending-session.spec.ts`, covering provider-specific
 - The remaining failures, if any, are documented as external blockers such as
   live CMD, QTSP, CC hardware, production TSL/TSA network, or legal review.
 
-## Focused Gate Snapshot Through `9a6b0f9`
+## Focused Gate Snapshot Through `247a8eb`
 
 Historical focused checks from the active director loop, refreshed on
 2026-07-10 for head `3e72e08`, checkpoint-promoted through `16000bb`, and
-metadata-refreshed on 2026-07-27 for current implementation head `9a6b0f9`.
+metadata-refreshed on 2026-07-27 for current implementation head `247a8eb`.
 This is not an exhaustive current green-run claim; the full-server E2E claim
 below is limited to local
 `chancela-server --features e2e` after auth harness alignment, and browser,
@@ -1020,7 +1020,7 @@ signing/attestation, live `verify-full` CA proof, production TLS/HSTS
 deployment proof, HA/distributed rate-limiting proof, and live-provider limits
 above still apply.
 
-- Current landed-slice markers through `9a6b0f9` cover the accessible
+- Current landed-slice markers through `247a8eb` cover the accessible
   configure-only right drawer for block settings; permission-separated full
   search and management UI; durable external-projector lease, health,
   checkpoint, pause/rebuild cancellation, and query-only API contracts;
@@ -1145,6 +1145,30 @@ above still apply.
   `.perf-work/invalidated/capacity-aborted-a3b6ffc5-projector-health-20260727T030817/`.
   This invalidated candidate is explicitly not capacity, latency/soak, or
   10,000-cryptographic-signature proof.
+
+  A later final-source attempt at `fcea46fc` passed exact dataset generation
+  and validation, then OOM-killed the elected leader at its 1 GiB hard limit
+  during one-shot book seeding. The workload and cryptographic phase never
+  completed, final topology failed, and the run is invalid. Cleanup verified
+  zero matching containers, volumes, networks, port 18081 listeners, launcher
+  PIDs, and run processes. The preserved 20-file, 40,044,838-byte evidence set
+  is bound by `sha256-manifest.txt` SHA-256
+  `df28a1df7c2aeacdad1b5bb108ef9616316c5eea433b4f873e76c423ea4069d2`
+  at
+  `.perf-work/capacity-fcea46fc98e2b36a40354638657082ccc4b44d24-20260727034112/`.
+  This invalidated run is not capacity, latency/soak, or
+  10,000-cryptographic-signature proof.
+
+  The deterministic cause was durable leader retention of every full
+  generated PDF/A in the process document map; each one-shot PDF embedded the
+  complete uncompressed 616,196-byte Noto Serif program. `247a8eb0` makes both
+  generated-document publish/replace paths return before byte retention on a
+  durable store. The store fallback remains loadable and pure in-memory
+  behavior remains unchanged. Focused validation passed 5/5 tests; the full
+  API library passed 1,331 tests with 2 ignored, including the existing
+  one-shot book/termo regression, plus Clippy with `-D warnings`, rustfmt, and
+  diff checks. This remediation is regression evidence, not a replacement
+  capacity run.
 
   `3168c1d6` aligns performance-topology RAM parsing with Compose/Docker binary
   semantics for bare and `B`/`iB` `k`/`m`/`g`/`t` suffixes. The exact live
@@ -2691,7 +2715,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `9a6b0f9`
+- Current checkpoint metadata/static checks through `247a8eb`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
