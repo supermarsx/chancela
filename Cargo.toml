@@ -163,7 +163,7 @@ roxmltree = "0.21"                                          # read-only XML pars
 # against time 0.3.45 (uses `FormatItem::StringLiteral`, removed from `time`). Drop that backend;
 # keep chrono+jiff+rayon (the rest of the default set) so datetime + parallelism still work.
 lopdf = { version = "0.44", default-features = false, features = ["chrono", "jiff", "rayon"] } # object-level PDF (PAdES sig dict built by us)
-base64 = "0.22"                                             # CMD wire fields, PEM
+base64 = "0.23"                                             # CMD wire fields, PEM
 # png (t67 §1.4): minimal PNG decoder for visible-seal raster embedding (e3 decodes PNG → a raw
 # FlateDecode PDF XObject; JPEG is stored as DCTDecode bytes with no decode). Pulls only
 # miniz_oxide/fdeflate/flate2/crc32fast/bitflags — NO ASN.1 crates, so it is safe vs the load-bearing
