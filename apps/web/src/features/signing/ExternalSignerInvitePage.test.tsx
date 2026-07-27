@@ -183,11 +183,9 @@ describe('ExternalSignerInvitePage', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Carregar PDF e aceitar' }));
 
     await waitFor(() => expect(screen.getByText('Artefacto técnico preservado')).toBeTruthy());
-    // A recorded slot is workflow tracking, not a verified signature, so the badge must not be the
-    // green `ok` tone that elsewhere means human-verified.
-    // The label text itself is `signing.envelopes.slot.status.signed`, owned by t59-e1: it becomes
-    // 'Assinatura registada' when their catalog change lands, and this assertion moves with it.
-    const slotBadge = screen.getByText('Assinado');
+    // A recorded slot is workflow tracking, not a verified signature: the label says so, and the
+    // badge must not be the green `ok` tone that elsewhere means human-verified.
+    const slotBadge = screen.getByText('Assinatura registada');
     expect(slotBadge.className).toContain('badge--info');
     expect(slotBadge.className).not.toContain('badge--ok');
     expect(screen.getByText('O que significa este estado')).toBeTruthy();
