@@ -12,9 +12,12 @@
  *     "Encerrar livro" seals the termo and closes the book (`close`).
  *   • **Sealed** — the termo took effect and the book is closed; the record is immutable.
  *
- * Honest until real signing lands: the `close` endpoint FAILS CLOSED with a `409` because no
- * signatory yet carries a real per-slot PAdES signature over the termo's PDF (a reference `sign` is
- * not enough — {@link ../../api/hooks#useSignBookTermoEncerramentoPkcs12} produces the real one). It
+ * Honest fail-closed close: real per-slot PAdES signing SHIPS —
+ * {@link ../../api/hooks#useSignBookTermoEncerramentoPkcs12} drives
+ * `POST …/termo/encerramento/sign/pkcs12`, which signs the frozen snapshot and records the
+ * signature in `instrument_signatures`. The `close` endpoint still FAILS CLOSED with a `409` while
+ * any required slot lacks one: a reference `sign` records completion metadata and no signature, so
+ * it sets `slot.signed` without ever satisfying the gate. It
  * also fails closed with a `409` when the frozen snapshot no longer re-renders to the bytes the
  * signatories signed. Each cause is surfaced distinctly, told apart by the server's stable error
  * `code` and never by its prose ({@link closeErrorKind}); the book stays `Open` in every case — the
