@@ -79,6 +79,7 @@ import {
   dpiaSectionTitleKey,
 } from '../../i18n/dpiaTemplateLabels';
 import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
+import { useRetentionNextStep } from '../../i18n/retentionNextStepFallback';
 import {
   useRetentionStatusResolver,
   type RetentionStatusGroup,
@@ -1947,6 +1948,7 @@ function RetentionDueCandidatesPanel({
   ) => Promise<void>;
 }) {
   const t = useT();
+  const resolveNextStep = useRetentionNextStep();
   const candidates: RetentionDueCandidate[] = report?.candidates ?? [];
   const suppressedByBoundedEvidenceCount = report?.suppressed_by_bounded_evidence_count ?? 0;
 
@@ -2064,7 +2066,7 @@ function RetentionDueCandidatesPanel({
                       <span>
                         {candidate.status} · {candidate.outcome}
                       </span>
-                      <span className="muted">{candidate.next_step}</span>
+                      <span className="muted">{resolveNextStep(candidate.next_step).text}</span>
                       <span className="muted">
                         {t('settings.privacy.dueCandidates.evidenceState')}:
                       </span>
@@ -2074,7 +2076,7 @@ function RetentionDueCandidatesPanel({
                       />
                       <span className="muted">
                         {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
-                        {candidate.evidence_next_step}
+                        {resolveNextStep(candidate.evidence_next_step).text}
                       </span>
                       {priorExecution ? (
                         <>
@@ -2103,10 +2105,12 @@ function RetentionDueCandidatesPanel({
                               })}
                             </span>
                           ) : null}
-                          <span className="muted">{priorExecution.next_step}</span>
+                          <span className="muted">
+                            {resolveNextStep(priorExecution.next_step).text}
+                          </span>
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.priorEvidenceNextStep')}:{' '}
-                            {priorExecution.evidence_next_step}
+                            {resolveNextStep(priorExecution.evidence_next_step).text}
                           </span>
                         </>
                       ) : null}
@@ -2131,7 +2135,9 @@ function RetentionDueCandidatesPanel({
                               count: latestResolution.evidence_count,
                             })}
                           </span>
-                          <span className="muted">{latestResolution.next_step}</span>
+                          <span className="muted">
+                            {resolveNextStep(latestResolution.next_step).text}
+                          </span>
                         </>
                       ) : null}
                     </div>
@@ -2311,7 +2317,7 @@ function RetentionDueCandidatesPanel({
                           />
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.queueNextStep')}:{' '}
-                            {queuedReview.evidence_next_step}
+                            {resolveNextStep(queuedReview.evidence_next_step).text}
                           </span>
                         </>
                       ) : canRecordNoActionEvidence ? (
@@ -2353,6 +2359,7 @@ function RetentionExecutionReviewQueue({
   onStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
 }) {
   const t = useT();
+  const resolveNextStep = useRetentionNextStep();
   const toast = useToast();
   const closeReview = useClosePrivacyRetentionExecutionReview();
   const [search, setSearch] = useState('');
@@ -2584,14 +2591,14 @@ function RetentionExecutionReviewQueue({
                 </td>
                 <td>
                   <div className="stack--tight">
-                    <span>{record.workflow.next_step}</span>
+                    <span>{resolveNextStep(record.workflow.next_step).text}</span>
                     <span className="muted">
                       {t('settings.privacy.dueCandidates.evidenceState')}:
                     </span>
                     <RetentionStatus group="evidenceState" token={record.evidence_state} />
                     <span className="muted">
                       {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
-                      {record.evidence_next_step}
+                      {resolveNextStep(record.evidence_next_step).text}
                     </span>
                     {record.operator_notes ? (
                       <span className="muted">{record.operator_notes}</span>
