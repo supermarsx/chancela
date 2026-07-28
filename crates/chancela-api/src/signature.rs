@@ -3525,7 +3525,9 @@ async fn record_cc_bridge_probe_audit(
 }
 
 fn cc_bridge_operation_error_code(error: &ApiError) -> &'static str {
-    match error {
+    // t58: peel any Tier-2 code before matching, or a coded conflict falls to the `_` arm and this
+    // probe reports `probe_operation_failed` for what is really a busy bridge.
+    match error.as_uncoded() {
         ApiError::Conflict(_) => "bridge_busy",
         ApiError::Internal(_) => "probe_worker_failed",
         _ => "probe_operation_failed",
@@ -3842,7 +3844,10 @@ pub(crate) fn cc_batch_doc_error_message(e: &chancela_signing::SigningError) -> 
     {
         return rejection.message();
     }
-    match map_cc_signing_error(e.clone()) {
+    // t58: `into_uncoded` peels any Tier-2 code first. Without it a coded 4xx would miss the arms
+    // below and be summarised by the `_` arm — silently replacing the honest, client-actionable
+    // message with a generic one, which is the opposite of what attaching a code is for.
+    match map_cc_signing_error(e.clone()).into_uncoded() {
         // A structured PIN rejection (already handled above) or any client-actionable 4xx: surface
         // its honest message. Internal/upstream faults are summarised without leaking internals.
         ApiError::PinRejected { message, .. }
@@ -3867,7 +3872,9 @@ pub(crate) async fn resolve_cc_batch_doc(
 ) -> Result<CcBatchDocInput, String> {
     let unsigned = load_signing_document(state, act_id)
         .await
-        .map_err(|error| match error {
+        // t58: peel before matching — a coded conflict here would lose its precondition message to
+        // the `_` arm, and this batch path reports per-document reasons the operator acts on.
+        .map_err(|error| match error.into_uncoded() {
             ApiError::NotFound => "ato não encontrado".to_owned(),
             ApiError::Conflict(message) => message,
             _ => "não foi possível carregar o documento do ato".to_owned(),

@@ -691,7 +691,13 @@ export const FORBIDDEN_PLACEHOLDERS = [
 export const NON_ROUTINE_CODES = [
   'compliance_blocked',
   'warnings_not_acknowledged',
-  'invalid_act_body',
+  // `InvalidActBody` never puts `invalid_act_body` on the wire — it ships the *diagnostic* code from
+  // `BodyRenderError::code()`. These four are the complete set it can emit, so they are what has to
+  // be marked; listing the variant name instead protected the surface in name only.
+  'invalid_placeholder',
+  'unsupported_markdown',
+  'body_too_large',
+  'body_block_too_large',
   'termo_stale_facts',
   'termo_snapshot_render_drift',
   'termo_snapshot_mismatch',
@@ -715,16 +721,29 @@ export const TIER_STATUSES = [400, 401, 403, 404, 409, 410, 422, 429, 500, 502, 
  * more specific is being hidden.
  */
 const TIER_DEFAULT_CODES = new Set([
-  'not_found',
-  'conflict',
-  'unprocessable',
-  'unavailable',
-  'gone',
-  'too_many_requests',
-  'unauthorized',
-  'forbidden',
-  'bad_request',
+  'http.not_found',
+  'http.conflict',
+  'http.unprocessable',
+  'http.unavailable',
+  'http.gone',
+  'http.too_many_requests',
+  'http.unauthorized',
+  'http.forbidden',
+  'http.bad_request',
 ]);
+
+/**
+ * The two Tier-1 defaults that DO have dedicated copy. `Internal` and `Upstream` are the only
+ * variants the server refuses to let a call site refine (`with_code` is a no-op for them), so their
+ * code is intrinsic rather than "nothing specific assigned yet" — and their message is scrubbed off
+ * the wire, which is exactly why they need their own sentence and a forced-open details block.
+ *
+ * The server sends the `http.`-prefixed form; the rest of this module speaks the bare name.
+ */
+const TIER_DEFAULT_ALIASES: Record<string, string> = {
+  'http.internal': 'internal',
+  'http.upstream': 'upstream',
+};
 
 /** The shape this module reads off a client `ApiError`. Structural, so tests need no class. */
 export interface ApiErrorLike {
@@ -766,7 +785,10 @@ function hasKey(key: string): key is ApiErrorCopyKey {
  */
 export function resolveApiError(error: ApiErrorLike | null | undefined): ApiErrorResolution {
   const status = error?.status;
-  const code = error?.code;
+  const rawCode = error?.code;
+  // `http.internal`/`http.upstream` carry dedicated copy under their bare names; every other
+  // `http.` code is a generic tier default and is matched as-is below.
+  const code = rawCode === undefined ? undefined : (TIER_DEFAULT_ALIASES[rawCode] ?? rawCode);
 
   // A blocked card is terminal and a wrong PIN has a remaining-attempt hint; both are finer than
   // the `pin_rejected` code and neither may read as an ordinary retry.

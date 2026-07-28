@@ -279,16 +279,53 @@ describe('resolution never drops the server detail and never shows raw English a
   });
 
   it('treats a Tier-1 variant default as mapped, not as a gap', () => {
-    // `not_found` carries nothing beyond the status, so the tier headline IS the whole message.
-    const resolved = resolveApiError({ status: 404, code: 'not_found' });
+    // `http.not_found` carries nothing beyond the status, so the tier headline IS the whole message.
+    // The code is the `http.`-prefixed form the server actually emits: asserting on the bare name
+    // would pass while covering nothing.
+    const resolved = resolveApiError({ status: 404, code: 'http.not_found' });
     expect(resolved.key).toBe('apiError.tier.404');
     expect(resolved.unmapped).toBe(false);
     expect(resolved.forceDetails).toBe(false);
   });
 
+  /**
+   * The complete Tier-1 set `ApiError::code()` can emit, transcribed from `error.rs`. Pinned here
+   * because the previous list held the *plan's* bare names while the server shipped `http.`-prefixed
+   * ones: every routine 404/409/422 in the app silently took the unmapped branch, force-opening the
+   * technical-details block and warning in DEV. Nothing went red, because no test named a code the
+   * server actually sends. If the server's vocabulary moves again, this fails.
+   */
+  it.each([
+    ['http.not_found', 404],
+    ['http.conflict', 409],
+    ['http.unprocessable', 422],
+    ['http.unauthorized', 401],
+    ['http.forbidden', 403],
+    ['http.gone', 410],
+    ['http.too_many_requests', 429],
+    ['http.unavailable', 503],
+  ])('%s resolves to its status tier without being treated as a gap', (code, status) => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resolved = resolveApiError({ status, code });
+    expect(resolved.key, `${code} did not reach its tier headline`).toBe(
+      `apiError.tier.${String(status)}`,
+    );
+    expect(resolved.unmapped, `${code} was treated as an unwritten-copy gap`).toBe(false);
+    expect(resolved.forceDetails, `${code} force-opened the details block`).toBe(false);
+    expect(warn, `${code} warned about missing copy that is not missing`).not.toHaveBeenCalled();
+  });
+
   it('forces the detail open for the scrubbed 5xx, because the copy is generic on purpose', () => {
-    expect(resolveApiError({ status: 500, code: 'internal' }).forceDetails).toBe(true);
-    expect(resolveApiError({ status: 502, code: 'upstream' }).forceDetails).toBe(true);
+    // The wire form is `http.`-prefixed; it must reach the dedicated copy, not the status tier.
+    const internal = resolveApiError({ status: 500, code: 'http.internal' });
+    expect(internal.forceDetails).toBe(true);
+    expect(internal.key).toBe('apiError.internal');
+    expect(internal.unmapped).toBe(false);
+
+    const upstream = resolveApiError({ status: 502, code: 'http.upstream' });
+    expect(upstream.forceDetails).toBe(true);
+    expect(upstream.key).toBe('apiError.upstream');
+    expect(upstream.unmapped).toBe(false);
   });
 
   it('resolves the structured PIN status ahead of the code', () => {
