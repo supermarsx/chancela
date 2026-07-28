@@ -39,6 +39,10 @@ collision it avoids.
 for the operator ("companion session", "companion device", and `docs/mobile.md`). This extends
 established vocabulary rather than introducing a third one.
 
+The names are settled: type `SigningCompanion`, pairing device kind `signing_companion`, routes under
+`/v1/signature/companion/...`. The two rejected alternatives are recorded above so that the choice is
+not relitigated later on the assumption that nobody weighed them.
+
 ## Ground truth in the current tree
 
 Established by reading the code, because the design turns on these being true.
@@ -239,9 +243,27 @@ field needs `#[serde(default)]` for the same reason.
 protects a *new* binary reading *old* rows. It does nothing for an *old* binary reading *new* rows:
 once a companion-capable build writes a `kind` field, a rollback to the previous binary hits an
 unknown field, fails to parse, and — through the same silent skip — drops **every** pairing device
-written by the new binary, phones included. The clean answers are to drop `deny_unknown_fields` on
-this struct, or to carry the device kind inside an already-tolerated field. This is a deploy-rollback
-hazard on the existing pairing feature, independent of whether the companion ships.
+written by the new binary, phones included.
+
+This is a deploy-rollback hazard **on the existing pairing feature**, independent of whether the
+signing companion ever ships: it is reachable by any future field added to this struct, not just by
+`kind`. It has been raised with the lane that owns `pairing.rs` as an issue on shipped code, with two
+resolutions and no preference imposed:
+
+1. **Drop `deny_unknown_fields` on this struct** — and pin the rollback direction with a test
+   asserting that a row carrying an *extra* field still rehydrates, mirroring the forward-direction
+   test already at `pairing.rs:1560`.
+2. **Carry the discriminator inside an already-tolerated field** rather than adding a new one, so no
+   unknown key is ever written.
+
+**Resolution pending.** Whichever is chosen must be chosen *deliberately*, and if the attribute is
+kept the struct's doc comment should say the strictness is intentional on the rollback side —
+otherwise the next reader takes it for an oversight and the hazard survives by silence.
+
+This design accommodates either outcome. Option 1 lets the companion add `kind` as an ordinary field
+with `#[serde(default)]`. Option 2 means the companion must **not** add a field at all, and instead
+encodes its device kind inside an existing tolerated one — a constraint on this design, which is why
+it is recorded here rather than only in the other lane's tracker.
 
 ## Failure and refusal
 
