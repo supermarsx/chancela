@@ -7496,7 +7496,6 @@ a.btn--primary {
   align-items: center;
   gap: 0.55rem;
   width: 100%;
-  padding: 0.5rem 0.6rem;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -7994,7 +7993,6 @@ a.btn--primary {
   justify-content: space-between;
   gap: 0.6rem;
   width: 100%;
-  padding: 0.4rem 0.5rem;
   border: 1px solid transparent;
   border-radius: var(--radius);
   background: transparent;
@@ -9795,6 +9793,31 @@ a.btn--primary {
   background-repeat: no-repeat;
   background-position: right 0.8rem center;
   background-size: 0.72rem;
+}
+
+/* --- `.menu-item`: one entry row for every hand-built menu ----------------------
+   A native `<select>`'s options are drawn by the operating system, so the app styles
+   none of them — `.control--select` above dresses only the closed box. That makes the
+   native select the app's de facto reference for how an option row should feel, and it
+   is the one operators singled out as reading well.
+
+   The hand-built menus could not inherit that, so each invented its own entry padding:
+   `.topbar__menu-item` 0.5/0.6, `.session-picker__item` 0.4/0.5,
+   `.template-block-add__menu-item` and `.admin-config-finder__result` 0.5/0.65 — four
+   menus, four values, none of them the reference's. The tightest of them is the one
+   that reads as cramped next to a native select on the same screen.
+
+   So the row metric lives here once, and it is not a new number: it is `.control`'s own
+   `0.55rem 0.7rem`, the padding of the very control the native options drop out of. Each
+   menu keeps its own class for colour, hover, icon layout and selected state, and no
+   longer states its own padding — there is exactly one owner of the spacing, which is
+   what stops the fifth menu inventing a fifth value.
+
+   Deliberately NOT set here: `line-height` and the panels' inter-row `gap`. The menus
+   carry different type sizes and two of them separate their rows while two run them
+   contiguous; those are real design differences, not drift. */
+.menu-item {
+  padding: 0.55rem 0.7rem;
 }
 
 /* Themed checkbox + radio — gold-on-leather boxes with a gilt fill when checked.

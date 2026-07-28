@@ -145,7 +145,7 @@ export function TopbarMenu({
                 end={item.end}
                 role="menuitem"
                 aria-current={item.active ? 'page' : undefined}
-                className={`topbar__menu-item${item.active ? ' is-active' : ''}`}
+                className={`menu-item topbar__menu-item${item.active ? ' is-active' : ''}`}
                 onClick={() => close(false)}
               >
                 {item.icon ? (

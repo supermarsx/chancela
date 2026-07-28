@@ -383,7 +383,7 @@ export function AdminConfigurationFinder({
               const selected = index === selectedIndex;
               return (
                 <button
-                  className="admin-config-finder__result"
+                  className="menu-item admin-config-finder__result"
                   id={`${resultsId}-option-${area.id}`}
                   key={area.id}
                   type="button"

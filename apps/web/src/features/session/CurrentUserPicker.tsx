@@ -318,7 +318,7 @@ export function CurrentUserPicker() {
                         type="button"
                         role="menuitemradio"
                         aria-checked={entry.isCurrent}
-                        className={`session-picker__item${entry.isCurrent ? ' is-current' : ''}`}
+                        className={`menu-item session-picker__item${entry.isCurrent ? ' is-current' : ''}`}
                         disabled={busy}
                         onClick={() => pick(entry)}
                       >

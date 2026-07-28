@@ -781,7 +781,7 @@ function BlockAddMenu({
             <button
               type="button"
               role="menuitem"
-              className="template-block-add__menu-item"
+              className="menu-item template-block-add__menu-item"
               key={kind}
               onClick={() => {
                 onAdd(kind);

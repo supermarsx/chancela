@@ -78,7 +78,7 @@
   gap: 0.75rem;
   width: 100%;
   min-height: 2.45rem;
-  padding: 0.5rem 0.65rem;
+  /* Padding comes from the shared `.menu-item` row metric in theme.css. */
   color: var(--text);
   font: inherit;
   text-align: left;

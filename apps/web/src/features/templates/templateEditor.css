@@ -136,9 +136,10 @@
   box-shadow: 0 0.9rem 2.2rem color-mix(in srgb, #000 28%, transparent);
 }
 
+/* Padding comes from the shared `.menu-item` row metric in theme.css, so this menu cannot
+   drift from the other three. Everything below is this menu's own look. */
 .template-block-add__menu-item {
   width: 100%;
-  padding: 0.5rem 0.65rem;
   border: 0;
   border-radius: calc(var(--radius) - 2px);
   background: transparent;
