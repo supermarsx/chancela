@@ -37,6 +37,7 @@ import { optionsFrom, signatoryCapacityLabels } from '../../api/labels';
 import {
   SIGNATORY_CAPACITIES,
   type PatchTermoAberturaBody,
+  type ReAuth,
   type SignatoryCapacity,
   type TermoClauseView,
   type TermoCompletionPolicy,
@@ -64,6 +65,15 @@ import {
 } from '../../ui';
 import { useTermoT } from './termoStrings';
 import { TermoSlotPkcs12Signer } from './TermoSlotPkcs12Signer';
+
+/**
+ * The exact type-to-confirm phrase the server demands for `termo_abertura.open`
+ * (`ConfirmationAction::phrase`). Fixed and deliberately NOT localised, exactly like `ASSINAR TESTE`
+ * on the CMD production test signature: the operator types this literal string whatever their
+ * locale, and the server compares it byte-for-byte. Do not translate it and do not build it from
+ * catalog copy.
+ */
+const TERMO_OPEN_CONFIRM_PHRASE = 'ABRIR LIVRO';
 
 /** Local, editable copy of a clause (a new clause has no server id yet). */
 type ClauseDraft = { heading: string; text: string };
@@ -305,9 +315,9 @@ function TermoDraftForm({
    * Persist the current edits first (the freeze validates the saved termo), then advance — one
    * promise, so the confirm dialog waits for the whole thing and reports either half's failure.
    */
-  async function runAdvance(): Promise<void> {
+  async function runAdvance(reauth: ReAuth = {}): Promise<void> {
     await patch.mutateAsync(buildBody());
-    await advance.mutateAsync(undefined);
+    await advance.mutateAsync({ confirmation: { reauth } });
   }
 
   function onAdvance() {
@@ -627,11 +637,15 @@ function TermoDraftForm({
         confirmLabel={tt('books.termo.advance.confirm.action')}
         pendingLabel={tt('books.termo.action.advancing')}
         pending={busy}
-        onConfirm={async () => {
+        onConfirm={async ({ reauth }) => {
+          // The dialog gathers the proof; this call site transmits it. `termo_abertura.advance` is
+          // floored at `confirm`, so `reauth` is `{}` today — but an operator may raise the action,
+          // and the server verifies whatever the raised floor demands.
+          //
           // Resolves either way so the dialog closes onto the panel's own error rendering, which
           // is unchanged from before the gate: an `ErrorNote` above the actions plus the toast.
           // Rejecting here would stack the dialog's copy of the server sentence on top of both.
-          await runAdvance().catch((error: unknown) => toast.error(error));
+          await runAdvance(reauth).catch((error: unknown) => toast.error(error));
         }}
       />
     </div>
@@ -782,11 +796,18 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
         confirmLabel={tt('books.termo.open.confirm.action')}
         pendingLabel={tt('books.termo.action.opening')}
         pending={openBook.isPending}
-        onConfirm={async () => {
+        onConfirm={async ({ reauth }) => {
+          // The server VERIFIES this proof (t80): `termo_abertura.open` is floored at
+          // confirm-with-reauth-and-phrase, so a request without both halves is a `403` that opens
+          // nothing. The dialog gathers them and this call site transmits them — the phrase is a
+          // byte-exact literal, deliberately non-localised like `ASSINAR TESTE`.
+          //
           // Resolves either way so the dialog closes onto this panel's own refusal rendering: the
           // reviewed fail-closed note for the evidentiary refusal, `ErrorNote` for everything else.
           // Rejecting would keep the dialog open over that, showing the raw server sentence twice.
-          await openBook.mutateAsync(undefined).catch(() => undefined);
+          await openBook
+            .mutateAsync({ confirmation: { reauth, confirm_phrase: TERMO_OPEN_CONFIRM_PHRASE } })
+            .catch(() => undefined);
         }}
       />
     </div>

@@ -360,12 +360,21 @@ describe('TermoEncerramentoEditor', () => {
     expect(screen.queryByText('O termo ainda não está assinado criptograficamente')).toBeNull();
   });
 
-  // --- The guarded actions the server declares (t78) --------------------------------------------
+  // --- The guarded actions the server declares (t78, enforced t80) ------------------------------
   //
   // `confirmation.rs` registers `termo_encerramento.advance` and `termo_encerramento.close` in
-  // `ROUTE_GUARD` and neither handler calls `require_confirmation`, so for these the client IS the
-  // gate. What these pin is the ABSENCE of a write before the operator confirms — not that a dialog
-  // renders, which would still pass if the mutation had already gone out behind it.
+  // `ROUTE_GUARD`. They are no longer alike:
+  //
+  //   • `termo_encerramento.close` is floored at confirm-with-reauth-and-phrase and the handler now
+  //     CALLS `require_confirmation` (t80), so the server refuses a request whose body carries no
+  //     proof. The dialog gathers it; the request must actually transmit it, which is what
+  //     `carries the gathered proof …` below pins — a client that opened the dialog and then sent an
+  //     empty body would render identically and 403 in production.
+  //   • `termo_encerramento.advance` is floored at `confirm`, which no server can observe, so for
+  //     that one the client really is the gate.
+  //
+  // Both still pin the ABSENCE of a write before the operator confirms — not that a dialog renders,
+  // which would pass even if the mutation had already gone out behind it.
 
   it('writes nothing when the freeze is asked for, until the dialog is confirmed', async () => {
     const calls: RecordedCall[] = [];
@@ -424,6 +433,42 @@ describe('TermoEncerramentoEditor', () => {
 
     fireEvent.click(dialogConfirm()!);
     expect(calls.filter((c) => c.method !== 'GET')).toHaveLength(0);
+  });
+
+  it('carries the gathered proof in the close request the server verifies', async () => {
+    // The server half of this gate (t80) reads `confirmation.reauth` and `confirmation.confirm_phrase`
+    // off the request body and refuses with `403` when either is missing. A dialog that gathers both
+    // and then posts them nowhere looks correct on screen and closes no book, so the transmitted body
+    // is what has to be asserted — not the dialog.
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
+      if (url.endsWith('/termo/encerramento/close'))
+        return Promise.resolve(jsonResponse({ id: 'book-2', entity_id: 'ent-1', state: 'Closed' }));
+      if (url.endsWith('/termo/encerramento')) return Promise.resolve(jsonResponse(SIGNED_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
+    await confirmClose();
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/encerramento/close')),
+      ).toBe(true),
+    );
+    const close = calls.find(
+      (c) => c.method === 'POST' && c.url.endsWith('/termo/encerramento/close'),
+    );
+    const body = close?.body as
+      | { confirmation?: { reauth?: { password?: string }; confirm_phrase?: string } }
+      | undefined;
+    expect(body?.confirmation?.reauth?.password).toBe('segredo-da-amelia');
+    // Byte-exact and deliberately non-localised: the server compares it literally.
+    expect(body?.confirmation?.confirm_phrase).toBe('ENCERRAR LIVRO');
   });
 
   it('signs a slot with a real PKCS#12 co-signature, then the book closes', async () => {

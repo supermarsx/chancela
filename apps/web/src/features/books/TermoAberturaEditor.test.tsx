@@ -21,6 +21,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 interface RecordedCall {
   url: string;
   method: string;
+  body?: unknown;
 }
 
 const DRAFT_TERMO: TermoInstrumentView = {
@@ -388,12 +389,21 @@ describe('TermoAberturaEditor', () => {
     expect(screen.queryByText(termoPtPT['books.termo.open.notSignedTitle'])).toBeNull();
   });
 
-  // --- The guarded actions the server declares (t78) --------------------------------------------
+  // --- The guarded actions the server declares (t78, enforced t80) ------------------------------
   //
-  // `confirmation.rs` registers `termo_abertura.advance` and `termo_abertura.open` in `ROUTE_GUARD`
-  // and neither handler calls `require_confirmation`, so for these the client IS the gate. What
-  // these pin is therefore the ABSENCE of a write before the operator confirms — not that a dialog
-  // renders, which would still pass if the mutation had already gone out behind it.
+  // `confirmation.rs` registers `termo_abertura.advance` and `termo_abertura.open` in `ROUTE_GUARD`.
+  // They are no longer alike:
+  //
+  //   • `termo_abertura.open` is floored at confirm-with-reauth-and-phrase and the handler now CALLS
+  //     `require_confirmation` (t80), so the server refuses a request whose body carries no proof.
+  //     The dialog gathers it; the request must actually transmit it, which is what
+  //     `carries the gathered proof …` below pins — a client that opened the dialog and then sent an
+  //     empty body would render identically and 403 in production.
+  //   • `termo_abertura.advance` is floored at `confirm`, which no server can observe, so for that
+  //     one the client really is the gate.
+  //
+  // Both still pin the ABSENCE of a write before the operator confirms — not that a dialog renders,
+  // which would pass even if the mutation had already gone out behind it.
 
   it('writes nothing when the freeze is asked for, until the dialog is confirmed', async () => {
     const calls: RecordedCall[] = [];
@@ -433,7 +443,7 @@ describe('TermoAberturaEditor', () => {
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
-      calls.push({ url, method });
+      calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
       if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
       if (url.endsWith('/termo/abertura/open'))
         return Promise.resolve(jsonResponse({ id: 'book-2', entity_id: 'ent-1', state: 'Open' }));
@@ -462,6 +472,46 @@ describe('TermoAberturaEditor', () => {
         true,
       ),
     );
+  });
+
+  it('carries the gathered proof in the open request the server verifies', async () => {
+    // The server half of this gate (t80) reads `confirmation.reauth` and `confirmation.confirm_phrase`
+    // off the request body and refuses with `403` when either is missing. A dialog that gathers both
+    // and then posts them nowhere looks correct on screen and opens no book, so the transmitted body
+    // is what has to be asserted — not the dialog.
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method, body: init?.body ? JSON.parse(init.body as string) : undefined });
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
+      if (url.endsWith('/termo/abertura/open'))
+        return Promise.resolve(jsonResponse({ id: 'book-2', entity_id: 'ent-1', state: 'Open' }));
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNED_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    fireEvent.click(
+      await screen.findByRole('button', { name: termoPtPT['books.termo.action.open'] }),
+    );
+    await screen.findByRole('dialog');
+    passOpenGate();
+    fireEvent.click(dialogConfirm()!);
+
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/open'))).toBe(
+        true,
+      ),
+    );
+    const open = calls.find((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/open'));
+    const body = open?.body as
+      | { confirmation?: { reauth?: { password?: string }; confirm_phrase?: string } }
+      | undefined;
+    expect(body?.confirmation?.reauth?.password).toBe('segredo-da-amelia');
+    // Byte-exact and deliberately non-localised, like `ASSINAR TESTE`: the server compares it
+    // literally, so a translated phrase would be a `403` in every locale but pt-PT.
+    expect(body?.confirmation?.confirm_phrase).toBe('ABRIR LIVRO');
   });
 
   it('renders the Sealed phase as status rows with a labelled artifact action row', async () => {

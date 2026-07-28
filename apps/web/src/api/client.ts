@@ -108,6 +108,7 @@ import type {
   LocalDglabInterchangeManifest,
   OpenBookBody,
   TermoInstrumentView,
+  AdvanceTermoBody,
   PatchTermoAberturaBody,
   SignTermoSlotBody,
   SignTermoSlotPkcs12Body,
@@ -1213,8 +1214,8 @@ export const api = {
     get<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura`),
   patchBookTermoAbertura: (bookId: string, body: PatchTermoAberturaBody) =>
     patch<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura`, body),
-  advanceBookTermoAbertura: (bookId: string) =>
-    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/advance`),
+  advanceBookTermoAbertura: (bookId: string, body?: AdvanceTermoBody) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/advance`, body),
   signBookTermoAbertura: (bookId: string, body: SignTermoSlotBody) =>
     post<TermoInstrumentView>(`/v1/books/${bookId}/termo/abertura/sign`, body),
   // Real per-slot PAdES signature with a locally supplied PKCS#12/PFX (desk-app only; a remote server
@@ -1241,8 +1242,8 @@ export const api = {
     get<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento`),
   patchBookTermoEncerramento: (bookId: string, body: PatchTermoEncerramentoBody) =>
     patch<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento`, body),
-  advanceBookTermoEncerramento: (bookId: string) =>
-    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento/advance`),
+  advanceBookTermoEncerramento: (bookId: string, body?: AdvanceTermoBody) =>
+    post<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento/advance`, body),
   signBookTermoEncerramento: (bookId: string, body: SignTermoSlotBody) =>
     post<TermoInstrumentView>(`/v1/books/${bookId}/termo/encerramento/sign`, body),
   // Real per-slot PAdES signature with a locally supplied PKCS#12/PFX (desk-app only; a remote server

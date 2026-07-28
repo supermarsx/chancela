@@ -81,9 +81,10 @@ use time::OffsetDateTime;
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book};
+use crate::confirmation::{ConfirmationAction, require_confirmation};
 use crate::dto::{
-    BookView, CloseBookFromTermo, OpenBookFromTermo, PatchTermoAbertura, PatchTermoEncerramento,
-    SignTermoSlot, TermoInstrumentView, normalize_capacity_note, parse_date,
+    AdvanceTermo, BookView, CloseBookFromTermo, OpenBookFromTermo, PatchTermoAbertura,
+    PatchTermoEncerramento, SignTermoSlot, TermoInstrumentView, normalize_capacity_note, parse_date,
 };
 use crate::error::ApiError;
 use crate::signature::{
@@ -409,9 +410,22 @@ pub async fn advance_abertura(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
+    body: Option<Json<AdvanceTermo>>,
 ) -> Result<Json<TermoInstrumentView>, ApiError> {
     let book_id = BookId(id);
     require_permission(&state, &actor, Permission::BookOpen, scope_of_book(book_id)).await?;
+    // Composes with the RBAC gate above; never replaces it. `TermoAberturaAdvance` is floored at
+    // `Confirm`, which the gate resolves to `Ok` server-side by construction — this call site
+    // exists so that an operator who *raises* the action is actually enforced, rather than
+    // configuring a floor nothing checks.
+    let AdvanceTermo { confirmation } = body.map(|Json(b)| b).unwrap_or_default();
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::TermoAberturaAdvance,
+        &confirmation,
+    )
+    .await?;
     let instance_layout = crate::documents::current_instance_document_layout(&state).await;
 
     // Resolve the family (to pin the template) and confirm the book is still `Created`, snapshotting
@@ -1002,6 +1016,17 @@ pub async fn open_from_termo(
 ) -> Result<Json<BookView>, ApiError> {
     let book_id = BookId(id);
     require_permission(&state, &actor, Permission::BookOpen, scope_of_book(book_id)).await?;
+    // Composes with the RBAC gate above; never replaces it. T3 + the `ABRIR LIVRO` phrase, because
+    // this request is the `book.opened` genesis commit. Runs BEFORE anything is loaded, sealed or
+    // appended, so a refusal leaves the termo `Signing` and the book `Created` — the same
+    // retriable state the evidentiary gate below leaves behind.
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::TermoAberturaOpen,
+        &req.confirmation,
+    )
+    .await?;
     let actor = actor.resolve(&req.actor);
 
     let mut termo = load_book_abertura(&state, book_id).await?;
@@ -1301,6 +1326,7 @@ pub async fn advance_encerramento(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
+    body: Option<Json<AdvanceTermo>>,
 ) -> Result<Json<TermoInstrumentView>, ApiError> {
     let book_id = BookId(id);
     require_permission(
@@ -1308,6 +1334,16 @@ pub async fn advance_encerramento(
         &actor,
         Permission::BookClose,
         scope_of_book(book_id),
+    )
+    .await?;
+    // Same shape and same reason as `advance_abertura`: floored at `Confirm` today, wired so a
+    // raised floor is enforced rather than merely declared.
+    let AdvanceTermo { confirmation } = body.map(|Json(b)| b).unwrap_or_default();
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::TermoEncerramentoAdvance,
+        &confirmation,
     )
     .await?;
     let instance_layout = crate::documents::current_instance_document_layout(&state).await;
@@ -1479,6 +1515,17 @@ pub async fn close_from_termo(
         &actor,
         Permission::BookClose,
         scope_of_book(book_id),
+    )
+    .await?;
+    // Composes with the RBAC gate above; never replaces it. T3 + the `ENCERRAR LIVRO` phrase: this
+    // request seals a termo that asserts the book's ata count and closes the book irreversibly
+    // (`chancela_core::book` has no `Closed -> Open` transition). Runs BEFORE anything is loaded,
+    // sealed or appended, so a refusal leaves the termo `Signing` and the book `Open`.
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::TermoEncerramentoClose,
+        &req.confirmation,
     )
     .await?;
     let actor = actor.resolve(&req.actor);

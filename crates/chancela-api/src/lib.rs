@@ -5676,6 +5676,45 @@ mod tests {
         token
     }
 
+    /// The password [`install_actor_password`] puts on the [`auth_token`] actor.
+    const STEP_UP_PASSWORD: &str = "Cavalo-Certo9!";
+
+    /// Give `token`'s actor a **verifiable** password, so a test can actually satisfy
+    /// `require_step_up` and pass a confirmation gate.
+    ///
+    /// [`auth_token`] seeds a placeholder string as the hash, which is not a PHC envelope and so
+    /// verifies against nothing. That is fine for the routes it was written for, but it makes
+    /// step-up *unsatisfiable* rather than merely unsatisfied — a test that only ever sends no
+    /// proof cannot tell "the gate refused me" apart from "the gate can never be passed", and a
+    /// guard that always refuses is not evidence that the guard works. Every t80 confirmation test
+    /// therefore proves the gate is passable on the same request it proves it refuses.
+    ///
+    /// Resolved through the **session**, not by username, and the reason is a live trap: [`send`]
+    /// auto-seeds a fresh `auth_token` actor for any request that carries no session header, so a
+    /// single unauthenticated `GET /v1/ledger/events` leaves TWO users called `test.actor` in the
+    /// map. `require_step_up` finds its user by username, so the placeholder duplicate can shadow
+    /// the patched one and turn a passing step-up into a `403` depending on hash-map order. Tests
+    /// that install a password must therefore keep every request authenticated.
+    ///
+    /// Deliberately opt-in rather than folded into `auth_token`: hashing is argon2 at real cost
+    /// parameters, and charging it to all 38 of that helper's callers to serve the handful of
+    /// confirmation-gated routes would be a poor trade.
+    async fn install_actor_password(state: &AppState, token: &str, password: &str) {
+        let uid = state
+            .sessions
+            .read()
+            .await
+            .get(token)
+            .expect("the session exists")
+            .user_id;
+        let hash = crate::attestation::hash_secret(password).expect("hash the step-up password");
+        let mut users = state.users.write().await;
+        users
+            .get_mut(&uid)
+            .expect("the session's user exists")
+            .password_hash = Some(hash);
+    }
+
     /// A fresh in-memory state with the RBAC catalog seeded — the in-memory equivalent of a real
     /// first-run install (mirrors [`AppState::from_env`]'s in-memory seeding). Used by the tests that
     /// bootstrap the first user through the API and then act AS that Owner: without a seeded catalog
@@ -8740,8 +8779,15 @@ mod tests {
         assert_eq!(book["state"], "Created");
         let book_id = book["id"].as_str().expect("book id").to_owned();
 
-        // No genesis before the explicit open.
-        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        // No genesis before the explicit open. Authenticated deliberately: `send` seeds a fresh
+        // `auth_token` actor for a session-less request, and this test later installs a step-up
+        // password on its own actor — a second `test.actor` would shadow it (see
+        // `install_actor_password`).
+        let (_, events) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events"), &token),
+        )
+        .await;
         assert!(
             !events
                 .as_array()
@@ -8868,13 +8914,25 @@ mod tests {
 
         // Open FAILS CLOSED: the slots carry only signature *references* (mark_slot_signed), not real
         // cryptographic PAdES signatures over the termo PDF. The evidentiary guardrail refuses to seal
-        // a not-really-signed termo until real per-slot signing is wired (tracked follow-up).
+        // a not-really-signed termo. (Real per-slot PAdES signing IS wired — `.../sign/pkcs12`, t41
+        // via 4230d1cd; this test drives the reference-only path deliberately, to exercise the gate.)
+        //
+        // The request carries a full `TermoAberturaOpen` proof (t80): the confirmation gate now runs
+        // ahead of the evidentiary one, so without it this would refuse at `403` and never reach the
+        // refusal under test.
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, body) = send(
             state.clone(),
             with_session(
                 post_json(
                     &format!("/v1/books/{book_id}/termo/abertura/open"),
-                    json!({"numbering_scheme": "Sequential"}),
+                    json!({
+                        "numbering_scheme": "Sequential",
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ABRIR LIVRO",
+                        },
+                    }),
                 ),
                 &token,
             ),
@@ -8890,7 +8948,11 @@ mod tests {
         );
 
         // The book stays Created and NOTHING entered the hash chain — no fake-signed seal.
-        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let (_, events) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events"), &token),
+        )
+        .await;
         assert!(
             !events
                 .as_array()
@@ -9331,12 +9393,20 @@ mod tests {
         }
 
         // Close FAILS CLOSED: the slots carry only signature references, not real PAdES signatures.
+        // The proof (t80) is what lets the request reach that refusal at all — the confirmation gate
+        // runs first, so an unproven close refuses at `403` and the evidentiary gate never speaks.
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, body) = send(
             state.clone(),
             with_session(
                 post_json(
                     &format!("/v1/books/{book_id}/termo/encerramento/close"),
-                    json!({}),
+                    json!({
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
                 ),
                 &token,
             ),
@@ -9352,7 +9422,11 @@ mod tests {
         );
 
         // The book stays Open and NOTHING entered the chain — no fake-signed close.
-        let (_, events) = send(state.clone(), get("/v1/ledger/events")).await;
+        let (_, events) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events"), &token),
+        )
+        .await;
         assert!(
             !events
                 .as_array()
@@ -9378,6 +9452,508 @@ mod tests {
         assert_eq!(
             termo["state"], "Signing",
             "termo stays Signing, not fake-Sealed"
+        );
+    }
+
+    // =============================================================================================
+    // t80 — the termo confirmation floors are ENFORCED, not merely declared
+    //
+    // `confirmation::ROUTE_GUARD` has floored `termo_abertura.open` and `termo_encerramento.close`
+    // at `ConfirmWithReauthAndPhrase` (`ABRIR LIVRO` / `ENCERRAR LIVRO`) since t56-e0, and the web
+    // client has rendered a `GuardedActionModal` in front of both since 4230d1cd / cf94cd51 — but
+    // `require_confirmation` had exactly THREE call sites in the crate (two in
+    // `cmd_test_signature.rs`, one in `pairing.rs`) and none of them was termo. The dialog gathered
+    // a proof nobody verified, so any caller bypassing the UI could append the `book.opened`
+    // genesis, or seal an encerramento asserting the book's ata count, with no step-up at all.
+    //
+    // "Did not open" / "did not close" is the assertion, not "returned an error": the book's state,
+    // the termo's state and the hash chain are all checked. Each test also proves the gate is
+    // PASSABLE on the same fixture, so a refusal cannot be scored for the wrong reason.
+    // =============================================================================================
+
+    /// Drive a two-phase book to a `Signing` termo de abertura: the state just before `open`.
+    async fn abertura_ready_to_open() -> (AppState, String, String, TempDir) {
+        let (state, token, entity_id, tmp) = state_with_entity().await;
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "PATCH",
+                    &format!("/v1/books/{book_id}/termo/abertura"),
+                    json!({
+                        "signatories": [
+                            {"name": "Amélia Marques", "capacity": "Manager", "order": 0},
+                        ],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/advance"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["state"], "Signing");
+        (state, token, book_id, tmp)
+    }
+
+    /// Drive an open book to a `Signing` termo de encerramento: the state just before `close`.
+    async fn encerramento_ready_to_close() -> (AppState, String, String, TempDir) {
+        let (state, token, entity_id, tmp) = state_with_entity().await;
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": ["Administrador"],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        assert_eq!(book["state"], "Open");
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+
+        let (status, view) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-06-30",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{view}");
+
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "PATCH",
+                    &format!("/v1/books/{book_id}/termo/encerramento"),
+                    json!({
+                        "signatories": [
+                            {"name": "Amélia Marques", "capacity": "Manager", "order": 0},
+                        ],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/advance"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+        assert_eq!(termo["state"], "Signing");
+        (state, token, book_id, tmp)
+    }
+
+    /// Assert the two-phase book is untouched: still `Created`, termo still `Signing`, no genesis.
+    async fn assert_book_not_opened(state: &AppState, token: &str, book_id: &str, why: &str) {
+        // Authenticated deliberately: `send` seeds a fresh `auth_token` actor for a request with
+        // no session header, and a second `test.actor` would shadow the one carrying the step-up
+        // password. See `install_actor_password`.
+        let (_, events) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events"), token),
+        )
+        .await;
+        assert!(
+            !events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "book.opened"),
+            "{why}: no book.opened may exist: {events}"
+        );
+        let (_, book) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}")), token),
+        )
+        .await;
+        assert_eq!(book["state"], "Created", "{why}: the book must not open");
+        let (_, termo) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}/termo/abertura")), token),
+        )
+        .await;
+        assert_eq!(
+            termo["state"], "Signing",
+            "{why}: the termo must stay Signing (retriable), never Sealed"
+        );
+    }
+
+    /// Assert the book is untouched: still `Open`, termo still `Signing`, no `book.closed`.
+    async fn assert_book_not_closed(state: &AppState, token: &str, book_id: &str, why: &str) {
+        // Authenticated for the same reason as `assert_book_not_opened` above.
+        let (_, events) = send(
+            state.clone(),
+            with_session(get("/v1/ledger/events"), token),
+        )
+        .await;
+        assert!(
+            !events
+                .as_array()
+                .expect("events")
+                .iter()
+                .any(|e| e["kind"] == "book.closed"),
+            "{why}: no book.closed may exist: {events}"
+        );
+        let (_, book) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}")), token),
+        )
+        .await;
+        assert_eq!(book["state"], "Open", "{why}: the book must not close");
+        let (_, termo) = send(
+            state.clone(),
+            with_session(get(&format!("/v1/books/{book_id}/termo/encerramento")), token),
+        )
+        .await;
+        assert_eq!(
+            termo["state"], "Signing",
+            "{why}: the termo must stay Signing (retriable), never Sealed"
+        );
+    }
+
+    #[tokio::test]
+    async fn opening_a_book_without_a_confirmation_proof_appends_no_genesis() {
+        let (state, token, book_id, _tmp) = abertura_ready_to_open().await;
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
+
+        // 1. The body every pre-t80 client sent: no `confirmation` key at all.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/open"),
+                    json!({"numbering_scheme": "Sequential"}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert_book_not_opened(&state, &token, &book_id, "no proof at all").await;
+
+        // 2. A real step-up, but no typed phrase. The phrase is the second half of the floor and
+        //    must refuse on its own — otherwise `ConfirmWithReauthAndPhrase` would be indistinguishable
+        //    from `ConfirmWithReauth`.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/open"),
+                    json!({
+                        "numbering_scheme": "Sequential",
+                        "confirmation": { "reauth": { "password": STEP_UP_PASSWORD } },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert_book_not_opened(&state, &token, &book_id, "step-up without the phrase").await;
+
+        // 3. The right phrase, the wrong password. Both halves are checked independently.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/open"),
+                    json!({
+                        "numbering_scheme": "Sequential",
+                        "confirmation": {
+                            "reauth": { "password": "Cavalo-Errado9!" },
+                            "confirm_phrase": "ABRIR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert_book_not_opened(&state, &token, &book_id, "phrase without a valid step-up").await;
+
+        // 4. THE DISCRIMINATOR. A complete, correct proof gets PAST the confirmation gate and lands
+        //    on the evidentiary one (`409`, reference-only slots). Without this, every assertion
+        //    above would also pass against a route that refuses unconditionally, and the test would
+        //    be measuring nothing. The phrase is byte-exact and deliberately non-localised, like
+        //    `ASSINAR TESTE` — a literal here pins it rather than restating `phrase()`.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/abertura/open"),
+                    json!({
+                        "numbering_scheme": "Sequential",
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ABRIR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "a complete proof must pass the confirmation gate and reach the evidentiary one: {body}"
+        );
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not cryptographically signed"),
+            "and the refusal it reaches is the evidentiary one: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn closing_a_book_without_a_confirmation_proof_seals_no_termo() {
+        let (state, token, book_id, _tmp) = encerramento_ready_to_close().await;
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
+
+        // 1. The body every pre-t80 client sent — `closeBookFromTermo` defaults it to `{}`.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/close"),
+                    json!({}),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert_book_not_closed(&state, &token, &book_id, "no proof at all").await;
+
+        // 2. Step-up without the phrase.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/close"),
+                    json!({ "confirmation": { "reauth": { "password": STEP_UP_PASSWORD } } }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert_book_not_closed(&state, &token, &book_id, "step-up without the phrase").await;
+
+        // 3. The abertura's phrase on the encerramento route. Each action names its own phrase, and
+        //    a gate that took any known phrase would let one deliberate act authorise a different one.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/close"),
+                    json!({
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ABRIR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert_book_not_closed(&state, &token, &book_id, "the other action's phrase").await;
+
+        // 4. THE DISCRIMINATOR, as above: a complete proof reaches the evidentiary refusal.
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/close"),
+                    json!({
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "a complete proof must pass the confirmation gate and reach the evidentiary one: {body}"
+        );
+        assert!(
+            body["error"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("not cryptographically signed"),
+            "and the refusal it reaches is the evidentiary one: {body}"
+        );
+    }
+
+    #[tokio::test]
+    async fn advancing_a_termo_accepts_a_proof_and_still_accepts_a_bodyless_request() {
+        // `TermoAberturaAdvance` / `TermoEncerramentoAdvance` are floored at `Confirm`, which
+        // `require_confirmation` resolves to `Ok` **by construction**: there is no server-observable
+        // difference between "the operator accepted a dialog" and "the operator did not". So there
+        // is deliberately NO refusal test here — one would be theatre. What the wiring buys is that
+        // an operator who *raises* either action (`ConfirmationSettings`, once `configured_strictness`
+        // is wired by t56-e1) is enforced instead of ignored.
+        //
+        // What IS testable today, and is the compatibility half of the t80 change: adding the field
+        // must not make a body mandatory. `advanceBookTermoAbertura` has always posted with no body
+        // and no content-type, and `Option<Json<AdvanceTermo>>` is what keeps that a 200 rather
+        // than a 415.
+        let (state, token, entity_id, _tmp) = state_with_entity().await;
+        let (status, book) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/books",
+                    json!({
+                        "entity_id": entity_id,
+                        "kind": "AssembleiaGeral",
+                        "purpose": "livro de atas da assembleia geral",
+                        "opening_date": "2026-01-15",
+                        "required_signatories": [],
+                        "one_shot": false,
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{book}");
+        let book_id = book["id"].as_str().expect("book id").to_owned();
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                body_json(
+                    "PATCH",
+                    &format!("/v1/books/{book_id}/termo/abertura"),
+                    json!({
+                        "signatories": [
+                            {"name": "Amélia Marques", "capacity": "Manager", "order": 0},
+                        ],
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{termo}");
+
+        // No body at all — the shape the shipped client sends.
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                Request::builder()
+                    .method("POST")
+                    .uri(format!("/v1/books/{book_id}/termo/abertura/advance"))
+                    .body(Body::empty())
+                    .expect("bodyless advance request"),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "a bodyless advance still freezes: {termo}"
+        );
+        assert_eq!(termo["state"], "Signing");
+
+        // And the encerramento mirror accepts a body carrying a full proof: the field parses, so a
+        // client can send the same shape it sends to `open`/`close` without a 422.
+        let (state, token, book_id, _tmp2) = encerramento_ready_to_close().await;
+        let (status, termo) = send(
+            state.clone(),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/termo/encerramento/advance"),
+                    json!({
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        // Already `Signing` from the helper, so the transition itself refuses (409) — but it
+        // refuses at the state machine, having parsed and accepted the proof-bearing body.
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "a proof-bearing advance body parses; the refusal is the state machine's: {termo}"
         );
     }
 

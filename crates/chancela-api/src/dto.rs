@@ -53,6 +53,7 @@ use chancela_store::{StoredFollowUp, StoredFollowUpStatus};
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::cae::{CaeRefView, enrich_cae_ref};
+use crate::confirmation::ConfirmationProof;
 use crate::error::ApiError;
 use crate::hex::{hex, parse_hex32};
 use crate::registry::legal_form_name;
@@ -905,8 +906,32 @@ pub struct SignTermoSlot {
     pub signature_id: Option<Uuid>,
 }
 
+/// Body of `POST /v1/books/{id}/termo/abertura/advance` and
+/// `POST /v1/books/{id}/termo/encerramento/advance`: freeze the draft for signing.
+///
+/// Both routes took no body before t80; the whole body is `Option` at the extractor so a caller
+/// that sends none still parses, and the absent body resolves to an empty proof — which the gate
+/// refuses at any strictness above `Confirm`. `TermoAberturaAdvance` / `TermoEncerramentoAdvance`
+/// are floored at `Confirm`, which
+/// [`require_confirmation`](crate::confirmation::require_confirmation) cannot enforce server-side by
+/// construction, so this field carries nothing today; it exists because an operator may **raise**
+/// either action's strictness, and a raised floor with no proof to check would be exactly the
+/// declared-but-unenforced gate t80 closed on `open`/`close`.
+///
+/// Deliberately **no `Debug`**, like every body carrying a
+/// [`ConfirmationProof`](crate::confirmation::ConfirmationProof): the proof holds a plaintext
+/// password.
+#[derive(Default, Deserialize)]
+pub struct AdvanceTermo {
+    #[serde(default)]
+    pub confirmation: ConfirmationProof,
+}
+
 /// Body of `POST /v1/books/{id}/termo/abertura/open`: seal the signed termo and open the book.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// Deliberately **no `Debug`** and no `Clone`: [`ConfirmationProof`] carries a plaintext password
+/// and derives neither, for the reason its own doc comment gives.
+#[derive(Deserialize)]
 pub struct OpenBookFromTermo {
     /// Optional compatibility assertion. The authoritative scheme is pinned on the draft before
     /// its signing snapshot is rendered; an explicit contradictory value is rejected.
@@ -914,15 +939,30 @@ pub struct OpenBookFromTermo {
     pub numbering_scheme: Option<NumberingScheme>,
     #[serde(default = "default_actor")]
     pub actor: String,
+    /// The step-up + typed-phrase proof for `ConfirmationAction::TermoAberturaOpen`, floored at
+    /// `ConfirmWithReauthAndPhrase` (phrase `ABRIR LIVRO`) because opening appends the
+    /// `book.opened` genesis event and a genesis cannot be un-appended. `#[serde(default)]` so an
+    /// absent object deserialises to an empty proof and the gate **refuses** it — the fail-closed
+    /// direction.
+    #[serde(default)]
+    pub confirmation: ConfirmationProof,
 }
 
 /// Body of `POST /v1/books/{id}/termo/encerramento/close` (two-phase CLOSE, t44): seal the signed
 /// termo de encerramento and close the book. Unlike opening, closing carries no numbering scheme —
 /// the book's numbering was fixed at its abertura and cannot change at close.
-#[derive(Debug, Clone, Deserialize)]
+///
+/// Deliberately **no `Debug`** and no `Clone`, for the same reason as [`OpenBookFromTermo`].
+#[derive(Deserialize)]
 pub struct CloseBookFromTermo {
     #[serde(default = "default_actor")]
     pub actor: String,
+    /// The step-up + typed-phrase proof for `ConfirmationAction::TermoEncerramentoClose`, floored
+    /// at `ConfirmWithReauthAndPhrase` (phrase `ENCERRAR LIVRO`) because closing is irreversible in
+    /// fact — `chancela_core::book` has no `Closed -> Open` transition. Same fail-closed default as
+    /// [`OpenBookFromTermo::confirmation`].
+    #[serde(default)]
+    pub confirmation: ConfirmationProof,
 }
 
 fn termo_signatory_records(

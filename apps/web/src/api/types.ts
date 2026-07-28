@@ -6049,6 +6049,29 @@ export interface SignTermoSlotBody {
 export interface OpenBookFromTermoBody {
   numbering_scheme?: NumberingScheme;
   actor?: string;
+  /**
+   * The step-up + typed-phrase proof for the `termo_abertura.open` guarded action, which the server
+   * floors at `confirm_with_reauth_and_phrase` (phrase `ABRIR LIVRO`): opening appends the
+   * `book.opened` genesis event, and a genesis cannot be un-appended. Omitting it is a `403` that
+   * opens nothing — the server verifies this proof as of t80, where before it only declared the
+   * floor and checked nothing.
+   */
+  confirmation?: ConfirmationProof;
+}
+
+/**
+ * Body of `POST /v1/books/{id}/termo/{abertura|encerramento}/advance` (`AdvanceTermo`): freeze the
+ * draft for signing.
+ *
+ * Both routes took no body at all before t80, and still accept none — the server extractor makes
+ * the whole body optional, so omitting it is a `200`, not a `415`. `termo_abertura.advance` and
+ * `termo_encerramento.advance` are floored at `confirm`, which the server cannot enforce by
+ * construction (there is no server-observable difference between an accepted dialog and no dialog),
+ * so the proof carries nothing today. It exists so that an operator who *raises* either action in
+ * the confirmation policy is actually enforced.
+ */
+export interface AdvanceTermoBody {
+  confirmation?: ConfirmationProof;
 }
 
 // --- Termo de encerramento as its own signable ata (two-phase book CLOSE, t44) ----------------
@@ -6119,6 +6142,13 @@ export interface SignTermoSlotPkcs12Body {
  */
 export interface CloseBookFromTermoBody {
   actor?: string;
+  /**
+   * The step-up + typed-phrase proof for the `termo_encerramento.close` guarded action, which the
+   * server floors at `confirm_with_reauth_and_phrase` (phrase `ENCERRAR LIVRO`): closing seals a
+   * termo asserting the book's ata count and is irreversible — there is no `Closed -> Open`
+   * transition. Omitting it is a `403` that closes nothing. Verified server-side as of t80.
+   */
+  confirmation?: ConfirmationProof;
 }
 
 export interface DraftActBody {

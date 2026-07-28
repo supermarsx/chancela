@@ -74,6 +74,7 @@ import type {
   LedgerArchiveDocumentParams,
   LedgerQueryParams,
   OpenBookBody,
+  AdvanceTermoBody,
   PatchTermoAberturaBody,
   SignTermoSlotBody,
   SignTermoSlotPkcs12Body,
@@ -602,7 +603,7 @@ export function usePatchBookTermoAbertura(id: string) {
 export function useAdvanceBookTermoAbertura(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.advanceBookTermoAbertura(id),
+    mutationFn: (body?: AdvanceTermoBody) => api.advanceBookTermoAbertura(id, body),
     onSuccess: (termo) => {
       qc.setQueryData(keys.bookTermoAbertura(id), termo);
     },
@@ -735,7 +736,7 @@ export function usePatchBookTermoEncerramento(id: string) {
 export function useAdvanceBookTermoEncerramento(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.advanceBookTermoEncerramento(id),
+    mutationFn: (body?: AdvanceTermoBody) => api.advanceBookTermoEncerramento(id, body),
     onSuccess: (termo) => {
       qc.setQueryData(keys.bookTermoEncerramento(id), termo);
     },
