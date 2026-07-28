@@ -225,6 +225,36 @@ describe('the must-not-soften set stays loud', () => {
     expect(ptPT['apiError.invalid_act_body']).toMatch(/nada foi guardado/i);
     expect(ptPT['apiError.unsupported_markdown']).toMatch(/nada foi convertido nem removido/i);
   });
+
+  it('keeps the three trust-anchor causes apart, and blames the provider only for its own', () => {
+    // Key names mirror `SigningError`'s variants; the server emits exactly these three. A code the
+    // server sends with no key here falls to the status tier, which is how the catalog silently
+    // drifted behind the emitter once already.
+    const anchorFaults = [
+      'apiError.trust_anchor_not_configured',
+      'apiError.trusted_list_not_anchored',
+    ];
+    const provider = 'apiError.signer_service_not_active';
+    const all = [...anchorFaults, provider];
+
+    for (const key of all) expect(ptPT[key], `${key} has no copy`).toBeTruthy();
+    // Three distinct sentences. Two sharing one is the collapse that made an operator diagnose a
+    // third party for their own configuration.
+    expect(new Set(all.map((key) => ptPT[key])).size).toBe(all.length);
+
+    // Only the signer's own service points at the provider. Both anchor faults are the operator's
+    // configuration and must say so — pointing outward is the original defect, not a wording choice.
+    expect(ptPT[provider]).toMatch(/lado do prestador/i);
+    for (const key of anchorFaults) {
+      expect(ptPT[key], `${key} blames the provider for a local fault`).not.toMatch(
+        /lado do prestador/i,
+      );
+      expect(ptPT[key], `${key} must point at the anchor configuration`).toMatch(/âncora/i);
+    }
+    // A configured-but-wrong anchor must never read as nothing-configured: telling an operator who
+    // did configure an anchor that they configured none is the narrower version of the same lie.
+    expect(ptPT['apiError.trusted_list_not_anchored']).not.toMatch(/ainda não tem/i);
+  });
 });
 
 describe('the cross-user 403 does not enumerate users', () => {

@@ -158,9 +158,16 @@ export const apiErrorPtPT = {
   'apiError.cross_user_recovery_cannot_generate_key':
     'Não é possível gerar uma chave de atestação apenas com a frase de recuperação: a chave é protegida pela palavra-passe atual do utilizador, que tem de ser fornecida.',
 
-  // — Trust anchors (422) — two causes that must stop sharing one sentence ————————————————
-  'apiError.trust_anchor_not_provisioned':
+  // — Trust anchors (422) — THREE causes that must never share one sentence ————————————————
+  // Key names mirror the server's `SigningError` variants exactly, so the two sides share one
+  // vocabulary. Nothing configured, the wrong anchor configured, and the signer's own service being
+  // inactive are three different problems with three different remedies — and only the third is
+  // about the signer at all. Collapsing any two of them re-creates the misdirection that sent
+  // operators to diagnose a third party for their own configuration.
+  'apiError.trust_anchor_not_configured':
     'A assinatura qualificada foi recusada porque este servidor ainda não tem âncoras de confiança configuradas. Sem elas nenhum certificado pode ser dado como fiável. Configure a Lista de Confiança nas definições antes de voltar a assinar.',
+  'apiError.trusted_list_not_anchored':
+    'A assinatura qualificada foi recusada porque a Lista de Confiança não foi autenticada pela âncora de confiança configurada. A âncora pode não corresponder a esta lista, ou ter sido substituída por uma rotação de chaves cujo novo certificado ainda não está configurado. Verifique a âncora nas definições: o problema está deste lado, não no prestador do signatário.',
   'apiError.signer_service_not_active':
     'A assinatura qualificada foi recusada porque o prestador de serviços de confiança do signatário não consta como ativo na Lista de Confiança. O problema está do lado do prestador, não deste servidor.',
 
@@ -456,8 +463,10 @@ export const apiErrorEnglish = {
   'apiError.cross_user_recovery_cannot_generate_key':
     'An attestation key cannot be generated from the recovery phrase alone: the key is protected by the user’s current password, which must be supplied.',
 
-  'apiError.trust_anchor_not_provisioned':
+  'apiError.trust_anchor_not_configured':
     'Qualified signing was refused because this server has no trust anchors configured yet. Without them no certificate can be treated as trusted. Configure the Trusted List in settings before signing again.',
+  'apiError.trusted_list_not_anchored':
+    'Qualified signing was refused because the Trusted List did not authenticate against the configured trust anchor. The anchor may not match this list, or a key rotation may have replaced it with a signing certificate that is not configured yet. Check the anchor in settings: the problem is on this side, not the signer’s provider.',
   'apiError.signer_service_not_active':
     'Qualified signing was refused because the signer’s trust service is not listed as active in the Trusted List. The problem is on the provider’s side, not this server’s.',
 
@@ -705,10 +714,20 @@ export const NON_ROUTINE_CODES = [
   'termo_abertura_not_signed',
   'cc_pin_blocked',
   'signin_throttled',
+  // The server emits the wait-less variant, not `signin_throttled`: the remaining seconds live only
+  // inside the English `error` string and no structured field carries them, so the seconds-bearing
+  // copy would render `{seconds}` verbatim. Listing only `signin_throttled` marked a code nothing
+  // sends and left the one that IS sent unprotected — the same "guard that covers nothing" shape as
+  // `invalid_act_body` above.
+  'signin_throttled.no_wait',
   'credential_proof_throttled',
   'api_key_rate_limited',
   'cluster_not_leader',
   'cross_user_proof_required',
+  // A refused qualified signature is a refusal, not a hiccup, and repeating it changes nothing
+  // until the operator edits their anchor configuration.
+  'trust_anchor_not_configured',
+  'trusted_list_not_anchored',
 ] as const;
 
 /** Statuses with a guaranteed tier headline. Every status `ApiError` can produce is here. */
