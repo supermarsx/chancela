@@ -18,8 +18,10 @@
  * type, the predecessor note — is ASSURANCE or product convenience and must never be worded as a
  * legal requirement. The completion policy leaves the plural-gerência question deliberately open: no
  * copy states the law requires all gerentes to sign, or that one suffices. The `open` step fails
- * closed until real per-slot signing lands; its copy says so plainly rather than implying the book
- * was opened. pt-PT is the source; interpolations here are numeric only (no noun-agreement traps).
+ * closed on a termo whose required slots are not all really signed — real per-slot PAdES signing
+ * ships (`POST …/termo/abertura/sign/pkcs12`), so the refusal copy names the residual cause (a slot
+ * recorded as signed by *reference* only) rather than describing the feature as unbuilt. pt-PT is
+ * the source; interpolations here are numeric only (no noun-agreement traps).
  */
 import { useMemo } from 'react';
 import { useActiveLocale } from '../../i18n/useT';
@@ -78,7 +80,7 @@ export const termoPtPT = {
   // — Falha-fechada da abertura (t23/t41) ————————————————————————————————————
   'books.termo.open.notSignedTitle': 'O termo ainda não está assinado criptograficamente',
   'books.termo.open.notSignedBody':
-    'O livro não pode ser aberto: cada signatário exigido tem de ter uma assinatura PAdES real sobre o PDF do termo. A assinatura real por signatário é um seguimento em curso; até lá, o livro não é aberto e o termo permanece em assinatura.',
+    'O livro não pode ser aberto: cada signatário exigido tem de ter uma assinatura PAdES real sobre o PDF do termo. Registar um signatário como assinado por referência não satisfaz esta exigência — só conta a assinatura criptográfica recolhida sobre o documento congelado. Enquanto faltar alguma, o livro não é aberto e o termo permanece em assinatura.',
   'books.termo.open.error': 'Não foi possível abrir o livro a partir do termo.',
 
   // — Campos de abertura + descrições (Cluster A) ——————————————————————————
@@ -246,7 +248,7 @@ export const termoEnglish = {
 
   'books.termo.open.notSignedTitle': 'The term is not yet cryptographically signed',
   'books.termo.open.notSignedBody':
-    'The book cannot be opened: every required signatory must have a real PAdES signature over the term’s PDF. Real per-signatory signing is a tracked follow-up; until it lands, the book is not opened and the term stays in signing.',
+    'The book cannot be opened: every required signatory must have a real PAdES signature over the term’s PDF. Recording a signatory as signed by reference does not satisfy that requirement — only a cryptographic signature collected over the frozen document counts. While any is missing, the book is not opened and the term stays in signing.',
   'books.termo.open.error': 'Could not open the book from the term.',
 
   'books.termo.field.entity': 'Entity',

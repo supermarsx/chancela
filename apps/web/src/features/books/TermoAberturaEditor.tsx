@@ -10,11 +10,15 @@
  *     "Abrir livro" seals the termo and opens the book (`open`).
  *   • **Sealed** — the termo took effect and the book is open; the record is immutable.
  *
- * Honest until real signing lands (t23/t41): the `open` endpoint FAILS CLOSED with a 409 for every
- * book because no signatory yet carries a real per-slot PAdES signature over the termo's PDF. The
- * panel surfaces that 409 as a clear "not cryptographically signed" note and keeps the book
- * `Created` — it never pretends the book was opened. All copy is ASSURANCE except the two genuinely
- * legal framings (the capacity allow-list and the at-least-one-signatory minimum).
+ * Honest fail-closed open (t23/t41): real per-slot PAdES signing SHIPS — the "Assinar" button drives
+ * `POST …/termo/abertura/sign/pkcs12`, which signs the frozen snapshot with a local PKCS#12
+ * certificate and records the signature in `instrument_signatures`. What still fails closed is a
+ * termo whose required slots are not ALL really signed: `slot.signed` is provisional workflow state
+ * that the reference-only `POST …/termo/abertura/sign` endpoint also sets, and only a real signature
+ * satisfies the server's gate. The panel surfaces that one refusal — matched on the server's stable
+ * `termo_abertura_not_signed` code, never on a bare 409 — and keeps the book `Created`; it never
+ * pretends the book was opened. All copy is ASSURANCE except the two genuinely legal framings (the
+ * capacity allow-list and the at-least-one-signatory minimum).
  */
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
@@ -85,6 +89,22 @@ function slotToDraft(slot: TermoSlotView): SlotDraft {
     required: slot.required,
     order: slot.order,
   };
+}
+
+/**
+ * Whether an `open` failure is the server's evidentiary fail-closed refusal, identified by its
+ * stable error **code** (`chancela-api`'s `termo.rs` `TermoSignatureGate`).
+ *
+ * Matched on the code, not on `status === 409` alone: the open path answers 409 for other reasons
+ * too (the book is no longer `Created`, for one), and rendering those under a headline that asserts
+ * the termo is unsigned tells the operator the wrong cause. Anything unrecognised falls through to
+ * {@link ErrorNote}, which reports what the server actually said. Mirrors
+ * `TermoEncerramentoEditor`'s `closeErrorKind`.
+ */
+function isNotSignedRefusal(error: unknown): boolean {
+  return (
+    error instanceof ApiError && error.status === 409 && error.code === 'termo_abertura_not_signed'
+  );
 }
 
 /** Render a completion policy as plain assurance copy — never as a legal claim about who must sign. */
@@ -603,7 +623,7 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
   // Sequential collection: the next slot allowed to sign is the earliest unsigned required one.
   const nextSlotId = orderedSlots.find((slot) => slot.required && !slot.signed)?.id;
 
-  const openFailedClosed = openBook.error instanceof ApiError && openBook.error.status === 409;
+  const openFailedClosed = isNotSignedRefusal(openBook.error);
 
   return (
     <div className="stack termo-editor">

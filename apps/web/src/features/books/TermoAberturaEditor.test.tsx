@@ -8,6 +8,7 @@ import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach } from 'vitest';
 import { renderWithProviders } from '../../test/utils';
 import { TermoAberturaEditor } from './TermoAberturaEditor';
+import { termoPtPT } from './termoStrings';
 import type { TermoInstrumentView } from '../../api/types';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -264,9 +265,16 @@ describe('TermoAberturaEditor', () => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
       if (url.endsWith('/termo/abertura/open')) {
-        // Until real per-slot PAdES lands (t41) the open fails closed for every book.
+        // The evidentiary gate: a required slot carries no real per-slot PAdES signature (a slot
+        // recorded as signed by *reference* only reaches exactly this refusal).
         return Promise.resolve(
-          jsonResponse({ error: 'the termo de abertura is not cryptographically signed' }, 409),
+          jsonResponse(
+            {
+              error: 'the termo de abertura is not cryptographically signed',
+              code: 'termo_abertura_not_signed',
+            },
+            409,
+          ),
         );
       }
       if (url.endsWith('/termo/abertura/sign')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
@@ -286,10 +294,42 @@ describe('TermoAberturaEditor', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Abrir livro' }));
 
-    // The 409 is surfaced honestly — the book is NOT pretended open.
-    expect(
-      await screen.findByText('O termo ainda não está assinado criptograficamente'),
-    ).toBeTruthy();
+    // The refusal is surfaced honestly — the book is NOT pretended open. Keyed on the exported
+    // copy entry, not on a transcribed sentence: a reworded headline must not flip this test.
+    expect(await screen.findByText(termoPtPT['books.termo.open.notSignedTitle'])).toBeTruthy();
+  });
+
+  /**
+   * The fail-closed headline asserts one specific cause. The open path answers `409` for other
+   * reasons too, and dressing one of those in the "not cryptographically signed" headline reports
+   * the wrong cause for a refusal on a legal instrument. Classified on the server's stable `code`;
+   * anything else falls through to `ErrorNote`, which says what the server said.
+   *
+   * Asserted on the rendered tone class, not on copy: the two notes are distinguishable by
+   * structure alone.
+   */
+  it('does not claim "not signed" for a 409 that is a different refusal', async () => {
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/termo/abertura/open')) {
+        return Promise.resolve(
+          jsonResponse({ error: 'book is not in the Created state; it cannot be opened' }, 409),
+        );
+      }
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNED_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    const { container } = renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: termoPtPT['books.termo.action.open'] }),
+    );
+
+    await waitFor(() => expect(container.querySelector('.inline-warning--error')).toBeTruthy());
+    expect(container.querySelector('.inline-warning--warn')).toBeNull();
+    expect(screen.queryByText(termoPtPT['books.termo.open.notSignedTitle'])).toBeNull();
   });
 
   it('renders the Sealed phase as status rows with a labelled artifact action row', async () => {
@@ -396,7 +436,7 @@ describe('TermoAberturaEditor', () => {
         true,
       ),
     );
-    expect(screen.queryByText('O termo ainda não está assinado criptograficamente')).toBeNull();
+    expect(screen.queryByText(termoPtPT['books.termo.open.notSignedTitle'])).toBeNull();
   });
 
   it('does not collect or submit PKCS#12 secrets outside the desktop app', async () => {
