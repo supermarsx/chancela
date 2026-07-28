@@ -2322,7 +2322,7 @@ export const ptPT: Catalog = {
     'Nenhuma política ativa correspondeu ao candidato.',
   'settings.privacy.retention.dryRun.column.result': 'Resultado',
   'settings.privacy.register.field.processorName': 'Nome do processador',
-  'settings.privacy.register.field.dpiaTitle': 'Título da DPIA',
+  'settings.privacy.register.field.dpiaTitle': 'Título da AIPD',
   'settings.privacy.register.field.purpose': 'Finalidade',
   'settings.privacy.register.field.legalBasis': 'Base legal',
   'settings.privacy.register.field.categories': 'Categorias de dados',
@@ -2337,7 +2337,7 @@ export const ptPT: Catalog = {
   'settings.privacy.evidence.field.notes': 'Notas de evidência',
   'settings.privacy.evidence.operator.title': 'Evidência de operador',
   'settings.privacy.evidence.operator.dpiaBody':
-    'Esta evidência regista apenas revisão ou exercício local da DPIA. Não submete à autoridade, não aceita revisão legal, não entrega externamente, não conclui a DPIA e não certifica conformidade.',
+    'Esta evidência regista apenas revisão ou exercício local da AIPD. Não submete à autoridade, não aceita revisão legal, não entrega externamente, não conclui a AIPD e não certifica conformidade.',
   'settings.privacy.evidence.operator.breachBody':
     'Esta evidência regista apenas revisão ou exercício. Não notifica a autoridade nem os titulares.',
   'settings.privacy.evidence.operator.transferBody':
@@ -5195,13 +5195,13 @@ export const ptPT: Catalog = {
   'settings.privacy.subnav.aria': 'Áreas de privacidade',
   'settings.privacy.subtab.registers.label': 'Registos',
   'settings.privacy.subtab.registers.desc':
-    'Processadores, avaliações de impacto (DPIA), manuais de violação e controlos de transferência.',
+    'Processadores, avaliações de impacto (AIPD), manuais de violação e controlos de transferência.',
   'settings.privacy.subtab.retention.label': 'Retenção',
   'settings.privacy.subtab.retention.desc':
     'Políticas de retenção, candidatos vencidos, simulação e fila de revisão de execução.',
   'settings.privacy.subtab.guidance.label': 'Orientação',
   'settings.privacy.subtab.guidance.desc':
-    'Modelo local de DPIA e notas sobre a revisão consultiva periódica.',
+    'Modelo local de AIPD e notas sobre a revisão consultiva periódica.',
   'settings.privacy.status.all': 'Todos os estados',
   'settings.privacy.status.draft': 'Rascunho',
   'settings.privacy.status.active': 'Ativo',
@@ -5231,20 +5231,20 @@ export const ptPT: Catalog = {
   'settings.privacy.register.processor.title': 'Processadores RGPD',
   'settings.privacy.register.processor.lede':
     'Registo dos processadores, subprocessadores e categorias de dados tratados por terceiros.',
-  'settings.privacy.register.dpia.title': 'DPIAs',
+  'settings.privacy.register.dpia.title': 'Avaliações de impacto (AIPD)',
   'settings.privacy.register.dpia.lede':
     'Avaliações de impacto com finalidade, base legal, categorias de dados e risco atual.',
   'settings.privacy.register.column.processor': 'Processador',
-  'settings.privacy.register.column.dpia': 'DPIA',
+  'settings.privacy.register.column.dpia': 'AIPD',
   'settings.privacy.register.column.purpose': 'Finalidade',
   'settings.privacy.register.column.categories': 'Categorias',
   'settings.privacy.register.column.subprocessors': 'Subprocessadores',
   'settings.privacy.register.column.updated': 'Atualizado',
-  'settings.privacy.guidance.title': 'Modelo DPIA local',
+  'settings.privacy.guidance.title': 'Modelo local de AIPD',
   'settings.privacy.guidance.lede':
-    'Pacote local/offline de campos, perguntas e verificações para DPIA; não lê nem apresenta registos de DPIA, processadores, titulares, destinatários, notas, bases legais ou segredos.',
+    'Pacote local/offline de campos, perguntas e verificações para AIPD; não lê nem apresenta registos de AIPD, processadores, titulares, destinatários, notas, bases legais ou segredos.',
   'settings.privacy.guidance.empty.title': 'Modelo indisponível',
-  'settings.privacy.guidance.empty.body': 'O pacote DPIA local não foi devolvido pela API.',
+  'settings.privacy.guidance.empty.body': 'O pacote local de AIPD não foi devolvido pela API.',
   'settings.privacy.guidance.dl.id': 'Identificador',
   'settings.privacy.guidance.dl.scope': 'Âmbito',
   'settings.privacy.guidance.dl.execution': 'Execução',
@@ -5305,7 +5305,7 @@ export const ptPT: Catalog = {
   'settings.privacy.dpiaTemplate.section.consultation_escalation.desc':
     'Registe perguntas para decisões de escalamento do operador sem alegar que houve consulta ou que foi obtida aprovação da autoridade.',
   'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.0':
-    'Que funções de revisor interno devem inspecionar esta DPIA?',
+    'Que funções de revisor interno devem inspecionar esta AIPD?',
   'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.1':
     'Que pergunta de consulta ou de escalamento permanece em aberto?',
   'settings.privacy.dpiaTemplate.section.consultation_escalation.prompt.2':
@@ -5377,7 +5377,7 @@ export const ptPT: Catalog = {
   'settings.privacy.dpiaTemplate.operatorAction.0':
     'Preencha os marcadores localmente com notas redigidas por pessoas, fora da resposta deste modelo.',
   'settings.privacy.dpiaTemplate.operatorAction.1':
-    'Reveja necessidade, proporcionalidade, riscos, salvaguardas e perguntas de escalamento antes de qualquer atualização separada do registo de DPIA.',
+    'Reveja necessidade, proporcionalidade, riscos, salvaguardas e perguntas de escalamento antes de qualquer atualização separada do registo de AIPD.',
   'settings.privacy.dpiaTemplate.operatorAction.2':
     'Mantenha a falso as alegações de submissão à autoridade, aceitação jurídica, validação externa, pontuação automática, conclusão, certificação e mutação do registo, salvo se evidenciadas em separado fora deste modelo.',
   'settings.privacy.dpiaTemplate.operatorAction.3':
@@ -5415,7 +5415,7 @@ export const ptPT: Catalog = {
   'settings.privacy.help.processor':
     'Um processador trata dados pessoais por conta da organização. Este registo documenta quem trata, para quê, com que base legal e que subprocessadores usa.',
   'settings.privacy.help.dpia':
-    'Uma DPIA (avaliação de impacto sobre a proteção de dados) documenta os riscos de um tratamento e as medidas para os reduzir. Este registo é apenas local e consultivo.',
+    'Uma AIPD (avaliação de impacto sobre a proteção de dados) documenta os riscos de um tratamento e as medidas para os reduzir. Este registo é apenas local e consultivo.',
   'settings.privacy.help.breach':
     'Um manual de resposta a violações reúne, com antecedência, os canais de deteção, os passos de contenção e quem notificar. Registar aqui não notifica ninguém.',
   'settings.privacy.help.transfer':
@@ -5547,7 +5547,7 @@ export const ptPT: Catalog = {
   'settings.privacy.advisory.detail.noClaims':
     'Sem notificação, aprovação, execução ou certificação.',
   'settings.privacy.help.guidance':
-    'Um pacote local e offline de campos, perguntas e verificações para conduzir uma DPIA; é apenas orientação e não substitui a avaliação jurídica.',
+    'Um pacote local e offline de campos, perguntas e verificações para conduzir uma AIPD; é apenas orientação e não substitui a avaliação jurídica.',
   'data.status.subnav.aria': 'Sub-secções da gestão de dados',
   'data.status.tab.storage': 'Armazenamento',
   'data.status.tab.storage.desc':

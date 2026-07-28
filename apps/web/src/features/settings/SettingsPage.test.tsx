@@ -4287,7 +4287,7 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Cloud Processor')).toBeTruthy();
     expect(await screen.findByText('Marketing profiling')).toBeTruthy();
 
-    const dpiaPanel = screen.getByText('DPIAs').closest('section');
+    const dpiaPanel = screen.getByText('Avaliações de impacto (AIPD)').closest('section');
     expect(dpiaPanel).toBeTruthy();
     fireEvent.change(within(dpiaPanel!).getByLabelText('Pesquisar'), {
       target: { value: 'marketing' },
@@ -4336,7 +4336,7 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Orientação');
 
-    const panel = (await screen.findByText('Modelo DPIA local')).closest('section');
+    const panel = (await screen.findByText('Modelo local de AIPD')).closest('section');
     expect(panel).toBeTruthy();
     expect(await within(panel!).findByText('privacy-dpia-guidance/v1')).toBeTruthy();
     // t15: the guidance template's wire copy stays English, but the panel resolves each stable
@@ -4381,7 +4381,7 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
-    const dpiaPanel = (await screen.findByText('DPIAs')).closest('section');
+    const dpiaPanel = (await screen.findByText('Avaliações de impacto (AIPD)')).closest('section');
     expect(dpiaPanel).toBeTruthy();
     expect(await within(dpiaPanel!).findByText('Marketing profiling')).toBeTruthy();
     expect(await within(dpiaPanel!).findByText(/Sem certificação de conformidade/)).toBeTruthy();
