@@ -800,6 +800,7 @@ function gate3(textInput, readSourceInput) {
         );
         continue;
       }
+      assertCitedTestRuns(relative, id, `docs/signing-trust-claims.md:${lineOf(text, start)}`);
       for (const name of names) {
         references += 1;
         if (!new RegExp(`\\bfn\\s+${name}\\b`, "u").test(source)) {
@@ -821,6 +822,93 @@ function gate3(textInput, readSourceInput) {
     );
   }
   return { states, references };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Is a cited test actually COMPILED? Existing on disk is not the same as running.
+//
+// `crates/chancela-api` sets `autotests = false` and declares 15 `[[test]]` targets for 50 files
+// in `tests/`. The other 35 run only because a `suite_*.rs` aggregator `mod`-includes them. A
+// file that nobody wires compiles nowhere and runs never — so a PROVEN entry citing it would
+// assert a proof that CANNOT FAIL. That is this lane's own defect class, inside the register
+// that exists to prevent it, and no amount of `fn <name>` grepping can see it.
+//
+// Modelled, not assumed: nothing about a filename says whether it is wired.
+
+const crateReachability = new Map();
+
+function reachableTestFiles(crateDir) {
+  if (crateReachability.has(crateDir)) return crateReachability.get(crateDir);
+
+  const manifestPath = join(repoRoot, crateDir, "Cargo.toml");
+  let manifest;
+  try {
+    manifest = readFileSync(manifestPath, "utf8");
+  } catch {
+    fatal(`${crateDir}/Cargo.toml cannot be read, so test reachability cannot be established.`);
+  }
+
+  // With autotests on (the default), cargo discovers every `tests/*.rs` as its own target.
+  if (!/^\s*autotests\s*=\s*false/mu.test(manifest)) {
+    crateReachability.set(crateDir, null); // null = "everything is reachable"
+    return null;
+  }
+
+  const declared = [...manifest.matchAll(/^\s*path\s*=\s*"(tests\/[^"]+)"/gmu)].map((m) => m[1]);
+  if (declared.length === 0) {
+    fatal(
+      `${crateDir}/Cargo.toml sets autotests = false but declares no test paths. Every test in ` +
+        "that crate is dead code; the manifest is broken, not the register.",
+    );
+  }
+
+  // Walk aggregator `mod` includes transitively — a suite may include a suite.
+  const reachable = new Set(declared);
+  const queue = [...declared];
+  while (queue.length > 0) {
+    const current = queue.pop();
+    let source;
+    try {
+      source = readFileSync(join(repoRoot, crateDir, current), "utf8");
+    } catch {
+      continue; // A declared path that does not exist is cargo's problem, not the register's.
+    }
+    const dir = current.slice(0, current.lastIndexOf("/"));
+    // `#[path = "x.rs"] mod x;` and bare `mod x;` both pull a sibling file into this target.
+    for (const m of source.matchAll(/#\[path\s*=\s*"([^"]+)"\]\s*(?:pub\s+)?mod\s+[a-z0-9_]+\s*;/gu)) {
+      const next = `${dir}/${m[1]}`;
+      if (!reachable.has(next)) {
+        reachable.add(next);
+        queue.push(next);
+      }
+    }
+    for (const m of source.matchAll(/^\s*(?:pub\s+)?mod\s+([a-z0-9_]+)\s*;/gmu)) {
+      for (const candidate of [`${dir}/${m[1]}.rs`, `${dir}/${m[1]}/mod.rs`]) {
+        if (!reachable.has(candidate)) {
+          reachable.add(candidate);
+          queue.push(candidate);
+        }
+      }
+    }
+  }
+  crateReachability.set(crateDir, reachable);
+  return reachable;
+}
+
+/** A cited path that is not compiled into any test binary is a proof that never runs. */
+function assertCitedTestRuns(relative, id, location) {
+  const match = /^(crates\/[^/]+)\/(tests\/.+)$/u.exec(relative);
+  if (!match) return; // `src/…` is covered by the crate's lib test target, which always exists.
+  const reachable = reachableTestFiles(match[1]);
+  if (reachable === null || reachable.has(match[2])) return;
+  finding(
+    "gate3-claims-register",
+    location,
+    `${id} cites tests in \`${relative}\`, which is compiled into NO test target — ` +
+      `${match[1]} sets autotests = false and neither declares this file nor \`mod\`-includes ` +
+      "it from a declared suite. The test never runs, so the proof cannot fail. Wire the file " +
+      "into a target, or the entry is REVIEWED, not PROVEN.",
+  );
 }
 
 // =============================================================================================
@@ -1047,6 +1135,27 @@ function runSelfTest() {
     return names.join(",") === "primeiro,Beta"
       ? null
       : `expected "primeiro,Beta", got "${names.join(",")}"`;
+  });
+
+  // Test reachability: existing on disk is not the same as being compiled and run.
+  check("a suite-included test file is recognised as compiled", () => {
+    const reachable = reachableTestFiles("crates/chancela-api");
+    if (reachable === null) {
+      return "chancela-api no longer sets autotests = false; this model is void, not passing";
+    }
+    return reachable.has("tests/signing_configure_gate.rs")
+      ? null
+      : "signing_configure_gate.rs is mod-included by suite_signatures.rs but was not recognised, " +
+          "so a real proof would be reported as never running";
+  });
+
+  check("a tests/ file wired into no target is NOT treated as compiled", () => {
+    const reachable = reachableTestFiles("crates/chancela-api");
+    if (reachable === null) return "autotests model unavailable";
+    return reachable.has("tests/nothing_wires_this_file.rs")
+      ? "an unwired test path was treated as compiled — a PROVEN entry citing a test that never " +
+          "runs would pass, which is the defect this register exists to prevent"
+      : null;
   });
 
   let failed = 0;

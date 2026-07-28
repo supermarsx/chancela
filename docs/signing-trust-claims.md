@@ -17,7 +17,7 @@ and there is no fourth:
 
 | state | meaning |
 |---|---|
-| **PROVEN** | A named test fails if the claim stops being true. The test path and name are given. |
+| **PROVEN** | A named test fails if the claim stops being true. The test path and name are given. `check-docs-claims.mjs` enforces that the test **exists** and that its file is **compiled into a real test target** — `chancela-api` sets `autotests = false`, so a file nobody wires into a `[[test]]` target or a `suite_*.rs` aggregator never runs, and a proof that never runs cannot fail. |
 | **REVIEWED** | No test proves it. A human read the code against the prose on the date shown. This is a weaker guarantee and is labelled as one. |
 | **FALSE** | The doc claims something the code does not do. Tracked, owned, and dated — never quietly left in place. |
 
@@ -39,10 +39,13 @@ new substrate:**
 - **Claims about absence** (*"never persisted"*, *"no endpoint sets it directly"*). A test can show
   a path does not do something; it cannot show no path does. Entries of this shape are REVIEWED at
   best, and the label is doing real work.
-- **Whether a proving test is any good.** That a cited test *exists* is mechanically enforced —
-  `check-docs-claims.mjs` gate 3 fails if a PROVEN entry cites a function that is not there, so an
-  entry cannot quietly outlive its proof through a rename. What no gate can check is whether the
-  test actually exercises the claim, or is thorough. That coupling is asserted by a human.
+- **Whether a proving test is any good.** That a cited test *exists*, and that its file is actually
+  **compiled into a test target**, are both mechanically enforced — gate 3 fails if a PROVEN entry
+  cites a function that is not there, so an entry cannot quietly outlive its proof through a rename,
+  and it fails if the file is wired into no target, because a test that never runs is a proof that
+  cannot fail. What no gate can check is whether the test actually exercises the claim, or is
+  thorough: a test that runs, passes, and asserts nothing of substance still reads as PROVEN here.
+  That coupling is asserted by a human.
 - **Prose without backticks**, which the mechanised halves also miss.
 
 ## Maintenance rule
