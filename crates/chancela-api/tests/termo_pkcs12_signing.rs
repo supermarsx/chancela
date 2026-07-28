@@ -45,6 +45,13 @@ use common::{TEST_PASSWORD, password_hash};
 const PFX_PASSWORD: &str = "correct horse battery staple";
 const OID_SHA256_WITH_RSA: ObjectIdentifier = ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.11");
 
+/// The typed phrases `ConfirmationAction::TermoAberturaOpen` and `TermoEncerramentoClose` carry, both
+/// being floored at `ConfirmWithReauthAndPhrase`. **Fixed and deliberately non-localised**: they are
+/// tokens to transcribe, not sentences to read, so they never come from a locale catalog. Spelling
+/// them byte-exact here pins the contract a real client must reproduce.
+const OPEN_PHRASE: &str = "ABRIR LIVRO";
+const CLOSE_PHRASE: &str = "ENCERRAR LIVRO";
+
 /// A self-cleaning data directory so `AppState::with_data_dir` gets a real store.
 struct TmpDir(PathBuf);
 
@@ -342,6 +349,27 @@ fn open_req(book_id: &str, token: &str, body: Value) -> Request<Body> {
     )
 }
 
+/// A **complete** `POST .../termo/abertura/open` body: the T3 confirmation proof the route demands
+/// (the acting operator's step-up password + the exact typed phrase), plus the optional
+/// numbering-scheme assertion for the one test that exercises it.
+///
+/// `bootstrap` gives the operator a real argon2 hash of [`TEST_PASSWORD`], so this proof genuinely
+/// passes `require_step_up` rather than merely being present. Every test that wants to reach a gate
+/// *after* the confirmation gate starts from here — the same shape
+/// `cmd_test_signature.rs`'s `initiate_body` uses for `ASSINAR TESTE`.
+fn open_body(numbering_scheme: Option<&str>) -> Value {
+    let mut body = json!({
+        "confirmation": {
+            "reauth": { "password": TEST_PASSWORD },
+            "confirm_phrase": OPEN_PHRASE,
+        },
+    });
+    if let Some(scheme) = numbering_scheme {
+        body["numbering_scheme"] = json!(scheme);
+    }
+    body
+}
+
 async fn ledger_events(state: &AppState, token: &str) -> Vec<Value> {
     let (status, body) = send(state, get_req("/v1/ledger/events", token)).await;
     assert_eq!(status, StatusCode::OK, "ledger events: {body}");
@@ -403,7 +431,7 @@ async fn genuinely_cosigned_termo_opens_and_preserves_the_signed_set() {
     cosign_both_slots(&state, &token, &book_id, &slot0, &slot1).await;
 
     // Open now succeeds — the fail-closed gate sees the real per-slot signatures at ActId(book.id).
-    let (status, view) = send(&state, open_req(&book_id, &token, json!({}))).await;
+    let (status, view) = send(&state, open_req(&book_id, &token, open_body(None))).await;
     assert_eq!(status, StatusCode::OK, "open: {view}");
     assert_eq!(view["state"], "Open", "book is Open: {view}");
 
@@ -574,7 +602,9 @@ async fn partially_cosigned_termo_still_fails_closed() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = send(&state, open_req(&book_id, &token, json!({}))).await;
+    // The proof is complete, so the request clears the confirmation gate and the 409 below can only
+    // come from the evidentiary co-signature gate — not from a step-up refusal upstream of it.
+    let (status, body) = send(&state, open_req(&book_id, &token, open_body(None))).await;
     assert_eq!(status, StatusCode::CONFLICT, "partial-sign open: {body}");
     assert!(
         body["error"]
@@ -604,9 +634,11 @@ async fn open_rejects_a_numbering_scheme_that_contradicts_the_signed_snapshot() 
     let (book_id, slot0, slot1) = seed_frozen_termo(&state, &token).await;
     cosign_both_slots(&state, &token, &book_id, &slot0, &slot1).await;
 
+    // The proof is complete, so the request clears the confirmation gate and the 422 below is the
+    // scheme contradiction specifically — not a step-up refusal upstream of it.
     let (status, body) = send(
         &state,
-        open_req(&book_id, &token, json!({ "numbering_scheme": "LooseLeaf" })),
+        open_req(&book_id, &token, open_body(Some("LooseLeaf"))),
     )
     .await;
     assert_eq!(
@@ -614,12 +646,107 @@ async fn open_rejects_a_numbering_scheme_that_contradicts_the_signed_snapshot() 
         StatusCode::UNPROCESSABLE_ENTITY,
         "scheme mismatch: {body}"
     );
+    assert!(
+        body["error"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("contradict the signed document"),
+        "the 422 names the scheme contradiction: {body}"
+    );
 
     // The book stays Created and retriable under the correct (Sequential) scheme.
     let (_, book) = send(&state, get_req(&format!("/v1/books/{book_id}"), &token)).await;
     assert_eq!(book["state"], "Created");
-    let (status, view) = send(&state, open_req(&book_id, &token, json!({}))).await;
+    let (status, view) = send(&state, open_req(&book_id, &token, open_body(None))).await;
     assert_eq!(status, StatusCode::OK, "retry under Sequential: {view}");
+    assert_eq!(view["state"], "Open");
+}
+
+#[tokio::test]
+async fn open_without_a_complete_confirmation_proof_appends_no_genesis() {
+    // The guard that would have caught t80's gap, at the level where the gap survived.
+    // `termo_abertura.open` has been floored at `ConfirmWithReauthAndPhrase` (`ABRIR LIVRO`) since
+    // t56-e0, but `require_confirmation` was called nowhere in the termo handlers until b3817fc0:
+    // the dialog gathered a step-up proof the request never carried and the server never checked.
+    // b3817fc0's own refusal tests live in the crate's `--lib` target; `--lib` is not the crate, so
+    // this is the integration-target counterpart.
+    //
+    // The fixture is FULLY co-signed on purpose. Every refusal below is therefore the confirmation
+    // gate and nothing else (the evidentiary gate would pass), and the last request proves the gate
+    // is PASSABLE on the same fixture — so a 403 can never be scored for the wrong reason.
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let (book_id, slot0, slot1) = seed_frozen_termo(&state, &token).await;
+    cosign_both_slots(&state, &token, &book_id, &slot0, &slot1).await;
+
+    let refused = [
+        ("no confirmation object at all (the pre-t80 body)", json!({})),
+        (
+            "step-up only, no phrase",
+            json!({ "confirmation": { "reauth": { "password": TEST_PASSWORD } } }),
+        ),
+        (
+            "the right phrase but no step-up",
+            json!({ "confirmation": { "confirm_phrase": OPEN_PHRASE } }),
+        ),
+        (
+            "the phrase in the wrong case — it is compared byte-exact",
+            json!({
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": "abrir livro",
+                },
+            }),
+        ),
+        (
+            "the right phrase with the wrong password",
+            json!({
+                "confirmation": {
+                    "reauth": { "password": "nao-e-a-palavra-passe" },
+                    "confirm_phrase": OPEN_PHRASE,
+                },
+            }),
+        ),
+    ];
+
+    for (label, body) in refused {
+        let (status, response) = send(&state, open_req(&book_id, &token, body)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{label}: the confirmation gate must refuse the open with 403: {response}"
+        );
+        assert_ne!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{label}: a confirmation failure must never be a 401 — that signs the operator out"
+        );
+
+        // The gate runs before anything is loaded, sealed or appended, so the refusal leaves the
+        // book `Created`, the termo `Signing`, and the hash chain without a genesis.
+        let (_, book) = send(&state, get_req(&format!("/v1/books/{book_id}"), &token)).await;
+        assert_eq!(book["state"], "Created", "{label}: book untouched: {book}");
+        let (_, termo) = send(
+            &state,
+            get_req(&format!("/v1/books/{book_id}/termo/abertura"), &token),
+        )
+        .await;
+        assert_eq!(
+            termo["state"], "Signing",
+            "{label}: termo not sealed: {termo}"
+        );
+        let events = ledger_events(&state, &token).await;
+        assert!(
+            !events.iter().any(|e| e["kind"] == "book.opened"),
+            "{label}: no book.opened genesis on an unproven open: {events:?}"
+        );
+    }
+
+    // Same fixture, complete proof: the gate is passable, so every 403 above was the missing proof
+    // rather than a guard that can never be satisfied.
+    let (status, view) = send(&state, open_req(&book_id, &token, open_body(None))).await;
+    assert_eq!(status, StatusCode::OK, "the complete proof opens: {view}");
     assert_eq!(view["state"], "Open");
 }
 
@@ -974,6 +1101,18 @@ fn close_req(book_id: &str, token: &str, body: Value) -> Request<Body> {
     )
 }
 
+/// A **complete** `POST .../termo/encerramento/close` body. Unlike opening, closing carries no
+/// numbering scheme — the book's numbering was fixed at its abertura — so the T3 proof is the whole
+/// body. See [`open_body`] for why this proof actually passes rather than merely being present.
+fn close_body() -> Value {
+    json!({
+        "confirmation": {
+            "reauth": { "password": TEST_PASSWORD },
+            "confirm_phrase": CLOSE_PHRASE,
+        },
+    })
+}
+
 #[tokio::test]
 async fn genuinely_cosigned_encerramento_closes_and_preserves_the_signed_set() {
     // The CLOSE mirror of `genuinely_cosigned_termo_opens...`: a termo de encerramento whose every
@@ -1021,7 +1160,7 @@ async fn genuinely_cosigned_encerramento_closes_and_preserves_the_signed_set() {
     assert_eq!(status, StatusCode::OK, "sign encerramento slot 1: {view}");
 
     // Close now succeeds — the fail-closed gate sees the real per-slot signatures.
-    let (status, view) = send(&state, close_req(&book_id, &token, json!({}))).await;
+    let (status, view) = send(&state, close_req(&book_id, &token, close_body())).await;
     assert_eq!(status, StatusCode::OK, "close: {view}");
     assert_eq!(view["state"], "Closed", "book is Closed: {view}");
 
@@ -1120,7 +1259,9 @@ async fn partially_cosigned_encerramento_still_fails_closed() {
     .await;
     assert_eq!(status, StatusCode::OK);
 
-    let (status, body) = send(&state, close_req(&book_id, &token, json!({}))).await;
+    // The proof is complete, so the request clears the confirmation gate and the 409 below can only
+    // come from the evidentiary co-signature gate — not from a step-up refusal upstream of it.
+    let (status, body) = send(&state, close_req(&book_id, &token, close_body())).await;
     assert_eq!(status, StatusCode::CONFLICT, "partial-sign close: {body}");
     assert!(
         body["error"]
@@ -1138,6 +1279,104 @@ async fn partially_cosigned_encerramento_still_fails_closed() {
         !events.iter().any(|e| e["kind"] == "book.closed"),
         "no book.closed on a partially-signed encerramento: {events:?}"
     );
+}
+
+#[tokio::test]
+async fn close_without_a_complete_confirmation_proof_seals_no_termo() {
+    // The CLOSE mirror of `open_without_a_complete_confirmation_proof_appends_no_genesis`.
+    // `termo_encerramento.close` is floored at `ConfirmWithReauthAndPhrase` (`ENCERRAR LIVRO`)
+    // because closing is irreversible in fact — `chancela_core::book` has no `Closed -> Open`
+    // transition — and, like `open`, it declared that floor long before any handler checked it.
+    //
+    // Fully co-signed fixture for the same reason: the evidentiary gate would pass, so every
+    // refusal below is the confirmation gate, and the final request proves it is passable.
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let book_id = open_book_one_shot(&state, &token).await;
+    let (_termo_id, slot0, slot1) = seed_frozen_encerramento(&state, &token, &book_id).await;
+
+    let pfx0 = local_pfx("Amelia Marques", 1, "amelia");
+    let (status, view) = send(
+        &state,
+        pkcs12_sign_encerramento_req(&book_id, &token, &slot0, &pfx0, PFX_PASSWORD),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sign encerramento slot 0: {view}");
+    let pfx1 = local_pfx("Bruno Secretario", 2, "bruno");
+    let (status, view) = send(
+        &state,
+        pkcs12_sign_encerramento_req(&book_id, &token, &slot1, &pfx1, PFX_PASSWORD),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sign encerramento slot 1: {view}");
+
+    let refused = [
+        ("no confirmation object at all (the pre-t80 body)", json!({})),
+        (
+            "step-up only, no phrase",
+            json!({ "confirmation": { "reauth": { "password": TEST_PASSWORD } } }),
+        ),
+        (
+            "the right phrase but no step-up",
+            json!({ "confirmation": { "confirm_phrase": CLOSE_PHRASE } }),
+        ),
+        (
+            "the phrase in the wrong case — it is compared byte-exact",
+            json!({
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": "encerrar livro",
+                },
+            }),
+        ),
+        (
+            "the abertura phrase on the close route",
+            json!({
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": OPEN_PHRASE,
+                },
+            }),
+        ),
+    ];
+
+    for (label, body) in refused {
+        let (status, response) = send(&state, close_req(&book_id, &token, body)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{label}: the confirmation gate must refuse the close with 403: {response}"
+        );
+        assert_ne!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{label}: a confirmation failure must never be a 401 — that signs the operator out"
+        );
+
+        // The book stays Open, the encerramento stays Signing, and nothing was closed.
+        let (_, book) = send(&state, get_req(&format!("/v1/books/{book_id}"), &token)).await;
+        assert_eq!(book["state"], "Open", "{label}: book still Open: {book}");
+        let (_, termo) = send(
+            &state,
+            get_req(&format!("/v1/books/{book_id}/termo/encerramento"), &token),
+        )
+        .await;
+        assert_eq!(
+            termo["state"], "Signing",
+            "{label}: encerramento not sealed: {termo}"
+        );
+        let events = ledger_events(&state, &token).await;
+        assert!(
+            !events.iter().any(|e| e["kind"] == "book.closed"),
+            "{label}: no book.closed on an unproven close: {events:?}"
+        );
+    }
+
+    // Same fixture, complete proof: passable, so the refusals above are the missing proof.
+    let (status, view) = send(&state, close_req(&book_id, &token, close_body())).await;
+    assert_eq!(status, StatusCode::OK, "the complete proof closes: {view}");
+    assert_eq!(view["state"], "Closed");
 }
 
 #[tokio::test]
