@@ -174,6 +174,14 @@ export const ledgerEventLabelsPtPT = {
     'Teste da ligação ao Cartão de Cidadão pedido',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultado do teste da ligação ao Cartão de Cidadão registado',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Confirmação da assinatura de teste com Chave Móvel Digital pedida',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Assinatura qualificada de teste com Chave Móvel Digital produzida',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Assinatura de teste com Chave Móvel Digital pedida',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Assinatura de teste com Chave Móvel Digital iniciada',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Envelope de assinatura externa criado',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -349,6 +357,14 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
     'Citizen Card connection test requested',
   'enum.ledgerEventKind.signature.cc_bridge.probed': 'Citizen Card connection test result recorded',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Chave Móvel Digital test signature confirmation requested',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Qualified Chave Móvel Digital test signature produced',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Chave Móvel Digital test signature requested',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Chave Móvel Digital test signature initiated',
   'enum.ledgerEventKind.signature.external_envelope.created': 'External signing envelope created',
   'enum.ledgerEventKind.signature.external_envelope.updated': 'External signing envelope updated',
   'enum.ledgerEventKind.signature.external_invite.accepted': 'External signing invite accepted',
@@ -535,6 +551,14 @@ export const ledgerEventLabelsPtBR: LedgerEventLabels = {
     'Teste da conexão com o Cartão de Cidadão solicitado',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultado do teste da conexão com o Cartão de Cidadão registrado',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Confirmação da assinatura de teste com Chave Móvel Digital solicitada',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Assinatura qualificada de teste com Chave Móvel Digital produzida',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Assinatura de teste com Chave Móvel Digital solicitada',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Assinatura de teste com Chave Móvel Digital iniciada',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Envelope de assinatura externa criado',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -720,6 +744,14 @@ export const ledgerEventLabelsDaDK: LedgerEventLabels = {
     'Test af forbindelse til Borgerkort anmodet',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultat af test af forbindelse til Borgerkort registreret',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Bekræftelse af testsignatur med Chave Móvel Digital anmodet',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Kvalificeret testsignatur med Chave Móvel Digital oprettet',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Testsignatur med Chave Móvel Digital anmodet',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Testsignatur med Chave Móvel Digital påbegyndt',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Kuvert til ekstern signering oprettet',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -911,6 +943,14 @@ export const ledgerEventLabelsDeDE: LedgerEventLabels = {
     'Verbindungstest der Bürgerkarte angefordert',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Ergebnis des Verbindungstests der Bürgerkarte erfasst',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Bestätigung der Testsignatur mit Chave Móvel Digital angefordert',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Qualifizierte Testsignatur mit Chave Móvel Digital erstellt',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Testsignatur mit Chave Móvel Digital angefordert',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Testsignatur mit Chave Móvel Digital eingeleitet',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Umschlag für externe Signatur erstellt',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1105,6 +1145,14 @@ export const ledgerEventLabelsEsES: LedgerEventLabels = {
     'Prueba de conexión con la Tarjeta de Ciudadano solicitada',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultado de la prueba de conexión con la Tarjeta de Ciudadano registrado',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Confirmación de la firma de prueba con Chave Móvel Digital solicitada',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Firma cualificada de prueba con Chave Móvel Digital generada',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Firma de prueba con Chave Móvel Digital solicitada',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Firma de prueba con Chave Móvel Digital iniciada',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Sobre de firma externa creado',
   'enum.ledgerEventKind.signature.external_envelope.updated': 'Sobre de firma externa actualizado',
   'enum.ledgerEventKind.signature.external_invite.accepted': 'Invitación de firma externa aceptada',
@@ -1284,6 +1332,14 @@ export const ledgerEventLabelsFiFI: LedgerEventLabels = {
   'enum.ledgerEventKind.signature.cc_bridge.probe_requested':
     'Kansalaiskortin yhteystesti pyydetty',
   'enum.ledgerEventKind.signature.cc_bridge.probed': 'Kansalaiskortin yhteystestin tulos kirjattu',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Chave Móvel Digital -testiallekirjoituksen vahvistusta pyydetty',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Hyväksytty Chave Móvel Digital -testiallekirjoitus luotu',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Chave Móvel Digital -testiallekirjoitusta pyydetty',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Chave Móvel Digital -testiallekirjoitus aloitettu',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Ulkoisen allekirjoituksen kuori luotu',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1478,6 +1534,14 @@ export const ledgerEventLabelsFrFR: LedgerEventLabels = {
     'Test de connexion à la Carte de citoyen demandé',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Résultat du test de connexion à la Carte de citoyen enregistré',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Confirmation de la signature de test avec Chave Móvel Digital demandée',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Signature de test qualifiée avec Chave Móvel Digital produite',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Signature de test avec Chave Móvel Digital demandée',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Signature de test avec Chave Móvel Digital lancée',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Enveloppe de signature externe créée',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -1672,6 +1736,14 @@ export const ledgerEventLabelsItIT: LedgerEventLabels = {
     'Test di connessione alla Carta di Cittadino richiesto',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Risultato del test di connessione alla Carta di Cittadino registrato',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Conferma della firma di prova con Chave Móvel Digital richiesta',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Firma qualificata di prova con Chave Móvel Digital prodotta',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Firma di prova con Chave Móvel Digital richiesta',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Firma di prova con Chave Móvel Digital avviata',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Busta di firma esterna creata',
   'enum.ledgerEventKind.signature.external_envelope.updated': 'Busta di firma esterna aggiornata',
   'enum.ledgerEventKind.signature.external_invite.accepted': 'Invito alla firma esterna accettato',
@@ -1855,6 +1927,14 @@ export const ledgerEventLabelsNlNL: LedgerEventLabels = {
     'Verbindingstest met Burgerkaart aangevraagd',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultaat van verbindingstest met Burgerkaart vastgelegd',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Bevestiging van testhandtekening met Chave Móvel Digital aangevraagd',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Gekwalificeerde testhandtekening met Chave Móvel Digital aangemaakt',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Testhandtekening met Chave Móvel Digital aangevraagd',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Testhandtekening met Chave Móvel Digital gestart',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Envelop voor externe ondertekening aangemaakt',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -2047,6 +2127,14 @@ export const ledgerEventLabelsPlPL: LedgerEventLabels = {
     'Zażądano testu połączenia z Kartą obywatela',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Wynik testu połączenia z Kartą obywatela zapisany',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Zażądano potwierdzenia podpisu testowego Chave Móvel Digital',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Utworzono kwalifikowany podpis testowy Chave Móvel Digital',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Zażądano podpisu testowego Chave Móvel Digital',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Rozpoczęto podpis testowy Chave Móvel Digital',
   'enum.ledgerEventKind.signature.external_envelope.created':
     'Koperta podpisu zewnętrznego utworzona',
   'enum.ledgerEventKind.signature.external_envelope.updated':
@@ -2228,6 +2316,14 @@ export const ledgerEventLabelsSvFI: LedgerEventLabels = {
     'Anslutningstest för Medborgarkort begärt',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultat av anslutningstest för Medborgarkort registrerat',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Bekräftelse av testsignatur med Chave Móvel Digital begärd',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Kvalificerad testsignatur med Chave Móvel Digital skapad',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Testsignatur med Chave Móvel Digital begärd',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Testsignatur med Chave Móvel Digital påbörjad',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Kuvert för extern signering skapat',
   'enum.ledgerEventKind.signature.external_envelope.updated':
     'Kuvert för extern signering uppdaterat',
@@ -2405,6 +2501,14 @@ export const ledgerEventLabelsSvSE: LedgerEventLabels = {
     'Anslutningstest för Medborgarkort begärt',
   'enum.ledgerEventKind.signature.cc_bridge.probed':
     'Resultat av anslutningstest för Medborgarkort registrerat',
+  'enum.ledgerEventKind.signature.cmd.test.confirm_requested':
+    'Bekräftelse av testsignatur med Chave Móvel Digital begärd',
+  'enum.ledgerEventKind.signature.cmd.test.confirmed':
+    'Kvalificerad testsignatur med Chave Móvel Digital skapad',
+  'enum.ledgerEventKind.signature.cmd.test.initiate_requested':
+    'Testsignatur med Chave Móvel Digital begärd',
+  'enum.ledgerEventKind.signature.cmd.test.initiated':
+    'Testsignatur med Chave Móvel Digital påbörjad',
   'enum.ledgerEventKind.signature.external_envelope.created': 'Kuvert för extern signering skapat',
   'enum.ledgerEventKind.signature.external_envelope.updated':
     'Kuvert för extern signering uppdaterat',

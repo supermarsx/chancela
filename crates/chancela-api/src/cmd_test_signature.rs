@@ -87,13 +87,13 @@ use crate::signature::{
 const AUDIT_SCOPE: &str = "cmd_test_signature";
 
 /// Recorded before AMA is contacted. If this cannot be durably appended, the test does not happen.
-const INITIATE_REQUESTED_EVENT: &str = "signature.cmd.test.initiate_requested";
+const INITIATE_REQUESTED_KIND: &str = "signature.cmd.test.initiate_requested";
 /// Recorded after `CCMovelSign` returns — the OTP has been dispatched to a real device.
-const INITIATED_EVENT: &str = "signature.cmd.test.initiated";
+const INITIATED_KIND: &str = "signature.cmd.test.initiated";
 /// Recorded before `ValidateOtp` — the point of no return for producing the signature.
-const CONFIRM_REQUESTED_EVENT: &str = "signature.cmd.test.confirm_requested";
+const CONFIRM_REQUESTED_KIND: &str = "signature.cmd.test.confirm_requested";
 /// Recorded after the qualified signature exists and has been retained.
-const CONFIRMED_EVENT: &str = "signature.cmd.test.confirmed";
+const CONFIRMED_KIND: &str = "signature.cmd.test.confirmed";
 
 /// How long an initiated test session stays confirmable. Mirrors the act path's CMD session TTL:
 /// an OTP that has aged out must force a fresh, freshly-confirmed initiate.
@@ -347,7 +347,7 @@ pub async fn initiate_cmd_test_signature(
         &state,
         &actor_label,
         &attestor,
-        INITIATE_REQUESTED_EVENT,
+        INITIATE_REQUESTED_KIND,
         json!({
             "operation": "production_test_signature_initiate",
             "environment": "prod",
@@ -394,7 +394,7 @@ pub async fn initiate_cmd_test_signature(
         &state,
         &actor_label,
         &attestor,
-        INITIATED_EVENT,
+        INITIATED_KIND,
         json!({
             "operation": "production_test_signature_initiate",
             "outcome": "otp_pending",
@@ -483,7 +483,7 @@ pub async fn confirm_cmd_test_signature(
         &state,
         &actor_label,
         &attestor,
-        CONFIRM_REQUESTED_EVENT,
+        CONFIRM_REQUESTED_KIND,
         json!({
             "operation": "production_test_signature_confirm",
             "environment": "prod",
@@ -543,7 +543,7 @@ pub async fn confirm_cmd_test_signature(
         &state,
         &actor_label,
         &attestor,
-        CONFIRMED_EVENT,
+        CONFIRMED_KIND,
         json!({
             "operation": "production_test_signature_confirm",
             "outcome": "signed",
