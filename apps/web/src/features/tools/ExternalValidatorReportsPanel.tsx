@@ -8,6 +8,10 @@ import { useExternalValidatorReports, useUploadExternalValidatorReport } from '.
 import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
 import { useT, type TFunction } from '../../i18n';
 import {
+  useExternalValidatorStatusResolver,
+  type ExternalValidatorStatusGroup,
+} from '../../i18n/externalValidatorStatusFallback';
+import {
   Badge,
   Card,
   Digest,
@@ -195,6 +199,33 @@ function displayText(value: string | null): ReactNode {
   return value ? <code className="mono">{value}</code> : '—';
 }
 
+/**
+ * One server-emitted status token, rendered as copy an operator can act on WITHOUT losing the token.
+ *
+ * These cards used to show the raw identifier and nothing else — a card labelled «Estado» whose
+ * entire value was `no_external_validator_report_metadata_attached`. Two problems: an internal
+ * identifier is not copy, and at 45 unbreakable characters it overflowed its own card.
+ *
+ * The identifier is kept, in `mono` and last, because a technical report is something people quote
+ * in a support thread and the token is the stable thing to quote; the label and sentence are added
+ * around it. Same shape the permission matrix uses for its verbs. The copy and the tone come from
+ * `externalValidatorStatusFallback.ts`, whose divergence test is driven off the Rust emitter, so a
+ * token added or removed there cannot silently render without a sentence.
+ */
+function StatusValue({ group, token }: { group: ExternalValidatorStatusGroup; token: string }) {
+  const describe = useExternalValidatorStatusResolver();
+  const status = describe(group, token);
+  return (
+    <div className="external-validator-status">
+      <Badge tone={status.tone} wrap>
+        {status.label}
+      </Badge>
+      <p className="muted">{status.meaning}</p>
+      <code className="mono">{token}</code>
+    </div>
+  );
+}
+
 function buildUploadRequest(
   rawText: string,
   rawReport: RawReportSelection | null,
@@ -259,11 +290,7 @@ function RawReportBackendSummary({ rawReport }: { rawReport: ExternalValidatorRa
         <div>
           <dt>{t('externalValidatorReports.rawFile.provenance')}</dt>
           <dd>
-            <Badge
-              tone={rawReport.preservation_status === 'raw_report_attached' ? 'ok' : 'neutral'}
-            >
-              {rawReport.preservation_status}
-            </Badge>
+            <StatusValue group="preservationStatus" token={rawReport.preservation_status} />
           </dd>
         </div>
         <div>
@@ -312,12 +339,14 @@ function StorageSummary({
     <dl className="pdf-validator-kv">
       <div>
         <dt>{t('externalValidatorReports.summary.storage')}</dt>
-        <dd>{storage}</dd>
+        <dd>
+          <StatusValue group="storageMode" token={storage} />
+        </dd>
       </div>
       <div>
         <dt>{t('externalValidatorReports.summary.status')}</dt>
         <dd>
-          <Badge tone={status === 'ok' ? 'ok' : 'neutral'}>{status}</Badge>
+          <StatusValue group="metadataStatus" token={status} />
         </dd>
       </div>
       <div>

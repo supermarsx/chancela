@@ -392,8 +392,20 @@ export function Table({
 
 type BadgeTone = 'neutral' | 'accent' | 'warn' | 'error' | 'ok' | 'info';
 
-export function Badge({ tone = 'neutral', children }: { tone?: BadgeTone; children: ReactNode }) {
-  return <span className={`badge badge--${tone}`}>{children}</span>;
+/**
+ * `wrap` opts a badge out of the base `white-space: nowrap`, for the case where the badge carries a
+ * phrase rather than a one-word tag and would otherwise overflow a narrow container (t87).
+ */
+export function Badge({
+  tone = 'neutral',
+  wrap = false,
+  children,
+}: {
+  tone?: BadgeTone;
+  wrap?: boolean;
+  children: ReactNode;
+}) {
+  return <span className={`badge badge--${tone}${wrap ? ' badge--wrap' : ''}`}>{children}</span>;
 }
 
 // --- Empty state ----------------------------------------------------------------

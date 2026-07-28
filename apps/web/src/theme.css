@@ -604,9 +604,17 @@ a:focus-visible {
   font-size: 0.92rem;
 }
 
+/* Identifiers, digests, paths and status tokens. `overflow-wrap: anywhere` is here rather than on
+   each surface because a snake_case token offers no break opportunity, so a long one blows out its
+   container instead of wrapping — which is how `no_external_validator_report_metadata_attached`
+   escaped its card in the technical-reports panel (t87). Surfaces had been patching this one at a
+   time (`.trust-detail-list .mono`, `.trust-identity-list .mono`); those stay, since they also set
+   `white-space: normal`, which is the part that is NOT safe to apply globally: `.digest__value` and
+   other call sites set `nowrap` deliberately, and `overflow-wrap` is inert while `nowrap` holds. */
 .mono {
   font-family: var(--font-mono);
   font-size: 0.85em;
+  overflow-wrap: anywhere;
 }
 
 .crumbs {
@@ -1473,6 +1481,15 @@ a.btn.btn--iconOnly {
   border: 1px solid var(--border);
   color: var(--text-muted);
   white-space: nowrap;
+}
+
+/* A badge whose text is a phrase rather than a one-word tag. `nowrap` above is right for the short
+   tags badges normally carry, so this is an opt-in modifier rather than a change to the base: an
+   unwrappable pill in a `minmax(min(100%, 12rem), 1fr)` grid cell overflows the card outright. */
+.badge--wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: left;
 }
 
 .badge--accent {
@@ -6284,6 +6301,25 @@ a.btn--primary {
 
 .pdf-validator-kv .digest {
   max-width: 100%;
+}
+
+/* A server-emitted status token presented as copy: tone badge, the sentence saying what it means to
+   the operator, and the identifier itself kept last in `mono` as the stable thing to quote (t87).
+   `min-width: 0` so the stack can actually shrink inside the auto-fit grid cell above. */
+.external-validator-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.external-validator-status p {
+  margin: 0;
+}
+
+.external-validator-status .mono {
+  color: var(--text-muted);
 }
 
 .pdf-validator-details {
