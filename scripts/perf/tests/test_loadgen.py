@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 
 
 PERF_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -596,10 +597,24 @@ class CpuPartitionTests(unittest.TestCase):
         self.assertEqual(flattened, list(range(8, 16)))
 
     def test_the_budget_stays_addressable_by_one_affinity_mask(self):
-        slices = loadgen.generator_cpu_slices(2, 24, 60, 80)
+        # Windows pins through a single mask, which addresses one processor
+        # group, so an 80-CPU host must still yield indices a mask can name.
+        # The platform is forced rather than inherited: this invariant is
+        # Windows-only, and a Linux runner would otherwise assert nothing.
+        with mock.patch.object(loadgen.sys, "platform", "win32"):
+            slices = loadgen.generator_cpu_slices(2, 24, 60, 80)
         for chunk in slices:
             for index in chunk:
                 self.assertLess(index, loadgen.WINDOWS_AFFINITY_MASK_LIMIT)
+
+    def test_the_budget_is_not_clamped_where_pinning_is_not_mask_based(self):
+        # sched_setaffinity takes a CPU set, not a 64-bit mask, so the mask
+        # limit does not apply and clamping to it would strand CPUs the
+        # generator is entitled to use.
+        with mock.patch.object(loadgen.sys, "platform", "linux"):
+            slices = loadgen.generator_cpu_slices(2, 24, 60, 80)
+        flattened = sorted(index for chunk in slices for index in chunk)
+        self.assertEqual(flattened, list(range(56, 80)))
 
     def test_pinning_is_reported_rather_than_assumed(self):
         summary = loadgen.summarize_affinity(

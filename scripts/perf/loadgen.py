@@ -636,7 +636,7 @@ def try_set_process_affinity(cpu_indices: Sequence[int]) -> dict[str, Any]:
                 "reason": f"{type(error).__name__}: {error}",
             }
     if sys.platform == "win32":
-        if any(index >= 64 for index in indices):
+        if any(index >= WINDOWS_AFFINITY_MASK_LIMIT for index in indices):
             return {
                 "requested": indices,
                 "applied": False,
@@ -678,8 +678,13 @@ def generator_cpu_slices(
     """Deal the generator's CPU budget round-robin across its worker processes.
 
     The budget deliberately starts above index 0 so the OS and the Docker VM's
-    own threads are not fought over the first cores, and it stays inside a single
-    Windows processor group because an affinity mask cannot address more than one.
+    own threads are not fought over the first cores. On Windows it is additionally
+    clamped to a single processor group, because pinning there goes through one
+    affinity mask and a mask cannot address more than one group; where pinning
+    goes through sched_setaffinity there is no mask and no such ceiling, so the
+    clamp would only strand CPUs. The ceiling therefore tracks the mechanism
+    try_set_process_affinity will actually use, not the platform in the abstract.
+
     This is a soft partition: the WSL2 VM's vCPUs are scheduled by the hypervisor
     and cannot be excluded from these cores. The run records whether pinning was
     actually applied rather than assuming it.
