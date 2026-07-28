@@ -1,14 +1,10 @@
 import { useDeferredValue, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import {
-  useCreatePrivacyBreachPlaybook,
-  useCreatePrivacyTransferControl,
   useClosePrivacyRetentionExecutionReview,
   useDryRunPrivacyRetentionPolicy,
-  usePatchPrivacyBreachPlaybook,
   usePatchPrivacyDpia,
   usePatchPrivacyProcessor,
-  usePatchPrivacyTransferControl,
   usePrivacyBreachPlaybooks,
   usePrivacyDpiaTemplate,
   usePrivacyDpias,
@@ -23,20 +19,16 @@ import {
 import {
   type BreachPlaybookView,
   type CloseRetentionExecutionReviewBody,
-  type CreateBreachPlaybookBody,
   PRIVACY_RECORD_STATUSES,
   PRIVACY_RISK_LEVELS,
   RETENTION_DISPOSAL_ACTIONS,
   RETENTION_EXECUTION_STATUSES,
   RETENTION_POLICY_STATUSES,
-  type CreateTransferControlBody,
   type DpiaRecordView,
   type DpiaTemplateNoClaims,
   type DpiaTemplateView,
-  type PatchBreachPlaybookBody,
   type PatchDpiaRecordBody,
   type PatchProcessorRecordBody,
-  type PatchTransferControlBody,
   PRIVACY_ADVISORY_REVIEW_STATUSES,
   type PrivacyRecordStatus,
   type PrivacyRiskLevel,
@@ -91,19 +83,11 @@ import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
 // the labels and the four forms themselves moved into `privacy/`, so the list panels below and the
 // five record pages share ONE definition of each rather than two that can drift.
 import {
-  EMPTY_BREACH_FORM,
-  EMPTY_TRANSFER_FORM,
-  breachCreateBody,
-  breachFormFromRecord,
   optionalText,
   primaryValue,
-  transferCreateBody,
-  transferFormFromRecord,
-  type BreachPlaybookFormState,
   type PrivacyPatchBody,
   type RegisterKind,
   type RegisterRecord,
-  type TransferControlFormState,
 } from './privacy/privacyFormState';
 import { privacyRecordNewPath, privacyRecordPath } from './privacy/privacyRoutes';
 import {
@@ -119,8 +103,6 @@ import {
   statusSelectOptionsFor,
   statusTone,
 } from './privacy/privacyLabels';
-import { BreachPlaybookForm } from './privacy/forms/BreachPlaybookForm';
-import { TransferControlForm } from './privacy/forms/TransferControlForm';
 
 interface RetentionDryRunFormState {
   scope: string;
@@ -1283,27 +1265,18 @@ function BreachPlaybookPanel({
   records,
   loading,
   error,
-  saving,
-  onCreate,
-  onPatch,
 }: {
   records: BreachPlaybookView[];
   loading: boolean;
   error: unknown;
-  saving: boolean;
-  onCreate: (body: CreateBreachPlaybookBody) => Promise<BreachPlaybookView>;
-  onPatch: (id: string, body: PatchBreachPlaybookBody) => Promise<BreachPlaybookView>;
 }) {
   const t = useT();
-  const toast = useToast();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
   const [reviewFilter, setReviewFilter] = useState('all');
   const [evidenceFilter, setEvidenceFilter] = useState('all');
-  const [form, setForm] = useState<BreachPlaybookFormState | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
@@ -1330,40 +1303,8 @@ function BreachPlaybookPanel({
     setEvidenceFilter('all');
   }
 
-  async function submitForm() {
-    if (!form) return;
-    try {
-      if (editingId) {
-        await onPatch(editingId, breachCreateBody(form));
-        toast.success(t('settings.privacy.toast.updated'));
-      } else {
-        await onCreate(breachCreateBody(form));
-        toast.success(t('settings.privacy.toast.created'));
-      }
-      setForm(null);
-      setEditingId(null);
-    } catch (e) {
-      toast.error(e);
-    }
-  }
-
   return (
     <div className="stack">
-      {form ? (
-        <Card title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}>
-          <BreachPlaybookForm
-            form={form}
-            setForm={setForm}
-            editing={editingId !== null}
-            saving={saving}
-            onCancel={() => {
-              setForm(null);
-              setEditingId(null);
-            }}
-            onSubmit={submitForm}
-          />
-        </Card>
-      ) : null}
       <Card
         title={
           <span className="row-wrap">
@@ -1374,17 +1315,13 @@ function BreachPlaybookPanel({
         actions={
           <>
             <FilterCountBadge shown={filtered.length} total={records.length} />
-            <Button
-              type="button"
+            <ButtonLink
+              to={privacyRecordNewPath('breach-playbooks')}
               variant="primary"
               icon={<Icon.Plus />}
-              onClick={() => {
-                setEditingId(null);
-                setForm(EMPTY_BREACH_FORM);
-              }}
             >
               {t('settings.privacy.action.new')}
-            </Button>
+            </ButtonLink>
           </>
         }
       >
@@ -1483,7 +1420,13 @@ function BreachPlaybookPanel({
                 const receipt = latestReceipt(record.evidence_receipts);
                 return (
                   <tr key={record.id}>
-                    <td>{record.title}</td>
+                    {/* The title is the record's address, the way the register's primary cell is.
+                        Two affordances, one destination: this and "Editar". */}
+                    <td>
+                      <Link to={privacyRecordPath('breach-playbooks', record.id)}>
+                        {record.title}
+                      </Link>
+                    </td>
                     <td>{record.scope}</td>
                     <td>{record.detection_channels.join(', ')}</td>
                     <td>{record.containment_steps.join(', ')}</td>
@@ -1521,18 +1464,13 @@ function BreachPlaybookPanel({
                       </div>
                     </td>
                     <td className="users-actions">
-                      <Button
-                        type="button"
+                      <ButtonLink
+                        to={privacyRecordPath('breach-playbooks', record.id)}
                         variant="ghost"
                         icon={<Icon.Pencil />}
-                        disabled={saving}
-                        onClick={() => {
-                          setEditingId(record.id);
-                          setForm(breachFormFromRecord(record));
-                        }}
                       >
                         {t('settings.privacy.action.edit')}
-                      </Button>
+                      </ButtonLink>
                     </td>
                   </tr>
                 );
@@ -1549,27 +1487,18 @@ function TransferControlPanel({
   records,
   loading,
   error,
-  saving,
-  onCreate,
-  onPatch,
 }: {
   records: TransferControlView[];
   loading: boolean;
   error: unknown;
-  saving: boolean;
-  onCreate: (body: CreateTransferControlBody) => Promise<TransferControlView>;
-  onPatch: (id: string, body: PatchTransferControlBody) => Promise<TransferControlView>;
 }) {
   const t = useT();
-  const toast = useToast();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
   const [riskFilter, setRiskFilter] = useState('all');
   const [destinationFilter, setDestinationFilter] = useState('all');
   const [reviewFilter, setReviewFilter] = useState('all');
-  const [form, setForm] = useState<TransferControlFormState | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Destination options come from the rows actually loaded, the way Entidades derives its
   // family/kind options — so the list only ever offers destinations that exist.
@@ -1611,40 +1540,8 @@ function TransferControlPanel({
     setReviewFilter('all');
   }
 
-  async function submitForm() {
-    if (!form) return;
-    try {
-      if (editingId) {
-        await onPatch(editingId, transferCreateBody(form));
-        toast.success(t('settings.privacy.toast.updated'));
-      } else {
-        await onCreate(transferCreateBody(form));
-        toast.success(t('settings.privacy.toast.created'));
-      }
-      setForm(null);
-      setEditingId(null);
-    } catch (e) {
-      toast.error(e);
-    }
-  }
-
   return (
     <div className="stack">
-      {form ? (
-        <Card title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}>
-          <TransferControlForm
-            form={form}
-            setForm={setForm}
-            editing={editingId !== null}
-            saving={saving}
-            onCancel={() => {
-              setForm(null);
-              setEditingId(null);
-            }}
-            onSubmit={submitForm}
-          />
-        </Card>
-      ) : null}
       <Card
         title={
           <span className="row-wrap">
@@ -1655,17 +1552,13 @@ function TransferControlPanel({
         actions={
           <>
             <FilterCountBadge shown={filtered.length} total={records.length} />
-            <Button
-              type="button"
+            <ButtonLink
+              to={privacyRecordNewPath('transfer-controls')}
               variant="primary"
               icon={<Icon.Plus />}
-              onClick={() => {
-                setEditingId(null);
-                setForm(EMPTY_TRANSFER_FORM);
-              }}
             >
               {t('settings.privacy.action.new')}
-            </Button>
+            </ButtonLink>
           </>
         }
       >
@@ -1760,7 +1653,12 @@ function TransferControlPanel({
                 const receipt = latestReceipt(record.evidence_receipts);
                 return (
                   <tr key={record.id}>
-                    <td>{record.name}</td>
+                    {/* Same two-affordances-one-address shape as the other four registers. */}
+                    <td>
+                      <Link to={privacyRecordPath('transfer-controls', record.id)}>
+                        {record.name}
+                      </Link>
+                    </td>
                     <td>
                       {record.destination_country}
                       <br />
@@ -1800,18 +1698,13 @@ function TransferControlPanel({
                       </div>
                     </td>
                     <td className="users-actions">
-                      <Button
-                        type="button"
+                      <ButtonLink
+                        to={privacyRecordPath('transfer-controls', record.id)}
                         variant="ghost"
                         icon={<Icon.Pencil />}
-                        disabled={saving}
-                        onClick={() => {
-                          setEditingId(record.id);
-                          setForm(transferFormFromRecord(record));
-                        }}
                       >
                         {t('settings.privacy.action.edit')}
-                      </Button>
+                      </ButtonLink>
                     </td>
                   </tr>
                 );
@@ -3004,10 +2897,6 @@ export function PrivacyComplianceSection() {
   // `RegisterRecordPage`. The patch mutations stay for the row-level quick edit.
   const patchProcessor = usePatchPrivacyProcessor();
   const patchDpia = usePatchPrivacyDpia();
-  const createBreachPlaybook = useCreatePrivacyBreachPlaybook();
-  const patchBreachPlaybook = usePatchPrivacyBreachPlaybook();
-  const createTransferControl = useCreatePrivacyTransferControl();
-  const patchTransferControl = usePatchPrivacyTransferControl();
   // No create/patch mutation for retention policies here any more: the record editor is
   // `RetentionPolicyPage` (`/settings/privacy/retention-policies/{new,:id}`), gated on its own
   // `retention.manage` verb. This panel lists and links; the dry-run below is a separate
@@ -3144,18 +3033,12 @@ export function PrivacyComplianceSection() {
                   records={breachPlaybooks.data ?? []}
                   loading={breachPlaybooks.isLoading}
                   error={breachPlaybooks.error}
-                  saving={createBreachPlaybook.isPending || patchBreachPlaybook.isPending}
-                  onCreate={(body) => createBreachPlaybook.mutateAsync(body)}
-                  onPatch={(id, body) => patchBreachPlaybook.mutateAsync({ id, body })}
                 />
 
                 <TransferControlPanel
                   records={transferControls.data ?? []}
                   loading={transferControls.isLoading}
                   error={transferControls.error}
-                  saving={createTransferControl.isPending || patchTransferControl.isPending}
-                  onCreate={(body) => createTransferControl.mutateAsync(body)}
-                  onPatch={(id, body) => patchTransferControl.mutateAsync({ id, body })}
                 />
               </>
             )}

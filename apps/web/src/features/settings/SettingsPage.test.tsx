@@ -4461,7 +4461,7 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('creates breach playbook and transfer-control records from the privacy settings tab', async () => {
+  it('lists breach and transfer records and links to their record pages', async () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -4480,54 +4480,20 @@ describe('SettingsPage', () => {
         .getAllByText('Revisão atual')
         .some((el) => el.classList.contains('badge')),
     ).toBe(true);
-    fireEvent.click(within(breachPanel!).getByRole('button', { name: 'Novo registo' }));
 
-    let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
-    let form = formCard.closest('section');
-    expect(form).toBeTruthy();
-    fireEvent.change(within(form!).getByLabelText('Título do playbook'), {
-      target: { value: 'Suspected exfiltration' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Âmbito'), {
-      target: { value: 'document exports' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Canais de deteção'), {
-      target: { value: 'DLP alert\nSupport report' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Passos de contenção'), {
-      target: { value: 'Disable export\nPreserve evidence' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Funções notificadas'), {
-      target: { value: 'DPO' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Notas de evidência'), {
-      target: { value: 'Operator tabletop evidence only.' },
-    });
-    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
-
-    const breachPost = await waitFor(() => {
-      const call = calls.find(
-        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/breach-playbooks'),
+    // t55-e3: the editor is a page. The tab offers its addresses and nothing else — the inline
+    // `<Card>` that used to open ABOVE this table, shoving it down the page, is gone.
+    expect(
+      within(breachPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/breach-playbooks/new');
+    const breachRow = within(breachPanel!)
+      .getByText('Suspected account compromise')
+      .closest('tr') as HTMLElement;
+    for (const name of ['Suspected account compromise', 'Editar']) {
+      expect(within(breachRow).getByRole('link', { name }).getAttribute('href')).toBe(
+        '/settings/privacy/breach-playbooks/breach-1',
       );
-      expect(call).toBeTruthy();
-      return call!;
-    });
-    expect(JSON.parse(breachPost.body as string)).toMatchObject({
-      title: 'Suspected exfiltration',
-      scope: 'document exports',
-      detection_channels: ['DLP alert', 'Support report'],
-      containment_steps: ['Disable export', 'Preserve evidence'],
-      notification_roles: ['DPO'],
-      risk_level: 'high',
-      status: 'draft',
-      evidence_receipt: {
-        evidence_type: 'review',
-        notes: 'Operator tabletop evidence only.',
-        authority_notified: false,
-        subjects_notified: false,
-      },
-    });
-    expect(await screen.findByText('Suspected exfiltration')).toBeTruthy();
+    }
 
     const transferPanel = (await screen.findByText('Controlos de transferência')).closest(
       'section',
@@ -4542,65 +4508,33 @@ describe('SettingsPage', () => {
         .getAllByText('Revisão atual')
         .some((el) => el.classList.contains('badge')),
     ).toBe(true);
-    fireEvent.click(within(transferPanel!).getByRole('button', { name: 'Novo registo' }));
 
-    formCard = await screen.findByRole('heading', { name: 'Novo registo' });
-    form = formCard.closest('section');
-    expect(form).toBeTruthy();
-    fireEvent.change(within(form!).getByLabelText('Nome do controlo'), {
-      target: { value: 'EU to US analytics export' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Finalidade'), {
-      target: { value: 'Product analytics' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Base legal'), {
-      target: { value: 'Legitimate interest' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Categorias de dados'), {
-      target: { value: 'Usage metrics\nAccount metadata' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Destinatário'), {
-      target: { value: 'Analytics Inc' },
-    });
-    fireEvent.change(within(form!).getByLabelText('País de destino'), {
-      target: { value: 'United States' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Mecanismo de transferência'), {
-      target: { value: 'SCCs' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Salvaguardas'), {
-      target: { value: 'Pseudonymisation\nAccess review' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Notas de evidência'), {
-      target: { value: 'Operator transfer-control review only.' },
-    });
-    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
-
-    const transferPost = await waitFor(() => {
-      const call = calls.find(
-        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/transfer-controls'),
+    expect(
+      within(transferPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/transfer-controls/new');
+    const transferRow = within(transferPanel!)
+      .getByText('EU to UK support access')
+      .closest('tr') as HTMLElement;
+    for (const name of ['EU to UK support access', 'Editar']) {
+      expect(within(transferRow).getByRole('link', { name }).getAttribute('href')).toBe(
+        '/settings/privacy/transfer-controls/transfer-1',
       );
-      expect(call).toBeTruthy();
-      return call!;
-    });
-    expect(JSON.parse(transferPost.body as string)).toMatchObject({
-      name: 'EU to US analytics export',
-      purpose: 'Product analytics',
-      legal_basis: 'Legitimate interest',
-      data_categories: ['Usage metrics', 'Account metadata'],
-      recipient: 'Analytics Inc',
-      destination_country: 'United States',
-      transfer_mechanism: 'SCCs',
-      safeguards: ['Pseudonymisation', 'Access review'],
-      risk_level: 'medium',
-      status: 'draft',
-      evidence_receipt: {
-        notes: 'Operator transfer-control review only.',
-        transfer_approved: false,
-        data_transfer_executed: false,
-      },
-    });
-    expect(await screen.findByText('EU to US analytics export')).toBeTruthy();
+    }
+
+    // No authoring surface survives in the list, and the list writes nothing: the create bodies
+    // are asserted where the forms now live (privacy/BreachPlaybookPage.test.tsx and
+    // privacy/TransferControlPage.test.tsx).
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('Título do playbook')).toBeNull();
+    expect(screen.queryByLabelText('Nome do controlo')).toBeNull();
+    expect(
+      calls.some(
+        (c) =>
+          c.method === 'POST' &&
+          (c.url.endsWith('/v1/privacy/breach-playbooks') ||
+            c.url.endsWith('/v1/privacy/transfer-controls')),
+      ),
+    ).toBe(false);
   });
 
   it('renders due retention candidates from the read-only GET scan', async () => {

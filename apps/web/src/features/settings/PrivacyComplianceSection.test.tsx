@@ -522,124 +522,74 @@ describe('PrivacyComplianceSection', () => {
     expect(screen.getByText('UK support access')).toBeTruthy();
   });
 
-  it('edits breach and transfer records into trimmed API bodies with local evidence only', async () => {
+  /**
+   * The breach-playbook and transfer-control editors were inline `<Card>`s rendered ABOVE their
+   * list — they shoved the table down the page, had no address, and browser Back reached neither.
+   * They are pages now (t55-e3); the body-shape assertions that used to live here moved with the
+   * forms, to `privacy/BreachPlaybookPage.test.tsx` and `privacy/TransferControlPage.test.tsx`.
+   * What stays here is the list's half of the contract: it links, and it authors nothing.
+   */
+  it('offers the breach and transfer editors as addresses, not as inline forms', () => {
     hooks.breaches.data = [breach];
     hooks.transfers.data = [transfer];
-    renderWithProviders(<PrivacyComplianceSection />);
-
-    const breachRow = screen.getByText('Account compromise').closest('tr') as HTMLElement;
-    fireEvent.click(within(breachRow).getByRole('button', { name: 'Editar' }));
-    expect((screen.getByLabelText('Título do playbook') as HTMLInputElement).value).toBe(
-      'Account compromise',
-    );
-    fireEvent.change(screen.getByLabelText('Funções notificadas'), {
-      target: { value: 'DPO, Security lead' },
-    });
-    fireEvent.change(screen.getByLabelText('Tipo de evidência'), { target: { value: 'review' } });
-    fireEvent.change(screen.getByLabelText('Notas de evidência'), {
-      target: { value: '  Reviewed locally  ' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }));
-    await waitFor(() => {
-      expect(hooks.patchBreach.mutateAsync).toHaveBeenCalledWith({
-        id: 'breach-1',
-        body: expect.objectContaining({
-          notification_roles: ['DPO', 'Security lead'],
-          evidence_receipt: expect.objectContaining({
-            evidence_type: 'review',
-            notes: 'Reviewed locally',
-          }),
-        }),
-      });
-    });
-
-    const transferRow = screen.getByText('UK support access').closest('tr') as HTMLElement;
-    fireEvent.click(within(transferRow).getByRole('button', { name: 'Editar' }));
-    fireEvent.change(screen.getByLabelText('Salvaguardas'), {
-      target: { value: 'Ticket-scoped access\nMFA' },
-    });
-    fireEvent.change(screen.getByLabelText('Notas de evidência'), {
-      target: { value: '  Review receipt  ' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }));
-    await waitFor(() => {
-      expect(hooks.patchTransfer.mutateAsync).toHaveBeenCalledWith({
-        id: 'transfer-1',
-        body: expect.objectContaining({
-          safeguards: ['Ticket-scoped access', 'MFA'],
-          evidence_receipt: expect.objectContaining({ notes: 'Review receipt' }),
-        }),
-      });
-    });
-  });
-
-  it('validates and creates breach and transfer controls, preserving optional-field semantics', async () => {
     renderWithProviders(<PrivacyComplianceSection />);
 
     const breachPanel = screen
       .getByText('Playbooks de resposta a violações')
       .closest<HTMLElement>('.panel')!;
-    fireEvent.click(within(breachPanel).getByRole('button', { name: 'Novo registo' }));
-    const createBreach = screen.getByRole('button', { name: 'Criar registo' }) as HTMLButtonElement;
-    expect(createBreach.disabled).toBe(true);
-    fireEvent.change(screen.getByLabelText('Título do playbook'), {
-      target: { value: '  Leak  ' },
-    });
-    fireEvent.change(screen.getByLabelText('Âmbito'), { target: { value: '  files  ' } });
-    fireEvent.change(screen.getByLabelText('Canais de deteção'), {
-      target: { value: 'DLP, user report' },
-    });
-    fireEvent.change(screen.getByLabelText('Passos de contenção'), {
-      target: { value: 'Disable link\nRotate token' },
-    });
-    fireEvent.change(document.getElementById('privacy-breach-new-risk')!, {
-      target: { value: 'high' },
-    });
-    fireEvent.change(document.getElementById('privacy-breach-new-status')!, {
-      target: { value: 'under_review' },
-    });
-    fireEvent.click(createBreach);
-    await waitFor(() => {
-      expect(hooks.createBreach.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          title: 'Leak',
-          scope: 'files',
-          detection_channels: ['DLP', 'user report'],
-          containment_steps: ['Disable link', 'Rotate token'],
-          authority_notification_window: undefined,
-          evidence_receipt: undefined,
-        }),
-      );
-    });
+    expect(
+      within(breachPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/breach-playbooks/new');
+    expect(within(breachPanel).queryByRole('button', { name: 'Novo registo' })).toBeNull();
+
+    // Two affordances per row, ONE address: the primary cell and the explicit action. Both are
+    // real links, so they can be middle-clicked, copied and bookmarked.
+    const breachRow = screen.getByText('Account compromise').closest('tr') as HTMLElement;
+    expect(
+      within(breachRow).getByRole('link', { name: 'Account compromise' }).getAttribute('href'),
+    ).toBe('/settings/privacy/breach-playbooks/breach-1');
+    expect(within(breachRow).getByRole('link', { name: 'Editar' }).getAttribute('href')).toBe(
+      '/settings/privacy/breach-playbooks/breach-1',
+    );
+    expect(within(breachRow).queryByRole('button', { name: 'Editar' })).toBeNull();
 
     const transferPanel = screen
       .getByText('Controlos de transferência')
       .closest<HTMLElement>('.panel')!;
-    fireEvent.click(within(transferPanel).getByRole('button', { name: 'Novo registo' }));
-    const values: [string, string][] = [
-      ['Nome do controlo', 'US incident support'],
-      ['Finalidade', 'Incident response'],
-      ['Base legal', 'SCC'],
-      ['Categorias de dados', 'Support messages'],
-      ['Destinatário', 'US Support Inc'],
-      ['País de destino', 'United States'],
-      ['Mecanismo de transferência', 'SCC 2021'],
-      ['Salvaguardas', 'MFA, ticket scope'],
-    ];
-    for (const [label, value] of values) {
-      fireEvent.change(screen.getByLabelText(label), { target: { value } });
-    }
-    fireEvent.click(screen.getByRole('button', { name: 'Criar registo' }));
-    await waitFor(() => {
-      expect(hooks.createTransfer.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data_categories: ['Support messages'],
-          safeguards: ['MFA', 'ticket scope'],
-          review_notes: undefined,
-          evidence_receipt: undefined,
-        }),
-      );
-    });
+    expect(
+      within(transferPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/transfer-controls/new');
+
+    const transferRow = screen.getByText('UK support access').closest('tr') as HTMLElement;
+    expect(
+      within(transferRow).getByRole('link', { name: 'UK support access' }).getAttribute('href'),
+    ).toBe('/settings/privacy/transfer-controls/transfer-1');
+    expect(within(transferRow).getByRole('link', { name: 'Editar' }).getAttribute('href')).toBe(
+      '/settings/privacy/transfer-controls/transfer-1',
+    );
+  });
+
+  it('holds no breach or transfer draft: the list can no longer create or patch either', () => {
+    // 🔒 REGRESSION GUARD. The inline form's state left a create/patch path inside the LIST. The
+    // record pages own that path now and re-check `privacy.manage` themselves; the panels must not
+    // grow a second one back — not as a card, not as a dialog.
+    hooks.breaches.data = [breach];
+    hooks.transfers.data = [transfer];
+    renderWithProviders(<PrivacyComplianceSection />);
+
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('Título do playbook')).toBeNull();
+    expect(screen.queryByLabelText('Nome do controlo')).toBeNull();
+    expect(document.getElementById('privacy-breach-new-status')).toBeNull();
+    expect(document.getElementById('privacy-breach-edit-status')).toBeNull();
+    expect(document.getElementById('privacy-transfer-new-status')).toBeNull();
+    expect(document.getElementById('privacy-transfer-edit-status')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Guardar alterações' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Criar registo' })).toBeNull();
+    expect(hooks.createBreach.mutateAsync).not.toHaveBeenCalled();
+    expect(hooks.patchBreach.mutateAsync).not.toHaveBeenCalled();
+    expect(hooks.createTransfer.mutateAsync).not.toHaveBeenCalled();
+    expect(hooks.patchTransfer.mutateAsync).not.toHaveBeenCalled();
   });
 
   it('offers both registers as addresses and keeps no editor in the list at all', () => {
