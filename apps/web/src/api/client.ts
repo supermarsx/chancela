@@ -352,6 +352,12 @@ interface ApiErrorBody {
   /** Coarse remaining-attempt hint (`"low"`/`"final_try"`/`"locked"`/`"unknown"`). */
   tries_left?: string;
   /**
+   * Correlation id the server's `propagate_request_id` middleware splices into every 4xx/5xx
+   * JSON-object error body. It is the operator's only route back to a scrubbed `internal`
+   * failure's real detail, so it is surfaced rather than dropped.
+   */
+  request_id?: string;
+  /**
    * Byte offset into an ata body source of the construct a `422 InvalidActBody` rejected (t74).
    * A **byte** offset (UTF-8), not a character index — the body editor converts it before
    * underlining. Absent unless the error is a rejected markdown body.
@@ -422,8 +428,18 @@ export class ApiError extends Error {
    * body editor can underline the offending byte in place. Absent on every non-body error.
    */
   readonly offset?: number;
+  /**
+   * Server correlation id, spliced into the error body by `propagate_request_id`. Absent when the
+   * failure never reached the server (a network error) or the body was not a JSON object.
+   */
+  readonly requestId?: string;
+  /**
+   * The API path the failing request was sent to, when the throwing helper knew it. Diagnostic
+   * only — it is shown in `ErrorNote`'s technical-details block so a bug report names the endpoint.
+   */
+  readonly path?: string;
 
-  constructor(status: number, body: ApiErrorBody, credentialProof = false) {
+  constructor(status: number, body: ApiErrorBody, credentialProof = false, path?: string) {
     super(body.error || body.message || t('error.requestFailed', { status }));
     this.name = 'ApiError';
     this.status = status;
@@ -435,6 +451,8 @@ export class ApiError extends Error {
     this.pinStatus = body.pin_status;
     this.triesLeft = body.tries_left;
     this.offset = body.offset;
+    this.requestId = body.request_id;
+    this.path = path;
   }
 }
 
@@ -480,6 +498,7 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
         res.status,
         { error: t('error.requestFailed', { status: res.status }) },
         proof,
+        path,
       );
     }
     return undefined as T;
@@ -497,6 +516,7 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
       res.status,
       { error: t('error.unexpectedResponse', { detail, suffix, status: res.status }) },
       proof,
+      path,
     );
   }
 
@@ -510,6 +530,7 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
       res.status,
       { error: t('error.invalidJson', { suffix, status: res.status }) },
       proof,
+      path,
     );
   }
 
@@ -521,7 +542,7 @@ export async function parseResponse<T>(res: Response, path?: string): Promise<T>
       data !== null && typeof data === 'object' && !Array.isArray(data)
         ? (data as ApiErrorBody)
         : { error: t('error.requestFailed', { status: res.status }) };
-    throw new ApiError(res.status, body, proof);
+    throw new ApiError(res.status, body, proof, path);
   }
   return data as T;
 }
@@ -592,7 +613,7 @@ export async function fetchBlob(path: string): Promise<Blob> {
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message }, credentialProof);
+    throw new ApiError(res.status, { error: message }, credentialProof, path);
   }
   return res.blob();
 }
@@ -617,7 +638,7 @@ export async function fetchArrayBuffer(path: string): Promise<ArrayBuffer> {
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message }, credentialProof);
+    throw new ApiError(res.status, { error: message }, credentialProof, path);
   }
   return res.arrayBuffer();
 }
@@ -641,7 +662,7 @@ export async function fetchTextDownload(path: string): Promise<TextDownload> {
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message }, credentialProof);
+    throw new ApiError(res.status, { error: message }, credentialProof, path);
   }
   const contentType = res.headers.get('Content-Type') ?? '';
   const text = await res.clone().text();
@@ -671,7 +692,7 @@ export async function postTextDownload(path: string, body: unknown): Promise<Tex
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message }, credentialProof);
+    throw new ApiError(res.status, { error: message }, credentialProof, path);
   }
   const contentType = res.headers.get('Content-Type') ?? '';
   const text = await res.clone().text();
@@ -703,7 +724,7 @@ export async function fetchBlobVia(
     } catch {
       // Non-JSON error body — keep the generic status message.
     }
-    throw new ApiError(res.status, { error: message }, credentialProof);
+    throw new ApiError(res.status, { error: message }, credentialProof, path);
   }
   return { blob: await res.blob(), headers: res.headers };
 }
@@ -754,7 +775,7 @@ export async function postJsonBlob(
     } catch {
       // Preserve the bounded status-only message for non-JSON error bodies.
     }
-    throw new ApiError(res.status, { error: message }, credentialProof);
+    throw new ApiError(res.status, { error: message }, credentialProof, path);
   }
   return { blob: await res.blob(), headers: res.headers };
 }
@@ -781,7 +802,7 @@ export async function postJsonArrayBuffer(
   handleUnauthorized(res, path);
   if (!res.ok) {
     await parseResponse<never>(res, path);
-    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) });
+    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) }, false, path);
   }
   return { data: await res.arrayBuffer(), headers: res.headers };
 }
@@ -802,7 +823,7 @@ export async function postJsonText(
   handleUnauthorized(res, path);
   if (!res.ok) {
     await parseResponse<never>(res, path);
-    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) });
+    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) }, false, path);
   }
   return { text: await res.text(), headers: res.headers };
 }

@@ -9,9 +9,22 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { ErrorNote } from './index';
 import { ApiError } from '../api/client';
+import { t } from '../i18n';
 import { apiErrorPtPT, NON_ROUTINE_CODES } from '../i18n/apiErrorFallback';
 
 afterEach(cleanup);
+
+/**
+ * Copy is read from the catalogs, never frozen as a literal here. Both catalogs are the source of
+ * truth for the sentence; this file is the source of truth for WHICH sentence each error resolves
+ * to. A reviewed rewording must not turn a structurally correct component red, and — the sharper
+ * risk — a literal that drifts out of the catalog silently stops matching anything, which turns a
+ * negative assertion (`queryByText(...)).toBeNull()`) into one that can never fail.
+ */
+const SUMMARY = apiErrorPtPT['apiError.details.summary'];
+const COPY_BUTTON = apiErrorPtPT['apiError.details.copy'];
+const REQUEST_ID_LABEL = apiErrorPtPT['apiError.details.requestId'];
+const PATH_LABEL = apiErrorPtPT['apiError.details.path'];
 
 /** Build an `ApiError` the same way `parseResponse` does, without a real fetch round-trip. */
 function apiError(
@@ -36,14 +49,21 @@ describe('ErrorNote — headline resolution', () => {
   });
 
   it('falls back to the status-tier sentence for a Tier-1 variant default (not a gap)', () => {
-    render(<ErrorNote error={apiError(404, { error: 'no such thing', code: 'not_found' })} />);
+    // `http.not_found` is what `ApiError::NotFound.code()` actually puts on the wire. The bare
+    // `not_found` this once sent is an UNMAPPED code, so the test rendered the same tier sentence
+    // by the opposite route and proved nothing about the Tier-1 path it names.
+    render(<ErrorNote error={apiError(404, { error: 'no such thing', code: 'http.not_found' })} />);
     expect(screen.getByText(apiErrorPtPT['apiError.tier.404'])).toBeTruthy();
+    // Not a gap: the server said nothing more specific, so nothing specific is being hidden and
+    // the detail is left collapsed. An unmapped code would have forced it open instead.
+    const details = screen.getByText(SUMMARY).closest('details') as HTMLElement;
+    expect(details.hasAttribute('open')).toBe(false);
   });
 
   it('still produces a pt-PT sentence for a bare thrown Error, and force-opens the detail', () => {
     render(<ErrorNote error={new Error('ECONNRESET')} />);
     expect(screen.getByText(apiErrorPtPT['apiError.tier.unknown'])).toBeTruthy();
-    const details = screen.getByText('Detalhes técnicos').closest('details');
+    const details = screen.getByText(SUMMARY).closest('details');
     expect(details?.hasAttribute('open')).toBe(true);
     expect(screen.getByText(/ECONNRESET/)).toBeTruthy();
   });
@@ -52,10 +72,10 @@ describe('ErrorNote — headline resolution', () => {
 describe('ErrorNote — the 403 split (generalised from the old single branch)', () => {
   it('renders the verbatim perm.denied copy for a bare 403 (no specific code)', () => {
     render(<ErrorNote error={apiError(403, { error: 'forbidden' })} />);
-    expect(screen.getByText('Não tem permissão para realizar esta operação.')).toBeTruthy();
+    expect(screen.getByText(t('perm.denied.body'))).toBeTruthy();
     // The generic denial never grows a technical-details block — nothing more was said, and
     // the perm.denied path is preserved verbatim rather than being routed through the resolver.
-    expect(screen.queryByText('Detalhes técnicos')).toBeNull();
+    expect(screen.queryByText(SUMMARY)).toBeNull();
   });
 
   it('resolves a 403 carrying a specific code through the catalog instead', () => {
@@ -68,7 +88,9 @@ describe('ErrorNote — the 403 split (generalised from the old single branch)',
       />,
     );
     expect(screen.getByText(apiErrorPtPT['apiError.cross_user_proof_required'])).toBeTruthy();
-    expect(screen.queryByText('Não tem permissão para esta ação.')).toBeNull();
+    // The generic denial must NOT have swallowed the coded 403. This asserted a literal that
+    // appears in no catalog, so it was null however the component behaved.
+    expect(screen.queryByText(t('perm.denied.body'))).toBeNull();
   });
 });
 
@@ -103,7 +125,9 @@ describe('ErrorNote — the cross-user 403 leaks no distinguishing detail', () =
   });
 });
 
-describe('ErrorNote — the 9 exempt (must-not-soften) surfaces read as non-routine', () => {
+// The count is deliberately not in the title: `NON_ROUTINE_CODES` has grown (9 → 20) and a title
+// that names a number goes stale silently, since nothing checks it.
+describe('ErrorNote — the exempt (must-not-soften) surfaces read as non-routine', () => {
   const nonTierText = new Set(
     Object.entries(apiErrorPtPT)
       .filter(([key]) => key.startsWith('apiError.tier.'))
@@ -139,7 +163,7 @@ describe('ErrorNote — the technical-details block', () => {
         )}
       />,
     );
-    const details = screen.getByText('Detalhes técnicos').closest('details') as HTMLElement;
+    const details = screen.getByText(SUMMARY).closest('details') as HTMLElement;
     expect(details.hasAttribute('open')).toBe(true); // scrubbed 5xx forces the block open
     const scoped = within(details);
     expect(scoped.getByText('internal')).toBeTruthy();
@@ -151,9 +175,9 @@ describe('ErrorNote — the technical-details block', () => {
 
   it('omits a row entirely when the server did not send that field', () => {
     render(<ErrorNote error={apiError(422, { error: 'bad body', code: 'invalid_act_body' })} />);
-    const details = screen.getByText('Detalhes técnicos').closest('details') as HTMLElement;
-    expect(within(details).queryByText('Identificador do pedido')).toBeNull();
-    expect(within(details).queryByText('Endereço do pedido')).toBeNull();
+    const details = screen.getByText(SUMMARY).closest('details') as HTMLElement;
+    expect(within(details).queryByText(REQUEST_ID_LABEL)).toBeNull();
+    expect(within(details).queryByText(PATH_LABEL)).toBeNull();
   });
 
   it('force-opens on an unmapped code and warns once in dev, without dropping the server detail', () => {
@@ -161,7 +185,7 @@ describe('ErrorNote — the technical-details block', () => {
     render(
       <ErrorNote error={apiError(422, { error: 'a brand new failure mode', code: 'nobody_wrote_copy_yet' })} />,
     );
-    const details = screen.getByText('Detalhes técnicos').closest('details') as HTMLElement;
+    const details = screen.getByText(SUMMARY).closest('details') as HTMLElement;
     expect(details.hasAttribute('open')).toBe(true);
     expect(within(details).getByText(/a brand new failure mode/)).toBeTruthy();
     expect(within(details).getByText('nobody_wrote_copy_yet')).toBeTruthy();
@@ -181,7 +205,7 @@ describe('ErrorNote — the technical-details block', () => {
         )}
       />,
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Copiar detalhes' }));
+    fireEvent.click(screen.getByRole('button', { name: COPY_BUTTON }));
     await Promise.resolve();
     await Promise.resolve();
 

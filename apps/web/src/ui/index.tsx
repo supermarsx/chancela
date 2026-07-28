@@ -12,8 +12,6 @@ import type {
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
 } from 'react';
-import { useT } from '../i18n';
-import { ApiError } from '../api/client';
 import { FieldHelp } from './FieldHelp';
 import { useDateInputT } from './dateInputStrings';
 import { Calendar } from './icons';
@@ -44,6 +42,7 @@ export {
   SkeletonRegion,
 } from './Skeleton';
 export { ToastProvider, useToast, type ToastHandle, type ToastVariant } from './toast';
+export { ErrorNote } from './ErrorNote';
 export {
   ConfirmActionModal,
   type ConfirmActionModalProps,
@@ -418,23 +417,7 @@ export function InlineWarning({
 }
 
 // --- Query state helpers --------------------------------------------------------
-
-export function ErrorNote({ error }: { error: unknown }) {
-  const t = useT();
-  // Honest 403 handling (t64-E5): a server permission denial (distinct from a 401 session,
-  // which the client resolves by clearing the token → sign-in) reads as "sem permissão",
-  // never a raw error. Applies app-wide since every inline error renders through here.
-  if (error instanceof ApiError && error.status === 403) {
-    return (
-      <InlineWarning tone="error" title={t('perm.denied.title')}>
-        {t('perm.denied.body')}
-      </InlineWarning>
-    );
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  return (
-    <InlineWarning tone="error" title={t('common.error')}>
-      {message}
-    </InlineWarning>
-  );
-}
+//
+// `ErrorNote` lives in `./ErrorNote` (re-exported above): it grew from this file's single 403
+// special-case into the `apiErrorFallback.ts` code table plus a technical-details block, which is
+// more than a presentational primitive belongs to carry.

@@ -1581,6 +1581,73 @@ a.btn.btn--iconOnly {
   font-size: 0.92rem;
 }
 
+/* `ErrorNote` — the reviewed pt-PT sentence, then everything the server actually said.
+   The headline is a full sentence, so it does NOT reuse `.inline-warning__title`'s uppercase
+   label treatment; the technical block below it is deliberately quieter, because it is for
+   whoever debugs the failure rather than for the person who hit it. */
+.error-note__headline {
+  margin: 0;
+  font-weight: 500;
+}
+
+/* A deliberate refusal (`NON_ROUTINE_CODES`) must not read as a transient hiccup to retry past. */
+.error-note--non-routine .error-note__headline {
+  font-weight: 600;
+}
+
+.error-note__details {
+  margin-top: 0.7rem;
+  font-size: 0.85rem;
+}
+
+.error-note__summary {
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.error-note__facts {
+  display: grid;
+  gap: 0.3rem 0.75rem;
+  margin: 0.6rem 0 0;
+}
+
+.error-note__fact {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) 1fr;
+  gap: 0.75rem;
+}
+
+.error-note__fact dt {
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* Codes, ids, paths and the English server detail are identifiers — monospaced, and allowed to
+   wrap so a long path is never clipped out of a bug report. */
+.error-note__fact dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  overflow-wrap: anywhere;
+}
+
+.error-note__hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.error-note__actions {
+  margin: 0.6rem 0 0;
+}
+
 /* Definition lists (entity/book summaries). */
 .deflist {
   display: grid;
