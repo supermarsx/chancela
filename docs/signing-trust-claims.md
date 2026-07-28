@@ -39,8 +39,10 @@ new substrate:**
 - **Claims about absence** (*"never persisted"*, *"no endpoint sets it directly"*). A test can show
   a path does not do something; it cannot show no path does. Entries of this shape are REVIEWED at
   best, and the label is doing real work.
-- **Whether a proving test is any good.** This register asserts a test exists and is coupled to the
-  claim. It does not assert the test is thorough.
+- **Whether a proving test is any good.** That a cited test *exists* is mechanically enforced —
+  `check-docs-claims.mjs` gate 3 fails if a PROVEN entry cites a function that is not there, so an
+  entry cannot quietly outlive its proof through a rename. What no gate can check is whether the
+  test actually exercises the claim, or is thorough. That coupling is asserted by a human.
 - **Prose without backticks**, which the mechanised halves also miss.
 
 ## Maintenance rule
@@ -233,3 +235,4 @@ architectural statement.
 | date | reviewer | scope |
 |---|---|---|
 | 2026-07-28 | t61-e5 | Register created. 13 claims: 8 PROVEN, 4 REVIEWED, 1 FALSE (ST-11, tracked in `scripts/docs-claims-registry.json`). ST-2 recorded as PROVEN on the strength of t61-e1's bridge; it was FALSE before that change landed. |
+| 2026-07-28 | t61-e5 | Every cited test verified to exist (18 references across the 8 PROVEN entries), first by hand and then mechanically — the hand check became `check-docs-claims.mjs` gate 3 precisely because hand checks decay. Gate 3 also rejects an entry carrying no PROVEN/REVIEWED/FALSE state, so an unclassified claim cannot inherit the register's authority. |

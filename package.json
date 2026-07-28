@@ -25,6 +25,8 @@
     "check:live-provider-assurance": "node scripts/check-live-provider-assurance.mjs",
     "check:encrypted-build-defaults": "node scripts/check-encrypted-build-defaults.mjs",
     "check:supply-chain-pins": "node scripts/check-supply-chain-pins.mjs",
+    "check:docs-claims": "node scripts/check-docs-claims.mjs",
+    "test:docs-claims-selftest": "node scripts/check-docs-claims.mjs --self-test",
     "lint": "npm run lint:rust && npm run lint:web",
     "lint:rust": "cargo clippy --workspace --all-targets --locked -- -D warnings",
     "lint:web": "npm run lint --workspace apps/web",
