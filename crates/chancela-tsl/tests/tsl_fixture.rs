@@ -1046,8 +1046,8 @@ fn client_with_explicit_anchors_authenticates_a_list_the_env_path_would_reject()
         "the unauthenticated list is Granted, so the anchor is what the assertions below isolate"
     );
 
-    let mut anchored = TslClient::new(BytesTslSource::new(signed.xml.clone()))
-        .with_anchors(anchors_for(&signed));
+    let mut anchored =
+        TslClient::new(BytesTslSource::new(signed.xml.clone())).with_anchors(anchors_for(&signed));
     assert_eq!(
         anchored.is_qualified_for_esig(&cert, NOW).unwrap(),
         QualifiedStatus::Granted,
@@ -1055,8 +1055,8 @@ fn client_with_explicit_anchors_authenticates_a_list_the_env_path_would_reject()
     );
     assert!(anchored.cached().unwrap().signature_valid());
 
-    let mut unanchored =
-        TslClient::new(BytesTslSource::new(signed.xml.clone())).with_anchors(TslTrustAnchors::new());
+    let mut unanchored = TslClient::new(BytesTslSource::new(signed.xml.clone()))
+        .with_anchors(TslTrustAnchors::new());
     assert_eq!(
         unanchored.is_qualified_for_esig(&cert, NOW).unwrap(),
         QualifiedStatus::Unknown,
@@ -1066,7 +1066,11 @@ fn client_with_explicit_anchors_authenticates_a_list_the_env_path_would_reject()
 
     // `new()` alone keeps its pre-existing behaviour: resolve from the environment. On a runner
     // with no anchor configured that is the fail-closed empty set.
-    assert!(TslClient::new(BytesTslSource::new(signed.xml)).anchors().is_none());
+    assert!(
+        TslClient::new(BytesTslSource::new(signed.xml))
+            .anchors()
+            .is_none()
+    );
 }
 
 #[test]
