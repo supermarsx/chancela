@@ -77,6 +77,20 @@ export const termoPtPT = {
   'books.termo.action.signing': 'A assinar…',
   'books.termo.action.opening': 'A abrir…',
 
+  // — Confirmação das ações guardadas (o servidor declara-as; o cliente é a barreira) ————
+  //
+  // Frases completas e autónomas: nada de nomes de instrumentos interpolados numa oração
+  // flexionada. A mesma confirmação do congelamento serve os dois termos, por isso não nomeia
+  // nem a abertura nem o encerramento.
+  'books.termo.advance.confirm.title': 'Congelar o termo para assinatura?',
+  'books.termo.advance.confirm.intro':
+    'O conteúdo e o conjunto de signatários ficam congelados e deixam de ser editáveis. O termo passa a recolher assinaturas.',
+  'books.termo.advance.confirm.action': 'Congelar e avançar',
+  'books.termo.open.confirm.title': 'Abrir o livro a partir deste termo?',
+  'books.termo.open.confirm.intro':
+    'O termo assinado é selado e o livro é aberto. A abertura fica registada como o primeiro evento da cadeia do livro e não pode ser anulada.',
+  'books.termo.open.confirm.action': 'Selar e abrir o livro',
+
   // — Falha-fechada da abertura (t23/t41) ————————————————————————————————————
   'books.termo.open.notSignedTitle': 'O termo ainda não está assinado criptograficamente',
   'books.termo.open.notSignedBody':
@@ -245,6 +259,15 @@ export const termoEnglish = {
   'books.termo.action.advancing': 'Freezing…',
   'books.termo.action.signing': 'Signing…',
   'books.termo.action.opening': 'Opening…',
+
+  'books.termo.advance.confirm.title': 'Freeze the term for signing?',
+  'books.termo.advance.confirm.intro':
+    'The content and the signatory set are frozen and stop being editable. The term moves on to collecting signatures.',
+  'books.termo.advance.confirm.action': 'Freeze and advance',
+  'books.termo.open.confirm.title': 'Open the book from this term?',
+  'books.termo.open.confirm.intro':
+    'The signed term is sealed and the book is opened. Opening is recorded as the first event in the book’s chain and cannot be undone.',
+  'books.termo.open.confirm.action': 'Seal and open the book',
 
   'books.termo.open.notSignedTitle': 'The term is not yet cryptographically signed',
   'books.termo.open.notSignedBody':

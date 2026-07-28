@@ -51,6 +51,7 @@ import {
   Card,
   ErrorNote,
   Field,
+  GuardedActionModal,
   Icon,
   InlineWarning,
   Input,
@@ -58,6 +59,7 @@ import {
   Skeleton,
   TextArea,
   Toggle,
+  useGuardedActionPolicy,
   useToast,
 } from '../../ui';
 import { useTermoT } from './termoStrings';
@@ -228,6 +230,10 @@ function TermoDraftForm({
   const toast = useToast();
   const patch = usePatchBookTermoAbertura(termo.book_id);
   const advance = useAdvanceBookTermoAbertura(termo.book_id);
+  // `termo_abertura.advance` is a guarded action in the server's registry, and one the server does
+  // not re-enforce: for a `confirm`-floored action the client IS the gate.
+  const advancePolicy = useGuardedActionPolicy('termo_abertura.advance');
+  const [confirmAdvance, setConfirmAdvance] = useState(false);
 
   const [title, setTitle] = useState(termo.title);
   const [clauses, setClauses] = useState<ClauseDraft[]>(termo.body.map(clauseToDraft));
@@ -295,15 +301,23 @@ function TermoDraftForm({
     });
   }
 
+  /**
+   * Persist the current edits first (the freeze validates the saved termo), then advance — one
+   * promise, so the confirm dialog waits for the whole thing and reports either half's failure.
+   */
+  async function runAdvance(): Promise<void> {
+    await patch.mutateAsync(buildBody());
+    await advance.mutateAsync(undefined);
+  }
+
   function onAdvance() {
-    // Persist the current edits first (the freeze validates the saved termo), then advance.
-    patch.mutate(buildBody(), {
-      onSuccess: () =>
-        advance.mutate(undefined, {
-          onError: (error) => toast.error(error),
-        }),
-      onError: (error) => toast.error(error),
-    });
+    if (!advancePolicy.gated) {
+      // Only when the policy positively resolves the action to `off`; the unreadable-policy case
+      // falls back to `confirm` and takes the dialog.
+      runAdvance().catch((error: unknown) => toast.error(error));
+      return;
+    }
+    setConfirmAdvance(true);
   }
 
   const busy = patch.isPending || advance.isPending;
@@ -603,6 +617,23 @@ function TermoDraftForm({
           </div>
         </Field>
       </div>
+
+      <GuardedActionModal
+        action="termo_abertura.advance"
+        open={confirmAdvance}
+        onClose={() => setConfirmAdvance(false)}
+        title={tt('books.termo.advance.confirm.title')}
+        intro={<p>{tt('books.termo.advance.confirm.intro')}</p>}
+        confirmLabel={tt('books.termo.advance.confirm.action')}
+        pendingLabel={tt('books.termo.action.advancing')}
+        pending={busy}
+        onConfirm={async () => {
+          // Resolves either way so the dialog closes onto the panel's own error rendering, which
+          // is unchanged from before the gate: an `ErrorNote` above the actions plus the toast.
+          // Rejecting here would stack the dialog's copy of the server sentence on top of both.
+          await runAdvance().catch((error: unknown) => toast.error(error));
+        }}
+      />
     </div>
   );
 }
@@ -613,6 +644,11 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
   const formatPolicy = useFormatPolicy();
   const sign = useSignBookTermoAberturaPkcs12(termo.book_id);
   const openBook = useOpenBookFromTermo(termo.book_id);
+  // `termo_abertura.open` is a guarded action in the server's registry — floored at
+  // confirm-with-reauth-and-phrase, because opening appends the `book.opened` genesis event and a
+  // genesis cannot be un-appended. The server declares the level; this dialog applies it.
+  const openPolicy = useGuardedActionPolicy('termo_abertura.open');
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // The slot whose real per-slot PAdES co-signature form is open (null = none expanded yet).
   const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
 
@@ -715,7 +751,13 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
               type="button"
               variant="primary"
               icon={<Icon.BookPlus />}
-              onClick={() => openBook.mutate(undefined)}
+              onClick={() => {
+                if (!openPolicy.gated) {
+                  openBook.mutate(undefined);
+                  return;
+                }
+                setConfirmOpen(true);
+              }}
               disabled={openBook.isPending}
             >
               {openBook.isPending
@@ -726,6 +768,23 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
           <p className="field__hint">{tt('books.termo.action.openHint')}</p>
         </div>
       </div>
+
+      <GuardedActionModal
+        action="termo_abertura.open"
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={tt('books.termo.open.confirm.title')}
+        intro={<p>{tt('books.termo.open.confirm.intro')}</p>}
+        confirmLabel={tt('books.termo.open.confirm.action')}
+        pendingLabel={tt('books.termo.action.opening')}
+        pending={openBook.isPending}
+        onConfirm={async () => {
+          // Resolves either way so the dialog closes onto this panel's own refusal rendering: the
+          // reviewed fail-closed note for the evidentiary refusal, `ErrorNote` for everything else.
+          // Rejecting would keep the dialog open over that, showing the raw server sentence twice.
+          await openBook.mutateAsync(undefined).catch(() => undefined);
+        }}
+      />
     </div>
   );
 }

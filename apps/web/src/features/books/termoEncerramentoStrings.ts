@@ -57,6 +57,12 @@ export const encerramentoPtPT = {
   'books.encerramento.action.closeHint': 'Sela o termo assinado e encerra o livro.',
   'books.encerramento.action.closing': 'A encerrar…',
 
+  // — Confirmação do encerramento (ação guardada; o cliente é a barreira) ————————
+  'books.encerramento.close.confirm.title': 'Encerrar o livro a partir deste termo?',
+  'books.encerramento.close.confirm.intro':
+    'O termo assinado é selado e o livro é encerrado. Um livro encerrado não volta a abrir nem aceita novas atas.',
+  'books.encerramento.close.confirm.action': 'Selar e encerrar o livro',
+
   // — Falha-fechada do encerramento (t44) ————————————————————————————————————
   'books.encerramento.close.notSignedTitle': 'O termo ainda não está assinado criptograficamente',
   'books.encerramento.close.notSignedBody':
@@ -113,6 +119,11 @@ export const encerramentoEnglish = {
   'books.encerramento.action.close': 'Close book',
   'books.encerramento.action.closeHint': 'Seals the signed term and closes the book.',
   'books.encerramento.action.closing': 'Closing…',
+
+  'books.encerramento.close.confirm.title': 'Close the book from this term?',
+  'books.encerramento.close.confirm.intro':
+    'The signed term is sealed and the book is closed. A closed book never reopens and accepts no further minutes.',
+  'books.encerramento.close.confirm.action': 'Seal and close the book',
 
   'books.encerramento.close.notSignedTitle': 'The term is not yet cryptographically signed',
   'books.encerramento.close.notSignedBody':

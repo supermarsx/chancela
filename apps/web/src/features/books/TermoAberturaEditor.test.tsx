@@ -79,6 +79,52 @@ const SIGNED_TERMO: TermoInstrumentView = {
   },
 };
 
+/**
+ * `GET /v1/confirmation-policy` as the server emits it, for the two guarded actions this panel
+ * fires. The levels mirror `confirmation.rs`'s floors: freezing is a plain confirm; opening is
+ * floored at a typed phrase plus step-up, because it appends the `book.opened` genesis event.
+ */
+function confirmationPolicyJson(): Response {
+  return jsonResponse({
+    actions: [
+      {
+        action: 'termo_abertura.advance',
+        floor: 'confirm',
+        effective: 'confirm',
+        consequence: 'consequential',
+        wired: true,
+      },
+      {
+        action: 'termo_abertura.open',
+        floor: 'confirm_with_reauth_and_phrase',
+        effective: 'confirm_with_reauth_and_phrase',
+        phrase: 'ABRIR LIVRO',
+        consequence: 'consequential',
+        wired: true,
+      },
+    ],
+  });
+}
+
+/** The dialog's submit control, found by role + type rather than by its translated label. */
+function dialogConfirm(): HTMLButtonElement | null {
+  const dialog = screen.queryByRole('dialog');
+  return dialog?.querySelector<HTMLButtonElement>('button[type=submit]') ?? null;
+}
+
+/**
+ * Satisfy the open dialog's server-declared gate: transcribe the phrase and supply a step-up
+ * proof. Both fields are found structurally (the phrase box is the dialog's only `.mono` input),
+ * never by their translated labels.
+ */
+function passOpenGate(): void {
+  const dialog = screen.getByRole('dialog');
+  const phrase = dialog.querySelector<HTMLInputElement>('input.mono');
+  if (phrase) fireEvent.change(phrase, { target: { value: 'ABRIR LIVRO' } });
+  const password = dialog.querySelector<HTMLInputElement>('input[type=password]');
+  if (password) fireEvent.change(password, { target: { value: 'segredo-da-amelia' } });
+}
+
 afterEach(() => {
   cleanup();
   delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
@@ -277,6 +323,7 @@ describe('TermoAberturaEditor', () => {
           ),
         );
       }
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
       if (url.endsWith('/termo/abertura/sign')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
       if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
       return Promise.reject(new Error(`no stub for ${method} ${url}`));
@@ -289,10 +336,15 @@ describe('TermoAberturaEditor', () => {
     expect(document.querySelector('.termo-status-table')).toBeTruthy();
     expect(document.querySelector('.termo-signatories-table')).toBeTruthy();
     expect(
-      screen.getByRole('button', { name: 'Abrir livro' }).closest('.termo-action-row'),
+      screen
+        .getByRole('button', { name: termoPtPT['books.termo.action.open'] })
+        .closest('.termo-action-row'),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir livro' }));
+    fireEvent.click(screen.getByRole('button', { name: termoPtPT['books.termo.action.open'] }));
+    await screen.findByRole('dialog');
+    passOpenGate();
+    fireEvent.click(dialogConfirm()!);
 
     // The refusal is surfaced honestly — the book is NOT pretended open. Keyed on the exported
     // copy entry, not on a transcribed sentence: a reworded headline must not flip this test.
@@ -317,6 +369,7 @@ describe('TermoAberturaEditor', () => {
           jsonResponse({ error: 'book is not in the Created state; it cannot be opened' }, 409),
         );
       }
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
       if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNED_TERMO));
       return Promise.reject(new Error(`no stub for ${method} ${url}`));
     }) as typeof fetch);
@@ -326,10 +379,89 @@ describe('TermoAberturaEditor', () => {
     fireEvent.click(
       await screen.findByRole('button', { name: termoPtPT['books.termo.action.open'] }),
     );
+    await screen.findByRole('dialog');
+    passOpenGate();
+    fireEvent.click(dialogConfirm()!);
 
     await waitFor(() => expect(container.querySelector('.inline-warning--error')).toBeTruthy());
     expect(container.querySelector('.inline-warning--warn')).toBeNull();
     expect(screen.queryByText(termoPtPT['books.termo.open.notSignedTitle'])).toBeNull();
+  });
+
+  // --- The guarded actions the server declares (t78) --------------------------------------------
+  //
+  // `confirmation.rs` registers `termo_abertura.advance` and `termo_abertura.open` in `ROUTE_GUARD`
+  // and neither handler calls `require_confirmation`, so for these the client IS the gate. What
+  // these pin is therefore the ABSENCE of a write before the operator confirms — not that a dialog
+  // renders, which would still pass if the mutation had already gone out behind it.
+
+  it('writes nothing when the freeze is asked for, until the dialog is confirmed', async () => {
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method });
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
+      if (url.endsWith('/termo/abertura/advance'))
+        return Promise.resolve(jsonResponse(SIGNING_TERMO));
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(DRAFT_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    await screen.findByLabelText('Título do termo');
+
+    fireEvent.click(screen.getByRole('button', { name: termoPtPT['books.termo.action.advance'] }));
+    await screen.findByRole('dialog');
+
+    // The freeze saves before it advances, so BOTH writes must still be absent — a gate that let
+    // the PATCH through would have already persisted the edits the operator did not commit to.
+    expect(calls.filter((c) => c.method !== 'GET')).toHaveLength(0);
+
+    fireEvent.click(dialogConfirm()!);
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/advance')),
+      ).toBe(true),
+    );
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
+  });
+
+  it('writes nothing when the open is asked for, until the phrase gate is passed', async () => {
+    const calls: RecordedCall[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      calls.push({ url, method });
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
+      if (url.endsWith('/termo/abertura/open'))
+        return Promise.resolve(jsonResponse({ id: 'book-2', entity_id: 'ent-1', state: 'Open' }));
+      if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNED_TERMO));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+
+    renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: termoPtPT['books.termo.action.open'] }),
+    );
+    await screen.findByRole('dialog');
+
+    // Nothing written, and the server's declared level cannot be satisfied by an empty gate: the
+    // genesis commit is not one stray click away.
+    expect(calls.filter((c) => c.method !== 'GET')).toHaveLength(0);
+    expect(dialogConfirm()?.disabled).toBe(true);
+
+    passOpenGate();
+    expect(calls.filter((c) => c.method !== 'GET')).toHaveLength(0);
+
+    fireEvent.click(dialogConfirm()!);
+    await waitFor(() =>
+      expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/open'))).toBe(
+        true,
+      ),
+    );
   });
 
   it('renders the Sealed phase as status rows with a labelled artifact action row', async () => {
@@ -406,6 +538,7 @@ describe('TermoAberturaEditor', () => {
         return Promise.resolve(jsonResponse(SIGNED_TERMO));
       if (url.endsWith('/termo/abertura/open'))
         return Promise.resolve(jsonResponse({ id: 'book-2', entity_id: 'ent-1', state: 'Open' }));
+      if (url.includes('/v1/confirmation-policy')) return Promise.resolve(confirmationPolicyJson());
       if (url.endsWith('/termo/abertura')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
       return Promise.reject(new Error(`no stub for ${method} ${url}`));
     }) as typeof fetch);
@@ -430,7 +563,10 @@ describe('TermoAberturaEditor', () => {
     expect(await screen.findByText('Assinatura registada.')).toBeTruthy();
 
     // With the required slot really signed, the open no longer fails closed.
-    fireEvent.click(screen.getByRole('button', { name: 'Abrir livro' }));
+    fireEvent.click(screen.getByRole('button', { name: termoPtPT['books.termo.action.open'] }));
+    await screen.findByRole('dialog');
+    passOpenGate();
+    fireEvent.click(dialogConfirm()!);
     await waitFor(() =>
       expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/open'))).toBe(
         true,
