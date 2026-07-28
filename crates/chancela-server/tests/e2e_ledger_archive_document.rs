@@ -158,8 +158,17 @@ async fn ledger_archive_document_is_pdf_filterable_structured_and_read_only() {
     let obj = body.as_object().expect("422 body is a JSON object");
     assert_eq!(
         obj.keys().collect::<Vec<_>>(),
-        vec!["error"],
+        vec!["code", "error"],
         "422 body is the base error envelope: {body}"
+    );
+    // The envelope carries a code as well as prose. This chain error is a Tier-1
+    // generic — it has no dedicated catalog entry — so the code is the status-shaped
+    // `http.unprocessable` rather than a specific one. Pinned so that a later change
+    // giving this error its own Tier-2 code has to say so here.
+    assert_eq!(
+        body["code"].as_str(),
+        Some("http.unprocessable"),
+        "422 code: {body}"
     );
     assert!(
         body["error"]
