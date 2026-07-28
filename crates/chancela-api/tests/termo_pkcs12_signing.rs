@@ -739,6 +739,10 @@ async fn pkcs12_termo_sign_wrong_passphrase_leaves_no_signature() {
         "wrong passphrase: {err}"
     );
     assert!(!err.to_string().contains("not the password"));
+    // t58: the client must be able to say "retype the passphrase" without reading the English
+    // prose. A wrong passphrase and an unusable certificate are both `422`s on this endpoint and
+    // are indistinguishable at the status tier.
+    assert_eq!(err["code"], "pkcs12_password_incorrect", "{err}");
     assert!(
         instrument_signatures(&state, &book_id).await.is_empty(),
         "no signature recorded on a failed sign"
@@ -751,6 +755,61 @@ async fn pkcs12_termo_sign_wrong_passphrase_leaves_no_signature() {
     )
     .await;
     assert_eq!(termo["signatories"][0]["signed"], false);
+}
+
+/// An unusable *upload* and an unusable *certificate* are different problems with different
+/// remedies, so `pkcs12_termo_sign` must not report them under one code. Both are `422`s carrying an
+/// English detail, so the status tier and the prose are the only other channels — and the prose is
+/// exactly what t58 stopped clients reading.
+#[tokio::test]
+async fn pkcs12_termo_sign_separates_a_bad_upload_from_a_bad_certificate() {
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let (book_id, slot0, _slot1) = seed_frozen_termo(&state, &token).await;
+    let path = format!("/v1/books/{book_id}/termo/abertura/sign/pkcs12");
+
+    let malformed = json_req(
+        "POST",
+        &path,
+        &token,
+        json!({
+            "slot_id": &slot0,
+            "pkcs12_base64": "not base64 at all!!",
+            "passphrase": PFX_PASSWORD,
+        }),
+    );
+    let (status, err) = send(&state, malformed).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{err}");
+    assert_eq!(err["code"], "invalid_base64_content", "{err}");
+
+    let empty = json_req(
+        "POST",
+        &path,
+        &token,
+        json!({
+            "slot_id": &slot0,
+            "pkcs12_base64": "",
+            "passphrase": PFX_PASSWORD,
+        }),
+    );
+    let (status, err) = send(&state, empty).await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{err}");
+    assert_eq!(err["code"], "empty_content", "{err}");
+
+    // A real PKCS#12 that simply is not signing material reports the certificate as the fault.
+    let (status, err) = send(
+        &state,
+        pkcs12_sign_req(&book_id, &token, &slot0, b"not a pfx at all", PFX_PASSWORD),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{err}");
+    assert_eq!(err["code"], "pkcs12_material_invalid", "{err}");
+
+    assert!(
+        instrument_signatures(&state, &book_id).await.is_empty(),
+        "no signature recorded on any rejected upload"
+    );
 }
 
 // --- termo de encerramento (two-phase CLOSE, t44) ------------------------------------------------

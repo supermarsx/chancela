@@ -571,16 +571,31 @@ fn termo_signer_subject_dn(der: &[u8]) -> Option<String> {
 
 /// Map a PKCS#12 signing error to a client-safe `422`, never echoing the passphrase (the error type
 /// carries none).
+///
+/// Each arm carries its own Tier-2 code (t58): a wrong passphrase is the operator's to fix in
+/// seconds, bad signing material means the file itself is unusable, and the catch-all establishes
+/// neither. Without the codes all three render from the same generic `422` tier and the operator
+/// cannot tell "retype the password" from "this certificate cannot sign".
+///
+/// The catch-all names no cause on purpose. It is reached only through
+/// [`chancela_signing::pipeline::sign_pdf_pades_with_appearance`] over a local
+/// [`Pkcs12SigningSource`], which consults no Trusted List — so the trust-anchor family
+/// (`UntrustedService`, `TrustAnchorNotConfigured`, `TrustedListNotAnchored`) cannot arrive here and
+/// be mis-reported as a local file fault. Any future path that *can* raise those must split them out
+/// rather than widen this arm.
 fn map_termo_pkcs12_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
     match e {
         S::SoftCertificate(chancela_signing::SoftCertificateError::WrongPassword) => {
             ApiError::Unprocessable("PKCS#12 password is incorrect".to_owned())
+                .with_code("pkcs12_password_incorrect")
         }
         S::SoftCertificate(error) => {
             ApiError::Unprocessable(format!("invalid PKCS#12 signing material: {error}"))
+                .with_code("pkcs12_material_invalid")
         }
-        other => ApiError::Unprocessable(format!("local PKCS#12 signing failed: {other}")),
+        other => ApiError::Unprocessable(format!("local PKCS#12 signing failed: {other}"))
+            .with_code("pkcs12_signing_failed"),
     }
 }
 
@@ -779,14 +794,15 @@ async fn sign_termo_slot_pkcs12(
 
     let appearance = seal_appearance_from_request(req.seal)?;
 
-    let pkcs12_der =
-        Zeroizing::new(B64.decode(req.pkcs12_base64.trim()).map_err(|e| {
-            ApiError::Unprocessable(format!("invalid base64 PKCS#12 content: {e}"))
-        })?);
+    // t58: an unusable upload and an unusable *certificate* are different problems with different
+    // remedies, so they carry different codes even though both are `422`s on the same request.
+    let pkcs12_der = Zeroizing::new(B64.decode(req.pkcs12_base64.trim()).map_err(|e| {
+        ApiError::Unprocessable(format!("invalid base64 PKCS#12 content: {e}"))
+            .with_code("invalid_base64_content")
+    })?);
     if pkcs12_der.is_empty() {
-        return Err(ApiError::Unprocessable(
-            "PKCS#12 upload is empty".to_owned(),
-        ));
+        return Err(ApiError::Unprocessable("PKCS#12 upload is empty".to_owned())
+            .with_code("empty_content"));
     }
     if pkcs12_der.len() > LOCAL_PKCS12_SIGN_MAX_BYTES {
         return Err(ApiError::Unprocessable(format!(
@@ -834,9 +850,10 @@ async fn sign_termo_slot_pkcs12(
     // Validate any visible-seal placement up-front so a bad page/geometry is a clean 422 rather than
     // surfacing as a generic 500 from inside the blocking sign task.
     if appearance.is_some() {
-        prepare_signature_with_appearance(&input_bytes, &opts, appearance.as_ref()).map_err(
-            |e| ApiError::Unprocessable(format!("não foi possível preparar o selo visível: {e}")),
-        )?;
+        prepare_signature_with_appearance(&input_bytes, &opts, appearance.as_ref()).map_err(|e| {
+            ApiError::Unprocessable(format!("não foi possível preparar o selo visível: {e}"))
+                .with_code("visible_seal_failed")
+        })?;
     }
 
     let (signed_pdf, identity) = tokio::task::spawn_blocking(move || {
