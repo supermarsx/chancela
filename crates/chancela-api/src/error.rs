@@ -111,10 +111,39 @@ pub enum ApiError {
     /// lock. The client should retry; once a leader is elected it serves the write. The message is a
     /// short, non-sensitive PT string (never leaks internal state).
     Unavailable(String),
-    /// A dependency upstream of the API failed — currently the certidão permanente registry
-    /// consultation (network/HTTP failure, or a response that was not a recognisable
-    /// certidão). Maps to `502 Bad Gateway` (contract §2.7).
+    /// A dependency upstream of the API failed. Maps to `502 Bad Gateway` (contract §2.7). Its
+    /// detail is scrubbed off the wire and it cannot carry a Tier-2 code — use it only where the
+    /// cause genuinely is not established.
     Upstream(String),
+    /// A certidão permanente consultation failed **and the cause is established** (t95).
+    ///
+    /// Distinct from [`Upstream`](ApiError::Upstream) for one reason: `Upstream` renders as an
+    /// opaque `{"error": "erro de gateway", "code": "http.upstream"}` with the detail diverted to
+    /// the server log. That is right when we do not know what went wrong, and actively harmful
+    /// here, where we do. Routing every registry failure through it made "the registry is
+    /// unreachable", "the registry refused our credentials", "the quota is exhausted" and "we could
+    /// not parse the reply" indistinguishable to the operator — including the case that matters
+    /// most, where a failure to *reach* the service reads as a statement that the company has no
+    /// registry record.
+    ///
+    /// The `code` is **intrinsic**, produced by `RegistryError::code()` at the single `From`
+    /// conversion — never chosen by a call site. That is what keeps the
+    /// [`with_code`](ApiError::with_code) cap on `Upstream`/`Internal` meaningful: this variant is
+    /// not a way to refine those, it is a variant whose cause was classified at the source.
+    ///
+    /// The message is safe to return: `RegistryError` never echoes the access code, and the
+    /// transport builds its text from error *kinds* rather than upstream strings precisely so the
+    /// code cannot ride along.
+    RegistryConsultation {
+        /// Human-readable English detail (mirrors the base `error` field).
+        message: String,
+        /// Stable machine-readable code (`registry.unreachable`, `registry.quota_exceeded`, …).
+        code: &'static str,
+        /// `true` when **this installation** is at fault (`500`) rather than the registry (`502`).
+        /// A misconfigured base URL is our defect; reporting it as a bad gateway blames a
+        /// government service for a bug at home and sends the operator to the wrong place.
+        ours: bool,
+    },
     /// An ata's markdown body was rejected — a malformed placeholder, a construct the frozen block
     /// set cannot represent, or an over-cap body (422, t74 §5).
     ///
@@ -277,6 +306,13 @@ impl ApiError {
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
+            ApiError::RegistryConsultation { ours, .. } => {
+                if *ours {
+                    StatusCode::INTERNAL_SERVER_ERROR
+                } else {
+                    StatusCode::BAD_GATEWAY
+                }
+            }
             // A Tier-2 code refines the *description*, never the status.
             ApiError::Coded { inner, .. } => inner.status(),
         }
@@ -317,6 +353,8 @@ impl ApiError {
             // identity already is the code. Each is on the must-not-be-softened list — the client
             // gives them distinct copy and they never fall through to a generic status tier.
             ApiError::InvalidActBody { code, .. } => code,
+            // Classified at the source by `RegistryError::code()`, never by a call site.
+            ApiError::RegistryConsultation { code, .. } => code,
             ApiError::InvalidNipc(_) => "invalid_nipc",
             ApiError::PasswordPolicy { .. } => "password_policy",
             ApiError::ComplianceBlocked { .. } => "compliance_blocked",
@@ -432,6 +470,7 @@ impl ApiError {
             | ApiError::WarningsNotAcknowledged { message, .. }
             | ApiError::PinRejected { message, .. }
             | ApiError::InvalidActBody { message, .. }
+            | ApiError::RegistryConsultation { message, .. }
             | ApiError::PasswordPolicy { message, .. } => message.clone(),
         }
     }
@@ -583,17 +622,48 @@ impl From<SealError> for ApiError {
     }
 }
 
-/// Registry consultation failures (contract §2.7): a malformed access code is the caller's
-/// fault (`422`); every upstream/recognition/config failure is a bad gateway (`502`). The
-/// message never echoes the raw code — `RegistryError::InvalidCode` reports only the digit
+/// Registry consultation failures (contract §2.7).
+///
+/// The message never echoes the raw code — `RegistryError::InvalidCode` reports only the digit
 /// count, so a mistyped secret cannot leak through the error body.
+///
+/// **Each failure keeps its own status *and* its own Tier-2 code**, because these are the
+/// sentences an operator reads when a consultation fails and collapsing them misdirects the person
+/// trying to fix it. Three groups:
+///
+/// - **`422` — the answer was about the code.** The registry replied, and its reply concerned the
+///   input: malformed here (`InvalidCode`), rejected as invalid-or-expired (`CodeRejected`), or no
+///   such certidão (`CertidaoNotFound`). A `502` here would be a lie: nothing upstream failed.
+/// - **`502` — the registry did not give us a usable answer.** Unreachable, credentials refused,
+///   quota exhausted, some other HTTP failure, or a body we could not recognise. Critically,
+///   `Unreachable` must never read as "this company has no registry record" — we did not get an
+///   answer, which is not the same as getting a negative one.
+/// - **`500` — we are at fault.** `Config` is *our* misconfiguration (bad base URL, missing env).
+///   It was previously folded into the `502` bucket, which blamed a government service for a
+///   defect in this installation and sent operators to the wrong place entirely.
 impl From<RegistryError> for ApiError {
     fn from(e: RegistryError) -> Self {
-        let msg = e.to_string();
+        let message = e.to_string();
+        let code = e.code();
         match e {
-            RegistryError::InvalidCode(_) => ApiError::Unprocessable(msg),
-            // Upstream / Unrecognized / Config (and any future variant) → 502.
-            _ => ApiError::Upstream(msg),
+            // The registry answered, and its answer was about the input. A `502` here would be a
+            // lie — nothing upstream failed.
+            RegistryError::InvalidCode(_)
+            | RegistryError::CodeRejected(_)
+            | RegistryError::CertidaoNotFound(_) => ApiError::Unprocessable(message).with_code(code),
+            // Our own misconfiguration → `500`, and said as such.
+            RegistryError::Config(_) => ApiError::RegistryConsultation {
+                message,
+                code,
+                ours: true,
+            },
+            // Unreachable / CredentialsRejected / QuotaExceeded / Upstream / Unrecognized (and any
+            // future variant) → `502`, each keeping its own code.
+            _ => ApiError::RegistryConsultation {
+                message,
+                code,
+                ours: false,
+            },
         }
     }
 }

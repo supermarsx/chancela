@@ -7,8 +7,10 @@
 //! parser therefore uses `scraper` only to flatten the DOM into text lines, then extracts
 //! **off those labels**, tolerating missing/optional sections (mirrors `chancela-tsl::parse`).
 //!
-//! A document with no recognisable Matrícula block (no NIPC / firma / matrícula) is treated as an
-//! error/expired page → [`RegistryError::Unrecognized`].
+//! A document with no recognisable Matrícula block (no NIPC / firma / matrícula) is not a certidão.
+//! Which non-certidão it is gets classified from the registry's own notice text — see
+//! [`classify_non_certidao`] — because the consultation service reports a rejected access code on
+//! HTTP 200, in the body, so no transport-level status can tell that apart from a genuine fault.
 
 use std::fmt::Write as _;
 
@@ -27,7 +29,9 @@ use crate::model::{
 /// `provenance` is assembled by this function from `masked_code` + `source_url` + `retrieved_at`
 /// (all supplied by the caller) plus the computed `raw_digest` (lowercase-hex sha256 of `html`).
 /// Parsing is defensive & label-driven: unknown/optional sections are skipped, never fatal. A
-/// document with no recognisable Matrícula block yields [`RegistryError::Unrecognized`].
+/// document with no recognisable Matrícula block is classified by [`classify_non_certidao`] into
+/// [`RegistryError::CertidaoNotFound`], [`RegistryError::CodeRejected`], or — when it matches none
+/// of the registry's known notices — [`RegistryError::Unrecognized`].
 pub fn parse_certidao(
     html: &str,
     masked_code: &str,
@@ -66,11 +70,11 @@ pub fn parse_certidao(
     .and_then(|v| normalize_date(&v));
     let cae = find_cae_refs(matricula_lines);
 
-    // A certidão must carry at least one identity anchor; otherwise it is an error/expired page.
+    // A certidão must carry at least one identity anchor. Without one this is not a certidão, and
+    // the job is to say *which* non-certidão it is: the consultation service reports a bad code on
+    // HTTP 200, in the body, so this is the only place that distinction can be drawn.
     if matricula.is_none() && nipc.is_none() && firma.is_none() {
-        return Err(RegistryError::Unrecognized(
-            "no Matrícula block (NIPC / firma / matrícula all absent)".to_owned(),
-        ));
+        return Err(classify_non_certidao(&lines));
     }
 
     let (inscricoes, mut orgaos, anotacoes) = parse_inscricoes(inscricoes_lines);
@@ -188,6 +192,52 @@ fn collect_text(el: ElementRef, skip: bool, out: &mut String) {
     if block {
         out.push('\n');
     }
+}
+
+// ---- Non-certidão classification ------------------------------------------------------------
+
+/// Decide *which* non-certidão a 200 response was.
+///
+/// The consultation service reports a bad access code in the body of an HTTP 200 page, so this is
+/// the only layer that can tell "your code was wrong" from "we got something we don't understand".
+/// Getting it wrong is expensive in both directions: reporting a bad code as an upstream fault
+/// sends an operator chasing a network problem that does not exist, and reporting an upstream
+/// oddity as a bad code tells them their código de acesso is bad when it may be perfectly good.
+///
+/// Matching is on the registry's own phrases, accent-folded so markup and accent churn do not
+/// break it. Anything that matches nothing stays [`RegistryError::Unrecognized`] — the honest
+/// "we do not know what this is", never a guess.
+fn classify_non_certidao(lines: &[String]) -> RegistryError {
+    let text = fold(&lines.join(" "));
+
+    // "Não existe qualquer certidão com esse número" — a definite answer from a working service.
+    if text.contains("nao existe") && text.contains("certidao") {
+        return RegistryError::CertidaoNotFound(
+            "the consultation page reports no certidão for that number".to_owned(),
+        );
+    }
+
+    // "O código de acesso introduzido não é válido ou a certidão já expirou." The service refuses
+    // to say which of the two it is, so neither do we — the disjunction is carried through to the
+    // operator rather than resolved into a confident claim the registry never made.
+    let rejects_code = text.contains("codigo de acesso")
+        && (text.contains("nao e valido")
+            || text.contains("invalido")
+            || text.contains("expirou")
+            || text.contains("expirada"));
+    if rejects_code {
+        return RegistryError::CodeRejected(
+            "the consultation page reports the código de acesso is not valid, or the certidão has \
+             expired — the registry does not distinguish the two"
+                .to_owned(),
+        );
+    }
+
+    RegistryError::Unrecognized(
+        "no Matrícula block (NIPC / firma / matrícula all absent), and the page matched none of \
+         the registry's known error notices"
+            .to_owned(),
+    )
 }
 
 // ---- Field extraction -----------------------------------------------------------------------

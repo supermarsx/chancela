@@ -15,8 +15,14 @@ pub const FIXTURE_FUNDACAO: &str = include_str!("../fixtures/fundacao_certidao.h
 /// Fullest-constitution specimen (deep inscription parsing; minimal matrícula block so the
 /// constitution body backfills the identity — fictional "Encosto Estratégico, Lda").
 pub const FIXTURE_CONSTITUICAO: &str = include_str!("../fixtures/constituicao_certidao.html");
-/// An error/expired consultation page (no Matrícula block → `Unrecognized`).
+/// The consultation page's *code rejected* notice — "o código de acesso introduzido não é válido ou
+/// a certidão já expirou". The service conflates invalid and expired, so this maps to
+/// [`RegistryError::CodeRejected`], which carries that disjunction rather than resolving it.
 pub const FIXTURE_EXPIRED: &str = include_str!("../fixtures/expired_error.html");
+/// The consultation page's *no such certidão* notice — "não existe qualquer certidão com esse
+/// número". A **different** real page from [`FIXTURE_EXPIRED`], and a definite answer from a working
+/// service, so it maps to [`RegistryError::CertidaoNotFound`].
+pub const FIXTURE_NOT_FOUND: &str = include_str!("../fixtures/not_found_error.html");
 /// **The live consultation page's real layout**, captured from a genuine `consultaCertidao.aspx`
 /// response and then anonymised (fictional "Encosto Estratégico - LDA" and "Amélia Marques";
 /// fabricated NIPC/NIF, addresses, postal codes and access code). Markup is otherwise untouched, so
@@ -64,6 +70,16 @@ impl MockRegistryTransport {
     /// Fullest-constitution specimen (fixture) — deep inscription parsing + identity backfill.
     pub fn from_fixture_constituicao() -> Self {
         Self::empty().with_html(FIXTURE_CONSTITUICAO)
+    }
+
+    /// The registry's "código de acesso inválido ou certidão expirada" notice (fixture).
+    pub fn from_fixture_code_rejected() -> Self {
+        Self::empty().with_html(FIXTURE_EXPIRED)
+    }
+
+    /// The registry's "não existe qualquer certidão com esse número" notice (fixture).
+    pub fn from_fixture_not_found() -> Self {
+        Self::empty().with_html(FIXTURE_NOT_FOUND)
     }
 
     /// Anonymised capture of the **live** consultation page's layout (fixture).

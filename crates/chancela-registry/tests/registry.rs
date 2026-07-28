@@ -418,14 +418,89 @@ fn parses_fundacao_fixture() {
     assert_eq!(vogal.cessation_date.as_deref(), Some("2024-01-30"));
 }
 
+/// The registry's two *different* rejection notices must not become one error.
+///
+/// Both arrive over HTTP 200 with no Matrícula block, so before classification they were
+/// indistinguishable — every one of them surfaced as an opaque "the registry is unavailable",
+/// which told an operator holding a mistyped código de acesso to go and check the network.
 #[test]
-fn error_page_is_unrecognized() {
-    let transport = MockRegistryTransport::empty().with_html(FIXTURE_EXPIRED);
+fn code_rejected_page_is_distinct_from_not_found_page() {
     let code = AccessCode::parse(TEST_CODE).unwrap();
+
+    let rejected = RegistryClient::new(MockRegistryTransport::from_fixture_code_rejected())
+        .lookup(&code, None)
+        .expect_err("the rejection notice must not parse as a certidão");
+    assert!(
+        matches!(rejected, RegistryError::CodeRejected(_)),
+        "expected CodeRejected, got {rejected:?}"
+    );
+
+    let missing = RegistryClient::new(MockRegistryTransport::from_fixture_not_found())
+        .lookup(&code, None)
+        .expect_err("the not-found notice must not parse as a certidão");
+    assert!(
+        matches!(missing, RegistryError::CertidaoNotFound(_)),
+        "expected CertidaoNotFound, got {missing:?}"
+    );
+
+    assert_ne!(
+        rejected.code(),
+        missing.code(),
+        "two different registry notices must not share one code"
+    );
+}
+
+/// A rejected code must NOT be reported as expired. The live page says "não é válido **ou** a
+/// certidão já expirou" — the registry declines to say which, so neither may we.
+#[test]
+fn code_rejected_does_not_claim_the_certidao_expired() {
+    let code = AccessCode::parse(TEST_CODE).unwrap();
+    let err = RegistryClient::new(MockRegistryTransport::from_fixture_code_rejected())
+        .lookup(&code, None)
+        .expect_err("the rejection notice must not parse as a certidão");
+    assert_eq!(err.code(), "registry.code_rejected");
+    // Not `registry.certidao_expired`: no such code exists, precisely because the service never
+    // establishes expiry on its own.
+    assert_ne!(err.code(), "registry.certidao_not_found");
+}
+
+/// A page matching none of the known notices stays honestly unknown rather than being guessed
+/// into "your code was wrong".
+#[test]
+fn an_unknown_page_stays_unrecognized() {
+    let code = AccessCode::parse(TEST_CODE).unwrap();
+    let transport = MockRegistryTransport::empty().with_html(
+        "<!DOCTYPE html><html lang=\"pt-PT\"><body><div><p>Servidor em manutencao \
+         programada.</p></div></body></html>",
+    );
     let err = RegistryClient::new(transport)
         .lookup(&code, None)
-        .expect_err("error page must not parse as a certidão");
-    assert!(matches!(err, RegistryError::Unrecognized(_)));
+        .expect_err("a maintenance page must not parse as a certidão");
+    assert!(
+        matches!(err, RegistryError::Unrecognized(_)),
+        "expected Unrecognized, got {err:?}"
+    );
+}
+
+/// Every variant must carry its own code — a shared code would re-collapse the taxonomy in the UI,
+/// which branches on `code` alone.
+#[test]
+fn every_registry_error_code_is_distinct() {
+    let codes = [
+        RegistryError::InvalidCode(String::new()).code(),
+        RegistryError::CodeRejected(String::new()).code(),
+        RegistryError::CertidaoNotFound(String::new()).code(),
+        RegistryError::Unreachable(String::new()).code(),
+        RegistryError::CredentialsRejected(String::new()).code(),
+        RegistryError::QuotaExceeded(String::new()).code(),
+        RegistryError::Upstream(String::new()).code(),
+        RegistryError::Unrecognized(String::new()).code(),
+        RegistryError::Config(String::new()).code(),
+    ];
+    let mut unique = codes.to_vec();
+    unique.sort_unstable();
+    unique.dedup();
+    assert_eq!(unique.len(), codes.len(), "duplicate code in {codes:?}");
 }
 
 #[test]

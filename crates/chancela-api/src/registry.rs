@@ -2132,18 +2132,55 @@ mod tests {
         assert!(!error.contains("1234"), "code echoed: {error}");
     }
 
+    /// A code the registry rejects is the **caller's** problem, not a gateway failure.
+    ///
+    /// This previously answered `502` + `code: "http.upstream"` + the scrubbed body "erro de
+    /// gateway" — telling an operator who mistyped their código de acesso that a government service
+    /// was down.
     #[tokio::test]
-    async fn lookup_on_an_unrecognized_page_is_502() {
-        let state = state_with(
-            MockRegistryTransport::empty().with_html(chancela_registry::mock::FIXTURE_EXPIRED),
-        );
+    async fn lookup_with_a_registry_rejected_code_is_422_and_does_not_blame_the_registry() {
+        let state = state_with(MockRegistryTransport::from_fixture_code_rejected());
+        let (status, body) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "registry.code_rejected");
+        // The disjunction the registry actually stated is preserved, not resolved into "expired".
+        let error = body["error"].as_str().expect("error");
+        assert!(error.contains("invalid or expired"), "error: {error}");
+        assert!(!error.contains("1234"), "code echoed: {error}");
+    }
+
+    /// "No certidão for that number" is a definite answer from a working service, and must not read
+    /// as the service having failed.
+    #[tokio::test]
+    async fn lookup_with_no_such_certidao_is_422_and_distinct_from_a_rejected_code() {
+        let state = state_with(MockRegistryTransport::from_fixture_not_found());
+        let (status, body) = send(
+            state,
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        assert_eq!(body["code"], "registry.certidao_not_found");
+    }
+
+    /// A page we cannot classify stays `502` + `registry.unrecognized` — honestly unknown, never
+    /// guessed into a claim about the operator's code.
+    #[tokio::test]
+    async fn lookup_on_an_unclassifiable_page_is_502_unrecognized() {
+        let state = state_with(MockRegistryTransport::empty().with_html(
+            "<!DOCTYPE html><html lang=\"pt-PT\"><body><p>Manutencao.</p></body></html>",
+        ));
         let (status, body) = send(
             state,
             post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
         )
         .await;
         assert_eq!(status, StatusCode::BAD_GATEWAY);
-        assert!(body["error"].is_string());
+        assert_eq!(body["code"], "registry.unrecognized");
     }
 
     #[tokio::test]
@@ -2156,7 +2193,64 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(body["code"], "registry.upstream");
         assert!(body["error"].is_string());
+    }
+
+    /// The load-bearing distinctness assertion: **no two failure modes may share a wire
+    /// signature**. The UI branches on `code` alone, so a duplicate here silently re-collapses the
+    /// taxonomy no matter how carefully the variants are written.
+    ///
+    /// Note the pairs this pins apart. A rejected code and an unreachable registry differ in
+    /// *status*, so an operator is never told the company has no record when we simply got no
+    /// answer. A rejected code and a missing certidão share a status but differ in *code*, because
+    /// "this code is not valid" and "there is no such certidão" are different facts.
+    #[tokio::test]
+    async fn every_lookup_failure_mode_has_its_own_wire_signature() {
+        use chancela_registry::RegistryError;
+
+        // Each `RegistryError` → the (status, code) an operator's client actually observes.
+        let observed: Vec<(u16, &str)> = vec![
+            RegistryError::InvalidCode("12 digits required".to_owned()),
+            RegistryError::CodeRejected("rejected".to_owned()),
+            RegistryError::CertidaoNotFound("no certidão".to_owned()),
+            RegistryError::Unreachable("timeout".to_owned()),
+            RegistryError::CredentialsRejected("HTTP 403".to_owned()),
+            RegistryError::QuotaExceeded("HTTP 429".to_owned()),
+            RegistryError::Upstream("HTTP 500".to_owned()),
+            RegistryError::Unrecognized("unknown page".to_owned()),
+            RegistryError::Config("bad base URL".to_owned()),
+        ]
+        .into_iter()
+        .map(|e| {
+            let api = ApiError::from(e);
+            let code = api.code();
+            // Observed the way a client observes it — through the rendered response, not a
+            // crate-private accessor.
+            let status = axum::response::IntoResponse::into_response(api).status();
+            (status.as_u16(), code)
+        })
+        .collect();
+
+        let mut unique = observed.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(
+            unique.len(),
+            observed.len(),
+            "two failure modes collapsed onto one wire signature: {observed:?}"
+        );
+
+        // Our own misconfiguration is a 500 — never a 502 blaming the registry for our defect.
+        assert_eq!(
+            observed[8],
+            (500, "registry.config"),
+            "a local misconfiguration must not be reported as a bad gateway"
+        );
+        // An unreachable service is a 502, and is NOT the 422 that would imply a bad code.
+        assert_eq!(observed[3], (502, "registry.unreachable"));
+        assert_eq!(observed[5], (502, "registry.quota_exceeded"));
+        assert_eq!(observed[4], (502, "registry.credentials_rejected"));
     }
 
     #[tokio::test]
