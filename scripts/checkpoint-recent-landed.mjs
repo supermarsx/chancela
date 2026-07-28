@@ -4910,10 +4910,36 @@ function assertCheckpointMap() {
     "destructive_execution_supported",
     "Settings privacy retention non-destructive execution marker",
   );
+  // t55-e4 moved composing a retention policy out of the settings panel and onto its own page
+  // (`/settings/privacy/retention-policies/{new,:id}`, gated on `retention.manage`), so the panel
+  // test narrowed to list + dry-run. The create and patch guarantees it used to carry are pinned
+  // below at their new home rather than dropped.
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
-    "lists, creates, patches, and dry-runs retention policies without destructive execution",
+    "lists and dry-runs retention policies without destructive execution",
     "Settings privacy retention policy UI regression coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/privacy/RetentionPolicyPage.test.tsx",
+    "seeds an empty form and creates, titled as a complete pt-PT sentence",
+    "Settings privacy retention policy create coverage",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/privacy/RetentionPolicyPage.test.tsx",
+    "seeds from the policy the address names and PATCHES it",
+    "Settings privacy retention policy patch coverage",
+  );
+  // The page test mocks the create/patch hooks, so the hop from those hooks to POST/PATCH on
+  // `/v1/privacy/retention-policies` is pinned here instead of being asserted over the wire.
+  assertFileContains(
+    "apps/web/src/features/settings/privacy/RetentionPolicyPage.tsx",
+    "useCreatePrivacyRetentionPolicy()",
+    "Settings privacy retention policy page create hook wiring",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/privacy/RetentionPolicyPage.tsx",
+    "usePatchPrivacyRetentionPolicy()",
+    "Settings privacy retention policy page patch hook wiring",
   );
   assertFileContains(
     "apps/web/src/features/settings/SettingsPage.test.tsx",
