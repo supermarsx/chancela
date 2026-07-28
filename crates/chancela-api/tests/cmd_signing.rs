@@ -113,6 +113,34 @@ fn sign_rsa_digest_info(key: &rsa::RsaPrivateKey, digest: &[u8; 32]) -> Vec<u8> 
         .expect("rsa sign")
 }
 
+/// Sign an already-formed `DigestInfo` **exactly as received**, adding nothing.
+///
+/// This models AMA: per the CMD service specification the submitted value is already the RFC 8017
+/// §9.2 `DigestInfo` (the construction stops at step 2), so the signer applies only the PKCS#1
+/// v1.5 padding and the raw RSA operation. A double that builds the prefix itself would model the
+/// opposite convention and would happily round-trip a bare digest — which is exactly the mismatch
+/// this suite has to be able to see.
+fn sign_submitted_digest_info(key: &rsa::RsaPrivateKey, digest_info: &[u8]) -> Vec<u8> {
+    key.sign(rsa::Pkcs1v15Sign::new_unprefixed(), digest_info)
+        .expect("rsa sign")
+}
+
+/// Constrain the wire format: the `CCMovelSign` `Hash` element must be the 51-byte DER
+/// `DigestInfo`, not the bare 32-byte digest.
+fn assert_submitted_digest_info(hash: &[u8]) {
+    assert_eq!(
+        hash.len(),
+        51,
+        "CCMovelSign Hash must be the 19-byte DigestInfo prefix + 32-byte digest; got {} bytes",
+        hash.len()
+    );
+    assert_eq!(
+        &hash[..19],
+        &SHA256_DIGEST_INFO_PREFIX,
+        "CCMovelSign Hash must open with the RFC 8017 §9.2 SHA-256 DigestInfo prefix"
+    );
+}
+
 fn build_self_signed(
     cn: &str,
     serial: u8,
@@ -220,8 +248,8 @@ impl ScmdTransport for SmartCmdTransport {
             }
             let guard = self.captured_hash.lock().unwrap();
             let hash = guard.as_ref().expect("CCMovelSign captured the hash first");
-            let digest: [u8; 32] = hash[..32].try_into().expect("32-byte digest");
-            let sig = sign_rsa_digest_info(&self.leaf_key, &digest);
+            assert_submitted_digest_info(hash);
+            let sig = sign_submitted_digest_info(&self.leaf_key, hash);
             Ok(validate_otp_response(&STANDARD.encode(&sig)))
         } else {
             Err(CmdError::Transport(format!("unexpected action {action}")))
