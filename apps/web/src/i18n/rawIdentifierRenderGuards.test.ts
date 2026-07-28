@@ -74,6 +74,12 @@ interface ExpectedSite {
  * were the original report and now resolve through `externalValidatorStatusFallback.ts`, so the
  * token reaches JSX as a component prop rather than a text child. That absence is what a fixed
  * site looks like.
+ *
+ * `features/books/BookDetailPage.tsx::report.candidate_classification.preservation_status` is absent
+ * for the same reason (t98): it resolves through `paperBookPreservationFallback.ts` and reaches JSX
+ * as a `token: string` prop. Note that a resolved site does NOT stop rendering its identifier — it
+ * still shows it in `mono` beside the copy; what changes is that the identifier is no longer the
+ * whole visible value, and the widened prop type is what takes it out of this scan.
  */
 const EXPECTED: readonly ExpectedSite[] = [
   // --- Correct as they stand: identifier presented as an identifier -----------------------------
@@ -115,12 +121,6 @@ const EXPECTED: readonly ExpectedSite[] = [
   // recorded rather than fixed here because they are three coherent features (paper-book import,
   // data recovery, retention execution) that each want their own label module and their own
   // divergence guard against Rust — not a tail-end of this lane.
-  {
-    site: 'features/books/BookDetailPage.tsx::report.candidate_classification.preservation_status',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
   {
     site: 'features/recovery/DataManagementSection.tsx::data.persistence.sidecar_storage_mode',
     mono: false,

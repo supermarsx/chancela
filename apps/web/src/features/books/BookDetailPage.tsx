@@ -71,6 +71,7 @@ import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { t as translateNow, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
+import { usePaperBookPreservationResolver } from '../../i18n/paperBookPreservationFallback';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
@@ -1696,6 +1697,38 @@ function renderPaperBookOcrConversionExecutionArtifactPanel(
   return <PaperBookOcrConversionExecutionArtifactPanel artifact={artifact} />;
 }
 
+/**
+ * The import report's preservation state, as a badge plus the sentence saying what it means.
+ *
+ * The identifier is kept, in `mono`, because a technical report gets pasted into a support thread
+ * and the token is the stable thing to search for; only the prose around it is translated. `token`
+ * is typed `string` rather than the field's literal union on purpose — that is what makes the site a
+ * prop rather than a raw text child, which is the shape `rawIdentifierRenderGuards.test.ts` records
+ * as resolved.
+ *
+ * The «Validade legal declarada: não» sentence stays exactly where it was. It is a no-claims
+ * disclaimer about the package, not a description of the preservation state, so it is not folded
+ * into the resolved copy.
+ */
+function PaperBookPreservationStatus({ token }: { token: string }) {
+  const t = useT();
+  const describe = usePaperBookPreservationResolver();
+  const status = describe(token);
+  return (
+    <div className="external-validator-status">
+      <p>
+        {t('uiLiteral.bookDetailPage.estado.kzwel3')}{' '}
+        <Badge tone={status.tone} wrap>
+          {status.label}
+        </Badge>
+        {t('uiLiteral.bookDetailPage.validadeLegalDeclaradaNao')}
+      </p>
+      <p className="muted">{status.meaning}</p>
+      <code className="mono">{token}</code>
+    </div>
+  );
+}
+
 function PaperBookImportsPanel({ book }: { book: BookView }) {
   const t = useT();
   const toast = useToast();
@@ -1974,12 +2007,9 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
         {report ? (
           <InlineWarning tone="info" title={t('books.detail.imports.reportTitle')}>
             <p>{report.legal_notice}</p>
-            <p>
-              {' '}
-              {t('uiLiteral.bookDetailPage.estado.kzwel3')}{' '}
-              {report.candidate_classification.preservation_status}
-              {t('uiLiteral.bookDetailPage.validadeLegalDeclaradaNao')}{' '}
-            </p>
+            <PaperBookPreservationStatus
+              token={report.candidate_classification.preservation_status}
+            />
           </InlineWarning>
         ) : null}
 
