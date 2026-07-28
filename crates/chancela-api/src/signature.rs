@@ -9151,24 +9151,30 @@ pub(crate) fn cmd_config_err(e: chancela_cmd::CmdError) -> ApiError {
     ApiError::Unprocessable(format!("configuração CMD inválida: {e}"))
 }
 
-/// Interim pt-PT diagnostics for the two trust-anchor faults t61-e2 split out of
+/// pt-PT diagnostics for the two trust-anchor faults t61-e2 split out of
 /// [`chancela_signing::SigningError::UntrustedService`].
 ///
-/// **t61-e2 owns the signal and the classification; t58-e3 owns the wording.** The signal is that
-/// these are the operator's own anchor configuration, not the signer's trust service, and the
+/// **t61-e2 owns the signal and the classification; planner-t58 wrote the wording.** The signal is
+/// that these are the operator's own anchor configuration, not the signer's trust service, and the
 /// classification is that both are client-actionable 422s — without an explicit arm they fall to
 /// each mapper's `other =>` catch-all and are reported as a 502 gateway error, which is simply
-/// false about a local configuration fault. The strings live here, in one place, so t58's catalog
-/// replaces them without touching any mapper.
+/// false about a local configuration fault. The strings live here, in one place, so the catalog can
+/// move without touching any mapper.
+///
+/// Neither string reports a trusted-list status label: an unauthenticated list is not a verdict
+/// about the signer. Which source resolved the anchor set (`chancela_signing::TrustAnchorSource`)
+/// is carried on the error and is surfaced by t58-e3b, which a bare `&str` cannot do without
+/// interpolating a noun into an inflected sentence.
 pub(crate) const TRUST_ANCHOR_NOT_CONFIGURED_PT: &str = concat!(
-    "não está configurada nenhuma âncora de confiança da Lista de Confiança (TSL), ",
-    "pelo que nenhuma lista pode ser autenticada"
+    "Não há nenhuma âncora de confiança configurada. Configure a âncora nas definições ",
+    "da aplicação ou no ambiente para que a Lista de Confiança (TSL) possa ser autenticada."
 );
 
-/// See [`TRUST_ANCHOR_NOT_CONFIGURED_PT`]. Interim copy; t58-e3 owns the wording.
+/// See [`TRUST_ANCHOR_NOT_CONFIGURED_PT`].
 pub(crate) const TRUSTED_LIST_NOT_ANCHORED_PT: &str = concat!(
-    "a Lista de Confiança (TSL) não foi autenticada pelas âncoras de confiança ",
-    "configuradas; verifique se a âncora de confiança está atualizada"
+    "A Lista de Confiança (TSL) não foi autenticada pela âncora de confiança configurada. ",
+    "A âncora pode não corresponder a esta lista ou ter sido substituída por rotação de ",
+    "chaves — verifique a âncora configurada."
 );
 
 /// The stable string label for a trusted-list status (used in payloads and views).

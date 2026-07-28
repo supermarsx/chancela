@@ -1180,9 +1180,14 @@ fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeC
         CmdTrustAnchorPreflight::Unanchored => check(
             "trusted_list_anchors",
             false,
+            // t61-e2: this used to say a signature would "refuse with an error naming the signer's
+            // trust service, though the fault is here". That was true, and is no longer: state (A)
+            // now has its own `SigningError::TrustAnchorNotConfigured`, which names the anchor
+            // configuration rather than the signer. Leaving the old sentence would have made this
+            // check a documented claim about behaviour that no longer exists.
             "A Trusted List is selected but no trust anchor is configured, and an empty anchor set \
-             authenticates no list. A CMD signature will refuse with an error naming the signer's \
-             trust service, though the fault is here. Provision an anchor in \
+             authenticates no list. A CMD signature will refuse, naming this missing anchor rather \
+             than the signer's trust service. Provision an anchor in \
              signing.tsl_trust_anchor_certs or signing.tsl_trust_anchor_sha256.",
         ),
         CmdTrustAnchorPreflight::Anchored { total, from_env } => {
@@ -3223,10 +3228,17 @@ mod tests {
         }
 
         // The unanchored arm is the one that would otherwise be misread as a signer problem, so it
-        // must say plainly that the fault is local.
+        // must say plainly that the fault is local — and, since t61-e2, it must say so about the
+        // error the operator will actually see. This text once promised an error "naming the
+        // signer's trust service, though the fault is here"; state (A) now raises
+        // `SigningError::TrustAnchorNotConfigured`, which names the anchor. The claim about the
+        // signer had to move with the behaviour, so pinning the old phrase would pin a promise the
+        // code no longer keeps.
         let unanchored = cmd_trust_anchor_check(&CmdTrustAnchorPreflight::Unanchored);
         assert!(
-            unanchored.detail.contains("the fault is here"),
+            unanchored
+                .detail
+                .contains("naming this missing anchor rather than the signer's trust service"),
             "{}",
             unanchored.detail
         );
