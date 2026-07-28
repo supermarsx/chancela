@@ -1,7 +1,7 @@
 //! Offline end-to-end tests for `chancela-registry`: fixture parsing + client round-trip over the
 //! mock transport. No network — the live seam lives in `tests/network.rs` behind `network-tests`.
 
-use chancela_registry::mock::{FIXTURE_EXPIRED, FIXTURE_SPQ};
+use chancela_registry::mock::FIXTURE_SPQ;
 use chancela_registry::model::{ConstitutionPayload, InscriptionPayload};
 use chancela_registry::{
     AccessCode, CaeRef, CaeRole, LegalForm, MockRegistryTransport, RegistryClient, RegistryError,
