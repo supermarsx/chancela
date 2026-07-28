@@ -709,8 +709,11 @@ pub async fn probe_entry(
     // configured for (prod demands the AMA certificate and BasicAuth that preprod does not), so the
     // settings slice is read here and moved into the blocking probe rather than re-read inside it.
     let cmd_settings = { state.settings.read().await.signing.cmd.clone() };
+    // Resolved out here for the same reason: it needs the async settings lock, and the trusted-list
+    // anchor state is what decides whether a qualified signature can be authenticated at all.
+    let cmd_trust = resolve_cmd_trust_anchor_preflight(&state).await;
     let outcome = tokio::task::spawn_blocking(move || {
-        probe_stored_entry(mode, &probe_provider, &cmd_settings, entry)
+        probe_stored_entry(mode, &probe_provider, &cmd_settings, &cmd_trust, entry)
     })
     .await
     .map_err(|_| ApiError::Internal("provider credential probe task failed".to_owned()))?;
@@ -828,6 +831,7 @@ fn probe_stored_entry(
     mode: CredentialMode,
     provider_id: &str,
     cmd_settings: &crate::settings::SigningCmdSettings,
+    cmd_trust: &CmdTrustAnchorPreflight,
     entry: DecryptedCredentialEntry,
 ) -> ProbeOutcome {
     if !entry.enabled {
@@ -843,7 +847,7 @@ fn probe_stored_entry(
         );
     }
     match mode {
-        CredentialMode::Cmd => probe_cmd(cmd_settings, entry),
+        CredentialMode::Cmd => probe_cmd(cmd_settings, cmd_trust, entry),
         CredentialMode::CscQtsp => probe_csc(provider_id, entry),
         CredentialMode::Scap => probe_scap(entry),
         CredentialMode::LocalPkcs12 => probe_pkcs12(entry),
@@ -888,6 +892,7 @@ const CMD_REACHABILITY_TIMEOUT: Duration = Duration::from_secs(8);
 /// because "can this server reach AMA production?" is the question the preflight exists to answer.
 fn probe_cmd(
     cmd: &crate::settings::SigningCmdSettings,
+    cmd_trust: &CmdTrustAnchorPreflight,
     entry: DecryptedCredentialEntry,
 ) -> ProbeOutcome {
     let is_prod = matches!(cmd.env, crate::settings::CmdEnvSetting::Prod);
@@ -905,6 +910,10 @@ fn probe_cmd(
                 if is_prod { "prod" } else { "preprod" }
             ),
         ),
+        // Deployment-wide, not a property of this entry, and reported before the credential checks
+        // so it survives every early return below: an operator with a perfectly filled CMD form and
+        // no trust anchor would otherwise see only green until a real signature refused.
+        cmd_trust_anchor_check(cmd_trust),
     ];
 
     // Assemble through the SIGNING path's own resolver, so what the preflight reports is what a
@@ -1054,6 +1063,134 @@ fn probe_cmd(
         }
     } else {
         ProbeOutcome::failed(false, false, checks, "endpoint_unreachable")
+    }
+}
+
+/// What the preflight could determine, offline, about the trusted-list anchors a CMD signature
+/// would be authenticated against.
+///
+/// **Why this check exists.** At signing time three distinct trust failures collapse into one
+/// `UntrustedService` error that names the *signer's* trust service:
+///
+/// - **(A)** no trust anchor is configured anywhere, so no list can ever authenticate;
+/// - **(B)** anchors are configured but the list does not authenticate against them — the shape of a
+///   Trusted-List signer rotation where the new signer is not yet anchored;
+/// - **(C)** the list authenticates and the service genuinely is not `Granted`.
+///
+/// Only **(C)** is about the signer. **(B)** is the one that hits real operators mid-rotation, and
+/// reads as "your signer's service is inactive" when the truth is "your anchor is stale". A feature
+/// whose whole purpose is to report signing failures honestly must not inherit that silently.
+///
+/// This preflight settles **(A)** definitively and offline, *before* a real qualified signature is
+/// attempted, and reports which anchor source resolved. **(B)** and **(C)** are only separable once
+/// the list itself has been authenticated; refining that error is **t61-e2**'s, deliberately
+/// sequenced after t61-e1's wiring fix (`eb078d57`), so nothing here duplicates it.
+pub(crate) enum CmdTrustAnchorPreflight {
+    /// No Trusted List is selected at all — there is nothing to authenticate. State **(A)**.
+    NoListSelected,
+    /// The list *selection* is itself misconfigured; `configured_tsl_source` refused it.
+    SelectionInvalid(String),
+    /// Anchors are configured but cannot be parsed. The policy build fails closed at signing time
+    /// (422) rather than degrading to "unanchored", so this is a hard stop, not a downgrade.
+    AnchorsInvalid(String),
+    /// A list is selected and the resolved anchor set is **empty**. State **(A)**: an empty set
+    /// authenticates no list, so a signature refuses while naming the signer's service.
+    Unanchored,
+    /// A list is selected and `total` distinct anchors resolved, `from_env` of which the
+    /// environment supplied. The remainder came from the admin panel's `signing.tsl_trust_anchor_*`
+    /// fields. A union only ever *adds*, so `from_env <= total`.
+    Anchored { total: usize, from_env: usize },
+}
+
+/// Resolve [`CmdTrustAnchorPreflight`] through the **signing path's own** source selector and anchor
+/// fold, so what the preflight reports is what a signature would actually authenticate against.
+///
+/// Read-only and offline: it selects the source and resolves anchors, and deliberately does **not**
+/// fetch or authenticate the list. Authenticating it is what separates (B) from (C), and that is
+/// t61-e2's.
+pub(crate) async fn resolve_cmd_trust_anchor_preflight(
+    state: &AppState,
+) -> CmdTrustAnchorPreflight {
+    let source = match crate::signature::configured_tsl_source(state).await {
+        Ok(Some(source)) => source,
+        Ok(None) => return CmdTrustAnchorPreflight::NoListSelected,
+        Err(err) => {
+            return CmdTrustAnchorPreflight::SelectionInvalid(credential_assembly_detail(err));
+        }
+    };
+    // The same union the signing-time policy builds: settings anchors ∪ environment anchors.
+    let anchors = match crate::trust::resolve_lotl_trust_anchors(
+        &source.trust_anchor_certs,
+        &source.trust_anchor_sha256,
+    ) {
+        Ok(anchors) => anchors,
+        Err(e) => return CmdTrustAnchorPreflight::AnchorsInvalid(e.to_string()),
+    };
+    if anchors.is_empty() {
+        return CmdTrustAnchorPreflight::Unanchored;
+    }
+    // The environment-only baseline, so the report can say which source supplied the anchors rather
+    // than only how many there are. A failure to read the environment is reported as zero from it:
+    // the union above already succeeded, so the anchors are real regardless of this attribution.
+    let from_env = chancela_tsl::TslTrustAnchors::from_env()
+        .map(|env| env.len())
+        .unwrap_or(0);
+    CmdTrustAnchorPreflight::Anchored {
+        total: anchors.len(),
+        from_env: from_env.min(anchors.len()),
+    }
+}
+
+/// Render the trust-anchor verdict as a probe check. Failing arms name the admin-panel fields the
+/// operator can go and fill, never environment-variable names.
+fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeCheck {
+    match preflight {
+        CmdTrustAnchorPreflight::NoListSelected => check(
+            "trusted_list_anchors",
+            false,
+            "No Trusted List is selected, so no qualified signature can be authenticated. A CMD \
+             signature will refuse. Select a Trusted List source in the signing settings.",
+        ),
+        CmdTrustAnchorPreflight::SelectionInvalid(detail) => check(
+            "trusted_list_anchors",
+            false,
+            format!("The Trusted List selection is invalid: {detail}"),
+        ),
+        CmdTrustAnchorPreflight::AnchorsInvalid(detail) => check(
+            "trusted_list_anchors",
+            false,
+            format!(
+                "A configured trust anchor could not be parsed, so the trust policy fails closed: \
+                 {detail}. Check signing.tsl_trust_anchor_certs and \
+                 signing.tsl_trust_anchor_sha256."
+            ),
+        ),
+        CmdTrustAnchorPreflight::Unanchored => check(
+            "trusted_list_anchors",
+            false,
+            "A Trusted List is selected but no trust anchor is configured, and an empty anchor set \
+             authenticates no list. A CMD signature will refuse with an error naming the signer's \
+             trust service, though the fault is here. Provision an anchor in \
+             signing.tsl_trust_anchor_certs or signing.tsl_trust_anchor_sha256.",
+        ),
+        CmdTrustAnchorPreflight::Anchored { total, from_env } => {
+            let provenance = match (*from_env, total - *from_env) {
+                (0, _) => "all of them from the signing settings".to_owned(),
+                (_, 0) => "all of them from the environment".to_owned(),
+                (env, settings) => format!(
+                    "{env} from the environment and at least {settings} from the signing settings"
+                ),
+            };
+            check(
+                "trusted_list_anchors",
+                true,
+                format!(
+                    "{total} Trusted List trust anchor(s) resolved — {provenance}. Whether the \
+                     selected list actually authenticates against them, and whether the signer's \
+                     service is Granted, are determined at signing time and are not probed here."
+                ),
+            )
+        }
     }
 }
 
@@ -3049,5 +3186,90 @@ mod tests {
         let event = ledger.events().last().expect("an event was appended");
         assert_eq!(event.scope, "provider_credentials");
         assert_eq!(event.kind, "provider.credentials.entry.created");
+    }
+
+    /// The three trust-failure states collapse into one `UntrustedService` error at signing time
+    /// that names the *signer's* service. This check exists so state (A) — no anchor configured
+    /// anywhere — is settled before a real qualified signature is attempted, and so the operator is
+    /// pointed at their own configuration rather than at the signer.
+    #[test]
+    fn the_trust_anchor_check_separates_unconfigured_from_the_signers_service() {
+        // (A), both shapes: no list at all, and a list with an empty anchor set. Each must fail,
+        // and each must point at the operator's own configuration.
+        for preflight in [
+            CmdTrustAnchorPreflight::NoListSelected,
+            CmdTrustAnchorPreflight::Unanchored,
+        ] {
+            let result = cmd_trust_anchor_check(&preflight);
+            assert_eq!(result.status, "failed", "{}", result.detail);
+            assert!(
+                !result.detail.contains("CHANCELA_"),
+                "an operator who filled the admin panel must never be shown an env var name: {}",
+                result.detail
+            );
+        }
+
+        // The unanchored arm is the one that would otherwise be misread as a signer problem, so it
+        // must say plainly that the fault is local.
+        let unanchored = cmd_trust_anchor_check(&CmdTrustAnchorPreflight::Unanchored);
+        assert!(
+            unanchored.detail.contains("the fault is here"),
+            "{}",
+            unanchored.detail
+        );
+        assert!(
+            unanchored
+                .detail
+                .contains("signing.tsl_trust_anchor_certs"),
+            "{}",
+            unanchored.detail
+        );
+
+        // Anchored: passes, reports which source resolved, and does NOT claim the list
+        // authenticates or that the signer's service is Granted — neither is probed here.
+        let both = cmd_trust_anchor_check(&CmdTrustAnchorPreflight::Anchored {
+            total: 3,
+            from_env: 1,
+        });
+        assert_eq!(both.status, "passed", "{}", both.detail);
+        assert!(both.detail.contains("1 from the environment"), "{}", both.detail);
+        assert!(
+            both.detail.contains("at least 2 from the signing settings"),
+            "{}",
+            both.detail
+        );
+        assert!(
+            both.detail.contains("determined at signing time"),
+            "the check must not overclaim what it verified: {}",
+            both.detail
+        );
+
+        let settings_only = cmd_trust_anchor_check(&CmdTrustAnchorPreflight::Anchored {
+            total: 2,
+            from_env: 0,
+        });
+        assert!(
+            settings_only
+                .detail
+                .contains("all of them from the signing settings"),
+            "{}",
+            settings_only.detail
+        );
+
+        let env_only = cmd_trust_anchor_check(&CmdTrustAnchorPreflight::Anchored {
+            total: 2,
+            from_env: 2,
+        });
+        assert!(
+            env_only.detail.contains("all of them from the environment"),
+            "{}",
+            env_only.detail
+        );
+
+        // A malformed anchor fails closed rather than degrading to "unanchored".
+        let invalid =
+            cmd_trust_anchor_check(&CmdTrustAnchorPreflight::AnchorsInvalid("bad hex".to_owned()));
+        assert_eq!(invalid.status, "failed", "{}", invalid.detail);
+        assert!(invalid.detail.contains("fails closed"), "{}", invalid.detail);
     }
 }
