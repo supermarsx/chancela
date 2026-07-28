@@ -938,7 +938,8 @@ pub async fn create_session(
     ) {
         return Err(ApiError::TooManyRequests(
             "demasiadas tentativas — tente novamente mais tarde".to_owned(),
-        ));
+        )
+        .with_code("signin_throttled.no_wait"));
     }
     let now = OffsetDateTime::now_utc();
     let seed = state.verifier_seed.read().await.clone();
@@ -950,10 +951,32 @@ pub async fn create_session(
     if now < entry.next_allowed_at {
         let ms = (entry.next_allowed_at - now).whole_milliseconds();
         let remaining = ((ms + 999) / 1000).max(1);
+        // t58 — DELIBERATELY THE WAIT-LESS CODE, even though this site knows the wait.
+        //
+        // A sign-in throttle must not read as a routine hiccup, so it gets a code rather than the
+        // bare `429` tier. The client catalog's seconds-bearing copy interpolates `{seconds}`, and
+        // **the number has no structured field on this wire** — it exists only inside the English
+        // `error` string. A client cannot parse a duration out of prose (that coupling is the whole
+        // defect t58 removed on the termo close path), so the seconds-bearing key would render its
+        // placeholder verbatim. `signin_throttled.no_wait` says less and says it truthfully; the
+        // exact remaining seconds stay in the operator detail below.
+        //
+        // Narrowing this honestly needs `retry_after_seconds` (or a `Retry-After` header on `429`)
+        // added to the error body shape in `error.rs` — outside this change's scope, and flagged
+        // rather than half-built.
         return Err(ApiError::TooManyRequests(format!(
             "demasiadas tentativas — tente novamente em {remaining} s"
-        )));
+        ))
+        .with_code("signin_throttled.no_wait"));
     }
+    // t58 — ONE code for every sign-in 401 on this handler, and it must stay that way.
+    //
+    // `create_session` answers a wrong password and an unknown user identically: an unresolved user
+    // is verified against `dummy_verifier()` so the branch is not observable in status, body or
+    // timing. `code` is a second machine-readable channel carrying the same answer, so splitting it
+    // into `wrong_password` / `unknown_user` would rebuild the enumeration oracle the dummy verifier
+    // exists to prevent — the same trap `error.rs` documents for the cross-user `403`. Both arms
+    // below therefore emit `invalid_credentials`, never a per-reason refinement.
     let verification = verify_secret_with_seed(&req.password, &stored, &seed);
     if !verification.verified {
         entry.fails += 1;
@@ -966,14 +989,16 @@ pub async fn create_session(
             .cluster_shared
             .signin_limiter
             .record_failure(&signin_limit_key, std::time::Duration::from_secs(15 * 60));
-        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
+        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned())
+            .with_code("invalid_credentials"));
     }
     drop(backoff);
     // The password proved out, so `stored` was a real account's verifier — the dummy is a hash of a
     // per-process random secret and can never verify. Belt and braces: if it somehow did, fall
     // through to the same opaque 401 rather than minting anything.
     let Some(mut user) = resolved else {
-        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned()));
+        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned())
+            .with_code("invalid_credentials"));
     };
     state.signin_backoff.write().await.remove(&uid);
     // A successful sign-in clears the global counter too (cluster-wide reset).
@@ -1057,8 +1082,13 @@ pub async fn complete_two_factor_challenge(
     Json(req): Json<CompleteChallenge>,
 ) -> Result<Json<SessionCreated>, ApiError> {
     let now = OffsetDateTime::now_utc();
-    let invalid =
-        || ApiError::Unauthorized("desafio de segundo fator inválido ou expirado".to_owned());
+    // t58: the challenge record and the submitted code are two ways to fail the SAME second-factor
+    // step, so they share one code. Telling them apart tells an attacker whether a challenge id is
+    // live, which is information the uniform sign-in 401 above is written to withhold.
+    let invalid = || {
+        ApiError::Unauthorized("desafio de segundo fator inválido ou expirado".to_owned())
+            .with_code("two_factor_challenge_invalid")
+    };
 
     // Take the record out (single-use per attempt); prune expired while we hold the lock.
     let Some(mut pending) = ({
@@ -1094,9 +1124,10 @@ pub async fn complete_two_factor_challenge(
                 .insert(req.challenge_id, pending);
         }
         // else: discarded — the user must re-authenticate with their password.
-        return Err(ApiError::Unauthorized(
-            "código de segundo fator inválido".to_owned(),
-        ));
+        return Err(
+            ApiError::Unauthorized("código de segundo fator inválido".to_owned())
+                .with_code("two_factor_challenge_invalid"),
+        );
     }
 
     // Accepted. Mint the session with the key carried across the challenge, then re-read the user for
@@ -1175,9 +1206,10 @@ async fn resolve_self(
     headers: &axum::http::HeaderMap,
 ) -> Result<(UserId, String), ApiError> {
     let Some(username) = actor.session_username() else {
-        return Err(ApiError::Forbidden(
-            "chave API não abre uma sessão interativa".to_owned(),
-        ));
+        return Err(
+            ApiError::Forbidden("chave API não abre uma sessão interativa".to_owned())
+                .with_code("api_key_no_interactive_session"),
+        );
     };
     let user_id = state
         .users
@@ -1186,13 +1218,17 @@ async fn resolve_self(
         .values()
         .find(|u| u.username == username)
         .map(|u| u.id)
-        .ok_or(ApiError::Unauthorized("sessão inválida".to_owned()))?;
+        .ok_or_else(|| {
+            ApiError::Unauthorized("sessão inválida".to_owned()).with_code("session_invalid")
+        })?;
     let token = headers
         .get(SESSION_HEADER)
         .and_then(|v| v.to_str().ok())
         .map(str::trim)
         .filter(|t| !t.is_empty())
-        .ok_or(ApiError::Unauthorized("sessão requerida".to_owned()))?;
+        .ok_or_else(|| {
+            ApiError::Unauthorized("sessão requerida".to_owned()).with_code("session_required")
+        })?;
     Ok((user_id, session_token_digest(token)))
 }
 
@@ -1220,7 +1256,8 @@ async fn listed_sessions_for(
             .collect()),
         cluster_shared_state::SessionListResult::Unavailable => Err(ApiError::Unavailable(
             "serviço de sessões partilhadas indisponível; tente novamente".to_owned(),
-        )),
+        )
+        .with_code("shared_sessions_unavailable")),
         cluster_shared_state::SessionListResult::NotShared => Ok(state
             .durable_sessions
             .list_for_user(user_id.0, now)
@@ -1407,7 +1444,8 @@ pub(crate) async fn mint_session(
             let _ = state.durable_sessions.revoke(&token).await;
             return Err(ApiError::Unavailable(
                 "serviço de sessões partilhadas indisponível; tente novamente".to_owned(),
-            ));
+            )
+            .with_code("shared_sessions_unavailable"));
         }
     }
     state.sessions.write().await.insert(
@@ -1466,9 +1504,10 @@ pub async fn get_session(
     parts: axum::http::HeaderMap,
 ) -> Result<Json<SessionView>, ApiError> {
     if read_bearer_api_key(&parts)?.is_some() {
-        return Err(ApiError::Forbidden(
-            "chave API não abre uma sessão interativa".to_owned(),
-        ));
+        return Err(
+            ApiError::Forbidden("chave API não abre uma sessão interativa".to_owned())
+                .with_code("api_key_no_interactive_session"),
+        );
     }
 
     let resolved: Option<(UserView, UserId, Option<RequiredAction>)> = match parts
@@ -1563,9 +1602,10 @@ pub async fn delete_session(
     parts: axum::http::HeaderMap,
 ) -> Result<StatusCode, ApiError> {
     if read_bearer_api_key(&parts)?.is_some() {
-        return Err(ApiError::Forbidden(
-            "chave API não abre uma sessão interativa".to_owned(),
-        ));
+        return Err(
+            ApiError::Forbidden("chave API não abre uma sessão interativa".to_owned())
+                .with_code("api_key_no_interactive_session"),
+        );
     }
 
     if let Some(token) = parts
@@ -1588,7 +1628,8 @@ pub async fn delete_session(
         if shared_revoke == cluster_shared_state::SessionMutation::Unavailable {
             return Err(ApiError::Unavailable(
                 "não foi possível confirmar o fim da sessão partilhada; tente novamente".to_owned(),
-            ));
+            )
+            .with_code("shared_sessions_unavailable"));
         }
     }
     Ok(StatusCode::NO_CONTENT)

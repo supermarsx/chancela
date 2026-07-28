@@ -1374,7 +1374,24 @@ fn verify_cross_user_proof(
     if constant_work_verify(recovery_hash, recovery_phrase) {
         return Ok(ProofKind::Recovery);
     }
-    Err(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))
+    Err(cross_user_forbidden())
+}
+
+/// The **single** uniform answer to every failed cross-user proof (t51 §5, t58 §4.2).
+///
+/// **MUST NOT BE SPLIT.** A wrong password, an absent proof and a target that does not exist all
+/// return this — identical status, identical body, identical timing — specifically so the endpoint
+/// never confirms or denies that an account exists. `code` is a second, machine-readable channel
+/// carrying the same answer, so refining it into `wrong_password` / `user_not_found` would rebuild
+/// the user-enumeration oracle through the new channel and defeat the uniform response entirely.
+/// **This is the one place in the lane where a more precise error IS the vulnerability.**
+///
+/// Every site that answers "no valid cross-user proof" must call this rather than construct its own
+/// `Forbidden`: two spellings of the same refusal are two codes, and two codes are the oracle.
+/// Callers today are [`verify_cross_user_proof`] and [`set_secret`]'s post-authorization snapshot
+/// re-read; `error.rs` caps every other `403` at the generic `http.forbidden` for the same reason.
+fn cross_user_forbidden() -> ApiError {
+    ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()).with_code("cross_user_proof_required")
 }
 
 /// Honest, secret-free description of which proof(s) the request *presented* (never the values, and
@@ -1469,9 +1486,10 @@ async fn authorize_secret_op_throttled(
     recovery_phrase: Option<&str>,
 ) -> Result<SecretAuthz, ApiError> {
     if actor.is_api_key() {
-        return Err(ApiError::Forbidden(
-            "chave API não abre uma sessão interativa".to_owned(),
-        ));
+        return Err(
+            ApiError::Forbidden("chave API não abre uma sessão interativa".to_owned())
+                .with_code("api_key_no_interactive_session"),
+        );
     }
 
     // Self-service is only possible when the requester *is* the (existing) target. Never throttled,
@@ -1497,6 +1515,13 @@ async fn authorize_secret_op_throttled(
             // ledger un-floodable). Layered ON TOP of the t51 uniform-403 guarantee, never below it.
             let ms = (entry.next_allowed_at - now).whole_milliseconds();
             let remaining = ((ms + 999) / 1000).max(1);
+            // t58 — LEFT ON THE GENERIC `429` TIER DELIBERATELY. The client catalog's
+            // `credential_proof_throttled` copy interpolates `{seconds}`, and this wire carries no
+            // structured field for it: the number exists only inside the English `error` string
+            // below, which a client must not parse. Emitting that code today would render its
+            // placeholder verbatim to an operator. The `429` tier headline is less specific and
+            // true; the exact wait stays in the operator detail. Attach the specific code only once
+            // `retry_after_seconds` is on the body shape — not before.
             return Err(ApiError::TooManyRequests(format!(
                 "demasiadas tentativas — tente novamente em {remaining} s"
             )));
@@ -1605,7 +1630,7 @@ pub async fn set_secret(
     }
     // Authorized. For self the requester *is* the target and exists; for cross-user the authorize
     // step already returned a uniform 403 for a missing target, so a snapshot is present here.
-    let snapshot = snapshot.ok_or(ApiError::Forbidden(CROSS_USER_FORBIDDEN.to_owned()))?;
+    let snapshot = snapshot.ok_or_else(cross_user_forbidden)?;
     let changing = snapshot.password_hash.is_some();
 
     // Strength policy (t68). Enforced AFTER authorization so a cross-user caller without a valid proof
@@ -1807,7 +1832,12 @@ pub async fn generate_attestation_key(
             (req.current_password.clone().unwrap_or_default(), true)
         }
         SecretAuthz::CrossUser(ProofKind::Recovery) => {
-            return Err(ApiError::Forbidden(RECOVERY_CANNOT_GENERATE_KEY.to_owned()));
+            // Distinguishable on purpose, and safe to be: reaching here means a recovery phrase
+            // ALREADY verified against a real target, so naming the limitation reveals nothing the
+            // caller has not already proved. It is a statement about the key-wrapping design, not
+            // about whether an account exists.
+            return Err(ApiError::Forbidden(RECOVERY_CANNOT_GENERATE_KEY.to_owned())
+                .with_code("cross_user_recovery_cannot_generate_key"));
         }
     };
 
