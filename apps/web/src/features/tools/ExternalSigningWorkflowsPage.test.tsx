@@ -336,7 +336,7 @@ describe('ExternalSigningWorkflowsPage', () => {
       /\.external-signing-workflows\s*>\s*\.panel\s*\+\s*\.panel\s*\{[^}]*margin-top:\s*1rem;/s,
     );
     expect(css).toMatch(
-      /\.external-signing-notice__actions\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.55rem;[^}]*margin-top:\s*0\.75rem;/s,
+      /\.informational-notice__actions\s*\{[^}]*display:\s*flex;[^}]*gap:\s*0\.55rem;[^}]*margin-top:\s*0\.75rem;/s,
     );
   });
 

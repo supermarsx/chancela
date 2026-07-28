@@ -32,9 +32,7 @@ import {
   useLedgerVerify,
   usePlatformLogs,
   useSettings,
-  useUpdateNoticeDismissal,
   useUpdateSettings,
-  useUserPreferences,
 } from '../../api/hooks';
 import { useAutosave } from '../../hooks/useAutosave';
 import { useToast } from '../../ui';
@@ -66,7 +64,6 @@ import {
   type EntitiesSettings,
   type Locale,
   type NumberingScheme,
-  type NoticeDismissal,
   type OrganizationSettings,
   type PlatformEmittedLogLevel,
   type PlatformLogEntry,
@@ -98,7 +95,6 @@ import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnToggleGrid } from '../tableColumns/ColumnToggleGrid';
 import { ENTITIES_TABLE, dataColumns } from '../tableColumns/tableColumnRegistry';
 import { type AdminCopyKey, useAdminT } from '../../i18n/adminFallback';
-import { usePlatformLogNoticeT } from '../../i18n/platformLogNoticeFallback';
 import { useTemplatePreviewSamplesT } from '../../i18n/templatePreviewSamplesFallback';
 import {
   type ReminderSettingsCopyKey,
@@ -148,12 +144,6 @@ import {
 import { DocumentLayoutDefaultsEditor } from '../documents/DocumentLayoutEditor';
 import { useCitizenCardBridgeT } from '../signing/CitizenCardBridgeFallback';
 import { usePermissions } from '../session/permissions';
-import {
-  createNoticeDismissal,
-  informationalNoticeHideDays,
-  informationalNoticeIsHidden,
-  noticeDismissalFromPreferences,
-} from '../notices/informationalNotice';
 import {
   Badge,
   Button,
@@ -1236,11 +1226,6 @@ function platformLogSequenceText(seq: number | null): string {
 
 function PlatformLogTailPanel() {
   const t = useT();
-  const noticeT = usePlatformLogNoticeT();
-  const toast = useToast();
-  const settings = useSettings();
-  const preferences = useUserPreferences();
-  const updateNoticeDismissal = useUpdateNoticeDismissal('platform_log_scope');
   const [serviceId, setServiceId] = useState<PlatformServiceId | ''>('');
   const [level, setLevel] = useState<PlatformEmittedLogLevel | ''>('');
   const [tail, setTail] = useState<number>(100);
@@ -1281,29 +1266,6 @@ function PlatformLogTailPanel() {
     logs.data?.order === 'chronological'
       ? t('settings.platform.logs.order.chronological')
       : (logs.data?.order ?? t('settings.platform.logs.order.unknown'));
-  const temporaryHideDays = informationalNoticeHideDays(settings.data);
-  const logScopeDismissal = noticeDismissalFromPreferences(preferences.data, 'platform_log_scope');
-  const logScopeNoticeHidden = informationalNoticeIsHidden(logScopeDismissal);
-
-  function hideLogScopeNotice(mode: NoticeDismissal['mode']) {
-    updateNoticeDismissal.mutate(createNoticeDismissal(mode, temporaryHideDays), {
-      onSuccess: () =>
-        toast.success(
-          mode === 'permanent'
-            ? noticeT('platformLogs.notice.hiddenPermanent')
-            : noticeT('platformLogs.notice.hiddenTemporary', { days: temporaryHideDays }),
-        ),
-      onError: (error) => toast.error(error),
-    });
-  }
-
-  function restoreLogScopeNotice() {
-    updateNoticeDismissal.mutate(null, {
-      onSuccess: () => toast.success(noticeT('platformLogs.notice.restored')),
-      onError: (error) => toast.error(error),
-    });
-  }
-
   return (
     <Card
       title={t('settings.platform.logs.cardTitle')}
@@ -1355,55 +1317,19 @@ function PlatformLogTailPanel() {
 
         {logs.data ? (
           <div className="stack--tight">
-            {!preferences.isLoading && !logScopeNoticeHidden ? (
-              <div className="platform-log-scope-notice">
-                <InlineWarning tone="info" title={t('settings.platform.logs.limitations.title')}>
-                  <ul className="platform-log-limitations">
-                    {logs.data.limitations.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
-                  {preferences.isSuccess ? (
-                    <div
-                      className="informational-notice__actions"
-                      role="group"
-                      aria-label={noticeT('platformLogs.notice.dismissActions')}
-                    >
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        disabled={updateNoticeDismissal.isPending}
-                        onClick={() => hideLogScopeNotice('snoozed')}
-                      >
-                        {noticeT('platformLogs.notice.hideTemporary', {
-                          days: temporaryHideDays,
-                        })}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={updateNoticeDismissal.isPending}
-                        onClick={() => hideLogScopeNotice('permanent')}
-                      >
-                        {noticeT('platformLogs.notice.hidePermanent')}
-                      </Button>
-                    </div>
-                  ) : null}
-                </InlineWarning>
-              </div>
-            ) : null}
-            {!preferences.isLoading && logScopeNoticeHidden && preferences.isSuccess ? (
-              <div className="platform-log-scope-notice platform-log-scope-notice--restore">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={updateNoticeDismissal.isPending}
-                  onClick={restoreLogScopeNotice}
-                >
-                  {noticeT('platformLogs.notice.restore')}
-                </Button>
-              </div>
-            ) : null}
+            <div className="platform-log-scope-notice">
+              <InlineWarning
+                tone="info"
+                notice="platform_log_scope"
+                title={t('settings.platform.logs.limitations.title')}
+              >
+                <ul className="platform-log-limitations">
+                  {logs.data.limitations.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </InlineWarning>
+            </div>
             <dl
               className="platform-log-retention"
               aria-label={t('settings.platform.logs.retention.title')}

@@ -2,7 +2,7 @@
  * Additive copy explaining what an external-signing envelope slot's `signed` status does and does
  * not assert. Kept outside the shared locale catalogs because `Catalog` is a total type: a new key
  * fails `tsc -b` for all fourteen locales at once, and eleven of them are owned by another lane.
- * Same shape as `externalSigningNoticeFallback.ts`.
+ * Same shape as `noticeDismissFallback.ts`.
  *
  * Fold this into the catalogs once all fourteen locale files are in one hand.
  */

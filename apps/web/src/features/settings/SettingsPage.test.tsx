@@ -3650,7 +3650,9 @@ describe('SettingsPage', () => {
 
     expect(await screen.findByText('Cauda estruturada de logs da API')).toBeTruthy();
     expect(await screen.findByText('Platform service status read')).toBeTruthy();
-    expect(screen.getByText(/in-memory API-owned structured log ring/)).toBeTruthy();
+    // The log-scope notice carries the limitations; it renders once its own dismissal state has
+    // loaded, which is a beat after the log payload itself.
+    expect(await screen.findByText(/in-memory API-owned structured log ring/)).toBeTruthy();
     expect(screen.getByText('Limite de retenção')).toBeTruthy();
     expect(screen.getByText('Retidas')).toBeTruthy();
     expect(screen.getByText('Ring em memória')).toBeTruthy();
@@ -3785,7 +3787,9 @@ describe('SettingsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
     expect(await screen.findByText('Sem logs da plataforma')).toBeTruthy();
-    expect(screen.getByText('Ring only; no historical process logs are retained.')).toBeTruthy();
+    expect(
+      await screen.findByText('Ring only; no historical process logs are retained.'),
+    ).toBeTruthy();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0);
     expect(screen.getByText('0 entradas · limite 100 · cronológico')).toBeTruthy();

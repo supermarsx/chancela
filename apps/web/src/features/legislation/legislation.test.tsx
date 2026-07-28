@@ -21,7 +21,7 @@ import type {
   LawSearchView,
   UserPreferences,
 } from '../../api/types';
-import { DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS } from '../notices/informationalNotice';
+import { DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS } from '../../ui';
 
 // The law shelf links out through openExternal; mock it so a click is observable and
 // nothing tries to reach the OS / a real tab under jsdom.
@@ -759,7 +759,7 @@ interface CorpusFetchOptions {
 
   // --- Dismissing the pinned-citations caveat (t53-e2) -------------------------------------------
   // Mirrors ExternalSigningWorkflowsPage.test.tsx's dismissal round-trip: same registry
-  // (notice_dismissals), same shared informationalNotice.ts mechanism, different NoticeKey.
+  // (notice_dismissals), same shared useNoticeDismissal mechanism, different NoticeKey.
 
   it('dismisses the citations caveat temporarily, persists it, and keeps a way back after remount', async () => {
     const requests: { url: string; init?: RequestInit }[] = [];

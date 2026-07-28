@@ -1,7 +1,6 @@
 /**
  * Additive counterparty-facing copy explaining what an external-envelope slot status does and does
- * not assert. Kept outside the shared locale catalogs, mirroring `externalSigningNoticeFallback.ts`
- * / `legCitationsNoticeFallback.ts` — a small, additive slice pt-anchored plus an English fallback
+ * not assert. Kept outside the shared locale catalogs, mirroring `noticeDismissFallback.ts` — a small, additive slice pt-anchored plus an English fallback
  * for every other shipped locale, rather than a full 14-catalog translation for two strings.
  *
  * The reader here is an outside signatory on the unauthenticated invite page, not a trained

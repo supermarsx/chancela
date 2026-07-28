@@ -43,6 +43,16 @@ export {
 } from './Skeleton';
 export { ToastProvider, useToast, type ToastHandle, type ToastVariant } from './toast';
 export { ErrorNote } from './ErrorNote';
+export { InlineWarning, type InlineWarningProps } from './InlineWarning';
+export {
+  DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS,
+  createNoticeDismissal,
+  informationalNoticeHideDays,
+  informationalNoticeIsHidden,
+  noticeDismissalFromPreferences,
+  useNoticeDismissal,
+  type NoticeDismissalControls,
+} from './noticeDismissal';
 export {
   ConfirmActionModal,
   type ConfirmActionModalProps,
@@ -397,27 +407,14 @@ export function EmptyState({ title, children }: { title: string; children?: Reac
   );
 }
 
-// --- Inline warning -------------------------------------------------------------
-
-export function InlineWarning({
-  tone = 'warn',
-  title,
-  children,
-}: {
-  tone?: 'warn' | 'error' | 'info';
-  title?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <div className={`inline-warning inline-warning--${tone}`} role="note">
-      {title ? <p className="inline-warning__title">{title}</p> : null}
-      <div className="inline-warning__body">{children}</div>
-    </div>
-  );
-}
-
 // --- Query state helpers --------------------------------------------------------
 //
 // `ErrorNote` lives in `./ErrorNote` (re-exported above): it grew from this file's single 403
 // special-case into the `apiErrorFallback.ts` code table plus a technical-details block, which is
 // more than a presentational primitive belongs to carry.
+//
+// `InlineWarning` lives in `./InlineWarning` for the same reason: a banner may now opt into durable
+// per-user dismissal by naming a registry key, which means preferences queries and a mutation. The
+// markup is unchanged and the capability is opt-in, so the ~460 banners that name no key stay as
+// presentational as they were — see that module's header for why absence of a key is the guarantee
+// that a fail-closed banner cannot be hidden.

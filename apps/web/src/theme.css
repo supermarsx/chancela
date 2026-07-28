@@ -259,16 +259,20 @@ a:focus-visible {
   margin-block: 0;
 }
 
-.informational-notice__actions,
-.external-signing-notice__actions {
+.informational-notice__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
   margin-top: 0.75rem;
 }
 
-.informational-notice__actions .btn,
-.external-signing-notice__actions .btn {
+/* What a dismissable banner leaves behind: the way back, right-aligned where the banner stood. */
+.notice-restore {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.informational-notice__actions .btn {
   min-width: min(100%, 11rem);
 }
 
@@ -281,8 +285,7 @@ a:focus-visible {
     grid-template-columns: 1fr;
   }
 
-  .informational-notice__actions .btn,
-  .external-signing-notice__actions .btn {
+  .informational-notice__actions .btn {
     width: 100%;
   }
 }
@@ -4684,11 +4687,6 @@ a,
 
 .platform-log-scope-notice {
   margin-bottom: 1rem;
-}
-
-.platform-log-scope-notice--restore {
-  display: flex;
-  justify-content: flex-end;
 }
 
 .platform-log-limitations {

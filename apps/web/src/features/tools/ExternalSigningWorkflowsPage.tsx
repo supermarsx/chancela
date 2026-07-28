@@ -4,23 +4,14 @@ import type {
   ActView,
   BookView,
   Entity,
-  NoticeDismissal,
   ExternalSignerInvitePublicView,
   ExternalSignerInviteStatus,
   ExternalSignerInviteView,
 } from '../../api/types';
 import { api } from '../../api/client';
-import {
-  keys,
-  useBooks,
-  useEntities,
-  useSettings,
-  useUpdateExternalSignatureNoticeDismissal,
-  useUserPreferences,
-} from '../../api/hooks';
+import { keys, useBooks, useEntities } from '../../api/hooks';
 import { openExternal } from '../../desktop/openExternal';
 import { useT, type TFunction } from '../../i18n';
-import { useExternalSigningNoticeT } from '../../i18n/externalSigningNoticeFallback';
 import { formatTimestamp } from '../../format';
 import {
   Badge,
@@ -39,20 +30,11 @@ import {
   SkeletonTable,
   Table,
   useToast,
+  DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS,
 } from '../../ui';
 import { scopeBook, useCan } from '../session/permissions';
-import {
-  DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS,
-  createNoticeDismissal,
-  informationalNoticeHideDays,
-  informationalNoticeIsHidden,
-  noticeDismissalFromPreferences,
-} from '../notices/informationalNotice';
 
-export {
-  informationalNoticeHideDays,
-  informationalNoticeIsHidden,
-} from '../notices/informationalNotice';
+export { informationalNoticeHideDays, informationalNoticeIsHidden } from '../../ui';
 
 export const DEFAULT_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS =
   DEFAULT_INFORMATIONAL_NOTICE_SNOOZE_DAYS;
@@ -202,21 +184,13 @@ function EnvelopeDetails({ envelope }: { envelope: ExternalSignerInvitePublicVie
 
 export function ExternalSigningWorkflowsPage() {
   const t = useT();
-  const noticeT = useExternalSigningNoticeT();
   const toast = useToast();
   const can = useCan();
   const entities = useEntities();
   const books = useBooks();
-  const settings = useSettings();
-  const preferences = useUserPreferences();
-  const updateNoticeDismissal = useUpdateExternalSignatureNoticeDismissal();
   const [token, setToken] = useState('');
   const link = externalSignerInviteLink(token);
   const canUseToken = !!link;
-  const temporaryHideDays = informationalNoticeHideDays(settings.data);
-  const noticeHidden = informationalNoticeIsHidden(
-    noticeDismissalFromPreferences(preferences.data, 'external_signing'),
-  );
 
   const entityById = useMemo(() => {
     const map = new Map<string, Entity>();
@@ -317,21 +291,6 @@ export function ExternalSigningWorkflowsPage() {
     for (const query of inviteQueries) void query.refetch();
   }
 
-  function hideNotice(mode: NoticeDismissal['mode']) {
-    const dismissal = createNoticeDismissal(mode, temporaryHideDays);
-    updateNoticeDismissal.mutate(dismissal, {
-      onSuccess: () =>
-        toast.success(
-          mode === 'permanent'
-            ? noticeT('externalSigning.notice.hiddenPermanent')
-            : noticeT('externalSigning.notice.hiddenTemporary', {
-                days: temporaryHideDays,
-              }),
-        ),
-      onError: (error) => toast.error(error),
-    });
-  }
-
   return (
     <div className="stack external-signing-workflows">
       <Card
@@ -349,37 +308,13 @@ export function ExternalSigningWorkflowsPage() {
         }
       >
         <div className="stack--tight">
-          {!preferences.isLoading && !noticeHidden ? (
-            <InlineWarning tone="info" title={t('externalSigning.notice.title')}>
-              <p>{t('externalSigning.notice.body')}</p>
-              {preferences.isSuccess ? (
-                <div
-                  className="informational-notice__actions external-signing-notice__actions"
-                  role="group"
-                  aria-label={noticeT('externalSigning.notice.dismissActions')}
-                >
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    disabled={updateNoticeDismissal.isPending}
-                    onClick={() => hideNotice('snoozed')}
-                  >
-                    {noticeT('externalSigning.notice.hideTemporary', {
-                      days: temporaryHideDays,
-                    })}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    disabled={updateNoticeDismissal.isPending}
-                    onClick={() => hideNotice('permanent')}
-                  >
-                    {noticeT('externalSigning.notice.hidePermanent')}
-                  </Button>
-                </div>
-              ) : null}
-            </InlineWarning>
-          ) : null}
+          <InlineWarning
+            tone="info"
+            notice="external_signing"
+            title={t('externalSigning.notice.title')}
+          >
+            <p>{t('externalSigning.notice.body')}</p>
+          </InlineWarning>
           <dl className="deflist external-signing-summary">
             <div>
               <dt>{t('externalSigning.summary.total')}</dt>
