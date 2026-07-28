@@ -488,8 +488,14 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
         .collect();
     assert!(all_ids.contains(&"csc-ata-ag/v1"), "spine: ata template");
     assert!(
-        all_ids.contains(&"csc-termo-abertura/v1"),
+        all_ids.contains(&"csc-termo-abertura/v2"),
         "spine: termo template"
+    );
+    // The superseded version stays listed and resolvable: documents already generated from it
+    // name it, and dropping it would leave them pointing at nothing.
+    assert!(
+        all_ids.contains(&"csc-termo-abertura/v1"),
+        "the superseded termo version is still served"
     );
 
     let (status, ata) = h
@@ -510,13 +516,14 @@ async fn document_pipeline_end_to_end_and_pdfa_conformance() {
         .get_json("/v1/templates?family=CommercialCompany&stage=TermoAbertura")
         .await;
     assert_eq!(status, 200);
+    let termo_arr = termo.as_array().expect("filtered termo templates");
     assert!(
-        termo
-            .as_array()
-            .expect("filtered termo templates")
-            .iter()
-            .any(|t| t["id"] == "csc-termo-abertura/v1"),
-        "the CSC termo template is listed: {termo}"
+        termo_arr.iter().any(|t| t["id"] == "csc-termo-abertura/v2"),
+        "the CSC termo spine is listed: {termo}"
+    );
+    assert!(
+        termo_arr.iter().any(|t| t["id"] == "csc-termo-abertura/v1"),
+        "both versions are offered by the picker: {termo}"
     );
 
     // The chain still verifies with the document events woven in.

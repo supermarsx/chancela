@@ -327,7 +327,7 @@ pub fn validate_catalog_metadata(assets: &[(&str, &str)]) -> Vec<CatalogMetadata
         let spec = TemplateSpec::from(dto);
 
         let actual_stem = template_id_stem(&spec.id);
-        if actual_stem != *asset {
+        if !asset_stem_matches_template_id(asset, &spec.id) {
             issues.push(metadata_issue(
                 asset,
                 Some(&spec.id),
@@ -539,6 +539,41 @@ fn template_id_stem(template_id: &str) -> &str {
         .split_once('/')
         .map(|(stem, _)| stem)
         .unwrap_or(template_id)
+}
+
+/// Whether `asset` is a legal filename for `template_id`.
+///
+/// Two forms are accepted, and the difference is only in the **filename**:
+///
+/// - `csc-termo-abertura.json` for `csc-termo-abertura/v1` — the bare stem.
+/// - `csc-termo-abertura-v2.json` for `csc-termo-abertura/v2` — the stem plus a matching `-vN`.
+///
+/// The second form is what lets **two versions of one template coexist**. `build.rs` derives each
+/// asset's key from its filename, so without it a `/v2` would have to occupy the same file as the
+/// `/v1` — and a catalog that advertises versioned ids could only ever ship one version per stem.
+/// Neither way of forcing that is acceptable: editing a shipped `/vN`'s blocks in place trips
+/// `SpecBinding::CatalogDrifted` for every document it already produced (the retroactive-edit
+/// detector, which then cries wolf over legitimate history), and renumbering the id in place leaves
+/// those documents naming an id the registry can no longer resolve.
+///
+/// The **template id stem is unchanged** by either form, so everything keyed on it — the family
+/// prefix rule, the spine table, the web template-name map — is untouched. Only the file moves.
+fn asset_stem_matches_template_id(asset: &str, template_id: &str) -> bool {
+    let stem = template_id_stem(template_id);
+    if asset == stem {
+        return true;
+    }
+    // `<stem>-v<N>`, where `<N>` must be the id's own version — `-v2` may not hold a `/v3`.
+    let Some((asset_stem, asset_version)) = asset.rsplit_once("-v") else {
+        return false;
+    };
+    let Some((_, id_version)) = template_id.rsplit_once("/v") else {
+        return false;
+    };
+    asset_stem == stem
+        && asset_version == id_version
+        && !asset_version.is_empty()
+        && asset_version.chars().all(|c| c.is_ascii_digit())
 }
 
 fn has_template_id_version_suffix(template_id: &str) -> bool {

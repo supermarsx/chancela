@@ -312,12 +312,14 @@ fn spine_template_id(family: EntityFamily, stage: LifecycleStage) -> Option<&'st
         (Association, Ata) => "assoc-ata-ga/v1",
         (Foundation, Ata) => "fundacao-ata-ca/v1",
         (Cooperative, Ata) => "cooperativa-ata-ag/v1",
-        // Termo de abertura — one per family.
-        (CommercialCompany, TermoAbertura) => "csc-termo-abertura/v1",
-        (Condominium, TermoAbertura) => "condominio-termo-abertura/v1",
-        (Association, TermoAbertura) => "assoc-termo-abertura/v1",
-        (Foundation, TermoAbertura) => "fundacao-termo-abertura/v1",
-        (Cooperative, TermoAbertura) => "cooperativa-termo-abertura/v1",
+        // Termo de abertura — one per family. `/v2` adds the declared page-count row; `/v1` stays
+        // in the catalog, byte-identical, because documents already generated from it name it and
+        // must keep resolving. Only what a NEW termo renders moves.
+        (CommercialCompany, TermoAbertura) => "csc-termo-abertura/v2",
+        (Condominium, TermoAbertura) => "condominio-termo-abertura/v2",
+        (Association, TermoAbertura) => "assoc-termo-abertura/v2",
+        (Foundation, TermoAbertura) => "fundacao-termo-abertura/v2",
+        (Cooperative, TermoAbertura) => "cooperativa-termo-abertura/v2",
         // Termo de encerramento — each family's closing instrument. CSC also carries a
         // `-transporte` variant (successor-book carry-over) reachable on demand; the encerramento is
         // the spine that book-close auto-generates.
@@ -10391,6 +10393,10 @@ mod spec_binding_tests {
                 "b4f7a9a4a8647313b1cca47a14034c527a896ef50e5bdb754415983f9515b9ca",
             ),
             (
+                "assoc-termo-abertura/v2",
+                "3b9dc5678cd61d15a3f724d76f2e20a2237f1859d2c9d6deb28e3decde37c0c0",
+            ),
+            (
                 "assoc-termo-encerramento/v1",
                 "15e20a35c7cf4c2eaf54015b3a5f5aba3a1cf96a4edc3aa9f5eb31905186e487",
             ),
@@ -10447,6 +10453,10 @@ mod spec_binding_tests {
                 "c6dafe79560973a58a679d9115b08e6e0d7f6c23391347f63dad22be247789cf",
             ),
             (
+                "condominio-termo-abertura/v2",
+                "5009a599e3377959ea90af9d7cf58fdacc83ba622938528d82cbcb1b63518ce4",
+            ),
+            (
                 "condominio-termo-encerramento/v1",
                 "b8a9c0277368fae50cf89d7faea2f7bb12b193b9a3de812b601723d099e2d6f3",
             ),
@@ -10501,6 +10511,10 @@ mod spec_binding_tests {
             (
                 "cooperativa-termo-abertura/v1",
                 "f98d2c35a1ff7d06d47fbfcefcf92ef612894a4cf8ab46e9296685bd7fabd803",
+            ),
+            (
+                "cooperativa-termo-abertura/v2",
+                "0b47a3518e7a280486c33eecb6f318b49bf413203bf9dc33aff3e97e3619e568",
             ),
             (
                 "cooperativa-termo-encerramento/v1",
@@ -10679,6 +10693,10 @@ mod spec_binding_tests {
                 "8a0a9bff43d9f243cde37cccd91fb8e52153027ce79319ba33c84f07235e6d20",
             ),
             (
+                "csc-termo-abertura/v2",
+                "c6b44878ebbd303421dea7a93e2d9df348552b38d0d0f9f2f85b6480cc9cd6e3",
+            ),
+            (
                 "csc-termo-encerramento/v1",
                 "bac01ebf10ebbfccacc166db6673f18a9b0215b485b0b908590df707a67172c5",
             ),
@@ -10733,6 +10751,10 @@ mod spec_binding_tests {
             (
                 "fundacao-termo-abertura/v1",
                 "af18a692de0e5b35183ed97ab7ba6e1b29b2a12cd5e29affbd4cc95d4bc0d0d5",
+            ),
+            (
+                "fundacao-termo-abertura/v2",
+                "f2bd8471e4ef48034376b317fc476dda31e6f6726d400ff12daa99b9334c4418",
             ),
             (
                 "fundacao-termo-encerramento/v1",
@@ -15337,6 +15359,94 @@ mod tests {
             LifecycleStage::TermoAbertura,
         )
         .expect("csc termo abertura spec")
+    }
+
+    /// The spine now renders `/v2`, which states the declared page count in a labelled row.
+    /// Asserted on the row's *value* and on the key/value pairing, not on prose: the label is
+    /// reviewable copy, but that the number reaches a row of its own is the contract.
+    #[test]
+    fn the_spine_termo_states_the_declared_page_count_in_its_own_row() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        termo.page_capacity = Some(250);
+
+        let model = chancela_templates::render_with_body(
+            abertura_spec(),
+            &termo_ctx(&termo, &book),
+            &[],
+        )
+        .expect("termo renders");
+        let rows: Vec<(String, String)> = model
+            .blocks
+            .iter()
+            .filter_map(|b| match b {
+                Block::KeyValue { rows } => Some(rows),
+                _ => None,
+            })
+            .flatten()
+            .map(|r| (r.key.clone(), r.value.clone()))
+            .collect();
+
+        let (_, value) = rows
+            .iter()
+            .find(|(_, v)| v == "250")
+            .expect("the declared page count reaches a row of its own");
+        assert_eq!(value, "250", "the bare number, never built into a sentence");
+    }
+
+    /// A one-shot book declares no capacity and is genuinely unlimited, so `/v2` must print no
+    /// page-count row at all — not a blank, not a `none`. This is the case that would have
+    /// regressed had the context carried a null instead of omitting the key.
+    #[test]
+    fn the_spine_termo_omits_the_row_when_no_page_count_was_declared() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        assert_eq!(termo.page_capacity, None, "the one-shot shape declares none");
+
+        let model = chancela_templates::render_with_body(
+            abertura_spec(),
+            &termo_ctx(&termo, &book),
+            &[],
+        )
+        .expect("termo renders");
+        for block in &model.blocks {
+            if let Block::KeyValue { rows } = block {
+                for row in rows {
+                    assert!(
+                        !row.value.trim().is_empty() && row.value != "none",
+                        "a termo declaring no page count must print no empty or `none` row: {:?}",
+                        row
+                    );
+                }
+            }
+        }
+    }
+
+    /// `/v1` stays as shipped: a book whose document named it re-renders exactly as before, with
+    /// no page-count row, even for a termo that declares a capacity.
+    #[test]
+    fn the_previous_termo_version_still_renders_without_the_page_count() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        termo.page_capacity = Some(250);
+
+        let v1 = registry()
+            .get("csc-termo-abertura/v1")
+            .expect("v1 still resolves for documents that name it");
+        let model =
+            chancela_templates::render_with_body(v1, &termo_ctx(&termo, &book), &[])
+                .expect("v1 renders");
+        let has_capacity_row = model.blocks.iter().any(|b| match b {
+            Block::KeyValue { rows } => rows.iter().any(|r| r.value == "250"),
+            _ => false,
+        });
+        assert!(
+            !has_capacity_row,
+            "v1 must render exactly as shipped, with no page-count row"
+        );
     }
 
     /// F3 reaches the render context as a bare number, so a template can put it in a labelled row

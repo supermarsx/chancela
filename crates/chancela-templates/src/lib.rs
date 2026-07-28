@@ -1335,6 +1335,11 @@ mod tests {
             "condominio-termo-abertura/v1",
             "cooperativa-termo-abertura/v1",
             "fundacao-termo-abertura/v1",
+            "csc-termo-abertura/v2",
+            "assoc-termo-abertura/v2",
+            "condominio-termo-abertura/v2",
+            "cooperativa-termo-abertura/v2",
+            "fundacao-termo-abertura/v2",
         ] {
             let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
             let body = spec.default_body();
@@ -1352,6 +1357,54 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Two versions of one template ship side by side, which is the whole point of putting the
+    /// version in the **filename**: `/v1` keeps resolving for every document already generated from
+    /// it, while `/v2` is what new termos render. Renumbering in place would have left those
+    /// documents naming an unresolvable id; editing `/v1`'s blocks would have tripped the
+    /// retroactive-edit detector for all of them.
+    #[test]
+    fn both_termo_abertura_versions_resolve_and_only_v2_states_the_page_count() {
+        let reg = load_registry().expect("registry loads");
+        for family in [
+            "csc",
+            "assoc",
+            "condominio",
+            "cooperativa",
+            "fundacao",
+        ] {
+            let v1 = reg
+                .get(&format!("{family}-termo-abertura/v1"))
+                .unwrap_or_else(|| panic!("{family} v1 still resolves"));
+            let v2 = reg
+                .get(&format!("{family}-termo-abertura/v2"))
+                .unwrap_or_else(|| panic!("{family} v2 present"));
+
+            // Assert on the merge tag, not on the rendered pt-PT label: the row's wording is
+            // reviewable copy, but the field it binds is the contract.
+            assert!(
+                !binds_page_capacity(v1),
+                "{family} v1 must stay as shipped, with no page-count row"
+            );
+            assert!(
+                binds_page_capacity(v2),
+                "{family} v2 must state the declared page count"
+            );
+            // Same instrument, same family/stage binding — only the added row differs.
+            assert_eq!(v1.family, v2.family);
+            assert_eq!(v1.stage, v2.stage);
+        }
+    }
+
+    /// Whether any `KeyValue` row of `spec` binds the termo's declared page capacity.
+    fn binds_page_capacity(spec: &TemplateSpec) -> bool {
+        spec.blocks.iter().any(|block| match block {
+            BlockSpec::KeyValue { rows, .. } => {
+                rows.iter().any(|r| r.value.contains("page_capacity"))
+            }
+            _ => false,
+        })
     }
 
     /// The seed body is deliberately outside the digested canonical form: editing a seed must
@@ -1972,6 +2025,44 @@ mod tests {
             "catalog metadata validation failed:\n{}",
             catalog_metadata_report(&issues)
         );
+    }
+
+    /// The filename may carry the version (`<stem>-vN.json` for `<stem>/vN`) — that is what lets
+    /// two versions of one template ship at once — but it must carry the *right* one, and a
+    /// filename that renames the template is still a mismatch.
+    #[test]
+    fn an_asset_filename_may_carry_its_version_but_never_a_different_one() {
+        let spec = |id: &str| {
+            format!(
+                r#"{{"id":"{id}","family":"Association","stage":"Ata","channels":[],
+                "signature_policy":"ManualAttested","rule_pack_id":"assoc-cc/v1",
+                "locale":"pt-PT","blocks":[{{"kind":"Paragraph","template":"Ata."}}]}}"#
+            )
+        };
+        let stem_issues = |asset: &str, id: &str| {
+            validate_catalog_metadata(&[(asset, spec(id).as_str())])
+                .into_iter()
+                .filter(|i| {
+                    matches!(
+                        i.kind,
+                        CatalogMetadataIssueKind::TemplateIdAssetStemMismatch { .. }
+                    )
+                })
+                .count()
+        };
+
+        // Accepted: the bare stem, and the stem plus its own version.
+        assert_eq!(stem_issues("assoc-ata-x", "assoc-ata-x/v1"), 0);
+        assert_eq!(stem_issues("assoc-ata-x-v2", "assoc-ata-x/v2"), 0);
+        assert_eq!(stem_issues("assoc-ata-x-v10", "assoc-ata-x/v10"), 0);
+
+        // Rejected: a filename claiming a version the id does not have — the pairing must be
+        // exact, or `-v2.json` could quietly ship a `/v3`.
+        assert_eq!(stem_issues("assoc-ata-x-v2", "assoc-ata-x/v3"), 1);
+        assert_eq!(stem_issues("assoc-ata-x-v2", "assoc-ata-x/v1"), 1);
+        // Rejected: a filename that names a different template altogether.
+        assert_eq!(stem_issues("assoc-ata-y", "assoc-ata-x/v1"), 1);
+        assert_eq!(stem_issues("assoc-ata-y-v2", "assoc-ata-x/v2"), 1);
     }
 
     #[test]
@@ -3560,23 +3651,26 @@ mod tests {
         let reg = load_registry().expect("the full catalog loads (deserializes + no duplicate id)");
 
         // Whole-catalog census — a dropped or duplicated asset changes these counts.
+        // Each family carries **two** termo de abertura specs: `/v1` as shipped and `/v2` adding
+        // the declared page-count row. Both stay in the catalog on purpose — documents already
+        // generated from `/v1` name it and must keep resolving.
         assert_eq!(
             reg.specs().len(),
-            104,
-            "expected the full authored catalog (~104 templates)"
+            109,
+            "expected the full authored catalog (~109 templates)"
         );
         let per_family = |f: EntityFamily| reg.specs().iter().filter(|s| s.family == f).count();
-        assert_eq!(per_family(EntityFamily::CommercialCompany), 44, "csc count");
+        assert_eq!(per_family(EntityFamily::CommercialCompany), 45, "csc count");
         assert_eq!(
             per_family(EntityFamily::Condominium),
-            14,
+            15,
             "condominio count"
         );
-        assert_eq!(per_family(EntityFamily::Association), 18, "assoc count");
-        assert_eq!(per_family(EntityFamily::Foundation), 14, "fundacao count");
+        assert_eq!(per_family(EntityFamily::Association), 19, "assoc count");
+        assert_eq!(per_family(EntityFamily::Foundation), 15, "fundacao count");
         assert_eq!(
             per_family(EntityFamily::Cooperative),
-            14,
+            15,
             "cooperativa count"
         );
 
