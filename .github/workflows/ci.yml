@@ -16,12 +16,20 @@ on:
 permissions:
   contents: read
 
-# Keep every running main publication alive. Pull-request runs still cancel when
-# superseded, while main pushes are keyed by commit so one push can never abort
-# another commit's release evidence.
+# One run per ref, and a new push cancels the one it supersedes — on main as well
+# as on pull requests. Keying main by commit kept every push's run alive, so a busy
+# day left several full matrices racing for the same runners and the newest commit
+# queued behind results nobody was going to act on.
+#
+# This does mean an aborted main run leaves no CI verdict for that commit. That is
+# the intended trade: the verdict that matters is the one for the tip, and any
+# commit whose run was cancelled is by definition no longer the tip. Release
+# evidence does not depend on it — release.yml, release-signing.yml and
+# auto-release.yml keep `cancel-in-progress: false` and run off tags, so nothing
+# here can abort a publication midway.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   # ---------------------------------------------------------------------------
