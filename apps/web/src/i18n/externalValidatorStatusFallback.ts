@@ -224,9 +224,7 @@ export function describeExternalValidatorStatus(
   tier: StatusTier = PT_PT_TIER,
 ): ExternalValidatorStatusDescription {
   const entry = tier.groups[group][token];
-  return entry === undefined
-    ? { ...tier.unrecognised, known: false }
-    : { ...entry, known: true };
+  return entry === undefined ? { ...tier.unrecognised, known: false } : { ...entry, known: true };
 }
 
 /**

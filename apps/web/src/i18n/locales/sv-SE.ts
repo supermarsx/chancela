@@ -3471,7 +3471,8 @@ export const svSE: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Identitetsbevis ofullständigt',
   'signing.envelopes.evidence.identityMissingBody':
     'Lägg till en märkt bevisreferens för varje konfigurerat identitetskrav innan slotet markeras med registrerad signatur.',
-  'signing.envelopes.evidence.submit': 'Registrera bevis och markera slotet med registrerad signatur',
+  'signing.envelopes.evidence.submit':
+    'Registrera bevis och markera slotet med registrerad signatur',
   'signing.envelopes.evidence.recording': 'Registrerar…',
   'signing.envelopes.evidence.recordedToast': 'Tekniskt slotbevis registrerat.',
   'signing.envelopes.identity.none': 'Inget ytterligare krav',
@@ -3633,7 +3634,7 @@ export const svSE: Catalog = {
   'data.status.cleanup.pending': 'Rensar…',
   'data.status.cleanup.done': 'Rensning klar.',
   'data.status.cleanup.doneTitle': 'Underhåll klart',
-    'data.status.cleanup.result': 'Tog bort {files} och {directories} och frigjorde {bytes}.',
+  'data.status.cleanup.result': 'Tog bort {files} och {directories} och frigjorde {bytes}.',
   'data.status.backup.title': 'Operativ säkerhetskopia',
   'data.status.backup.body':
     'Skapar en varm säkerhetskopia av den beständiga instansen och returnerar endast ett icke-hemligt manifest.',

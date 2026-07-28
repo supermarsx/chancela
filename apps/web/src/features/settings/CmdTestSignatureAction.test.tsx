@@ -201,7 +201,9 @@ const confirmCalls = (calls: Call[]) =>
 
 /** Open the flow from the credentials table row. */
 async function openFlow() {
-  fireEvent.click(await screen.findByRole('button', { name: copy['providerCredentials.cmdTest.button'] }));
+  fireEvent.click(
+    await screen.findByRole('button', { name: copy['providerCredentials.cmdTest.button'] }),
+  );
   return screen.findByRole('dialog');
 }
 
@@ -230,7 +232,9 @@ async function runTestSignatureToResult() {
   });
   fillConfirmationProof(dialog);
   fireEvent.click(
-    within(dialog).getByRole('button', { name: copy['providerCredentials.cmdTest.initiateConfirm'] }),
+    within(dialog).getByRole('button', {
+      name: copy['providerCredentials.cmdTest.initiateConfirm'],
+    }),
   );
 
   await screen.findByTestId('cmd-test-step-authorisation');
@@ -239,7 +243,9 @@ async function runTestSignatureToResult() {
   });
   fillConfirmationProof(dialog);
   fireEvent.click(
-    within(dialog).getByRole('button', { name: copy['providerCredentials.cmdTest.confirmConfirm'] }),
+    within(dialog).getByRole('button', {
+      name: copy['providerCredentials.cmdTest.confirmConfirm'],
+    }),
   );
 }
 
@@ -267,9 +273,12 @@ describe('CmdTestSignatureAction', () => {
     expect(railStates()).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
     expect(within(dialog).getByTestId('cmd-test-step-credentials')).toBeTruthy();
 
-    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
-      target: { value: '+351 912345678' },
-    });
+    fireEvent.change(
+      within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']),
+      {
+        target: { value: '+351 912345678' },
+      },
+    );
     fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
       target: { value: '271828' },
     });
@@ -295,7 +304,9 @@ describe('CmdTestSignatureAction', () => {
     expect(
       within(stillOpen).getByText(copy['providerCredentials.cmdTest.waitingTitle']),
     ).toBeTruthy();
-    expect(within(stillOpen).getByText(copy['providerCredentials.cmdTest.waitingNote'])).toBeTruthy();
+    expect(
+      within(stillOpen).getByText(copy['providerCredentials.cmdTest.waitingNote']),
+    ).toBeTruthy();
     // The rail advanced: the credentials step is done, the wait is where the run is.
     expect(railStates()).toEqual(['done', 'current', 'upcoming', 'upcoming']);
 
@@ -360,9 +371,12 @@ describe('CmdTestSignatureAction', () => {
     fireEvent.click(send());
     expect(initiateCalls(stub.calls).length).toBe(0);
 
-    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
-      target: { value: '+351 912345678' },
-    });
+    fireEvent.change(
+      within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']),
+      {
+        target: { value: '+351 912345678' },
+      },
+    );
     fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
       target: { value: '271828' },
     });
@@ -433,9 +447,12 @@ describe('CmdTestSignatureAction', () => {
     renderSection();
 
     const dialog = await openFlow();
-    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
-      target: { value: '+351 912345678' },
-    });
+    fireEvent.change(
+      within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']),
+      {
+        target: { value: '+351 912345678' },
+      },
+    );
     fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
       target: { value: '271828' },
     });
@@ -550,8 +567,12 @@ describe('CmdTestSignatureAction', () => {
     ).toBeTruthy();
     // And the panel says the signature nonetheless exists and is downloadable, rather than
     // implying the test failed to produce one.
-    expect(within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationBad'])).toBeTruthy();
-    expect(screen.getByRole('button', { name: copy['providerCredentials.cmdTest.download'] })).toBeTruthy();
+    expect(
+      within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationBad']),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: copy['providerCredentials.cmdTest.download'] }),
+    ).toBeTruthy();
   });
 
   /**

@@ -268,7 +268,12 @@ function formatOptionalNumber(value: number | null | undefined, locale: string):
  * `{count} noun` template can never fix that on its own. Mirrors the `.one`/`.other` key
  * pair convention already used by `compliance.errors`/`compliance.warnings`.
  */
-function pluralCount(count: number, oneKey: MessageKey, otherKey: MessageKey, t: TFunction): string {
+function pluralCount(
+  count: number,
+  oneKey: MessageKey,
+  otherKey: MessageKey,
+  t: TFunction,
+): string {
   return t(count === 1 ? oneKey : otherKey, { count });
 }
 
@@ -861,9 +866,7 @@ function IsolatedRestoreVerificationReport({
           {
             key: 'status',
             label: translateNow('uiLiteral.gestaoDadosSection.estado'),
-            value: (
-              <DataRecoveryStatus group="isolatedRestoreStatus" token={verification.status} />
-            ),
+            value: <DataRecoveryStatus group="isolatedRestoreStatus" token={verification.status} />,
           },
           {
             key: 'isolated_restore_verified',
@@ -1328,7 +1331,9 @@ function SyncHandoffPreflightReportCard({
                 {
                   key: 'readiness',
                   label: translateNow('uiLiteral.gestaoDadosSection.estado'),
-                  value: <DataRecoveryStatus group="readinessStatus" token={report.readiness.status} />,
+                  value: (
+                    <DataRecoveryStatus group="readinessStatus" token={report.readiness.status} />
+                  ),
                 },
                 {
                   key: 'generated_at',

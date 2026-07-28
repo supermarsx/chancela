@@ -237,7 +237,9 @@ describe('the copy has the right shape, whatever its wording', () => {
           expect(entry.label.trim(), `${group}/${token} label`).not.toBe('');
           expect(entry.meaning.trim().length, `${group}/${token} meaning`).toBeGreaterThan(40);
           expect(entry.meaning.trim().endsWith('.'), `${group}/${token} meaning`).toBe(true);
-          expect(['ok', 'neutral', 'warn', 'error'], `${group}/${token} tone`).toContain(entry.tone);
+          expect(['ok', 'neutral', 'warn', 'error'], `${group}/${token} tone`).toContain(
+            entry.tone,
+          );
         }
       }
     }

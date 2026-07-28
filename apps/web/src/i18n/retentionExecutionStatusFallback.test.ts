@@ -120,24 +120,25 @@ function enumWireTokens(source: string, name: string): string[] {
 const sorted = (values: readonly string[]): string[] => [...values].sort();
 
 /** The five emitted populations, parsed from Rust. */
-async function emittedTokens(): Promise<Record<RetentionStatusGroup | 'executionStatus', string[]>> {
+async function emittedTokens(): Promise<
+  Record<RetentionStatusGroup | 'executionStatus', string[]>
+> {
   const source = productionSection(await readCrateSource(EMITTER));
 
   const mode =
     /let mode = if execution_record\.is_some\(\) \{\s*"([a-z0-9_]+)"\s*\} else \{\s*"([a-z0-9_]+)"\s*\}/u.exec(
       source,
     );
-  expect(mode, `the dry-run report no longer derives \`mode\` the expected way in ${EMITTER}`)
-    .not.toBeNull();
+  expect(
+    mode,
+    `the dry-run report no longer derives \`mode\` the expected way in ${EMITTER}`,
+  ).not.toBeNull();
 
   return {
     outcome: enumWireTokens(source, 'RetentionExecutionOutcome'),
     evidenceState: enumWireTokens(source, 'RetentionEvidenceState'),
     disposition: enumWireTokens(source, 'RetentionCandidateDisposition'),
-    dryRunMode: [
-      (mode as RegExpExecArray)[1] as string,
-      (mode as RegExpExecArray)[2] as string,
-    ],
+    dryRunMode: [(mode as RegExpExecArray)[1] as string, (mode as RegExpExecArray)[2] as string],
     executionStatus: enumWireTokens(source, 'RetentionExecutionStatus'),
   };
 }
@@ -250,7 +251,9 @@ describe('the copy has the right shape, whatever its wording', () => {
           expect(entry.label.trim(), `${group}/${token} label`).not.toBe('');
           expect(entry.meaning.trim().length, `${group}/${token} meaning`).toBeGreaterThan(40);
           expect(entry.meaning.trim().endsWith('.'), `${group}/${token} meaning`).toBe(true);
-          expect(['ok', 'neutral', 'warn', 'error'], `${group}/${token} tone`).toContain(entry.tone);
+          expect(['ok', 'neutral', 'warn', 'error'], `${group}/${token} tone`).toContain(
+            entry.tone,
+          );
         }
       }
     }
@@ -309,9 +312,9 @@ describe('the copy has the right shape, whatever its wording', () => {
   it('does not let a bounded evidence state imply a deletion', () => {
     // `bounded_*` means the executor is evidence-only. Both entries must deny deletion outright.
     for (const token of ['bounded_archive_recorded', 'bounded_no_action_recorded']) {
-      expect(
-        (PT_PT.evidenceState[token] as RetentionStatusEntry).meaning.toLowerCase(),
-      ).toContain('não inclui qualquer eliminação');
+      expect((PT_PT.evidenceState[token] as RetentionStatusEntry).meaning.toLowerCase()).toContain(
+        'não inclui qualquer eliminação',
+      );
       expect(
         (ENGLISH.evidenceState[token] as RetentionStatusEntry).meaning.toLowerCase(),
       ).toContain('no deletion');

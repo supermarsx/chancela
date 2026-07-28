@@ -12,7 +12,10 @@ import type {
 } from '../../api/types';
 import { normalizeLegacyRoute } from '../../app/legacySlugs';
 import type { MessageKey, TFunction, TParams } from '../../i18n';
-import { isPrivacyReviewReminderKey, privacyReviewReminderT } from '../../i18n/privacyReviewReminderFallback';
+import {
+  isPrivacyReviewReminderKey,
+  privacyReviewReminderT,
+} from '../../i18n/privacyReviewReminderFallback';
 import { actConveningGuidanceRoute } from '../acts/anchors';
 
 /**

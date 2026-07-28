@@ -122,10 +122,7 @@ export function usePrivacyLegalHoldCopy(): PrivacyLegalHoldCopy {
  * The panel's extra translate hook, shaped like {@link useT}:
  * `const lt = usePrivacyLegalHoldT(); lt('settings.privacy.legalHold.column.indicator')`.
  */
-export function usePrivacyLegalHoldT(): (
-  key: PrivacyLegalHoldCopyKey,
-  params?: TParams,
-) => string {
+export function usePrivacyLegalHoldT(): (key: PrivacyLegalHoldCopyKey, params?: TParams) => string {
   const copy = usePrivacyLegalHoldCopy();
   return useMemo(() => (key, params) => interpolate(copy[key], params), [copy]);
 }

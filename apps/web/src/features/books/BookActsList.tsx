@@ -242,7 +242,9 @@ export function BookActsList({ acts, opening }: { acts: ActView[]; opening: Open
       {shows('State') ? (
         <td data-act-column="State">
           <span className="acts-table__state">
-            <Badge tone={stateTone(opening.state)}>{tt(`books.termo.state.${opening.state}`)}</Badge>
+            <Badge tone={stateTone(opening.state)}>
+              {tt(`books.termo.state.${opening.state}`)}
+            </Badge>
           </span>
         </td>
       ) : null}

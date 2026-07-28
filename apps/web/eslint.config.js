@@ -20,6 +20,20 @@ export default tseslint.config(
       // TypeScript resolves identifiers itself; core no-undef only produces
       // false positives on DOM/globals here.
       'no-undef': 'off',
+      // A leading underscore is this codebase's existing signal for "bound on
+      // purpose, read nowhere" — a destructure that omits a key, or a mock typed
+      // with the real signature so a later assertion can read the argument list.
+      // Without this the convention was aspirational and the rule fired on it.
+      // Accidental unused bindings are unaffected: they are not underscore-named.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+          ignoreRestSiblings: true,
+        },
+      ],
       'react-hooks/rules-of-hooks': 'error',
       'react-hooks/exhaustive-deps': 'warn',
     },

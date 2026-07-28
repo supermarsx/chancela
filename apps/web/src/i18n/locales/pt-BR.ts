@@ -3472,7 +3472,8 @@ export const ptBR: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Evidência de identidade incompleta',
   'signing.envelopes.evidence.identityMissingBody':
     'Adicione uma referência de evidência marcada para cada requisito de identidade configurado antes de marcar o slot com assinatura registrada.',
-  'signing.envelopes.evidence.submit': 'Registrar evidência e marcar o slot com assinatura registrada',
+  'signing.envelopes.evidence.submit':
+    'Registrar evidência e marcar o slot com assinatura registrada',
   'signing.envelopes.evidence.recording': 'Registrando…',
   'signing.envelopes.evidence.recordedToast': 'Evidência técnica do slot registrada.',
   'signing.envelopes.identity.none': 'Nenhum requisito adicional',
@@ -3635,7 +3636,7 @@ export const ptBR: Catalog = {
   'data.status.cleanup.pending': 'Limpando…',
   'data.status.cleanup.done': 'Limpeza concluída.',
   'data.status.cleanup.doneTitle': 'Manutenção concluída',
-    'data.status.cleanup.result': 'Apagados {files} e {directories}, liberando {bytes}.',
+  'data.status.cleanup.result': 'Apagados {files} e {directories}, liberando {bytes}.',
   'data.status.backup.title': 'Backup operacional',
   'data.status.backup.body':
     'Cria um backup dinâmico da instância durável e retorna apenas o manifesto sem segredos.',

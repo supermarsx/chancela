@@ -3485,7 +3485,8 @@ export const esES: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Evidencia de identidad incompleta',
   'signing.envelopes.evidence.identityMissingBody':
     'Añada una referencia de evidencia etiquetada por cada requisito de identidad configurado antes de marcar el puesto con firma registrada.',
-  'signing.envelopes.evidence.submit': 'Registrar evidencia y marcar el puesto con firma registrada',
+  'signing.envelopes.evidence.submit':
+    'Registrar evidencia y marcar el puesto con firma registrada',
   'signing.envelopes.evidence.recording': 'Registrando…',
   'signing.envelopes.evidence.recordedToast': 'Evidencia técnica del puesto registrada.',
   'signing.envelopes.identity.none': 'Sin requisito adicional',
@@ -3650,7 +3651,7 @@ export const esES: Catalog = {
   'data.status.cleanup.pending': 'Limpiando…',
   'data.status.cleanup.done': 'Limpieza completada.',
   'data.status.cleanup.doneTitle': 'Mantenimiento completado',
-    'data.status.cleanup.result': 'Se eliminaron {files} y {directories}, liberando {bytes}.',
+  'data.status.cleanup.result': 'Se eliminaron {files} y {directories}, liberando {bytes}.',
   'data.status.backup.title': 'Copia de seguridad operativa',
   'data.status.backup.body':
     'Crea una copia de seguridad en caliente de la instancia duradera y devuelve solo un manifiesto no secreto.',

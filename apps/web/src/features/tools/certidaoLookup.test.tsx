@@ -136,8 +136,9 @@ describe('Certidão de Registo Permanente lookup', () => {
 
     // Only the submit and the clear control. An "import this" button appearing here would be a
     // product decision, not an incidental one — this pins that it has not been added by accident.
-    expect(screen.getAllByRole('button').filter((b) => b.getAttribute('type') !== 'button').length)
-      .toBe(1);
+    expect(
+      screen.getAllByRole('button').filter((b) => b.getAttribute('type') !== 'button').length,
+    ).toBe(1);
   });
 
   it('clears the access code from the input once it has been used', async () => {

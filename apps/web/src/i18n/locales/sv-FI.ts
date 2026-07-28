@@ -3474,7 +3474,8 @@ export const svFI: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Identitetsbevis ofullständigt',
   'signing.envelopes.evidence.identityMissingBody':
     'Lägg till en märkt bevisreferens för varje konfigurerat identitetskrav innan slotet markeras med registrerad signatur.',
-  'signing.envelopes.evidence.submit': 'Registrera bevis och markera slotet med registrerad signatur',
+  'signing.envelopes.evidence.submit':
+    'Registrera bevis och markera slotet med registrerad signatur',
   'signing.envelopes.evidence.recording': 'Registrerar…',
   'signing.envelopes.evidence.recordedToast': 'Tekniskt slotbevis registrerat.',
   'signing.envelopes.identity.none': 'Inget ytterligare krav',
@@ -3636,7 +3637,7 @@ export const svFI: Catalog = {
   'data.status.cleanup.pending': 'Rensar…',
   'data.status.cleanup.done': 'Rensning slutförd.',
   'data.status.cleanup.doneTitle': 'Underhåll slutfört',
-    'data.status.cleanup.result': 'Tog bort {files} och {directories} och frigjorde {bytes}.',
+  'data.status.cleanup.result': 'Tog bort {files} och {directories} och frigjorde {bytes}.',
   'data.status.backup.title': 'Driftsäkerhetskopia',
   'data.status.backup.body':
     'Skapar en varm säkerhetskopia av den beständiga instansen och returnerar endast ett icke-hemligt manifest.',

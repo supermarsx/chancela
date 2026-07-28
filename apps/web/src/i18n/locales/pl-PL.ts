@@ -3471,7 +3471,8 @@ export const plPL: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Dowód tożsamości jest niekompletny',
   'signing.envelopes.evidence.identityMissingBody':
     'Dodaj oznaczoną referencję dowodu dla każdego skonfigurowanego wymagania tożsamości przed oznaczeniem slotu jako mającego zarejestrowany podpis.',
-  'signing.envelopes.evidence.submit': 'Zarejestruj dowód i oznacz slot jako mający zarejestrowany podpis',
+  'signing.envelopes.evidence.submit':
+    'Zarejestruj dowód i oznacz slot jako mający zarejestrowany podpis',
   'signing.envelopes.evidence.recording': 'Rejestrowanie…',
   'signing.envelopes.evidence.recordedToast': 'Techniczny dowód slotu zarejestrowany.',
   'signing.envelopes.identity.none': 'Brak dodatkowego wymagania',
@@ -3634,7 +3635,7 @@ export const plPL: Catalog = {
   'data.status.cleanup.pending': 'Czyszczenie…',
   'data.status.cleanup.done': 'Czyszczenie zakończone.',
   'data.status.cleanup.doneTitle': 'Konserwacja zakończona',
-    'data.status.cleanup.result': 'Usunięto {files} i {directories}, zwalniając {bytes}.',
+  'data.status.cleanup.result': 'Usunięto {files} i {directories}, zwalniając {bytes}.',
   'data.status.backup.title': 'Kopia zapasowa operacyjna',
   'data.status.backup.body':
     'Tworzy gorącą kopię zapasową trwałej instancji i zwraca wyłącznie niepoufny manifest.',
@@ -5998,7 +5999,8 @@ export const plPL: Catalog = {
   'companionPair.hint.password': 'Hasło do Twojego konta.',
   'companionPair.hint.totp_code':
     'Sześciocyfrowy kod, który Twoja aplikacja uwierzytelniająca pokazuje w tej chwili.',
-  'companionPair.hint.emailed_code': 'Kod otrzymany e-mailem. Możesz go wpisać z myślnikami lub bez nich.',
+  'companionPair.hint.emailed_code':
+    'Kod otrzymany e-mailem. Możesz go wpisać z myślnikami lub bez nich.',
   'companionPair.submit': 'Potwierdź i sparuj',
   'companionPair.pending': 'Parowanie…',
   'companionPair.done.title': 'Urządzenie sparowane',

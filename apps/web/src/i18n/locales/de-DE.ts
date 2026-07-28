@@ -3513,7 +3513,8 @@ export const deDE: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Identitätsnachweis unvollständig',
   'signing.envelopes.evidence.identityMissingBody':
     'Fügen Sie für jede konfigurierte Identitätsanforderung eine markierte Nachweisreferenz hinzu, bevor der Slot mit erfasster Signatur markiert wird.',
-  'signing.envelopes.evidence.submit': 'Nachweis erfassen und Slot mit erfasster Signatur markieren',
+  'signing.envelopes.evidence.submit':
+    'Nachweis erfassen und Slot mit erfasster Signatur markieren',
   'signing.envelopes.evidence.recording': 'Wird erfasst…',
   'signing.envelopes.evidence.recordedToast': 'Technischer Slot-Nachweis erfasst.',
   'signing.envelopes.identity.none': 'Keine zusätzliche Anforderung',
@@ -3677,7 +3678,7 @@ export const deDE: Catalog = {
   'data.status.cleanup.pending': 'Wird bereinigt…',
   'data.status.cleanup.done': 'Bereinigung abgeschlossen.',
   'data.status.cleanup.doneTitle': 'Wartung abgeschlossen',
-    'data.status.cleanup.result': '{files} und {directories} gelöscht, {bytes} freigegeben.',
+  'data.status.cleanup.result': '{files} und {directories} gelöscht, {bytes} freigegeben.',
   'data.status.backup.title': 'Betriebssicherung',
   'data.status.backup.body':
     'Erstellt eine Hot-Sicherung der dauerhaften Instanz und gibt nur ein nicht geheimes Manifest zurück.',
@@ -6045,7 +6046,8 @@ export const deDE: Catalog = {
   'companionPair.method.totp_code': 'Authenticator-Code',
   'companionPair.method.emailed_code': 'Per E-Mail gesendeter Code',
   'companionPair.hint.password': 'Das Passwort Ihres Kontos.',
-  'companionPair.hint.totp_code': 'Der sechsstellige Code, den Ihre Authenticator-App gerade anzeigt.',
+  'companionPair.hint.totp_code':
+    'Der sechsstellige Code, den Ihre Authenticator-App gerade anzeigt.',
   'companionPair.hint.emailed_code':
     'Der Code, den Sie per E-Mail erhalten haben. Sie können ihn mit oder ohne Bindestriche eingeben.',
   'companionPair.submit': 'Bestätigen und koppeln',

@@ -165,7 +165,9 @@ export function useCertidaoLookupT(): (key: CertidaoLookupCopyKey, params?: TPar
  * Portuguese sentence invented for a failure this build does not recognise. Guessing here is how a
  * refusal ends up explained by a cause that was never established.
  */
-export function certidaoLookupErrorKey(code: string | undefined): CertidaoLookupCopyKey | undefined {
+export function certidaoLookupErrorKey(
+  code: string | undefined,
+): CertidaoLookupCopyKey | undefined {
   switch (code) {
     case 'registry.invalid_code':
       return 'certidaoLookup.error.invalidCode';

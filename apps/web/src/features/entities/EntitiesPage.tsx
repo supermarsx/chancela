@@ -659,7 +659,9 @@ function LastRegistryChange({ registry }: { registry: EntityRegistrySummary | nu
  */
 function ArchivedBadge({ entity }: { entity: Entity }) {
   const at = useEntityArchiveT();
-  const since = entity.archived_at ? at('badgeSince', { date: formatDateValue(entity.archived_at) }) : null;
+  const since = entity.archived_at
+    ? at('badgeSince', { date: formatDateValue(entity.archived_at) })
+    : null;
   return (
     <Badge tone="warn">
       <span title={joinCellParts([at('badgeTitle'), since])}>{at('badge')}</span>
@@ -784,7 +786,7 @@ function EntityColumnCell({
             >
               {entity.name}
             </Link>
-            {entity.archived ?? entity.archived_at != null ? (
+            {(entity.archived ?? entity.archived_at != null) ? (
               <ArchivedBadge entity={entity} />
             ) : null}
           </span>

@@ -15,7 +15,11 @@ import { ledgerEventKindLabel } from '../../api/labels';
 import type { LedgerEventView } from '../../api/types';
 import { useT } from '../../i18n';
 import { Badge, DateTime, Digest, EmptyState, Table, TooltipText } from '../../ui';
-import { allColumns, LEDGER_TABLE, type LedgerTableColumn } from '../tableColumns/tableColumnRegistry';
+import {
+  allColumns,
+  LEDGER_TABLE,
+  type LedgerTableColumn,
+} from '../tableColumns/tableColumnRegistry';
 import { chainSummaryLabel, LedgerScopeCell, useLedgerScopeNames } from './LedgerScopeCell';
 
 /** Every ledger column, in canonical order — the default for a caller that does not personalize. */

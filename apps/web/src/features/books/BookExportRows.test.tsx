@@ -27,17 +27,14 @@ interface RecordedCall {
 
 function stubFetch(handler: (url: string, method: string) => Response | null): RecordedCall[] {
   const calls: RecordedCall[] = [];
-  vi.stubGlobal(
-    'fetch',
-    ((input: RequestInfo | URL, init?: RequestInit) => {
-      const url = typeof input === 'string' ? input : input.toString();
-      const method = init?.method ?? 'GET';
-      calls.push({ url, method });
-      const hit = handler(url, method);
-      if (hit) return Promise.resolve(hit);
-      return Promise.reject(new Error(`no stub for ${method} ${url}`));
-    }) as typeof fetch,
-  );
+  vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+    calls.push({ url, method });
+    const hit = handler(url, method);
+    if (hit) return Promise.resolve(hit);
+    return Promise.reject(new Error(`no stub for ${method} ${url}`));
+  }) as typeof fetch);
   return calls;
 }
 
@@ -80,9 +77,7 @@ describe('BookExportRows', () => {
     });
     renderRows();
 
-    fireEvent.click(
-      screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }),
-    );
+    fireEvent.click(screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }));
     fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));
 
     expect(screen.getByText('Indique o motivo antes de marcar a retenção legal.')).toBeTruthy();
@@ -107,9 +102,7 @@ describe('BookExportRows', () => {
     });
     renderRows();
 
-    fireEvent.click(
-      screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }),
-    );
+    fireEvent.click(screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }));
     fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
       target: { value: 'Processo 44/26' },
     });

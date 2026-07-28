@@ -3649,7 +3649,7 @@ export const itIT: Catalog = {
   'data.status.cleanup.pending': 'Pulizia…',
   'data.status.cleanup.done': 'Pulizia completata.',
   'data.status.cleanup.doneTitle': 'Manutenzione completata',
-    'data.status.cleanup.result': 'Eliminati {files} e {directories}, liberando {bytes}.',
+  'data.status.cleanup.result': 'Eliminati {files} e {directories}, liberando {bytes}.',
   'data.status.backup.title': 'Backup operativo',
   'data.status.backup.body':
     'Crea un backup a caldo dell’istanza durevole e restituisce solo un manifesto non segreto.',

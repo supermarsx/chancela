@@ -111,7 +111,10 @@ async function emittedLimitations(): Promise<EmittedLimitations> {
   const memoryBranch = body.slice(memorySpan.start, memorySpan.end);
 
   const pushMatch = /limitations\.push\(\s*"((?:[^"\\]|\\.)*)"/u.exec(body.slice(memorySpan.end));
-  expect(pushMatch, 'limitations() lost its `limitations.push(...)` appended sentence').not.toBeNull();
+  expect(
+    pushMatch,
+    'limitations() lost its `limitations.push(...)` appended sentence',
+  ).not.toBeNull();
 
   const durableLiterals = stringLiterals(durableBranch);
   const memoryLiterals = stringLiterals(memoryBranch);
@@ -127,7 +130,11 @@ async function emittedLimitations(): Promise<EmittedLimitations> {
 
 /** Normalise both sides' interpolation slot to one shared placeholder for text comparison. */
 function normalizeRetentionSlot(text: string): string {
-  return text.split(RUST_PLACEHOLDER).join(COMMON_PLACEHOLDER).split(OUR_PLACEHOLDER).join(COMMON_PLACEHOLDER);
+  return text
+    .split(RUST_PLACEHOLDER)
+    .join(COMMON_PLACEHOLDER)
+    .split(OUR_PLACEHOLDER)
+    .join(COMMON_PLACEHOLDER);
 }
 
 describe('the emitted copy is parsed from Rust, not assumed', () => {
@@ -181,7 +188,10 @@ describe('every emitted sentence has copy, and every copy entry is emitted', () 
 });
 
 describe('the pt-PT copy has the right shape, whatever its wording', () => {
-  const groups: PlatformLogLimitationsCopy[] = [platformLogLimitationsPtPT, platformLogLimitationsEnglish];
+  const groups: PlatformLogLimitationsCopy[] = [
+    platformLogLimitationsPtPT,
+    platformLogLimitationsEnglish,
+  ];
 
   it('is a real, complete sentence in both tiers', () => {
     for (const copy of groups) {
@@ -238,7 +248,11 @@ describe('resolvePlatformLogLimitations', () => {
   });
 
   it('substitutes the retention limit as a bare integer, never a formatted noun phrase', () => {
-    const items = resolvePlatformLogLimitations(platformLogLimitationsEnglish, true, 7, ['a', 'b', 'c']);
+    const items = resolvePlatformLogLimitations(platformLogLimitationsEnglish, true, 7, [
+      'a',
+      'b',
+      'c',
+    ]);
     expect(items[1]).toBe(
       'Retention is deterministic: only the newest 7 API-owned platform log entries are kept.',
     );

@@ -64,10 +64,7 @@ import { useActiveLocale } from './useT';
 
 /** Stable client-side codes for the four sentences `limitations()` can emit. None reaches the wire. */
 export type PlatformLogLimitationCode =
-  | 'basis.durable'
-  | 'basis.memory'
-  | 'retention.limit'
-  | 'scope.notStdoutStderr';
+  'basis.durable' | 'basis.memory' | 'retention.limit' | 'scope.notStdoutStderr';
 
 export type PlatformLogLimitationsCopy = Record<PlatformLogLimitationCode, string>;
 

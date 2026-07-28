@@ -65,6 +65,8 @@ export function privacyReviewReminderT(
   params?: TParams,
 ): string {
   const copy =
-    i18nStore.getActiveLocale() === 'pt-PT' ? privacyReviewReminderPtPT : privacyReviewReminderEnglish;
+    i18nStore.getActiveLocale() === 'pt-PT'
+      ? privacyReviewReminderPtPT
+      : privacyReviewReminderEnglish;
   return interpolate(copy[key], params);
 }

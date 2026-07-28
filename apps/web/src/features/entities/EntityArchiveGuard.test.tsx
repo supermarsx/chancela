@@ -120,7 +120,9 @@ function harness(entities: Entity[], policy: ConfirmationPolicyView = POLICY): H
   return {
     calls,
     mutations: () =>
-      calls.filter((c) => c.method === 'POST' && /\/(un)?archive$/.test(new URL(c.url, 'http://t').pathname)),
+      calls.filter(
+        (c) => c.method === 'POST' && /\/(un)?archive$/.test(new URL(c.url, 'http://t').pathname),
+      ),
   };
 }
 
@@ -199,7 +201,9 @@ describe('archiving an entity from the list', () => {
 
     fireEvent.click(control('archive'));
     const dialog = await screen.findByRole('dialog');
-    const cancel = within(dialog).getAllByRole('button').find((b) => b.getAttribute('type') === 'button');
+    const cancel = within(dialog)
+      .getAllByRole('button')
+      .find((b) => b.getAttribute('type') === 'button');
     fireEvent.click(cancel as HTMLElement);
 
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -302,16 +306,13 @@ describe('the client carries archiving on the wire', () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it('keeps archived_at and archived instead of dropping them', async () => {
-    vi.stubGlobal(
-      'fetch',
-      (() =>
-        Promise.resolve(
-          new Response(JSON.stringify(ARCHIVED), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        )) as typeof fetch,
-    );
+    vi.stubGlobal('fetch', (() =>
+      Promise.resolve(
+        new Response(JSON.stringify(ARCHIVED), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )) as typeof fetch);
 
     const entity = await api.getEntity(ARCHIVED.id);
     // Typed reads: these do not compile if the interface loses the fields again.
@@ -321,18 +322,15 @@ describe('the client carries archiving on the wire', () => {
 
   it('threads the archived filter onto both list endpoints and omits it when unset', async () => {
     const urls: string[] = [];
-    vi.stubGlobal(
-      'fetch',
-      ((input: RequestInfo | URL) => {
-        urls.push(typeof input === 'string' ? input : input.toString());
-        return Promise.resolve(
-          new Response(JSON.stringify([]), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-      }) as typeof fetch,
-    );
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      urls.push(typeof input === 'string' ? input : input.toString());
+      return Promise.resolve(
+        new Response(JSON.stringify([]), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }) as typeof fetch);
 
     await api.listEntities();
     expect(urls[0]).not.toContain('archived=');
@@ -343,16 +341,13 @@ describe('the client carries archiving on the wire', () => {
 
   it('posts to the archive and unarchive routes and tolerates a bodyless 204', async () => {
     const seen: { url: string; method: string }[] = [];
-    vi.stubGlobal(
-      'fetch',
-      ((input: RequestInfo | URL, init?: RequestInit) => {
-        seen.push({
-          url: typeof input === 'string' ? input : input.toString(),
-          method: init?.method ?? 'GET',
-        });
-        return Promise.resolve(new Response(null, { status: 204 }));
-      }) as typeof fetch,
-    );
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      seen.push({
+        url: typeof input === 'string' ? input : input.toString(),
+        method: init?.method ?? 'GET',
+      });
+      return Promise.resolve(new Response(null, { status: 204 }));
+    }) as typeof fetch);
 
     await expect(api.archiveEntity('ent-1')).resolves.toBeUndefined();
     await expect(api.unarchiveEntity('ent-1')).resolves.toBeUndefined();

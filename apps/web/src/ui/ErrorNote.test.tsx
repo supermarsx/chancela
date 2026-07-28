@@ -29,7 +29,13 @@ const PATH_LABEL = apiErrorPtPT['apiError.details.path'];
 /** Build an `ApiError` the same way `parseResponse` does, without a real fetch round-trip. */
 function apiError(
   status: number,
-  body: { error?: string; code?: string; request_id?: string; pin_status?: string; tries_left?: string },
+  body: {
+    error?: string;
+    code?: string;
+    request_id?: string;
+    pin_status?: string;
+    tries_left?: string;
+  },
   path?: string,
 ): ApiError {
   return new ApiError(status, body, false, path);
@@ -96,11 +102,7 @@ describe('ErrorNote — the 403 split (generalised from the old single branch)',
 
 describe('ErrorNote — the cross-user 403 leaks no distinguishing detail', () => {
   it('shows the same uniform sentence and code regardless of the underlying cause', () => {
-    const causes = [
-      'wrong current password',
-      'no proof supplied',
-      'target user does not exist',
-    ];
+    const causes = ['wrong current password', 'no proof supplied', 'target user does not exist'];
     for (const error of causes) {
       const { container, unmount } = render(
         <ErrorNote error={apiError(403, { error, code: 'cross_user_proof_required' })} />,
@@ -119,7 +121,9 @@ describe('ErrorNote — the cross-user 403 leaks no distinguishing detail', () =
     // The catalog itself has no such key (see apiErrorFallback.test.ts); confirm the component
     // does not invent copy for a code the catalog does not carry — it demotes to the tier
     // headline and forces the detail open instead of guessing at a sentence.
-    render(<ErrorNote error={apiError(403, { error: 'wrong password', code: 'wrong_password' })} />);
+    render(
+      <ErrorNote error={apiError(403, { error: 'wrong password', code: 'wrong_password' })} />,
+    );
     expect(screen.queryByText(/palavra-passe/)).toBeNull();
     expect(screen.getByText(apiErrorPtPT['apiError.tier.403'])).toBeTruthy();
   });
@@ -134,13 +138,16 @@ describe('ErrorNote — the exempt (must-not-soften) surfaces read as non-routin
       .map(([, value]) => value),
   );
 
-  it.each(NON_ROUTINE_CODES)('%s renders its own dedicated sentence, not a generic tier headline', (code) => {
-    render(<ErrorNote error={apiError(409, { error: 'server detail', code })} />);
-    const headline = apiErrorPtPT[`apiError.${code}` as keyof typeof apiErrorPtPT];
-    expect(screen.getByText(headline)).toBeTruthy();
-    expect(nonTierText.has(headline)).toBe(false);
-    cleanup();
-  });
+  it.each(NON_ROUTINE_CODES)(
+    '%s renders its own dedicated sentence, not a generic tier headline',
+    (code) => {
+      render(<ErrorNote error={apiError(409, { error: 'server detail', code })} />);
+      const headline = apiErrorPtPT[`apiError.${code}` as keyof typeof apiErrorPtPT];
+      expect(screen.getByText(headline)).toBeTruthy();
+      expect(nonTierText.has(headline)).toBe(false);
+      cleanup();
+    },
+  );
 
   it('the PIN-blocked surface (terminal, structured ahead of the code) reads as non-routine too', () => {
     render(
@@ -183,7 +190,9 @@ describe('ErrorNote — the technical-details block', () => {
   it('force-opens on an unmapped code and warns once in dev, without dropping the server detail', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     render(
-      <ErrorNote error={apiError(422, { error: 'a brand new failure mode', code: 'nobody_wrote_copy_yet' })} />,
+      <ErrorNote
+        error={apiError(422, { error: 'a brand new failure mode', code: 'nobody_wrote_copy_yet' })}
+      />,
     );
     const details = screen.getByText(SUMMARY).closest('details') as HTMLElement;
     expect(details.hasAttribute('open')).toBe(true);

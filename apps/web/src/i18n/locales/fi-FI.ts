@@ -3474,7 +3474,8 @@ export const fiFI: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Henkilöllisyysnäyttö on puutteellinen',
   'signing.envelopes.evidence.identityMissingBody':
     'Lisää merkitty näyttöviite jokaiselle määritetylle henkilöllisyysvaatimukselle ennen kuin merkitset paikan allekirjoituksen kirjatuksi.',
-  'signing.envelopes.evidence.submit': 'Tallenna näyttö ja merkitse paikan allekirjoituksen kirjatuksi',
+  'signing.envelopes.evidence.submit':
+    'Tallenna näyttö ja merkitse paikan allekirjoituksen kirjatuksi',
   'signing.envelopes.evidence.recording': 'Tallennetaan…',
   'signing.envelopes.evidence.recordedToast': 'Paikan tekninen näyttö tallennettu.',
   'signing.envelopes.identity.none': 'Ei lisävaatimusta',
@@ -3637,7 +3638,7 @@ export const fiFI: Catalog = {
   'data.status.cleanup.pending': 'Siivotaan…',
   'data.status.cleanup.done': 'Siivous valmis.',
   'data.status.cleanup.doneTitle': 'Ylläpito valmis',
-    'data.status.cleanup.result': 'Poistettiin {files} ja {directories}, vapautui {bytes}.',
+  'data.status.cleanup.result': 'Poistettiin {files} ja {directories}, vapautui {bytes}.',
   'data.status.backup.title': 'Toiminnallinen varmuuskopio',
   'data.status.backup.body':
     'Luo pysyvän instanssin kuuma varmuuskopio ja palauttaa vain ei-salaisen manifestin.',
@@ -5982,7 +5983,8 @@ export const fiFI: Catalog = {
   'companionPair.method.totp_code': 'Todennussovelluksen koodi',
   'companionPair.method.emailed_code': 'Sähköpostitse lähetetty koodi',
   'companionPair.hint.password': 'Tilisi salasana.',
-  'companionPair.hint.totp_code': 'Kuusinumeroinen koodi, jonka todennussovelluksesi näyttää juuri nyt.',
+  'companionPair.hint.totp_code':
+    'Kuusinumeroinen koodi, jonka todennussovelluksesi näyttää juuri nyt.',
   'companionPair.hint.emailed_code':
     'Sähköpostitse saamasi koodi. Voit kirjoittaa sen väliviivojen kanssa tai ilman.',
   'companionPair.submit': 'Vahvista ja parita',

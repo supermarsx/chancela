@@ -241,9 +241,9 @@ describe('ColumnPicker', () => {
 describe('resolveColumnOrigin', () => {
   it('reports a stored personal preference as the user own choice', () => {
     const spec = tableColumnsSpec(ENTITIES_TABLE);
-    expect(
-      resolveColumnOrigin(ENTITIES_TABLE, { overridden: true, fallback: spec.fallback }),
-    ).toBe('personal');
+    expect(resolveColumnOrigin(ENTITIES_TABLE, { overridden: true, fallback: spec.fallback })).toBe(
+      'personal',
+    );
   });
 
   it('reports an untouched instance as the product default, not as the organisation one', () => {
@@ -270,9 +270,9 @@ describe('resolveColumnOrigin', () => {
     // user's own choice and the shipped one.
     const books = tableColumnsSpec(BOOKS_TABLE);
     const templates = tableColumnsSpec(TEMPLATES_TABLE);
-    expect(
-      resolveColumnOrigin(BOOKS_TABLE, { overridden: false, fallback: books.fallback }),
-    ).toBe('product');
+    expect(resolveColumnOrigin(BOOKS_TABLE, { overridden: false, fallback: books.fallback })).toBe(
+      'product',
+    );
     expect(resolveColumnOrigin(BOOKS_TABLE, { overridden: true, fallback: books.fallback })).toBe(
       'personal',
     );

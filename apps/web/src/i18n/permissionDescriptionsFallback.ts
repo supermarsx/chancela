@@ -105,8 +105,7 @@ export const permissionDescriptionsPtPT = {
   // --- Books ---
   'book.read':
     'Ver os livros e o seu conteúdo, incluindo o termo de abertura, o termo de encerramento e os documentos de assinatura desses termos.',
-  'book.open':
-    'Abrir um livro e preparar, alterar e assinar o respetivo termo de abertura.',
+  'book.open': 'Abrir um livro e preparar, alterar e assinar o respetivo termo de abertura.',
   'book.close':
     'Encerrar um livro e preparar, alterar e assinar o respetivo termo de encerramento.',
   'book.export':
@@ -133,8 +132,7 @@ export const permissionDescriptionsPtPT = {
     'Fazer o ato avançar para o passo seguinte do seu percurso e confirmar a revisão humana quando houve apoio de inteligência artificial.',
   'act.revert':
     'Fazer o ato recuar para um passo anterior, enquanto ainda não há assinatura. É uma autoridade distinta da de o fazer avançar.',
-  'act.archive':
-    'Arquivar um ato, retirando-o do trabalho corrente sem o apagar.',
+  'act.archive': 'Arquivar um ato, retirando-o do trabalho corrente sem o apagar.',
 
   // --- Signing ---
   'signing.perform':
@@ -167,12 +165,9 @@ export const permissionDescriptionsPtPT = {
     'Repor a cadeia de registo a partir de um pacote de recuperação, e correr a verificação prévia dessa reposição. Exige autenticação reforçada.',
 
   // --- Data ---
-  'data.backup':
-    'Criar cópias de segurança e materializar os artefactos que delas dependem.',
-  'data.export':
-    'Descarregar os objetos guardados no repositório de dados.',
-  'data.wipe':
-    'Apagar os dados desta instalação. O que for apagado por esta via não volta.',
+  'data.backup': 'Criar cópias de segurança e materializar os artefactos que delas dependem.',
+  'data.export': 'Descarregar os objetos guardados no repositório de dados.',
+  'data.wipe': 'Apagar os dados desta instalação. O que for apagado por esta via não volta.',
   'data.start_over':
     'Repor a instalação no estado inicial, deitando abaixo o trabalho existente. O que for apagado por esta via não volta.',
 
@@ -193,10 +188,8 @@ export const permissionDescriptionsPtPT = {
     'Entregar à plataforma registos de funcionamento vindos de um processo externo. Uma recusa fica ela própria registada.',
 
   // --- Reference ---
-  'cae.read':
-    'Consultar o catálogo de atividades económicas e a lista de serviços de confiança.',
-  'cae.refresh':
-    'Atualizar o catálogo de atividades económicas a partir da origem que o publica.',
+  'cae.read': 'Consultar o catálogo de atividades económicas e a lista de serviços de confiança.',
+  'cae.refresh': 'Atualizar o catálogo de atividades económicas a partir da origem que o publica.',
   'law.read':
     'Consultar legislação: diplomas, artigos, os documentos em PDF e a pesquisa no corpo legislativo.',
   'law.manage':
@@ -207,8 +200,7 @@ export const permissionDescriptionsPtPT = {
     'Importar a lista de serviços de confiança. É essa lista que decide quais as assinaturas que o produto aceita como válidas, pelo que se trata de configuração de segurança e não de dados de referência.',
 
   // --- Users ---
-  'user.read':
-    'Ver a lista de utilizadores e a ficha de cada um.',
+  'user.read': 'Ver a lista de utilizadores e a ficha de cada um.',
   'user.manage':
     'Administrar utilizadores já existentes: alterar a ficha, definir e retirar segredos, emitir recuperações, gerir chaves de atestação, gerir as chaves de acesso à API e tratar a autenticação em dois passos.',
   'user.invite':
@@ -217,12 +209,9 @@ export const permissionDescriptionsPtPT = {
   // --- RBAC meta ---
   'role.manage':
     'Criar, alterar e eliminar funções, decidindo que permissões cada uma concede. Nunca permite conceder mais do que aquilo que já se possui.',
-  'role.assign':
-    'Atribuir uma função a um utilizador e retirar-lha.',
-  'delegation.grant':
-    'Passar a outra pessoa, por tempo limitado, uma permissão que já se possui.',
-  'delegation.revoke':
-    'Ver as delegações em vigor, suspendê-las, retomá-las e revogá-las.',
+  'role.assign': 'Atribuir uma função a um utilizador e retirar-lha.',
+  'delegation.grant': 'Passar a outra pessoa, por tempo limitado, uma permissão que já se possui.',
+  'delegation.revoke': 'Ver as delegações em vigor, suspendê-las, retomá-las e revogá-las.',
 } as const;
 
 /** The catalog verb ids this module describes. */
@@ -264,8 +253,7 @@ export const permissionDescriptionsEnglish = {
   'book.close': 'Close a book, and prepare, change and sign its closing record.',
   'book.export':
     'Export a book and its archive package, check disposal status, and produce readability packages.',
-  'book.import':
-    'Import a book from an exported package, and carry out the import of paper books.',
+  'book.import': 'Import a book from an exported package, and carry out the import of paper books.',
   'book.start_over':
     'Erase a book’s contents and start it again from scratch. What was there is not recoverable this way.',
   'book.reopen':
@@ -320,8 +308,7 @@ export const permissionDescriptionsEnglish = {
   // --- Data ---
   'data.backup': 'Create backups and materialise the artefacts that depend on them.',
   'data.export': 'Download the objects held in the data repository.',
-  'data.wipe':
-    'Erase this installation’s data. What is erased this way does not come back.',
+  'data.wipe': 'Erase this installation’s data. What is erased this way does not come back.',
   'data.start_over':
     'Reset the installation to its initial state, tearing down existing work. What is erased this way does not come back.',
 

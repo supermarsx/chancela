@@ -47,20 +47,28 @@ async function readCrateSource(relative: string): Promise<string> {
  */
 function productionSection(source: string): string {
   const section = source.split(/^#\[cfg\(test\)\]/mu)[0] as string;
-  expect(section.length, 'the pre-test section is implausibly short — check the split').
-    toBeGreaterThan(source.length / 2);
+  expect(
+    section.length,
+    'the pre-test section is implausibly short — check the split',
+  ).toBeGreaterThan(source.length / 2);
   return section;
 }
 
 /** The catalog's dotted ids, from the serde renames each variant carries exactly one of. */
 async function catalogPermissionIds(): Promise<string[]> {
-  const source = productionSection(await readCrateSource('crates/chancela-authz/src/permission.rs'));
-  return [...source.matchAll(/#\[serde\(rename = "([^"]+)"\)\]/gu)].map((match) => match[1] as string);
+  const source = productionSection(
+    await readCrateSource('crates/chancela-authz/src/permission.rs'),
+  );
+  return [...source.matchAll(/#\[serde\(rename = "([^"]+)"\)\]/gu)].map(
+    (match) => match[1] as string,
+  );
 }
 
 /** `Permission::Variant => "dotted.id"` from `as_str()`, used to resolve enforcement arms. */
 async function variantToId(): Promise<Map<string, string>> {
-  const source = productionSection(await readCrateSource('crates/chancela-authz/src/permission.rs'));
+  const source = productionSection(
+    await readCrateSource('crates/chancela-authz/src/permission.rs'),
+  );
   const pairs = [...source.matchAll(/Permission::(\w+) => "([^"]+)",/gu)];
   return new Map(pairs.map((match) => [match[1] as string, match[2] as string]));
 }
@@ -110,7 +118,7 @@ describe('descriptions do not diverge from the Rust catalog', () => {
       undescribed,
       'these verbs are in the Rust catalog but have no description: an administrator would see a ' +
         'bare identifier with nothing explaining what ticking it grants. Add a sentence to ' +
-        'permissionDescriptionsFallback.ts, written from the verb\'s real handler evidence.',
+        "permissionDescriptionsFallback.ts, written from the verb's real handler evidence.",
     ).toEqual([]);
     expect(
       orphaned,

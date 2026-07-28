@@ -806,7 +806,12 @@ export async function postJsonArrayBuffer(
   handleUnauthorized(res, path);
   if (!res.ok) {
     await parseResponse<never>(res, path);
-    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) }, false, path);
+    throw new ApiError(
+      res.status,
+      { error: t('error.requestFailed', { status: res.status }) },
+      false,
+      path,
+    );
   }
   return { data: await res.arrayBuffer(), headers: res.headers };
 }
@@ -827,7 +832,12 @@ export async function postJsonText(
   handleUnauthorized(res, path);
   if (!res.ok) {
     await parseResponse<never>(res, path);
-    throw new ApiError(res.status, { error: t('error.requestFailed', { status: res.status }) }, false, path);
+    throw new ApiError(
+      res.status,
+      { error: t('error.requestFailed', { status: res.status }) },
+      false,
+      path,
+    );
   }
   return { text: await res.text(), headers: res.headers };
 }

@@ -903,23 +903,22 @@ pub fn build_cmd_test_document(
     credential_source: &str,
     entry_label: Option<&str>,
 ) -> DocumentModel {
-    let mut blocks: Vec<Block> = Vec::new();
-
-    blocks.push(emphatic(
-        "Este documento é um teste de ligação à Chave Móvel Digital. Não é uma ata, não é um termo \
-         e não constitui um registo da atividade da organização.",
-    ));
-    blocks.push(plain(
-        "Foi gerado pela aplicação, no momento indicado abaixo, para verificar que a integração \
-         com a Chave Móvel Digital funciona em produção. O seu conteúdo é o que aqui está escrito \
-         e nada mais.",
-    ));
-    blocks.push(Block::Rule);
-
-    blocks.push(Block::Heading {
-        level: 2,
-        text: "Identificação do teste".to_owned(),
-    });
+    let mut blocks: Vec<Block> = vec![
+        emphatic(
+            "Este documento é um teste de ligação à Chave Móvel Digital. Não é uma ata, não é um termo \
+             e não constitui um registo da atividade da organização.",
+        ),
+        plain(
+            "Foi gerado pela aplicação, no momento indicado abaixo, para verificar que a integração \
+             com a Chave Móvel Digital funciona em produção. O seu conteúdo é o que aqui está escrito \
+             e nada mais.",
+        ),
+        Block::Rule,
+        Block::Heading {
+            level: 2,
+            text: "Identificação do teste".to_owned(),
+        },
+    ];
     let mut rows = vec![
         kv("Instância", instance_name),
         kv("Operador que pediu o teste", actor_label),

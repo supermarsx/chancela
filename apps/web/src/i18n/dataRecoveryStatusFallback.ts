@@ -86,10 +86,7 @@ export interface DataRecoveryStatusEntry {
  * site in Rust, and the divergence test checks each against its own site.
  */
 export type DataRecoveryStatusGroup =
-  | 'sidecarStorageMode'
-  | 'backendFamily'
-  | 'readinessStatus'
-  | 'isolatedRestoreStatus';
+  'sidecarStorageMode' | 'backendFamily' | 'readinessStatus' | 'isolatedRestoreStatus';
 
 type StatusGroupTable = Readonly<Record<string, DataRecoveryStatusEntry>>;
 type StatusGroups = Readonly<Record<DataRecoveryStatusGroup, StatusGroupTable>>;

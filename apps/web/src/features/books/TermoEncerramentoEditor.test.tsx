@@ -464,8 +464,7 @@ describe('TermoEncerramentoEditor', () => {
       (c) => c.method === 'POST' && c.url.endsWith('/termo/encerramento/close'),
     );
     const body = close?.body as
-      | { confirmation?: { reauth?: { password?: string }; confirm_phrase?: string } }
-      | undefined;
+      { confirmation?: { reauth?: { password?: string }; confirm_phrase?: string } } | undefined;
     expect(body?.confirmation?.reauth?.password).toBe('segredo-da-amelia');
     // Byte-exact and deliberately non-localised: the server compares it literally.
     expect(body?.confirmation?.confirm_phrase).toBe('ENCERRAR LIVRO');

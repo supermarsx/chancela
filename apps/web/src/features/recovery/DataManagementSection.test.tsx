@@ -834,7 +834,8 @@ describe('DataManagementSection', () => {
       return { metric, size, count, filesPhrase, directoriesPhrase };
     };
 
-    const filesOne = (n: number) => interpolate(ptPT['data.status.cleanup.filesCount.one'], { count: n });
+    const filesOne = (n: number) =>
+      interpolate(ptPT['data.status.cleanup.filesCount.one'], { count: n });
     const filesOther = (n: number) =>
       interpolate(ptPT['data.status.cleanup.filesCount.other'], { count: n });
     const dirsOne = (n: number) =>
@@ -883,7 +884,9 @@ describe('DataManagementSection', () => {
       usage: {
         ...durableStatus.usage,
         filesystem: durableStatus.usage.filesystem.map((concern) =>
-          concern.id === 'crash' ? { ...concern, bytes: 0, file_count: 0, directory_count: 0 } : concern,
+          concern.id === 'crash'
+            ? { ...concern, bytes: 0, file_count: 0, directory_count: 0 }
+            : concern,
         ),
       },
     };
@@ -898,11 +901,15 @@ describe('DataManagementSection', () => {
     const count = row.querySelector('.data-status-cleanup__metric-count')!;
     const [filesPhrase, directoriesPhrase] = (count.textContent ?? '').split(' · ');
 
-    expect(filesPhrase).toBe(interpolate(ptPT['data.status.cleanup.filesCount.other'], { count: 0 }));
+    expect(filesPhrase).toBe(
+      interpolate(ptPT['data.status.cleanup.filesCount.other'], { count: 0 }),
+    );
     expect(directoriesPhrase).toBe(
       interpolate(ptPT['data.status.cleanup.directoriesCount.other'], { count: 0 }),
     );
-    expect(filesPhrase).not.toBe(interpolate(ptPT['data.status.cleanup.filesCount.one'], { count: 0 }));
+    expect(filesPhrase).not.toBe(
+      interpolate(ptPT['data.status.cleanup.filesCount.one'], { count: 0 }),
+    );
     expect(directoriesPhrase).not.toBe(
       interpolate(ptPT['data.status.cleanup.directoriesCount.one'], { count: 0 }),
     );

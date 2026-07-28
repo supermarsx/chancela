@@ -3491,7 +3491,8 @@ export const nlNL: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Identiteitsbewijs onvolledig',
   'signing.envelopes.evidence.identityMissingBody':
     'Voeg voor elke geconfigureerde identiteitsvereiste een gelabelde bewijsreferentie toe voordat u het slot met geregistreerde handtekening markeert.',
-  'signing.envelopes.evidence.submit': 'Bewijs vastleggen en slot markeren met geregistreerde handtekening',
+  'signing.envelopes.evidence.submit':
+    'Bewijs vastleggen en slot markeren met geregistreerde handtekening',
   'signing.envelopes.evidence.recording': 'Vastleggen…',
   'signing.envelopes.evidence.recordedToast': 'Technisch slotbewijs vastgelegd.',
   'signing.envelopes.identity.none': 'Geen aanvullende vereiste',
@@ -3656,7 +3657,7 @@ export const nlNL: Catalog = {
   'data.status.cleanup.pending': 'Opruimen…',
   'data.status.cleanup.done': 'Opruimen voltooid.',
   'data.status.cleanup.doneTitle': 'Onderhoud voltooid',
-    'data.status.cleanup.result': '{files} en {directories} verwijderd, {bytes} vrijgemaakt.',
+  'data.status.cleanup.result': '{files} en {directories} verwijderd, {bytes} vrijgemaakt.',
   'data.status.backup.title': 'Operationele back-up',
   'data.status.backup.body':
     'Maakt een hot back-up van de duurzame instantie en geeft alleen een niet-geheim manifest terug.',
@@ -6024,7 +6025,8 @@ export const nlNL: Catalog = {
   'companionPair.method.totp_code': 'Authenticator-code',
   'companionPair.method.emailed_code': 'Per e-mail verzonden code',
   'companionPair.hint.password': 'Het wachtwoord van uw account.',
-  'companionPair.hint.totp_code': 'De zescijferige code die uw authenticator-app op dit moment toont.',
+  'companionPair.hint.totp_code':
+    'De zescijferige code die uw authenticator-app op dit moment toont.',
   'companionPair.hint.emailed_code':
     'De code die u per e-mail hebt ontvangen. U mag deze met of zonder koppeltekens typen.',
   'companionPair.submit': 'Bevestigen en koppelen',

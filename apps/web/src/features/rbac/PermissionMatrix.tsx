@@ -155,9 +155,7 @@ export function PermissionMatrix({
                         the description is rendered beside it — never instead of it. An id this
                         build has no sentence for resolves to an explicit notice, never to blank
                         space. */}
-                    <span className="rbac-matrix__perm-desc">
-                      {describe(info.permission).text}
-                    </span>
+                    <span className="rbac-matrix__perm-desc">{describe(info.permission).text}</span>
                   </span>
                 </label>
               );

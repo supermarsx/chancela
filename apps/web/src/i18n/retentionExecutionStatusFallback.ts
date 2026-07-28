@@ -440,7 +440,8 @@ export function useRetentionStatusResolver(): (
   const locale = useActiveLocale();
   const tier = TIERS_BY_LOCALE[locale] ?? ENGLISH_TIER;
   return useMemo(
-    () => (group: RetentionStatusGroup, token: string) => describeRetentionStatus(group, token, tier),
+    () => (group: RetentionStatusGroup, token: string) =>
+      describeRetentionStatus(group, token, tier),
     [tier],
   );
 }

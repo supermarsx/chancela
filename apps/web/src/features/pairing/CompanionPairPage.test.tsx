@@ -154,7 +154,10 @@ describe('CompanionPairPage', () => {
   });
 
   it('takes the pairing code out of the address bar once it has been read', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(json(EXCHANGED))));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(json(EXCHANGED))),
+    );
     renderAt('?code=9b1f6c0000004000800000000000a1de&methods=password');
 
     // A live credential must not linger in a phone's history or whatever sync it has on.

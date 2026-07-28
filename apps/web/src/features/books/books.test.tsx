@@ -889,7 +889,9 @@ describe('BookDetailPage — preservation package download', () => {
 
     renderAtBook();
 
-    expect(await screen.findByRole('button', { name: 'Pacote de preservação Chancela' })).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: 'Pacote de preservação Chancela' }),
+    ).toBeTruthy();
     fireEvent.click(screen.getByRole('switch', { name: 'Marcar retenção legal nesta exportação' }));
     // A blank reason is a server 422, so the export is held back and the field says why.
     fireEvent.click(screen.getByRole('button', { name: 'Pacote de preservação Chancela' }));
@@ -2392,25 +2394,23 @@ describe('BookDetailPage — legal hold', () => {
     await screen.findByText('operator-9');
     const table = legalHoldTable();
 
-    expect(
-      within(legalHoldRow(table, 'Estado')).getByText('Retenção legal ativa'),
-    ).toBeTruthy();
+    expect(within(legalHoldRow(table, 'Estado')).getByText('Retenção legal ativa')).toBeTruthy();
     expect(within(legalHoldRow(table, 'Ator')).getAllByRole('cell')[0].textContent).toBe(
       'operator-9',
     );
     // "Definida em" renders through the shared evidentiary `<DateTime>` — assert the row and its
     // `<time>` element exist rather than the locale-formatted text, which is not this panel's copy.
     expect(legalHoldRow(table, 'Definida em').querySelector('time')).toBeTruthy();
-    expect(
-      within(legalHoldRow(table, 'Fluxo operador')).getAllByRole('cell')[0].textContent,
-    ).toBe('blocked_by_legal_hold');
+    expect(within(legalHoldRow(table, 'Fluxo operador')).getAllByRole('cell')[0].textContent).toBe(
+      'blocked_by_legal_hold',
+    );
     expect(
       within(legalHoldRow(table, 'Bloqueia revisão de descarte')).getAllByRole('cell')[0]
         .textContent,
     ).toBe('true');
-    expect(
-      within(legalHoldRow(table, 'Próximo passo')).getAllByRole('cell')[0].textContent,
-    ).toBe('Passo seguinte de teste.');
+    expect(within(legalHoldRow(table, 'Próximo passo')).getAllByRole('cell')[0].textContent).toBe(
+      'Passo seguinte de teste.',
+    );
     for (const flag of [
       'destructive_disposal_completed',
       'disposal_approved',

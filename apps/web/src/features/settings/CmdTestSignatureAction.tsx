@@ -183,7 +183,8 @@ function CmdTestSignatureResultPanel({
 }) {
   const toast = useToast();
   const download = useDownloadCmdTestSignatureDocument();
-  const yesNo = (value: boolean) => (value ? pt('providerCredentials.probe.yes') : pt('providerCredentials.probe.no'));
+  const yesNo = (value: boolean) =>
+    value ? pt('providerCredentials.probe.yes') : pt('providerCredentials.probe.no');
 
   function onDownload() {
     download.mutate(result.test_id, {
@@ -205,7 +206,11 @@ function CmdTestSignatureResultPanel({
   }
 
   return (
-    <section className="stack stack--tight" aria-live="polite" data-testid="cmd-test-signature-result">
+    <section
+      className="stack stack--tight"
+      aria-live="polite"
+      data-testid="cmd-test-signature-result"
+    >
       <div>
         <Badge tone="ok">{pt('providerCredentials.cmdTest.resultSigned')}</Badge>
       </div>
@@ -488,10 +493,7 @@ function CmdTestSignatureFlowModal({
                   onChange={(e) => setPhone(e.target.value)}
                 />
               </Field>
-              <Field
-                label={pt('providerCredentials.cmdTest.pinLabel')}
-                htmlFor={`${titleId}-pin`}
-              >
+              <Field label={pt('providerCredentials.cmdTest.pinLabel')} htmlFor={`${titleId}-pin`}>
                 <Input
                   id={`${titleId}-pin`}
                   type="password"
@@ -535,10 +537,7 @@ function CmdTestSignatureFlowModal({
                   </p>
                 </div>
               </div>
-              <Field
-                label={pt('providerCredentials.cmdTest.otpLabel')}
-                htmlFor={`${titleId}-otp`}
-              >
+              <Field label={pt('providerCredentials.cmdTest.otpLabel')} htmlFor={`${titleId}-otp`}>
                 <Input
                   id={`${titleId}-otp`}
                   value={otp}
@@ -568,7 +567,9 @@ function CmdTestSignatureFlowModal({
             </div>
           ) : null}
 
-          {step === 'result' && result ? <CmdTestSignatureResultPanel result={result} pt={pt} /> : null}
+          {step === 'result' && result ? (
+            <CmdTestSignatureResultPanel result={result} pt={pt} />
+          ) : null}
 
           {/* The server's own diagnostic text, in the step it happened in. Never summarised,
               never narrowed — an untrusted trust anchor and a wrong PIN do not read alike. */}
@@ -580,9 +581,7 @@ function CmdTestSignatureFlowModal({
 
           <div className="modal__foot">
             <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              {step === 'result'
-                ? pt('providerCredentials.cmdTest.close')
-                : t('common.cancel')}
+              {step === 'result' ? pt('providerCredentials.cmdTest.close') : t('common.cancel')}
             </Button>
             {step === 'result' ? (
               <Button type="button" variant="secondary" onClick={onRestart}>

@@ -359,9 +359,7 @@ describe('LedgerPage', () => {
     fireEvent.click(screen.getByText('Filtros avançados'));
     // Scoped to the advanced-filters body: the "Autor" filter and the column picker's "Autor"
     // checkbox (t54) would otherwise both answer to the same accessible name.
-    const advancedBody = document.querySelector(
-      '.ledger-advanced-filters__body',
-    ) as HTMLElement;
+    const advancedBody = document.querySelector('.ledger-advanced-filters__body') as HTMLElement;
     fireEvent.change(within(advancedBody).getByLabelText('Tipo de evento'), {
       target: { value: 'act.sealed' },
     });
@@ -536,9 +534,7 @@ describe('LedgerPage', () => {
     fireEvent.click(screen.getByText('Filtros avançados'));
     // Scoped to the advanced-filters body: the "Autor" filter and the column picker's "Autor"
     // checkbox (t54) would otherwise both answer to the same accessible name.
-    const advancedBody = document.querySelector(
-      '.ledger-advanced-filters__body',
-    ) as HTMLElement;
+    const advancedBody = document.querySelector('.ledger-advanced-filters__body') as HTMLElement;
     fireEvent.change(within(advancedBody).getByLabelText('Autor'), {
       target: { value: 'nobody' },
     });

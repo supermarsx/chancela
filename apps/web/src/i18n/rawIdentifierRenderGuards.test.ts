@@ -221,61 +221,85 @@ function monoAncestor(node: ts.Node): boolean {
 }
 
 describe('the raw-identifier scan actually sees the codebase', () => {
-  it('resolves types and finds a plausible population', () => {
-    const found = scan().map((f) => f.site);
-    // Non-vacuity: a program that failed to resolve, or a walk that matched nothing, would make the
-    // set comparison below pass against an empty population.
-    //
-    // This used to be a floor of `> 10`, which held while 14 sites were awaiting copy. t98 resolved
-    // all 14 and the population is now 5, so a size floor no longer distinguishes "the scan worked
-    // and most sites are fixed" from "the scan resolved nothing" — and it will keep shrinking. Named
-    // ANCHORS do the job at any size: both are `no_claims` families that must stay raw forever, so
-    // neither can legitimately leave this list, and a checker that failed to resolve types would
-    // find neither.
-    expect(found, 'the DPIA no-claims flags are not being seen — did the program resolve?').toContain(
-      'features/settings/PrivacyComplianceSection.tsx::key',
-    );
-    expect(
-      found,
-      'the paper-book OCR no-claims flags are not being seen — did the program resolve?',
-    ).toContain('features/books/BookDetailPage.tsx::flag');
-    expect(found.length).toBeGreaterThanOrEqual(2);
-  }, SCAN_TIMEOUT);
+  it(
+    'resolves types and finds a plausible population',
+    () => {
+      const found = scan().map((f) => f.site);
+      // Non-vacuity: a program that failed to resolve, or a walk that matched nothing, would make the
+      // set comparison below pass against an empty population.
+      //
+      // This used to be a floor of `> 10`, which held while 14 sites were awaiting copy. t98 resolved
+      // all 14 and the population is now 5, so a size floor no longer distinguishes "the scan worked
+      // and most sites are fixed" from "the scan resolved nothing" — and it will keep shrinking. Named
+      // ANCHORS do the job at any size: both are `no_claims` families that must stay raw forever, so
+      // neither can legitimately leave this list, and a checker that failed to resolve types would
+      // find neither.
+      expect(
+        found,
+        'the DPIA no-claims flags are not being seen — did the program resolve?',
+      ).toContain('features/settings/PrivacyComplianceSection.tsx::key');
+      expect(
+        found,
+        'the paper-book OCR no-claims flags are not being seen — did the program resolve?',
+      ).toContain('features/books/BookDetailPage.tsx::flag');
+      expect(found.length).toBeGreaterThanOrEqual(2);
+    },
+    SCAN_TIMEOUT,
+  );
 
-  it('does not flag a site that resolves its token through a label module', () => {
-    // The panel this lane fixed renders `token={…}` as a prop, so it must NOT appear.
-    const files = scan().map((f) => f.site);
-    expect(files.filter((s) => s.startsWith('features/tools/ExternalValidatorReportsPanel'))).toEqual(
-      [],
-    );
-  }, SCAN_TIMEOUT);
+  it(
+    'does not flag a site that resolves its token through a label module',
+    () => {
+      // The panel this lane fixed renders `token={…}` as a prop, so it must NOT appear.
+      const files = scan().map((f) => f.site);
+      expect(
+        files.filter((s) => s.startsWith('features/tools/ExternalValidatorReportsPanel')),
+      ).toEqual([]);
+    },
+    SCAN_TIMEOUT,
+  );
 });
 
 describe('every raw-identifier render site is classified', () => {
-  it('matches the expected population exactly, in both directions', () => {
-    const found = scan().map((f) => f.site);
-    const expected = EXPECTED.map((e) => e.site).sort((a, b) => a.localeCompare(b));
-    expect(found).toEqual(expected);
-  }, SCAN_TIMEOUT);
+  it(
+    'matches the expected population exactly, in both directions',
+    () => {
+      const found = scan().map((f) => f.site);
+      const expected = EXPECTED.map((e) => e.site).sort((a, b) => a.localeCompare(b));
+      expect(found).toEqual(expected);
+    },
+    SCAN_TIMEOUT,
+  );
 
-  it('presents every deliberately-untranslated identifier as an identifier', () => {
-    const byName = new Map(scan().map((f) => [f.site, f.mono]));
-    for (const entry of EXPECTED) {
-      // A site recorded as correct-as-is must really be in a `mono` context: an identifier kept
-      // verbatim because translating it would assert a claim must never be folded into prose.
-      expect(byName.get(entry.site), `${entry.site} mono context`).toBe(entry.mono);
-      if (!entry.unresolved) {
-        expect(entry.mono, `${entry.site} is recorded as done but is not an identifier context`).toBe(
-          true,
+  it(
+    'presents every deliberately-untranslated identifier as an identifier',
+    () => {
+      const byName = new Map(scan().map((f) => [f.site, f.mono]));
+      for (const entry of EXPECTED) {
+        // A site recorded as correct-as-is must really be in a `mono` context: an identifier kept
+        // verbatim because translating it would assert a claim must never be folded into prose.
+        expect(byName.get(entry.site), `${entry.site} mono context`).toBe(entry.mono);
+        if (!entry.unresolved) {
+          expect(
+            entry.mono,
+            `${entry.site} is recorded as done but is not an identifier context`,
+          ).toBe(true);
+        }
+      }
+    },
+    SCAN_TIMEOUT,
+  );
+
+  it(
+    'keeps every no-claims identifier verbatim and never marks one as pending copy',
+    () => {
+      for (const entry of EXPECTED.filter((e) => e.classification === 'no-claims')) {
+        expect(entry.mono, `${entry.site} must stay monospace`).toBe(true);
+        expect(entry.unresolved, `${entry.site} must never be scheduled for translation`).toBe(
+          false,
         );
       }
-    }
-  }, SCAN_TIMEOUT);
-
-  it('keeps every no-claims identifier verbatim and never marks one as pending copy', () => {
-    for (const entry of EXPECTED.filter((e) => e.classification === 'no-claims')) {
-      expect(entry.mono, `${entry.site} must stay monospace`).toBe(true);
-      expect(entry.unresolved, `${entry.site} must never be scheduled for translation`).toBe(false);
-    }
-  }, SCAN_TIMEOUT);
+    },
+    SCAN_TIMEOUT,
+  );
 });

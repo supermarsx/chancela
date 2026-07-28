@@ -29,10 +29,7 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type SearchCopyKey, useSearchT } from '../../i18n/searchFallback';
-import {
-  type CertidaoLookupCopyKey,
-  useCertidaoLookupT,
-} from '../../i18n/certidaoLookupFallback';
+import { type CertidaoLookupCopyKey, useCertidaoLookupT } from '../../i18n/certidaoLookupFallback';
 import { Icon, PageHeader } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { CaeExplorer } from '../cae/CaeExplorer';
@@ -46,19 +43,25 @@ import { SearchPage } from './SearchPage';
 import { usePermissions } from '../session/permissions';
 
 type ToolsSection =
-  | 'search'
-  | 'cae'
-  | 'certidao'
-  | 'legislation'
-  | 'pdf'
-  | 'trust'
-  | 'external-signing';
+  'search' | 'cae' | 'certidao' | 'legislation' | 'pdf' | 'trust' | 'external-signing';
 
 // Three label sources, because two of these tools own their copy in a self-contained fallback
 // module rather than the locked 14-locale catalogs. Exactly one is set per section.
 type ToolsSectionDefinition =
-  | { id: ToolsSection; label: MessageKey; searchLabel?: never; certidaoLabel?: never; icon: ReactNode }
-  | { id: ToolsSection; label?: never; searchLabel: SearchCopyKey; certidaoLabel?: never; icon: ReactNode }
+  | {
+      id: ToolsSection;
+      label: MessageKey;
+      searchLabel?: never;
+      certidaoLabel?: never;
+      icon: ReactNode;
+    }
+  | {
+      id: ToolsSection;
+      label?: never;
+      searchLabel: SearchCopyKey;
+      certidaoLabel?: never;
+      icon: ReactNode;
+    }
   | {
       id: ToolsSection;
       label?: never;

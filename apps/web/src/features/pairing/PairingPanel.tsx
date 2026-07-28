@@ -241,12 +241,7 @@ function ActiveCodePanel({
             <div className="stack--tight">
               <p>{t('pairing.expired.body')}</p>
               <div className="form__actions">
-                <Button
-                  type="button"
-                  variant="primary"
-                  icon={<Icon.IdCard />}
-                  onClick={onRenew}
-                >
+                <Button type="button" variant="primary" icon={<Icon.IdCard />} onClick={onRenew}>
                   {t('pairing.expired.renew')}
                 </Button>
               </div>

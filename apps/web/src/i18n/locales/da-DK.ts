@@ -3466,7 +3466,8 @@ export const daDK: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Identitetsbevis er ufuldstændigt',
   'signing.envelopes.evidence.identityMissingBody':
     'Tilføj en mærket bevisreference for hvert konfigureret identitetskrav, før slottet markeres med registreret underskrift.',
-  'signing.envelopes.evidence.submit': 'Registrer bevis og marker slottet med registreret underskrift',
+  'signing.envelopes.evidence.submit':
+    'Registrer bevis og marker slottet med registreret underskrift',
   'signing.envelopes.evidence.recording': 'Registrerer…',
   'signing.envelopes.evidence.recordedToast': 'Teknisk slotbevis registreret.',
   'signing.envelopes.identity.none': 'Intet yderligere krav',
@@ -3629,7 +3630,7 @@ export const daDK: Catalog = {
   'data.status.cleanup.pending': 'Rydder…',
   'data.status.cleanup.done': 'Rydning fuldført.',
   'data.status.cleanup.doneTitle': 'Vedligeholdelse fuldført',
-    'data.status.cleanup.result': 'Slettede {files} og {directories} og frigjorde {bytes}.',
+  'data.status.cleanup.result': 'Slettede {files} og {directories} og frigjorde {bytes}.',
   'data.status.backup.title': 'Driftssikkerhedskopi',
   'data.status.backup.body':
     'Opretter en varm sikkerhedskopi af den vedvarende instans og returnerer kun et ikke-hemmeligt manifest.',

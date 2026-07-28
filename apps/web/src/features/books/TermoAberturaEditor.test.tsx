@@ -506,8 +506,7 @@ describe('TermoAberturaEditor', () => {
     );
     const open = calls.find((c) => c.method === 'POST' && c.url.endsWith('/termo/abertura/open'));
     const body = open?.body as
-      | { confirmation?: { reauth?: { password?: string }; confirm_phrase?: string } }
-      | undefined;
+      { confirmation?: { reauth?: { password?: string }; confirm_phrase?: string } } | undefined;
     expect(body?.confirmation?.reauth?.password).toBe('segredo-da-amelia');
     // Byte-exact and deliberately non-localised, like `ASSINAR TESTE`: the server compares it
     // literally, so a translated phrase would be a `403` in every locale but pt-PT.

@@ -1738,7 +1738,7 @@ export const frFR: Catalog = {
   'users.edit.status.pending': 'Mise à jour…',
   'users.disable.confirm.title': 'Désactiver le compte',
   'users.disable.confirm.intro':
-    'Le compte ne pourra plus se connecter. Rien n\'est supprimé : l\'attribution de tout ce qu\'il a déjà fait reste intacte, et vous pourrez le réactiver plus tard.',
+    "Le compte ne pourra plus se connecter. Rien n'est supprimé : l'attribution de tout ce qu'il a déjà fait reste intacte, et vous pourrez le réactiver plus tard.",
   'users.disable.confirm.subject': 'Compte : {username}',
   'users.disable.confirm.action': 'Désactiver le compte',
   'users.edit.notFound': 'Utilisateur introuvable.',
@@ -3501,7 +3501,8 @@ export const frFR: Catalog = {
   'signing.envelopes.evidence.identityMissingTitle': 'Preuve d’identité incomplète',
   'signing.envelopes.evidence.identityMissingBody':
     'Ajoutez une référence de preuve étiquetée pour chaque exigence d’identité configurée avant de marquer le créneau avec signature enregistrée.',
-  'signing.envelopes.evidence.submit': 'Enregistrer la preuve et marquer le créneau avec signature enregistrée',
+  'signing.envelopes.evidence.submit':
+    'Enregistrer la preuve et marquer le créneau avec signature enregistrée',
   'signing.envelopes.evidence.recording': 'Enregistrement…',
   'signing.envelopes.evidence.recordedToast': 'Preuve technique du créneau enregistrée.',
   'signing.envelopes.identity.none': 'Aucune exigence supplémentaire',
@@ -3666,7 +3667,7 @@ export const frFR: Catalog = {
   'data.status.cleanup.pending': 'Nettoyage…',
   'data.status.cleanup.done': 'Nettoyage terminé.',
   'data.status.cleanup.doneTitle': 'Maintenance terminée',
-    'data.status.cleanup.result': '{files} et {directories} supprimés, libérant {bytes}.',
+  'data.status.cleanup.result': '{files} et {directories} supprimés, libérant {bytes}.',
   'data.status.backup.title': 'Sauvegarde opérationnelle',
   'data.status.backup.body':
     'Crée une sauvegarde à chaud de l’instance durable et ne renvoie qu’un manifeste non secret.',

@@ -48,7 +48,11 @@ import {
   Tooltip,
   TooltipText,
 } from '../../ui';
-import { LEDGER_TABLE, renderedColumns, tableColumnsSpec } from '../tableColumns/tableColumnRegistry';
+import {
+  LEDGER_TABLE,
+  renderedColumns,
+  tableColumnsSpec,
+} from '../tableColumns/tableColumnRegistry';
 import { useTableColumns } from '../tableColumns/useTableColumns';
 import { LedgerTable } from '../ledger/LedgerTable';
 import { scopeSummaryLabel, useLedgerScopeNames } from '../ledger/LedgerScopeCell';
@@ -888,7 +892,9 @@ export function buildDashboardWorkQueue({
       sortTime,
       badge: dashboardReminderStatusLabel(reminder.status, t),
       tone: dashboardReminderTone(reminder),
-      title: effectiveTitleKey ? resolveDashboardMessageKey(effectiveTitleKey, t, params) : entityName,
+      title: effectiveTitleKey
+        ? resolveDashboardMessageKey(effectiveTitleKey, t, params)
+        : entityName,
       detail: effectiveBodyKey ? resolveDashboardMessageKey(effectiveBodyKey, t, params) : reason,
       meta: [
         dashboardReminderDateMeta(reminder.due_date, t),

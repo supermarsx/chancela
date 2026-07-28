@@ -84,7 +84,10 @@ const sorted = (values: readonly string[]): string[] => [...values].sort();
  * out of Rust — a plain `string` — cannot index it. Widening here keeps the source objects strictly
  * typed while letting the test look tokens up by the value the emitter actually produces.
  */
-type WidenedTiers = Record<ExternalValidatorStatusGroup, Record<string, ExternalValidatorStatusEntry>>;
+type WidenedTiers = Record<
+  ExternalValidatorStatusGroup,
+  Record<string, ExternalValidatorStatusEntry>
+>;
 const PT_PT: WidenedTiers = externalValidatorStatusPtPT;
 const ENGLISH: WidenedTiers = externalValidatorStatusEnglish;
 
@@ -100,8 +103,10 @@ async function emittedTokens(): Promise<Record<ExternalValidatorStatusGroup, str
     /let status = if reports\.is_empty\(\) \{\s*"([a-z0-9_]+)"\s*\} else \{\s*"([a-z0-9_]+)"\s*\}/u.exec(
       source,
     );
-  expect(listStatus, `metadata_list_response no longer assigns status the expected way in ${EMITTER}`)
-    .not.toBeNull();
+  expect(
+    listStatus,
+    `metadata_list_response no longer assigns status the expected way in ${EMITTER}`,
+  ).not.toBeNull();
 
   return {
     metadataStatus: [
@@ -111,7 +116,9 @@ async function emittedTokens(): Promise<Record<ExternalValidatorStatusGroup, str
     preservationStatus: snakeCaseLiterals(
       fnBody(source, /pub fn preservation_status\(&self\) -> &'static str/u),
     ),
-    storageMode: snakeCaseLiterals(fnBody(source, /fn storage_mode\(durable: bool\) -> &'static str/u)),
+    storageMode: snakeCaseLiterals(
+      fnBody(source, /fn storage_mode\(durable: bool\) -> &'static str/u),
+    ),
   };
 }
 
@@ -133,7 +140,10 @@ describe('the emitted status tokens are parsed, not assumed', () => {
       /ExternalValidatorReportMetadataCreateResponse \{[\s\S]{0,400}?status: "([a-z0-9_]+)"/u.exec(
         source,
       );
-    expect(created, `the create handler no longer hard-codes a status in ${EMITTER}`).not.toBeNull();
+    expect(
+      created,
+      `the create handler no longer hard-codes a status in ${EMITTER}`,
+    ).not.toBeNull();
     const token = (created as RegExpExecArray)[1] as string;
     const emitted = await emittedTokens();
     expect(
@@ -152,9 +162,7 @@ describe('every emitted status has a label, and every label has an emitted statu
 
   it.each(groups)('%s matches the Rust emitter in both directions', async (group) => {
     const emitted = await emittedTokens();
-    expect(sorted(Object.keys(PT_PT[group]))).toEqual(
-      sorted(emitted[group]),
-    );
+    expect(sorted(Object.keys(PT_PT[group]))).toEqual(sorted(emitted[group]));
   });
 
   it('describes every emitted token as known', async () => {
@@ -168,9 +176,7 @@ describe('every emitted status has a label, and every label has an emitted statu
 
   it('keeps the English tier on the same key set as pt-PT', () => {
     for (const group of groups) {
-      expect(sorted(Object.keys(ENGLISH[group]))).toEqual(
-        sorted(Object.keys(PT_PT[group])),
-      );
+      expect(sorted(Object.keys(ENGLISH[group]))).toEqual(sorted(Object.keys(PT_PT[group])));
     }
   });
 });
@@ -207,7 +213,10 @@ describe('the copy has the right shape, whatever its wording', () => {
           // Exact match, not a substring: for a short token like `data_dir` the natural English
           // words ARE "data directory", so a substring test flags correct copy. What is worth
           // catching is a label that is nothing but the token with its underscores removed.
-          const normalisedLabel = entry.label.toLowerCase().replace(/[^a-z0-9]+/gu, ' ').trim();
+          const normalisedLabel = entry.label
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/gu, ' ')
+            .trim();
           expect(normalisedLabel, `${group}/${token} label just respells its identifier`).not.toBe(
             spelledOut,
           );

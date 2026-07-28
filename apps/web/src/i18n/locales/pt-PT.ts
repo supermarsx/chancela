@@ -3788,7 +3788,7 @@ export const ptPT: Catalog = {
   'data.status.cleanup.pending': 'A limpar…',
   'data.status.cleanup.done': 'Limpeza concluída.',
   'data.status.cleanup.doneTitle': 'Manutenção concluída',
-    'data.status.cleanup.result': 'Apagados {files} e {directories}, libertando {bytes}.',
+  'data.status.cleanup.result': 'Apagados {files} e {directories}, libertando {bytes}.',
   'data.status.backup.title': 'Backup operacional',
   'data.status.backup.body':
     'Cria um backup quente da instância durável e devolve apenas o manifesto sem segredos.',
@@ -5992,7 +5992,8 @@ export const ptPT: Catalog = {
   'companionPair.hint.password': 'A palavra-passe da sua conta.',
   'companionPair.hint.totp_code':
     'O código de seis dígitos que a sua aplicação de autenticação mostra neste momento.',
-  'companionPair.hint.emailed_code': 'O código que recebeu por email. Pode escrevê-lo com ou sem os hífenes.',
+  'companionPair.hint.emailed_code':
+    'O código que recebeu por email. Pode escrevê-lo com ou sem os hífenes.',
   'companionPair.submit': 'Confirmar e emparelhar',
   'companionPair.pending': 'A emparelhar…',
   'companionPair.done.title': 'Dispositivo emparelhado',
