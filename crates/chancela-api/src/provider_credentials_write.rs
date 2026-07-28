@@ -1069,22 +1069,28 @@ fn probe_cmd(
 /// What the preflight could determine, offline, about the trusted-list anchors a CMD signature
 /// would be authenticated against.
 ///
-/// **Why this check exists.** At signing time three distinct trust failures collapse into one
-/// `UntrustedService` error that names the *signer's* trust service:
+/// **Why this check exists.** Three distinct trust failures decide whether a qualified signature can
+/// be authenticated at all:
 ///
 /// - **(A)** no trust anchor is configured anywhere, so no list can ever authenticate;
 /// - **(B)** anchors are configured but the list does not authenticate against them — the shape of a
 ///   Trusted-List signer rotation where the new signer is not yet anchored;
 /// - **(C)** the list authenticates and the service genuinely is not `Granted`.
 ///
-/// Only **(C)** is about the signer. **(B)** is the one that hits real operators mid-rotation, and
-/// reads as "your signer's service is inactive" when the truth is "your anchor is stale". A feature
-/// whose whole purpose is to report signing failures honestly must not inherit that silently.
+/// Only **(C)** is about the signer. **(B)** is the one that hits real operators mid-rotation.
 ///
-/// This preflight settles **(A)** definitively and offline, *before* a real qualified signature is
-/// attempted, and reports which anchor source resolved. **(B)** and **(C)** are only separable once
-/// the list itself has been authenticated; refining that error is **t61-e2**'s, deliberately
-/// sequenced after t61-e1's wiring fix (`eb078d57`), so nothing here duplicates it.
+/// **All three are now discriminated at signing time** (t61-e2): `SigningError` carries
+/// `TrustAnchorNotConfigured` for (A) and `TrustedListNotAnchored { configured_in, anchor_count }`
+/// for (B), and `UntrustedService` — which previously absorbed all three and named the *signer's*
+/// service for every one of them — now means (C) alone. Both new variants map to **422**, a local
+/// configuration fault rather than a provider one.
+///
+/// So this preflight is not the diagnosis and never was. Its job is **earliness**: it settles **(A)**
+/// offline and reports which anchor source resolved, so an operator learns their CMD configuration is
+/// incomplete *before* pressing a button that produces a real, legally binding qualified signature —
+/// rather than from an error afterwards. It structurally **cannot** see (B): it never fetches or
+/// authenticates a list. A signature attempt that gets past it surfaces (B) honestly on its own, and
+/// nothing here special-cases that.
 pub(crate) enum CmdTrustAnchorPreflight {
     /// No Trusted List is selected at all — there is nothing to authenticate. State **(A)**.
     NoListSelected,
@@ -1106,8 +1112,9 @@ pub(crate) enum CmdTrustAnchorPreflight {
 /// fold, so what the preflight reports is what a signature would actually authenticate against.
 ///
 /// Read-only and offline: it selects the source and resolves anchors, and deliberately does **not**
-/// fetch or authenticate the list. Authenticating it is what separates (B) from (C), and that is
-/// t61-e2's.
+/// fetch or authenticate the list. Authenticating it is what separates (B) from (C), and that
+/// happens at signing time, where t61-e2 discriminates both. A preflight that reached out to
+/// authenticate a list would be doing the trust boundary's job on a different surface.
 pub(crate) async fn resolve_cmd_trust_anchor_preflight(
     state: &AppState,
 ) -> CmdTrustAnchorPreflight {
@@ -1132,6 +1139,11 @@ pub(crate) async fn resolve_cmd_trust_anchor_preflight(
     // The environment-only baseline, so the report can say which source supplied the anchors rather
     // than only how many there are. A failure to read the environment is reported as zero from it:
     // the union above already succeeded, so the anchors are real regardless of this attribution.
+    //
+    // `resolve_lotl_trust_anchors` is a **deduplicating** union: an anchor provisioned in both
+    // settings and the environment is counted once. So `total - from_env` is a lower bound on the
+    // settings contribution, not an exact count, and the wording below says "at least" for that
+    // reason. A strict subtraction presented as exact would be wrong whenever the two overlap.
     let from_env = chancela_tsl::TslTrustAnchors::from_env()
         .map(|env| env.len())
         .unwrap_or(0);
@@ -3188,10 +3200,11 @@ mod tests {
         assert_eq!(event.kind, "provider.credentials.entry.created");
     }
 
-    /// The three trust-failure states collapse into one `UntrustedService` error at signing time
-    /// that names the *signer's* service. This check exists so state (A) — no anchor configured
-    /// anywhere — is settled before a real qualified signature is attempted, and so the operator is
-    /// pointed at their own configuration rather than at the signer.
+    /// Signing time discriminates all three trust-failure states since t61-e2 —
+    /// `TrustAnchorNotConfigured` for (A), `TrustedListNotAnchored` for (B), `UntrustedService` for
+    /// (C) alone. This check is not that diagnosis; it exists so state (A) is settled *before* a
+    /// real qualified signature is attempted, and so the operator is pointed at their own
+    /// configuration rather than at the signer.
     #[test]
     fn the_trust_anchor_check_separates_unconfigured_from_the_signers_service() {
         // (A), both shapes: no list at all, and a list with an empty anchor set. Each must fail,
