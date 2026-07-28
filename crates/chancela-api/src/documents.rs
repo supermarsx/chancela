@@ -9238,7 +9238,11 @@ async fn persist_created_user_template(
         // Preserve the structured template-create conflict body while the store supplies the
         // backend-independent 409 classification. `persist_write_through` has already rolled the
         // speculative ledger event back before returning this error.
-        if matches!(&error, ApiError::Conflict(_)) {
+        // t58: classify through `as_uncoded`, never around it. A `matches!` written against the
+        // bare variant stops matching the moment this path's conflict is given a Tier-2 code, and
+        // the failure is silent — the structured conflict body below is simply skipped and the
+        // caller gets a generic 409 instead.
+        if matches!(error.as_uncoded(), ApiError::Conflict(_)) {
             return Ok((StatusCode::CONFLICT, Json(template_conflict_body(&id))).into_response());
         }
         return Err(error);

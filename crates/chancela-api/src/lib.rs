@@ -2087,8 +2087,10 @@ impl AppState {
         self.external_signing_envelopes.write().await.clear();
         // ZK repositories are domain data. Removing the sidecar here prevents a successful domain
         // wipe/start-over from resurrecting opaque objects on the next process restart.
+        // t58: peel any Tier-2 code before classifying, or a coded `Unprocessable` would slip past
+        // this filter and log a spurious warning for the one outcome it exists to stay quiet about.
         if let Err(error) = self.zk_repositories.write().await.clear_persisted()
-            && !matches!(error, ApiError::Unprocessable(_))
+            && !matches!(error.as_uncoded(), ApiError::Unprocessable(_))
         {
             eprintln!("warning: failed to clear zero-knowledge repository storage: {error:?}");
         }
@@ -21114,7 +21116,10 @@ mod tests {
         let (_, reference_status, reference_headers, reference_bytes) = observed[0].clone();
         assert_eq!(
             String::from_utf8_lossy(&reference_bytes),
-            r#"{"error":"credenciais inválidas"}"#
+            // t58: `code` is additive beside the unchanged `error`, and this byte-for-byte
+            // comparison is exactly what proves the new channel did not become an enumeration
+            // oracle — every refusal below must match this reference byte for byte, code included.
+            r#"{"error":"credenciais inválidas","code":"http.unauthorized"}"#
         );
         for (label, status, headers, bytes) in &observed[1..] {
             assert_eq!(*status, reference_status, "{label} differs in status");

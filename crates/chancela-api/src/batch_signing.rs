@@ -351,7 +351,11 @@ pub async fn sign_cc_batch(
 /// A PIN-free message for a persistence failure surfaced as a per-document batch error. Internal
 /// faults are summarised so no server internals leak into the result body.
 fn api_error_message(err: ApiError) -> String {
-    match err {
+    // t58: peel any Tier-2 code before matching. Without this, giving any site feeding this function
+    // a specific code sends its error to the `_` arm below, replacing the honest per-document
+    // message with the generic summary — a silent loss of what the server actually said, which is
+    // exactly the failure `as_uncoded`/`into_uncoded` exist to prevent.
+    match err.into_uncoded() {
         ApiError::PinRejected { message, .. }
         | ApiError::Unprocessable(message)
         | ApiError::Conflict(message) => message,
