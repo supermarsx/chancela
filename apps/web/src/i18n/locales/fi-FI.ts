@@ -2198,8 +2198,6 @@ export const fiFI: Catalog = {
   'settings.privacy.action.create': 'Luo tietue',
   'settings.privacy.action.new': 'Uusi tietue',
   'settings.privacy.action.edit': 'Muokkaa',
-  'settings.privacy.form.edit': 'Muokkaa tietuetta',
-  'settings.privacy.form.new': 'Uusi tietue',
   'settings.privacy.listHint': 'Yksi merkintä riviä kohden tai pilkuin eroteltuna.',
   'settings.privacy.listHintOptional':
     'Valinnainen. Yksi merkintä riviä kohden tai pilkuin eroteltuna.',

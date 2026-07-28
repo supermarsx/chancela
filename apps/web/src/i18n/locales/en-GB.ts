@@ -2196,8 +2196,6 @@ export const enGB: Catalog = {
   'settings.privacy.action.create': 'Create record',
   'settings.privacy.action.new': 'New record',
   'settings.privacy.action.edit': 'Edit',
-  'settings.privacy.form.edit': 'Edit record',
-  'settings.privacy.form.new': 'New record',
   'settings.privacy.listHint': 'One entry per line or separated by commas.',
   'settings.privacy.listHintOptional': 'Optional. One entry per line or separated by commas.',
   'settings.privacy.filter.search': 'Search',

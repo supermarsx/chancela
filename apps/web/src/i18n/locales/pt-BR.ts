@@ -2204,8 +2204,6 @@ export const ptBR: Catalog = {
   'settings.privacy.action.create': 'Criar registro',
   'settings.privacy.action.new': 'Novo registro',
   'settings.privacy.action.edit': 'Editar',
-  'settings.privacy.form.edit': 'Editar registro',
-  'settings.privacy.form.new': 'Novo registro',
   'settings.privacy.listHint': 'Uma entrada por linha ou separadas por vírgulas.',
   'settings.privacy.listHintOptional': 'Opcional. Uma entrada por linha ou separadas por vírgulas.',
   'settings.privacy.filter.search': 'Para procurar',

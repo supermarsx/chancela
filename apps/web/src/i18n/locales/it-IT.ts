@@ -2211,8 +2211,6 @@ export const itIT: Catalog = {
   'settings.privacy.action.create': 'Crea registrazione',
   'settings.privacy.action.new': 'Nuova registrazione',
   'settings.privacy.action.edit': 'Modifica',
-  'settings.privacy.form.edit': 'Modifica registrazione',
-  'settings.privacy.form.new': 'Nuova registrazione',
   'settings.privacy.listHint': 'Una voce per riga o separate da virgole.',
   'settings.privacy.listHintOptional': 'Facoltativo. Una voce per riga o separate da virgole.',
   'settings.privacy.filter.search': 'Cerca',

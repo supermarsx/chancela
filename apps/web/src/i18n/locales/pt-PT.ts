@@ -2225,8 +2225,6 @@ export const ptPT: Catalog = {
   'settings.privacy.action.create': 'Criar registo',
   'settings.privacy.action.new': 'Novo registo',
   'settings.privacy.action.edit': 'Editar',
-  'settings.privacy.form.edit': 'Editar registo',
-  'settings.privacy.form.new': 'Novo registo',
   'settings.privacy.listHint': 'Uma entrada por linha ou separada por vírgulas.',
   'settings.privacy.listHintOptional': 'Opcional. Uma entrada por linha ou separada por vírgulas.',
   'settings.privacy.filter.search': 'Pesquisar',

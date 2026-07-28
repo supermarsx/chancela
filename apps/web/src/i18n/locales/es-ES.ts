@@ -2210,8 +2210,6 @@ export const esES: Catalog = {
   'settings.privacy.action.create': 'Crear registro',
   'settings.privacy.action.new': 'Nuevo registro',
   'settings.privacy.action.edit': 'Editar',
-  'settings.privacy.form.edit': 'Editar registro',
-  'settings.privacy.form.new': 'Nuevo registro',
   'settings.privacy.listHint': 'Una entrada por línea o separadas por comas.',
   'settings.privacy.listHintOptional': 'Opcional. Una entrada por línea o separadas por comas.',
   'settings.privacy.filter.search': 'Buscar',

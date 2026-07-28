@@ -2224,8 +2224,6 @@ export const deDE: Catalog = {
   'settings.privacy.action.create': 'Eintrag erstellen',
   'settings.privacy.action.new': 'Neuer Eintrag',
   'settings.privacy.action.edit': 'Bearbeiten',
-  'settings.privacy.form.edit': 'Eintrag bearbeiten',
-  'settings.privacy.form.new': 'Neuer Eintrag',
   'settings.privacy.listHint': 'Ein Eintrag pro Zeile oder durch Kommas getrennt.',
   'settings.privacy.listHintOptional':
     'Optional. Ein Eintrag pro Zeile oder durch Kommas getrennt.',

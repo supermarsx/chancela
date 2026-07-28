@@ -2219,8 +2219,6 @@ export const frFR: Catalog = {
   'settings.privacy.action.create': 'Créer l’enregistrement',
   'settings.privacy.action.new': 'Nouvel enregistrement',
   'settings.privacy.action.edit': 'Modifier',
-  'settings.privacy.form.edit': 'Modifier l’enregistrement',
-  'settings.privacy.form.new': 'Nouvel enregistrement',
   'settings.privacy.listHint': 'Une entrée par ligne ou séparées par des virgules.',
   'settings.privacy.listHintOptional':
     'Facultatif. Une entrée par ligne ou séparées par des virgules.',

@@ -2202,8 +2202,6 @@ export const plPL: Catalog = {
   'settings.privacy.action.create': 'Utwórz rekord',
   'settings.privacy.action.new': 'Nowy rekord',
   'settings.privacy.action.edit': 'Edytuj',
-  'settings.privacy.form.edit': 'Edytuj rekord',
-  'settings.privacy.form.new': 'Nowy rekord',
   'settings.privacy.listHint': 'Jeden wpis w wierszu lub oddzielone przecinkami.',
   'settings.privacy.listHintOptional':
     'Opcjonalnie. Jeden wpis w wierszu lub oddzielone przecinkami.',

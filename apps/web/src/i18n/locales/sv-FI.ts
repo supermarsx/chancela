@@ -2204,8 +2204,6 @@ export const svFI: Catalog = {
   'settings.privacy.action.create': 'Skapa post',
   'settings.privacy.action.new': 'Ny post',
   'settings.privacy.action.edit': 'Redigera',
-  'settings.privacy.form.edit': 'Redigera post',
-  'settings.privacy.form.new': 'Ny post',
   'settings.privacy.listHint': 'En post per rad eller åtskilda med kommatecken.',
   'settings.privacy.listHintOptional': 'Valfritt. En post per rad eller åtskilda med kommatecken.',
   'settings.privacy.filter.search': 'Sök',

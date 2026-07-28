@@ -2211,8 +2211,6 @@ export const nlNL: Catalog = {
   'settings.privacy.action.create': 'Record aanmaken',
   'settings.privacy.action.new': 'Nieuw record',
   'settings.privacy.action.edit': 'Bewerken',
-  'settings.privacy.form.edit': 'Record bewerken',
-  'settings.privacy.form.new': 'Nieuw record',
   'settings.privacy.listHint': 'Eén invoer per regel of gescheiden door komma’s.',
   'settings.privacy.listHintOptional':
     'Optioneel. Eén invoer per regel of gescheiden door komma’s.',

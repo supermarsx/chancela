@@ -2200,8 +2200,6 @@ export const daDK: Catalog = {
   'settings.privacy.action.create': 'Opret post',
   'settings.privacy.action.new': 'Ny post',
   'settings.privacy.action.edit': 'Rediger',
-  'settings.privacy.form.edit': 'Rediger post',
-  'settings.privacy.form.new': 'Ny post',
   'settings.privacy.listHint': 'Én post pr. linje eller adskilt med kommaer.',
   'settings.privacy.listHintOptional': 'Valgfrit. Én post pr. linje eller adskilt med kommaer.',
   'settings.privacy.filter.search': 'Søg',
