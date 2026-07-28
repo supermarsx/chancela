@@ -5281,9 +5281,20 @@ function assertCheckpointMap() {
     "prior.targets_acted_count",
     "Settings retention due-candidate projected evidence target-count marker",
   );
+  // The status and the id used to share one text node joined by a literal `·`. `148a987a` gave the
+  // status a translated tag (correct — a raw `awaiting_review` was the bug) but took the separator
+  // with it, leaving the two values separated only by flex `gap`, which puts NO character in
+  // `textContent`: the pair read `awaiting_reviewretention-exec-queued-due` fused to a screen reader
+  // and to find-in-page. `ValueSeparator` restores the character; both halves are pinned here, and
+  // the un-fused string itself is asserted on the rendered row in `SettingsPage.test.tsx` below.
   assertFileContains(
     "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
-    "{queuedReview.execution_status} · {queuedReview.id}",
+    "function ValueSeparator()",
+    "Settings retention accessible value separator marker",
+  );
+  assertFileContains(
+    "apps/web/src/features/settings/PrivacyComplianceSection.tsx",
+    "<ValueSeparator />\n                          <span className=\"muted mono\">{queuedReview.id}</span>",
     "Settings retention due-candidate queued-review id marker",
   );
   assertFileContains(
@@ -5731,9 +5742,13 @@ function assertCheckpointMap() {
     "settings.privacy.guidance.title",
     "Settings DPIA template guidance panel title key",
   );
+  // `dc48bdd2` (i18n(privacy): the register is the AIPD in pt-PT, not the DPIA) renamed the
+  // instrument to its pt-PT form and put the words in Portuguese order. The panel is the same one;
+  // only the acronym and the word order moved. Each locale keeps its own form, so a marker on
+  // pt-PT copy is expected to move again the next time a locale form is corrected.
   assertFileContains(
     "apps/web/src/i18n/locales/pt-PT.ts",
-    "Modelo DPIA local",
+    "Modelo local de AIPD",
     "Settings DPIA template guidance PT panel title",
   );
   assertFileContains(

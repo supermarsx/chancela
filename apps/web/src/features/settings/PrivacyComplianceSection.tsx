@@ -322,6 +322,19 @@ function RetentionStatus({ group, token }: { group: RetentionStatusGroup; token:
 }
 
 /**
+ * A real separating character between two adjacent values.
+ *
+ * The rows below set their parts apart with flex `gap` and separate elements, and CSS separation
+ * inserts NO character: `textContent` — and with it a screen reader and browser find-in-page — read
+ * `awaiting_reviewretention-exec-queued-due` fused into one word. These values are identifiers an
+ * operator quotes into a support thread, so the boundary has to exist in the text, not only in the
+ * layout. `sr-only` keeps the visible spacing the layout's job while restoring that boundary.
+ */
+function ValueSeparator() {
+  return <span className="sr-only"> · </span>;
+}
+
+/**
  * The execution status, which does NOT go through the fallback module.
  *
  * `RetentionExecutionStatus` already has operator copy in the shipped `Catalog`
@@ -342,6 +355,7 @@ function RetentionExecutionStatusTag({ status }: { status: RetentionExecutionSta
       <Badge tone={retentionExecutionStatusTone(status)}>
         {retentionExecutionStatusLabel(t, status)}
       </Badge>
+      <ValueSeparator />
       <code className="mono">{token}</code>
     </span>
   );
@@ -2294,6 +2308,7 @@ function RetentionDueCandidatesPanel({
                       {priorExecution ? (
                         <>
                           <RetentionExecutionStatusTag status={priorExecution.execution_status} />
+                          <ValueSeparator />
                           <span className="muted mono">{priorExecution.execution_id}</span>
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.noDuplicate')}
@@ -2302,6 +2317,7 @@ function RetentionDueCandidatesPanel({
                       ) : queuedReview ? (
                         <>
                           <RetentionExecutionStatusTag status={queuedReview.execution_status} />
+                          <ValueSeparator />
                           <span className="muted mono">{queuedReview.id}</span>
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.requestedAt', {

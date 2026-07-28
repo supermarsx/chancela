@@ -4969,6 +4969,10 @@ describe('SettingsPage', () => {
     // Token and id are separate elements since t98; see the note on the acknowledged case above.
     expect(within(candidateRow!).getByText('awaiting_review')).toBeTruthy();
     expect(within(candidateRow!).getByText('retention-exec-queued-due')).toBeTruthy();
+    // ...and being separate elements, only a real character keeps them from reading as one word.
+    // Flex `gap` is invisible to `textContent`, so without the separator a screen reader and
+    // find-in-page both get `awaiting_reviewretention-exec-queued-due`.
+    expect(candidateRow!.textContent).toContain('awaiting_review · retention-exec-queued-due');
     expect(within(candidateRow!).getByText(/Pedido em/)).toBeTruthy();
     expect(
       within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),
