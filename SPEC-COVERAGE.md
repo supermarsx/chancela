@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-28 from current implementation snapshot `613e144bb585f42e502b310b7019d844965f7fbe`,
+*Updated 2026-07-28 from current implementation snapshot `227582daa64b7eba66ba9ce5585231b73025d34b`,
 with committed evidence for the per-verb permission enforcement audit that made
 `tenant.admin` gate a real route, split `entity.registry.lookup` out of
 `entity.read`, and recorded `book.reopen` as unbuildable rather than merely
@@ -349,6 +349,40 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `227582d` keeps Roles & Access/Signatures & Trust/UX/CI **PARTIAL**.
+  This batch is remediation: it makes existing gates true rather than adding
+  capability, so it moves no top-level status.
+
+  **Roles & access.** `86740674` closes the third and last declared-but-unenforced
+  route in the confirmation family. `ConfirmationAction::BookClose` had floored
+  `POST /v1/books/{id}/close` at reauth-plus-phrase since t56-e0 with nothing in
+  the handler verifying it, exactly as `termo_abertura.open` and
+  `termo_encerramento.close` had before `b3817fc0`. Any client could put a book
+  into closing, sealing a termo de encerramento that asserts the book's ata
+  count, without the step-up the registry demanded. The check now runs at the
+  route ahead of the one-shot/two-phase branch, so a refusal mints nothing; the
+  refusal tests assert the *state* (book still `Open`, no termo sealed) rather
+  than the status code, since a `403` that had nonetheless closed the book would
+  pass a status-only test. Server and client landed together. This is
+  enforcement of an already-declared floor, not a new authorization model.
+
+  **Signatures & trust / UX.** `9928de4c` restores the character between a
+  retention execution status and its identifier: CSS `gap` separates them
+  visually but inserts no character, so `textContent` read
+  `awaiting_reviewretention-exec-queued-due` — fused for screen readers and
+  find-in-page. Roughly ten further fused sites are recorded and **not** fixed
+  here. `ce19a4c1` forces the error-detail block open when the headline can only
+  name a status tier, so a fail-closed refusal reason cannot be left collapsed.
+
+  **CI.** Machine-checkable gates only: `658a7ea9` makes the TOTP pairing cases
+  supply their own credential root key, which is why they had passed on Windows
+  (DPAPI) and could never pass on Linux or macOS; `6d334d6e` clamps the load
+  generator's CPU budget by the pinning mechanism rather than the platform;
+  `c3bfbb31`/`227582da` make the checkpoint map report every stale marker in one
+  run instead of aborting at the first; `1b3153b0` automates the `YY.N` release
+  bump-and-tag. `ab2d6467` finishes a half-English pt-BR no-claim disclaimer.
+  None of this asserts legal validity, certification, or spec completion.
 
 - Current `613e144` keeps Roles & Access/Architecture/API/Data/Entity/Documents
   & Archive/Workflows/Signatures & Trust/Template Catalog/UX/CI **PARTIAL**. It
