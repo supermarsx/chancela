@@ -337,6 +337,16 @@ pub struct EntityView {
     pub statute: Option<StatuteOverrides>,
     /// Optional per-entity document-layout layer. Missing leaves inherit the instance policy.
     pub document_layout_override: Option<DocumentLayoutOverrides>,
+    /// When the entity was retired from new authorship (RFC 3339), or `null` while active.
+    ///
+    /// Present on **every** entity read, including the ones the default `GET /v1/entities` keeps
+    /// returning after archiving. That is deliberate: archiving never removes a row from the list,
+    /// so every consumer that resolves a name — the ledger scope cell, the recovery panel, the
+    /// scope picker — receives the state and can render it instead of guessing.
+    pub archived_at: Option<String>,
+    /// Derived from [`archived_at`](EntityView::archived_at), so a client renders the badge without
+    /// re-deriving "is this null" and without parsing a timestamp it does not otherwise need.
+    pub archived: bool,
 }
 
 /// List-only activity rollup for one entity. This is computed by the API from the full book state
@@ -416,6 +426,8 @@ impl From<&Entity> for EntityView {
             profile: EntityProfileView::from(e.kind),
             statute: e.statute.clone(),
             document_layout_override: e.document_layout_override.clone(),
+            archived_at: e.archived_at.and_then(|t| t.format(&Rfc3339).ok()),
+            archived: e.is_archived(),
         }
     }
 }

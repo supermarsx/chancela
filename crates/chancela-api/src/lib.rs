@@ -2629,6 +2629,16 @@ pub fn router(state: AppState) -> Router {
             "/v1/entities/import-from-registry",
             post(registry::import_from_registry),
         )
+        // Entity archiving (t60). Its own routes rather than a flag on `PATCH /v1/entities/{id}`,
+        // because that handler gates on `entity.update` and the seeded **Records Manager** role
+        // holds `entity.archive` *without* `entity.update` — lifecycle curation without content
+        // authorship. Folding archiving into the PATCH would silently deny the one seeded role
+        // designed to do it.
+        .route("/v1/entities/{id}/archive", post(entities::archive_entity))
+        .route(
+            "/v1/entities/{id}/unarchive",
+            post(entities::unarchive_entity),
+        )
         .route(
             "/v1/entities/{id}/registry",
             get(registry::get_entity_registry).post(registry::request_registry_auto_update),

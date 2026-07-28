@@ -565,6 +565,8 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/entities", RouteClass::Gated), // GET entity.read@Global · POST entity.create@Global
     ("/v1/entities/page", RouteClass::Gated), // GET entity.read per visible row
     ("/v1/entities/{id}", RouteClass::Gated), // GET entity.read@Entity · PATCH entity.update@Entity
+    ("/v1/entities/{id}/archive", RouteClass::Gated), // POST entity.archive@Entity
+    ("/v1/entities/{id}/unarchive", RouteClass::Gated), // POST entity.archive@Entity (same verb: the authority to retire is the authority to un-retire)
     ("/v1/entities/import-from-registry", RouteClass::Gated), // POST entity.create@Global
     ("/v1/entities/{id}/registry", RouteClass::Gated), // GET entity.read@Entity
     ("/v1/entities/{id}/registry/import", RouteClass::Gated), // POST entity.registry.import@Entity

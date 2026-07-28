@@ -10,12 +10,12 @@ use axum::http::StatusCode;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{
     Book, BookId, BookKind, BookState, ClosingReason, DEFAULT_TENANT_ID, DocumentLayoutOverrides,
-    Entity, EntityFamily, EntityId, EntityKind, Nipc, StatuteOverrides, TenantId,
-    resolve_document_layout,
+    Entity, EntityArchiveError, EntityFamily, EntityId, EntityKind, Nipc, StatuteOverrides,
+    TenantId, resolve_document_layout,
 };
 use chancela_ledger::{ChainId, Event};
 use serde::Deserialize;
-use time::{Date, Month};
+use time::{Date, Month, OffsetDateTime};
 use uuid::Uuid;
 
 use crate::AppState;
@@ -320,6 +320,210 @@ pub async fn patch_entity(
     Ok(Json(EntityView::from(&*entity)))
 }
 
+/// Tri-state archived filter shared by both entity list endpoints.
+///
+/// **The default is [`Include`](ArchivedFilter::Include), and that is load-bearing.** Archiving
+/// retires an entity from new authorship; it does not hide it. `useEntities()` has seven consumers
+/// and only one — the book-open picker — chooses a target for new work. The other six resolve names:
+/// the ledger feed, the per-row ledger scope cell, the recovery/integrity panel, the RBAC scope
+/// picker, the admin integrations panel and the external-signing workflows. Filtering by default
+/// would make an archived entity's ledger rows render as a bare UUID, which is the *"can no longer
+/// name its own parties"* evidentiary failure displaced one layer outward. Hiding is therefore
+/// opt-in, at the call site that wants it, and an API client written before this filter existed
+/// keeps receiving exactly the same bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ArchivedFilter {
+    /// Every entity, archived or not — today's behaviour, and the default.
+    #[default]
+    Include,
+    /// Active entities only. What a picker for *new* work asks for.
+    Exclude,
+    /// Archived entities only.
+    Only,
+}
+
+impl ArchivedFilter {
+    /// Parse the wire spelling, rejecting an unknown value with `422` rather than silently falling
+    /// back to the default — a caller who asked to hide archived rows and was quietly given all of
+    /// them would be shown more than they asked for and never know.
+    fn parse(raw: Option<&str>) -> Result<Self, ApiError> {
+        match raw {
+            None | Some("include") => Ok(ArchivedFilter::Include),
+            Some("exclude") => Ok(ArchivedFilter::Exclude),
+            Some("only") => Ok(ArchivedFilter::Only),
+            Some(_) => Err(ApiError::Unprocessable(
+                "unknown archived filter: expected \"include\", \"exclude\" or \"only\"".to_owned(),
+            )),
+        }
+    }
+
+    /// The canonical spelling, used for the page cursor fingerprint. Deriving it from the *resolved*
+    /// filter rather than the raw string means an absent `archived=` and an explicit
+    /// `archived=include` share a cursor, because they are the same query.
+    fn fingerprint_value(self) -> &'static str {
+        match self {
+            ArchivedFilter::Include => "include",
+            ArchivedFilter::Exclude => "exclude",
+            ArchivedFilter::Only => "only",
+        }
+    }
+
+    fn permits(self, entity: &Entity) -> bool {
+        match self {
+            ArchivedFilter::Include => true,
+            ArchivedFilter::Exclude => !entity.is_archived(),
+            ArchivedFilter::Only => entity.is_archived(),
+        }
+    }
+}
+
+/// Query string for `GET /v1/entities`. The legacy route took none; `archived` is the only knob it
+/// gains, and omitting it reproduces the previous response byte-for-byte.
+#[derive(Debug, Default, Deserialize)]
+pub struct EntityListQuery {
+    archived: Option<String>,
+}
+
+/// `POST /v1/entities/{id}/archive` — retire an entity from new authorship.
+///
+/// Archiving withdraws the invitation to *start* work: opening a book on the entity, drafting a new
+/// act in its books, editing its content, and its place in the pickers that choose a target for new
+/// work. It withdraws nothing else. Every book, act, document, ledger row and export written about
+/// the entity stays readable, searchable and exportable; a book already open can still be closed;
+/// an act already drafted can still be advanced, signed and sealed. An archive that hid records
+/// would be a delete wearing a euphemism, which is the one thing this product may not do.
+///
+/// **Idempotent `204`.** [`Entity::archive`] deliberately *refuses* a redundant transition rather
+/// than restamping `archived_at`, because restamping would move the recorded moment of retirement —
+/// a fact the ledger already carries an event for. Translating that refusal is the API's call, and
+/// it follows the group precedent (`archive_group`): archiving an already-archived entity is a
+/// `204` with no second ledger event, not a `409`. The caller asked for a state the entity is
+/// already in, and it is in it.
+///
+/// `404` unknown entity · `403` without `entity.archive` at the entity's scope.
+pub async fn archive_entity(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<StatusCode, ApiError> {
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityArchive,
+        scope_of_entity(EntityId(id)),
+    )
+    .await?;
+    set_entity_archived(state, EntityId(id), actor, attestor, true).await
+}
+
+/// `POST /v1/entities/{id}/unarchive` — return an entity to active authorship.
+///
+/// Reversible on purpose, and this is where entity archiving diverges from `CompanyGroup`, which is
+/// one-way. A group is documented in-tree as a convenience view, not an authorization boundary, and
+/// recreating one is free. An entity is a legal person with a NIPC, statutes, books and sealed acts:
+/// there is no "just recreate it", because a second entity sharing a NIPC forks the evidentiary
+/// record — precisely the corruption this product exists to prevent. Irreversibility buys integrity
+/// only where reversal would rewrite the record, and archiving touches no sealed content, so it
+/// would purchase nothing here and cost recoverability.
+///
+/// The round trip is not a loss of history: archive and unarchive each append their own event, so
+/// reversing leaves strictly *more* audit record, never less. Same `entity.archive` verb in both
+/// directions — the authority to retire is the authority to un-retire, and a separate verb would
+/// force a seeded-role migration to buy a distinction no threat model asks for.
+///
+/// Idempotent `204` when the entity is already active, for the same reason as [`archive_entity`].
+pub async fn unarchive_entity(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<StatusCode, ApiError> {
+    require_permission(
+        &state,
+        &actor,
+        Permission::EntityArchive,
+        scope_of_entity(EntityId(id)),
+    )
+    .await?;
+    set_entity_archived(state, EntityId(id), actor, attestor, false).await
+}
+
+/// The shared body of [`archive_entity`] and [`unarchive_entity`]: attempt the transition on a
+/// clone, translate a redundant one into `204`, then append the event and durably write through
+/// before the in-memory map is touched (a store failure rolls the append back and leaves the read
+/// model untouched, so memory and disk never diverge).
+async fn set_entity_archived(
+    state: AppState,
+    id: EntityId,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    archive: bool,
+) -> Result<StatusCode, ApiError> {
+    let actor = actor.resolve("api");
+    // entities → ledger (the global lock order); attestation sidecar acquired last.
+    let mut entities = state.entities.write().await;
+    let current = entities.get(&id).ok_or(ApiError::NotFound)?;
+    let mut next = current.clone();
+    let transition = if archive {
+        next.archive(OffsetDateTime::now_utc())
+    } else {
+        next.unarchive()
+    };
+    if let Err(error) = transition {
+        return match error {
+            // Already in the requested state: the group precedent's idempotent success. No second
+            // event, because nothing happened.
+            EntityArchiveError::AlreadyArchived { .. } | EntityArchiveError::NotArchived => {
+                Ok(StatusCode::NO_CONTENT)
+            }
+        };
+    }
+
+    // Only now that a real transition is happening: churning the search source on a no-op would
+    // invalidate the projection for nothing.
+    let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
+    // The entity is the payload, exactly as `entity.created` and `entity.statute_updated` serialize
+    // it, so the event carries the whole post-transition shape. An archived entity's payload gains
+    // the `archived_at` key; an unarchived one is byte-identical to the pre-archiving shape again.
+    let payload = serde_json::to_vec(&next)?;
+    // Same scope as `entity.created`, so the event joins both the tenant chain and the entity's own
+    // company chain.
+    let scope = format!("tenant:{}/entity:{}", next.tenant_id, next.id);
+    let mut ledger = state.ledger.write().await;
+    // The kind is a **string literal at the call site** on purpose. `apps/web/src/api/labels.test.ts`
+    // scans the crates for emitted kinds by regex over a handful of emit shapes and asserts each has
+    // a pt-PT label; its non-vacuity guard only proves each rule matched *something*, not that it
+    // matched this one. A kind hidden behind a constant would slip that net silently — and a gate
+    // that passes while covering nothing manufactures confidence. Do not lift these into constants.
+    if archive {
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &scope,
+            "entity.archived",
+            None,
+            &payload,
+        )?;
+    } else {
+        crate::try_append_event(
+            &mut ledger,
+            &actor,
+            &scope,
+            "entity.unarchived",
+            None,
+            &payload,
+        )?;
+    }
+    let next_for_store = next.clone();
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_entity(&next_for_store))
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    entities.insert(id, next);
+    Ok(StatusCode::NO_CONTENT)
+}
+
 pub(crate) fn normalize_fiscal_year_end(value: Option<String>) -> Result<Option<String>, ApiError> {
     let Some(value) = value else {
         return Ok(None);
@@ -349,14 +553,17 @@ fn invalid_fiscal_year_end() -> ApiError {
 /// read authority gets an empty list, never a status that reveals what exists.
 pub async fn list_entities(
     State(state): State<AppState>,
+    Query(query): Query<EntityListQuery>,
     actor: CurrentActor,
 ) -> Result<Json<Vec<EntityListItemView>>, ApiError> {
+    let archived = ArchivedFilter::parse(query.archived.as_deref())?;
     let authz = crate::authz::authorizer(&state, &actor).await?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
     let entities = state.entities.read().await;
     let visible: Vec<_> = entities
         .values()
         .filter(|e| authz.permits(Permission::EntityRead, scope_of_entity(e.id)))
+        .filter(|e| archived.permits(e))
         .collect();
 
     let visible_entity_ids: HashSet<_> = visible.iter().map(|e| e.id).collect();
@@ -420,6 +627,8 @@ pub struct EntityPageQuery {
     last_book: Option<String>,
     activity: Option<String>,
     activity_kind: Option<String>,
+    /// Tri-state archived filter; see [`ArchivedFilter`]. Absent means `include`.
+    archived: Option<String>,
 }
 
 impl EntityPageQuery {
@@ -553,8 +762,10 @@ fn activity_kind_search_labels(kind: &str) -> String {
     let localized = match kind {
         "registry.imported" => "Certidão do registo comercial importada Registo importado",
         "registry.auto_update.attempted" => "Atualização automática do registo comercial tentada",
+        "entity.archived" => "Entidade arquivada",
         "entity.created" => "Entidade criada",
         "entity.statute_updated" => "Estatutos da entidade atualizados",
+        "entity.unarchived" => "Entidade desarquivada",
         "entity.document_layout_updated" => "Formato dos documentos da entidade atualizado",
         "book.opened" => "Livro aberto",
         "book.closed" => "Livro encerrado",
@@ -667,6 +878,7 @@ pub async fn list_entities_page(
             "unknown entity activity filter".to_owned(),
         ));
     }
+    let archived = ArchivedFilter::parse(query.archived.as_deref())?;
     let fingerprint = query_fingerprint([
         ("q", search.clone().unwrap_or_default()),
         ("sort", sort.to_owned()),
@@ -722,6 +934,10 @@ pub async fn list_entities_page(
             "activity_kind",
             query.activity_kind.clone().unwrap_or_default(),
         ),
+        // Joined to the fingerprint because it narrows the result set: without it a cursor minted
+        // under `archived=exclude` would keep paging a cached `include` page, serving rows the
+        // caller asked not to see.
+        ("archived", archived.fingerprint_value().to_owned()),
     ]);
     let cursor = page_query.cursor("entities", &fingerprint)?;
 
@@ -739,6 +955,7 @@ pub async fn list_entities_page(
                 .group_id
                 .is_none_or(|group_id| entity.group_id.is_some_and(|id| id.0 == group_id))
         })
+        .filter(|entity| archived.permits(entity))
         .filter(|entity| query.family.is_none_or(|family| entity.family == family))
         .filter(|entity| query.kind.is_none_or(|kind| entity.kind == kind))
         .filter(|entity| {
@@ -2512,5 +2729,433 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    }
+
+    /// Create an entity through the real route, so its company chain carries the `entity.created`
+    /// genesis every later entity-scoped event links onto. Inserting straight into `state.entities`
+    /// (the shorter fixture used elsewhere in this module) leaves that chain empty, and the ledger
+    /// then rejects any non-genesis kind on it — a fixture artefact, but one that would otherwise
+    /// look like an archiving bug.
+    async fn created_entity(state: &AppState, token: &str, name: &str, nipc: &str) -> EntityId {
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(
+                    "/v1/entities",
+                    json!({
+                        "name": name,
+                        "nipc": nipc,
+                        "seat": "Lisboa",
+                        "kind": "SociedadePorQuotas",
+                        "allow_invalid_nipc": true,
+                    }),
+                ),
+                token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{body}");
+        EntityId(
+            Uuid::parse_str(body["id"].as_str().expect("created entity has an id"))
+                .expect("entity id is a uuid"),
+        )
+    }
+
+    /// Archive → unarchive, end to end through the router: the idempotent `204`, the two ledger
+    /// kinds on the entity's own scope, the payload, and the guarantee that a redundant call
+    /// appends **nothing**.
+    ///
+    /// The no-second-event assertion is the point of the idempotent translation. The core refuses a
+    /// redundant transition rather than restamping `archived_at`, because restamping would move the
+    /// recorded moment of retirement; a `204` that quietly appended a second `entity.archived` would
+    /// reintroduce exactly that lie one layer up, with two events claiming two different retirement
+    /// moments for one retirement.
+    #[tokio::test]
+    async fn entity_archive_round_trip_is_idempotent_and_appends_one_event_per_real_transition() {
+        use sha2::{Digest, Sha256};
+
+        let state = AppState::default();
+        let token = token_for_role(&state, "amelia.marques", OWNER_ROLE_ID).await;
+        let id = created_entity(&state, &token, "Encosto Estratégico Lda", "arch-nipc").await;
+        let tenant_id = state
+            .entities
+            .read()
+            .await
+            .get(&id)
+            .expect("entity present")
+            .tenant_id;
+
+        let archive_uri = format!("/v1/entities/{id}/archive");
+        let unarchive_uri = format!("/v1/entities/{id}/unarchive");
+        let expected_scope = format!("tenant:{tenant_id}/entity:{id}");
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&archive_uri, json!({})), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        // The view now carries both the timestamp and the derived flag.
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id}")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["archived"], true);
+        let archived_at = view["archived_at"]
+            .as_str()
+            .expect("archived_at is present once archived")
+            .to_owned();
+
+        // Kind, scope and payload. The ledger stores only the digest, so the payload assertion is
+        // made against it: the event's preimage must be the post-transition entity itself, the same
+        // whole-`Entity` shape `entity.created` and `entity.statute_updated` serialize.
+        {
+            let entities = state.entities.read().await;
+            let stored = entities.get(&id).expect("entity survives archiving");
+            assert!(stored.is_archived());
+            let expected: [u8; 32] =
+                Sha256::digest(serde_json::to_vec(stored).expect("entity serializes")).into();
+            let ledger = state.ledger.read().await;
+            let archived: Vec<_> = ledger
+                .events()
+                .iter()
+                .filter(|event| event.kind == "entity.archived")
+                .collect();
+            assert_eq!(archived.len(), 1, "one archive, one event");
+            assert_eq!(archived[0].scope, expected_scope);
+            assert_eq!(archived[0].payload_digest, expected);
+        }
+
+        // Redundant archive: `204`, and no second event claiming a second retirement moment.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&archive_uri, json!({})), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id}")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(
+            view["archived_at"], archived_at,
+            "a redundant archive must not restamp the recorded moment of retirement"
+        );
+        assert_eq!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .filter(|event| event.kind == "entity.archived")
+                .count(),
+            1,
+            "a redundant archive must append nothing"
+        );
+
+        // Reversal, and its own event — a round trip is strictly *more* audit record, never less.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&unarchive_uri, json!({})), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, view) = send_raw(
+            state.clone(),
+            with_session(get(&format!("/v1/entities/{id}")), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(view["archived"], false);
+        assert_eq!(view["archived_at"], Value::Null);
+
+        // Redundant unarchive: `204`, still nothing appended.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&unarchive_uri, json!({})), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let ledger = state.ledger.read().await;
+        let unarchived: Vec<_> = ledger
+            .events()
+            .iter()
+            .filter(|event| event.kind == "entity.unarchived")
+            .collect();
+        assert_eq!(unarchived.len(), 1, "a redundant unarchive must append nothing");
+        assert_eq!(unarchived[0].scope, expected_scope);
+
+        let (status, missing) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/entities/{}/archive", Uuid::new_v4()), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "{missing}");
+    }
+
+    /// The seeded data validates the API shape. **Records Manager** holds `entity.archive` and
+    /// deliberately *not* `entity.update` — lifecycle curation without content authorship — so
+    /// archiving cannot be a flag on `PATCH /v1/entities/{id}`, which gates on `entity.update`:
+    /// that would silently deny the one seeded role designed to archive. **Tenant Administrator**
+    /// is the mirror image, holding `entity.update` without `entity.archive`, and must be refused.
+    #[tokio::test]
+    async fn entity_archive_is_gated_on_entity_archive_alone_not_on_entity_update() {
+        use chancela_authz::{RECORDS_MANAGER_ROLE_ID, TENANT_ADMIN_ROLE_ID};
+
+        let state = AppState::default();
+        let owner = token_for_role(&state, "amelia.marques", OWNER_ROLE_ID).await;
+        let curator = token_for_role(&state, "records.manager", RECORDS_MANAGER_ROLE_ID).await;
+        let editor = token_for_role(&state, "tenant.admin", TENANT_ADMIN_ROLE_ID).await;
+        let id = created_entity(&state, &owner, "Encosto Estratégico Lda", "rbac-nipc").await;
+        let archive_uri = format!("/v1/entities/{id}/archive");
+        let unarchive_uri = format!("/v1/entities/{id}/unarchive");
+
+        // Holds entity.update, not entity.archive: refused in both directions.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(post_json(&archive_uri, json!({})), &editor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(post_json(&unarchive_uri, json!({})), &editor),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert!(
+            !state
+                .entities
+                .read()
+                .await
+                .get(&id)
+                .expect("entity present")
+                .is_archived()
+        );
+
+        // Holds entity.archive without entity.update: permitted, both directions, one verb.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&archive_uri, json!({})), &curator),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert!(
+            state
+                .entities
+                .read()
+                .await
+                .get(&id)
+                .expect("entity present")
+                .is_archived()
+        );
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&unarchive_uri, json!({})), &curator),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        assert!(
+            !state
+                .entities
+                .read()
+                .await
+                .get(&id)
+                .expect("entity present")
+                .is_archived()
+        );
+    }
+
+    /// **The §4 non-regression guard.** The default response must keep returning archived rows.
+    /// Six of the seven `useEntities()` consumers resolve entity names — the ledger feed, the
+    /// per-row ledger scope cell, the recovery panel, the RBAC scope picker, the admin integrations
+    /// panel, the signing-workflows page — and only the book-open picker chooses a target for new
+    /// work. A default that hid archived rows would render an archived entity's ledger rows as a
+    /// bare UUID: the "can no longer name its own parties" evidentiary failure, displaced one layer
+    /// outward. Hiding is opt-in, and this test is what keeps it that way.
+    #[tokio::test]
+    async fn archived_entities_stay_in_the_default_list_and_the_tri_state_filter_narrows() {
+        let state = AppState::default();
+        let token = token_for_role(&state, "amelia.marques", OWNER_ROLE_ID).await;
+        let active_id = created_entity(&state, &token, "Ativa Lda", "active-nipc").await;
+        let retired_id = created_entity(&state, &token, "Retirada Lda", "retired-nipc").await;
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/entities/{retired_id}/archive"), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        let ids = |body: &Value| -> Vec<String> {
+            let mut out: Vec<String> = body
+                .as_array()
+                .expect("list is an array")
+                .iter()
+                .map(|row| row["id"].as_str().expect("row id").to_owned())
+                .collect();
+            out.sort();
+            out
+        };
+        let mut both = vec![active_id.to_string(), retired_id.to_string()];
+        both.sort();
+
+        for uri in ["/v1/entities", "/v1/entities?archived=include"] {
+            let (status, body) = send_raw(state.clone(), with_session(get(uri), &token)).await;
+            assert_eq!(status, StatusCode::OK);
+            assert_eq!(ids(&body), both, "{uri} must still return archived rows");
+        }
+        // And the row carries the state, so a consumer that now receives it can render it.
+        let (_, body) = send_raw(
+            state.clone(),
+            with_session(get("/v1/entities"), &token),
+        )
+        .await;
+        let retired_row = body
+            .as_array()
+            .expect("list is an array")
+            .iter()
+            .find(|row| row["id"] == retired_id.to_string())
+            .expect("archived row is listed")
+            .clone();
+        assert_eq!(retired_row["archived"], true);
+        assert!(retired_row["archived_at"].is_string());
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(get("/v1/entities?archived=exclude"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ids(&body), vec![active_id.to_string()]);
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(get("/v1/entities?archived=only"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(ids(&body), vec![retired_id.to_string()]);
+
+        // The same tri-state on the bounded companion route.
+        let page_ids = |body: &Value| -> Vec<String> {
+            let mut out: Vec<String> = body["items"]
+                .as_array()
+                .expect("items is an array")
+                .iter()
+                .map(|row| row["id"].as_str().expect("row id").to_owned())
+                .collect();
+            out.sort();
+            out
+        };
+        for (uri, expected) in [
+            ("/v1/entities/page", both.clone()),
+            ("/v1/entities/page?archived=include", both.clone()),
+            (
+                "/v1/entities/page?archived=exclude",
+                vec![active_id.to_string()],
+            ),
+            (
+                "/v1/entities/page?archived=only",
+                vec![retired_id.to_string()],
+            ),
+        ] {
+            let (status, body) = send_raw(state.clone(), with_session(get(uri), &token)).await;
+            assert_eq!(status, StatusCode::OK, "{uri}: {body}");
+            assert_eq!(page_ids(&body), expected, "{uri}");
+        }
+
+        // An unknown value is refused rather than silently treated as the default: a caller who
+        // asked to hide archived rows and was quietly shown all of them would never know.
+        for uri in [
+            "/v1/entities?archived=hidden",
+            "/v1/entities/page?archived=hidden",
+        ] {
+            let (status, body) = send_raw(state.clone(), with_session(get(uri), &token)).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{uri}: {body}");
+        }
+    }
+
+    /// **R3: the archived filter is joined to the page cursor fingerprint.** A cursor minted under
+    /// one filter value must not keep paging another's cached result set. Asserted on observed
+    /// behaviour — mint a real cursor, replay it under a different filter — rather than by reading
+    /// the fingerprint list, because a missing entry fails silently by serving stale rows.
+    #[tokio::test]
+    async fn entity_page_cursor_does_not_survive_a_change_of_archived_filter() {
+        let state = AppState::default();
+        let token = token_for_role(&state, "amelia.marques", OWNER_ROLE_ID).await;
+        for (index, name) in ["Alfa Lda", "Beta Lda", "Gama Lda"].into_iter().enumerate() {
+            created_entity(&state, &token, name, &format!("cursor-nipc-{index}")).await;
+        }
+
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(get("/v1/entities/page?limit=1&archived=include"), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let cursor = body["next_cursor"]
+            .as_str()
+            .expect("a bounded page with more rows mints a cursor")
+            .to_owned();
+
+        // Same filter: the cursor is accepted.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                get(&format!(
+                    "/v1/entities/page?limit=1&archived=include&cursor={cursor}"
+                )),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        // Absent `archived=` is the same query as an explicit `include`, so it shares the cursor.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                get(&format!("/v1/entities/page?limit=1&cursor={cursor}")),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "an absent filter and an explicit include are one query: {body}"
+        );
+
+        // A different filter value: refused, rather than paging the wrong set.
+        for value in ["exclude", "only"] {
+            let (status, body) = send_raw(
+                state.clone(),
+                with_session(
+                    get(&format!(
+                        "/v1/entities/page?limit=1&archived={value}&cursor={cursor}"
+                    )),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(
+                status,
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "archived={value} must reject a cursor minted under include: {body}"
+            );
+        }
     }
 }

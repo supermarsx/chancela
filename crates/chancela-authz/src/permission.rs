@@ -40,7 +40,17 @@ pub enum Permission {
     EntityUpdate,
     #[serde(rename = "entity.registry.import")]
     EntityRegistryImport,
-    /// Reserved for t62 (entity archival becomes permission-gated).
+    /// Retire an entity from **new authorship**, and return it — `POST /v1/entities/{id}/archive`
+    /// and `.../unarchive`, both gated on this verb at the entity's scope.
+    ///
+    /// Deliberately separate from [`EntityUpdate`](Permission::EntityUpdate): the seeded **Records
+    /// Manager** role holds this verb and *not* `entity.update`, which is lifecycle curation without
+    /// content authorship. Both directions share this one verb because the authority to retire is
+    /// the authority to un-retire — there is no threat model separating them, and archiving is
+    /// reversible and separately ledgered in each direction.
+    ///
+    /// Granting it withdraws nothing evidentiary: an archived entity stays readable, resolvable,
+    /// searchable and exportable, and only the invitation to *start* new work is removed.
     #[serde(rename = "entity.archive")]
     EntityArchive,
 
