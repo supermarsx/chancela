@@ -88,6 +88,8 @@ import {
   type WorkflowSettings,
 } from '../../api/types';
 import { UI_VERSION, displayVersion } from '../../api/versionCheck';
+import { BUILD_COMMIT } from './buildProvenance';
+import { BuildProvenanceRows } from './BuildProvenanceRows';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
@@ -3417,6 +3419,10 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                     )}
                   </td>
                 </tr>
+                {/* Build provenance (t100) — the commit behind this bundle, beside the version and
+                    never in place of it. `BUILD_COMMIT` is `null` on a build made without a
+                    repository, and the rows then say so; see BuildProvenanceRows. */}
+                <BuildProvenanceRows commit={BUILD_COMMIT} />
                 <tr>
                   <th scope="row">{t('settings.about.ledger')}</th>
                   <td>

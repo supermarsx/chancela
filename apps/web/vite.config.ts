@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import { execFileSync } from 'node:child_process';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import pkg from './package.json';
@@ -7,6 +8,82 @@ import pkg from './package.json';
 // `__APP_VERSION__` global (see src/vite-env.d.ts). The version-check on boot compares it
 // against the server's `/health` version to warn when the server binary is stale.
 const appVersion: string = pkg.version;
+
+/**
+ * BUILD PROVENANCE (t100) — which commit this bundle was built from, inlined as the
+ * `__BUILD_COMMIT__` global (see src/vite-env.d.ts) and read by exactly ONE surface:
+ * Settings → «Sobre». The web app cannot shell out to git at runtime, so it is resolved here.
+ *
+ * It sits BESIDE the release version and never in place of it. `__APP_VERSION__` remains the sole
+ * CalVer value, `displayVersion()` keeps owning the user-facing `YY.N` form, and the version-skew
+ * comparison in `src/api/versionCheck.ts` never reads these fields — they are provenance, not a
+ * version (see VERSIONING.md).
+ *
+ * ─── IT MUST BUILD WHERE GIT IS ABSENT ─────────────────────────────────────────────────────────
+ *
+ * `.dockerignore` excludes `.git`, so the `web-build` stage of `docker/Dockerfile.server` and of
+ * `Dockerfile.hardened` runs `npm run build --workspace apps/web` against a context with no
+ * repository in it at all. `git` can also be missing from PATH, and a source tarball carries no
+ * history either. Every one of those resolves to `null` here, and the Sobre screen then says in
+ * words that the build carries no provenance. A build that failed for want of a codename would be
+ * far worse than a build without one; a fabricated hash would be worse still.
+ *
+ * CI is not one of those cases: `actions/checkout` leaves a real `.git`, and even the depth-1
+ * shallow clones the web job uses contain HEAD — the only commit this reads.
+ *
+ * ─── THE ENV OVERRIDE ──────────────────────────────────────────────────────────────────────────
+ *
+ * `CHANCELA_BUILD_COMMIT` / `CHANCELA_BUILD_COMMIT_DATE` let a build that HAS the facts but not the
+ * repository supply them (the Docker case, whenever someone wires them as build args). Both must be
+ * set or the pair is ignored: a half-supplied override degrades to "no provenance" rather than to a
+ * plausible-looking half-truth.
+ *
+ * ─── COMMITTER DATE, NOT AUTHOR DATE, AND NEVER BUILD TIME ─────────────────────────────────────
+ *
+ * `%cI` is the *committer* date in strict ISO 8601 with an explicit offset. Committer date because
+ * it is when the commit entered this history: a rebased or cherry-picked commit keeps its original
+ * author date, which would stamp the build with work predating the branch it was actually built
+ * from. Build time is deliberately not recorded — what is wanted is the commit's own date.
+ *
+ * ─── NO VALIDATION HERE ────────────────────────────────────────────────────────────────────────
+ *
+ * This reads two strings and does not judge them. Shape checking lives in
+ * `src/features/settings/buildProvenance.ts`, which is covered by tests; anything malformed —
+ * from git or from the env — is rejected there and renders as "not available" rather than reaching
+ * the screen. Duplicating the patterns into this untested file would only let the two drift.
+ */
+type RawBuildCommit = { hash: string; committedAt: string } | null;
+
+function buildCommitFromEnv(): RawBuildCommit {
+  const hash = process.env.CHANCELA_BUILD_COMMIT;
+  const committedAt = process.env.CHANCELA_BUILD_COMMIT_DATE;
+  if (!hash || !committedAt) {
+    return null;
+  }
+  return { hash: hash.trim(), committedAt: committedAt.trim() };
+}
+
+function buildCommitFromGit(): RawBuildCommit {
+  try {
+    const out = execFileSync('git', ['log', '-1', '--format=%H%n%cI'], {
+      encoding: 'utf8',
+      // stderr discarded: outside a repository git writes a fatal line that is not this build's
+      // problem, and the empty result already carries the whole answer.
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 10_000,
+    });
+    const [hash, committedAt] = out.split('\n').map((line) => line.trim());
+    if (!hash || !committedAt) {
+      return null;
+    }
+    return { hash, committedAt };
+  } catch {
+    // No git binary, no repository, no commits yet, or a git that hung: all the same answer.
+    return null;
+  }
+}
+
+const buildCommit: RawBuildCommit = buildCommitFromEnv() ?? buildCommitFromGit();
 
 function manualChunks(id: string): string | undefined {
   if (!id.includes('node_modules')) {
@@ -71,6 +148,9 @@ export default defineConfig({
   plugins: [react(), stripCspMetaInDev()],
   define: {
     __APP_VERSION__: JSON.stringify(appVersion),
+    // `JSON.stringify(null)` is the string "null", so an absent repository inlines a literal
+    // `null` — the one value `describeBuildCommit()` reads as "this build has no provenance".
+    __BUILD_COMMIT__: JSON.stringify(buildCommit),
   },
   server: {
     // Dev-only anti-clickjacking hardening so `npm run dev` (Vite :5173) matches the

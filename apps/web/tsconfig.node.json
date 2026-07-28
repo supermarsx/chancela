@@ -22,5 +22,5 @@
 
     "types": ["vitest/config"]
   },
-  "include": ["vite.config.ts"]
+  "include": ["vite.config.ts", "vite-config-node.d.ts"]
 }
