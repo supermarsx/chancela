@@ -1,0 +1,192 @@
+name: Auto release
+
+# Cuts a CalVer `YY.N` release: computes the next version from the existing
+# tags, rewrites every version-carrying manifest, commits, tags, pushes the tag
+# and hands off to release.yml for packaging. See VERSIONING.md.
+#
+# WHY NOT "every green push to main": main takes well over a hundred commits on
+# a busy day. Releasing on each one would burn `26.1 … 26.160` in a day and make
+# the number meaningless in a product that prints its version in the About tab
+# and alongside evidentiary documents. A release is therefore a decision:
+#
+#   - workflow_dispatch — a human cuts a release on demand.
+#   - push to main whose HEAD commit carries a `Release: yes` trailer — the
+#     decision is recorded in the commit that earns the release.
+#
+# Everything after the trigger is automatic.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Compute the release and print the manifest edits without committing, tagging or packaging"
+        type: boolean
+        default: false
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+# Serialize: two releases computing "the next N" concurrently would both read
+# the same highest tag and race to claim it.
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Decide: the loop guard. This job is the only thing standing between a bump
+  # commit landing on main and that push cutting another release.
+  # ---------------------------------------------------------------------------
+  decide:
+    name: Decide whether to release
+    runs-on: ubuntu-latest
+    outputs:
+      release: ${{ steps.gate.outputs.release }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      # The commit message is read out of git rather than interpolated from the
+      # event payload: `${{ github.event.head_commit.message }}` inside a run
+      # block is attacker-controlled text pasted into a shell script.
+      - name: Gate on trigger and commit trailer
+        id: gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            echo "Manual dispatch: releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # LOOP GUARD 3 of 4: the bump commit is authored by the bot, so a push
+          # that carried it can never be mistaken for a human release decision.
+          if [ "$ACTOR" = "github-actions[bot]" ]; then
+            echo "Push actor is github-actions[bot]: not releasing."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          message="$(git log -1 --format=%B)"
+
+          # LOOP GUARD 2 of 4: the bump commit subject carries [skip ci].
+          if printf '%s' "$message" | grep -qiF '[skip ci]'; then
+            echo "Head commit is marked [skip ci]: not releasing."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # LOOP GUARD 1 of 4: the bump commit carries no Release trailer, and
+          # only a `Release: yes` trailer opts a push into a release.
+          trailer="$(git log -1 --format='%(trailers:key=Release,valueonly)' | tr -d '[:space:]')"
+          if [ "$(printf '%s' "$trailer" | tr '[:upper:]' '[:lower:]')" = "yes" ]; then
+            echo "Head commit carries a 'Release: yes' trailer: releasing."
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Head commit has no 'Release: yes' trailer: not releasing."
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Bump: compute, rewrite, verify, commit, tag, push.
+  # ---------------------------------------------------------------------------
+  bump:
+    name: Bump and tag
+    needs: decide
+    if: needs.decide.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      dry_run: ${{ steps.mode.outputs.dry_run }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # The next version is derived from the tag list, so every tag has to
+          # be present. A shallow clone would silently look like "no releases
+          # yet" and reset N to 1.
+          fetch-depth: 0
+
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
+      - name: Activate npm 12.0.1
+        run: npm install --global npm@12.0.1
+
+      - name: Resolve mode
+        id: mode
+        shell: bash
+        env:
+          DRY_RUN: ${{ github.event.inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "${DRY_RUN:-false}" = "true" ]; then
+            echo "dry_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "dry_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # The version rules are the part that must not be wrong, so their tests
+      # run before they are used rather than only in the CI lane.
+      - name: Test the version computation
+        run: node --test scripts/release-version.test.mjs
+
+      - name: Configure the bot identity
+        if: steps.mode.outputs.dry_run != 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+      - name: Compute, rewrite manifests, commit and tag
+        id: bump
+        run: |
+          node scripts/release-version.mjs bump \
+            ${{ steps.mode.outputs.dry_run == 'true' && '--dry-run' || '--commit --tag' }} \
+            --emit-github-output
+
+      - name: Verify release metadata versions agree
+        run: npm run check:versions
+
+      # Pushed as two commands so a rejected branch push (someone else landed on
+      # main between checkout and push) fails before the tag is published, rather
+      # than leaving a tag pointing at a commit that never reached main.
+      - name: Push the bump commit and the tag
+        if: steps.mode.outputs.dry_run != 'true'
+        run: |
+          git push origin HEAD:main
+          git push origin "${{ steps.bump.outputs.tag }}"
+
+      - name: Summarize
+        shell: bash
+        run: |
+          {
+            echo "### Release ${{ steps.bump.outputs.version }}"
+            echo ""
+            echo "- Tag: \`${{ steps.bump.outputs.tag }}\`"
+            echo "- Manifest version: \`${{ steps.bump.outputs.manifest_version }}\`"
+            echo "- Manifests rewritten: \`${{ steps.bump.outputs.changed }}\`"
+            echo "- Dry run: \`${{ steps.mode.outputs.dry_run }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Package the tag that was just created. release.yml is called rather than
+  # left to its own `push: tags` trigger, which a GITHUB_TOKEN push never fires.
+  # ---------------------------------------------------------------------------
+  release:
+    name: Package
+    needs: bump
+    if: needs.bump.outputs.dry_run != 'true'
+    uses: ./.github/workflows/release.yml
+    with:
+      ref: ${{ needs.bump.outputs.tag }}

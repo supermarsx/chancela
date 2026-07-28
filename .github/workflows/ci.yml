@@ -49,6 +49,12 @@ jobs:
       - name: Check release versions
         run: npm run check:versions
 
+      # The CalVer computation decides what number a release is stamped with, so
+      # it is gated here next to check:versions rather than only exercised when
+      # auto-release.yml runs.
+      - name: Check release version computation
+        run: npm run test:release-version
+
       - name: Check spec coverage tracker
         run: npm run check:spec-coverage
 

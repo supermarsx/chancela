@@ -5,6 +5,18 @@ on:
   push:
     tags:
       - "v*"
+  # auto-release.yml calls this workflow directly instead of relying on its own
+  # tag push to fire the trigger above: a push made with GITHUB_TOKEN does not
+  # create new workflow runs, so the `push: tags` path only covers tags pushed
+  # by a human. `ref` carries the freshly created tag, because a called workflow
+  # otherwise checks out the caller's ref (main, still at the pre-bump commit)
+  # and would package the previous version.
+  workflow_call:
+    inputs:
+      ref:
+        description: "Git ref to package. Defaults to the triggering ref."
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -36,6 +48,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          # Empty for every trigger except workflow_call, where it is the tag
+          # auto-release.yml just created.
+          ref: ${{ inputs.ref || github.ref }}
 
       - name: Install PC/SC system deps (Linux)
         if: runner.os == 'Linux'
