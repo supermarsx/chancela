@@ -767,7 +767,7 @@ async fn evict_sessions_by_digest(state: &AppState, token_sha256: &str) {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use axum::body::{Body, to_bytes};
     use axum::http::header::CONTENT_TYPE;
@@ -776,6 +776,7 @@ mod tests {
     use tower::ServiceExt;
 
     use super::*;
+    use crate::ProviderCredentialStore;
     use crate::actor::SESSION_HEADER;
 
     struct TempDir {
@@ -793,6 +794,32 @@ mod tests {
     impl Drop for TempDir {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
+    /// A fixed DB key so the derived-root credential key source resolves deterministically (mirrors
+    /// the `secretstore_persist` / `smtp_settings` tests).
+    const TEST_DB_KEY: &[u8] = b"t70-pairing-totp-test-db-key-000001";
+
+    /// A durable state whose credential store has an explicit key source, for the cases that enrol a
+    /// real TOTP factor.
+    ///
+    /// A TOTP secret rides the credential store
+    /// ([`CredentialMode::TwoFactorTotp`](crate::secretstore_persist::CredentialMode)), which fails
+    /// closed rather than persist a secret it cannot seal. A plain `AppState::with_data_dir` state
+    /// resolves its root through `secretstore::resolve_root`, whose first source is the platform
+    /// protector — present on Windows (DPAPI), `None` everywhere else. Off Windows that state has no
+    /// key at all, so these tests must name the derived-root DB key themselves; otherwise they could
+    /// only ever pass on Windows. Gating them to Windows was the alternative and is wrong: device
+    /// pairing by second factor is a security path, and CI runs on Linux and macOS.
+    fn state_with_totp_credential_store(dir: &Path) -> AppState {
+        AppState {
+            provider_credentials: Arc::new(ProviderCredentialStore::load_with_db_key(
+                dir,
+                TEST_DB_KEY,
+                false,
+            )),
+            ..AppState::with_data_dir(dir)
         }
     }
 
@@ -1314,10 +1341,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_wrong_totp_code_does_not_pair() {
-        // A stored TOTP secret needs a durable credential store, so this case cannot run
-        // on the in-memory state the password cases use.
+        // A stored TOTP secret needs a durable credential store with a resolvable root key, so this
+        // case cannot run on the in-memory state the password cases use.
         let temp = TempDir::new();
-        let state = AppState::with_data_dir(temp.path.clone());
+        let state = state_with_totp_credential_store(&temp.path);
         let (operator, user_id) = operator_account(&state).await;
         enrol_confirmed_totp(&state, &operator, &user_id).await;
         let code = mint_code(&state, &operator).await;
@@ -1332,10 +1359,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_totp_code_confirms_the_exchange_without_a_password() {
-        // A stored TOTP secret needs a durable credential store, so this case cannot run
-        // on the in-memory state the password cases use.
+        // A stored TOTP secret needs a durable credential store with a resolvable root key, so this
+        // case cannot run on the in-memory state the password cases use.
         let temp = TempDir::new();
-        let state = AppState::with_data_dir(temp.path.clone());
+        let state = state_with_totp_credential_store(&temp.path);
         let (operator, user_id) = operator_account(&state).await;
         let secret = enrol_confirmed_totp(&state, &operator, &user_id).await;
         let code = mint_code(&state, &operator).await;
@@ -1360,10 +1387,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_deployment_can_accept_only_password_free_confirmation() {
-        // A stored TOTP secret needs a durable credential store, so this case cannot run
-        // on the in-memory state the password cases use.
+        // A stored TOTP secret needs a durable credential store with a resolvable root key, so this
+        // case cannot run on the in-memory state the password cases use.
         let temp = TempDir::new();
-        let state = AppState::with_data_dir(temp.path.clone());
+        let state = state_with_totp_credential_store(&temp.path);
         let (operator, user_id) = operator_account(&state).await;
         let secret = enrol_confirmed_totp(&state, &operator, &user_id).await;
         accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
@@ -1408,10 +1435,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_totp_code_cannot_confirm_two_pairings() {
-        // A stored TOTP secret needs a durable credential store, so this case cannot run
-        // on the in-memory state the password cases use.
+        // A stored TOTP secret needs a durable credential store with a resolvable root key, so this
+        // case cannot run on the in-memory state the password cases use.
         let temp = TempDir::new();
-        let state = AppState::with_data_dir(temp.path.clone());
+        let state = state_with_totp_credential_store(&temp.path);
         let (operator, user_id) = operator_account(&state).await;
         let secret = enrol_confirmed_totp(&state, &operator, &user_id).await;
         let presented = live_totp_code(&secret);
@@ -1436,10 +1463,10 @@ mod tests {
 
     #[tokio::test]
     async fn a_pending_second_factor_cannot_confirm_a_pairing() {
-        // A stored TOTP secret needs a durable credential store, so this case cannot run
-        // on the in-memory state the password cases use.
+        // A stored TOTP secret needs a durable credential store with a resolvable root key, so this
+        // case cannot run on the in-memory state the password cases use.
         let temp = TempDir::new();
-        let state = AppState::with_data_dir(temp.path.clone());
+        let state = state_with_totp_credential_store(&temp.path);
         let (operator, user_id) = operator_account(&state).await;
         // Enrol but never confirm: a secret exists, an active factor does not.
         let (status, started) = json_response(
