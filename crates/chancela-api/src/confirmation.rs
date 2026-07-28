@@ -2217,12 +2217,13 @@ pub(crate) async fn require_confirmation(
 /// reach the device being enrolled. A deployment that wants that guarantee absolutely can drop
 /// [`Password`](Self::Password) from [`PairingConfirmationSettings::accepted`].
 ///
-/// **`EmailLink` is deliberately absent for now.** The emailed-link method is not implemented yet
-/// (it needs a two-round-trip pending-exchange protocol, and it collides with a promise this
-/// product's outgoing mail currently makes in all 14 locales — `email_template.rs`'s
-/// `welcome_never_sends`). Naming a method here that the server cannot actually perform would put a
-/// value in the settings surface and on the wire that resolves to "pairing is impossible". Adding
-/// the variant later is purely additive.
+/// **There is no `EmailLink` method, and that is a decision rather than an omission.** The emailed
+/// method is a code the operator **transcribes**, never a link they click. This product's outgoing
+/// mail tells every recipient, in all 14 locales, that it never sends access links and that a
+/// message which does should be reported to an administrator (`email_template.rs`'s
+/// `welcome_never_sends`). A clickable pairing link would make our own mail train operators to
+/// click exactly what we told them to report, so the promise stands unchanged and the credential
+/// changed shape instead.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PairingConfirmationMethod {
@@ -2230,11 +2231,14 @@ pub enum PairingConfirmationMethod {
     Password,
     /// A live TOTP code from the operator's **confirmed** second factor.
     TotpCode,
+    /// A ~79-bit code mailed to the operator's registered address at mint time and typed back in.
+    /// Proves control of a second channel without any reusable secret reaching the device.
+    EmailedCode,
 }
 
 impl PairingConfirmationMethod {
     /// Every variant, in wire order.
-    pub const ALL: &'static [Self] = &[Self::Password, Self::TotpCode];
+    pub const ALL: &'static [Self] = &[Self::Password, Self::TotpCode, Self::EmailedCode];
 
     /// The stable wire identifier (matches the serde representation).
     #[must_use]
@@ -2242,6 +2246,7 @@ impl PairingConfirmationMethod {
         match self {
             Self::Password => "password",
             Self::TotpCode => "totp_code",
+            Self::EmailedCode => "emailed_code",
         }
     }
 }
@@ -2295,6 +2300,11 @@ pub struct PairingConfirmationProof {
     pub password: Option<String>,
     #[serde(default)]
     pub totp_code: Option<String>,
+    /// The code mailed to the operator when the pairing code was minted. Accepted in any letter
+    /// case and with or without the group separators — see
+    /// [`canonicalize_transcribable`](crate::auth_token::canonicalize_transcribable).
+    #[serde(default)]
+    pub emailed_code: Option<String>,
 }
 
 /// The single, uniform refusal for an unconfirmed pairing.
@@ -2350,6 +2360,26 @@ pub(crate) async fn require_pairing_confirmation(
         && crate::totp::verify_totp_for_user(state, user, supplied, now).await?
     {
         return Ok(PairingConfirmationMethod::TotpCode);
+    }
+
+    // The mailed code. Redeemed through the shared `auth_token` store, which removes the record
+    // before returning it — so a code is spent by the attempt, not by the success, and the arms
+    // below cannot leave it replayable. The subject is checked here rather than trusted: a record
+    // for a different user must not confirm this pairing even though the purpose matches.
+    if accepted.contains(&PairingConfirmationMethod::EmailedCode)
+        && let Some(supplied) = proof.emailed_code.as_deref()
+    {
+        let canonical = crate::auth_token::canonicalize_transcribable(supplied);
+        let redeemed = state.auth_tokens.write().await.redeem(
+            crate::auth_token::AuthTokenPurpose::DevicePairingConfirmation,
+            &canonical,
+            now,
+        );
+        if let Ok(record) = redeemed
+            && record.subject.user_id() == Some(user.id.0)
+        {
+            return Ok(PairingConfirmationMethod::EmailedCode);
+        }
     }
 
     Err(pairing_not_confirmed())

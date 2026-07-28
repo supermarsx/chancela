@@ -517,6 +517,99 @@ pub fn welcome_email(input: &WelcomeEmail<'_>) -> RenderedEmail {
     shell.render(copy.welcome_subject.to_owned())
 }
 
+/// The device-pairing confirmation message (t70).
+pub struct PairingCodeEmail<'a> {
+    pub recipient_name: Option<&'a str>,
+    /// The instance the pairing is happening on.
+    pub instance_name: &'a str,
+    /// The transcribed confirmation code, in canonical `XXXX-XXXX-XXXX-XXXX` form.
+    pub code: &'a str,
+    /// How many minutes the code stays valid, for the deadline line.
+    pub expires_in_minutes: i64,
+    /// The label the operator gave the device being enrolled, when they gave one.
+    pub device_label: Option<&'a str>,
+    pub locale: &'a str,
+}
+
+/// Render the device-pairing confirmation message.
+///
+/// ## Why this carries a credential when [`welcome_email`] refuses to
+///
+/// [`welcome_email`]'s doc says mail is not a confidential channel, and that is still true. The
+/// difference is what the credential is worth on its own: this code confirms a pairing **already in
+/// progress** and is useless without the separate, five-minute pairing code shown on the operator's
+/// own screen. A mailbox copy of this message grants nothing. A mailed password would have granted
+/// everything, which is why that one is still refused.
+///
+/// ## Why the code is transcribed and there is no link in here
+///
+/// [`EmailCopy::welcome_never_sends`] promises every recipient, in all 14 locales, that this product
+/// never sends access links and that a message which does should be reported to an administrator.
+/// That promise is not reworded — instead this message contains nothing to click. The type has no
+/// URL field, so a later caller cannot add a link without changing this signature first, which is
+/// the same structural guard `WelcomeEmail` uses to keep passwords out of the welcome mail.
+///
+/// The message also states plainly that nobody will ever ask the recipient to forward or read out
+/// this code, which is what lets them recognise the social-engineering call that asks them to.
+pub fn pairing_code_email(input: &PairingCodeEmail<'_>) -> RenderedEmail {
+    let copy = copy_for(input.locale);
+
+    let mut lede: Vec<&str> = Vec::new();
+    let greeting;
+    if let Some(name) = input
+        .recipient_name
+        .map(str::trim)
+        .filter(|n| !n.is_empty())
+    {
+        greeting = copy.welcome_greeting.replace("{name}", name);
+        lede.push(&greeting);
+    }
+    lede.push(copy.pairing_lede);
+
+    let expiry = copy
+        .pairing_expiry
+        .replace("{minutes}", &input.expires_in_minutes.to_string());
+
+    let mut rows = vec![
+        Row {
+            label: copy.label_instance,
+            value: input.instance_name,
+            mono: false,
+        },
+        Row {
+            label: copy.pairing_label_code,
+            value: input.code,
+            mono: true,
+        },
+    ];
+    // Appended as its own labelled row rather than interpolated into a sentence: the label is
+    // operator-supplied text of unknown gender and number, and dropping it into an inflected
+    // Portuguese clause breaks agreement.
+    if let Some(label) = input.device_label.map(str::trim).filter(|l| !l.is_empty()) {
+        rows.push(Row {
+            label: copy.pairing_label_device,
+            value: label,
+            mono: false,
+        });
+    }
+    rows.push(Row {
+        label: copy.pairing_label_expiry,
+        value: &expiry,
+        mono: false,
+    });
+
+    let shell = Shell {
+        instance_name: input.instance_name,
+        badge: None,
+        heading: copy.pairing_heading,
+        lede,
+        rows,
+        notes: vec![copy.pairing_not_requested, copy.pairing_never_asks],
+        footer: copy.footer_automated,
+    };
+    shell.render(copy.pairing_subject.to_owned())
+}
+
 // --- Copy ----------------------------------------------------------------------------------------
 
 /// The typed key-set every locale must supply in full.
@@ -555,6 +648,17 @@ pub struct EmailCopy {
     pub welcome_label_sign_in: &'static str,
     pub welcome_credentials: &'static str,
     pub welcome_never_sends: &'static str,
+    // Device-pairing confirmation (t70).
+    pub pairing_subject: &'static str,
+    pub pairing_heading: &'static str,
+    pub pairing_lede: &'static str,
+    pub pairing_label_code: &'static str,
+    pub pairing_label_device: &'static str,
+    pub pairing_label_expiry: &'static str,
+    /// Carries a `{minutes}` placeholder.
+    pub pairing_expiry: &'static str,
+    pub pairing_not_requested: &'static str,
+    pub pairing_never_asks: &'static str,
 }
 
 /// The 14 shipped locales, in the same order as `apps/web/src/i18n`.
@@ -632,6 +736,15 @@ static PT_PT: EmailCopy = EmailCopy {
          de acesso separadamente.",
     welcome_never_sends: "A Chancela nunca envia palavras-passe nem ligações de acesso por email. Se receber uma \
          mensagem que o faça, comunique-a a um administrador.",
+    pairing_subject: "Chancela — código de confirmação de emparelhamento",
+    pairing_heading: "Código de confirmação de emparelhamento",
+    pairing_lede: "Foi pedido o emparelhamento de um dispositivo com a sua conta. Escreva o código abaixo nesse dispositivo para confirmar.",
+    pairing_label_code: "Código",
+    pairing_label_device: "Dispositivo",
+    pairing_label_expiry: "Validade",
+    pairing_expiry: "{minutes} minutos a partir do envio desta mensagem.",
+    pairing_not_requested: "Se não foi você que pediu este emparelhamento, ignore esta mensagem e comunique-a a um administrador. Sem o código de emparelhamento mostrado no seu próprio ecrã, este código não dá acesso a nada.",
+    pairing_never_asks: "A Chancela nunca lhe pede que reencaminhe este código nem que o leia a outra pessoa. Nenhum funcionário, nem o suporte, precisa de o conhecer.",
 };
 
 /// Human-authored.
@@ -667,6 +780,15 @@ static EN_US: EmailCopy = EmailCopy {
          separately.",
     welcome_never_sends: "Chancela never sends passwords or sign-in links by email. If you receive a message that \
          does, report it to an administrator.",
+    pairing_subject: "Chancela — device pairing confirmation code",
+    pairing_heading: "Device pairing confirmation code",
+    pairing_lede: "Someone asked to pair a device with your account. Type the code below on that device to confirm.",
+    pairing_label_code: "Code",
+    pairing_label_device: "Device",
+    pairing_label_expiry: "Valid for",
+    pairing_expiry: "{minutes} minutes from the time this message was sent.",
+    pairing_not_requested: "If you did not request this pairing, ignore this message and report it to an administrator. Without the pairing code shown on your own screen, this code grants access to nothing.",
+    pairing_never_asks: "Chancela will never ask you to forward this code or read it out to anyone. No member of staff and no support agent needs to know it.",
 };
 
 /// Human-authored; British spelling. Identical to `EN_US` for this copy: none of these strings hit
@@ -704,6 +826,15 @@ static EN_GB: EmailCopy = EmailCopy {
          separately.",
     welcome_never_sends: "Chancela never sends passwords or sign-in links by email. If you receive a message that \
          does, report it to an administrator.",
+    pairing_subject: "Chancela — device pairing confirmation code",
+    pairing_heading: "Device pairing confirmation code",
+    pairing_lede: "Someone has asked to pair a device with your account. Type the code below on that device to confirm.",
+    pairing_label_code: "Code",
+    pairing_label_device: "Device",
+    pairing_label_expiry: "Valid for",
+    pairing_expiry: "{minutes} minutes from the time this message was sent.",
+    pairing_not_requested: "If you did not request this pairing, ignore this message and report it to an administrator. Without the pairing code shown on your own screen, this code grants access to nothing.",
+    pairing_never_asks: "Chancela will never ask you to forward this code or read it out to anyone. No member of staff and no support agent needs to know it.",
 };
 
 #[cfg(test)]

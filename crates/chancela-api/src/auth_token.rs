@@ -15,7 +15,7 @@
 //!
 //! | Property | How |
 //! |---|---|
-//! | Entropy | 256 bits from the OS CSPRNG per token ([`TOKEN_ENTROPY_BYTES`]). |
+//! | Entropy | 256 bits from the OS CSPRNG per token ([`TOKEN_ENTROPY_BYTES`]), or ~79 bits for a transcribed secret ([`AuthTokenStore::issue_transcribable`]). |
 //! | Storage | **Verifier only** — SHA-256 of the token bytes. The plaintext exists in exactly one place, the outbound message, and is unrecoverable from the store. |
 //! | Single use | [`AuthTokenStore::redeem`] removes the record *before* returning it, so the effect can never run twice off one token. |
 //! | Supersession | Issuing a token invalidates every earlier token of the same purpose for the same subject. |
@@ -41,7 +41,18 @@
 //! ([t95 §2.3 says the same thing about TOTP throttling]). [`AuthTokenPurpose::TwoFactorEmailCode`]
 //! therefore means *a full-entropy emailed confirmation token*, not a PIN.
 //!
-//! Magic link is **not** a purpose here: it was dropped from the tranche.
+//! **That rule is unchanged, and [`AuthTokenStore::issue_transcribable`] (t70) does not bend it.**
+//! The rule is about *entropy*, not about typing: what makes a PIN unsafe here is that ~20 bits is
+//! walkable without a counter, not that a human's fingers were involved. A transcribed secret of
+//! ~79 bits is a different object — the missing attempt counter is irrelevant to it, because there
+//! is no attempt budget at which guessing 2^79 becomes feasible. A six-digit PIN is still
+//! forbidden, and the way to tell the two apart is to compute the entropy rather than to look at
+//! whether it is typed.
+//!
+//! Magic link is **not** a purpose here: it was dropped from the tranche. Nor is any *clickable*
+//! emailed credential for pairing: [`AuthTokenPurpose::DevicePairingConfirmation`] is transcribed
+//! precisely so this product never mails a link that grants access, which is a promise its own
+//! outgoing mail already makes to recipients (`email_template.rs`'s `welcome_never_sends`).
 
 use std::collections::BTreeMap;
 
@@ -57,6 +68,79 @@ use zeroize::Zeroize;
 /// Bytes of OS entropy behind every token: 32 bytes = **256 bits**.
 pub const TOKEN_ENTROPY_BYTES: usize = 32;
 
+/// The alphabet a **transcribed** secret is drawn from: 31 symbols, with `0`, `O`, `1`, `I` and `L`
+/// removed so that what a human reads off a screen cannot be a different string from what was sent.
+/// The same alphabet `totp::generate_backup_code` uses, for one transcription vocabulary.
+const TRANSCRIBABLE_ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/// Symbols in a transcribed secret. **16 × log2(31) ≈ 79.3 bits** — see
+/// [`AuthTokenStore::issue_transcribable`] for why that number and not a smaller one.
+const TRANSCRIBABLE_SYMBOLS: usize = 16;
+
+/// Symbols per hyphen-separated group in the canonical rendering.
+const TRANSCRIBABLE_GROUP: usize = 4;
+
+/// The largest byte value that can be reduced mod 31 without bias: `31 * 8 = 248`, so `0..=247`
+/// covers each residue exactly 8 times and `248..=255` must be redrawn.
+const TRANSCRIBABLE_UNBIASED_CEILING: u8 = 248;
+
+/// Draw one uniformly-distributed symbol, redrawing on the biased tail.
+///
+/// **Rejection sampling, deliberately, and deliberately unlike `totp::generate_backup_code`**, which
+/// takes `byte % 31` on a uniform byte. 256 is not a multiple of 31, so that favours the first eight
+/// symbols by a factor of 9/8 and leaks a fraction of a bit per character. It is a small effect at
+/// backup-code length and this lane is not the place to change how backup codes are minted, but
+/// copying the pattern into new code would be propagating a flaw for the sake of symmetry.
+fn transcribable_symbol() -> u8 {
+    let mut buf = [0u8; 1];
+    loop {
+        OsRng.fill_bytes(&mut buf);
+        if buf[0] < TRANSCRIBABLE_UNBIASED_CEILING {
+            return TRANSCRIBABLE_ALPHABET[(buf[0] as usize) % TRANSCRIBABLE_ALPHABET.len()];
+        }
+    }
+}
+
+/// Generate a transcribed secret in canonical form (`XXXX-XXXX-XXXX-XXXX`).
+fn transcribable_secret() -> String {
+    let mut out = String::with_capacity(TRANSCRIBABLE_SYMBOLS + TRANSCRIBABLE_SYMBOLS / 4);
+    for i in 0..TRANSCRIBABLE_SYMBOLS {
+        if i > 0 && i % TRANSCRIBABLE_GROUP == 0 {
+            out.push('-');
+        }
+        out.push(transcribable_symbol() as char);
+    }
+    out
+}
+
+/// Put a transcribed secret into the exact form its verifier was computed over.
+///
+/// The verifier is a digest of the **canonical** string, so a presented value has to be canonical
+/// before it is looked up. This absorbs the two things a person reliably varies when copying from a
+/// mail client — letter case, and whether they typed the group separators — and **nothing else**.
+///
+/// In particular it does not try to repair a mistyped symbol. Mapping `0`→`O` or `1`→`I` would be
+/// guessing at what the operator meant about a credential, and a lookalike-repair table is how a
+/// secret quietly acquires extra accepted spellings. A character outside the alphabet survives
+/// canonicalisation unchanged, produces a different digest, and is refused — which is the honest
+/// outcome for "you typed it wrong".
+#[must_use]
+pub fn canonicalize_transcribable(presented: &str) -> String {
+    let stripped: String = presented
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '-')
+        .flat_map(char::to_uppercase)
+        .collect();
+    let mut out = String::with_capacity(stripped.len() + stripped.len() / 4);
+    for (i, c) in stripped.chars().enumerate() {
+        if i > 0 && i % TRANSCRIBABLE_GROUP == 0 {
+            out.push('-');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// What a token authorizes. The purpose is part of the lookup, so a recovery token presented to the
 /// invite endpoint is simply not found — cross-purpose replay fails as an unknown token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -71,6 +155,12 @@ pub enum AuthTokenPurpose {
     /// six-digit PIN.
     #[serde(rename = "two_factor_email_code")]
     TwoFactorEmailCode,
+    /// An emailed **transcribed** confirmation for a device pairing (t70). Issued when the operator
+    /// mints a pairing code and asks for it; presented back at
+    /// `POST /v1/pairing/exchange`. Deliberately transcribed rather than clicked — see
+    /// [`AuthTokenStore::issue_transcribable`].
+    #[serde(rename = "device_pairing_confirmation")]
+    DevicePairingConfirmation,
 }
 
 impl AuthTokenPurpose {
@@ -81,6 +171,7 @@ impl AuthTokenPurpose {
             AuthTokenPurpose::Invite => "invite",
             AuthTokenPurpose::PasswordRecovery => "password_recovery",
             AuthTokenPurpose::TwoFactorEmailCode => "two_factor_email_code",
+            AuthTokenPurpose::DevicePairingConfirmation => "device_pairing_confirmation",
         }
     }
 
@@ -93,6 +184,9 @@ impl AuthTokenPurpose {
             AuthTokenPurpose::Invite => Duration::hours(168),
             AuthTokenPurpose::PasswordRecovery => Duration::minutes(15),
             AuthTokenPurpose::TwoFactorEmailCode => Duration::minutes(10),
+            // Long enough for mail to arrive and be typed over; the pairing code it accompanies
+            // dies after five minutes anyway, so a longer life would outlive its own use.
+            AuthTokenPurpose::DevicePairingConfirmation => Duration::minutes(10),
         }
     }
 
@@ -105,6 +199,9 @@ impl AuthTokenPurpose {
             AuthTokenPurpose::Invite => (Duration::hours(1), Duration::days(30)),
             AuthTokenPurpose::PasswordRecovery => (Duration::minutes(5), Duration::hours(1)),
             AuthTokenPurpose::TwoFactorEmailCode => (Duration::minutes(2), Duration::minutes(30)),
+            AuthTokenPurpose::DevicePairingConfirmation => {
+                (Duration::minutes(5), Duration::minutes(30))
+            }
         }
     }
 
@@ -359,6 +456,54 @@ impl AuthTokenStore {
         let plaintext = B64URL.encode(bytes);
         bytes.zeroize();
 
+        let verifier = AuthTokenVerifier::of(&plaintext);
+        let record = AuthTokenRecord {
+            id: Uuid::new_v4(),
+            purpose,
+            subject,
+            issued_at: now,
+            expires_at: now.saturating_add(purpose.clamp_ttl(ttl)),
+            verifier,
+        };
+        self.records.insert(verifier, record.clone());
+        (AuthTokenSecret(plaintext), record)
+    }
+
+    /// Issue a token whose secret a person is expected to **read off a screen and type**, in the
+    /// canonical form `XXXX-XXXX-XXXX-XXXX`. Same store, same single-use redeem, same supersession,
+    /// same digest-only storage as [`issue`](Self::issue) — the only difference is the shape of the
+    /// secret.
+    ///
+    /// # The entropy, and why it is not smaller
+    ///
+    /// 16 symbols from a 31-symbol alphabet is **≈ 79.3 bits**. That is chosen to stand on its own:
+    /// at 79 bits the secret is out of reach of guessing whether or not anything else in the system
+    /// is working, so its safety is not an argument that depends on the surrounding controls
+    /// staying as they are.
+    ///
+    /// That distinction is the whole point. A device pairing does also carry single-use redemption,
+    /// a ten-minute life, supersession by the next issue, and — because
+    /// `pairing::PairingRegistry::redeem_code` consumes the pairing code on *any* attempt — an
+    /// effective budget of one guess per pairing session. Those are real, and they are **defence in
+    /// depth, not the reason this is safe**. If they were the reason, then a later change that
+    /// looked purely ergonomic (letting a failed exchange retry with the same pairing code, say)
+    /// would silently turn a sound credential into a guessable one, and nothing in the type system
+    /// would notice. Sizing the secret so it survives that change is cheaper than hoping nobody
+    /// makes it.
+    ///
+    /// A shorter code is therefore not a knob to turn. Six digits (~20 bits) is what the module
+    /// header forbids and remains forbidden.
+    pub fn issue_transcribable(
+        &mut self,
+        purpose: AuthTokenPurpose,
+        subject: AuthTokenSubject,
+        ttl: Duration,
+        now: OffsetDateTime,
+    ) -> (AuthTokenSecret, AuthTokenRecord) {
+        self.prune_expired(now);
+        self.invalidate_purpose_for_subject(purpose, &subject);
+
+        let plaintext = transcribable_secret();
         let verifier = AuthTokenVerifier::of(&plaintext);
         let record = AuthTokenRecord {
             id: Uuid::new_v4(),
@@ -860,11 +1005,143 @@ mod tests {
             AuthTokenPurpose::Invite,
             AuthTokenPurpose::PasswordRecovery,
             AuthTokenPurpose::TwoFactorEmailCode,
+            AuthTokenPurpose::DevicePairingConfirmation,
         ]
         .iter()
         .map(|p| p.as_str())
         .collect();
-        assert_eq!(ids.len(), 3);
+        assert_eq!(ids.len(), 4);
         assert!(serde_json::from_str::<AuthTokenPurpose>("\"magic_link\"").is_err());
+    }
+
+    // --- Transcribed secrets (t70) --------------------------------------------------------------
+
+    /// The shape is the entropy claim. 16 symbols from a 31-symbol alphabet is ~79.3 bits, and the
+    /// commit that introduced it argues from that number — so a later "make it friendlier" that
+    /// shortens the code has to come through this test rather than past it.
+    #[test]
+    fn a_transcribed_secret_has_the_length_its_entropy_claim_depends_on() {
+        let mut store = AuthTokenStore::new();
+        let now = OffsetDateTime::now_utc();
+        for _ in 0..64 {
+            let (secret, _) = store.issue_transcribable(
+                AuthTokenPurpose::DevicePairingConfirmation,
+                AuthTokenSubject::user(Uuid::new_v4()),
+                Duration::minutes(10),
+                now,
+            );
+            let shown = secret.expose();
+            assert_eq!(shown.len(), 19, "four groups of four plus three separators");
+            let symbols: Vec<char> = shown.chars().filter(|c| *c != '-').collect();
+            assert_eq!(symbols.len(), 16, "16 symbols carry the entropy");
+            for c in symbols {
+                assert!(
+                    TRANSCRIBABLE_ALPHABET.contains(&(c as u8)),
+                    "{c} is outside the unambiguous alphabet"
+                );
+                assert!(
+                    !"01ILO".contains(c),
+                    "{c} is a lookalike and must not be mintable"
+                );
+            }
+        }
+    }
+
+    /// Two secrets in a row must not collide. A generator wired to a constant seed, or one that
+    /// forgot to draw per symbol, passes every shape assertion above and fails this.
+    #[test]
+    fn transcribed_secrets_do_not_repeat() {
+        let mut store = AuthTokenStore::new();
+        let now = OffsetDateTime::now_utc();
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..200 {
+            let (secret, _) = store.issue_transcribable(
+                AuthTokenPurpose::DevicePairingConfirmation,
+                AuthTokenSubject::user(Uuid::new_v4()),
+                Duration::minutes(10),
+                now,
+            );
+            assert!(seen.insert(secret.expose().to_owned()), "secrets repeated");
+        }
+    }
+
+    /// Case and separators are absorbed; nothing else is. In particular a lookalike is NOT repaired
+    /// into the character it resembles — that would quietly give one secret several spellings.
+    #[test]
+    fn canonicalization_absorbs_transcription_variance_and_nothing_more() {
+        assert_eq!(
+            canonicalize_transcribable("abcd-efgh-jkmn-pqrs"),
+            "ABCD-EFGH-JKMN-PQRS"
+        );
+        assert_eq!(
+            canonicalize_transcribable("ABCDEFGHJKMNPQRS"),
+            "ABCD-EFGH-JKMN-PQRS"
+        );
+        assert_eq!(
+            canonicalize_transcribable("  ABCD EFGH\tJKMN\nPQRS "),
+            "ABCD-EFGH-JKMN-PQRS"
+        );
+        // `0` is not repaired to `O`, nor `1` to `I`: it stays wrong, and stays refused.
+        assert_ne!(
+            canonicalize_transcribable("0BCD-EFGH-JKMN-PQRS"),
+            "OBCD-EFGH-JKMN-PQRS"
+        );
+    }
+
+    /// The transcribed path inherits the store's rules rather than getting its own.
+    #[test]
+    fn a_transcribed_secret_is_single_use_and_subject_bound() {
+        let mut store = AuthTokenStore::new();
+        let now = OffsetDateTime::now_utc();
+        let user = Uuid::new_v4();
+        let (secret, _) = store.issue_transcribable(
+            AuthTokenPurpose::DevicePairingConfirmation,
+            AuthTokenSubject::user(user),
+            Duration::minutes(10),
+            now,
+        );
+        let presented = canonicalize_transcribable(secret.expose());
+
+        let record = store
+            .redeem(
+                AuthTokenPurpose::DevicePairingConfirmation,
+                &presented,
+                now,
+            )
+            .expect("first redeem succeeds");
+        assert_eq!(record.subject.user_id(), Some(user));
+        // Spent by the redeem, not by the caller's success.
+        assert!(
+            store
+                .redeem(
+                    AuthTokenPurpose::DevicePairingConfirmation,
+                    &presented,
+                    now
+                )
+                .is_err(),
+            "a transcribed secret is single use"
+        );
+    }
+
+    /// Presenting it to another purpose finds nothing, like every other token here.
+    #[test]
+    fn a_transcribed_secret_does_not_cross_purposes() {
+        let mut store = AuthTokenStore::new();
+        let now = OffsetDateTime::now_utc();
+        let (secret, _) = store.issue_transcribable(
+            AuthTokenPurpose::DevicePairingConfirmation,
+            AuthTokenSubject::user(Uuid::new_v4()),
+            Duration::minutes(10),
+            now,
+        );
+        assert!(
+            store
+                .redeem(
+                    AuthTokenPurpose::PasswordRecovery,
+                    &canonicalize_transcribable(secret.expose()),
+                    now
+                )
+                .is_err()
+        );
     }
 }

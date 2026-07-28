@@ -60,6 +60,15 @@ pub static PT_BR: EmailCopy = EmailCopy {
          separadamente.",
     welcome_never_sends: "A Chancela nunca envia senhas nem links de acesso por e-mail. Se você receber uma \
          mensagem que faça isso, comunique-a a um administrador.",
+    pairing_subject: "Chancela — código de confirmação de pareamento",
+    pairing_heading: "Código de confirmação de pareamento",
+    pairing_lede: "Foi solicitado o pareamento de um dispositivo com a sua conta. Digite o código abaixo nesse dispositivo para confirmar.",
+    pairing_label_code: "Código",
+    pairing_label_device: "Dispositivo",
+    pairing_label_expiry: "Validade",
+    pairing_expiry: "{minutes} minutos a partir do envio desta mensagem.",
+    pairing_not_requested: "Se não foi você que solicitou este pareamento, ignore esta mensagem e comunique-a a um administrador. Sem o código de pareamento exibido na sua própria tela, este código não dá acesso a nada.",
+    pairing_never_asks: "A Chancela nunca pede que você encaminhe este código nem que o leia para outra pessoa. Nenhum funcionário, nem o suporte, precisa conhecê-lo.",
 };
 
 /// Machine translation, pending native review.
@@ -95,6 +104,15 @@ pub static ES_ES: EmailCopy = EmailCopy {
          credenciales de acceso por separado.",
     welcome_never_sends: "Chancela nunca envía contraseñas ni enlaces de acceso por correo electrónico. Si recibe \
          un mensaje que lo haga, comuníquelo a un administrador.",
+    pairing_subject: "Chancela — código de confirmación de vinculación",
+    pairing_heading: "Código de confirmación de vinculación",
+    pairing_lede: "Se ha solicitado vincular un dispositivo con su cuenta. Escriba el código siguiente en ese dispositivo para confirmar.",
+    pairing_label_code: "Código",
+    pairing_label_device: "Dispositivo",
+    pairing_label_expiry: "Validez",
+    pairing_expiry: "{minutes} minutos desde el envío de este mensaje.",
+    pairing_not_requested: "Si no ha solicitado esta vinculación, ignore este mensaje y comuníquelo a un administrador. Sin el código de vinculación mostrado en su propia pantalla, este código no da acceso a nada.",
+    pairing_never_asks: "Chancela nunca le pedirá que reenvíe este código ni que se lo lea a otra persona. Ningún empleado ni el servicio de soporte necesita conocerlo.",
 };
 
 /// Machine translation, pending native review.
@@ -132,6 +150,15 @@ pub static FR_FR: EmailCopy = EmailCopy {
     welcome_never_sends: "Chancela n'envoie jamais de mots de passe ni de liens de connexion par courrier \
          électronique. Si vous recevez un message qui en contient, signalez-le à un \
          administrateur.",
+    pairing_subject: "Chancela — code de confirmation d’association",
+    pairing_heading: "Code de confirmation d’association",
+    pairing_lede: "L’association d’un appareil à votre compte a été demandée. Saisissez le code ci-dessous sur cet appareil pour confirmer.",
+    pairing_label_code: "Code",
+    pairing_label_device: "Appareil",
+    pairing_label_expiry: "Validité",
+    pairing_expiry: "{minutes} minutes à compter de l’envoi de ce message.",
+    pairing_not_requested: "Si vous n’êtes pas à l’origine de cette demande, ignorez ce message et signalez-le à un administrateur. Sans le code d’association affiché sur votre propre écran, ce code ne donne accès à rien.",
+    pairing_never_asks: "Chancela ne vous demandera jamais de transférer ce code ni de le communiquer à qui que ce soit. Aucun collaborateur, ni le support, n’a besoin de le connaître.",
 };
 
 /// Machine translation, pending native review.
@@ -168,6 +195,15 @@ pub static DE_DE: EmailCopy = EmailCopy {
          gesondert zur Verfügung.",
     welcome_never_sends: "Chancela versendet niemals Passwörter oder Anmeldelinks per E-Mail. Wenn Sie eine \
          Nachricht erhalten, die das tut, melden Sie sie einem Administrator.",
+    pairing_subject: "Chancela — Bestätigungscode für die Kopplung",
+    pairing_heading: "Bestätigungscode für die Kopplung",
+    pairing_lede: "Es wurde angefordert, ein Gerät mit Ihrem Konto zu koppeln. Geben Sie den folgenden Code auf diesem Gerät ein, um zu bestätigen.",
+    pairing_label_code: "Code",
+    pairing_label_device: "Gerät",
+    pairing_label_expiry: "Gültigkeit",
+    pairing_expiry: "{minutes} Minuten ab dem Versand dieser Nachricht.",
+    pairing_not_requested: "Wenn Sie diese Kopplung nicht angefordert haben, ignorieren Sie diese Nachricht und melden Sie sie einer Administratorin oder einem Administrator. Ohne den Kopplungscode auf Ihrem eigenen Bildschirm gewährt dieser Code keinerlei Zugriff.",
+    pairing_never_asks: "Chancela wird Sie niemals bitten, diesen Code weiterzuleiten oder jemandem vorzulesen. Weder Mitarbeitende noch der Support müssen ihn kennen.",
 };
 
 /// Machine translation, pending native review.
@@ -204,6 +240,15 @@ pub static IT_IT: EmailCopy = EmailCopy {
          credenziali di accesso separatamente.",
     welcome_never_sends: "Chancela non invia mai password né link di accesso per email. Se riceve un messaggio che \
          lo fa, lo segnali a un amministratore.",
+    pairing_subject: "Chancela — codice di conferma dell’associazione",
+    pairing_heading: "Codice di conferma dell’associazione",
+    pairing_lede: "È stata richiesta l’associazione di un dispositivo al tuo account. Digita il codice qui sotto su quel dispositivo per confermare.",
+    pairing_label_code: "Codice",
+    pairing_label_device: "Dispositivo",
+    pairing_label_expiry: "Validità",
+    pairing_expiry: "{minutes} minuti dall’invio di questo messaggio.",
+    pairing_not_requested: "Se non hai richiesto questa associazione, ignora questo messaggio e segnalalo a un amministratore. Senza il codice di associazione mostrato sul tuo schermo, questo codice non dà accesso a nulla.",
+    pairing_never_asks: "Chancela non ti chiederà mai di inoltrare questo codice né di leggerlo a qualcuno. Nessun dipendente e nessun operatore dell’assistenza ha bisogno di conoscerlo.",
 };
 
 /// Machine translation, pending native review.
@@ -239,6 +284,15 @@ pub static NL_NL: EmailCopy = EmailCopy {
     welcome_credentials: "Dit bericht bevat geen wachtwoord. Een beheerder verstrekt uw aanmeldgegevens apart.",
     welcome_never_sends: "Chancela verstuurt nooit wachtwoorden of aanmeldlinks per e-mail. Als u een bericht \
          ontvangt dat dat wel doet, meld het dan bij een beheerder.",
+    pairing_subject: "Chancela — bevestigingscode voor koppeling",
+    pairing_heading: "Bevestigingscode voor koppeling",
+    pairing_lede: "Er is verzocht een apparaat aan uw account te koppelen. Typ de onderstaande code op dat apparaat om te bevestigen.",
+    pairing_label_code: "Code",
+    pairing_label_device: "Apparaat",
+    pairing_label_expiry: "Geldigheid",
+    pairing_expiry: "{minutes} minuten vanaf het verzenden van dit bericht.",
+    pairing_not_requested: "Als u deze koppeling niet hebt aangevraagd, negeer dit bericht dan en meld het bij een beheerder. Zonder de koppelingscode op uw eigen scherm geeft deze code nergens toegang toe.",
+    pairing_never_asks: "Chancela vraagt u nooit om deze code door te sturen of aan iemand voor te lezen. Geen enkele medewerker en ook de helpdesk hoeft de code te kennen.",
 };
 
 /// Machine translation, pending native review.
@@ -275,6 +329,15 @@ pub static DA_DK: EmailCopy = EmailCopy {
          loginoplysninger separat.",
     welcome_never_sends: "Chancela sender aldrig adgangskoder eller loginlinks med e-mail. Hvis du modtager en \
          besked, der gør det, skal du melde det til en administrator.",
+    pairing_subject: "Chancela — bekræftelseskode til parring",
+    pairing_heading: "Bekræftelseskode til parring",
+    pairing_lede: "Der er anmodet om at parre en enhed med din konto. Indtast koden nedenfor på den enhed for at bekræfte.",
+    pairing_label_code: "Kode",
+    pairing_label_device: "Enhed",
+    pairing_label_expiry: "Gyldighed",
+    pairing_expiry: "{minutes} minutter fra afsendelsen af denne besked.",
+    pairing_not_requested: "Hvis du ikke har anmodet om denne parring, så ignorér denne besked og meld den til en administrator. Uden parringskoden på din egen skærm giver denne kode ikke adgang til noget.",
+    pairing_never_asks: "Chancela beder dig aldrig om at videresende denne kode eller læse den op for nogen. Hverken medarbejdere eller support har brug for at kende den.",
 };
 
 /// Machine translation, pending native review.
@@ -310,6 +373,15 @@ pub static FI_FI: EmailCopy = EmailCopy {
     welcome_credentials: "Tämä viesti ei sisällä salasanaa. Ylläpitäjä toimittaa kirjautumistietosi erikseen.",
     welcome_never_sends: "Chancela ei koskaan lähetä salasanoja eikä kirjautumislinkkejä sähköpostitse. Jos saat \
          viestin, joka sisältää niitä, ilmoita siitä ylläpitäjälle.",
+    pairing_subject: "Chancela — parituksen vahvistuskoodi",
+    pairing_heading: "Parituksen vahvistuskoodi",
+    pairing_lede: "Laitteen parittamista tilisi kanssa on pyydetty. Kirjoita alla oleva koodi kyseiseen laitteeseen vahvistaaksesi.",
+    pairing_label_code: "Koodi",
+    pairing_label_device: "Laite",
+    pairing_label_expiry: "Voimassaolo",
+    pairing_expiry: "{minutes} minuuttia tämän viestin lähettämisestä.",
+    pairing_not_requested: "Jos et pyytänyt tätä paritusta, jätä tämä viesti huomiotta ja ilmoita siitä järjestelmänvalvojalle. Ilman omalla näytölläsi näkyvää parituskoodia tämä koodi ei anna pääsyä mihinkään.",
+    pairing_never_asks: "Chancela ei koskaan pyydä sinua välittämään tätä koodia tai lukemaan sitä kenellekään. Sitä ei tarvitse tietää kukaan työntekijä eikä tuki.",
 };
 
 /// Machine translation, pending native review.
@@ -346,6 +418,15 @@ pub static SV_SE: EmailCopy = EmailCopy {
          inloggningsuppgifter separat.",
     welcome_never_sends: "Chancela skickar aldrig lösenord eller inloggningslänkar via e-post. Om du får ett \
          meddelande som gör det ska du anmäla det till en administratör.",
+    pairing_subject: "Chancela — bekräftelsekod för parkoppling",
+    pairing_heading: "Bekräftelsekod för parkoppling",
+    pairing_lede: "Någon har begärt att parkoppla en enhet med ditt konto. Skriv in koden nedan på den enheten för att bekräfta.",
+    pairing_label_code: "Kod",
+    pairing_label_device: "Enhet",
+    pairing_label_expiry: "Giltighet",
+    pairing_expiry: "{minutes} minuter från att detta meddelande skickades.",
+    pairing_not_requested: "Om du inte har begärt denna parkoppling, ignorera meddelandet och anmäl det till en administratör. Utan parkopplingskoden på din egen skärm ger den här koden inte åtkomst till någonting.",
+    pairing_never_asks: "Chancela ber dig aldrig att vidarebefordra denna kod eller läsa upp den för någon. Varken medarbetare eller support behöver känna till den.",
 };
 
 /// Machine translation, pending native review. Seeded from [`SV_SE`] per the documented sv-FI rule:
@@ -386,6 +467,15 @@ pub static SV_FI: EmailCopy = EmailCopy {
          inloggningsuppgifter separat.",
     welcome_never_sends: "Chancela skickar aldrig lösenord eller inloggningslänkar via e-post. Om du får ett \
          meddelande som gör det ska du anmäla det till en administratör.",
+    pairing_subject: "Chancela — bekräftelsekod för parkoppling",
+    pairing_heading: "Bekräftelsekod för parkoppling",
+    pairing_lede: "Det har begärts att en enhet ska parkopplas med ditt konto. Skriv in koden nedan på den enheten för att bekräfta.",
+    pairing_label_code: "Kod",
+    pairing_label_device: "Enhet",
+    pairing_label_expiry: "Giltighet",
+    pairing_expiry: "{minutes} minuter räknat från när detta meddelande skickades.",
+    pairing_not_requested: "Om du inte har begärt den här parkopplingen, ignorera meddelandet och anmäl det till en administratör. Utan parkopplingskoden på din egen skärm ger den här koden inte åtkomst till någonting.",
+    pairing_never_asks: "Chancela ber dig aldrig att vidarebefordra den här koden eller läsa upp den för någon. Varken medarbetare eller support behöver känna till den.",
 };
 
 /// Machine translation, pending native review.
@@ -421,4 +511,13 @@ pub static PL_PL: EmailCopy = EmailCopy {
     welcome_credentials: "Ta wiadomość nie zawiera hasła. Administrator przekaże Ci dane logowania osobno.",
     welcome_never_sends: "Chancela nigdy nie wysyła haseł ani linków do logowania pocztą elektroniczną. Jeśli \
          otrzymasz wiadomość, która to robi, zgłoś ją administratorowi.",
+    pairing_subject: "Chancela — kod potwierdzenia parowania",
+    pairing_heading: "Kod potwierdzenia parowania",
+    pairing_lede: "Zażądano sparowania urządzenia z Twoim kontem. Wpisz poniższy kod na tym urządzeniu, aby potwierdzić.",
+    pairing_label_code: "Kod",
+    pairing_label_device: "Urządzenie",
+    pairing_label_expiry: "Ważność",
+    pairing_expiry: "{minutes} minut od wysłania tej wiadomości.",
+    pairing_not_requested: "Jeśli to nie Ty zażądałeś tego parowania, zignoruj tę wiadomość i zgłoś ją administratorowi. Bez kodu parowania wyświetlonego na Twoim własnym ekranie ten kod nie daje dostępu do niczego.",
+    pairing_never_asks: "Chancela nigdy nie prosi o przekazanie tego kodu ani o odczytanie go komukolwiek. Ani pracownicy, ani wsparcie techniczne nie muszą go znać.",
 };

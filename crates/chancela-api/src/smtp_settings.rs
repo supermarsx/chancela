@@ -820,6 +820,122 @@ pub(crate) async fn send_and_record_welcome_email(
     outcome.map(|_| ()).map_err(ApiError::from)
 }
 
+/// A device-pairing confirmation code to send and file the outcome of (t70).
+pub(crate) struct PairingCodeMessage<'a> {
+    /// The operator the pairing is for — the pseudonymous key the outcome is filed under.
+    pub user_id: uuid::Uuid,
+    pub recipient_email: &'a str,
+    pub recipient_name: Option<&'a str>,
+    /// The transcribed code, in canonical form. Passed to be **rendered into the message and
+    /// nowhere else** — the recorder below is handed a *reference* to the credential (its subject
+    /// and purpose), never this value.
+    pub code: &'a str,
+    pub expires_in_minutes: i64,
+    /// The device label the operator typed, when they typed one.
+    pub device_label: Option<&'a str>,
+    /// The recipient's stored locale preference, or `None` for the platform default. Same rule as
+    /// the welcome message: the recipient's language, never the operator's, because nobody is at
+    /// the keyboard when it is read.
+    pub locale_override: Option<&'a str>,
+}
+
+/// Render and send the pairing confirmation message.
+async fn send_pairing_code_email(
+    state: &AppState,
+    message: &PairingCodeMessage<'_>,
+) -> Result<SmtpDelivery, SendFailure> {
+    let Relay {
+        client,
+        from_address,
+        from_name,
+    } = build_relay(state, "sending a device-pairing confirmation")
+        .await
+        .map_err(SendFailure::NotConfigured)?;
+
+    let (instance_name, locale) = {
+        let all = state.settings.read().await;
+        (
+            all.organization
+                .name
+                .as_deref()
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or(email_template::PRODUCT_NAME)
+                .to_owned(),
+            message
+                .locale_override
+                .unwrap_or_else(|| all.documents.locale.as_str())
+                .to_owned(),
+        )
+    };
+
+    let rendered = email_template::pairing_code_email(&email_template::PairingCodeEmail {
+        recipient_name: message.recipient_name,
+        instance_name: &instance_name,
+        code: message.code,
+        expires_in_minutes: message.expires_in_minutes,
+        device_label: message.device_label,
+        locale: &locale,
+    });
+
+    let now = OffsetDateTime::now_utc();
+    let smtp = SmtpMessage {
+        from_address,
+        from_name,
+        to_address: message.recipient_email.to_owned(),
+        subject: rendered.subject,
+        body: rendered.text_body,
+        html_body: Some(rendered.html_body),
+        date: now.format(&Rfc2822).unwrap_or_default(),
+        message_id: format!("{}@chancela.invalid", uuid::Uuid::new_v4()),
+    };
+    client.send(&smtp).await.map_err(SendFailure::Refused)
+}
+
+/// Send a device-pairing confirmation code and file the outcome (t70).
+///
+/// **The only crate-visible way to send one**, matching the rule t108 established for the welcome
+/// message: a sender that nothing records is how the outcome of the only real message this product
+/// sent came to be recorded nowhere at all.
+///
+/// Unlike the welcome mail, this one **returns its error to the caller to act on**. A welcome mail
+/// is a courtesy attached to an account that already exists, so a relay refusal must not fail the
+/// create. Here the mail *is* the delivery of a confirmation method: if it did not go out, the
+/// operator is holding a pairing code they cannot complete, and telling them "code minted" while
+/// the code needed to use it sits undelivered would be the failure this repo's standing rule names
+/// — a state reported as success that is not one.
+///
+/// `token_subject`/`token_purpose` are filled in, which is what marks the message **re-issuable
+/// rather than resendable** ([`delivery_is_resendable`]): the server keeps only `sha256(secret)`,
+/// so the body is not reproducible even in principle, and the honest recovery is a fresh mint.
+pub(crate) async fn send_and_record_pairing_code_email(
+    state: &AppState,
+    actor: &str,
+    attestor: &CurrentAttestor,
+    message: PairingCodeMessage<'_>,
+) -> Result<(), ApiError> {
+    let outcome = send_pairing_code_email(state, &message).await;
+    let subject = message.user_id.to_string();
+    record_send_outcome(
+        state,
+        actor,
+        attestor,
+        SendRecord {
+            template_id: PAIRING_CODE_TEMPLATE_ID,
+            user_id: Some(message.user_id),
+            recipient: message.recipient_email,
+            token_subject: Some(&subject),
+            token_purpose: Some(
+                crate::auth_token::AuthTokenPurpose::DevicePairingConfirmation.as_str(),
+            ),
+        },
+        &outcome,
+        None,
+    )
+    .await?;
+    outcome.map(|_| ()).map_err(ApiError::from)
+}
+
 /// What a send was, independent of its outcome — the descriptor every sender hands the recorder.
 ///
 /// Deliberately small and non-secret: a template id, the account it concerns, where it went, and a
@@ -992,6 +1108,9 @@ async fn record_send_outcome(
 /// The template identifier recorded against a welcome message, so a later sender's outcomes are
 /// distinguishable from these without adding an event kind per template.
 const WELCOME_TEMPLATE_ID: &str = "user.welcome";
+
+/// The template id device-pairing confirmation sends are filed under.
+const PAIRING_CODE_TEMPLATE_ID: &str = "device.pairing_code";
 
 /// Whether a recorded delivery can be **re-sent** — as opposed to re-issued.
 ///

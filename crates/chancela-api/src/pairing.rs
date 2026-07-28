@@ -178,6 +178,14 @@ impl PairingRegistry {
         Some((pending.user_id, pending.label))
     }
 
+    /// Drop an outstanding code without redeeming it. Used when a mint has to be unwound after the
+    /// code was already minted — the operator never saw it, so leaving it live would be a live
+    /// credential nobody knows exists.
+    async fn discard_code(&self, code: &str) {
+        let digest = session_token_digest(code.trim());
+        self.0.codes.write().await.remove(&digest);
+    }
+
     /// Commit a freshly enrolled device to the in-memory index (the durable write is done first by
     /// the handler).
     async fn insert_device(&self, record: DurablePairingDevice) {
@@ -289,6 +297,11 @@ pub struct MintPairingCode {
     /// that omits it deserialises to an empty proof and is refused.
     #[serde(default)]
     pub confirmation: ConfirmationProof,
+    /// Ask for a confirmation code to be mailed to the operator's registered address, for the
+    /// device to type back at the exchange. Off by default: mail is only sent when the operator
+    /// says they intend to use it, so an instance whose operators all use TOTP sends none.
+    #[serde(default)]
+    pub email_confirmation_code: bool,
 }
 
 /// Response of `POST /v1/pairing/codes` — the one-time code plus its expiry.
@@ -308,6 +321,10 @@ pub struct PairingCodeMinted {
     /// what they are about to be asked for. Not a secret — knowing that an instance accepts a TOTP
     /// code tells an attacker nothing they could not learn by trying.
     pub accepted_confirmation_methods: Vec<&'static str>,
+    /// Whether a confirmation code was mailed for this pairing code. Only ever `true` after the
+    /// relay accepted the message — a failed send is an error, never a `false` the operator has to
+    /// notice.
+    pub emailed_code_sent: bool,
 }
 
 /// `POST /v1/pairing/codes` — mint a short-lived, single-use pairing code for the signed-in operator.
@@ -328,6 +345,7 @@ pub struct PairingCodeMinted {
 pub async fn create_pairing_code(
     State(state): State<AppState>,
     actor: CurrentActor,
+    attestor: crate::actor::CurrentAttestor,
     Json(req): Json<MintPairingCode>,
 ) -> Result<Json<PairingCodeMinted>, ApiError> {
     let uid = resolve_operator(&state, &actor).await?;
@@ -340,22 +358,133 @@ pub async fn create_pairing_code(
     .await?;
     let label = sanitize_label(req.label);
     let now = OffsetDateTime::now_utc();
+    let accepted = {
+        let settings = state.settings.read().await;
+        settings.auth.device_pairing.accepted.clone()
+    };
+
+    // Everything that can refuse runs BEFORE the pairing code is minted, so a refusal here does not
+    // leave a live code behind that the operator was never told about.
+    let emailed = if req.email_confirmation_code {
+        Some(prepare_emailed_code(&state, uid, &accepted).await?)
+    } else {
+        None
+    };
+
     let code = state.pairing.mint_code(uid.0, label.clone(), now).await;
     let expires_at = now + Duration::seconds(PAIRING_CODE_TTL_SECS);
-    let accepted_confirmation_methods = state
-        .settings
-        .read()
+
+    if let Some(recipient) = emailed {
+        // The send is fallible and its failure is reported, not swallowed: this mail *is* the
+        // delivery of a confirmation method, so "code minted" while the code needed to use it sits
+        // undelivered would be a success report for a state that is not one. The pairing code is
+        // dropped again so the operator is not left holding one they cannot complete.
+        if let Err(e) = issue_and_send_emailed_code(
+            &state, &actor, &attestor, uid, &recipient, &label, now,
+        )
         .await
-        .auth
-        .device_pairing
-        .accepted_ids();
+        {
+            state.pairing.discard_code(&code).await;
+            return Err(e);
+        }
+    }
+
     Ok(Json(PairingCodeMinted {
         code,
         expires_at: expires_at.format(&Rfc3339).unwrap_or_else(|_| rfc3339(0)),
         expires_in_secs: PAIRING_CODE_TTL_SECS,
         label,
-        accepted_confirmation_methods,
+        accepted_confirmation_methods: accepted.iter().map(|m| m.as_str()).collect(),
+        emailed_code_sent: req.email_confirmation_code,
     }))
+}
+
+/// The operator's details needed to mail them a confirmation code.
+struct EmailedCodeRecipient {
+    address: String,
+    display_name: String,
+    locale: Option<String>,
+}
+
+/// Check that mailing a confirmation code is something this deployment and this operator can
+/// actually do, and resolve where it would go.
+///
+/// **Every refusal is loud and specific.** Silently skipping the mail — or sending it while the
+/// deployment does not accept the method — would hand the operator a pairing code whose promised
+/// confirmation either never arrives or would not be accepted if it did. These are configuration
+/// mistakes the operator can fix, so they are told which one.
+async fn prepare_emailed_code(
+    state: &AppState,
+    uid: UserId,
+    accepted: &std::collections::BTreeSet<PairingConfirmationMethod>,
+) -> Result<EmailedCodeRecipient, ApiError> {
+    if !accepted.contains(&PairingConfirmationMethod::EmailedCode) {
+        return Err(ApiError::Unprocessable(
+            "esta instância não aceita a confirmação por código enviado por email; \
+             veja auth.device_pairing.accepted"
+                .to_owned(),
+        ));
+    }
+    let users = state.users.read().await;
+    let user = users.get(&uid).ok_or(ApiError::NotFound)?;
+    let address = user
+        .email
+        .as_deref()
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .ok_or_else(|| {
+            ApiError::Unprocessable(
+                "a sua conta não tem endereço de email; não há para onde enviar o código de \
+                 confirmação"
+                    .to_owned(),
+            )
+        })?
+        .to_owned();
+    Ok(EmailedCodeRecipient {
+        address,
+        display_name: user.display_name.clone(),
+        locale: user.language.fixed().map(|l| l.as_str().to_owned()),
+    })
+}
+
+/// Mint the transcribed confirmation code and mail it.
+///
+/// The plaintext exists in exactly two places and neither outlives this function: the outbound
+/// message, and this stack frame. `AuthTokenSecret` zeroes itself on drop and the store keeps only
+/// the digest, so a failed pairing leaves nothing to recover the code from.
+async fn issue_and_send_emailed_code(
+    state: &AppState,
+    actor: &CurrentActor,
+    attestor: &crate::actor::CurrentAttestor,
+    uid: UserId,
+    recipient: &EmailedCodeRecipient,
+    label: &str,
+    now: OffsetDateTime,
+) -> Result<(), ApiError> {
+    use crate::auth_token::{AuthTokenPurpose, AuthTokenSubject};
+
+    let purpose = AuthTokenPurpose::DevicePairingConfirmation;
+    let (secret, _record) = state.auth_tokens.write().await.issue_transcribable(
+        purpose,
+        AuthTokenSubject::user(uid.0),
+        purpose.default_ttl(),
+        now,
+    );
+    crate::smtp_settings::send_and_record_pairing_code_email(
+        state,
+        &actor.resolve("api"),
+        attestor,
+        crate::smtp_settings::PairingCodeMessage {
+            user_id: uid.0,
+            recipient_email: &recipient.address,
+            recipient_name: Some(&recipient.display_name),
+            code: secret.expose(),
+            expires_in_minutes: purpose.default_ttl().whole_minutes(),
+            device_label: Some(label),
+            locale_override: recipient.locale.as_deref(),
+        },
+    )
+    .await
 }
 
 /// Body of `POST /v1/pairing/exchange`.
@@ -1283,6 +1412,150 @@ mod tests {
         assert!(devices_of(&state, &operator).await.is_empty());
     }
 
+    /// Issue a pairing confirmation code directly, as a successful mint-with-mail would, and return
+    /// the plaintext. Bypasses SMTP: these tests are about the gate, and no relay is configured.
+    async fn issue_emailed_code(state: &AppState, user_id: Uuid) -> String {
+        use crate::auth_token::{AuthTokenPurpose, AuthTokenSubject};
+        let purpose = AuthTokenPurpose::DevicePairingConfirmation;
+        let (secret, _) = state.auth_tokens.write().await.issue_transcribable(
+            purpose,
+            AuthTokenSubject::user(user_id),
+            purpose.default_ttl(),
+            OffsetDateTime::now_utc(),
+        );
+        secret.expose().to_owned()
+    }
+
+    async fn operator_uuid(state: &AppState) -> Uuid {
+        let users = state.users.read().await;
+        users.values().find(|u| u.active).unwrap().id.0
+    }
+
+    #[tokio::test]
+    async fn an_emailed_code_confirms_the_exchange_without_a_password() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let user_id = operator_uuid(&state).await;
+        let emailed = issue_emailed_code(&state, user_id).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, exchanged) =
+            exchange_with(&state, &code, json!({ "emailed_code": emailed })).await;
+        assert_eq!(status, StatusCode::OK, "exchange: {exchanged}");
+        assert_eq!(exchanged["confirmed_by"], "emailed_code");
+        assert_eq!(devices_of(&state, &operator).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn an_emailed_code_is_accepted_lower_case_and_without_separators() {
+        // What a person types back is not byte-identical to what they read. Case and the group
+        // hyphens are the two things they reliably vary, and only those two.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let user_id = operator_uuid(&state).await;
+        let emailed = issue_emailed_code(&state, user_id).await;
+        let typed = emailed.replace('-', "").to_lowercase();
+        assert_ne!(typed, emailed, "the transcription really does differ");
+        let code = mint_code(&state, &operator).await;
+
+        let (status, exchanged) =
+            exchange_with(&state, &code, json!({ "emailed_code": typed })).await;
+        assert_eq!(status, StatusCode::OK, "exchange: {exchanged}");
+        assert_eq!(exchanged["confirmed_by"], "emailed_code");
+    }
+
+    #[tokio::test]
+    async fn an_emailed_code_cannot_confirm_two_pairings() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let user_id = operator_uuid(&state).await;
+        let emailed = issue_emailed_code(&state, user_id).await;
+
+        let first = mint_code(&state, &operator).await;
+        let (status, _) = exchange_with(&state, &first, json!({ "emailed_code": emailed })).await;
+        assert_eq!(status, StatusCode::OK);
+
+        let second = mint_code(&state, &operator).await;
+        let (status, body) =
+            exchange_with(&state, &second, json!({ "emailed_code": emailed })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "single use: {body}");
+        assert_eq!(devices_of(&state, &operator).await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn another_users_emailed_code_does_not_confirm_this_pairing() {
+        // The purpose matches and the token is live; only the subject differs. Trusting the record
+        // because it redeemed would let anyone holding *any* valid pairing code confirm as someone
+        // else, so the subject is checked rather than assumed.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let stranger = issue_emailed_code(&state, Uuid::new_v4()).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, body) = exchange_with(&state, &code, json!({ "emailed_code": stranger })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(devices_of(&state, &operator).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_wrong_emailed_code_does_not_pair() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let user_id = operator_uuid(&state).await;
+        issue_emailed_code(&state, user_id).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, body) =
+            exchange_with(&state, &code, json!({ "emailed_code": "AAAA-BBBB-CCCC-DDDD" })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(devices_of(&state, &operator).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_deployment_that_does_not_accept_emailed_codes_refuses_one() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let user_id = operator_uuid(&state).await;
+        let emailed = issue_emailed_code(&state, user_id).await;
+        accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, body) =
+            exchange_with(&state, &code, json!({ "emailed_code": emailed })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(devices_of(&state, &operator).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn asking_to_mail_a_code_with_no_address_refuses_and_mints_nothing() {
+        // The operator these tests create has no email address. Refusing loudly beats minting a
+        // pairing code whose promised confirmation could never arrive.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+
+        let (status, body) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    &operator,
+                    json!({
+                        "confirmation": { "reauth": { "password": OPERATOR_PASSWORD } },
+                        "email_confirmation_code": true,
+                    }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "refused: {body}");
+        assert_eq!(
+            state.pairing.0.codes.read().await.len(),
+            0,
+            "no pairing code was left outstanding"
+        );
+    }
+
     #[tokio::test]
     async fn a_device_row_written_before_the_confirmation_still_rehydrates() {
         // `DurablePairingDevice` is `deny_unknown_fields` and `from_store` SKIPS a row it cannot
@@ -1342,7 +1615,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "mint: {minted}");
         assert_eq!(
             minted["accepted_confirmation_methods"],
-            json!(["password", "totp_code"]),
+            json!(["password", "totp_code", "emailed_code"]),
             "an unconfigured instance accepts every implemented method"
         );
 

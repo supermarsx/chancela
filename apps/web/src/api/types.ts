@@ -4348,6 +4348,12 @@ export interface MintPairingCodeBody {
    * signed-in browser must not be one click from it. Omitting it is a `403`.
    */
   confirmation?: ConfirmationProof;
+  /**
+   * Ask for a confirmation code to be mailed to the operator's own registered address. Off by
+   * default, so an instance whose operators all use TOTP sends no mail. Refused (422) when the
+   * deployment does not accept the method or the account has no address — never silently skipped.
+   */
+  email_confirmation_code?: boolean;
 }
 
 /** `POST /v1/pairing/codes` response — the one-time code plus its expiry. */
@@ -4366,6 +4372,8 @@ export interface PairingCodeMinted {
    * desktop learns the accepted set here and tells the operator what they will be asked for.
    */
   accepted_confirmation_methods: PairingConfirmationMethod[];
+  /** Whether a confirmation code was mailed. Only ever true after the relay accepted it. */
+  emailed_code_sent: boolean;
 }
 
 /**
@@ -4374,12 +4382,18 @@ export interface PairingCodeMinted {
  * The password is one accepted method and never the only one: a TOTP code proves the same
  * operator without a reusable secret reaching the device being enrolled.
  */
-export type PairingConfirmationMethod = 'password' | 'totp_code';
+export type PairingConfirmationMethod = 'password' | 'totp_code' | 'emailed_code';
 
 /** The confirmation carried by `POST /v1/pairing/exchange`. Supply exactly one proof. */
 export interface PairingConfirmationProof {
   password?: string;
   totp_code?: string;
+  /**
+   * The code mailed to the operator when the pairing code was minted. Accepted in any letter case
+   * and with or without the group separators. There is no emailed *link* anywhere in this flow:
+   * the product promises recipients it never mails access links, so the credential is transcribed.
+   */
+  emailed_code?: string;
 }
 
 /**
