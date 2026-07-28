@@ -3178,6 +3178,22 @@ a.btn.btn--iconOnly {
   }
 }
 
+/* The preservation-package row's action cell packs a `Toggle`, its `.field__hint`, and a
+   `GateButton` into one `.stack--tight` — `.field__hint` sets `margin: 0` by design (t100's
+   note at the `.settings-notes` rule below: it is built to sit tight under the control it
+   explains), so the only gap above the button is `.stack--tight`'s own 0.75rem, and that read
+   as the hint running straight into the button. Per t89-margins (who owns `.stack--tight` and
+   `.field__hint` and confirmed neither should change): scoped here, and on the BUTTON side —
+   `.field__hint { margin: 0 }` stays load-bearing for the tight-hint-under-control case
+   everywhere else this table doesn't touch. `* + .btn` (not `.field__hint + .btn`) so it also
+   covers the legal-hold-on case, where a `Field` (the reason input) sits between the hint and
+   the button — either way, the button is the one thing that should visually separate itself as
+   the row's primary action. Deliberately does NOT match a `.btn` with no preceding sibling, so
+   the bundle row's lone button (nothing above it in its own `.stack--tight`) is untouched. */
+.book-export-table .stack--tight > * + .btn {
+  margin-top: 1.25rem;
+}
+
 /* --------------------------------------------------------------------------
  * A book's atas (minutes) list (t47) — the same filter bar + fixed-layout,
  * truncating table the Livros list uses, so a book's atas read as the same
@@ -11796,11 +11812,30 @@ input[type='radio']:disabled {
   overflow-wrap: anywhere;
 }
 
+/* Stacked, not side-by-side: the byte size is the headline, the file/folder counts are
+   secondary detail beneath it. Row layout let the two run together with nothing but a flex
+   `gap` between them — invisible to text extraction and screen readers, and the first thing
+   to collapse once the Ocupação column below is narrow. */
 .data-status-cleanup__metric {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.35rem 0.55rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
   margin: 0;
+}
+
+.data-status-cleanup__metric-count {
+  margin: 0;
+}
+
+/* The Ocupação column was sized by leftover space after the description and action columns,
+   which crushed "N ficheiros · N pastas" into a multi-line wrap (or a broken word) well
+   before the rest of the table felt tight. Give it a floor; `.table-wrap` already scrolls
+   horizontally below that, same as `.pdf-validator-table`. */
+.data-status-cleanup-table .table th:nth-child(2),
+.data-status-cleanup-table .table td:nth-child(2) {
+  width: 10rem;
+  min-width: 10rem;
 }
 
 .data-status-cleanup__actions {
