@@ -3,8 +3,14 @@
  *
  * Read-only by design: the backend exposes the parsed Trusted List state and catalog, but
  * no live refresh operation. The UI therefore mirrors the CAE/law consultation style:
- * a compact status card for scheme/source/signature validity, plus a stacked catalog
- * explorer with URL-backed search/filter/selection followed by provider/service detail.
+ * a compact status card for scheme/source/signature validity, plus a catalog explorer
+ * with URL-backed search/filter/selection.
+ *
+ * The picked record (a TSL provider, a TSL service, or a TSA record) opens in a floating
+ * right-hand {@link SidePanel} rather than expanding below the results, so a long search does
+ * not push the detail off-screen and the list stays operable while the detail is up (t88).
+ * Selection stays in the URL exactly as it was — `trustProvider` / `trustService` / `tsaRecord`
+ * are still the addressable state, so a deep link opens the panel on the right record.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -34,6 +40,7 @@ import {
   Skeleton,
   SkeletonDeflist,
   ColumnHead,
+  SidePanel,
   SkeletonRegion,
   SubNav,
   Table,
@@ -702,6 +709,7 @@ function TsaRecordDetail({ record }: { record: TsaRecordView }) {
 
 function TsaToolingPanel() {
   const t = useT();
+  const st = useTrustSectionsT();
   const [params, setParams] = useSearchParams();
   const tsa = useTsaCatalog();
   const term = params.get('tsaQ') ?? '';
@@ -744,11 +752,15 @@ function TsaToolingPanel() {
     typeFilter,
   ]);
 
-  const selected =
-    records.find((record) => record.id === selectedId) ??
-    tsa.data?.records.find((record) => record.id === selectedId) ??
-    records[0] ??
-    null;
+  // t88: the detail is a floating panel now, so it opens only on an explicit pick. It used to fall
+  // back to `records[0]`, which was right while the detail was a permanently-present column below
+  // the list and wrong for something that floats over the page before anyone asked for it. A
+  // deep link (`?tsaRecord=…`) still opens it, so the addressable selection is unchanged.
+  const selected = selectedId
+    ? (records.find((record) => record.id === selectedId) ??
+      tsa.data?.records.find((record) => record.id === selectedId) ??
+      null)
+    : null;
 
   function setParam(name: string, value: string | null, replace = true) {
     setParams(
@@ -1041,15 +1053,14 @@ function TsaToolingPanel() {
                 </div>
               )}
             </div>
-            <div className="trust-explorer__detail">
-              {selected ? (
-                <TsaRecordDetail record={selected} />
-              ) : (
-                <EmptyState title={t('trust.tsa.detail.empty.title')}>
-                  <p>{t('trust.tsa.detail.empty.body')}</p>
-                </EmptyState>
-              )}
-            </div>
+            <SidePanel
+              open={!!selected}
+              label={st('tools.trust.panel.tsaRecord')}
+              closeLabel={st('tools.trust.panel.close')}
+              onClose={() => setParam('tsaRecord', null)}
+            >
+              {selected ? <TsaRecordDetail record={selected} /> : null}
+            </SidePanel>
           </div>
         </div>
       ) : null}
@@ -1641,6 +1652,7 @@ function ServiceDetail({
 
 function TrustCatalogExplorer() {
   const t = useT();
+  const st = useTrustSectionsT();
   const [params, setParams] = useSearchParams();
   const catalog = useTrustCatalog();
   const term = params.get('trustQ') ?? '';
@@ -1763,6 +1775,19 @@ function TrustCatalogExplorer() {
       p.delete('trustProvider');
       return p;
     });
+  }
+
+  /** Dismissing the detail drops the selection from the URL — a replace, not a new history entry. */
+  function clearSelection() {
+    setParams(
+      (prev) => {
+        const p = new URLSearchParams(prev);
+        p.delete('trustProvider');
+        p.delete('trustService');
+        return p;
+      },
+      { replace: true },
+    );
   }
 
   return (
@@ -1892,7 +1917,16 @@ function TrustCatalogExplorer() {
           )}
         </div>
 
-        <div className="trust-explorer__detail">
+        {/* t88: the picked record floats beside the list instead of pushing it up the page. The
+            panel names the KIND of record; the record's own name stays on the detail's heading. */}
+        <SidePanel
+          open={!!selectedService || !!selectedProvider}
+          label={
+            selectedService ? st('tools.trust.panel.service') : st('tools.trust.panel.provider')
+          }
+          closeLabel={st('tools.trust.panel.close')}
+          onClose={clearSelection}
+        >
           {selectedService ? (
             <ServiceDetail
               id={selectedService}
@@ -1901,12 +1935,8 @@ function TrustCatalogExplorer() {
             />
           ) : selectedProvider ? (
             <ProviderDetail id={selectedProvider} onSelectService={selectService} />
-          ) : (
-            <EmptyState title={t('trust.detail.empty.title')}>
-              <p>{t('trust.detail.empty.body')}</p>
-            </EmptyState>
-          )}
-        </div>
+          ) : null}
+        </SidePanel>
       </div>
     </Card>
   );

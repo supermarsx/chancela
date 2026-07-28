@@ -1,0 +1,169 @@
+/* ============================================================================
+ * SidePanel (t88) — the floating right-hand detail pane.
+ *
+ * The shape a list/detail surface reaches for when the detail must NOT push the
+ * list down the page: the list keeps the full content width and the selected
+ * record floats beside it. Deliberately NOT a modal — no `aria-modal`, no
+ * page-wide blocking scrim on desktop, so the list stays clickable while the
+ * panel is open and the operator can walk the results without closing anything.
+ *
+ * Layering: below `.modal-backdrop` (z-index 1500) so a confirm dialog opened
+ * from inside a panel still covers it.
+ * ========================================================================== */
+
+.side-panel-layer {
+  position: fixed;
+  /* Starts below the titlebar + tab bar, exactly like `.modal-backdrop`, so the
+     panel never covers the window chrome. */
+  top: calc(var(--titlebar-h) + var(--topbar-h));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1400;
+  /* The layer itself is inert: only the panel (and, on narrow, the scrim) take
+     pointer events, so the list behind stays operable on desktop. */
+  pointer-events: none;
+}
+
+/* Desktop: no dimming at all. The page behind is meant to stay usable. */
+.side-panel__scrim {
+  display: none;
+}
+
+.side-panel {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  bottom: 1rem;
+  inline-size: clamp(22rem, 34vw, 40rem);
+  max-inline-size: calc(100% - 2rem);
+  pointer-events: auto;
+
+  display: flex;
+  flex-direction: column;
+  min-block-size: 0;
+
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
+
+  /* Same arriving gesture as `.modal`, slid in from the right instead of risen,
+     because that is the direction the panel comes from. Compositor-only and
+     one-shot-on-mount, so it needs no `will-change`; the universal
+     reduced-motion / safe-mode kill-switches collapse it to an instant show. */
+  animation: side-panel-in var(--motion-panel-duration) var(--motion-ease-enter) both;
+}
+
+.side-panel:focus {
+  outline: none;
+}
+
+@keyframes side-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(16px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.side-panel__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--rule, var(--border));
+}
+
+.side-panel__title {
+  margin: 0;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.side-panel__close {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.side-panel__close:hover {
+  border-color: var(--border);
+  color: inherit;
+}
+
+/* The detail can run long — certificates, validity windows, service history —
+   so it scrolls INSIDE the panel, and `overscroll-behavior: contain` stops the
+   scroll chaining into the page behind once the panel hits its end. */
+.side-panel__body {
+  flex: 1 1 auto;
+  min-block-size: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.1rem 1.3rem;
+}
+
+/* --------------------------------------------------------------------------
+ * Narrow viewports: a fixed side column would leave the list unreadable, so the
+ * panel becomes a full-width bottom sheet over a dimmed page. The sheet DOES
+ * cover the list, so here — and only here — the scrim appears and dismisses.
+ * ------------------------------------------------------------------------ */
+@media (max-width: 60rem) {
+  .side-panel__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    pointer-events: auto;
+    background: rgba(0, 0, 0, 0.5);
+    animation: side-panel-scrim-in var(--motion-panel-duration) var(--motion-ease-enter) both;
+  }
+
+  .side-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    inline-size: auto;
+    max-inline-size: none;
+    max-block-size: 85vh;
+    max-block-size: 85dvh;
+    border-inline: none;
+    border-block-end: none;
+    border-radius: var(--radius) var(--radius) 0 0;
+    animation-name: side-panel-sheet-in;
+  }
+}
+
+@keyframes side-panel-scrim-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes side-panel-sheet-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}

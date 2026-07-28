@@ -65,6 +65,7 @@ export {
   type GuardedActionModalProps,
   type GuardedActionPolicy,
 } from './GuardedActionModal';
+export { SidePanel, type SidePanelProps } from './SidePanel';
 
 // --- Button ---------------------------------------------------------------------
 

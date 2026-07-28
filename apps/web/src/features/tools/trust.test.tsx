@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { getByRevealedText, renderWithProviders } from '../../test/utils';
+import { ptPT } from '../../i18n/locales/pt-PT';
+import { trustSectionsPtPT } from '../../i18n/trustSectionsFallback';
 import { ToolsPage } from './ToolsPage';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import type {
@@ -974,5 +976,204 @@ describe('Ferramentas — TSL trust catalog', () => {
     );
     expect(await screen.findByText('Sem resultados')).toBeTruthy();
     expect(screen.getByText(/Nenhum prestador ou serviço corresponde/)).toBeTruthy();
+  });
+});
+
+/**
+ * t88 — "clicking on a provider should show the provider info on a floating right hand popup
+ * instead of below all the info, same for ts providers".
+ *
+ * The detail used to be `.trust-explorer__detail`, a box stacked under the search results, so a
+ * long result list pushed the record the operator had just picked off the bottom of the page. It
+ * is now a `SidePanel` portaled beside the list.
+ *
+ * The real risk in a move like this is a field quietly not making the trip, so each of these
+ * enumerates the panel's field/value row headers and its section labels as EXACT arrays: drop one
+ * (or bolt one on) and the assertion fails. The expected names are read out of the pt-PT catalog
+ * and the trust sub-tab fallback module by key rather than typed in as prose, so a copy revision
+ * moves the test with the product instead of pinning a rendered substring.
+ */
+describe('Ferramentas — trust detail side panel', () => {
+  /** The names the panel's fact tables give their fields, in render order. */
+  function fieldNames(panel: HTMLElement): string[] {
+    return within(panel)
+      .getAllByRole('rowheader')
+      .map((cell) => cell.textContent?.trim() ?? '');
+  }
+
+  /** The blocks the panel is divided into, in render order. */
+  function sectionNames(panel: HTMLElement): (string | null)[] {
+    return within(panel)
+      .getAllByRole('group')
+      .map((group) => group.getAttribute('aria-label'));
+  }
+
+  /** Click a row the way a pointer does: focus lands on the control before the click fires. */
+  function pickRow(row: HTMLElement): HTMLElement {
+    row.focus();
+    fireEvent.click(row);
+    return row;
+  }
+
+  it('floats the TSL provider detail beside the list instead of stacking it below', async () => {
+    vi.stubGlobal('fetch', trustFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    fireEvent.click(await screen.findByRole('button', { name: ptPT['trust.filter.providers'] }));
+    // Nothing floats until something is picked.
+    expect(screen.queryByRole('complementary')).toBeNull();
+    pickRow(await screen.findByRole('button', { name: /MULTICERT S\.A\./i }));
+
+    const panel = await screen.findByRole('complementary', {
+      name: trustSectionsPtPT['tools.trust.panel.provider'],
+    });
+    // The panel opens onto its loading skeleton; wait for the record itself before enumerating.
+    const heading = await within(panel).findByRole('heading', { level: 3 });
+
+    // It is genuinely OUT of the explorer column, not merely restyled: the old in-flow detail box
+    // is gone and the panel hangs off <body> so no transformed route ancestor can clip it.
+    expect(document.querySelector('.trust-explorer__detail')).toBeNull();
+    expect(panel.closest('.trust-explorer')).toBeNull();
+    expect(panel.closest('.side-panel-layer')?.parentElement).toBe(document.body);
+    // The list underneath keeps working — this is a panel beside the list, not a dialog over it.
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.getByRole('list', { name: ptPT['trust.results.providers'] })).toBeTruthy();
+
+    // Every field the stacked detail showed, and only those.
+    expect(fieldNames(panel)).toEqual([
+      ptPT['trust.provider.tradeNames'],
+      ptPT['trust.provider.informationUris'],
+      ptPT['trust.status.services'],
+      ptPT['trust.provider.analysis'],
+    ]);
+    expect(sectionNames(panel)).toEqual([
+      ptPT['trust.detail.summary'],
+      ptPT['trust.provider.duplicateNames'],
+      ptPT['trust.provider.services'],
+    ]);
+    // …with their values, including the provider's own name as the detail heading and the
+    // services grid the operator drills through.
+    expect(heading.textContent).toBe('MULTICERT S.A.');
+    expect(within(panel).getByText('MULTICERT')).toBeTruthy();
+    expect(within(panel).getByText('https://www.multicert.pt')).toBeTruthy();
+    expect(
+      within(panel).getByRole('table', { name: ptPT['trust.table.service.caption'] }),
+    ).toBeTruthy();
+    expect(within(panel).getByRole('button', { name: /MULTICERT Timestamping/i })).toBeTruthy();
+  });
+
+  it('floats the TSL service detail, keeps every field, and hands focus back on Escape', async () => {
+    vi.stubGlobal('fetch', trustFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    fireEvent.change(await screen.findByLabelText(ptPT['trust.search.aria']), {
+      target: { value: 'qualified' },
+    });
+    const row = pickRow(await screen.findByRole('button', { name: /MULTICERT Qualified CA/i }));
+
+    const panel = await screen.findByRole('complementary', {
+      name: trustSectionsPtPT['tools.trust.panel.service'],
+    });
+    // Opening a panel puts the keyboard on the thing that just appeared.
+    expect(document.activeElement).toBe(panel);
+    const heading = await within(panel).findByRole('heading', { level: 3 });
+
+    expect(fieldNames(panel)).toEqual([
+      ptPT['trust.service.type'],
+      ptPT['trust.service.statusUri'],
+      ptPT['trust.service.statusStartingTime'],
+      ptPT['trust.service.certificates'],
+    ]);
+    expect(sectionNames(panel)).toEqual([
+      ptPT['trust.detail.summary'],
+      ptPT['trust.service.additionalInfo'],
+      ptPT['trust.detail.supplyPoints'],
+      ptPT['trust.detail.history'],
+      ptPT['trust.detail.identities'],
+    ]);
+    expect(heading.textContent).toBe('MULTICERT Qualified CA');
+    expect(within(panel).getByText('QCForESig')).toBeTruthy();
+    expect(within(panel).getByText('CN=MULTICERT Qualified CA')).toBeTruthy();
+    expect(
+      within(panel).getByRole('table', { name: ptPT['trust.table.history.caption'] }),
+    ).toBeTruthy();
+    expect(
+      within(panel).getByRole('table', { name: ptPT['trust.table.identity.caption'] }),
+    ).toBeTruthy();
+    expect(within(panel).getByText('MIID-qualified-test')).toBeTruthy();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+
+    await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull());
+    expect(document.activeElement).toBe(row);
+    // Dismissing drops the selection from the URL, so the list is back to an unpicked state.
+    expect(
+      screen
+        .getByRole('button', { name: /MULTICERT Qualified CA/i })
+        .classList.contains('is-current'),
+    ).toBe(false);
+  });
+
+  it('floats the TSA record detail, opens only on a pick, and still honours a deep link', async () => {
+    vi.stubGlobal('fetch', trustFetch());
+    const first = renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
+
+    await screen.findByRole('group', { name: ptPT['trust.tsa.summary.aria'] });
+    // The stacked detail used to fall back to the first record; something that floats over the
+    // page must wait to be asked for.
+    expect(screen.queryByRole('complementary')).toBeNull();
+
+    const row = pickRow(
+      await screen.findByRole('button', { name: /Qualified Timestamping Authority/i }),
+    );
+    const panel = await screen.findByRole('complementary', {
+      name: trustSectionsPtPT['tools.trust.panel.tsaRecord'],
+    });
+    expect(document.activeElement).toBe(panel);
+    expect(panel.closest('.trust-explorer')).toBeNull();
+
+    expect(fieldNames(panel)).toEqual([
+      ptPT['trust.service.type'],
+      ptPT['trust.service.statusStartingTime'],
+      ptPT['trust.tsa.detail.grantedEffective'],
+      ptPT['trust.service.certificates'],
+      ptPT['trust.detail.historyEntries'],
+      ptPT['trust.tsa.detail.classification'],
+      ptPT['trust.tsa.detail.trustBasis'],
+    ]);
+    expect(sectionNames(panel)).toEqual([
+      ptPT['trust.detail.summary'],
+      ptPT['trust.detail.supplyPoints'],
+      ptPT['trust.detail.history'],
+      ptPT['trust.tsa.detail.blockingReasons'],
+      ptPT['trust.detail.identities'],
+    ]);
+    expect(within(panel).getByRole('heading', { level: 3 }).textContent).toBe(
+      'Qualified Timestamping Authority',
+    );
+    expect(within(panel).getByText('Cartorio Notarial Timestamping')).toBeTruthy();
+    expect(within(panel).getByText('http://tsa.cartorio.example.test/tsa/server')).toBeTruthy();
+    // The blocking reason and the classification stay verbatim — these are the record's own
+    // evidentiary wording, not product copy to be tidied.
+    expect(within(panel).getByText('TSL signature is not valid; record is advisory')).toBeTruthy();
+    expect(within(panel).getByText('QualifiedTimestampService')).toBeTruthy();
+    expect(within(panel).getByText('AdvisoryOnlyInvalidTslSignature')).toBeTruthy();
+
+    // Closing from the panel's own control returns the keyboard to the row.
+    fireEvent.click(
+      within(panel).getByRole('button', { name: trustSectionsPtPT['tools.trust.panel.close'] }),
+    );
+    await waitFor(() => expect(screen.queryByRole('complementary')).toBeNull());
+    expect(document.activeElement).toBe(row);
+
+    // The selection is still addressable: a URL naming a record paints its panel on arrival.
+    first.unmount();
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa?tsaRecord=svc-tsa']);
+    const deepLinked = await screen.findByRole('complementary', {
+      name: trustSectionsPtPT['tools.trust.panel.tsaRecord'],
+    });
+    expect(within(deepLinked).getByRole('heading', { level: 3 }).textContent).toBe(
+      'Qualified Timestamping Authority',
+    );
   });
 });

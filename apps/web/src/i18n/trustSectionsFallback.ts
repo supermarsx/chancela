@@ -27,6 +27,12 @@ export const trustSectionsPtPT = {
   'tools.trust.section.tsl': 'Lista de confiança (TSL)',
   'tools.trust.section.tsa': 'Selos temporais (TSA)',
   'tools.trust.subnav.aria': 'Secções da lista de confiança',
+  // t88: the floating detail panel's own heading — it names the KIND of record on show; the
+  // record's own name stays inside the detail body, so nothing is interpolated into a sentence.
+  'tools.trust.panel.provider': 'Detalhe do prestador',
+  'tools.trust.panel.service': 'Detalhe do serviço',
+  'tools.trust.panel.tsaRecord': 'Detalhe do registo TSA',
+  'tools.trust.panel.close': 'Fechar o detalhe',
 } as const;
 
 /** The key set the Lista de confiança sub-tab copy resolves. */
@@ -36,6 +42,10 @@ export const trustSectionsEnglish = {
   'tools.trust.section.tsl': 'Trust list (TSL)',
   'tools.trust.section.tsa': 'Time stamps (TSA)',
   'tools.trust.subnav.aria': 'Trust list sections',
+  'tools.trust.panel.provider': 'Provider detail',
+  'tools.trust.panel.service': 'Service detail',
+  'tools.trust.panel.tsaRecord': 'TSA record detail',
+  'tools.trust.panel.close': 'Close the detail',
 } as const satisfies Record<TrustSectionsCopyKey, string>;
 
 /**
