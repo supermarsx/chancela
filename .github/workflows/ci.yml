@@ -99,6 +99,14 @@ jobs:
       - name: Check search-projector dependency boundary
         run: node scripts/check-search-projector-dependencies.mjs
 
+      # The self-test runs FIRST and is not optional: it proves the gate still goes red on a
+      # phantom status. A green `check` from a gate whose decision logic has been loosened is
+      # worse than no gate, because it reports confidence over its own blind spot.
+      - name: Check docs-to-code claims parity
+        run: |
+          node scripts/check-docs-claims.mjs --self-test
+          node scripts/check-docs-claims.mjs
+
       - name: Check Docker image contracts
         run: |
           node scripts/check-docker-image-contracts.mjs check

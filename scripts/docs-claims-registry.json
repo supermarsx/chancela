@@ -1,0 +1,150 @@
+{
+  "_README": [
+    "Exemptions and tracked defects for scripts/check-docs-claims.mjs.",
+    "",
+    "Every entry needs a written reason of substance; the checker rejects a short one.",
+    "Every entry is EXERCISED: when it stops matching anything the check FAILS and demands its",
+    "deletion. That is what stops this file becoming a rubber stamp.",
+    "",
+    "NEVER add an entry to make a matcher stop complaining about a case it should understand.",
+    "Fix the matcher instead. An exemption is for something genuinely outside the mechanism —",
+    "a different namespace, a client-owned vocabulary — not for a case the gate got right."
+  ],
+
+  "_identifierAllowlist_README": [
+    "Backticked dotted tokens that collide with a settings root or a permission namespace but",
+    "belong to a different namespace entirely. The recognizer keys on the first segment, which",
+    "is derived from code and deliberately not narrowed to whatever happens to resolve."
+  ],
+  "identifierAllowlist": [
+    {
+      "identifier": "act.convening",
+      "reason": "Act DTO field path (the act payload's `convening` object), not a permission. It collides with the `act.*` permission namespace only because the docs address a response body with the same dotted style. Gate 1 models the settings document and the permission catalog; it does not model API DTO shapes."
+    },
+    {
+      "identifier": "act.ai_provenance",
+      "reason": "Act DTO field path (the act payload's `ai_provenance` object), same collision as `act.convening`. The AI-provenance envelope is a response-body section, not a permission verb or a settings key."
+    },
+    {
+      "identifier": "template.summary",
+      "reason": "Name of a composed-server contract E2E fixture, listed in CI-E2E-HARDENING-PLAN.md alongside `template.import-verdict`. Fixture names are a test-asset namespace that gate 1 does not model; the `template.*` permission namespace collision is incidental."
+    },
+    {
+      "identifier": "template.export",
+      "reason": "Name of a composed-server contract E2E fixture, same namespace as `template.summary`. The corresponding artefact filename `template.export.json` is excluded by the recognizer's file-path rule; the extensionless fixture name is not."
+    },
+    {
+      "identifier": "settings.id",
+      "reason": "PostgreSQL column reference in the HA least-privilege section of docs/configuration.md ('the role can read exactly `settings.id` and `settings.json`') — a database schema namespace, not the settings document. `settings.json` is excluded by the file-path rule; the bare column is not."
+    }
+  ],
+
+  "_unionAllowlist_README": [
+    "Web `as const` unions whose values are client-owned and never crossed the wire from Rust.",
+    "Listing a union here also removes a FALSE GREEN: an unlisted client-owned union can pass",
+    "merely because its values coincide with unrelated Rust identifiers."
+  ],
+  "unionAllowlist": [
+    {
+      "union": "BOOK_COLUMNS",
+      "reason": "Opaque per-user UI table column ids, documented in types.ts as 'an ordered, opaque list of column ids… NOT part of the settings document and NOT in the ledger'. The server stores the list verbatim and never emits these tokens as values, so backend emittability is not the right contract for them."
+    },
+    {
+      "union": "REGISTERED_ENTITY_COLUMNS",
+      "reason": "The same opaque per-user UI column vocabulary as BOOK_COLUMNS, for the entities table. Listed explicitly even though it currently passes: its members ('Name', 'Type', 'Capital'…) resolve only by coincidence against unrelated Rust identifiers, and an unlisted coincidental pass is a false green rather than coverage."
+    }
+  ],
+
+  "_memberAllowlist_README": [
+    "Single values inside an otherwise-checked union. Prefer fixing the emittability model over",
+    "adding entries here — a value the backend really does emit means the model is incomplete."
+  ],
+  "memberAllowlist": [],
+
+  "_keyUnions_README": [
+    "Web `as const` unions whose members are JSON object KEYS, not values. They are checked",
+    "against the fields of the one Rust struct that owns those keys — NOT exempted, and NOT",
+    "checked against the emittable-value set, which a key can never legitimately belong to.",
+    "",
+    "This section exists so the value model can stay strict. Folding Rust struct field names",
+    "into the emittable-value vocabulary would justify these members, but it also adds 3509",
+    "names that every OTHER union could then pass against by coincidence. Measured on this tree,",
+    "that channel justified exactly one union member — this one. Naming the owning struct turns",
+    "a match against 3509 global field names into a match against that struct's 5 fields."
+  ],
+  "keyUnions": [
+    {
+      "union": "TEMPLATE_PREVIEW_FAMILY_PROFILE_KEYS",
+      "struct": "TemplatePreviewFamilyProfiles",
+      "reason": "Its members ('commercial_company', 'association', 'condominium', 'cooperative', 'foundation') are the serialised field names of `TemplatePreviewFamilyProfiles` in crates/chancela-api/src/template_preview_samples.rs — the web indexes the family_profiles object by these keys. They are JSON keys the server emits as object members, never as string values, so emittable-value parity is the wrong contract for them; struct-field parity is the right one."
+    }
+  ],
+
+  "_asConstNonUnionSites_README": [
+    "`as const` declarations in types.ts that are neither a string array nor a string-valued",
+    "record. Empty is the healthy state: it means the matcher understands every declaration."
+  ],
+  "asConstNonUnionSites": [],
+
+  "_knownDefects_README": [
+    "Live defects this gate detects, tracked rather than suppressed. Each entry names its owner.",
+    "Because entries are exercised, FIXING a defect without deleting its entry fails the check —",
+    "so a tracked defect cannot quietly become permanent, and a fix cannot quietly lose its gate."
+  ],
+  "knownDefects": [
+    {
+      "key": "union::FINALIZATION_STATUSES::rascunho",
+      "owner": "t61-e3",
+      "reason": "Phantom wire contract (t61 §1.3b): FINALIZATION_STATUSES declares five statuses; `finalization_status` in crates/chancela-api/src/signature.rs emits three. `rascunho` is emitted by no production path — the not-sealed state reports `em_assinatura`. t61-e3 resolves it by dropping `rascunho` from the contract; delete this entry with that change."
+    },
+    {
+      "key": "union::FINALIZATION_STATUSES::aguarda_assinatura_qualificada",
+      "owner": "t61-e3",
+      "reason": "Phantom wire contract (t61 §1.3b): the client type asserts a server state that cannot occur, because `require_qualified_for_seal` is bound as `_require_qualified` and never referenced. t61-e3 makes the flag operative so this status becomes emittable; delete this entry with that change."
+    },
+    {
+      "key": "docs::rascunho",
+      "owner": "t61-e6",
+      "reason": "docs/ARCHITECTURE.md documents 'not sealed ⇒ `rascunho`' in the enforcement-gates section. The code emits `em_assinatura` for that case, and would continue to even with the flag wired, so this is a doc error independent of t61-e3. t61-e6 corrects the prose; delete this entry with that change."
+    },
+    {
+      "key": "docs::aguarda_assinatura_qualificada",
+      "owner": "t61-e6",
+      "reason": "docs/ARCHITECTURE.md documents 'sealed with the flag on but no qualified sig ⇒ `aguarda_assinatura_qualificada`'. No production path reaches it today. Once t61-e3 makes the flag operative the claim becomes true and this entry must be deleted; until then the doc describes an unreachable state."
+    }
+  ],
+
+  "_statusWatchlist_README": [
+    "Extra literals the docs half treats as status claims, beyond the declared web unions.",
+    "This is a WATCHLIST, not an allowlist: it only ever ADDS coverage, so it carries no",
+    "rubber-stamp risk and is not exercised. Use it to keep a doc claim under guard after the",
+    "value leaves the web contract — otherwise dropping a union member silently drops the check."
+  ],
+  "statusWatchlist": [
+    {
+      "value": "rascunho",
+      "reason": "Keeps docs coverage of this status claim alive after t61-e3 removes `rascunho` from FINALIZATION_STATUSES. Without it, dropping the union member would silently stop checking the ARCHITECTURE.md claim that the code emits it."
+    },
+    {
+      "value": "aguarda_assinatura_qualificada",
+      "reason": "Same reason as `rascunho`: keeps the docs claim under guard independently of whether the value remains in the web union, since the union and the prose are corrected by different executors (t61-e3 and t61-e6)."
+    }
+  ],
+
+  "_quotedLiteralExemptions_README": [
+    "(file, value) pairs where a doc QUOTES a non-emittable literal in order to document that it",
+    "is non-emittable. Only the claims register legitimately does this: a register whose subject",
+    "is false claims has to be able to state them.",
+    "",
+    "Scoped to one file and one value at a time — never a whole-file exemption, which would stop",
+    "checking real claims in the same document. Exercised like every other entry: when the value",
+    "becomes emittable the pair stops matching and the check demands its deletion."
+  ],
+  "quotedLiteralExemptions": [
+    {
+      "file": "docs/signing-trust-claims.md",
+      "value": "rascunho",
+      "reason": "Entry ST-11 of the claims register quotes the ARCHITECTURE.md sentence 'not sealed => `rascunho`' in order to record that the code emits `em_assinatura` instead. Today the quotation is absorbed by knownDefects::docs::rascunho, but t61-e6 deletes that entry when it corrects the prose — and `rascunho` stays permanently non-emittable because t61-e3 drops it rather than implementing it. Without this pair the register would go red for correctly documenting a defect. Checked before knownDefects so it is exercised now rather than only after t61-e6 lands."
+    }
+  ]
+}

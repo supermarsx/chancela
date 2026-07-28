@@ -19,6 +19,8 @@
     "check:versions": "node scripts/check-versions.mjs",
     "check:spec-coverage": "node scripts/check-spec-coverage.mjs",
     "test:spec-coverage-policy": "node --test scripts/check-spec-coverage-snapshot.test.mjs",
+    "check:docs-claims": "node scripts/check-docs-claims.mjs",
+    "test:docs-claims-selftest": "node scripts/check-docs-claims.mjs --self-test",
     "check:ci-assurance-waivers": "node scripts/check-ci-assurance-waivers.mjs",
     "check:live-provider-assurance": "node scripts/check-live-provider-assurance.mjs",
     "check:encrypted-build-defaults": "node scripts/check-encrypted-build-defaults.mjs",
