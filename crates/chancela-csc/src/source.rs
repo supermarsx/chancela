@@ -27,7 +27,9 @@
 
 use zeroize::Zeroizing;
 
-use chancela_cades::{RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{
+    RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest,
+};
 use chancela_pades::PreparedSignature;
 use chancela_signing::{
     EvidentiaryLevel, RemoteInitiate, RemoteSignSession, RemoteSigningSource, SigningError,
@@ -189,12 +191,8 @@ impl<T: CscTransport> RemoteSigningSource for CscRemoteSource<T> {
             session.signing_cert_der.clone(),
             session.chain_der.clone(),
         );
-        assemble_cades_b(
-            &raw,
-            &session.byterange_digest,
-            SignedAttrsProfile::Pades,
-        )
-        .map_err(cades_err)
+        assemble_cades_b(&raw, &session.byterange_digest, SignedAttrsProfile::Pades)
+            .map_err(cades_err)
     }
 }
 

@@ -1286,8 +1286,7 @@ mod tests {
             )
             .unwrap();
         assert_eq!(
-            payload.entity_seat,
-            "Avenida da Liberdade, n.º 214, 1250-148 Lisboa",
+            payload.entity_seat, "Avenida da Liberdade, n.º 214, 1250-148 Lisboa",
             "the operator's assertion, not the entity's current seat"
         );
     }
@@ -1368,7 +1367,11 @@ mod tests {
             })
         ));
         termo.fields.entity_seat = Some("Rua das Amoreiras, n.º 12, 1250-020 Lisboa".into());
-        assert!(termo.advance_to_signing("csc-termo-abertura", now()).is_ok());
+        assert!(
+            termo
+                .advance_to_signing("csc-termo-abertura", now())
+                .is_ok()
+        );
     }
 
     /// Only the abertura projects an entity snapshot, so a seat on an encerramento would be

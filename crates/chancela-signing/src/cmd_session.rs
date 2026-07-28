@@ -22,7 +22,9 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use chancela_cades::{RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{
+    RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest,
+};
 use chancela_cmd::rand_core::OsRng;
 use chancela_cmd::{CmdError, ProcessHandle, ScmdClient, ScmdTransport, SignRequest};
 use chancela_pades::PreparedSignature;

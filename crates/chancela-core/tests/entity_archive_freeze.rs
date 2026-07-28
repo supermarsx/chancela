@@ -123,8 +123,14 @@ fn manual_reference() -> ManualSignatureOriginalReference {
 fn open_book_genesis(entity: &Entity) -> (Book, Ledger, [u8; 32], String) {
     let mut book = deterministic_book(entity);
     let mut ledger = Ledger::default();
-    open_and_seal_book(&mut book, entity, abertura(entity), "sec@encosto", &mut ledger)
-        .expect("the deterministic book opens");
+    open_and_seal_book(
+        &mut book,
+        entity,
+        abertura(entity),
+        "sec@encosto",
+        &mut ledger,
+    )
+    .expect("the deterministic book opens");
     let genesis = &ledger.events()[0];
     assert_eq!(genesis.kind, "book.opened");
     let digest = genesis.payload_digest;
@@ -211,7 +217,9 @@ fn archiving_an_entity_cannot_move_the_book_opened_genesis_preimage() {
     // the identical scope. This is the guarantee the plan forbids anyone from touching.
     let active = deterministic_entity();
     let mut archived = deterministic_entity();
-    archived.archive(datetime!(2026-07-27 09:30:00 UTC)).unwrap();
+    archived
+        .archive(datetime!(2026-07-27 09:30:00 UTC))
+        .unwrap();
 
     let (_, _, active_digest, active_scope) = open_book_genesis(&active);
     let (_, _, archived_digest, archived_scope) = open_book_genesis(&archived);
@@ -252,7 +260,14 @@ fn a_sealed_act_seals_identically_whether_or_not_its_entity_is_archived() {
     let seal_digest = |entity: &Entity| {
         let mut book = deterministic_book(entity);
         let mut ledger = Ledger::default();
-        open_and_seal_book(&mut book, entity, abertura(entity), "sec@encosto", &mut ledger).unwrap();
+        open_and_seal_book(
+            &mut book,
+            entity,
+            abertura(entity),
+            "sec@encosto",
+            &mut ledger,
+        )
+        .unwrap();
         let pack = rule_pack_for(entity);
         let mut act = clean_act();
         let outcome = seal_act(
@@ -272,7 +287,9 @@ fn a_sealed_act_seals_identically_whether_or_not_its_entity_is_archived() {
 
     let active = deterministic_entity();
     let mut archived = deterministic_entity();
-    archived.archive(datetime!(2026-07-27 09:30:00 UTC)).unwrap();
+    archived
+        .archive(datetime!(2026-07-27 09:30:00 UTC))
+        .unwrap();
 
     let (active_digest, active_metadata) = seal_digest(&active);
     let (archived_digest, archived_metadata) = seal_digest(&archived);

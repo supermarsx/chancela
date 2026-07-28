@@ -63,7 +63,10 @@ struct TempDir(std::path::PathBuf);
 impl TempDir {
     fn new() -> Self {
         let mut p = std::env::temp_dir();
-        p.push(format!("chancela-entity-archive-enforcement-{}", Uuid::new_v4()));
+        p.push(format!(
+            "chancela-entity-archive-enforcement-{}",
+            Uuid::new_v4()
+        ));
         std::fs::create_dir_all(&p).expect("temp dir created");
         Self(p)
     }
@@ -317,7 +320,9 @@ async fn frozen_party_identity(state: &AppState, act_id: &str) -> (String, Strin
     let act_id = ActId(Uuid::parse_str(act_id).expect("act uuid"));
     let book_id = {
         let acts = state.acts.read().await;
-        acts.get(&act_id).expect("the sealed act is retained").book_id
+        acts.get(&act_id)
+            .expect("the sealed act is retained")
+            .book_id
     };
     let books = state.books.read().await;
     let book = books.get(&book_id).expect("the act's book is retained");
@@ -696,6 +701,7 @@ async fn unarchiving_restores_new_authorship() {
         "unarchiving must return the entity to new authorship: {book}"
     );
     assert_eq!(book["state"], "Open");
-    let book_id = BookId(Uuid::parse_str(book["id"].as_str().expect("book id")).expect("book uuid"));
+    let book_id =
+        BookId(Uuid::parse_str(book["id"].as_str().expect("book id")).expect("book uuid"));
     assert!(state.books.read().await.contains_key(&book_id));
 }

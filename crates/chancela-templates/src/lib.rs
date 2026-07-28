@@ -1367,13 +1367,7 @@ mod tests {
     #[test]
     fn both_termo_abertura_versions_resolve_and_only_v2_states_the_page_count() {
         let reg = load_registry().expect("registry loads");
-        for family in [
-            "csc",
-            "assoc",
-            "condominio",
-            "cooperativa",
-            "fundacao",
-        ] {
+        for family in ["csc", "assoc", "condominio", "cooperativa", "fundacao"] {
             let v1 = reg
                 .get(&format!("{family}-termo-abertura/v1"))
                 .unwrap_or_else(|| panic!("{family} v1 still resolves"));

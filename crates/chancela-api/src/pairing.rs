@@ -410,10 +410,9 @@ pub async fn create_pairing_code(
         // delivery of a confirmation method, so "code minted" while the code needed to use it sits
         // undelivered would be a success report for a state that is not one. The pairing code is
         // dropped again so the operator is not left holding one they cannot complete.
-        if let Err(e) = issue_and_send_emailed_code(
-            &state, &actor, &attestor, uid, &recipient, &label, now,
-        )
-        .await
+        if let Err(e) =
+            issue_and_send_emailed_code(&state, &actor, &attestor, uid, &recipient, &label, now)
+                .await
         {
             state.pairing.discard_code(&code).await;
             return Err(e);
@@ -482,10 +481,8 @@ async fn prepare_emailed_code(
     // because then the mailbox is not a second factor at all: it is the only one, reachable from
     // the same chair. An operator in this state can still pair with a TOTP code, and the honest
     // fix is for them to set a credential — which the message says.
-    if crate::data::step_up_is_vacuous(
-        user.password_hash.as_deref(),
-        user.recovery_hash.as_deref(),
-    ) {
+    if crate::data::step_up_is_vacuous(user.password_hash.as_deref(), user.recovery_hash.as_deref())
+    {
         return Err(ApiError::Unprocessable(
             "a sua conta não tem palavra-passe nem frase de recuperação, por isso o código \
              enviado por email seria a única prova exigida para emparelhar. Defina uma \
@@ -917,13 +914,8 @@ mod tests {
 
     /// Narrow this deployment's accepted confirmation methods.
     async fn accept_only(state: &AppState, methods: &[PairingConfirmationMethod]) {
-        state
-            .settings
-            .write()
-            .await
-            .auth
-            .device_pairing
-            .accepted = methods.iter().copied().collect();
+        state.settings.write().await.auth.device_pairing.accepted =
+            methods.iter().copied().collect();
     }
 
     /// The operator's enrolled devices. The refusal tests assert on this: "did not pair" means no
@@ -968,7 +960,11 @@ mod tests {
     }
 
     /// Attempt a mint with an arbitrary confirmation object.
-    async fn mint_with(state: &AppState, operator: &str, confirmation: Value) -> (StatusCode, Value) {
+    async fn mint_with(
+        state: &AppState,
+        operator: &str,
+        confirmation: Value,
+    ) -> (StatusCode, Value) {
         json_response(
             crate::router(state.clone())
                 .oneshot(auth_request(
@@ -1345,8 +1341,12 @@ mod tests {
         let code = mint_code(&state, &operator).await;
 
         // No password anywhere in this body — the point of the password-free path.
-        let (status, exchanged) =
-            exchange_with(&state, &code, json!({ "totp_code": live_totp_code(&secret) })).await;
+        let (status, exchanged) = exchange_with(
+            &state,
+            &code,
+            json!({ "totp_code": live_totp_code(&secret) }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "exchange: {exchanged}");
         assert_eq!(exchanged["confirmed_by"], "totp_code");
         assert_eq!(
@@ -1379,8 +1379,12 @@ mod tests {
 
         // The accepted method still works.
         let code = mint_code(&state, &operator).await;
-        let (status, exchanged) =
-            exchange_with(&state, &code, json!({ "totp_code": live_totp_code(&secret) })).await;
+        let (status, exchanged) = exchange_with(
+            &state,
+            &code,
+            json!({ "totp_code": live_totp_code(&secret) }),
+        )
+        .await;
         assert_eq!(status, StatusCode::OK, "totp accepted: {exchanged}");
         assert_eq!(exchanged["confirmed_by"], "totp_code");
     }
@@ -1420,7 +1424,8 @@ mod tests {
         // The replay guard in `totp::verify_totp_for_user` has spent this step. Same code, fresh
         // pairing code: refused, and the second device is not enrolled.
         let second = mint_code(&state, &operator).await;
-        let (status, body) = exchange_with(&state, &second, json!({ "totp_code": presented })).await;
+        let (status, body) =
+            exchange_with(&state, &second, json!({ "totp_code": presented })).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "replay refused: {body}");
         assert_eq!(
             devices_of(&state, &operator).await.len(),
@@ -1454,8 +1459,12 @@ mod tests {
         accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
 
         let code = mint_code(&state, &operator).await;
-        let (status, body) =
-            exchange_with(&state, &code, json!({ "totp_code": live_totp_code(&secret) })).await;
+        let (status, body) = exchange_with(
+            &state,
+            &code,
+            json!({ "totp_code": live_totp_code(&secret) }),
+        )
+        .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
         assert!(
             devices_of(&state, &operator).await.is_empty(),
@@ -1469,7 +1478,8 @@ mod tests {
         let operator = operator_session(&state).await;
         let code = mint_code(&state, &operator).await;
 
-        let (status, _) = exchange_with(&state, &code, json!({ "password": "Cavalo-Errado9!" })).await;
+        let (status, _) =
+            exchange_with(&state, &code, json!({ "password": "Cavalo-Errado9!" })).await;
         assert_eq!(status, StatusCode::FORBIDDEN);
 
         // Retrying the same code with the CORRECT password is refused as an unknown code: one
@@ -1559,7 +1569,8 @@ mod tests {
         let stranger = issue_emailed_code(&state, Uuid::new_v4()).await;
         let code = mint_code(&state, &operator).await;
 
-        let (status, body) = exchange_with(&state, &code, json!({ "emailed_code": stranger })).await;
+        let (status, body) =
+            exchange_with(&state, &code, json!({ "emailed_code": stranger })).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
         assert!(devices_of(&state, &operator).await.is_empty());
     }
@@ -1572,8 +1583,12 @@ mod tests {
         issue_emailed_code(&state, user_id).await;
         let code = mint_code(&state, &operator).await;
 
-        let (status, body) =
-            exchange_with(&state, &code, json!({ "emailed_code": "AAAA-BBBB-CCCC-DDDD" })).await;
+        let (status, body) = exchange_with(
+            &state,
+            &code,
+            json!({ "emailed_code": "AAAA-BBBB-CCCC-DDDD" }),
+        )
+        .await;
         assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
         assert!(devices_of(&state, &operator).await.is_empty());
     }
@@ -1587,8 +1602,7 @@ mod tests {
         accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
         let code = mint_code(&state, &operator).await;
 
-        let (status, body) =
-            exchange_with(&state, &code, json!({ "emailed_code": emailed })).await;
+        let (status, body) = exchange_with(&state, &code, json!({ "emailed_code": emailed })).await;
         assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
         assert!(devices_of(&state, &operator).await.is_empty());
     }
@@ -1683,7 +1697,11 @@ mod tests {
         // signal is behaviour: the credential gate refuses BEFORE a token is issued, while a
         // relay failure happens after. One issued token therefore means the gate was passed and
         // the request died at the relay — which is the only thing this test claims.
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no relay here: {body}");
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "no relay here: {body}"
+        );
         assert_eq!(
             state.auth_tokens.read().await.len(),
             1,

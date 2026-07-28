@@ -696,14 +696,12 @@ fn sign_one_pdf(
     let options = crate::pipeline::with_pades_signing_time(&doc.options, signing_time);
 
     // Pre-sign preparation (may fail before the card is ever contacted).
-    let prepared = match prepare_signature_with_appearance(
-        doc.pdf,
-        options.as_ref(),
-        doc.appearance.as_ref(),
-    ) {
-        Ok(prepared) => prepared,
-        Err(e) => return (false, Err(pades_err(e))),
-    };
+    let prepared =
+        match prepare_signature_with_appearance(doc.pdf, options.as_ref(), doc.appearance.as_ref())
+        {
+            Ok(prepared) => prepared,
+            Err(e) => return (false, Err(pades_err(e))),
+        };
     let signed_attrs_digest = match signed_attributes_digest(
         prepared.byterange_digest(),
         signing_cert_der,

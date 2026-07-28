@@ -879,7 +879,11 @@ mod tests {
 
         // Exactly ONE event, on the tenant's own chain scope, digesting BOTH sides of the change.
         let ledger = state.ledger.read().await;
-        assert_eq!(ledger.len(), before + 1, "a rename appends exactly one event");
+        assert_eq!(
+            ledger.len(),
+            before + 1,
+            "a rename appends exactly one event"
+        );
         let event = ledger
             .events()
             .iter()

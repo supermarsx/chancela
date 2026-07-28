@@ -558,8 +558,14 @@ impl IntoResponse for ApiError {
             )
                 .into_response(),
             _ => {
-                let mut response =
-                    (status, Json(ErrorBody { error: message, code })).into_response();
+                let mut response = (
+                    status,
+                    Json(ErrorBody {
+                        error: message,
+                        code,
+                    }),
+                )
+                    .into_response();
                 if retry_after {
                     response.headers_mut().insert(
                         axum::http::header::RETRY_AFTER,
@@ -650,7 +656,9 @@ impl From<RegistryError> for ApiError {
             // lie — nothing upstream failed.
             RegistryError::InvalidCode(_)
             | RegistryError::CodeRejected(_)
-            | RegistryError::CertidaoNotFound(_) => ApiError::Unprocessable(message).with_code(code),
+            | RegistryError::CertidaoNotFound(_) => {
+                ApiError::Unprocessable(message).with_code(code)
+            }
             // Our own misconfiguration → `500`, and said as such.
             RegistryError::Config(_) => ApiError::RegistryConsultation {
                 message,
@@ -786,9 +794,13 @@ mod tests {
     /// channel for the same information, so it is capped too — structurally, not by convention.
     #[test]
     fn internal_and_upstream_codes_cannot_be_refined() {
-        let internal = ApiError::Internal("private detail".to_owned()).with_code("db_pool_exhausted");
+        let internal =
+            ApiError::Internal("private detail".to_owned()).with_code("db_pool_exhausted");
         assert_eq!(internal.code(), "http.internal");
-        assert!(matches!(internal, ApiError::Internal(_)), "not even wrapped");
+        assert!(
+            matches!(internal, ApiError::Internal(_)),
+            "not even wrapped"
+        );
 
         let upstream = ApiError::Upstream("TSL host refused".to_owned()).with_code("tsl_refused");
         assert_eq!(upstream.code(), "http.upstream");
@@ -952,9 +964,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_coded_error_renders_its_inner_status_body_and_message() {
-        let error =
-            ApiError::Conflict("o documento já não corresponde ao livro".to_owned())
-                .with_code("termo_stale_facts");
+        let error = ApiError::Conflict("o documento já não corresponde ao livro".to_owned())
+            .with_code("termo_stale_facts");
         let response = error.into_response();
         assert_eq!(response.status(), StatusCode::CONFLICT);
         let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)

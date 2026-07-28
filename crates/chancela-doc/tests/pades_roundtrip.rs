@@ -569,7 +569,11 @@ fn sign_with_text_seal(base: &[u8], name: &str, serial: u8) -> Vec<u8> {
     };
     sign_pdf_with_appearance(base, &SignOptions::default(), Some(&appearance), |digest| {
         let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
-        assemble_cades_b(&signer.raw_signature(&attrs), digest, SignedAttrsProfile::Pades)
+        assemble_cades_b(
+            &signer.raw_signature(&attrs),
+            digest,
+            SignedAttrsProfile::Pades,
+        )
     })
     .expect("visible-seal signing")
 }

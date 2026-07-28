@@ -84,7 +84,8 @@ use crate::authz::{require_permission, scope_of_book};
 use crate::confirmation::{ConfirmationAction, require_confirmation};
 use crate::dto::{
     AdvanceTermo, BookView, CloseBookFromTermo, OpenBookFromTermo, PatchTermoAbertura,
-    PatchTermoEncerramento, SignTermoSlot, TermoInstrumentView, normalize_capacity_note, parse_date,
+    PatchTermoEncerramento, SignTermoSlot, TermoInstrumentView, normalize_capacity_note,
+    parse_date,
 };
 use crate::error::ApiError;
 use crate::signature::{

@@ -11487,8 +11487,7 @@ mod tests {
             &signable_pdf(),
             &chancela_pades::SignOptions::default(),
             |digest| {
-                let attrs =
-                    signed_attributes_digest(digest, &cert_der, SignedAttrsProfile::Pades)?;
+                let attrs = signed_attributes_digest(digest, &cert_der, SignedAttrsProfile::Pades)?;
                 let raw = RawSignature::new(
                     SignatureAlgorithm::RsaPkcs1Sha256,
                     sign_rsa_digest_info(&key, &attrs),
@@ -15371,12 +15370,9 @@ mod tests {
         let mut termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
         termo.page_capacity = Some(250);
 
-        let model = chancela_templates::render_with_body(
-            abertura_spec(),
-            &termo_ctx(&termo, &book),
-            &[],
-        )
-        .expect("termo renders");
+        let model =
+            chancela_templates::render_with_body(abertura_spec(), &termo_ctx(&termo, &book), &[])
+                .expect("termo renders");
         let rows: Vec<(String, String)> = model
             .blocks
             .iter()
@@ -15403,14 +15399,14 @@ mod tests {
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = Book::new(entity.id, BookKind::AssembleiaGeral);
         let termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
-        assert_eq!(termo.page_capacity, None, "the one-shot shape declares none");
+        assert_eq!(
+            termo.page_capacity, None,
+            "the one-shot shape declares none"
+        );
 
-        let model = chancela_templates::render_with_body(
-            abertura_spec(),
-            &termo_ctx(&termo, &book),
-            &[],
-        )
-        .expect("termo renders");
+        let model =
+            chancela_templates::render_with_body(abertura_spec(), &termo_ctx(&termo, &book), &[])
+                .expect("termo renders");
         for block in &model.blocks {
             if let Block::KeyValue { rows } = block {
                 for row in rows {
@@ -15436,9 +15432,8 @@ mod tests {
         let v1 = registry()
             .get("csc-termo-abertura/v1")
             .expect("v1 still resolves for documents that name it");
-        let model =
-            chancela_templates::render_with_body(v1, &termo_ctx(&termo, &book), &[])
-                .expect("v1 renders");
+        let model = chancela_templates::render_with_body(v1, &termo_ctx(&termo, &book), &[])
+            .expect("v1 renders");
         let has_capacity_row = model.blocks.iter().any(|b| match b {
             Block::KeyValue { rows } => rows.iter().any(|r| r.value == "250"),
             _ => false,
@@ -15470,7 +15465,10 @@ mod tests {
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = Book::new(entity.id, BookKind::AssembleiaGeral);
         let termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
-        assert_eq!(termo.page_capacity, None, "the one-shot shape declares none");
+        assert_eq!(
+            termo.page_capacity, None,
+            "the one-shot shape declares none"
+        );
 
         let ctx = termo_ctx(&termo, &book);
         assert!(

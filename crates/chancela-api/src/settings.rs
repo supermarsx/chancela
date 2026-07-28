@@ -4374,9 +4374,15 @@ mod tests {
         let settings = EntitiesSettings::default();
         assert!(settings.enabled_kinds.is_empty());
         assert!(settings.is_default());
-        assert_eq!(settings.effective_enabled_kinds(), ALL_ENTITY_KINDS.to_vec());
+        assert_eq!(
+            settings.effective_enabled_kinds(),
+            ALL_ENTITY_KINDS.to_vec()
+        );
         for kind in ALL_ENTITY_KINDS {
-            assert!(settings.permits(kind), "{kind:?} must be permitted by default");
+            assert!(
+                settings.permits(kind),
+                "{kind:?} must be permitted by default"
+            );
         }
 
         // A settings document that predates the slice loads with the same reading.
@@ -4425,7 +4431,10 @@ mod tests {
             enabled_kinds: ALL_ENTITY_KINDS.to_vec(),
         };
         every.validate().expect("naming every kind is valid");
-        assert_eq!(every.effective_enabled_kinds().len(), ALL_ENTITY_KINDS.len());
+        assert_eq!(
+            every.effective_enabled_kinds().len(),
+            ALL_ENTITY_KINDS.len()
+        );
     }
 
     /// A repeated kind is refused, not silently de-duplicated: the stored list must stay a faithful

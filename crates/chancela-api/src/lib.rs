@@ -9610,11 +9610,7 @@ mod tests {
         // Authenticated deliberately: `send` seeds a fresh `auth_token` actor for a request with
         // no session header, and a second `test.actor` would shadow the one carrying the step-up
         // password. See `install_actor_password`.
-        let (_, events) = send(
-            state.clone(),
-            with_session(get("/v1/ledger/events"), token),
-        )
-        .await;
+        let (_, events) = send(state.clone(), with_session(get("/v1/ledger/events"), token)).await;
         assert!(
             !events
                 .as_array()
@@ -9643,11 +9639,7 @@ mod tests {
     /// Assert the book is untouched: still `Open`, termo still `Signing`, no `book.closed`.
     async fn assert_book_not_closed(state: &AppState, token: &str, book_id: &str, why: &str) {
         // Authenticated for the same reason as `assert_book_not_opened` above.
-        let (_, events) = send(
-            state.clone(),
-            with_session(get("/v1/ledger/events"), token),
-        )
-        .await;
+        let (_, events) = send(state.clone(), with_session(get("/v1/ledger/events"), token)).await;
         assert!(
             !events
                 .as_array()
@@ -9664,7 +9656,10 @@ mod tests {
         assert_eq!(book["state"], "Open", "{why}: the book must not close");
         let (_, termo) = send(
             state.clone(),
-            with_session(get(&format!("/v1/books/{book_id}/termo/encerramento")), token),
+            with_session(
+                get(&format!("/v1/books/{book_id}/termo/encerramento")),
+                token,
+            ),
         )
         .await;
         assert_eq!(
@@ -21253,7 +21248,10 @@ mod tests {
         assert_eq!(unknown_status, StatusCode::UNAUTHORIZED);
         assert_eq!(wrong_status, unknown_status);
         assert_eq!(empty_status, unknown_status);
-        assert_eq!(unknown_body, json!({ "error": "credenciais inválidas", "code": "invalid_credentials" }));
+        assert_eq!(
+            unknown_body,
+            json!({ "error": "credenciais inválidas", "code": "invalid_credentials" })
+        );
         assert_eq!(
             wrong_body, unknown_body,
             "the two failures must be identical"
@@ -21384,7 +21382,10 @@ mod tests {
         }
 
         let (_, reference_status, reference_body) = observed[0].clone();
-        assert_eq!(reference_body, json!({ "error": "credenciais inválidas", "code": "invalid_credentials" }));
+        assert_eq!(
+            reference_body,
+            json!({ "error": "credenciais inválidas", "code": "invalid_credentials" })
+        );
         for (label, status, body) in &observed[1..] {
             assert_eq!(*status, reference_status, "{label} differs in status");
             assert_eq!(
@@ -21498,7 +21499,10 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(body, json!({ "error": "credenciais inválidas", "code": "invalid_credentials" }));
+        assert_eq!(
+            body,
+            json!({ "error": "credenciais inválidas", "code": "invalid_credentials" })
+        );
     }
 
     // --- tg1: the unauthenticated surface answers nothing about who exists -----------------

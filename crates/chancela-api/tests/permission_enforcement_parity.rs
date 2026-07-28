@@ -536,7 +536,9 @@ fn scan() -> Scan {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let mut sources = BTreeMap::new();
     for entry in fs::read_dir(&root).expect("the chancela-api source directory must be readable") {
-        let path = entry.expect("source directory entry must be readable").path();
+        let path = entry
+            .expect("source directory entry must be readable")
+            .path();
         assert!(
             !path.is_dir(),
             "{} contains a subdirectory: the scan walks a flat module tree and would miss it",
@@ -579,8 +581,7 @@ fn scan() -> Scan {
                         observed.entry(verb.to_owned()).or_default().insert(site);
                     }
                     None => {
-                        let key =
-                            format!("{name}::{} {anchor}", enclosing_function(source, at));
+                        let key = format!("{name}::{} {anchor}", enclosing_function(source, at));
                         let slot = unparsed.entry(key).or_insert((0, site));
                         slot.0 += 1;
                     }

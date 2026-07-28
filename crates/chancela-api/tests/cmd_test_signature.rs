@@ -66,7 +66,10 @@ struct TempDir(std::path::PathBuf);
 impl TempDir {
     fn new() -> Self {
         let mut p = std::env::temp_dir();
-        p.push(format!("chancela-cmd-test-signature-{}", uuid::Uuid::new_v4()));
+        p.push(format!(
+            "chancela-cmd-test-signature-{}",
+            uuid::Uuid::new_v4()
+        ));
         std::fs::create_dir_all(&p).unwrap();
         TempDir(p)
     }
@@ -419,8 +422,8 @@ async fn the_typed_phrase_gate_refuses_with_403_and_never_signs_the_operator_out
     ];
 
     for (label, body) in cases {
-        let (status, response) = send(&state, json_req("POST", INITIATE_URI, Some(&token), body))
-            .await;
+        let (status, response) =
+            send(&state, json_req("POST", INITIATE_URI, Some(&token), body)).await;
         assert_eq!(
             status,
             StatusCode::FORBIDDEN,

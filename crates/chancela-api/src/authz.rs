@@ -568,7 +568,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/entities/{id}/archive", RouteClass::Gated), // POST entity.archive@Entity
     ("/v1/entities/{id}/unarchive", RouteClass::Gated), // POST entity.archive@Entity (same verb: the authority to retire is the authority to un-retire)
     ("/v1/entities/import-from-registry", RouteClass::Gated), // POST entity.create@Global
-    ("/v1/entities/{id}/registry", RouteClass::Gated), // GET entity.read@Entity
+    ("/v1/entities/{id}/registry", RouteClass::Gated),  // GET entity.read@Entity
     ("/v1/entities/{id}/registry/import", RouteClass::Gated), // POST entity.registry.import@Entity
     ("/v1/entities/{id}/chronology", RouteClass::Gated), // GET entity.read@Entity
     ("/v1/registry/lookup", RouteClass::Gated), // POST entity.registry.lookup@Global · GET entity.read@Global
@@ -803,7 +803,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         RouteClass::Gated,
     ), // POST signing.perform@Book
     ("/v1/acts/{id}/signature/ltv/execute", RouteClass::Gated), // POST signing.perform@Book
-    ("/v1/acts/{id}/signature/ltv/renew", RouteClass::Gated), // POST signing.perform@Book
+    ("/v1/acts/{id}/signature/ltv/renew", RouteClass::Gated),  // POST signing.perform@Book
     // Generic provider-parameterized remote signing (t59-s3): CMD + any configured CSC QTSP.
     (
         "/v1/acts/{id}/signature/remote/{provider}/initiate",

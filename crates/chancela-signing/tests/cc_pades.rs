@@ -494,9 +494,12 @@ fn cc_prepare_sign_embed_validate_explicit() {
 
     // The card signs the CAdES signed-attributes digest over the prepared ByteRange digest.
     let cert_der = provider.signing_certificate_der().expect("signature cert");
-    let signed_attrs =
-        signed_attributes_digest(prepared.byterange_digest(), &cert_der, SignedAttrsProfile::Pades)
-            .expect("signed-attrs digest");
+    let signed_attrs = signed_attributes_digest(
+        prepared.byterange_digest(),
+        &cert_der,
+        SignedAttrsProfile::Pades,
+    )
+    .expect("signed-attrs digest");
     let raw = provider
         .sign_signed_attributes(&signed_attrs)
         .expect("card sign_digest");

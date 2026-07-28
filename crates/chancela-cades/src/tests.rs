@@ -305,9 +305,12 @@ fn pades_profile_omits_the_cms_signing_time_attribute() {
     // at every level (B-B..B-LTA). The claimed instant belongs in the PDF `/M` entry instead.
     let signer = TestSigner::new_rsa("PAdES No Signing Time", 11);
     let content_digest = sha256(b"content");
-    let digest =
-        signed_attributes_digest(&content_digest, &signer.cert_der(), SignedAttrsProfile::Pades)
-            .unwrap();
+    let digest = signed_attributes_digest(
+        &content_digest,
+        &signer.cert_der(),
+        SignedAttrsProfile::Pades,
+    )
+    .unwrap();
     let raw = signer.raw_signature(&digest);
     let cms = assemble_cades_b(&raw, &content_digest, SignedAttrsProfile::Pades).unwrap();
 
@@ -346,7 +349,10 @@ fn cades_profile_keeps_the_cms_signing_time_attribute() {
 
     let validation = validate_cades_b(&cms, &content_digest).expect("validate");
     assert_eq!(
-        validation.signing_time.expect("signing time").unix_timestamp(),
+        validation
+            .signing_time
+            .expect("signing time")
+            .unix_timestamp(),
         1_750_000_000
     );
 }
@@ -358,9 +364,12 @@ fn pades_attributes_do_not_vary_with_time() {
     // `cades_signing_time_mismatch_breaks_signature` vacuous for PAdES — asserted, not assumed.
     let signer = TestSigner::new_ecdsa("PAdES Time Invariance", 13);
     let content_digest = sha256(b"content");
-    let a =
-        signed_attributes_digest(&content_digest, &signer.cert_der(), SignedAttrsProfile::Pades)
-            .unwrap();
+    let a = signed_attributes_digest(
+        &content_digest,
+        &signer.cert_der(),
+        SignedAttrsProfile::Pades,
+    )
+    .unwrap();
     let raw = signer.raw_signature(&a);
     // Assembling "later" cannot change the bytes, so the signature still verifies.
     let cms = assemble_cades_b(&raw, &content_digest, SignedAttrsProfile::Pades).unwrap();

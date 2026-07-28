@@ -2755,9 +2755,7 @@ async fn archiving_the_entity_refuses_a_new_act_draft_from_an_accepted_ocr_draft
     // Archive the entity that owns the target book.
     let entity_id = {
         let books = state.books.read().await;
-        let id = chancela_core::BookId(
-            uuid::Uuid::parse_str(&book_id).expect("book uuid"),
-        );
+        let id = chancela_core::BookId(uuid::Uuid::parse_str(&book_id).expect("book uuid"));
         books.get(&id).expect("the target book").entity_id
     };
     state

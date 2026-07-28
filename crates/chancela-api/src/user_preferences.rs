@@ -765,11 +765,20 @@ mod tests {
         let tc = &parsed.table_columns;
         assert_eq!(tc.entities.as_deref(), Some(["Name".to_owned()].as_slice()));
         assert_eq!(tc.books.as_deref(), Some(["Kind".to_owned()].as_slice()));
-        assert_eq!(tc.templates.as_deref(), Some(["Family".to_owned()].as_slice()));
+        assert_eq!(
+            tc.templates.as_deref(),
+            Some(["Family".to_owned()].as_slice())
+        );
         assert_eq!(tc.acts.as_deref(), Some(["Number".to_owned()].as_slice()));
         assert_eq!(tc.ledger.as_deref(), Some(["Seq".to_owned()].as_slice()));
-        assert_eq!(tc.users.as_deref(), Some(["Username".to_owned()].as_slice()));
-        assert_eq!(tc.processors.as_deref(), Some(["Name".to_owned()].as_slice()));
+        assert_eq!(
+            tc.users.as_deref(),
+            Some(["Username".to_owned()].as_slice())
+        );
+        assert_eq!(
+            tc.processors.as_deref(),
+            Some(["Name".to_owned()].as_slice())
+        );
         assert_eq!(tc.dpias.as_deref(), Some(["Name".to_owned()].as_slice()));
         assert_eq!(
             tc.breach_playbooks.as_deref(),

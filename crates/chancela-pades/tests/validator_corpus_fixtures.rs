@@ -128,7 +128,6 @@ fn build_fixtures() -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-
 fn sign_with(pdf: &[u8], signer: &CorpusSigner) -> Vec<u8> {
     let cert = signer.cert_der();
     sign_pdf(pdf, &SignOptions::default(), |digest| {

@@ -1249,9 +1249,11 @@ fn cmd_endpoint_reachable(vetted: &crate::trust::VettedHttpUrl) -> Result<(), St
         .map_err(|_| "The bounded outbound client could not be created.".to_owned())?;
     match client.head(vetted.as_str()).send() {
         Ok(_) => Ok(()),
-        Err(_) => Err("The AMA production endpoint could not be reached from this server. No \
+        Err(_) => Err(
+            "The AMA production endpoint could not be reached from this server. No \
                        SCMD operation was invoked."
-            .to_owned()),
+                .to_owned(),
+        ),
     }
 }
 
@@ -2527,7 +2529,11 @@ mod tests {
                 .find(|check| check["name"] == name)
                 .unwrap_or_else(|| panic!("check {name} is reported: {body}"))
         };
-        assert_eq!(named("configured_environment")["status"], "passed", "{body}");
+        assert_eq!(
+            named("configured_environment")["status"],
+            "passed",
+            "{body}"
+        );
         assert!(
             named("configured_environment")["detail"]
                 .as_str()
@@ -3250,9 +3256,7 @@ mod tests {
             unanchored.detail
         );
         assert!(
-            unanchored
-                .detail
-                .contains("signing.tsl_trust_anchor_certs"),
+            unanchored.detail.contains("signing.tsl_trust_anchor_certs"),
             "{}",
             unanchored.detail
         );
@@ -3264,7 +3268,11 @@ mod tests {
             from_env: 1,
         });
         assert_eq!(both.status, "passed", "{}", both.detail);
-        assert!(both.detail.contains("1 from the environment"), "{}", both.detail);
+        assert!(
+            both.detail.contains("1 from the environment"),
+            "{}",
+            both.detail
+        );
         assert!(
             both.detail.contains("at least 2 from the signing settings"),
             "{}",
@@ -3299,9 +3307,14 @@ mod tests {
         );
 
         // A malformed anchor fails closed rather than degrading to "unanchored".
-        let invalid =
-            cmd_trust_anchor_check(&CmdTrustAnchorPreflight::AnchorsInvalid("bad hex".to_owned()));
+        let invalid = cmd_trust_anchor_check(&CmdTrustAnchorPreflight::AnchorsInvalid(
+            "bad hex".to_owned(),
+        ));
         assert_eq!(invalid.status, "failed", "{}", invalid.detail);
-        assert!(invalid.detail.contains("fails closed"), "{}", invalid.detail);
+        assert!(
+            invalid.detail.contains("fails closed"),
+            "{}",
+            invalid.detail
+        );
     }
 }

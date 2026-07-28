@@ -106,8 +106,9 @@ pub fn probe_cc_provider(
     // is the carrier (EN 319 122-1 permits it). This probe emits no PAdES artifact.
     let profile = SignedAttrsProfile::Cades(signing_time);
     let signing_cert_der = provider.signing_certificate_der()?;
-    let signed_attrs_digest = signed_attributes_digest(challenge_digest, &signing_cert_der, profile)
-        .map_err(cades_err)?;
+    let signed_attrs_digest =
+        signed_attributes_digest(challenge_digest, &signing_cert_der, profile)
+            .map_err(cades_err)?;
     // Deliberately use the no-secret/protected-authentication path. A desktop IPC/native PIN
     // broker is not part of this seam, and accepting an HTTP PIN would turn a diagnostic into a
     // credential-bearing endpoint.
@@ -242,8 +243,8 @@ pub fn sign_pdf_cc_with_appearance(
     // PAdES: the claimed instant goes in the PDF `/M` entry, never in the CMS `signing-time`
     // attribute (EN 319 142-1 V1.2.1 Table 1, all levels).
     let options = crate::pipeline::with_pades_signing_time(options, signing_time);
-    let prepared = prepare_signature_with_appearance(pdf, options.as_ref(), appearance)
-        .map_err(pades_err)?;
+    let prepared =
+        prepare_signature_with_appearance(pdf, options.as_ref(), appearance).map_err(pades_err)?;
     let signed_attrs_digest = signed_attributes_digest(
         prepared.byterange_digest(),
         &signing_cert_der,

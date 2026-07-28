@@ -1661,7 +1661,10 @@ mod tests {
     async fn every_role_that_can_import_from_the_registry_can_also_look_up() {
         use chancela_authz::{Permission, default_roles};
         for role in default_roles() {
-            if role.permission_set.contains(&Permission::EntityRegistryImport) {
+            if role
+                .permission_set
+                .contains(&Permission::EntityRegistryImport)
+            {
                 assert!(
                     role.permission_set
                         .contains(&Permission::EntityRegistryLookup),
@@ -1765,7 +1768,10 @@ mod tests {
         let (status, entity) = send(state.clone(), get(&format!("/v1/entities/{id}"))).await;
         assert_eq!(status, StatusCode::OK);
         assert_eq!(entity["name"], "Nome Original, Lda", "name was rewritten");
-        assert_eq!(entity["seat"], "", "blank seat was backfilled from the certidão");
+        assert_eq!(
+            entity["seat"], "",
+            "blank seat was backfilled from the certidão"
+        );
         assert_eq!(
             state.ledger.read().await.events().len(),
             events_before,

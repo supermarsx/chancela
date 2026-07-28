@@ -60,7 +60,6 @@ fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
 
-
 // --- In-test signer (mirrors chancela-cades/src/tests.rs) ----------------------------------------
 
 enum TestSigner {

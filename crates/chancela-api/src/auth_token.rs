@@ -1108,21 +1108,13 @@ mod tests {
         let presented = canonicalize_transcribable(secret.expose());
 
         let record = store
-            .redeem(
-                AuthTokenPurpose::DevicePairingConfirmation,
-                &presented,
-                now,
-            )
+            .redeem(AuthTokenPurpose::DevicePairingConfirmation, &presented, now)
             .expect("first redeem succeeds");
         assert_eq!(record.subject.user_id(), Some(user));
         // Spent by the redeem, not by the caller's success.
         assert!(
             store
-                .redeem(
-                    AuthTokenPurpose::DevicePairingConfirmation,
-                    &presented,
-                    now
-                )
+                .redeem(AuthTokenPurpose::DevicePairingConfirmation, &presented, now)
                 .is_err(),
             "a transcribed secret is single use"
         );

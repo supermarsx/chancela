@@ -2636,7 +2636,15 @@ mod tests {
     async fn create_entity_permits_every_kind_while_the_allowlist_is_untouched() {
         let state = AppState::default();
         let token = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, Scope::Global).await;
-        assert!(state.settings.read().await.entities.enabled_kinds.is_empty());
+        assert!(
+            state
+                .settings
+                .read()
+                .await
+                .entities
+                .enabled_kinds
+                .is_empty()
+        );
 
         for (nipc, kind) in [("503004642", "Fundacao"), ("500000000", "SociedadeAnonima")] {
             let (status, created) = send_raw(
@@ -2896,13 +2904,20 @@ mod tests {
             .iter()
             .filter(|event| event.kind == "entity.unarchived")
             .collect();
-        assert_eq!(unarchived.len(), 1, "a redundant unarchive must append nothing");
+        assert_eq!(
+            unarchived.len(),
+            1,
+            "a redundant unarchive must append nothing"
+        );
         assert_eq!(unarchived[0].scope, expected_scope);
 
         let (status, missing) = send_raw(
             state.clone(),
             with_session(
-                post_json(&format!("/v1/entities/{}/archive", Uuid::new_v4()), json!({})),
+                post_json(
+                    &format!("/v1/entities/{}/archive", Uuid::new_v4()),
+                    json!({}),
+                ),
                 &token,
             ),
         )
@@ -3026,11 +3041,7 @@ mod tests {
             assert_eq!(ids(&body), both, "{uri} must still return archived rows");
         }
         // And the row carries the state, so a consumer that now receives it can render it.
-        let (_, body) = send_raw(
-            state.clone(),
-            with_session(get("/v1/entities"), &token),
-        )
-        .await;
+        let (_, body) = send_raw(state.clone(), with_session(get("/v1/entities"), &token)).await;
         let retired_row = body
             .as_array()
             .expect("list is an array")
@@ -3195,7 +3206,10 @@ mod tests {
 
         let (status, _) = send_raw(
             state.clone(),
-            with_session(post_json(&format!("/v1/entities/{id}/archive"), json!({})), &token),
+            with_session(
+                post_json(&format!("/v1/entities/{id}/archive"), json!({})),
+                &token,
+            ),
         )
         .await;
         assert_eq!(status, StatusCode::NO_CONTENT);
@@ -3210,7 +3224,9 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::CONFLICT, "{body}");
-        let message = body["error"].as_str().expect("a conflict carries a message");
+        let message = body["error"]
+            .as_str()
+            .expect("a conflict carries a message");
         assert!(message.contains("Encosto Estratégico Lda"), "{message}");
         assert!(message.contains("Unarchive it first"), "{message}");
 

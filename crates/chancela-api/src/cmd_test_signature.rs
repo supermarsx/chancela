@@ -82,7 +82,8 @@ use crate::error::ApiError;
 use crate::settings::CmdEnvSetting;
 use crate::signature::{
     build_trust_policy, cmd_config_err, configured_tsl_source, finalize_signed_pdf,
-    looks_like_scmd_phone, map_signing_error, mask_phone, pdf_time, resolve_cmd_candidates, rfc3339,
+    looks_like_scmd_phone, map_signing_error, mask_phone, pdf_time, resolve_cmd_candidates,
+    rfc3339,
 };
 
 /// The ledger scope both audit events are recorded under. Deliberately **not** a book/act/entity
@@ -442,8 +443,16 @@ pub async fn initiate_cmd_test_signature(
     )
     .await?;
 
-    let session = run_test_initiate(&state, &cfg, tsl_source, &phone, &pin, signing_time, &prepared)
-        .await?;
+    let session = run_test_initiate(
+        &state,
+        &cfg,
+        tsl_source,
+        &phone,
+        &pin,
+        signing_time,
+        &prepared,
+    )
+    .await?;
     drop(pin);
 
     let session_id = Uuid::new_v4().to_string();
@@ -528,7 +537,10 @@ pub async fn confirm_cmd_test_signature(
 
     let pending = {
         let sessions = state.pending_cmd_test_signatures.read().await;
-        sessions.get(&req.session_id).cloned().ok_or(ApiError::NotFound)?
+        sessions
+            .get(&req.session_id)
+            .cloned()
+            .ok_or(ApiError::NotFound)?
     };
     if pending.actor != actor_label {
         return Err(ApiError::Forbidden(
@@ -581,7 +593,8 @@ pub async fn confirm_cmd_test_signature(
     drop(otp);
     let signed_pdf = embed_signature(&pending.prepared, &cms)
         .map_err(|e| ApiError::Internal(format!("failed to embed the CMS signature: {e}")))?;
-    let final_pdf = finalize_signed_pdf(&state, signed_pdf, &pending.session.signing_cert_der).await?;
+    let final_pdf =
+        finalize_signed_pdf(&state, signed_pdf, &pending.session.signing_cert_der).await?;
 
     let digest: [u8; 32] = Sha256::digest(&final_pdf.bytes).into();
     let signed_pdf_digest = crate::hex::hex(&digest);
@@ -690,7 +703,8 @@ pub async fn get_cmd_test_signature_document(
     let test_id = Uuid::parse_str(&test_id)
         .map_err(|_| ApiError::NotFound)?
         .to_string();
-    let bytes = std::fs::read(dir.join(format!("{test_id}.pdf"))).map_err(|_| ApiError::NotFound)?;
+    let bytes =
+        std::fs::read(dir.join(format!("{test_id}.pdf"))).map_err(|_| ApiError::NotFound)?;
     Ok((
         StatusCode::OK,
         [
@@ -746,13 +760,16 @@ async fn require_production_environment(state: &AppState) -> Result<(), ApiError
 /// and producing a real qualified signature that could not be retained is worse than not producing
 /// one at all.
 fn retention_dir(state: &AppState) -> Result<std::path::PathBuf, ApiError> {
-    state.data_dir().map(|dir| dir.join(RETENTION_DIR)).ok_or_else(|| {
-        ApiError::Conflict(
+    state
+        .data_dir()
+        .map(|dir| dir.join(RETENTION_DIR))
+        .ok_or_else(|| {
+            ApiError::Conflict(
             "esta instância não guarda ficheiros em disco, pelo que uma assinatura qualificada \
              real não poderia ser conservada; a assinatura de teste não foi iniciada"
                 .to_owned(),
         )
-    })
+        })
 }
 
 // --- Credential resolution ---------------------------------------------------------------------
@@ -802,11 +819,9 @@ async fn resolve_pinned_candidate(
 /// Non-secret provenance for the response and the audit payload.
 fn describe_source(source: &ResolvedSource) -> (&'static str, Option<String>, Option<String>) {
     match source {
-        ResolvedSource::Stored { entry_id, label } => (
-            "stored_entry",
-            Some(entry_id.clone()),
-            Some(label.clone()),
-        ),
+        ResolvedSource::Stored { entry_id, label } => {
+            ("stored_entry", Some(entry_id.clone()), Some(label.clone()))
+        }
         ResolvedSource::Env => ("environment", None, None),
     }
 }
@@ -845,7 +860,11 @@ async fn run_test_initiate(
         cmd_initiate(&client, &init, &prepared, Some(policy.as_mut())).map_err(map_signing_error)
     })
     .await
-    .unwrap_or_else(|e| Err(ApiError::Internal(format!("cmd test initiate task failed: {e}"))))
+    .unwrap_or_else(|e| {
+        Err(ApiError::Internal(format!(
+            "cmd test initiate task failed: {e}"
+        )))
+    })
 }
 
 /// `ValidateOtp` → the detached CAdES-B CMS, over a real [`HttpScmdTransport`]. Same rule: no

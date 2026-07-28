@@ -147,7 +147,11 @@ fn ccmovel_sign_submits_the_der_digest_info_not_the_bare_digest() {
         "51 raw bytes base64-encode to 68 characters; got {hash_b64:?}"
     );
     let submitted = STANDARD.decode(hash_b64).expect("Hash is base64");
-    assert_eq!(submitted.len(), 51, "19-byte DigestInfo prefix + 32-byte digest");
+    assert_eq!(
+        submitted.len(),
+        51,
+        "19-byte DigestInfo prefix + 32-byte digest"
+    );
     assert_eq!(
         &submitted[..19],
         &EXPECTED_SHA256_DIGEST_INFO_PREFIX,
@@ -182,7 +186,10 @@ fn ccmovel_sign_rejects_a_wrong_length_digest() {
         match err {
             CmdError::RequestBuild(msg) => {
                 assert!(msg.contains("32-byte"), "unexpected message: {msg}");
-                assert!(msg.contains(&len.to_string()), "message names the length: {msg}");
+                assert!(
+                    msg.contains(&len.to_string()),
+                    "message names the length: {msg}"
+                );
             }
             other => panic!("expected RequestBuild for a {len}-byte digest, got {other:?}"),
         }
