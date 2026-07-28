@@ -605,7 +605,7 @@ describe('PrivacyComplianceSection', () => {
     expect(screen.queryByLabelText('Título da DPIA')).toBeNull();
     expect(screen.queryByLabelText('Nome do processador')).toBeNull();
 
-    const processorPanel = screen.getByText('Processadores GDPR').closest<HTMLElement>('.panel')!;
+    const processorPanel = screen.getByText('Processadores RGPD').closest<HTMLElement>('.panel')!;
     expect(
       within(processorPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
     ).toBe('/settings/privacy/processors/new');

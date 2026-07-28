@@ -5919,7 +5919,7 @@ export const esES: Catalog = {
   'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
     'No se reportaron brechas locales en este estado.',
   'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
-    'Respalde las señales locales con secretos redactados. No certifican el cifrado del resto de la producción, la migración de texto sin formato completada, el runbook de custodia ni el ciclo legal/GDPR.',
+    'Respalde las señales locales con secretos redactados. No certifican el cifrado del resto de la producción, la migración de texto sin formato completada, el runbook de custodia ni el ciclo legal/RGPD.',
   'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Instantánea aislada verificada',
   'uiLiteral.gestaoDadosSection.sqlcipher': 'Cifrado SQL',
   'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher en compilación',

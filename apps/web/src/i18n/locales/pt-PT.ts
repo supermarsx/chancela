@@ -5227,7 +5227,7 @@ export const ptPT: Catalog = {
   'settings.privacy.evidence.breachReceiptNote':
     'Sem notificação à autoridade · Sem notificação aos titulares',
   'settings.privacy.evidence.transferReceiptNote': 'Sem aprovação · Sem execução de transferência',
-  'settings.privacy.register.processor.title': 'Processadores GDPR',
+  'settings.privacy.register.processor.title': 'Processadores RGPD',
   'settings.privacy.register.processor.lede':
     'Registo dos processadores, subprocessadores e categorias de dados tratados por terceiros.',
   'settings.privacy.register.dpia.title': 'DPIAs',
@@ -5863,7 +5863,7 @@ export const ptPT: Catalog = {
   'uiLiteral.gestaoDadosSection.estado': 'Estado',
   'uiLiteral.gestaoDadosSection.estadoDoEnsaio': 'Estado do ensaio',
   'uiLiteral.gestaoDadosSection.evidenciaOperacionalLocalGeradaAposRekeySqlcipherAceite':
-    'Evidência operacional local gerada após rekey SQLCipher aceite. Estes recibos não certificam cifragem em repouso, migração de plaintext, eliminação legal ou ciclo de vida GDPR completo.',
+    'Evidência operacional local gerada após rekey SQLCipher aceite. Estes recibos não certificam cifragem em repouso, migração de plaintext, eliminação legal ou ciclo de vida RGPD completo.',
   'uiLiteral.gestaoDadosSection.evidenciaVerificada': 'Evidência verificada',
   'uiLiteral.gestaoDadosSection.fallbackFalhaFechado': 'Fallback falha fechado',
   'uiLiteral.gestaoDadosSection.fallbackHardware': 'Fallback hardware',
@@ -5912,7 +5912,7 @@ export const ptPT: Catalog = {
   'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
     'Sem lacunas locais reportadas neste estado.',
   'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
-    'Sinais locais do backend com segredos redigidos. Não certificam cifragem em repouso de produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR.',
+    'Sinais locais do backend com segredos redigidos. Não certificam cifragem em repouso de produção, migração plaintext concluída, runbook de custódia ou ciclo legal/RGPD.',
   'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Snapshot isolado verificado',
   'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
   'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher no build',

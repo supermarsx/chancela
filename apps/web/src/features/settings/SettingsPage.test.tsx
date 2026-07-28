@@ -4423,7 +4423,7 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
-    const processorPanel = (await screen.findByText('Processadores GDPR')).closest('section');
+    const processorPanel = (await screen.findByText('Processadores RGPD')).closest('section');
     expect(processorPanel).toBeTruthy();
     expect(await within(processorPanel!).findByText('Cloud Processor')).toBeTruthy();
 

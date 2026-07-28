@@ -1441,7 +1441,6 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Privacidade',
     'Privacidade e conformidade',
     'Processador',
-    'Processadores GDPR',
     'Produção',
     'Produção (AMA)',
     'Produzir ASiC',
