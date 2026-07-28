@@ -10502,6 +10502,41 @@ mod tests {
             "an unanchored list must fail on the anchor configuration, not on the signer: \
              {unanchored:?}"
         );
+
+        // 4. The operator-facing origin, end to end. The three cases above hand-build a
+        //    `RuntimeTslSource`, which takes the settings→runtime hop on trust. Here the anchor is
+        //    set **only** on `SigningSettings` — the document the admin UI writes and `put_settings`
+        //    422-validates — and the source is picked by the same `runtime_tsl_selection` production
+        //    uses. Nothing else in this case is configured: no environment anchor can match this
+        //    ephemeral signer, so a `Granted` here is the settings field and nothing else.
+        let signing = crate::settings::SigningSettings {
+            tsl_trust_anchor_certs: vec![test_pem_cert(&signer_cert_der)],
+            tsl_sources: vec![crate::settings::TslSourceSettings {
+                id: "operator-provisioned-tsl".to_owned(),
+                name: "Operator-provisioned TSL".to_owned(),
+                enabled: true,
+                path: Some(path.display().to_string()),
+                ..Default::default()
+            }],
+            ..crate::settings::SigningSettings::default()
+        };
+        let selected = signing
+            .runtime_tsl_selection()
+            .selected
+            .expect("an enabled path-backed source is selected");
+        assert_eq!(
+            selected.trust_anchor_certs, signing.tsl_trust_anchor_certs,
+            "the settings anchors must travel onto the runtime source that reaches signing"
+        );
+        let mut policy = build_trust_policy(None, Some(selected)).expect("policy builds");
+        assert_eq!(
+            policy
+                .issuer_status(&issuer_cert_der, now)
+                .expect("issuer status resolves"),
+            TrustedListStatus::Granted,
+            "an anchor provisioned only in `signing.tsl_trust_anchor_certs` must authenticate the \
+             list at signing time"
+        );
     }
 
     /// t61-e2 — the three trust failures this gate can hit are three **distinct** signals,
