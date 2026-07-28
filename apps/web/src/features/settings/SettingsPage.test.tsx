@@ -3,6 +3,15 @@ import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/re
 import { Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
 import { SettingsPage } from './SettingsPage';
 import { MCP_TAB_PATH } from './PlatformOperationsSection';
+/**
+ * The platform service-control sentences are server-authored English resolved to pt-PT by
+ * `platformServiceFallback.ts` (t92). These assertions name the KEY and take the expected text
+ * from the module, so they check that the right sentence reached the right place without pinning
+ * its wording — a reviewed rewording must not turn them red, and a substring match must never let
+ * a near-miss pass. What the copy has to BE is gated by `platformServiceFallback.test.ts`, which
+ * derives it from `platform_ops.rs`.
+ */
+import { platformServicePtPT } from '../../i18n/platformServiceFallback';
 import {
   DEFAULT_SETTINGS,
   RETENTION_DISPOSAL_ACTIONS,
@@ -3289,7 +3298,9 @@ describe('SettingsPage', () => {
     // two, so the list here is empty by design — the pane routes rather than showing "no services".
     expect(screen.queryByText('Chancela API server')).toBeNull();
     expect(screen.queryByText('Chancela MCP stdio server')).toBeNull();
-    expect(screen.queryByText(/cannot observe or spawn/)).toBeNull();
+    expect(
+      screen.queryByText(platformServicePtPT.serviceLimitation['mcp.external_launch']),
+    ).toBeNull();
     expect(screen.queryByRole('button', { name: /Registar reinício/ })).toBeNull();
 
     const links = Object.fromEntries(
@@ -3386,7 +3397,9 @@ describe('SettingsPage', () => {
     // The service row, with the same honest backend limitations it carried in Plataforma.
     expect(await screen.findByText('Chancela MCP stdio server')).toBeTruthy();
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
-    expect(screen.getByText(/cannot observe or spawn/)).toBeTruthy();
+    expect(
+      screen.getByText(platformServicePtPT.serviceLimitation['mcp.external_launch']),
+    ).toBeTruthy();
 
     // The MCP log level and the MCP service override, both moved off the generic logging grid.
     const loggingTable = screen.getByRole('table', { name: 'Registos do MCP' });
@@ -3544,7 +3557,7 @@ describe('SettingsPage', () => {
     expect(within(apiRow!).getByRole('button', { name: /Registar reinício/ })).toBeTruthy();
     expect(within(apiRow!).getAllByText('Não suportado').length).toBeGreaterThan(0);
     expect(
-      within(apiRow!).getByText('The current API process cannot start another copy of itself.'),
+      within(apiRow!).getByText(platformServicePtPT.capabilityLimitation['api.start']),
     ).toBeTruthy();
 
     // The same assertion for MCP, on the tab the row moved to (t82): same component, same
@@ -3561,7 +3574,7 @@ describe('SettingsPage', () => {
     expect(within(mcpRow!).getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
     expect(
       within(mcpRow!).getAllByText(
-        'The stdio MCP server is launched externally; the API can only record desired state.',
+        platformServicePtPT.capabilityLimitation['mcp_stdio.start'],
       ),
     ).toHaveLength(3);
   });
@@ -3841,7 +3854,7 @@ describe('SettingsPage', () => {
       ).toBe(true),
     );
     expect(
-      (await screen.findAllByText(/MCP start desired state was recorded/)).length,
+      (await screen.findAllByText(platformServicePtPT.controlMessage['mcp_stdio.start'])).length,
     ).toBeGreaterThan(0);
     expect(screen.getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
     expect(screen.getByRole('group', { name: 'Áreas de administração' })).toBeTruthy();

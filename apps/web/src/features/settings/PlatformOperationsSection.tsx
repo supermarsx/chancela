@@ -16,6 +16,7 @@ import {
 } from '../../api/types';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
+import { usePlatformServiceText } from '../../i18n/platformServiceFallback';
 import {
   Badge,
   Button,
@@ -167,6 +168,7 @@ export function AiMcpAssurancePanel() {
 
 function LastAction({ service }: { service: PlatformServiceStatus }) {
   const t = useT();
+  const platformText = usePlatformServiceText();
   const last = service.last_action;
   if (!last) {
     return <p className="field__hint">{t('settings.platform.lastAction.empty')}</p>;
@@ -198,7 +200,10 @@ function LastAction({ service }: { service: PlatformServiceStatus }) {
       </div>
       <div className="platform-action-summary__message">
         <dt>{t('settings.platform.message')}</dt>
-        <dd>{last.message}</dd>
+        {/* The server's message is English prose. It resolves to reviewed pt-PT by
+            `(service_id, action)` rather than by its own text, so an action recorded by an older
+            build still reads in Portuguese; an unknown pair renders what the server said. */}
+        <dd>{platformText.controlMessage(service.id, last.action, last.message).text}</dd>
       </div>
     </dl>
   );
@@ -206,6 +211,7 @@ function LastAction({ service }: { service: PlatformServiceStatus }) {
 
 function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
   const t = useT();
+  const platformText = usePlatformServiceText();
   if (service.controllable_actions.length === 0) return null;
   return (
     <div className="platform-control-support">
@@ -221,7 +227,15 @@ function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
                 {t(`settings.platform.outcome.${capability.outcome}` as MessageKey)}
               </Badge>
             </div>
-            <p>{capability.limitation}</p>
+            <p>
+              {
+                platformText.capabilityLimitation(
+                  service.id,
+                  capability.action,
+                  capability.limitation,
+                ).text
+              }
+            </p>
           </li>
         ))}
       </ul>
@@ -240,6 +254,7 @@ export function ServiceRow({
 }) {
   const t = useT();
   const toast = useToast();
+  const platformText = usePlatformServiceText();
   const control = useControlPlatformService();
   const meaningfulActions = service.controllable_actions.filter((capability) =>
     isMeaningfulDesiredStateAction(service, capability),
@@ -249,7 +264,10 @@ export function ServiceRow({
     control.mutate(
       { id: service.id, action },
       {
-        onSuccess: (response) => toast.success(response.result.message),
+        onSuccess: (response) =>
+          toast.success(
+            platformText.controlMessage(service.id, action, response.result.message).text,
+          ),
         onError: onControlError,
       },
     );
@@ -335,9 +353,13 @@ export function ServiceRow({
             <ActionCapabilities service={service} />
             <div className="platform-limitations">
               <p className="card__label">{t('settings.platform.limitations')}</p>
+              {/* `limitations[]` carries no identifier on the wire, so each caveat resolves by
+                  matching the server's English against the tier pinned to `platform_ops.rs`. A
+                  caveat that stops matching still renders — dropping one would hide a real
+                  constraint from the operator. */}
               <ul>
                 {service.limitations.map((item) => (
-                  <li key={item}>{item}</li>
+                  <li key={item}>{platformText.serviceLimitation(item).text}</li>
                 ))}
               </ul>
             </div>
@@ -355,6 +377,7 @@ export function ServiceRow({
 
 function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
   const t = useT();
+  const platformText = usePlatformServiceText();
   const tail = audit.slice(-5).reverse();
   return (
     <Card title={t('settings.platform.auditTail')}>
@@ -376,7 +399,8 @@ function AuditTail({ audit }: { audit: PlatformAuditEvent[] }) {
                 {t(`settings.platform.desired.${event.desired_state}` as MessageKey)}
               </p>
               <p className="field__hint">
-                {event.requested_by}: {event.message}
+                {event.requested_by}:{' '}
+                {platformText.controlMessage(event.service_id, event.action, event.message).text}
               </p>
             </li>
           ))}

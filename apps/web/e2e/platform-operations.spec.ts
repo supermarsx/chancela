@@ -15,6 +15,7 @@ import {
   type Settings,
   type UserView,
 } from '../src/api/types';
+import { platformServicePtPT } from '../src/i18n/platformServiceFallback';
 
 const USER_ID = 'a3f14f20-9000-4000-8000-00000000d902';
 
@@ -53,7 +54,10 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   await expect(apiRow).toContainText('Servidor API');
   await expect(apiRow).toContainText('A executar');
   await expect(apiRow).toContainText('Reinício necessário');
-  await expect(apiRow).toContainText('requires an external supervisor');
+  // Server-authored English resolved to pt-PT by `platformServiceFallback.ts` (t92). Named by KEY
+  // so a reviewed rewording does not turn this red; the copy itself is gated by that module's
+  // divergence test against `platform_ops.rs`.
+  await expect(apiRow).toContainText(platformServicePtPT.capabilityLimitation['api.restart']);
 
   // The launch-time security posture is surfaced read-only alongside it.
   await expect(page.getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeVisible();
@@ -72,7 +76,9 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   await expect(mcpRow).toContainText('Servidor MCP stdio');
   await expect(mcpRow).toContainText('Parado');
   await expect(mcpRow).toContainText('Supervisor necessário');
-  await expect(mcpRow).toContainText('API cannot observe or spawn that process');
+  await expect(mcpRow).toContainText(
+    platformServicePtPT.serviceLimitation['mcp.external_launch'],
+  );
 
   const controlResponse = waitForApiResponse(
     page,
@@ -85,9 +91,7 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   expect(controlRequests).toEqual([{ serviceId: 'mcp_stdio', action: 'start' }]);
   await expect(mcpRow).toContainText('Pedido por');
   await expect(mcpRow).toContainText('e2e.platform.operator');
-  await expect(mcpRow).toContainText(
-    'MCP start desired state was recorded; relaunch the external MCP client or supervisor.',
-  );
+  await expect(mcpRow).toContainText(platformServicePtPT.controlMessage['mcp_stdio.start']);
   await expect(mcpRow).not.toContainText(/started process|spawned process|processo iniciado/i);
 
   // The MCP service log override moved onto this same tab and still writes the settings document.
