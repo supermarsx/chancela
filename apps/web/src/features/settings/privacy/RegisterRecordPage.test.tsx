@@ -14,9 +14,10 @@
  * resolved one PATCHES the id in the address rather than creating anything.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import type { DpiaRecordView, ProcessorRecordView } from '../../../api/types';
+import { hasUnsavedChanges } from '../../../hooks/useUnsavedChanges';
 import { renderWithProviders } from '../../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../../session/permissions';
 import { DpiaRecordPage, ProcessorRecordPage } from './RegisterRecordPage';
@@ -33,15 +34,25 @@ const hooks = vi.hoisted(() => {
     patchDpia: mutation(),
     /** Records which list query was enabled, so the permission gate can be proved to fail closed. */
     enabled: vi.fn(),
+    /**
+     * Re-renders the page as if the list query had just settled. Flipping the fields above changes
+     * what the mocked hooks return, but nothing tells React to ask again — and the moment the list
+     * settles is precisely where the edit→create bug lives, so it has to be reachable from a test.
+     * Both list hooks are mounted on every render, so either one can drive the bump.
+     */
+    settle: (() => {}) as () => void,
   };
 });
 
 vi.mock('../../../api/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/hooks')>();
+  const { useReducer } = await import('react');
   return {
     ...actual,
     usePrivacyProcessors: (enabled: boolean) => {
       hooks.enabled('processors', enabled);
+      const [, bump] = useReducer((n: number) => n + 1, 0);
+      hooks.settle = bump as unknown as () => void;
       return hooks.processors;
     },
     usePrivacyDpias: (enabled: boolean) => {
@@ -343,14 +354,89 @@ describe('the edit route', () => {
     hooks.processors.isLoading = true;
     renderAt('/settings/privacy/processors/processor-1');
 
-    // 🔴 REGRESSION GUARD for the edit→create bug. Handing `EMPTY_FORM` to the draft hook as a
-    // placeholder here would paint a blank form on a real record's address, and the save would
-    // write a NEW record. The page must show the operator nothing to type into until the record
-    // it is addressing has actually resolved.
+    // Nothing empty is on screen to type into while the record is still being resolved.
+    //
+    // ⚠️ On its own this assertion does NOT prove the draft hook received `null` — verified by
+    // mutation: seeding `EMPTY_FORM` here leaves this case GREEN, because the shell renders the
+    // skeleton on `state === 'loading'` and never reaches the form either way. The two cases below
+    // are the ones that actually kill that mutant; this one only covers the paint.
     expect(screen.queryByLabelText('Nome do processador')).toBeNull();
     expect(
       screen.getByRole('heading', { level: 1, name: 'Editar registo de atividades de tratamento' }),
     ).toBeTruthy();
+  });
+
+  it('seeds the processor from the record when the list resolves AFTER the first paint', async () => {
+    // 🔴 THE REGRESSION GUARD for the edit→create bug, and one of the only two cases here
+    // that kill it.
+    //
+    // `usePrivacyRecordDraft` installs the FIRST non-null seed it is handed and ignores every
+    // later one — it has to, or a background refetch would discard what the operator has typed.
+    // So handing it `EMPTY_FORM` as a placeholder while the list is in flight does not merely
+    // paint a blank form for an instant: it POISONS the draft permanently. The list then settles,
+    // the shell flips to `ready`, and the operator gets a blank form on a real record's address,
+    // reading CLEAN, because the placeholder became the baseline too. Since `editing` is true,
+    // saving then PATCHes those blanks over the live record — the register entry is not
+    // duplicated, it is WIPED.
+    //
+    // Every other case in this file stays green under that mutation, because they each observe one
+    // side of the transition and never the transition itself. This one crosses it, and asserts the
+    // record's OWN values — presence of a form after the transition proves nothing, since the
+    // poisoned draft renders a form too.
+    hooks.processors.isLoading = true;
+    hooks.processors.data = [];
+    renderAt('/settings/privacy/processors/processor-1');
+    expect(screen.queryByLabelText('Nome do processador')).toBeNull();
+
+    hooks.processors.isLoading = false;
+    hooks.processors.data = [processor];
+    act(() => hooks.settle());
+
+    const name = (await screen.findByLabelText('Nome do processador')) as HTMLInputElement;
+    expect(name.value).toBe('Encosto Estratégico Lda');
+    expect((screen.getByLabelText('Finalidade') as HTMLTextAreaElement).value).toBe(
+      'Alojamento na UE',
+    );
+    expect((screen.getByLabelText('Categorias de dados') as HTMLTextAreaElement).value).toBe(
+      'Identificação\nContacto',
+    );
+    expect((screen.getByLabelText('Subprocessadores') as HTMLTextAreaElement).value).toBe(
+      'Amélia Marques',
+    );
+    // The record's own risk, not the `medium` default `EMPTY_FORM` carries.
+    expect((screen.getByLabelText('Risco') as HTMLSelectElement).value).toBe('low');
+    // The draft is also CLEAN, so a seeded edit page does not challenge the operator's first exit.
+    // Note this line does NOT discriminate the mutant — a poisoned draft is clean too, because the
+    // placeholder became the baseline. It is here as a correctness claim, not as the guard.
+    expect(hasUnsavedChanges()).toBe(false);
+  });
+
+  it('seeds the AIPD from the record when the list resolves AFTER the first paint', async () => {
+    // 🔴 The same guard for the OTHER `kind`. The two pages are one module behind a
+    // discriminant and the seed reads `formFromRecord(kind, record)`, so a placeholder introduced
+    // on one branch — or a crossed `kind` resolving against the wrong list — is a distinct mutant
+    // that the single-kind retention page cannot exhibit. Both halves are driven, not just one.
+    hooks.dpias.isLoading = true;
+    hooks.dpias.data = [];
+    renderAt('/settings/privacy/dpias/dpia-1');
+    expect(screen.queryByLabelText('Título da DPIA')).toBeNull();
+
+    hooks.dpias.isLoading = false;
+    hooks.dpias.data = [dpia];
+    act(() => hooks.settle());
+
+    const title = (await screen.findByLabelText('Título da DPIA')) as HTMLInputElement;
+    expect(title.value).toBe('Definição de perfis de risco elevado');
+    expect((screen.getByLabelText('Base legal') as HTMLInputElement).value).toBe(
+      'Interesse legítimo',
+    );
+    expect((screen.getByLabelText('Categorias de dados') as HTMLTextAreaElement).value).toBe(
+      'Comportamento',
+    );
+    // The record's own enums, not the defaults `EMPTY_FORM` carries (`medium` / `draft`).
+    expect((screen.getByLabelText('Risco') as HTMLSelectElement).value).toBe('high');
+    expect((screen.getByLabelText('Estado') as HTMLSelectElement).value).toBe('active');
+    expect(hasUnsavedChanges()).toBe(false);
   });
 
   it('names the register on a stale id instead of falling through to a create form', () => {

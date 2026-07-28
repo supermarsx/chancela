@@ -17,9 +17,10 @@
  * receipt) moved here from `PrivacyComplianceSection.test.tsx` along with the form itself.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import type { BreachPlaybookView } from '../../../api/types';
+import { hasUnsavedChanges } from '../../../hooks/useUnsavedChanges';
 import { renderWithProviders } from '../../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../../session/permissions';
 import { BreachPlaybookPage } from './BreachPlaybookPage';
@@ -30,14 +31,23 @@ const hooks = vi.hoisted(() => ({
   patch: { mutateAsync: vi.fn(), isPending: false },
   /** Records whether the list query was enabled, so the permission gate can be proved fail-closed. */
   enabled: vi.fn(),
+  /**
+   * Re-renders the page as if the list query had just settled. Flipping the fields above changes
+   * what the mocked hook returns, but nothing tells React to ask again — and the moment the list
+   * settles is precisely where the edit→create bug lives, so it has to be reachable from a test.
+   */
+  settle: (() => {}) as () => void,
 }));
 
 vi.mock('../../../api/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/hooks')>();
+  const { useReducer } = await import('react');
   return {
     ...actual,
     usePrivacyBreachPlaybooks: (enabled: boolean) => {
       hooks.enabled(enabled);
+      const [, bump] = useReducer((n: number) => n + 1, 0);
+      hooks.settle = bump as unknown as () => void;
       return hooks.breaches;
     },
     useCreatePrivacyBreachPlaybook: () => hooks.create,
@@ -277,10 +287,12 @@ describe('the edit route', () => {
     hooks.breaches.isLoading = true;
     renderAt('/settings/privacy/breach-playbooks/breach-1');
 
-    // 🔴 REGRESSION GUARD for the edit→create bug. Handing `EMPTY_BREACH_FORM` to the draft hook
-    // as a placeholder here would paint a blank form on a real record's address, and the save
-    // would write a NEW procedimento. The page must show the operator nothing to type into until
-    // the record it is addressing has actually resolved.
+    // Nothing empty is on screen to type into while the record is still being resolved.
+    //
+    // ⚠️ On its own this assertion does NOT prove the draft hook received `null` — verified by
+    // mutation: seeding `EMPTY_BREACH_FORM` here leaves this case GREEN, because the shell renders
+    // the skeleton on `state === 'loading'` and never reaches the form either way. The case below
+    // is the one that actually kills that mutant; this one only covers the paint.
     expect(screen.queryByLabelText('Título do playbook')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Criar registo' })).toBeNull();
     expect(
@@ -289,6 +301,52 @@ describe('the edit route', () => {
         name: 'Editar procedimento de resposta a violações de dados pessoais',
       }),
     ).toBeTruthy();
+  });
+
+  it('seeds from the record when the list resolves AFTER the first paint', async () => {
+    // 🔴 THE REGRESSION GUARD for the edit→create bug, and the only case here that kills it.
+    //
+    // `usePrivacyRecordDraft` installs the FIRST non-null seed it is handed and ignores every
+    // later one — it has to, or a background refetch would discard what the operator has typed.
+    // So handing it `EMPTY_BREACH_FORM` as a placeholder while the list is in flight does not
+    // merely paint a blank form for an instant: it POISONS the draft permanently. The list then
+    // settles, the shell flips to `ready`, and the operator gets a blank form sitting on a real
+    // procedimento's address — its detection channels, containment steps and notification window
+    // nowhere on screen — reading CLEAN, because the placeholder became the baseline too. Since
+    // `editing` is true, saving then PATCHes those blanks over the live record: the compliance
+    // record is not duplicated, it is WIPED.
+    //
+    // Every other case in this file stays green under that mutation, because they each observe
+    // one side of the transition and never the transition itself. This one crosses it, and asserts
+    // the record's OWN values — presence of a form after the transition proves nothing, since the
+    // poisoned draft renders a form too.
+    hooks.breaches.isLoading = true;
+    hooks.breaches.data = [];
+    renderAt('/settings/privacy/breach-playbooks/breach-1');
+    expect(screen.queryByLabelText('Título do playbook')).toBeNull();
+
+    hooks.breaches.isLoading = false;
+    hooks.breaches.data = [breach];
+    act(() => hooks.settle());
+
+    const title = (await screen.findByLabelText('Título do playbook')) as HTMLInputElement;
+    expect(title.value).toBe('Comprometimento de contas');
+    expect((screen.getByLabelText('Âmbito') as HTMLInputElement).value).toBe(
+      'serviço de identidade',
+    );
+    expect((screen.getByLabelText('Canais de deteção') as HTMLTextAreaElement).value).toBe(
+      'SIEM\napoio ao cliente',
+    );
+    expect(
+      (screen.getByLabelText('Janela de notificação à autoridade') as HTMLInputElement).value,
+    ).toBe('72 horas quando aplicável');
+    // The record's own enums, not the defaults `EMPTY_BREACH_FORM` carries (`high` / `draft`).
+    expect((screen.getByLabelText('Risco') as HTMLSelectElement).value).toBe('critical');
+    expect((screen.getByLabelText('Estado') as HTMLSelectElement).value).toBe('active');
+    // The draft is also CLEAN, so a seeded edit page does not challenge the operator's first exit.
+    // Note this line does NOT discriminate the mutant — a poisoned draft is clean too, because the
+    // placeholder became the baseline. It is here as a correctness claim, not as the guard.
+    expect(hasUnsavedChanges()).toBe(false);
   });
 
   it('names the register on a stale id instead of falling through to a create form', () => {

@@ -14,9 +14,10 @@
  * The body-shape assertions moved here from `PrivacyComplianceSection.test.tsx` with the form.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import type { TransferControlView } from '../../../api/types';
+import { hasUnsavedChanges } from '../../../hooks/useUnsavedChanges';
 import { renderWithProviders } from '../../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../../session/permissions';
 import { TransferControlPage } from './TransferControlPage';
@@ -27,14 +28,23 @@ const hooks = vi.hoisted(() => ({
   patch: { mutateAsync: vi.fn(), isPending: false },
   /** Records whether the list query was enabled, so the permission gate can be proved fail-closed. */
   enabled: vi.fn(),
+  /**
+   * Re-renders the page as if the list query had just settled. Flipping the fields above changes
+   * what the mocked hook returns, but nothing tells React to ask again — and the moment the list
+   * settles is precisely where the edit→create bug lives, so it has to be reachable from a test.
+   */
+  settle: (() => {}) as () => void,
 }));
 
 vi.mock('../../../api/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/hooks')>();
+  const { useReducer } = await import('react');
   return {
     ...actual,
     usePrivacyTransferControls: (enabled: boolean) => {
       hooks.enabled(enabled);
+      const [, bump] = useReducer((n: number) => n + 1, 0);
+      hooks.settle = bump as unknown as () => void;
       return hooks.transfers;
     },
     useCreatePrivacyTransferControl: () => hooks.create,
@@ -247,12 +257,65 @@ describe('the edit route', () => {
     hooks.transfers.isLoading = true;
     renderAt('/settings/privacy/transfer-controls/transfer-1');
 
-    // 🔴 REGRESSION GUARD for the edit→create bug — see the module comment.
+    // Nothing empty is on screen to type into while the record is still being resolved.
+    //
+    // ⚠️ On its own this assertion does NOT prove the draft hook received `null` — verified by
+    // mutation: seeding `EMPTY_TRANSFER_FORM` here leaves this case GREEN, because the shell
+    // renders the skeleton on `state === 'loading'` and never reaches the form either way. The
+    // case below is the one that actually kills that mutant; this one only covers the paint.
     expect(screen.queryByLabelText('Nome do controlo')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Criar registo' })).toBeNull();
     expect(
       screen.getByRole('heading', { level: 1, name: 'Editar controlo de transferência' }),
     ).toBeTruthy();
+  });
+
+  it('seeds from the record when the list resolves AFTER the first paint', async () => {
+    // 🔴 THE REGRESSION GUARD for the edit→create bug, and the only case here that kills it.
+    //
+    // `usePrivacyRecordDraft` installs the FIRST non-null seed it is handed and ignores every
+    // later one — it has to, or a background refetch would discard what the operator has typed.
+    // So handing it `EMPTY_TRANSFER_FORM` as a placeholder while the list is in flight does not
+    // merely paint a blank form for an instant: it POISONS the draft permanently. The list then
+    // settles, the shell flips to `ready`, and the operator gets a blank form on a real controlo's
+    // address — its recipient, destination country, transfer mechanism and safeguards nowhere on
+    // screen — reading CLEAN, because the placeholder became the baseline too. Since `editing` is
+    // true, saving then PATCHes those blanks over the live record: the RGPD Cap. V transfer
+    // control is not duplicated, it is WIPED.
+    //
+    // Every other case in this file stays green under that mutation, because they each observe one
+    // side of the transition and never the transition itself. This one crosses it, and asserts the
+    // record's OWN values — presence of a form after the transition proves nothing, since the
+    // poisoned draft renders a form too.
+    hooks.transfers.isLoading = true;
+    hooks.transfers.data = [];
+    renderAt('/settings/privacy/transfer-controls/transfer-1');
+    expect(screen.queryByLabelText('Nome do controlo')).toBeNull();
+
+    hooks.transfers.isLoading = false;
+    hooks.transfers.data = [transfer];
+    act(() => hooks.settle());
+
+    const name = (await screen.findByLabelText('Nome do controlo')) as HTMLInputElement;
+    expect(name.value).toBe('Acesso de apoio no Reino Unido');
+    expect((screen.getByLabelText('Destinatário') as HTMLInputElement).value).toBe(
+      'Encosto Estratégico Lda',
+    );
+    expect((screen.getByLabelText('País de destino') as HTMLInputElement).value).toBe(
+      'Reino Unido',
+    );
+    expect((screen.getByLabelText('Mecanismo de transferência') as HTMLInputElement).value).toBe(
+      'Decisão de adequação',
+    );
+    expect((screen.getByLabelText('Salvaguardas') as HTMLTextAreaElement).value).toBe(
+      'Acesso limitado ao pedido',
+    );
+    // The record's own status, not the `draft` default `EMPTY_TRANSFER_FORM` carries.
+    expect((screen.getByLabelText('Estado') as HTMLSelectElement).value).toBe('retired');
+    // The draft is also CLEAN, so a seeded edit page does not challenge the operator's first exit.
+    // Note this line does NOT discriminate the mutant — a poisoned draft is clean too, because the
+    // placeholder became the baseline. It is here as a correctness claim, not as the guard.
+    expect(hasUnsavedChanges()).toBe(false);
   });
 
   it('names the register on a stale id instead of falling through to a create form', () => {
