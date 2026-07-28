@@ -13,7 +13,7 @@ use time::OffsetDateTime;
 use crate::cache::CachedTsl;
 use crate::error::TslError;
 use crate::parse::{DigitalIdentity, TrustService, TrustedList, parse_tsl};
-use crate::source::TslSource;
+use crate::source::{TslSource, TslTrustAnchors};
 
 /// Whether a certificate or issuer is currently qualified for the requested service class per the
 /// TSL.
@@ -249,15 +249,42 @@ pub fn qualified_timestamp_services(list: &TrustedList, now: OffsetDateTime) -> 
 pub struct TslClient<S: TslSource> {
     source: S,
     cache: Option<CachedTsl>,
+    /// Trust anchors used to authenticate the list's own XML-DSig signature on [`Self::refresh`].
+    /// `None` means "resolve from the environment at refresh time"
+    /// ([`crate::source::validate_tsl_signature`]); `Some` pins an explicitly-supplied set, which
+    /// is how a caller holding anchors from application config provisions them (see
+    /// [`Self::with_anchors`]). Either way an empty resolved set trusts nothing.
+    anchors: Option<TslTrustAnchors>,
 }
 
 impl<S: TslSource> TslClient<S> {
-    /// Build a client over `source` with an empty cache.
+    /// Build a client over `source` with an empty cache, resolving the list's trust anchors from
+    /// the environment on each refresh. Use [`with_anchors`](Self::with_anchors) when the anchors
+    /// come from application configuration.
     pub fn new(source: S) -> Self {
         Self {
             source,
             cache: None,
+            anchors: None,
         }
+    }
+
+    /// Pin the trust anchors used to authenticate the Trusted List's own XML-DSig signature,
+    /// instead of resolving them from the environment on every refresh.
+    ///
+    /// This is the entry point for callers that source anchors from application configuration —
+    /// they are expected to have already folded the environment anchors in (anchoring is a union,
+    /// so an anchor set can only ever *add* trust). **Fail-closed is preserved:** an empty
+    /// `anchors` set authenticates no list at all, exactly as an unconfigured environment does.
+    pub fn with_anchors(mut self, anchors: TslTrustAnchors) -> Self {
+        self.anchors = Some(anchors);
+        self
+    }
+
+    /// The explicitly-pinned trust anchors, if any. `None` means the environment is consulted at
+    /// refresh time.
+    pub fn anchors(&self) -> Option<&TslTrustAnchors> {
+        self.anchors.as_ref()
     }
 
     /// The currently-cached list, if any has been fetched.
@@ -267,15 +294,20 @@ impl<S: TslSource> TslClient<S> {
 
     /// Fetch and parse the list unconditionally, replacing the cache with an entry stamped `now`.
     ///
-    /// After parsing, the list's XML-DSig signature is validated (SIG-11, audit t41/C2). The
-    /// validation result is stored on the cache entry and consulted by
-    /// [`is_qualified_for_esig`](Self::is_qualified_for_esig). A signature failure does NOT
-    /// error here — the parsed list is still cached so the caller can inspect it; but the
+    /// After parsing, the list's XML-DSig signature is validated (SIG-11, audit t41/C2) against
+    /// the anchors pinned by [`with_anchors`](Self::with_anchors), or — when none were pinned —
+    /// against the environment anchors. The validation result is stored on the cache entry and
+    /// consulted by [`is_qualified_for_esig`](Self::is_qualified_for_esig). A signature failure
+    /// does NOT error here — the parsed list is still cached so the caller can inspect it; but the
     /// qualified-status query downgrades `Granted` to `Unknown` when the signature did not verify.
     pub fn refresh(&mut self, now: OffsetDateTime) -> Result<(), TslError> {
         let bytes = self.source.fetch()?;
         let list = parse_tsl(&bytes)?;
-        let signature_valid = crate::source::validate_tsl_signature(&bytes).is_ok();
+        let signature_valid = match &self.anchors {
+            Some(anchors) => crate::source::validate_tsl_signature_with_anchors(&bytes, anchors),
+            None => crate::source::validate_tsl_signature(&bytes),
+        }
+        .is_ok();
         self.cache = Some(CachedTsl::with_signature_valid(list, now, signature_valid));
         Ok(())
     }

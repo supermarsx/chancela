@@ -278,7 +278,17 @@ configured certificate or fingerprint is anchored):
   anchors as application config — a list of PEM certificate strings and a list of 64-character
   sha256 hex fingerprints. Invalid PEM or a malformed fingerprint is rejected on save with `422`.
   At runtime the settings anchors are **unioned with** the environment anchors (settings-first,
-  environment as fallback).
+  environment as fallback) — on **both** trust paths: the operator-triggered LOTL bootstrap
+  (`POST /v1/trust/refresh`) and the trusted-list policy consulted at **signing time**.
+
+> **Trust surface.** A settings-provisioned anchor is a **trust root**: matching it is what makes a
+> Trusted List authentic, and an authentic list is what reports a certificate as qualified. Whoever
+> may write `signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256` can therefore cause
+> a list to authenticate. That write is gated on the narrow `signing.configure` permission (not
+> plain `settings.manage`), though the migration that introduced `signing.configure` grants it to
+> every existing `settings.manage` holder — so in an install predating custom roles the effective
+> audience is unchanged. Fail-closed is preserved regardless: the union can only ever *add* anchors,
+> and an install that provisions none in settings **or** environment trusts no list at all.
 
 **Rotation:** because matching is by the exact signing certificate (equivalently its SHA-256
 fingerprint), configure **multiple** anchors to span a key rollover. Add the incoming signing

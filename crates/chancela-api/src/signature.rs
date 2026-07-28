@@ -8255,6 +8255,21 @@ pub(crate) async fn run_cmd_confirm(
 /// Build the trusted-list policy: the injected factory (tests), else a real `TslTrustPolicy` over
 /// the selected configured TSL source (production). The qualified path MUST have a policy (ruling
 /// 7), so no selected source is a client-actionable 422.
+///
+/// The list's own XML-DSig signature is authenticated against the anchors the operator provisioned
+/// in `signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256` **unioned** with the
+/// environment anchors (t61-e1). Those anchors ride on [`RuntimeTslSource`], so every caller —
+/// including the ones that never see the settings document — gets the configured set rather than
+/// the environment alone. Before this bridge the client resolved anchors from the environment
+/// exclusively, which made the settings fields inert at signing time: an operator who provisioned
+/// an anchor through the admin UI alone could not complete a qualified signature.
+///
+/// **Trust surface:** a settings-provisioned anchor is a *trust root* here — matching it is what
+/// makes a Trusted List authentic, and an authentic list is what makes a certificate qualified.
+/// Writing those fields is gated on `Permission::SigningConfigure` (via `signing_policy_changed`),
+/// not plain `settings.manage`. Fail-closed is preserved: the union can only ever *add* anchors,
+/// and an install that configures none in settings **or** environment resolves the empty set, which
+/// authenticates no list.
 pub(crate) fn build_trust_policy(
     factory: Option<Arc<dyn Fn() -> Box<dyn TrustPolicy + Send> + Send + Sync>>,
     tsl_source: Option<RuntimeTslSource>,
@@ -8267,7 +8282,18 @@ pub(crate) fn build_trust_policy(
             "a assinatura qualificada requer uma Lista de Confiança (TSL) configurada".to_owned(),
         )
     })?;
-    Ok(Box::new(TslTrustPolicy::new(source)))
+    let anchors = crate::trust::resolve_lotl_trust_anchors(
+        &source.trust_anchor_certs,
+        &source.trust_anchor_sha256,
+    )
+    .map_err(|e| {
+        ApiError::Unprocessable(format!(
+            "configuração inválida da âncora de confiança da Lista de Confiança (TSL): {e}"
+        ))
+    })?;
+    Ok(Box::new(TslTrustPolicy::from_client(
+        TslClient::new(source).with_anchors(anchors),
+    )))
 }
 
 /// Resolve the effective **default** [`CmdConfig`]: a complete stored CMD record wins; otherwise
@@ -10166,6 +10192,8 @@ mod tests {
                 max_bytes: 1024 * 1024,
                 configured_index: Some(0),
                 legacy: false,
+                trust_anchor_certs: Vec::new(),
+                trust_anchor_sha256: Vec::new(),
             };
 
             let err =
@@ -10189,6 +10217,8 @@ mod tests {
             max_bytes: 1,
             configured_index: Some(0),
             legacy: false,
+            trust_anchor_certs: Vec::new(),
+            trust_anchor_sha256: Vec::new(),
         };
 
         let mut policy = build_trust_policy(None, Some(source)).expect("policy builds");
@@ -10197,6 +10227,244 @@ mod tests {
             .expect_err("oversize local TSL fails closed");
 
         assert!(err.to_string().contains("exceeded max_bytes"));
+    }
+
+    /// An ephemeral self-signed RSA certificate plus the key that signed it.
+    fn test_self_signed_rsa(cn: &str, serial: u8) -> (rsa::RsaPrivateKey, Vec<u8>) {
+        let key = rsa::RsaPrivateKey::new(&mut OsRng, 2048).expect("rsa keygen");
+        let name = Name::from_str(&format!("CN={cn}")).expect("name");
+        let tbs = TbsCertificate {
+            version: Version::V3,
+            serial_number: SerialNumber::new(&[serial]).expect("serial"),
+            signature: test_rsa_algorithm(),
+            issuer: name.clone(),
+            validity: Validity::from_now(StdDuration::from_secs(365 * 24 * 3600))
+                .expect("validity"),
+            subject: name,
+            subject_public_key_info: SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(
+                &key,
+            ))
+            .expect("spki"),
+            issuer_unique_id: None,
+            subject_unique_id: None,
+            extensions: None,
+        };
+        let signature = test_rsa_sign(&key, &tbs.to_der().expect("tbs der"));
+        let cert = Certificate {
+            tbs_certificate: tbs,
+            signature_algorithm: test_rsa_algorithm(),
+            signature: BitString::from_bytes(&signature).expect("bitstring"),
+        };
+        (key, cert.to_der().expect("cert der"))
+    }
+
+    /// A minimal ETSI TS 119 612 Trusted List granting `issuer_cert_der` as a CA/QC for
+    /// e-signatures, carrying a real enveloped XML-DSig signature over the whole document
+    /// (`URI=""`, exclusive C14N, RSA-SHA256). Returns the signed XML and the DER of the
+    /// certificate that signed it — the anchor a correctly-configured operator would provision.
+    fn test_signed_tsl(issuer_cert_der: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let (signer_key, signer_cert_der) =
+            test_self_signed_rsa("Chancela TSL XML-DSig Test Signer", 21);
+        let unsigned = format!(
+            concat!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+                r#"<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">"#,
+                "<SchemeInformation>",
+                "<SchemeTerritory>PT</SchemeTerritory>",
+                "<ListIssueDateTime>2026-01-15T00:00:00Z</ListIssueDateTime>",
+                "<NextUpdate><dateTime>2099-01-01T00:00:00Z</dateTime></NextUpdate>",
+                "</SchemeInformation>",
+                "<TrustServiceProviderList><TrustServiceProvider><TSPInformation>",
+                r#"<TSPName><Name xml:lang="en">Chancela Test QTSP</Name></TSPName>"#,
+                "</TSPInformation><TSPServices><TSPService><ServiceInformation>",
+                "<ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>",
+                r#"<ServiceName><Name xml:lang="en">Chancela Test CA</Name></ServiceName>"#,
+                "<ServiceDigitalIdentity><DigitalId><X509Certificate>{}</X509Certificate></DigitalId></ServiceDigitalIdentity>",
+                "<ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>",
+                "<StatusStartingTime>2020-01-01T00:00:00Z</StatusStartingTime>",
+                r#"<ServiceInformationExtensions><Extension Critical="false"><AdditionalServiceInformation>"#,
+                r#"<URI xml:lang="en">http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSignatures</URI>"#,
+                "</AdditionalServiceInformation></Extension></ServiceInformationExtensions>",
+                "</ServiceInformation></TSPService></TSPServices>",
+                "</TrustServiceProvider></TrustServiceProviderList>",
+                "</TrustServiceStatusList>",
+            ),
+            B64.encode(issuer_cert_der)
+        );
+
+        let signed_info = format!(
+            concat!(
+                r#"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>"#,
+                r#"<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>"#,
+                r#"<ds:Reference URI=""><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>"#,
+                "<ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>",
+            ),
+            B64.encode(Sha256::digest(unsigned.as_bytes()))
+        );
+        let signature = format!(
+            concat!(
+                r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{}"#,
+                "<ds:SignatureValue>{}</ds:SignatureValue>",
+                "<ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo>",
+                "</ds:Signature>",
+            ),
+            signed_info,
+            B64.encode(test_rsa_sign(&signer_key, signed_info.as_bytes())),
+            B64.encode(&signer_cert_der)
+        );
+
+        let insert_at = unsigned
+            .find("</TrustServiceStatusList>")
+            .expect("root close tag");
+        let xml = format!(
+            "{}{}{}",
+            &unsigned[..insert_at],
+            signature,
+            &unsigned[insert_at..]
+        );
+        (xml.into_bytes(), signer_cert_der)
+    }
+
+    fn test_pem_cert(der: &[u8]) -> String {
+        format!(
+            "-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n",
+            B64.encode(der)
+        )
+    }
+
+    fn test_hex_sha256(bytes: &[u8]) -> String {
+        Sha256::digest(bytes).iter().fold(
+            String::with_capacity(64),
+            |mut acc: String, byte: &u8| {
+                use std::fmt::Write as _;
+                let _ = write!(acc, "{byte:02x}");
+                acc
+            },
+        )
+    }
+
+    fn test_anchored_tsl_source(
+        path: &std::path::Path,
+        trust_anchor_certs: Vec<String>,
+        trust_anchor_sha256: Vec<String>,
+    ) -> RuntimeTslSource {
+        RuntimeTslSource {
+            id: "settings-anchored-tsl".to_owned(),
+            name: "Settings-anchored TSL".to_owned(),
+            location: RuntimeTrustLocation::Path(path.display().to_string()),
+            timeout_seconds: 30,
+            max_bytes: 4 * 1024 * 1024,
+            configured_index: Some(0),
+            legacy: false,
+            trust_anchor_certs,
+            trust_anchor_sha256,
+        }
+    }
+
+    /// t61-e1 — the settings→signing-time trust-anchor bridge, end to end.
+    ///
+    /// A Trusted List signed by an ephemeral XML-DSig signer is authenticated at **signing time**
+    /// against an anchor provisioned **only** through settings
+    /// (`signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256`, carried on
+    /// [`RuntimeTslSource`]) — in either the certificate or the fingerprint form. Before the
+    /// bridge, `build_trust_policy` resolved anchors from the environment exclusively, so this
+    /// same list was unauthenticated and the issuer was downgraded `Granted → Unknown` no matter
+    /// what the operator had configured.
+    ///
+    /// The third case is the fail-closed acceptance criterion: with **no** settings anchor the
+    /// identical list authenticates against nothing, so the union can only ever add trust.
+    #[test]
+    fn settings_provisioned_anchor_authenticates_trusted_list_at_signing_time() {
+        // The resolved set is `settings ∪ env`; an ambient env anchor cannot match this test's
+        // ephemeral signer, so every assertion below holds regardless of the runner's environment.
+        // A *malformed* env anchor would fail the resolution itself — surface that plainly rather
+        // than letting it masquerade as a bridge failure.
+        chancela_tsl::TslTrustAnchors::from_env()
+            .expect("CHANCELA_TSL_TRUST_ANCHOR[_SHA256] in this environment must parse");
+
+        let (_issuer_key, issuer_cert_der) = test_self_signed_rsa("Chancela Test CA", 22);
+        let (tsl_xml, signer_cert_der) = test_signed_tsl(&issuer_cert_der);
+
+        let tmp = TempDir::new();
+        let path = tmp.0.join("settings-anchored-tsl.xml");
+        std::fs::write(&path, &tsl_xml).expect("write signed TSL");
+        let now = OffsetDateTime::now_utc();
+
+        // 1. Certificate anchor from settings alone authenticates the list.
+        let mut policy = build_trust_policy(
+            None,
+            Some(test_anchored_tsl_source(
+                &path,
+                vec![test_pem_cert(&signer_cert_der)],
+                Vec::new(),
+            )),
+        )
+        .expect("policy builds");
+        assert_eq!(
+            policy
+                .issuer_status(&issuer_cert_der, now)
+                .expect("issuer status resolves"),
+            TrustedListStatus::Granted,
+            "a settings-provisioned certificate anchor must authenticate the list at signing time"
+        );
+
+        // 2. The fingerprint form of the same anchor, also from settings alone.
+        let mut policy = build_trust_policy(
+            None,
+            Some(test_anchored_tsl_source(
+                &path,
+                Vec::new(),
+                vec![test_hex_sha256(&signer_cert_der)],
+            )),
+        )
+        .expect("policy builds");
+        assert_eq!(
+            policy
+                .issuer_status(&issuer_cert_der, now)
+                .expect("issuer status resolves"),
+            TrustedListStatus::Granted,
+            "a settings-provisioned SHA-256 anchor must authenticate the list at signing time"
+        );
+
+        // 3. Fail-closed: no settings anchor, so nothing vouches for the signer.
+        let mut policy = build_trust_policy(
+            None,
+            Some(test_anchored_tsl_source(&path, Vec::new(), Vec::new())),
+        )
+        .expect("policy builds");
+        assert_eq!(
+            policy
+                .issuer_status(&issuer_cert_der, now)
+                .expect("issuer status resolves"),
+            TrustedListStatus::Unknown,
+            "an install that provisions no anchor must still trust no list"
+        );
+    }
+
+    /// A settings anchor that cannot be parsed must fail the policy build closed, never degrade to
+    /// "unanchored" (which would silently fall back to trusting whatever the environment says).
+    #[test]
+    fn malformed_settings_anchor_fails_the_trust_policy_closed() {
+        let tmp = TempDir::new();
+        let path = tmp.0.join("tsl.xml");
+        std::fs::write(&path, b"<TrustServiceStatusList/>").expect("write TSL");
+
+        let built = build_trust_policy(
+            None,
+            Some(test_anchored_tsl_source(
+                &path,
+                Vec::new(),
+                vec!["not-a-fingerprint".to_owned()],
+            )),
+        );
+        let err = match built {
+            Ok(_) => panic!("a malformed settings anchor must fail the policy build closed"),
+            Err(err) => err,
+        };
+        assert!(
+            matches!(&err, ApiError::Unprocessable(msg) if msg.contains("âncora de confiança")),
+            "{err:?}"
+        );
     }
 
     #[test]

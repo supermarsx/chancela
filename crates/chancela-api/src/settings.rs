@@ -1884,6 +1884,16 @@ pub(crate) struct RuntimeTslSource {
     pub(crate) max_bytes: u64,
     pub(crate) configured_index: Option<usize>,
     pub(crate) legacy: bool,
+    /// Operator-provisioned PEM trust anchors for the list's own XML-DSig signature, carried
+    /// verbatim from [`SigningSettings::tsl_trust_anchor_certs`]. They travel with the source so
+    /// the signing-time trust policy authenticates the list against the anchors the operator
+    /// configured, unioned with the environment ones — not the environment alone. Parsed
+    /// fail-closed at policy-build time; they were already shape-validated on save.
+    pub(crate) trust_anchor_certs: Vec<String>,
+    /// Operator-provisioned hex SHA-256 anchor fingerprints, carried verbatim from
+    /// [`SigningSettings::tsl_trust_anchor_sha256`]. See
+    /// [`trust_anchor_certs`](Self::trust_anchor_certs).
+    pub(crate) trust_anchor_sha256: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1939,6 +1949,8 @@ impl SigningSettings {
                     max_bytes: entry.max_bytes,
                     configured_index: Some(index),
                     legacy: false,
+                    trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
+                    trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
                 });
             }
         }
@@ -1958,6 +1970,8 @@ impl SigningSettings {
                 max_bytes: DEFAULT_TSL_MAX_BYTES,
                 configured_index: None,
                 legacy: true,
+                trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
+                trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
             });
         }
 

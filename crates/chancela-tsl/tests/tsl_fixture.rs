@@ -1032,6 +1032,44 @@ fn client_downgrades_granted_to_unknown_when_reference_digest_is_tampered() {
 }
 
 #[test]
+fn client_with_explicit_anchors_authenticates_a_list_the_env_path_would_reject() {
+    // t61-e1: the seam the signing-time trust policy now walks. Anchors supplied by the caller
+    // (in production: `signing.tsl_trust_anchor_*` unioned with the environment) authenticate the
+    // list, so the issuer stays `Granted`. The same client without them resolves the environment,
+    // which cannot vouch for this ephemeral signer, and fails closed to `Unknown`.
+    let signed = signed_fixture();
+    let list = parse_tsl(&signed.xml).expect("signed fixture parses");
+    let cert = issuer_cert(&list, "MULTICERT");
+    assert_eq!(
+        resolve_esig_status(&list, &cert, NOW),
+        QualifiedStatus::Granted,
+        "the unauthenticated list is Granted, so the anchor is what the assertions below isolate"
+    );
+
+    let mut anchored = TslClient::new(BytesTslSource::new(signed.xml.clone()))
+        .with_anchors(anchors_for(&signed));
+    assert_eq!(
+        anchored.is_qualified_for_esig(&cert, NOW).unwrap(),
+        QualifiedStatus::Granted,
+        "explicitly-supplied anchors must authenticate the list"
+    );
+    assert!(anchored.cached().unwrap().signature_valid());
+
+    let mut unanchored =
+        TslClient::new(BytesTslSource::new(signed.xml.clone())).with_anchors(TslTrustAnchors::new());
+    assert_eq!(
+        unanchored.is_qualified_for_esig(&cert, NOW).unwrap(),
+        QualifiedStatus::Unknown,
+        "an empty anchor set must trust no list (fail closed)"
+    );
+    assert!(!unanchored.cached().unwrap().signature_valid());
+
+    // `new()` alone keeps its pre-existing behaviour: resolve from the environment. On a runner
+    // with no anchor configured that is the fail-closed empty set.
+    assert!(TslClient::new(BytesTslSource::new(signed.xml)).anchors().is_none());
+}
+
+#[test]
 fn tsl_signature_validation_rejects_incomplete_fixture_signature() {
     // The bundled fixture carries a placeholder <ds:Signature> with only a CanonicalizationMethod,
     // SignatureMethod, and a fake SignatureValue — no <ds:Reference>, no <ds:KeyInfo>. The

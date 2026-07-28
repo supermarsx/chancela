@@ -975,8 +975,8 @@ fn resolve_member_tsl_url(selection: &RuntimeTslSelection, request_url: Option<&
         .unwrap_or_else(|| DEFAULT_PT_TSL_URL.to_owned())
 }
 
-/// Resolve the LOTL trust anchors from operator configuration: the certificate/fingerprint anchors
-/// provisioned in `SigningSettings` **unioned** with those from the environment
+/// Resolve the Trusted-List trust anchors from operator configuration: the certificate/fingerprint
+/// anchors provisioned in `SigningSettings` **unioned** with those from the environment
 /// ([`TslTrustAnchors::from_env`]).
 ///
 /// Settings-first with the environment as fallback. Because anchoring is a *union* — a list is
@@ -986,7 +986,15 @@ fn resolve_member_tsl_url(selection: &RuntimeTslSelection, request_url: Option<&
 /// neither source configures an anchor: a default anchor is never baked in, so an unconfigured
 /// install trusts no list. The settings anchors were already shape-validated on save; a parse error
 /// here is still surfaced fail-closed by the caller.
-fn resolve_lotl_trust_anchors(
+///
+/// Shared by **both** trust paths, so they cannot disagree about where an anchor may come from: the
+/// operator-triggered LOTL bootstrap ([`import_tsl_via_lotl`]) and the signing-time trusted-list
+/// policy (`signature::build_trust_policy`). The second was bridged by t61-e1; until then the
+/// signing path resolved anchors from the environment alone while the settings fields (and the
+/// docs) said otherwise. **Note the trust surface this shares:** a settings-provisioned anchor is a
+/// trust root at signing time, so whoever may write `signing.tsl_trust_anchor_*` can make a list
+/// authenticate. That write is gated on `Permission::SigningConfigure` via `signing_policy_changed`.
+pub(crate) fn resolve_lotl_trust_anchors(
     settings_certs: &[String],
     settings_fingerprints: &[String],
 ) -> Result<TslTrustAnchors, TslError> {
