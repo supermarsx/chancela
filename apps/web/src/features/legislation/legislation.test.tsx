@@ -554,7 +554,7 @@ describe('Legislação — corpus reader (full text, t55-E3)', () => {
     ],
   };
 
-interface CorpusFetchOptions {
+  interface CorpusFetchOptions {
     requests?: { url: string; init?: RequestInit }[];
     preferences?: UserPreferences;
     preferencesError?: boolean;
@@ -769,9 +769,7 @@ interface CorpusFetchOptions {
     renderWithProviders(<CorpusReader />);
 
     const actions = await screen.findByRole('group', { name: 'Opções para ocultar este aviso' });
-    expect(
-      within(actions).getByRole('button', { name: 'Ocultar permanentemente' }),
-    ).toBeTruthy();
+    expect(within(actions).getByRole('button', { name: 'Ocultar permanentemente' })).toBeTruthy();
     fireEvent.click(within(actions).getByRole('button', { name: 'Ocultar durante 30 dias' }));
 
     await waitFor(() =>
@@ -807,7 +805,9 @@ interface CorpusFetchOptions {
     cleanup();
     renderWithProviders(<CorpusReader />);
     expect(await screen.findByText('Citações selecionadas')).toBeTruthy();
-    expect(await screen.findByRole('button', { name: 'Repor aviso sobre as citações' })).toBeTruthy();
+    expect(
+      await screen.findByRole('button', { name: 'Repor aviso sobre as citações' }),
+    ).toBeTruthy();
     expect(screen.queryByRole('group', { name: 'Opções para ocultar este aviso' })).toBeNull();
   });
 
@@ -836,11 +836,14 @@ interface CorpusFetchOptions {
 
     // Restoring is explicit and reachable — a permanent dismiss is not a one-way door.
     await screen.findByRole('group', { name: 'Opções para ocultar este aviso' });
-    const put = requests.findLast(
-      (request) =>
-        request.url.includes('/v1/me/preferences') &&
-        (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
-    );
+    // `lib` is ES2022, so `Array.prototype.findLast` (ES2023) is not typed here.
+    const put = [...requests]
+      .reverse()
+      .find(
+        (request) =>
+          request.url.includes('/v1/me/preferences') &&
+          (request.init?.method ?? 'GET').toUpperCase() === 'PUT',
+      );
     expect(JSON.parse(String(put?.init?.body))).toEqual({
       table_columns: {},
       notice_dismissals: {},
