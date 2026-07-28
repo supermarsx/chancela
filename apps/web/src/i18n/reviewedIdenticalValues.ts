@@ -239,6 +239,12 @@ export const REVIEWED_IDENTICAL_VALUES = {
     '{count} de {total} diplomas',
     '{count} erros',
     '{count} notificações pendentes',
+    // t93: `data.status.cleanup.directoriesCount.one`/`.other` — "pasta"/"pastas" (folder) is
+    // the same word in pt-BR and pt-PT; no dialectal variant to translate. Registered per this
+    // file's own guidance (a cognate, not an untranslated gap) — `filesCount.one`/`.other`
+    // ("ficheiro" vs "arquivo") already differ correctly and needed no entry.
+    '{count} pasta',
+    '{count} pastas',
     '{count} permissões',
     '{count} resultados',
     '{count} serviços',
@@ -681,6 +687,9 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Declarações',
     'Declarações de voto, protestos ou reservas que devem acompanhar uma deliberação.',
     'Defina o URL de atualização em',
+    // t93: `settings.policyTable.head.setting` — "Definição" (setting/definition) is the same
+    // word in pt-BR and pt-PT.
+    'Definição',
     'Definida',
     'Deixe vazio se o servidor não exigir autenticação.',
     'Delegação',
