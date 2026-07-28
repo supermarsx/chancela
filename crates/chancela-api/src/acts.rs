@@ -66,7 +66,8 @@ pub async fn draft_act(
         return Err(ApiError::Conflict(format!(
             "book {book_id} is at page capacity; no new acts can be drafted. Close it with a termo \
              de encerramento and continue the sequence in a successor book."
-        )));
+        ))
+        .with_code("book_capacity_exhausted"));
     }
     let entity_id = book.entity_id;
     // t60: drafting an act is new authorship, so an archived entity refuses it. Advancing, signing
@@ -475,6 +476,13 @@ pub async fn advance_act(
     if target_state == ActState::Signing {
         let blocking = blocking_compliance_issues(&next, entity);
         if !blocking.is_empty() {
+            // MUST NOT BE SOFTENED (t58 §4 item 1). `ComplianceBlocked` carries `issues[]`, each
+            // naming the legal basis it was raised under, and the client renders them individually.
+            // Its `code` is intrinsic (`compliance_blocked`, from `ApiError::code`) and must NOT be
+            // refined per rule: a specific code invites a headline that summarises the refusal,
+            // which is exactly the collapse the structured array exists to prevent — one sentence
+            // in place of every citation. The summary here is the operator's detail line, never a
+            // replacement for the issues.
             return Err(ApiError::ComplianceBlocked {
                 message: format!(
                     "advance to Signing blocked by compliance errors: {}",
@@ -1488,6 +1496,14 @@ pub async fn seal_act_handler(
             Ok((StatusCode::OK, Json(resp)).into_response())
         }
         // Re-run the dispatched pack to surface the structured blocking issues (all Error severity).
+        //
+        // MUST NOT BE SOFTENED (t58 §4 items 1 and 2), and neither arm may be given a Tier-2 code.
+        // Both variants carry an intrinsic code from `ApiError::code` (`compliance_blocked`,
+        // `warnings_not_acknowledged`) precisely because their *identity* is the cause; what makes
+        // them honest is the structured array beside it. A blocked seal must keep citing each issue
+        // individually rather than collapsing to a single "não foi possível selar", and an
+        // unacknowledged-warnings `409` must stay an explicit acknowledgement prompt — not a notice
+        // a client can dismiss. Refining either code invites a headline that stands in for the list.
         Err(chancela_core::SealError::ComplianceBlocked(message)) => {
             let issues = pack
                 .check_act(act, entity)
@@ -1721,7 +1737,8 @@ fn capacity_reservation_error(e: chancela_core::BookError) -> ApiError {
             "book is at page capacity: {used} used and {reserved} reserved of {capacity}, but this \
              act needs {required} more. Close this book with a termo de encerramento and continue \
              the sequence in a successor book."
-        )),
+        ))
+        .with_code("book_page_capacity_exceeded"),
         other => ApiError::from(other),
     }
 }
@@ -2837,8 +2854,12 @@ mod tests {
             Ok(_) => panic!("a full book must block the freeze"),
             Err(e) => e,
         };
+        // t58: PEEL before classifying by variant. `capacity_reservation_error` now attaches
+        // `book_page_capacity_exceeded`, so `matches!(err, ApiError::Conflict(_))` is false against
+        // the wrapper and this assertion would silently stop testing the thing it names.
+        assert_eq!(err.code(), "book_page_capacity_exceeded", "{err:?}");
         assert!(
-            matches!(err, ApiError::Conflict(ref msg) if msg.contains("capacity")),
+            matches!(err.as_uncoded(), ApiError::Conflict(msg) if msg.contains("capacity")),
             "{err:?}"
         );
         // The act did not move, the ledger is untouched, and the book stayed open (never auto-closed).
@@ -2880,8 +2901,9 @@ mod tests {
             Ok(_) => panic!("an exhausted book must refuse new drafts"),
             Err(e) => e,
         };
+        assert_eq!(draft_err.code(), "book_capacity_exhausted", "{draft_err:?}");
         assert!(
-            matches!(draft_err, ApiError::Conflict(ref msg) if msg.contains("capacity")),
+            matches!(draft_err.as_uncoded(), ApiError::Conflict(msg) if msg.contains("capacity")),
             "{draft_err:?}"
         );
     }

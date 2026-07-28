@@ -801,8 +801,10 @@ async fn sign_termo_slot_pkcs12(
             .with_code("invalid_base64_content")
     })?);
     if pkcs12_der.is_empty() {
-        return Err(ApiError::Unprocessable("PKCS#12 upload is empty".to_owned())
-            .with_code("empty_content"));
+        return Err(
+            ApiError::Unprocessable("PKCS#12 upload is empty".to_owned())
+                .with_code("empty_content"),
+        );
     }
     if pkcs12_der.len() > LOCAL_PKCS12_SIGN_MAX_BYTES {
         return Err(ApiError::Unprocessable(format!(
@@ -850,10 +852,12 @@ async fn sign_termo_slot_pkcs12(
     // Validate any visible-seal placement up-front so a bad page/geometry is a clean 422 rather than
     // surfacing as a generic 500 from inside the blocking sign task.
     if appearance.is_some() {
-        prepare_signature_with_appearance(&input_bytes, &opts, appearance.as_ref()).map_err(|e| {
-            ApiError::Unprocessable(format!("não foi possível preparar o selo visível: {e}"))
-                .with_code("visible_seal_failed")
-        })?;
+        prepare_signature_with_appearance(&input_bytes, &opts, appearance.as_ref()).map_err(
+            |e| {
+                ApiError::Unprocessable(format!("não foi possível preparar o selo visível: {e}"))
+                    .with_code("visible_seal_failed")
+            },
+        )?;
     }
 
     let (signed_pdf, identity) = tokio::task::spawn_blocking(move || {

@@ -374,10 +374,18 @@ async fn create_book_two_phase(
     // Draft instrumentos are store-backed. Refuse before parsing or minting a BookId when the
     // process is running in the in-memory fallback; otherwise the write-through is a no-op and the
     // API would return a Created book whose termo immediately 404s.
+    // t58 — CODED so this does not read as the retryable `503` it shares a status with.
+    //
+    // `Unavailable` normally means "a leader election is in flight, retry in a second", and
+    // `error.rs` puts `Retry-After: 1` on every one of them. This refusal is the opposite: the
+    // process is running without durable storage, so retrying cannot ever succeed until the
+    // deployment changes. `data_dir_required` is what lets the client say that instead of inviting
+    // a retry loop against a permanent configuration state.
     if state.store.is_none() {
         return Err(ApiError::Unavailable(
             "two-phase book creation requires durable storage; no book was created".to_owned(),
-        ));
+        )
+        .with_code("data_dir_required"));
     }
     // A two-phase draft may leave the opening date for a later PATCH; seed it only if supplied.
     let opening_date = {
@@ -1000,11 +1008,14 @@ async fn close_book_two_phase(
     closing_date: String,
     required_signatories: Vec<crate::dto::TermoSignatoryInput>,
 ) -> Result<Json<BookView>, ApiError> {
+    // t58: a permanent configuration state, not the retryable leader-election `503` this status
+    // otherwise means. See `create_book_two_phase` for the full rationale.
     if state.store.is_none() {
         return Err(ApiError::Unavailable(
             "two-phase book closing requires durable storage; no closing draft was created"
                 .to_owned(),
-        ));
+        )
+        .with_code("data_dir_required"));
     }
     // A blank closing date defers the choice to a later PATCH; parse only if supplied.
     let closing_date = {
@@ -1048,7 +1059,8 @@ async fn close_book_two_phase(
     if !book.is_open() {
         return Err(ApiError::Conflict(
             "book is not Open; only an open book can start a two-phase close".to_owned(),
-        ));
+        )
+        .with_code("book_not_open"));
     }
     let entity = entities.get(&book.entity_id).ok_or(ApiError::NotFound)?;
     let family = entity.family;
