@@ -4354,6 +4354,49 @@ export interface PairingCodeMinted {
   expires_in_secs: number;
   /** The resolved device label bound to this code. */
   label: string;
+  /**
+   * Which proofs this deployment accepts to confirm the exchange. The device redeeming the
+   * code is unauthenticated and cannot read `GET /v1/confirmation-policy` itself, so the
+   * desktop learns the accepted set here and tells the operator what they will be asked for.
+   */
+  accepted_confirmation_methods: PairingConfirmationMethod[];
+}
+
+/**
+ * A proof a device pairing may be confirmed with. **Any one** satisfies the requirement.
+ *
+ * The password is one accepted method and never the only one: a TOTP code proves the same
+ * operator without a reusable secret reaching the device being enrolled.
+ */
+export type PairingConfirmationMethod = 'password' | 'totp_code';
+
+/** The confirmation carried by `POST /v1/pairing/exchange`. Supply exactly one proof. */
+export interface PairingConfirmationProof {
+  password?: string;
+  totp_code?: string;
+}
+
+/**
+ * `POST /v1/pairing/exchange` request (**unauthenticated** — the device being paired calls it).
+ *
+ * A code alone does not pair: omitting `confirmation`, or supplying one the deployment does not
+ * accept or the operator cannot prove, is a `403` that mints no session and enrolls no device.
+ * The attempt still spends the code — one attempt per code, by design.
+ */
+export interface ExchangePairingCode {
+  code: string;
+  confirmation: PairingConfirmationProof;
+}
+
+/** `POST /v1/pairing/exchange` response: the companion session and the enrolled device. */
+export interface PairingExchanged {
+  /** The companion session token (sent as `X-Chancela-Session` on subsequent requests). */
+  token: string;
+  device_id: string;
+  label: string;
+  user: UserView;
+  /** Which proof confirmed this enrollment. Render as its own labelled line. */
+  confirmed_by: PairingConfirmationMethod;
 }
 
 /** One enrolled companion device (`GET /v1/pairing/devices`). */
@@ -4366,6 +4409,13 @@ export interface PairingDeviceView {
   revoked: boolean;
   /** RFC 3339 revoke instant, or `null` while active. */
   revoked_at: string | null;
+  /**
+   * Which proof confirmed this enrollment, or `null` for a device enrolled before the
+   * confirmation requirement existed. `null` must render as *not recorded* and **never** as a
+   * method: this is evidence, and a device whose enrollment nobody confirmed must not read as
+   * one that somebody did.
+   */
+  confirmed_by: PairingConfirmationMethod | null;
 }
 
 /** `GET /v1/pairing/devices` response. */

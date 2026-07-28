@@ -180,13 +180,35 @@ remote WebView. A short-lived **pairing-code** handshake sits on top of the sess
 machinery (`crates/chancela-api/src/pairing.rs`, schema v22 `pairing_devices` table):
 
 - `POST /v1/pairing/codes` (operator session) mints a **single-use, 5-minute** code and
-  returns `{code, expires_at, expires_in_secs, label}`. Only the code's SHA-256 digest is
-  retained server-side.
+  returns `{code, expires_at, expires_in_secs, label, accepted_confirmation_methods}`. Only
+  the code's SHA-256 digest is retained server-side.
 - `POST /v1/pairing/exchange` (**unauthenticated** — the phone calls this) redeems the code
-  for a companion session: `{token, device_id, label, user}`. Unknown, expired, and
-  already-used codes fail closed with one uniform `401`.
+  for a companion session: `{token, device_id, label, user, confirmed_by}`. Unknown, expired,
+  and already-used codes fail closed with one uniform `401`.
 - `GET /v1/pairing/devices` lists the operator's enrolled devices;
   `DELETE /v1/pairing/devices/{id}` soft-revokes one and kills its companion session.
+
+**A code alone does not pair a device.** The exchange body carries
+`{code, confirmation}`, and the confirmation must satisfy **one** proof from the operator the
+code is bound to — `{"password": …}` or `{"totp_code": …}`. Which proofs an instance accepts
+is `auth.device_pairing.accepted` (defaults to all of them; an empty list is refused at
+`PUT /v1/settings`, because it would make pairing impossible rather than optional). The mint
+response advertises the accepted set so the desktop can tell the operator what the phone will
+ask for — the phone is unauthenticated and cannot read `GET /v1/confirmation-policy` itself.
+
+This does not reintroduce the password the handshake exists to avoid: the password is one
+accepted proof and never the only one. A TOTP code proves the same operator with no reusable
+secret reaching the phone, and a deployment can narrow `accepted` to `["totp_code"]` so a
+password is not accepted at this endpoint at all. What the confirmation closes is the gap
+where possession of a code — photographed off an unattended screen — *was* a session as the
+operator.
+
+Fail-closed: an unsatisfied confirmation is a `403` that mints no session and writes no device
+row, so it pairs nothing. It does spend the code, because `redeem_code` consumes a code on any
+attempt — deliberate, since a code left live for its five minutes would make a six-digit TOTP
+an unlimited online guessing target. One attempt per code. A device's row records which proof
+confirmed it (`confirmed_by`); rows written before this requirement carry `null`, which the UI
+must render as *not recorded* and never as a method.
 
 The desktop UI is **Configurações → Dispositivos** (`apps/web/src/features/pairing/`). The
 operator names the device and mints a code; the panel renders it as a **QR code and a
@@ -207,6 +229,13 @@ desktop's own origin. Loading it on the phone gives the companion both the serve
 URL origin) and the code to POST to `/v1/pairing/exchange`. The plaintext code is shown once
 and lives only in local component state — never cached or persisted, mirroring the API-key
 secret panel.
+
+**The companion-side page that consumes `?companion_pair=` is not built.** The deep link is
+minted and encoded, and the endpoint it names is implemented and tested server-side, but no
+route in `apps/web` reads the parameter — `companion_pair` appears only in `PairingPanel.tsx`
+and its test. Enrolling a phone today therefore means calling `/v1/pairing/exchange` directly.
+Recorded here rather than left to be discovered: the desktop half of this flow looks finished,
+which is exactly what makes the missing half easy to assume.
 
 The minted companion session is **identity-only** (no unlocked attestation signing key — the
 phone never authenticated a key), so a paired phone can act as the operator for RBAC-gated
