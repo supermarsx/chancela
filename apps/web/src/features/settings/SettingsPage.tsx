@@ -91,6 +91,7 @@ import { UI_VERSION, displayVersion } from '../../api/versionCheck';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
+import { usePlatformLogLimitations } from '../../i18n/platformLogLimitationsFallback';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnToggleGrid } from '../tableColumns/ColumnToggleGrid';
 import { ENTITIES_TABLE, dataColumns } from '../tableColumns/tableColumnRegistry';
@@ -1238,6 +1239,7 @@ function PlatformLogTailPanel() {
     [level, serviceId, tail],
   );
   const logs = usePlatformLogs(params);
+  const resolveLogLimitations = usePlatformLogLimitations();
   const serviceOptions = useMemo(
     () => [
       { value: '', label: t('settings.platform.logs.filter.service.all') },
@@ -1262,9 +1264,12 @@ function PlatformLogTailPanel() {
     () => PLATFORM_LOG_TAIL_OPTIONS.map((item) => ({ value: String(item), label: String(item) })),
     [],
   );
+  // The label describes the SERVER's declared order, never an assumption about it: the table
+  // renders `logs.data.logs` in the order it arrived, so anything else here would be a caption
+  // that can drift away from the rows underneath it.
   const orderLabel =
-    logs.data?.order === 'chronological'
-      ? t('settings.platform.logs.order.chronological')
+    logs.data?.order === 'newest_first'
+      ? t('settings.platform.logs.order.newestFirst')
       : (logs.data?.order ?? t('settings.platform.logs.order.unknown'));
   return (
     <Card
@@ -1324,7 +1329,11 @@ function PlatformLogTailPanel() {
                 title={t('settings.platform.logs.limitations.title')}
               >
                 <ul className="platform-log-limitations">
-                  {logs.data.limitations.map((item) => (
+                  {resolveLogLimitations(
+                    logs.data.retention.durable,
+                    logs.data.retention.retention_limit,
+                    logs.data.limitations,
+                  ).map((item) => (
                     <li key={item}>{item}</li>
                   ))}
                 </ul>

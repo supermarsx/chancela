@@ -13,6 +13,16 @@ import { MCP_TAB_PATH } from './PlatformOperationsSection';
  */
 import { platformServicePtPT } from '../../i18n/platformServiceFallback';
 /**
+ * The platform log tail's «Limitações» sentences are likewise server-authored English, resolved to
+ * pt-PT by `platformLogLimitationsFallback.ts` (t97) from the structured `retention.durable` /
+ * `retention.retention_limit` fields rather than from `limitations[]`'s prose (module header
+ * explains why). These assertions take the expected text from the module rather than pinning
+ * Portuguese wording inline, for the same reason as the service-control sentences above. What the
+ * copy has to BE is gated by `platformLogLimitationsFallback.test.ts`, which derives it from
+ * `platform_logs.rs`.
+ */
+import { platformLogLimitationsPtPT } from '../../i18n/platformLogLimitationsFallback';
+/**
  * The RGPD registers are located by their catalog KEY rather than by the pt-PT words they
  * currently render. The terminology has moved twice (GDPR→RGPD, DPIA→AIPD) without the surface
  * changing, and each move turned these lookups red for no reason — the assertion is that the
@@ -1097,10 +1107,14 @@ function settingsFetch(
       const serviceId = parsed.searchParams.get('service_id');
       const level = parsed.searchParams.get('level');
       const tail = Number(parsed.searchParams.get('tail') ?? '100');
+      // Mirrors `PlatformLogRing::tail`: filter, then take the newest `tail` by seq, newest
+      // first. `platformLogs` itself stays in append order, as the real ring does — the stub
+      // must not hand back a window the server could not produce.
       const logs = platformLogs
         .filter((entry) => !serviceId || entry.service_id === serviceId)
         .filter((entry) => !level || entry.level === level)
-        .slice(-tail);
+        .sort((left, right) => Number(right.seq) - Number(left.seq))
+        .slice(0, tail);
       const oldestSeq = platformLogs.length > 0 ? Number(platformLogs[0].seq) : null;
       const newestSeq =
         platformLogs.length > 0 ? Number(platformLogs[platformLogs.length - 1].seq) : null;
@@ -1108,7 +1122,7 @@ function settingsFetch(
         jsonResponse({
           logs,
           tail,
-          order: 'chronological',
+          order: 'newest_first',
           retention: {
             retention_limit: 512,
             retained_count: platformLogs.length,
@@ -3686,9 +3700,7 @@ describe('SettingsPage', () => {
     expect(within(mcpRow!).queryByRole('button', { name: /Registar reinício/ })).toBeNull();
     expect(within(mcpRow!).getAllByText('Supervisor necessário').length).toBeGreaterThan(0);
     expect(
-      within(mcpRow!).getAllByText(
-        platformServicePtPT.capabilityLimitation['mcp_stdio.start'],
-      ),
+      within(mcpRow!).getAllByText(platformServicePtPT.capabilityLimitation['mcp_stdio.start']),
     ).toHaveLength(3);
   });
 
@@ -3777,13 +3789,16 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Cauda estruturada de logs da API')).toBeTruthy();
     expect(await screen.findByText('Platform service status read')).toBeTruthy();
     // The log-scope notice carries the limitations; it renders once its own dismissal state has
-    // loaded, which is a beat after the log payload itself.
-    expect(await screen.findByText(/in-memory API-owned structured log ring/)).toBeTruthy();
+    // loaded, which is a beat after the log payload itself. The stub always reports `durable:
+    // false`, so the basis sentence is the in-memory one; `resolvePlatformLogLimitations` builds it
+    // from that structured field rather than from the server's English prose (t97).
+    expect(await screen.findByText(platformLogLimitationsPtPT['basis.memory'])).toBeTruthy();
+    expect(screen.getByText(platformLogLimitationsPtPT['scope.notStdoutStderr'])).toBeTruthy();
     expect(screen.getByText('Limite de retenção')).toBeTruthy();
     expect(screen.getByText('Retidas')).toBeTruthy();
     expect(screen.getByText('Ring em memória')).toBeTruthy();
     expect(screen.getByText('process_memory')).toBeTruthy();
-    expect(screen.getByText('2 entradas · limite 100 · cronológico')).toBeTruthy();
+    expect(screen.getByText('2 entradas · limite 100 · mais recentes primeiro')).toBeTruthy();
     expect(screen.getAllByText('Servidor API').length).toBeGreaterThan(0);
     expect(screen.getByText('platform.services')).toBeTruthy();
 
@@ -3902,10 +3917,11 @@ describe('SettingsPage', () => {
   });
 
   it('shows platform log empty state together with backend limitations', async () => {
-    const { fn } = settingsFetch(DEFAULT_SETTINGS, {
-      platformLogs: [],
-      platformLogLimitations: ['Ring only; no historical process logs are retained.'],
-    });
+    // `platformLogLimitations` is deliberately NOT overridden here: `resolvePlatformLogLimitations`
+    // builds the notice from `retention.durable` / `retention.retention_limit`, not from
+    // `limitations[]`'s prose (t97), so the standard sentences must still appear even with zero
+    // rows and even though the stub's raw English differs from what the panel actually shows.
+    const { fn } = settingsFetch(DEFAULT_SETTINGS, { platformLogs: [] });
     vi.stubGlobal('fetch', fn);
 
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
@@ -3913,12 +3929,11 @@ describe('SettingsPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
 
     expect(await screen.findByText('Sem logs da plataforma')).toBeTruthy();
-    expect(
-      await screen.findByText('Ring only; no historical process logs are retained.'),
-    ).toBeTruthy();
+    expect(await screen.findByText(platformLogLimitationsPtPT['basis.memory'])).toBeTruthy();
+    expect(screen.getByText(platformLogLimitationsPtPT['scope.notStdoutStderr'])).toBeTruthy();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
     expect(screen.getAllByText('n/a').length).toBeGreaterThan(0);
-    expect(screen.getByText('0 entradas · limite 100 · cronológico')).toBeTruthy();
+    expect(screen.getByText('0 entradas · limite 100 · mais recentes primeiro')).toBeTruthy();
   });
 
   it('renders a minimal platform log entry without context', async () => {
@@ -3945,6 +3960,47 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('Aplicação').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Debug').length).toBeGreaterThan(0);
     expect(screen.getByText('Sem contexto')).toBeTruthy();
+  });
+
+  /**
+   * The table must render the response's own order, and the response's own rows — no client-side
+   * sort or slice on top.
+   *
+   * Seeded past the default tail on purpose. With a fixture that fits inside the window, "shows
+   * the newest hundred" and "shows the oldest hundred upside-down" are indistinguishable: both
+   * render descending seqs. So this asserts WHICH seqs made it in, which only the first can
+   * satisfy. Rows are read structurally (the seq column), never by their pt-PT copy.
+   */
+  it('renders the newest window of platform logs, newest first', async () => {
+    const SEEDED = 120;
+    const { fn } = settingsFetch(DEFAULT_SETTINGS, {
+      // Append order, oldest first — exactly how the server's ring holds them.
+      platformLogs: Array.from({ length: SEEDED }, (_, index) => ({
+        id: `platform-log-${index + 1}`,
+        seq: index + 1,
+        timestamp: '2026-07-09T12:00:00Z',
+        service_id: 'api',
+        level: 'info',
+        target: 'platform.test',
+        message: `event ${index + 1}`,
+      })),
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Registos' }));
+    await screen.findByText('event 120');
+
+    const seqs = Array.from(
+      document.querySelectorAll('.platform-log-table tbody tr td:first-child'),
+    ).map((cell) => Number(cell.textContent));
+
+    expect(seqs).toHaveLength(100);
+    expect(seqs).toEqual(Array.from({ length: 100 }, (_, index) => SEEDED - index));
+    expect(seqs[0]).toBe(SEEDED);
+    expect(seqs.at(-1)).toBe(SEEDED - 99);
+    expect(seqs).not.toContain(1);
   });
 
   it('records a platform MCP start desired state without implying live process control', async () => {
