@@ -34,6 +34,7 @@ import {
   SERVICE_LIMITATION_OWNER,
   type PlatformServiceCopy,
   type PlatformServiceLimitationCode,
+  platformDiagnosticCode,
   platformServiceEnglish,
   platformServicePtPT,
   resolveCapabilityLimitation,
@@ -125,6 +126,25 @@ async function actionTokens(): Promise<string[]> {
   );
   expect(variants.length, `parsed no PlatformServiceAction variants from ${SETTINGS}`).toBe(3);
   return variants;
+}
+
+/**
+ * The outcome tokens as they reach the wire. Separate from the action enum because it renames with
+ * `snake_case`, not `lowercase` — `RestartRequired` becomes `restart_required`, and a code built by
+ * lowercasing alone would silently produce `restartrequired`.
+ */
+async function emittedOutcomeKinds(): Promise<string[]> {
+  const source = await readCrateSource(SETTINGS);
+  const block =
+    /#\[serde\(rename_all = "(?<style>[a-z_]+)"\)\]\s*pub enum PlatformControlOutcomeKind \{(?<body>[^}]*)\}/u.exec(
+      source,
+    );
+  expect(block, `PlatformControlOutcomeKind lost its serde rename in ${SETTINGS}`).not.toBeNull();
+  const groups = (block as RegExpExecArray).groups as { style: string; body: string };
+  expect(groups.style, 'PlatformControlOutcomeKind serde rename style changed').toBe('snake_case');
+  return [...groups.body.matchAll(/^\s*(\w+),/gmu)].map((m) =>
+    (m[1] as string).replace(/(?<!^)([A-Z])/gu, '_$1').toLowerCase(),
+  );
 }
 
 /** `capabilityLimitation`: `${service}.${action}` → the English the endpoint sends. */
@@ -354,6 +374,41 @@ describe('the pt-PT copy has the right shape, whatever its wording', () => {
     expect(platformServiceEnglish.serviceLimitation['mcp.ai_gate_disabled']).toContain(
       'settings.ai.enabled',
     );
+  });
+});
+
+describe('the quotable diagnostic code stays untranslated', () => {
+  it('is built from the wire tokens the emitter actually produces', async () => {
+    const ids = await serviceIds();
+    const actions = await actionTokens();
+    const outcomes = await emittedOutcomeKinds();
+    // Non-vacuity: an empty parse would make the containment checks below trivially true.
+    expect(outcomes.length, 'parsed no PlatformControlOutcomeKind variants').toBe(3);
+
+    for (const service of [ids.api, ids.mcp]) {
+      for (const action of actions) {
+        for (const outcome of outcomes) {
+          const code = platformDiagnosticCode(service, action, outcome);
+          expect(code, 'the code must carry the raw service id').toContain(service);
+          expect(code, 'the code must carry the raw action token').toContain(action);
+          expect(code, 'the code must carry the raw outcome token').toContain(outcome);
+          // It is an identifier, not copy: no locale may alter it, so it must contain no letter
+          // outside the ASCII range the wire tokens use.
+          expect(code, 'the code drifted into prose').toMatch(
+            /^[a-z0-9_]+\/[a-z0-9_]+ · [a-z0-9_]+$/u,
+          );
+        }
+      }
+    }
+  });
+
+  it('distinguishes every service/action pair from every other', async () => {
+    const ids = await serviceIds();
+    const actions = await actionTokens();
+    const codes = [ids.api, ids.mcp].flatMap((service) =>
+      actions.map((action) => platformDiagnosticCode(service, action, 'unsupported')),
+    );
+    expect(new Set(codes).size, 'two different pairs share one code').toBe(codes.length);
   });
 });
 

@@ -16,7 +16,7 @@ import {
 } from '../../api/types';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
-import { usePlatformServiceText } from '../../i18n/platformServiceFallback';
+import { platformDiagnosticCode, usePlatformServiceText } from '../../i18n/platformServiceFallback';
 import {
   Badge,
   Button,
@@ -226,6 +226,12 @@ function ActionCapabilities({ service }: { service: PlatformServiceStatus }) {
               <Badge tone={outcomeTone(capability.outcome)}>
                 {t(`settings.platform.outcome.${capability.outcome}` as MessageKey)}
               </Badge>
+              {/* The wire tokens, untranslated. The English sentence used to be the thing an
+                  operator pasted into a support thread; now that it reads in pt-PT, the
+                  identifiers it came from take that job. */}
+              <code className="mono">
+                {platformDiagnosticCode(service.id, capability.action, capability.outcome)}
+              </code>
             </div>
             <p>
               {

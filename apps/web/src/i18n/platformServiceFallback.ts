@@ -212,6 +212,24 @@ export const SERVICE_LIMITATION_OWNER = {
   'mcp.ai_gate_disabled': 'mcp_stdio',
 } as const satisfies Record<PlatformServiceLimitationCode, PlatformControllableServiceId>;
 
+/**
+ * The stable, deliberately UNTRANSLATED triplet an operator quotes in a support thread:
+ * `api/start · unsupported`.
+ *
+ * Before this module the English prose itself was the quotable artifact — a maintainer could search
+ * the Rust source for the sentence on screen. Translating it removes that, so the identifiers the
+ * sentence was derived from are surfaced in its place. All three parts are wire tokens, never copy,
+ * and stay English in every locale (memory: `english-codebase-pt-ui`); it renders inside a `<code>`
+ * element, which is also what keeps it out of the literal-copy gate's scan.
+ *
+ * This is the same split `externalValidatorStatusFallback.ts` uses — human sentence plus the raw
+ * token retained beside it — reached from the opposite direction: there the identifier was already
+ * on screen and needed prose, here the prose was on screen and needed the identifier.
+ */
+export function platformDiagnosticCode(serviceId: string, action: string, outcome: string): string {
+  return `${serviceId}/${action} · ${outcome}`;
+}
+
 /** How a server string resolved. `text` is never empty. */
 export interface PlatformCopyResolution {
   /** The sentence to render. */
