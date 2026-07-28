@@ -228,6 +228,43 @@
 }
 
 /*
+ * Loading shape of the preview (`DocumentPreviewSkeleton`). The placeholder wears the real
+ * `.doc-preview` box, so only the inner spacing the real blocks get from their own typography
+ * has to be restated here — the paper column, the gilt top rule and the head rule are already
+ * the document's own. The blocks inside are the shared `.skeleton` primitive; nothing about the
+ * shimmer is redefined.
+ */
+.doc-skeleton__head,
+.doc-skeleton__body,
+.doc-skeleton__paragraph,
+.doc-skeleton__signature {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-skeleton__head {
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.doc-skeleton__body {
+  gap: 1.1rem;
+}
+
+/* Matches `.doc-paragraph`'s line rhythm so the swap does not change the column height. */
+.doc-skeleton__paragraph {
+  gap: 0.45rem;
+}
+
+.doc-skeleton__signatures {
+  margin-top: 1.5rem;
+}
+
+.doc-skeleton__signature {
+  gap: 0.5rem;
+}
+
+/*
  * Browser print of just the document. The print action toggles `body.printing-doc`
  * (added right before `window.print()`, removed on `afterprint`), so these rules stay
  * dormant for every other page and every other print. The visibility trick prints only
@@ -236,6 +273,11 @@
 @media print {
   body.printing-doc {
     visibility: hidden;
+  }
+  /* A placeholder is not a document: never let the loading shape reach paper, even though
+     the print action is only offered once the real model has arrived. */
+  body.printing-doc .doc-preview--loading {
+    display: none;
   }
   body.printing-doc .doc-preview,
   body.printing-doc .doc-preview * {

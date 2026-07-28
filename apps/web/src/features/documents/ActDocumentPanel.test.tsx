@@ -2674,3 +2674,50 @@ describe('ActDocumentPanel — honest no-template preview', () => {
     await waitFor(() => expect(screen.getByText('Sem modelo disponível')).toBeTruthy());
   });
 });
+
+describe('ActDocumentPanel — preview loading shape', () => {
+  it('holds the document box with a pulsing skeleton, then swaps it for the rendered model', async () => {
+    let releasePreview = () => {};
+    const previewGate = new Promise<void>((resolve) => {
+      releasePreview = resolve;
+    });
+    const model = {
+      title: 'Ata número um',
+      entity_name: 'Encosto Estratégico Lda',
+      entity_nipc: '500600700',
+      subject: '',
+      language: 'pt-PT',
+      created_at: '2026-06-30',
+      blocks: [{ type: 'Heading', level: 2, text: 'Abertura' }],
+    };
+
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL) => {
+      const url = input.toString();
+      if (url.includes('/document/preview')) return previewGate.then(() => json(model));
+      if (url.includes('/templates')) return json([]);
+      const imports = emptyImports(url);
+      if (imports) return imports;
+      return Promise.reject(new Error(`no stub for ${url}`));
+    }) as typeof fetch);
+
+    const { container } = renderWithProviders(
+      <ActDocumentPanel act={baseAct} family="CommercialCompany" />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Pré-visualizar documento' }));
+
+    // While in flight: the document's own box, filled with the shared pulsing primitive.
+    await waitFor(() => expect(container.querySelector('.doc-preview--loading')).toBeTruthy());
+    expect(container.querySelectorAll('.skeleton').length).toBeGreaterThanOrEqual(12);
+    expect(container.querySelector('.doc-preview--loading')?.querySelector('.doc-kv')).toBeTruthy();
+
+    releasePreview();
+
+    // Once the model lands the placeholder is gone and the real render owns the same box.
+    await waitFor(() => expect(container.querySelector('.doc-preview--loading')).toBeNull());
+    const rendered = container.querySelector('.doc-preview');
+    expect(rendered).toBeTruthy();
+    expect(rendered?.querySelectorAll('.skeleton').length).toBe(0);
+    expect(rendered?.querySelector('.doc-heading--2')).toBeTruthy();
+  });
+});

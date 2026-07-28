@@ -80,6 +80,7 @@ import {
 } from '../../ui';
 import { hasTemplateName, templateDisplayName, templateName } from '../templates/templateNames';
 import { DocumentPreview } from './DocumentPreview';
+import { DocumentPreviewSkeleton } from './DocumentPreviewSkeleton';
 import { TemplatePicker } from './TemplatePicker';
 import './documents.css';
 
@@ -2823,7 +2824,7 @@ export function ActDocumentPanel({
           <div className="stack--tight">
             <p className="field__hint">{t('documents.preview.hint')}</p>
             {preview.isLoading ? (
-              <Skeleton height="12rem" />
+              <DocumentPreviewSkeleton />
             ) : isNoDocumentTemplate(preview.error) ? (
               <InlineWarning tone="info" title={t('documents.preview.noTemplate.title')}>
                 {t('documents.preview.noTemplate.body')}
