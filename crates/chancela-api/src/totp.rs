@@ -273,21 +273,47 @@ pub fn verify_code_against_secret(
 
 // --- Backup codes -------------------------------------------------------------------------------
 
+/// The unambiguous backup-code alphabet: 31 symbols, with `0`, `O`, `1`, `I` and `L` removed so a
+/// code read off a screen cannot be transcribed into a different one.
+const BACKUP_CODE_ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+
+/// The largest byte that reduces mod 31 without bias: `31 * 8 = 248`, so `0..=247` covers each
+/// residue exactly eight times and the rest must be redrawn.
+const BACKUP_CODE_UNBIASED_CEILING: u8 = 248;
+
 /// A freshly minted backup code, shown once. Ten characters from an unambiguous alphabet (no `0`,
 /// `O`, `1`, `I`, `L`), grouped for readability.
+///
+/// **Rejection sampling, not `byte % 31`.** 256 is not a multiple of 31, so reducing a uniform byte
+/// modulo the alphabet made the first eight symbols 9:8 more likely than the rest — real bias,
+/// costing a fraction of a bit per character. At ten characters (~49 bits) that is a small loss and
+/// was never a live break; this is a correctness fix, not an incident. It matters mainly because
+/// the pattern gets copied: `auth_token::issue_transcribable` draws from the same alphabet and
+/// would have inherited the flaw for the sake of symmetry.
+///
+/// Existing codes are untouched. They are stored as argon2id verifiers and cannot be regenerated,
+/// and their entropy was never low enough to warrant forcing every enrolled operator to reprint.
 #[must_use]
 pub fn generate_backup_code() -> String {
-    const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let mut code = String::with_capacity(11);
     for i in 0..10 {
         if i == 5 {
             code.push('-');
         }
-        let mut buf = [0u8; 1];
-        OsRng.fill_bytes(&mut buf);
-        code.push(ALPHABET[(buf[0] as usize) % ALPHABET.len()] as char);
+        code.push(backup_code_symbol() as char);
     }
     code
+}
+
+/// Draw one uniformly-distributed backup-code symbol, redrawing on the biased tail.
+fn backup_code_symbol() -> u8 {
+    let mut buf = [0u8; 1];
+    loop {
+        OsRng.fill_bytes(&mut buf);
+        if buf[0] < BACKUP_CODE_UNBIASED_CEILING {
+            return BACKUP_CODE_ALPHABET[(buf[0] as usize) % BACKUP_CODE_ALPHABET.len()];
+        }
+    }
 }
 
 // =================================================================================================
@@ -1054,5 +1080,36 @@ mod tests {
             );
             assert!(seen.insert(code), "the CSPRNG repeated a backup code");
         }
+    }
+
+    /// The sampler must not favour the start of the alphabet.
+    ///
+    /// The old `byte % 31` made symbols 0..7 land 9:8 more often than 8..30. Over a large sample
+    /// that skew is far outside the spread of an unbiased draw, so comparing the two halves of the
+    /// alphabet catches a reintroduction without pinning any particular random sequence — this
+    /// asserts a property, not a fixture, and does not depend on a seed.
+    #[test]
+    fn backup_code_symbols_are_drawn_without_modulo_bias() {
+        const DRAWS: usize = 60_000;
+        let mut favoured = 0usize;
+        for _ in 0..DRAWS {
+            let symbol = backup_code_symbol();
+            let index = BACKUP_CODE_ALPHABET
+                .iter()
+                .position(|c| *c == symbol)
+                .expect("symbol is in the alphabet");
+            if index < 8 {
+                favoured += 1;
+            }
+        }
+        // Unbiased: 8/31 ≈ 25.8%. The old modulo path: 9/(9*8 + 8*23) ≈ 28.1%. A 1.2-point band
+        // around the true rate separates them with enormous margin at this sample size while
+        // staying far outside normal sampling noise (σ ≈ 0.18 points).
+        let rate = favoured as f64 / DRAWS as f64;
+        let unbiased = 8.0 / 31.0;
+        assert!(
+            (rate - unbiased).abs() < 0.012,
+            "first-eight rate {rate:.4} is not the unbiased {unbiased:.4}; modulo bias is back"
+        );
     }
 }
