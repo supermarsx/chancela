@@ -663,7 +663,12 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
         // established cause and neither may borrow the stale-fact title, which asserts the book's
         // facts moved. Their reviewed sentence comes from the shared api-error catalog, keyed by the
         // same code that selected this branch.
-        <InlineWarning tone="warn">{apiErrorHeadline(closeBook.error)}</InlineWarning>
+        <InlineWarning tone="warn">
+          {/* Narrowed rather than asserted: reaching this branch already required `closeErrorKind`
+              to see an `ApiError` with a recognised code, so the guard is a type-level restatement
+              of a fact the branch condition established, not a new runtime possibility. */}
+          {apiErrorHeadline(closeBook.error instanceof ApiError ? closeBook.error : null)}
+        </InlineWarning>
       ) : closeBook.error ? (
         <ErrorNote error={closeBook.error} />
       ) : null}
