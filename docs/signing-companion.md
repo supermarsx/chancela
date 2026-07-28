@@ -179,7 +179,7 @@ the digest until it knows which certificate will sign.
    confirmation**, the card signs, and it posts the `RawSignature`.
 5. **Browser polls, then commits.** The server does `assemble_cades_b` → `embed_signature` →
    `validate_pdf_signature` → persist → ledger append **under the browser session's attestation
-   key**. This step is forced by [Finding B](#finding-b--a-paired-session-structurally-cannot-commit-a-ledger-event).
+   key**. This step is forced by [Finding B](#finding-b-a-paired-session-structurally-cannot-commit-a-ledger-event).
 
 > **The trusted-list gate stays server-side.** It is exactly the thing a later "the companion
 > already has the certificate, why round-trip?" optimisation would try to move. It must not move.
@@ -310,6 +310,6 @@ update the desktop application. Drift is caught on the first poll, **before any 
   updater, and both *are* local-socket architectures. The functional difference is real and is
   theirs to weigh: rendezvous does not prove browser/card co-location. If co-location proof is a
   genuine requirement, that is a different design, and this document records exactly what choosing
-  loopback would cost — the CSP concession in [Finding A](#finding-a--a-browser-page-cannot-reach-a-loopback-companion-today).
+  loopback would cost — the CSP concession in [Finding A](#finding-a-a-browser-page-cannot-reach-a-loopback-companion-today).
 - **The WYSIWYS mitigation.** Document SHA-256 in the native dialog as the baseline, with in-app PDF
   rendering over the companion's own authenticated channel as a possible follow-up.
