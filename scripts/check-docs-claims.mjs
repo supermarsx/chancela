@@ -24,7 +24,7 @@
 //         node scripts/check-docs-claims.mjs --self-test   (prove the gate still goes red)
 // Exit:   0 clean, 1 findings, 2 parse failure / registry rot / self-test failure.
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -107,10 +107,76 @@ const quotedLiterals = new Map(
 // Model 1 — the settings document, parsed from settings.rs
 // =============================================================================================
 
+// A settings section may be typed with a struct that lives in a SIBLING MODULE
+// (`pub device_pairing: crate::confirmation::PairingConfirmationSettings`). Parsing settings.rs
+// alone left that type unresolvable, so `structOf` treated the field as a leaf and every path
+// *beneath* it was reported as a phantom setting while the setting was real and shipped. The model
+// therefore follows `crate::<module>::<Struct>` into the module that declares it.
+//
+// This can only ever ADD resolution, never suppress a finding the gate got right: an unfollowed
+// reference makes real paths unresolvable (a false RED), never a phantom one resolvable.
+//
+// CANNOT FOLLOW: a type qualified into another crate (`chancela_authz::RoleId`). Those are leaves
+// today and paths beneath one would be reported — the fail-closed direction, not a false green.
+const CRATE_QUALIFIED = /^crate::([a-z_][a-z0-9_]*)::([A-Za-z0-9_]+)$/u;
+
+/** Strip `Option<…>`/`Box<…>` wrappers down to the named type. */
+function unwrapType(type) {
+  let inner = type.trim();
+  for (;;) {
+    const wrapper = /^(?:Option|Box)\s*<\s*([\s\S]+)\s*>$/u.exec(inner);
+    if (!wrapper) return inner;
+    inner = wrapper[1].trim();
+  }
+}
+
 function buildSettingsModel() {
-  const source = readFileSync(SETTINGS_RS, "utf8");
-  const { mask } = maskRust(source, SETTINGS_RS);
-  const skip = cfgTestRanges(mask, SETTINGS_RS);
+  const structs = new Map();
+  const declaredIn = new Map();
+  const parsed = new Set();
+  const queue = [SETTINGS_RS];
+
+  while (queue.length > 0) {
+    const file = queue.shift();
+    if (parsed.has(file)) continue;
+    parsed.add(file);
+    for (const [name, fields] of parseSettingsStructs(file)) {
+      const prior = declaredIn.get(name);
+      if (prior !== undefined && prior !== file) {
+        fatal(
+          `struct \`${name}\` is declared in both ${repoPath(repoRoot, prior)} and ` +
+            `${repoPath(repoRoot, file)}. The settings model keys structs by bare name and cannot ` +
+            "tell them apart; disambiguate rather than letting one silently win.",
+        );
+      }
+      declaredIn.set(name, file);
+      structs.set(name, fields);
+      for (const type of fields.values()) {
+        const qualified = CRATE_QUALIFIED.exec(unwrapType(type));
+        if (!qualified) continue;
+        const module = join(repoRoot, "crates", "chancela-api", "src", `${qualified[1]}.rs`);
+        if (!existsSync(module)) {
+          fatal(
+            `settings type \`${unwrapType(type)}\` names module \`${qualified[1]}\`, but ` +
+              `${repoPath(repoRoot, module)} does not exist. The settings model would silently ` +
+              "treat the field as a leaf — find the module rather than leaving the blind spot.",
+          );
+        }
+        queue.push(module);
+      }
+    }
+  }
+
+  if (!structs.has("Settings")) {
+    fatal("settings.rs: root `Settings` struct not found — the settings model is unusable");
+  }
+  return structs;
+}
+
+function parseSettingsStructs(file) {
+  const source = readFileSync(file, "utf8");
+  const { mask } = maskRust(source, file);
+  const skip = cfgTestRanges(mask, file);
 
   const structs = new Map();
   const pattern = /\bstruct\s+([A-Za-z0-9_]+)\s*(?:<[^{;]*>)?\s*\{/gu;
@@ -119,7 +185,7 @@ function buildSettingsModel() {
     if (inRanges(match.index, skip)) continue;
     const name = match[1];
     const open = match.index + match[0].length - 1;
-    const { start, end } = braceBody(mask, open, SETTINGS_RS);
+    const { start, end } = braceBody(mask, open, file);
     const bodyMask = mask.slice(start, end);
     const bodySource = source.slice(start, end);
 
@@ -129,7 +195,10 @@ function buildSettingsModel() {
     if (renameAll) {
       const fn = SERDE_CASES[renameAll[1]];
       if (!fn) {
-        fatal(`settings.rs: struct ${name} uses unknown serde rename_all="${renameAll[1]}"`);
+        fatal(
+          `${repoPath(repoRoot, file)}: struct ${name} uses unknown ` +
+            `serde rename_all="${renameAll[1]}"`,
+        );
       }
       // Field names in this file are already snake_case; a rename_all that changes them would
       // silently move every documented path, so surface it rather than assume it is harmless.
@@ -142,7 +211,7 @@ function buildSettingsModel() {
     while ((fieldMatch = fieldPattern.exec(bodyMask)) !== null) {
       const rawName = fieldMatch[3];
       const typeStart = fieldMatch.index + fieldMatch[0].length;
-      const type = readFieldType(bodyMask, typeStart, name, rawName);
+      const type = readFieldType(bodyMask, typeStart, name, rawName, file);
       const fieldAttrs = precedingAttributes(
         bodySource,
         bodyMask,
@@ -154,15 +223,11 @@ function buildSettingsModel() {
     }
     structs.set(name, fields);
   }
-
-  if (!structs.has("Settings")) {
-    fatal("settings.rs: root `Settings` struct not found — the settings model is unusable");
-  }
   return structs;
 }
 
 /** Read a field's type text, stopping at the `,` that terminates it at angle/paren depth 0. */
-function readFieldType(bodyMask, start, structName, fieldName) {
+function readFieldType(bodyMask, start, structName, fieldName, file) {
   let depth = 0;
   for (let i = start; i < bodyMask.length; i += 1) {
     const c = bodyMask[i];
@@ -173,19 +238,22 @@ function readFieldType(bodyMask, start, structName, fieldName) {
       if (text.length > 0) return text;
     }
   }
-  fatal(`settings.rs: cannot determine the type of ${structName}.${fieldName}`);
+  fatal(
+    `${repoPath(repoRoot, file)}: cannot determine the type of ${structName}.${fieldName}`,
+  );
   return "";
 }
 
-/** Unwrap `Option<T>`/`Box<T>` to the inner struct name, or null when the field is a leaf. */
+/**
+ * Unwrap `Option<T>`/`Box<T>` and any `crate::<module>::` qualification to the inner struct name,
+ * or null when the field is a leaf. Dropping the qualification is safe because
+ * `buildSettingsModel` fails hard on two reachable structs sharing a bare name.
+ */
 function structOf(type, structs) {
-  let inner = type.trim();
-  for (;;) {
-    const wrapper = /^(?:Option|Box)\s*<\s*([\s\S]+)\s*>$/u.exec(inner);
-    if (!wrapper) break;
-    inner = wrapper[1].trim();
-  }
-  return structs.has(inner) ? inner : null;
+  const inner = unwrapType(type);
+  const qualified = CRATE_QUALIFIED.exec(inner);
+  const name = qualified ? qualified[2] : inner;
+  return structs.has(name) ? name : null;
 }
 
 function resolveSettingsPath(segments, structs) {
@@ -959,6 +1027,37 @@ function assertRegistryExercised() {
 function runSelfTest() {
   const cases = [];
   const check = (name, fn) => cases.push({ name, fn });
+
+  // Gate 1's settings resolver. `auth.device_pairing.accepted` is a REAL, shipped setting that the
+  // resolver reported as a phantom, because settings.rs types the section with a struct from a
+  // sibling module and the model parsed settings.rs alone. Pinned in all three directions: the
+  // qualified hop resolves, a bad segment beneath it is still red, and an unfollowed module stays
+  // red rather than becoming a blanket accept.
+  const qualifiedModel = () =>
+    new Map([
+      ["Settings", new Map([["seccao_fantasma", "crate::modulo_fantasma::AjustesFantasma"]])],
+      ["AjustesFantasma", new Map([["aceites", "BTreeSet<MetodoFantasma>"]])],
+    ]);
+
+  check("resolveSettingsPath follows a `crate::<module>::` qualified field type", () =>
+    resolveSettingsPath(["seccao_fantasma", "aceites"], qualifiedModel())
+      ? null
+      : "a path under a module-qualified settings struct did not resolve, so a real setting " +
+          "would be reported as a phantom");
+
+  check("resolveSettingsPath still rejects an unknown segment under a qualified type", () =>
+    resolveSettingsPath(["seccao_fantasma", "nao_e_um_campo"], qualifiedModel())
+      ? "following the qualification became a blanket accept — any path under the section passes"
+      : null);
+
+  check("an unparsed module's struct stays a leaf, so paths beneath it are red", () => {
+    const model = new Map([
+      ["Settings", new Map([["seccao_fantasma", "crate::modulo_fantasma::NaoParseado"]])],
+    ]);
+    return resolveSettingsPath(["seccao_fantasma", "aceites"], model)
+      ? "a path resolved through a struct the model never parsed"
+      : null;
+  });
 
   // A minimal emittable vocabulary standing in for production Rust.
   const emittable = () => new Set(["em_assinatura", "finalizado", "finalizado_qualificado"]);

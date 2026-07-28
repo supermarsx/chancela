@@ -33,8 +33,10 @@ search-projection marker* installed before a destructive store transaction
 (`crates/chancela-api/src/search.rs:1351`, `crates/chancela-store/src/lib.rs:113`). The word is used
 in this document as a concept, but the field, the events and the operator copy use **deleted**.
 
-Settled names: field `deleted_at`, events `*.deleted` / `*.restored`, permissions `entity.delete` /
-`book.delete` / `act.delete`.
+Settled names: field `deleted_at`, events `*.deleted` / `*.restored`, permissions entity.delete /
+book.delete / act.delete. The three verbs are written without code formatting because none is minted
+yet and the docs-parity gate reads a backticked dotted identifier as a claim that it exists — see
+[Permission and confirmation](#permission-and-confirmation) for what minting them entails.
 
 ## The hazard that decided this design — and why it does not arise
 
@@ -85,13 +87,18 @@ Verified at the payload construction sites, because the design turns on these be
 **`Book` is never a ledger payload.** Adding a field to it moves no digest, past or future. The book
 subject is the cheapest of the three to build.
 
-**`Entity` and `Act` are payloads** for their non-seal events: `entity.created` / `entity.updated` /
-`entity.archived` (`entities.rs:493-525`), and `act.drafted` (`acts.rs:137`), `act.advanced`
+**`Entity` and `Act` are payloads** for their non-seal events: `entity.created`,
+`entity.statute_updated` (`entities.rs:307-314`) and `entity.archived` / `entity.unarchived`
+(`entities.rs:493-525`), and `act.drafted` (`acts.rs:137`), `act.advanced`
 (`:553`), `act.ai_human_verification` (`:931`), `act.archived` (`:1608`), `convening.dispatched`
 (`:1694`) — each serializing the whole aggregate. For those two the new field must follow the pattern
 `Entity::archived_at` already establishes (`chancela-core/src/entity.rs:341-365`): `Option<T>` with
 `skip_serializing_if = "Option::is_none"`, so an untouched subject stays **byte-identical** and no
 future digest of one moves.
+
+The one entity event that is *not* an aggregate payload is `entity.document_layout_updated`, which
+carries a curated `{entity_id, document_layout_override}` object (`entities.rs:288-304`). A new
+`Entity` field does not reach it, and none should be added.
 
 `ActPayload` is a hand-written struct, so a new `Act` field does not reach the seal preimage unless
 someone adds it there. That absence should be asserted by a test rather than left to inspection.
@@ -99,9 +106,9 @@ someone adds it there. That absence should be asserted by a test rather than lef
 **One constraint this places elsewhere.** `TermoDeAbertura` carries the entity's `name`, `nipc` and
 `seat` and *is* the `book.opened` genesis preimage. Party identity resolves
 `act.book_id → Book.termo_abertura → TermoDeAbertura`, and `preview_document` deliberately resolves
-names through an **unfiltered** `entities.get`. Deletion state must never enter that lookup, for the
-same reason archiving does not — the day it does, a sealed act loses the ability to name who was in
-the room.
+names by calling `get` on the in-memory entities map **unfiltered**, applying no lifecycle predicate
+at all. Deletion state must never enter that lookup, for the same reason archiving does not — the day
+it does, a sealed act loses the ability to name who was in the room.
 
 ## Ground truth per subject
 
@@ -219,7 +226,10 @@ confirmation floor, because granting visibility back is not the dangerous direct
 
 ## Permission and confirmation
 
-**Three verbs: `entity.delete`, `book.delete`, `act.delete`.** The blast radii genuinely differ: one
+**Three verbs, proposed and not yet minted: entity.delete, book.delete, act.delete.** They are
+written here without code formatting deliberately — none exists in the catalog, and the docs-parity
+gate reads a backticked dotted identifier as a claim that it does. Backtick them in the same change
+that mints them. The blast radii genuinely differ: one
 hides an entire legal person, one hides a single row. A single `record.delete` would save three
 entries each in `permission_description.rs`, the two `permissionDescriptionsFallback.ts` maps and the
 seeded-role decision, at the price of handing everyone who can hide a mistaken draft the ability to
@@ -301,7 +311,8 @@ no-op here, because `apps/web/tsconfig.json` sets `"files": []`.
   keeps the ata number, and keeps the PDF/A and signature chain in the archive package.
 - **Inherited visibility, not cascaded state**: children of a deleted subject are hidden by
   inheritance and keep `deleted_at: None`.
-- **Three permissions**, `entity.delete` / `book.delete` / `act.delete`, all shipping `Enforced`.
+- **Three permissions**, entity.delete / book.delete / act.delete (proposed, unminted — see above
+  for why they are not backticked), all to ship `Enforced`.
 - Floor `ConfirmWithReauth`, consequence class `Consequential`.
 - Reversible, via a separately appended `*.restored` event carrying no floor.
 - Legal hold blocks deletion in all three directions and never blocks restore.
