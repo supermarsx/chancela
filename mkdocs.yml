@@ -139,6 +139,7 @@ nav:
   - Reference:
       - Architecture overview: ARCHITECTURE.md
       - Mobile companion (foundation): mobile.md
+      - Signing companion (design decision): signing-companion.md
       - Comparison with other tools: comparison.md
       - Extras & utilities: extras.md
       - Specification (repo): https://github.com/supermarsx/chancela/blob/main/spec.md
