@@ -13,6 +13,12 @@ import type {
   RetentionPolicyView,
   TransferControlView,
 } from '../../api/types';
+/**
+ * Register titles and field labels are looked up by catalog KEY, not by the pt-PT words of the
+ * day: the terminology moved twice (GDPR→RGPD, DPIA→AIPD) without this surface changing, and
+ * what these cases assert is that the right register reached the right panel.
+ */
+import { ptPT } from '../../i18n/locales/pt-PT';
 import { renderWithProviders } from '../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../session/permissions';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';

@@ -12,6 +12,13 @@ import { MCP_TAB_PATH } from './PlatformOperationsSection';
  * derives it from `platform_ops.rs`.
  */
 import { platformServicePtPT } from '../../i18n/platformServiceFallback';
+/**
+ * The RGPD registers are located by their catalog KEY rather than by the pt-PT words they
+ * currently render. The terminology has moved twice (GDPR→RGPD, DPIA→AIPD) without the surface
+ * changing, and each move turned these lookups red for no reason — the assertion is that the
+ * right register's title reached the panel, not what that title says today.
+ */
+import { ptPT } from '../../i18n/locales/pt-PT';
 import {
   DEFAULT_SETTINGS,
   RETENTION_DISPOSAL_ACTIONS,

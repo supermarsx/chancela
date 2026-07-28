@@ -18,9 +18,17 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-libra
 import { Route, Routes } from 'react-router-dom';
 import type { DpiaRecordView, ProcessorRecordView } from '../../../api/types';
 import { hasUnsavedChanges } from '../../../hooks/useUnsavedChanges';
+import { ptPT } from '../../../i18n/locales/pt-PT';
 import { renderWithProviders } from '../../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../../session/permissions';
 import { DpiaRecordPage, ProcessorRecordPage } from './RegisterRecordPage';
+
+/**
+ * The AIPD title field, by catalog KEY. The pt-PT term for this register moved once already
+ * (DPIA→AIPD) with no change to the page, and eight literal copies of the label turned red for
+ * it; what these cases mean is "the AIPD's own title field", not the word printed above it.
+ */
+const DPIA_TITLE_LABEL = ptPT['settings.privacy.register.field.dpiaTitle'];
 
 const hooks = vi.hoisted(() => {
   const query = () => ({ data: [] as unknown[], isLoading: false, error: null as unknown });
