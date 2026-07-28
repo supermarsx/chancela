@@ -11,6 +11,12 @@
  * not push the detail off-screen and the list stays operable while the detail is up (t88).
  * Selection stays in the URL exactly as it was — `trustProvider` / `trustService` / `tsaRecord`
  * are still the addressable state, so a deep link opens the panel on the right record.
+ *
+ * This file holds TWO independent components, {@link TrustCatalogExplorer} (the TSL sub-tab —
+ * providers and services, `ProviderDetail` / `ServiceDetail`) and {@link TsaToolingPanel} (the
+ * TSA sub-tab — `TsaRecordDetail`). They share `.trust-explorer` / `.trust-explorer__nav` class
+ * names and the `SidePanel` shell, but separate state, separate URL params, and different detail
+ * bodies — a change made against one does NOT reach the other; verify/fix both.
  */
 import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';

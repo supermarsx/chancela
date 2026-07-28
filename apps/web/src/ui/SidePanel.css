@@ -43,7 +43,14 @@
   flex-direction: column;
   min-block-size: 0;
 
-  background: var(--surface);
+  /* NOT `var(--surface)` — that token is intentionally translucent (93% alpha) so the
+     leather grain shows through a card's gutters (theme.css, "leather-textured chrome").
+     `.modal` gets away with the same token because it always sits on `.modal-backdrop`'s
+     opaque 50%-black dim; this panel deliberately has none on desktop and the mobile
+     scrim doesn't fully occlude the sheet's own footprint either, so the translucency
+     let the list underneath show straight through — visible, readable ghosting behind
+     every heading. `--bg` is the same tone with no alpha, so nothing behind can bleed in. */
+  background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4);
