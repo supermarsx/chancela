@@ -217,7 +217,7 @@ describe('the create route', () => {
     renderAt('/settings/privacy/dpias/new');
 
     for (const [label, value] of [
-      ['Título da AIPD', 'AIPD de entrada biométrica'],
+      [DPIA_TITLE_LABEL, 'AIPD de entrada biométrica'],
       ['Finalidade', 'Entrada segura no edifício'],
       ['Base legal', 'Interesse legítimo'],
       ['Categorias de dados', 'Identificação\nDados biométricos'],
@@ -258,7 +258,7 @@ describe('the create route', () => {
     renderAt('/settings/privacy/dpias/new');
 
     for (const [label, value] of [
-      ['Título da AIPD', 'Perfis'],
+      [DPIA_TITLE_LABEL, 'Perfis'],
       ['Finalidade', 'Pontuação'],
       ['Base legal', 'Consentimento'],
       ['Categorias de dados', 'Comportamento'],
@@ -269,7 +269,7 @@ describe('the create route', () => {
 
     expect(await screen.findByText('escrita recusada')).toBeTruthy();
     // The operator's nine fields survive a refusal, and the page does not navigate away.
-    expect((screen.getByLabelText('Título da AIPD') as HTMLInputElement).value).toBe('Perfis');
+    expect((screen.getByLabelText(DPIA_TITLE_LABEL) as HTMLInputElement).value).toBe('Perfis');
     expect(navigate).not.toHaveBeenCalled();
   });
 });
@@ -280,7 +280,7 @@ describe('the edit route', () => {
     renderAt('/settings/privacy/dpias/dpia-1');
 
     expect(screen.getByRole('heading', { level: 1, name: 'Editar AIPD' })).toBeTruthy();
-    expect((screen.getByLabelText('Título da AIPD') as HTMLInputElement).value).toBe(
+    expect((screen.getByLabelText(DPIA_TITLE_LABEL) as HTMLInputElement).value).toBe(
       'Definição de perfis de risco elevado',
     );
 
@@ -419,13 +419,13 @@ describe('the edit route', () => {
     hooks.dpias.isLoading = true;
     hooks.dpias.data = [];
     renderAt('/settings/privacy/dpias/dpia-1');
-    expect(screen.queryByLabelText('Título da AIPD')).toBeNull();
+    expect(screen.queryByLabelText(DPIA_TITLE_LABEL)).toBeNull();
 
     hooks.dpias.isLoading = false;
     hooks.dpias.data = [dpia];
     act(() => hooks.settle());
 
-    const title = (await screen.findByLabelText('Título da AIPD')) as HTMLInputElement;
+    const title = (await screen.findByLabelText(DPIA_TITLE_LABEL)) as HTMLInputElement;
     expect(title.value).toBe('Definição de perfis de risco elevado');
     expect((screen.getByLabelText('Base legal') as HTMLInputElement).value).toBe(
       'Interesse legítimo',
@@ -446,7 +446,7 @@ describe('the edit route', () => {
     expect(
       screen.getByText('Não foi encontrada nenhuma AIPD com este identificador.'),
     ).toBeTruthy();
-    expect(screen.queryByLabelText('Título da AIPD')).toBeNull();
+    expect(screen.queryByLabelText(DPIA_TITLE_LABEL)).toBeNull();
     expect(screen.getByRole('link', { name: 'Voltar à privacidade' })).toBeTruthy();
   });
 
@@ -465,7 +465,7 @@ describe('the permission gate', () => {
     renderAt('/settings/privacy/dpias/dpia-1', false);
 
     expect(screen.getByText('Sem permissão')).toBeTruthy();
-    expect(screen.queryByLabelText('Título da AIPD')).toBeNull();
+    expect(screen.queryByLabelText(DPIA_TITLE_LABEL)).toBeNull();
     // Not even the list query runs: no authoring read, no draft, no late POST.
     expect(hooks.enabled).toHaveBeenCalledWith('dpias', false);
   });

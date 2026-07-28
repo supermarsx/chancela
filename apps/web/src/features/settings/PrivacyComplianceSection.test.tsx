@@ -602,16 +602,20 @@ describe('PrivacyComplianceSection', () => {
     // nine-field DPIA silently. Nothing dialog-shaped may come back to this list, and no
     // authoring form may render inline either.
     expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.queryByLabelText('Título da AIPD')).toBeNull();
+    expect(screen.queryByLabelText(ptPT['settings.privacy.register.field.dpiaTitle'])).toBeNull();
     expect(screen.queryByLabelText('Nome do processador')).toBeNull();
 
-    const processorPanel = screen.getByText('Processadores RGPD').closest<HTMLElement>('.panel')!;
+    const processorPanel = screen
+      .getByText(ptPT['settings.privacy.register.processor.title'])
+      .closest<HTMLElement>('.panel')!;
     expect(
       within(processorPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
     ).toBe('/settings/privacy/processors/new');
     expect(within(processorPanel).queryByRole('button', { name: 'Novo registo' })).toBeNull();
 
-    const dpiaPanel = screen.getByText('Avaliações de impacto (AIPD)').closest<HTMLElement>('.panel')!;
+    const dpiaPanel = screen
+      .getByText(ptPT['settings.privacy.register.dpia.title'])
+      .closest<HTMLElement>('.panel')!;
     expect(within(dpiaPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href')).toBe(
       '/settings/privacy/dpias/new',
     );

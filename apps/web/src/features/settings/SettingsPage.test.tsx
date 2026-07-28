@@ -4300,7 +4300,9 @@ describe('SettingsPage', () => {
     expect(await screen.findByText('Cloud Processor')).toBeTruthy();
     expect(await screen.findByText('Marketing profiling')).toBeTruthy();
 
-    const dpiaPanel = screen.getByText('Avaliações de impacto (AIPD)').closest('section');
+    const dpiaPanel = screen
+      .getByText(ptPT['settings.privacy.register.dpia.title'])
+      .closest('section');
     expect(dpiaPanel).toBeTruthy();
     fireEvent.change(within(dpiaPanel!).getByLabelText('Pesquisar'), {
       target: { value: 'marketing' },
@@ -4349,7 +4351,9 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage />, ['/settings/privacy']);
     await openPrivacySubTab('Orientação');
 
-    const panel = (await screen.findByText('Modelo local de AIPD')).closest('section');
+    const panel = (await screen.findByText(ptPT['settings.privacy.guidance.title'])).closest(
+      'section',
+    );
     expect(panel).toBeTruthy();
     expect(await within(panel!).findByText('privacy-dpia-guidance/v1')).toBeTruthy();
     // t15: the guidance template's wire copy stays English, but the panel resolves each stable
@@ -4394,7 +4398,9 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
-    const dpiaPanel = (await screen.findByText('Avaliações de impacto (AIPD)')).closest('section');
+    const dpiaPanel = (
+      await screen.findByText(ptPT['settings.privacy.register.dpia.title'])
+    ).closest('section');
     expect(dpiaPanel).toBeTruthy();
     expect(await within(dpiaPanel!).findByText('Marketing profiling')).toBeTruthy();
     expect(await within(dpiaPanel!).findByText(/Sem certificação de conformidade/)).toBeTruthy();
@@ -4436,7 +4442,9 @@ describe('SettingsPage', () => {
 
     renderWithProviders(<SettingsPage />, ['/settings/privacy']);
 
-    const processorPanel = (await screen.findByText('Processadores RGPD')).closest('section');
+    const processorPanel = (
+      await screen.findByText(ptPT['settings.privacy.register.processor.title'])
+    ).closest('section');
     expect(processorPanel).toBeTruthy();
     expect(await within(processorPanel!).findByText('Cloud Processor')).toBeTruthy();
 
