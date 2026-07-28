@@ -6022,7 +6022,12 @@ export const frFR: Catalog = {
   'pairing.expiresIn': 'Expire dans {time}',
   'pairing.waiting': 'En attente que le téléphone termine l’association…',
   'pairing.expired.title': 'Code expiré',
-  'pairing.expired.body': 'Ce code a expiré. Génération d’un nouveau…',
+  'pairing.expired.body': 'Ce code a expiré. Générez-en un nouveau pour continuer.',
+  'pairing.expired.renew': 'Générer un nouveau code',
+  'pairing.confirm.title': 'Confirmer l’association',
+  'pairing.confirm.intro':
+    'Générer un code d’association permet d’enrôler un nouvel appareil sous votre identité. Confirmez qu’il s’agit bien de vous avant de continuer.',
+  'pairing.confirm.action': 'Générer le code',
   'pairing.cancel': 'Terminer',
   'pairing.enrolled.title': 'Téléphone associé',
   'pairing.enrolled.body': '{label} a été ajouté à vos appareils.',

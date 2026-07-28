@@ -6009,7 +6009,12 @@ export const itIT: Catalog = {
   'pairing.expiresIn': 'Scade tra {time}',
   'pairing.waiting': 'In attesa che il telefono completi l’associazione…',
   'pairing.expired.title': 'Codice scaduto',
-  'pairing.expired.body': 'Questo codice è scaduto. Generazione di uno nuovo…',
+  'pairing.expired.body': 'Questo codice è scaduto. Generane uno nuovo per continuare.',
+  'pairing.expired.renew': 'Genera nuovo codice',
+  'pairing.confirm.title': 'Conferma l’associazione',
+  'pairing.confirm.intro':
+    'Generare un codice di associazione consente di registrare un nuovo dispositivo con la tua identità. Conferma che sei tu prima di continuare.',
+  'pairing.confirm.action': 'Genera codice',
   'pairing.cancel': 'Termina',
   'pairing.enrolled.title': 'Telefono associato',
   'pairing.enrolled.body': '{label} è stato aggiunto ai tuoi dispositivi.',

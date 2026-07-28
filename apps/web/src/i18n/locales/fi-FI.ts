@@ -5966,7 +5966,12 @@ export const fiFI: Catalog = {
   'pairing.expiresIn': 'Vanhenee {time}',
   'pairing.waiting': 'Odotetaan, että puhelin viimeistelee parituksen…',
   'pairing.expired.title': 'Koodi vanhentunut',
-  'pairing.expired.body': 'Tämä koodi on vanhentunut. Luodaan uusi…',
+  'pairing.expired.body': 'Tämä koodi on vanhentunut. Luo uusi jatkaaksesi.',
+  'pairing.expired.renew': 'Luo uusi koodi',
+  'pairing.confirm.title': 'Vahvista paritus',
+  'pairing.confirm.intro':
+    'Parituskoodin luominen mahdollistaa uuden laitteen liittämisen henkilöllisyydelläsi. Vahvista, että se olet sinä, ennen kuin jatkat.',
+  'pairing.confirm.action': 'Luo koodi',
   'pairing.cancel': 'Lopeta',
   'pairing.enrolled.title': 'Puhelin paritettu',
   'pairing.enrolled.body': '{label} lisättiin laitteisiisi.',

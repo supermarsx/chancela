@@ -6002,7 +6002,12 @@ export const esES: Catalog = {
   'pairing.expiresIn': 'Caduca en {time}',
   'pairing.waiting': 'Esperando a que el teléfono complete la vinculación…',
   'pairing.expired.title': 'Código caducado',
-  'pairing.expired.body': 'Este código ha caducado. Generando uno nuevo…',
+  'pairing.expired.body': 'Este código ha caducado. Genere uno nuevo para continuar.',
+  'pairing.expired.renew': 'Generar código nuevo',
+  'pairing.confirm.title': 'Confirmar la vinculación',
+  'pairing.confirm.intro':
+    'Generar un código de vinculación permite inscribir un dispositivo nuevo con su identidad. Confirme que es usted antes de continuar.',
+  'pairing.confirm.action': 'Generar código',
   'pairing.cancel': 'Finalizar',
   'pairing.enrolled.title': 'Teléfono vinculado',
   'pairing.enrolled.body': '{label} se ha añadido a tus equipos.',

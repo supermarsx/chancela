@@ -6008,7 +6008,12 @@ export const nlNL: Catalog = {
   'pairing.expiresIn': 'Verloopt over {time}',
   'pairing.waiting': 'Wachten tot de telefoon de koppeling voltooit…',
   'pairing.expired.title': 'Code verlopen',
-  'pairing.expired.body': 'Deze code is verlopen. Een nieuwe wordt gegenereerd…',
+  'pairing.expired.body': 'Deze code is verlopen. Genereer een nieuwe om door te gaan.',
+  'pairing.expired.renew': 'Nieuwe code genereren',
+  'pairing.confirm.title': 'Koppeling bevestigen',
+  'pairing.confirm.intro':
+    'Het genereren van een koppelingscode maakt het mogelijk een nieuw apparaat onder uw identiteit te registreren. Bevestig dat u het bent voordat u doorgaat.',
+  'pairing.confirm.action': 'Code genereren',
   'pairing.cancel': 'Stoppen',
   'pairing.enrolled.title': 'Telefoon gekoppeld',
   'pairing.enrolled.body': '{label} is toegevoegd aan uw apparaten.',

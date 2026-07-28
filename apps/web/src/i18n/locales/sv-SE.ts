@@ -5958,7 +5958,12 @@ export const svSE: Catalog = {
   'pairing.expiresIn': 'Upphör om {time}',
   'pairing.waiting': 'Väntar på att telefonen ska slutföra parkopplingen…',
   'pairing.expired.title': 'Koden har upphört',
-  'pairing.expired.body': 'Denna kod har upphört. Skapar en ny…',
+  'pairing.expired.body': 'Denna kod har upphört. Skapa en ny för att fortsätta.',
+  'pairing.expired.renew': 'Skapa ny kod',
+  'pairing.confirm.title': 'Bekräfta parkopplingen',
+  'pairing.confirm.intro':
+    'Att skapa en parkopplingskod gör det möjligt att registrera en ny enhet under din identitet. Bekräfta att det är du innan du fortsätter.',
+  'pairing.confirm.action': 'Skapa kod',
   'pairing.cancel': 'Avsluta',
   'pairing.enrolled.title': 'Telefon parkopplad',
   'pairing.enrolled.body': '{label} lades till bland dina enheter.',

@@ -5952,7 +5952,12 @@ export const daDK: Catalog = {
   'pairing.expiresIn': 'Udløber om {time}',
   'pairing.waiting': 'Venter på, at telefonen fuldfører parringen…',
   'pairing.expired.title': 'Kode udløbet',
-  'pairing.expired.body': 'Denne kode er udløbet. Genererer en ny…',
+  'pairing.expired.body': 'Denne kode er udløbet. Generér en ny for at fortsætte.',
+  'pairing.expired.renew': 'Generér ny kode',
+  'pairing.confirm.title': 'Bekræft parringen',
+  'pairing.confirm.intro':
+    'At generere en parringskode gør det muligt at tilmelde en ny enhed under din identitet. Bekræft, at det er dig, før du fortsætter.',
+  'pairing.confirm.action': 'Generér kode',
   'pairing.cancel': 'Afslut',
   'pairing.enrolled.title': 'Telefon parret',
   'pairing.enrolled.body': '{label} blev føjet til dine enheder.',

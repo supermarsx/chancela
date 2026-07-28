@@ -4342,6 +4342,12 @@ export type ApiKeyCreated = ApiKeyView & {
 export interface MintPairingCodeBody {
   /** Human label for the device that will redeem this code (e.g. "Telemóvel da Amélia"). */
   label?: string;
+  /**
+   * The step-up proof for the `device.pairing` guarded action, which the server floors at
+   * `confirm_with_reauth`: minting enrols a new device as this operator, so an unattended
+   * signed-in browser must not be one click from it. Omitting it is a `403`.
+   */
+  confirmation?: ConfirmationProof;
 }
 
 /** `POST /v1/pairing/codes` response — the one-time code plus its expiry. */

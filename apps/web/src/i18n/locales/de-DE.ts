@@ -6029,7 +6029,12 @@ export const deDE: Catalog = {
   'pairing.expiresIn': 'Läuft ab in {time}',
   'pairing.waiting': 'Warten, bis das Telefon die Kopplung abschließt…',
   'pairing.expired.title': 'Code abgelaufen',
-  'pairing.expired.body': 'Dieser Code ist abgelaufen. Ein neuer wird erzeugt…',
+  'pairing.expired.body': 'Dieser Code ist abgelaufen. Erzeugen Sie einen neuen, um fortzufahren.',
+  'pairing.expired.renew': 'Neuen Code erzeugen',
+  'pairing.confirm.title': 'Kopplung bestätigen',
+  'pairing.confirm.intro':
+    'Das Erzeugen eines Kopplungscodes ermöglicht die Registrierung eines neuen Geräts unter Ihrer Identität. Bestätigen Sie, dass Sie es sind, bevor Sie fortfahren.',
+  'pairing.confirm.action': 'Code erzeugen',
   'pairing.cancel': 'Beenden',
   'pairing.enrolled.title': 'Telefon gekoppelt',
   'pairing.enrolled.body': '{label} wurde zu Ihren Geräten hinzugefügt.',

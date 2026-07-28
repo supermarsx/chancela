@@ -3,15 +3,32 @@
  *
  * Wired to the wp27-e4 pairing backend. The operator mints a single-use, 5-minute pairing
  * code; the panel renders it as a hand-rolled zero-dependency QR **and** a copyable
- * deep-link, counts the TTL down, and re-mints automatically when a code expires while the
- * panel is open. It polls the device list so the phone's exchange surfaces as a success
- * without a manual refresh, and lists every enrolled device with a per-device revoke.
+ * deep-link and counts the TTL down. It polls the device list so the phone's exchange
+ * surfaces as a success without a manual refresh, and lists every enrolled device with a
+ * per-device revoke.
  *
  * The plaintext pairing code is held only in local component state (never cached), exactly
  * like the API-key secret panel it mirrors.
+ *
+ * # Minting is a guarded action (t70)
+ *
+ * `POST /v1/pairing/codes` is floored at `confirm_with_reauth` by the server's guarded-action
+ * registry, because minting enrols a new device as this operator. So the mint goes through
+ * {@link GuardedActionModal}, which reads the floor from `GET /v1/confirmation-policy` rather
+ * than this panel deciding a strictness for itself, and threads the gathered proof into the
+ * request body.
+ *
+ * **The automatic re-mint on expiry is deliberately gone.** It re-minted with zero clicks for
+ * as long as the panel stayed open, which is exactly the thing the floor exists to stop — the
+ * registry's reason for flooring this action is that "an unattended signed-in browser must not
+ * be one click from it", and a silent re-mint loop is no clicks at all. Keeping it would have
+ * required caching the operator's password in component state to replay the proof, which is a
+ * worse thing to hold than the code this panel is already careful never to persist. An expired
+ * code now asks for the confirmation again.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { PairingCodeMinted, PairingDeviceView } from '../../api/types';
+import { useEffect, useMemo, useState } from 'react';
+import type { PairingCodeMinted, PairingDeviceView, ReAuth } from '../../api/types';
+import { GuardedActionModal } from '../../ui/GuardedActionModal';
 import { useCreatePairingCode, usePairingDevices, useRevokePairingDevice } from '../../api/hooks';
 import { resolveApiBaseUrl } from '../../api/baseUrl';
 import { openExternal } from '../../desktop/openExternal';
@@ -80,6 +97,7 @@ function ActiveCodePanel({
   shareEmailEnabled,
   shareWhatsappEnabled,
   onCancel,
+  onRenew,
 }: {
   minted: PairingCodeMinted;
   remaining: number;
@@ -87,6 +105,8 @@ function ActiveCodePanel({
   shareEmailEnabled: boolean;
   shareWhatsappEnabled: boolean;
   onCancel: () => void;
+  /** Ask for a fresh code. Re-opens the confirmation — there is no silent re-mint. */
+  onRenew: () => void;
 }) {
   const t = useT();
   const pt = usePairingShareT();
@@ -203,7 +223,19 @@ function ActiveCodePanel({
 
         {expired ? (
           <InlineWarning tone="warn" title={t('pairing.expired.title')}>
-            {t('pairing.expired.body')}
+            <div className="stack--tight">
+              <p>{t('pairing.expired.body')}</p>
+              <div className="form__actions">
+                <Button
+                  type="button"
+                  variant="primary"
+                  icon={<Icon.IdCard />}
+                  onClick={onRenew}
+                >
+                  {t('pairing.expired.renew')}
+                </Button>
+              </div>
+            </div>
           </InlineWarning>
         ) : (
           <div className="pairing-code__status" role="status" aria-live="polite">
@@ -316,6 +348,7 @@ export function PairingPanel({
   const [now, setNow] = useState<number>(() => Date.now());
   const [enrolled, setEnrolled] = useState<PairingDeviceView | null>(null);
   const [label, setLabel] = useState('');
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const mint = useCreatePairingCode();
   const devices = usePairingDevices({
@@ -345,54 +378,45 @@ export function PairingPanel({
     }
   }, [devices.data, session, enrolled, toast, t]);
 
-  // Re-mint automatically when the outstanding code expires while the panel is open.
-  const remintGuard = useRef(false);
-  useEffect(() => {
-    if (!session || enrolled || !expired || mint.isPending || remintGuard.current) return;
-    remintGuard.current = true;
-    mint.mutate(
-      { label: session.label || undefined },
-      {
-        onSuccess: (res) => {
-          setMinted(res);
-          setMintedAt(Date.now());
-          setNow(Date.now());
-          remintGuard.current = false;
-        },
-        onError: (e) => {
-          toast.error(e);
-          remintGuard.current = false;
-        },
-      },
-    );
-  }, [expired, session, enrolled, mint, toast]);
+  // No automatic re-mint on expiry — see the module header. Minting is floored at
+  // `confirm_with_reauth`, so a new code costs a fresh confirmation, every time.
 
-  function startConnect() {
+  /**
+   * Mint one code with the proof the dialog gathered.
+   *
+   * Returns a promise so {@link GuardedActionModal} can keep the dialog open and render the
+   * server's `403` inline when the proof is wrong, instead of closing over a failure.
+   */
+  function runMint(reauth: ReAuth): Promise<void> {
     const trimmed = label.trim();
     const baseline = new Set((devices.data?.devices ?? []).map((d) => d.device_id));
     setEnrolled(null);
     setSession({ label: trimmed, baseline });
-    mint.mutate(
-      { label: trimmed || undefined },
-      {
-        onSuccess: (res) => {
-          setMinted(res);
-          setMintedAt(Date.now());
-          setNow(Date.now());
+    return new Promise<void>((resolve, reject) => {
+      mint.mutate(
+        { label: trimmed || undefined, confirmation: { reauth } },
+        {
+          onSuccess: (res) => {
+            setMinted(res);
+            setMintedAt(Date.now());
+            setNow(Date.now());
+            resolve();
+          },
+          onError: (e) => {
+            // The session baseline is dropped so a refused mint leaves the panel exactly where
+            // it started, with nothing outstanding — matching the server, which minted no code.
+            setSession(null);
+            reject(e);
+          },
         },
-        onError: (e) => {
-          toast.error(e);
-          setSession(null);
-        },
-      },
-    );
+      );
+    });
   }
 
   function endSession() {
     setSession(null);
     setMinted(null);
     setEnrolled(null);
-    remintGuard.current = false;
   }
 
   const list = devices.data?.devices ?? [];
@@ -420,6 +444,7 @@ export function PairingPanel({
           shareEmailEnabled={shareEmailEnabled}
           shareWhatsappEnabled={shareWhatsappEnabled}
           onCancel={endSession}
+          onRenew={() => setConfirmOpen(true)}
         />
       ) : session && mint.isPending ? (
         <Card title={t('pairing.code.title')}>
@@ -457,7 +482,7 @@ export function PairingPanel({
                 variant="primary"
                 icon={<Icon.IdCard />}
                 disabled={mint.isPending}
-                onClick={startConnect}
+                onClick={() => setConfirmOpen(true)}
               >
                 {t('pairing.connect')}
               </GateButton>
@@ -467,6 +492,21 @@ export function PairingPanel({
       ) : null}
 
       {mint.error && !session ? <ErrorNote error={mint.error} /> : null}
+
+      {/* The strictness and framing come from the server policy for `device.pairing`, not from
+          this panel. `onConfirm` threads the gathered proof into the request body; the dialog
+          gathers it and never transmits it itself. */}
+      <GuardedActionModal
+        action="device.pairing"
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={t('pairing.confirm.title')}
+        intro={t('pairing.confirm.intro')}
+        confirmLabel={t('pairing.confirm.action')}
+        pendingLabel={t('pairing.confirm.pending')}
+        pending={mint.isPending}
+        onConfirm={({ reauth }) => runMint(reauth)}
+      />
 
       <Card title={t('pairing.devices.title')}>
         {/* Four columns: device, enrolled, status, action. (The mint wait above keeps the

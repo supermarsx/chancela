@@ -5974,7 +5974,12 @@ export const ptPT: Catalog = {
   'pairing.expiresIn': 'Expira em {time}',
   'pairing.waiting': 'A aguardar que o telemóvel conclua o emparelhamento…',
   'pairing.expired.title': 'Código expirado',
-  'pairing.expired.body': 'Este código expirou. A gerar um novo…',
+  'pairing.expired.body': 'Este código expirou. Gere um novo código para continuar.',
+  'pairing.expired.renew': 'Gerar novo código',
+  'pairing.confirm.title': 'Confirmar o emparelhamento',
+  'pairing.confirm.intro':
+    'Gerar um código de emparelhamento permite inscrever um novo dispositivo com a sua identidade. Confirme que é você antes de continuar.',
+  'pairing.confirm.action': 'Gerar código',
   'pairing.cancel': 'Terminar',
   'pairing.enrolled.title': 'Telemóvel emparelhado',
   'pairing.enrolled.body': '{label} foi adicionado aos seus dispositivos.',

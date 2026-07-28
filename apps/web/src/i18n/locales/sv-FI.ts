@@ -5961,7 +5961,12 @@ export const svFI: Catalog = {
   'pairing.expiresIn': 'Går ut om {time}',
   'pairing.waiting': 'Väntar på att telefonen ska slutföra parkopplingen…',
   'pairing.expired.title': 'Koden har gått ut',
-  'pairing.expired.body': 'Den här koden har gått ut. Skapar en ny…',
+  'pairing.expired.body': 'Den här koden har gått ut. Skapa en ny för att fortsätta.',
+  'pairing.expired.renew': 'Skapa en ny kod',
+  'pairing.confirm.title': 'Bekräfta parkopplingen',
+  'pairing.confirm.intro':
+    'Att skapa en parkopplingskod gör det möjligt att registrera en ny enhet under din identitet. Bekräfta att det är du innan du fortsätter.',
+  'pairing.confirm.action': 'Skapa kod',
   'pairing.cancel': 'Avsluta',
   'pairing.enrolled.title': 'Telefonen parkopplad',
   'pairing.enrolled.body': '{label} lades till bland dina enheter.',

@@ -62,7 +62,8 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::cluster_shared_state;
 use crate::confirmation::{
-    PairingConfirmationMethod, PairingConfirmationProof, require_pairing_confirmation,
+    ConfirmationAction, ConfirmationProof, PairingConfirmationMethod, PairingConfirmationProof,
+    require_confirmation, require_pairing_confirmation,
 };
 use crate::error::ApiError;
 use crate::session::{mint_session, session_token_digest};
@@ -277,11 +278,17 @@ async fn persist_device(state: &AppState, record: &DurablePairingDevice) -> Resu
 }
 
 /// Body of `POST /v1/pairing/codes`.
+///
+/// Deliberately **no `Debug`**: [`ConfirmationProof`] carries a plaintext password.
 #[derive(Deserialize)]
 pub struct MintPairingCode {
     /// Optional human label for the device that will redeem this code (e.g. "Telemóvel da Amélia").
     #[serde(default)]
     pub label: Option<String>,
+    /// The step-up proof for [`ConfirmationAction::DevicePairing`]. `#[serde(default)]`, so a body
+    /// that omits it deserialises to an empty proof and is refused.
+    #[serde(default)]
+    pub confirmation: ConfirmationProof,
 }
 
 /// Response of `POST /v1/pairing/codes` — the one-time code plus its expiry.
@@ -304,12 +311,33 @@ pub struct PairingCodeMinted {
 }
 
 /// `POST /v1/pairing/codes` — mint a short-lived, single-use pairing code for the signed-in operator.
+///
+/// **Gated on [`ConfirmationAction::DevicePairing`]**, whose floor (`ConfirmWithReauth`) the registry
+/// has declared since t56-e0 with nothing enforcing it: `require_confirmation` had exactly two call
+/// sites in the workspace, both in `cmd_test_signature.rs`. Until this call site existed the floor
+/// was a guarantee that lived only in the settings model — the registry's own comment says minting
+/// "enrols a new device as this operator, so an unattended signed-in browser must not be one click
+/// from it", and an unattended signed-in browser was precisely one click from it.
+///
+/// This is the *mint* gate and it is not the same proof as the *exchange* gate below. They defend
+/// different moments and are deliberately independent: this one asks the desktop operator, who
+/// already holds a session, to re-prove themselves before a code exists at all; the exchange asks
+/// whoever holds the code to prove they are that operator before a device is enrolled. Neither
+/// substitutes for the other, and the exchange has no equivalent of `require_step_up`'s
+/// credential-less exemption.
 pub async fn create_pairing_code(
     State(state): State<AppState>,
     actor: CurrentActor,
     Json(req): Json<MintPairingCode>,
 ) -> Result<Json<PairingCodeMinted>, ApiError> {
     let uid = resolve_operator(&state, &actor).await?;
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::DevicePairing,
+        &req.confirmation,
+    )
+    .await?;
     let label = sanitize_label(req.label);
     let now = OffsetDateTime::now_utc();
     let code = state.pairing.mint_code(uid.0, label.clone(), now).await;
@@ -721,6 +749,7 @@ mod tests {
         devices["devices"].as_array().cloned().unwrap_or_default()
     }
 
+    /// Mint a code, carrying the step-up proof the `DevicePairing` floor now demands.
     async fn mint_code(state: &AppState, operator: &str) -> String {
         let (status, minted) = json_response(
             crate::router(state.clone())
@@ -728,7 +757,10 @@ mod tests {
                     Method::POST,
                     "/v1/pairing/codes",
                     operator,
-                    json!({ "label": "Telemóvel da Amélia" }),
+                    json!({
+                        "label": "Telemóvel da Amélia",
+                        "confirmation": { "reauth": { "password": OPERATOR_PASSWORD } },
+                    }),
                 ))
                 .await
                 .unwrap(),
@@ -737,6 +769,22 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "mint code: {minted}");
         assert_eq!(minted["label"], "Telemóvel da Amélia");
         minted["code"].as_str().unwrap().to_owned()
+    }
+
+    /// Attempt a mint with an arbitrary confirmation object.
+    async fn mint_with(state: &AppState, operator: &str, confirmation: Value) -> (StatusCode, Value) {
+        json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    operator,
+                    json!({ "confirmation": confirmation }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await
     }
 
     /// Redeem `code` carrying an arbitrary confirmation object.
@@ -928,6 +976,98 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // =============================================================================================
+    // t70 — the mint must be re-authenticated
+    //
+    // `ConfirmationAction::DevicePairing` has been floored at `ConfirmWithReauth` since t56-e0 with
+    // nothing enforcing it. "Did not mint" is the assertion, not "returned an error": a refused
+    // mint must leave no redeemable code behind.
+    // =============================================================================================
+
+    #[tokio::test]
+    async fn minting_without_a_step_up_proof_mints_no_code() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+
+        // The body every pre-t70 client sent.
+        let (status, body) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    &operator,
+                    json!({ "label": "Telemóvel da Amélia" }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        // NOT `body["code"]` — an `ApiError` body carries its own `code` field (the error id), so
+        // that assertion would read the refusal's own name and call it a pairing code. The real
+        // question is whether a redeemable code exists, which is the registry.
+        assert_eq!(
+            state.pairing.0.codes.read().await.len(),
+            0,
+            "no code was minted"
+        );
+    }
+
+    #[tokio::test]
+    async fn minting_with_a_wrong_password_mints_no_code() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+
+        let (status, body) = mint_with(
+            &state,
+            &operator,
+            json!({ "reauth": { "password": "Cavalo-Errado9!" } }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        // NOT `body["code"]` — an `ApiError` body carries its own `code` field (the error id), so
+        // that assertion would read the refusal's own name and call it a pairing code. The real
+        // question is whether a redeemable code exists, which is the registry.
+        assert_eq!(
+            state.pairing.0.codes.read().await.len(),
+            0,
+            "no code was minted"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_code_refused_at_mint_time_cannot_be_exchanged() {
+        // The refusal must not merely hide the code from the response — there must be no code. A
+        // status assertion alone would pass even if a code had been minted and dropped on the
+        // floor, still redeemable by anyone who could guess it.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let (status, _) = mint_with(&state, &operator, json!({})).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        assert_eq!(
+            state.pairing.0.codes.read().await.len(),
+            0,
+            "a refused mint left no outstanding code"
+        );
+        assert!(devices_of(&state, &operator).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn minting_with_the_correct_password_still_works() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+
+        let (status, minted) = mint_with(
+            &state,
+            &operator,
+            json!({ "reauth": { "password": OPERATOR_PASSWORD } }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "mint: {minted}");
+        assert!(!minted["code"].as_str().unwrap().is_empty());
     }
 
     // =============================================================================================
@@ -1193,7 +1333,7 @@ mod tests {
                     Method::POST,
                     "/v1/pairing/codes",
                     &operator,
-                    json!({}),
+                    json!({ "confirmation": { "reauth": { "password": OPERATOR_PASSWORD } } }),
                 ))
                 .await
                 .unwrap(),
@@ -1213,7 +1353,7 @@ mod tests {
                     Method::POST,
                     "/v1/pairing/codes",
                     &operator,
-                    json!({}),
+                    json!({ "confirmation": { "reauth": { "password": OPERATOR_PASSWORD } } }),
                 ))
                 .await
                 .unwrap(),

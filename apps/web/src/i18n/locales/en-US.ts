@@ -5909,7 +5909,12 @@ export const enUS = {
   'pairing.expiresIn': 'Expires in {time}',
   'pairing.waiting': 'Waiting for the phone to finish pairing…',
   'pairing.expired.title': 'Code expired',
-  'pairing.expired.body': 'This code expired. Generating a new one…',
+  'pairing.expired.body': 'This code expired. Generate a new one to continue.',
+  'pairing.expired.renew': 'Generate new code',
+  'pairing.confirm.title': 'Confirm device pairing',
+  'pairing.confirm.intro':
+    'Generating a pairing code lets a new device be enrolled under your identity. Confirm it is you before continuing.',
+  'pairing.confirm.action': 'Generate code',
   'pairing.cancel': 'Stop',
   'pairing.enrolled.title': 'Phone paired',
   'pairing.enrolled.body': '{label} was added to your devices.',
