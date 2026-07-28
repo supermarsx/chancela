@@ -113,7 +113,6 @@ mod cae;
 mod chronology;
 mod collection_page;
 pub mod confirmation;
-pub mod confirmation;
 mod connector_jobs;
 mod cors;
 pub use connector_jobs::{ConnectorTargetMap, ConnectorTargetRecord};
