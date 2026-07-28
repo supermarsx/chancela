@@ -240,6 +240,7 @@ impl Role {
                 Permission::EntityCreate,
                 Permission::EntityUpdate,
                 Permission::EntityRegistryImport,
+                Permission::EntityRegistryLookup,
                 Permission::EntityArchive,
                 Permission::BookRead,
                 Permission::BookOpen,
@@ -438,6 +439,7 @@ impl Role {
                 Permission::EntityCreate,
                 Permission::EntityUpdate,
                 Permission::EntityRegistryImport,
+                Permission::EntityRegistryLookup,
                 Permission::EntityArchive,
                 Permission::BookRead,
                 Permission::BookOpen,
@@ -1327,6 +1329,7 @@ mod tests {
                 Permission::EntityCreate,
                 Permission::EntityUpdate,
                 Permission::EntityRegistryImport,
+                Permission::EntityRegistryLookup,
                 Permission::EntityArchive,
                 Permission::BookRead,
                 Permission::BookOpen,
@@ -1638,6 +1641,13 @@ mod tests {
             Permission::EntityCreate,
             Permission::EntityUpdate,
             Permission::EntityRegistryImport,
+            // t95 split `entity.registry.lookup` out of `entity.read`. A Gestor holder could always
+            // consult a certidão without importing it — that authority simply rode on `entity.read`
+            // until the verb existed. Adding it here keeps the restatement a faithful account of
+            // what the retired role could DO, which is what "identical authority" means; omitting it
+            // would make the successor narrower and silently strip every migrated holder of a
+            // capability they had. This is the one edit to this list that is not a widening.
+            Permission::EntityRegistryLookup,
             Permission::EntityArchive,
             Permission::BookRead,
             Permission::BookOpen,

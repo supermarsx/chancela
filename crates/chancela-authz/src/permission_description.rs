@@ -158,7 +158,7 @@ impl Permission {
             // entities.rs::{get_entity, list_entities, list_entities_page},
             // books.rs::list_books_page, chronology.rs::get_entity_chronology,
             // groups.rs::group_dashboard,
-            // registry.rs::{get_entity_registry, registry_lookup, registry_auto_update_due_plan}
+            // registry.rs::{get_entity_registry, registry_auto_update_due_plan}
             Permission::EntityRead => Enforced,
             // entities.rs::create_entity, registry.rs::import_from_registry
             Permission::EntityCreate => Enforced,
@@ -166,6 +166,16 @@ impl Permission {
             Permission::EntityUpdate => Enforced,
             // registry.rs::{import_into_entity, request_registry_auto_update}
             Permission::EntityRegistryImport => Enforced,
+            // registry.rs::registry_lookup — `POST /v1/registry/lookup`,
+            // `authz.require(EntityRegistryLookup, Scope::Global)`. Global because a lookup names no
+            // entity: it is pointed at a código de acesso, and the company it resolves to may not
+            // exist in this instance at all.
+            //
+            // Split out of `EntityRead` (t95). The endpoint reaches an external government service
+            // and spends a metered consultation, so a verb meaning "read entities in this instance"
+            // was describing the wrong blast radius — concretely, it let a Guest make the
+            // installation fire live outbound requests at a third party.
+            Permission::EntityRegistryLookup => Enforced,
             // entities.rs::{archive_entity, unarchive_entity} — `POST /v1/entities/{id}/archive`
             // and `.../unarchive`, both `require_permission(EntityArchive, scope_of_entity(id))`.
             // One verb in both directions, and deliberately NOT `EntityUpdate`: the seeded Records
@@ -418,8 +428,9 @@ mod tests {
             "every catalog verb must be either enforced or audited as not-built"
         );
         // 50 at audit time; 51 once t60 made `entity.archive` real; 52 once t77 made
-        // `tenant.admin` real. 52 + 1 not-built = the 53 catalog verbs.
-        assert_eq!(enforced, 52);
+        // `tenant.admin` real; 53 once t95 split `entity.registry.lookup` out of `entity.read`.
+        // 53 + 1 not-built = the 54 catalog verbs.
+        assert_eq!(enforced, 53);
     }
 
     /// The phantoms are seeded into real funções — that is *why* they matter. An administrator

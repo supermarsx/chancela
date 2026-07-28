@@ -571,7 +571,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/entities/{id}/registry", RouteClass::Gated), // GET entity.read@Entity
     ("/v1/entities/{id}/registry/import", RouteClass::Gated), // POST entity.registry.import@Entity
     ("/v1/entities/{id}/chronology", RouteClass::Gated), // GET entity.read@Entity
-    ("/v1/registry/lookup", RouteClass::Gated), // POST entity.read@Global
+    ("/v1/registry/lookup", RouteClass::Gated), // POST entity.registry.lookup@Global · GET entity.read@Global
     // --- Top-level tenant collection (wp27-e1; dedicated Tenant* verbs wired by wp27-e2) -------
     ("/v1/tenants", RouteClass::Gated), // GET tenant.read@Tenant (per-row) · POST tenant.create@Global
     ("/v1/tenants/{tenant_id}", RouteClass::Gated), // GET tenant.read@Tenant · PATCH tenant.admin@Tenant

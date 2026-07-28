@@ -52,6 +52,24 @@ pub enum Permission {
     EntityUpdate,
     #[serde(rename = "entity.registry.import")]
     EntityRegistryImport,
+    /// Consult a Certidão de Registo Permanente **without importing it** — the lookup-only tool at
+    /// `POST /v1/registry/lookup`. Holding it lets the caller spend a código de acesso against the
+    /// live registry and read the result; it grants no authority to create, match or modify
+    /// anything.
+    ///
+    /// Deliberately separate from [`EntityRead`](Permission::EntityRead), which this endpoint used
+    /// to be gated on. `entity.read` means "read entities **in this instance**". A registry lookup
+    /// is not that: it reaches an *external* government service, costs a metered consultation, and
+    /// can be pointed at **any** Portuguese company — including ones this instance has no
+    /// relationship with. Under the old gate a Guest could make the installation fire live outbound
+    /// requests at a third party, which is a blast radius `entity.read` never described.
+    ///
+    /// Also separate from [`EntityRegistryImport`](Permission::EntityRegistryImport), which is
+    /// strictly more authority (it consults *and* writes). Every seeded role holding the import verb
+    /// holds this one too, so the split narrows who may look up without stripping anyone who could
+    /// already import.
+    #[serde(rename = "entity.registry.lookup")]
+    EntityRegistryLookup,
     /// Retire an entity from **new authorship**, and return it — `POST /v1/entities/{id}/archive`
     /// and `.../unarchive`, both gated on this verb at the entity's scope.
     ///
@@ -245,7 +263,7 @@ pub enum Permission {
 
 impl Permission {
     /// Every permission in the catalog, in declaration order. This IS the Owner permission-set.
-    pub const ALL: [Permission; 53] = [
+    pub const ALL: [Permission; 54] = [
         Permission::TenantRead,
         Permission::TenantCreate,
         Permission::TenantAdmin,
@@ -253,6 +271,7 @@ impl Permission {
         Permission::EntityCreate,
         Permission::EntityUpdate,
         Permission::EntityRegistryImport,
+        Permission::EntityRegistryLookup,
         Permission::EntityArchive,
         Permission::BookRead,
         Permission::BookOpen,
@@ -360,6 +379,7 @@ impl Permission {
             Permission::EntityCreate => "entity.create",
             Permission::EntityUpdate => "entity.update",
             Permission::EntityRegistryImport => "entity.registry.import",
+            Permission::EntityRegistryLookup => "entity.registry.lookup",
             Permission::EntityArchive => "entity.archive",
             Permission::BookRead => "book.read",
             Permission::BookOpen => "book.open",
@@ -457,6 +477,7 @@ mod tests {
                 | Permission::EntityCreate
                 | Permission::EntityUpdate
                 | Permission::EntityRegistryImport
+                | Permission::EntityRegistryLookup
                 | Permission::EntityArchive
                 | Permission::BookRead
                 | Permission::BookOpen

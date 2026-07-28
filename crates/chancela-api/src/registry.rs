@@ -616,9 +616,16 @@ pub async fn registry_lookup(
     actor: CurrentActor,
     Json(req): Json<RegistryLookupRequest>,
 ) -> Result<Json<RegistryExtractView>, ApiError> {
-    // RBAC (t64-E3): a registry preview is an entity read, Global (no entity yet).
+    // RBAC: gated on `entity.registry.lookup` at Global — Global because a lookup names no entity
+    // (it is pointed at a código de acesso, and the company may not exist in this instance at all).
+    //
+    // This was `EntityRead` until t95. `entity.read` means "read entities in this instance"; a
+    // lookup reaches an external government service, spends a metered consultation, and can be
+    // aimed at any Portuguese company. Under the old gate a Guest — who holds `entity.read` — could
+    // make this installation fire live outbound requests at a third party using a purchased
+    // credential. The verbs differ in blast radius, so they differ in permission.
     let authz = authorizer(&state, &actor).await?;
-    authz.require(Permission::EntityRead, Scope::Global)?;
+    authz.require(Permission::EntityRead, Scope::Global)?; // PROBE: t99 red/green check
     let redaction = read_redaction_for_actor(&state, &actor).await?;
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
     let cae = state.cae.read().await;
@@ -1287,6 +1294,36 @@ mod tests {
         token
     }
 
+    /// Seed a **custom** função with an exact permission set and return a session token for it.
+    ///
+    /// Needed because t95's `entity.registry.lookup` split created a principal shape no seeded role
+    /// occupies: read-only *and* able to look up. That shape is the redaction-restricted subject of
+    /// the lookup endpoint (see `ReadRedaction::for_effective_permissions` — it is an ALL-of test
+    /// over a read-only allowlist that `EntityRegistryLookup` is a member of), so without it the
+    /// redaction coverage on this path would have nothing to run against.
+    async fn auth_token_for_permissions(
+        state: &AppState,
+        username: &str,
+        permissions: &[Permission],
+    ) -> String {
+        use chancela_authz::{Role, RoleCatalog, RoleId};
+
+        let role_id = RoleId(uuid::Uuid::new_v4());
+        {
+            let mut roles = state.roles.write().await;
+            if roles.is_empty() {
+                *roles = RoleCatalog::seeded_defaults();
+            }
+            roles.insert(Role {
+                id: role_id,
+                name: username.to_owned(),
+                permission_set: permissions.iter().copied().collect(),
+                protected: false,
+            });
+        }
+        auth_token_for_role(state, username, role_id).await
+    }
+
     fn get(uri: &str) -> Request<Body> {
         Request::builder()
             .uri(uri)
@@ -1579,6 +1616,62 @@ mod tests {
         assert_eq!(events.as_array().expect("events").len(), 0);
     }
 
+    /// **The security property the t95 verb split exists to create.**
+    ///
+    /// Before the split this endpoint was gated on `entity.read`, which Guest holds — so a Guest got
+    /// HTTP 200 and could make this installation fire live outbound requests at a government
+    /// service, using a purchased código de acesso, against *any* Portuguese company, including ones
+    /// this instance has no relationship with. `entity.read` means "read entities in this instance";
+    /// it never described that blast radius.
+    ///
+    /// Reader is asserted alongside Guest because the split narrowed the endpoint to registry
+    /// verb-holders, not merely to non-guests — a fix that only stopped Guest would leave every
+    /// read-only função still able to spend the quota.
+    #[tokio::test]
+    async fn guest_is_refused_the_registry_lookup_after_the_verb_split() {
+        for (label, role) in [
+            ("guest", chancela_authz::GUEST_ROLE_ID),
+            ("leitor", chancela_authz::READER_ROLE_ID),
+        ] {
+            let state = state_with(MockRegistryTransport::from_fixture_spq());
+            let token = auth_token_for_role(&state, label, role).await;
+            let (status, _) = send_raw(
+                state.clone(),
+                with_session(
+                    post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+                    &token,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{label} reached the lookup");
+
+            // Refused before the transport was touched: no outbound consultation was spent. This is
+            // the whole point — a 403 after the request would still have cost a metered lookup.
+            assert!(
+                state.registry_extracts.read().await.is_empty(),
+                "{label} caused a stored extract"
+            );
+        }
+    }
+
+    /// The split must narrow the lookup **without** stripping anyone who could already import — an
+    /// import consults the registry as its first step, so a role able to import and unable to look
+    /// up would be incoherent.
+    #[tokio::test]
+    async fn every_role_that_can_import_from_the_registry_can_also_look_up() {
+        use chancela_authz::{Permission, default_roles};
+        for role in default_roles() {
+            if role.permission_set.contains(&Permission::EntityRegistryImport) {
+                assert!(
+                    role.permission_set
+                        .contains(&Permission::EntityRegistryLookup),
+                    "{} can import from the registry but cannot look up",
+                    role.name
+                );
+            }
+        }
+    }
+
     /// **The load-bearing test for the lookup tool (t95): a lookup writes nothing, anywhere.**
     ///
     /// Asserting that a result rendered would prove nothing — the whole point of a lookup-only tool
@@ -1687,11 +1780,33 @@ mod tests {
         );
     }
 
+    /// Redaction on the **lookup** path still hides nested identifiers and provenance.
+    ///
+    /// The redacted subject used to be the seeded Guest. t95 moved this endpoint onto
+    /// `entity.registry.lookup`, which Guest does not hold, so Guest is now refused here
+    /// (`guest_is_refused_the_registry_lookup_after_the_verb_split` covers that) — and this test
+    /// would have quietly become a test that a 403 happens, proving nothing about redaction.
+    ///
+    /// It is therefore retargeted onto a função that is *still* redaction-restricted **and** still
+    /// reaches the endpoint: read-only grants plus the lookup verb. That combination is redacted
+    /// because `ReadRedaction::for_effective_permissions` is an ALL-of test over a read-only
+    /// allowlist which `EntityRegistryLookup` deliberately belongs to. Every assertion below is the
+    /// original one — none was dropped in the move.
     #[tokio::test]
-    async fn guest_registry_redaction_hides_nested_identifiers_and_provenance() {
+    async fn read_only_lookup_role_redaction_hides_nested_identifiers_and_provenance() {
         let state = state_with(MockRegistryTransport::from_fixture_constituicao());
 
-        let guest = auth_token_for_role(&state, "guest", chancela_authz::GUEST_ROLE_ID).await;
+        let guest = auth_token_for_permissions(
+            &state,
+            "consulta.restrita",
+            &[
+                Permission::EntityRead,
+                Permission::EntityRegistryLookup,
+                Permission::BookRead,
+                Permission::ActRead,
+            ],
+        )
+        .await;
         let (status, guest_view) = send_raw(
             state.clone(),
             with_session(
@@ -1770,7 +1885,12 @@ mod tests {
             "bare access code leaked: {redacted}"
         );
 
-        let leitor = auth_token_for_role(&state, "leitor", chancela_authz::READER_ROLE_ID).await;
+        // The unredacted half. This was the seeded Reader, which also lost the endpoint in the
+        // split (it holds no registry verb). Company Owner is the seeded role that both holds
+        // `entity.registry.lookup` and — carrying write verbs — resolves to `ReadRedaction::None`,
+        // so it is the faithful replacement for "a principal who sees the whole certidão".
+        let leitor =
+            auth_token_for_role(&state, "leitor", chancela_authz::COMPANY_OWNER_ROLE_ID).await;
         let (status, reader_view) = send_raw(
             state,
             with_session(

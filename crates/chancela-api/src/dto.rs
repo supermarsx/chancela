@@ -86,6 +86,16 @@ impl ReadRedaction {
                         | Permission::ActRead
                         | Permission::SearchRead
                         | Permission::CaeRead
+                        // A registry lookup reads a record; it writes nothing. Counting it as
+                        // read-only here is what keeps a low-privilege role redacted after t95 split
+                        // the verb out: this list is an ALL-of test, so leaving the new verb off it
+                        // would mean granting lookup to an otherwise read-only função silently
+                        // promoted that função to `ReadRedaction::None` — un-redacting NIFs, names,
+                        // marital status and residências across every read surface, as a side effect
+                        // of an innocuous-looking grant. The blast radius that justifies the
+                        // separate verb is outbound-request authority, which is not a reason to hand
+                        // out more PII.
+                        | Permission::EntityRegistryLookup
                         | Permission::LawRead
                 )
             })

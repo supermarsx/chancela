@@ -97,6 +97,8 @@ export const permissionDescriptionsPtPT = {
     'Alterar os dados de uma entidade já existente e mover entidades para dentro e para fora de grupos.',
   'entity.registry.import':
     'Trazer dados do registo comercial para uma entidade já existente e pedir a sua atualização automática.',
+  'entity.registry.lookup':
+    'Consultar o registo comercial através de um código de acesso, sem importar o resultado nem o associar a nenhuma entidade. Cada consulta chega a um serviço externo do Estado e pode incidir sobre qualquer empresa, mesmo sem relação com esta instalação.',
   'entity.archive':
     'Retirar uma entidade do trabalho corrente e voltar a trazê-la. O que já existe continua legível, pesquisável e exportável; deixa apenas de se poder começar trabalho novo.',
 
@@ -250,6 +252,8 @@ export const permissionDescriptionsEnglish = {
     'Change the details of an existing entity, and move entities into and out of groups.',
   'entity.registry.import':
     'Pull commercial registry data into an existing entity and request its automatic update.',
+  'entity.registry.lookup':
+    'Consult the commercial registry using an access code, without importing the result or linking it to any entity. Each consultation reaches an external government service and can be pointed at any company, even one with no relationship to this installation.',
   'entity.archive':
     'Retire an entity from current work and bring it back. What already exists stays readable, searchable and exportable; only starting new work stops.',
 

@@ -89,10 +89,10 @@ export function ToolsPage() {
   const locale = useActiveLocale();
   const { canAny } = usePermissions();
   const canSearch = canAny('search.read');
-  // `POST /v1/registry/lookup` enforces `entity.read@Global`. The tab is gated on the SAME verb the
-  // server enforces — deliberately not on a lookup-specific one, which would be a phantom verb
-  // enforced only in the client (the cost of which `book.reopen` already demonstrated).
-  const canLookupCertidao = canAny('entity.read');
+  // `POST /v1/registry/lookup` enforces `entity.registry.lookup@Global` (t95). The tab is gated on
+  // the SAME verb the server enforces — deliberately not on `entity.read`, which used to gate this
+  // endpoint and let any Guest fire live outbound requests at the registry service.
+  const canLookupCertidao = canAny('entity.registry.lookup');
   const visibleSections = SECTIONS.filter(
     (candidate) =>
       (candidate.id !== 'search' || canSearch) &&
