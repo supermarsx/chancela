@@ -2577,7 +2577,9 @@ fn storage_error(context: &str, error: std::io::Error) -> ApiError {
 }
 
 fn api_error_message(error: ApiError) -> String {
-    match error {
+    // t58: peel any Tier-2 code first, or a coded error misses the arms below and is replaced by
+    // the generic summary — a silent loss of the storage fault the operator needs to see.
+    match error.into_uncoded() {
         ApiError::Unavailable(message)
         | ApiError::Unprocessable(message)
         | ApiError::Internal(message)

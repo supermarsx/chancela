@@ -950,8 +950,12 @@ async fn record_send_outcome(
                     SendFailure::Refused(f) => f.summary(),
                     // Our own server-authored refusal, which names a missing setting and carries
                     // no credential. `build_relay` only ever raises `Unprocessable` here.
-                    SendFailure::NotConfigured(ApiError::Unprocessable(msg)) => msg.clone(),
-                    SendFailure::NotConfigured(_) => "mail is not configured".to_owned(),
+                    // t58: peel any Tier-2 code before matching the inner variant, or a coded
+                    // refusal falls to the generic arm below and the setting it names is lost.
+                    SendFailure::NotConfigured(e) => match e.as_uncoded() {
+                        ApiError::Unprocessable(msg) => msg.clone(),
+                        _ => "mail is not configured".to_owned(),
+                    },
                 }),
             ),
         };

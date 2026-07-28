@@ -6610,12 +6610,18 @@ pub async fn export_working_copy(
         .ok_or(ApiError::NotFound)?;
     let model = render_persisted_act_document_model(&state, act_id, &doc)
         .await
-        .map_err(|err| match err {
-            ApiError::NotFound => ApiError::Conflict(
-                "preserved document exists, but its editable document model is unavailable"
-                    .to_owned(),
-            ),
-            other => other,
+        // t58: classify through `as_uncoded`, but pass the ORIGINAL error through untouched when it
+        // is not a not-found — peeling on the passthrough arm would strip a Tier-2 code the caller
+        // attached, turning a specific refusal back into a generic one.
+        .map_err(|err| {
+            if matches!(err.as_uncoded(), ApiError::NotFound) {
+                ApiError::Conflict(
+                    "preserved document exists, but its editable document model is unavailable"
+                        .to_owned(),
+                )
+            } else {
+                err
+            }
         })?;
     let (body, content_type, extension) = match query.format {
         WorkingCopyFormat::Markdown => (
@@ -6694,12 +6700,18 @@ pub async fn export_office_document(
         .ok_or(ApiError::NotFound)?;
     let model = render_persisted_act_document_model(&state, act_id, &doc)
         .await
-        .map_err(|err| match err {
-            ApiError::NotFound => ApiError::Conflict(
-                "preserved document exists, but its editable document model is unavailable"
-                    .to_owned(),
-            ),
-            other => other,
+        // t58: classify through `as_uncoded`, but pass the ORIGINAL error through untouched when it
+        // is not a not-found — peeling on the passthrough arm would strip a Tier-2 code the caller
+        // attached, turning a specific refusal back into a generic one.
+        .map_err(|err| {
+            if matches!(err.as_uncoded(), ApiError::NotFound) {
+                ApiError::Conflict(
+                    "preserved document exists, but its editable document model is unavailable"
+                        .to_owned(),
+                )
+            } else {
+                err
+            }
         })?;
     let bytes = office_docx(act_id, &doc, &model)?;
     let filename = format!("act-{id}-office-working-copy.docx");
@@ -8018,7 +8030,9 @@ pub(crate) async fn pdf_accessibility_evidence_for_act_document(
 ) -> PdfAccessibilityEvidenceReport {
     let model = match render_persisted_act_document_model(state, act_id, doc).await {
         Ok(model) => model,
-        Err(ApiError::NotFound) => {
+        // t58: a match guard over `as_uncoded`, so a coded not-found still reports the model as
+        // unavailable rather than falling through to the generic error arm below.
+        Err(err) if matches!(err.as_uncoded(), ApiError::NotFound) => {
             return unavailable_pdf_accessibility_evidence(
                 doc,
                 Some(act_id),

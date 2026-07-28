@@ -145,17 +145,32 @@ pub enum ApiError {
     /// error *by variant* — as opposed to rendering it — must go through
     /// [`as_uncoded`](ApiError::as_uncoded) / [`into_uncoded`](ApiError::into_uncoded).
     ///
-    /// **This is not yet true of the pre-existing in-crate classifiers.** An audit when this landed
-    /// found **15 production sites across 7 files** that still classify by variant without peeling:
-    /// `documents.rs` (`:6614`, `:6698`, `:8021`, `:9241`), `signature.rs` (`:3529`, `:3530`,
-    /// `:3850`, `:3851`, `:3871`, `:3872`), `batch_signing.rs:357`,
-    /// `provider_credentials_write.rs:1066`, `zk_repository.rs:2584`, `smtp_settings.rs:953` and
-    /// `lib.rs:2091`. None is reachable by a coded error *today* — the only [`with_code`] sites are
-    /// in `termo.rs` and render straight through [`IntoResponse`] — but each turns into a **silent**
-    /// loss of the server's honest message the moment a code is attached upstream of it, because the
-    /// usual shape is a `_ =>` arm degrading to a generic summary rather than anything the compiler
-    /// can catch. Peeling them is t58 follow-up work and must land before Tier-2 codes reach
-    /// `signature.rs`, which holds six of the fifteen.
+    /// **Every in-crate production classifier now does.** The audit behind this list was re-derived
+    /// by tracking brace depth to decide whether each site sits inside a `#[cfg(test)]` module,
+    /// rather than judging by proximity — the two earlier counts (15, then 8) were both wrong, in
+    /// opposite directions, because one guessed from proximity and the other used a pattern that
+    /// missed bare match arms and `ApiError` nested inside another enum's pattern.
+    ///
+    /// **10 production classifier expressions, in 6 files**, all now peeling — named by function
+    /// rather than by line, because line numbers drift under concurrent work and a stale number is
+    /// what let the previous version of this list go unchecked:
+    ///
+    /// - `documents.rs` — the two `render_persisted_act_document_model` `map_err`s, the model match
+    ///   in `pdf_accessibility_evidence_for_act_document`, and the conflict guard in
+    ///   `persist_created_user_template`
+    /// - `signature.rs` — `cc_bridge_operation_error_code`, `cc_batch_doc_error_message`,
+    ///   `resolve_cc_batch_doc`
+    /// - `batch_signing.rs` / `zk_repository.rs` — their respective `api_error_message`
+    /// - `smtp_settings.rs` — the `SendFailure::NotConfigured` arm
+    /// - `lib.rs` — `clear_domain_memory_raw`'s warn-log filter
+    ///
+    /// Roughly 110 further by-variant matches live in `#[cfg(test)]` modules; they assert on
+    /// uncoded errors and are correct as written.
+    ///
+    /// The hazard each of these carried is worth stating, because it is invisible: the usual shape
+    /// is a `_ =>` arm degrading to a generic summary, so attaching a code upstream would have
+    /// caused a **silent** loss of the server's honest message rather than anything the compiler
+    /// could catch. A classifier that stops matching does not fail — it quietly gets vaguer.
     Coded {
         /// The error being refined. Never itself a `Coded` when built through `with_code`.
         inner: Box<ApiError>,
