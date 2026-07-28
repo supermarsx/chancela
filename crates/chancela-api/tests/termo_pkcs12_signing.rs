@@ -681,7 +681,10 @@ async fn open_without_a_complete_confirmation_proof_appends_no_genesis() {
     cosign_both_slots(&state, &token, &book_id, &slot0, &slot1).await;
 
     let refused = [
-        ("no confirmation object at all (the pre-t80 body)", json!({})),
+        (
+            "no confirmation object at all (the pre-t80 body)",
+            json!({}),
+        ),
         (
             "step-up only, no phrase",
             json!({ "confirmation": { "reauth": { "password": TEST_PASSWORD } } }),
@@ -1312,7 +1315,10 @@ async fn close_without_a_complete_confirmation_proof_seals_no_termo() {
     assert_eq!(status, StatusCode::OK, "sign encerramento slot 1: {view}");
 
     let refused = [
-        ("no confirmation object at all (the pre-t80 body)", json!({})),
+        (
+            "no confirmation object at all (the pre-t80 body)",
+            json!({}),
+        ),
         (
             "step-up only, no phrase",
             json!({ "confirmation": { "reauth": { "password": TEST_PASSWORD } } }),
