@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "name": "pending-acts",
+  "proof_eligible": false,
+  "seed": 20260727,
+  "backlog": {
+    "target_acts_in_signing": 10000,
+    "users": 2,
+    "entities": 5,
+    "books": 25,
+    "advance_concurrency": 12
+  },
+  "pending_cmd_sessions": {
+    "target_count": 10000,
+    "seed_mode": "store_direct_sqlite",
+    "synthetic_fixture": true,
+    "note": "initiate_cmd_signature (signature.rs:1618) dispatches a real CCMovelSign network call and a real OTP to a real phone per session; there is no HTTP-reachable or env-configurable seam that substitutes a fake transport for the running binary (AppState.cmd_transport is only ever set by Rust-internal test code that constructs AppState in-process, lib.rs:888). This matches the plan's own CMD non-automatability finding for B1 (plan.md §8 Assumption 3). Rows are therefore written directly at the store layer with the exact pending_cmd_sessions column set (schema.rs:479-491) so the boot-rehydration read path (all_pending_cmd_sessions, lib.rs:1478-1479) sees structurally real data. seed_mode=store_direct_sqlite requires a single-node SQLite-backed instance whose CHANCELA_DATA_DIR is host-reachable; the clustered Postgres-backed perf topology (docker-compose.perf.yml + docker/docker-compose.cluster.yml) is NOT reachable this way today — Postgres is not published to the host and no psycopg dependency exists in this harness. Against that topology this stage must be reported not_measured, never faked. See t57-e3 log."
+  },
+  "read_stress": {
+    "mode": "ramp",
+    "duration_seconds": 420,
+    "warmup_seconds": 30,
+    "ramp_seconds": 60,
+    "peak_plateau_seconds": 300,
+    "cooldown_seconds": 30,
+    "clients": 32,
+    "request_timeout_seconds": 30,
+    "max_latency_samples_per_operation": 200000,
+    "weights": {
+      "act_get": 10,
+      "signature_status": 40,
+      "book_acts_list": 10,
+      "dashboard": 5
+    }
+  },
+  "rehydration": {
+    "measure": true,
+    "method": "compose_restart_then_readiness",
+    "service": "chancela-cluster",
+    "timeout_seconds": 600,
+    "poll_seconds": 2,
+    "max_attempts": 1
+  }
+}
