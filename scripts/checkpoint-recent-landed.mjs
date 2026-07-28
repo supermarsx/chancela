@@ -7,6 +7,23 @@ import { dirname } from "node:path";
 
 const repoRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const staticOnly = process.argv.includes("--static");
+
+/**
+ * Marker failures collected across one `assertCheckpointMap()` run.
+ *
+ * The `assertFile*` helpers below used to `assert.ok` straight through, which threw on the FIRST bad
+ * marker and hid every other one behind it. A red run then named exactly one marker, fixing it
+ * revealed the next, and each reveal cost a full push→CI cycle: on 2026-07-28 one reported failure
+ * was standing in front of six more already on `main`. Collecting names them all in a single run.
+ *
+ * This reports more, it does not fail less — `reportCheckpointFailures()` exits non-zero on any
+ * collected failure. A collector that swallowed the exit code would turn the whole job into a
+ * permanent false green, which is strictly worse than the fail-fast behaviour it replaces.
+ *
+ * Declared up here rather than beside the helpers because the check loop runs at module top level,
+ * far above them: a `const` further down is still in its temporal dead zone when the loop calls in.
+ */
+const checkpointFailures = [];
 const webMatrixTestPaths = requireExistingTestPaths("apps/web", [
   "src/api/client.test.ts",
   "src/api/settingsDefaults.test.ts",
@@ -637,6 +654,8 @@ const checks = [
 for (const check of checks) {
   console.log(`\n==> ${check.name}`);
   check.before?.();
+  // The static map collects rather than throws, so ask for the whole list before running anything.
+  reportCheckpointFailures();
 
   const [bin, args] = check.command;
   const result = spawnSync(bin, args, {
@@ -18006,13 +18025,43 @@ function assertCheckpointMap() {
   );
 }
 
+function recordCheckpointFailure(relativePath, message) {
+  checkpointFailures.push({ relativePath, message });
+}
+
+/**
+ * Print every collected marker failure and exit non-zero. Silent — and returns — when clean, so a
+ * passing run looks exactly as it did before.
+ *
+ * One line per failure, carrying the label, the file and the marker that did not match. Markers are
+ * whitespace-collapsed for the report because several span lines; the assertion itself still matches
+ * on the original text.
+ */
+function reportCheckpointFailures() {
+  if (checkpointFailures.length === 0) {
+    return;
+  }
+  const count = checkpointFailures.length;
+  console.error(`\n${count} checkpoint marker${count === 1 ? "" : "s"} failed:`);
+  for (const { relativePath, message } of checkpointFailures) {
+    console.error(`  x ${relativePath}: ${normalizeWhitespace(message)}`);
+  }
+  console.error("");
+  process.exit(1);
+}
+
+/** Records and returns `false` when the file is absent, so callers can skip reading it. */
 function assertFileExists(relativePath, label) {
   const path = join(repoRoot, relativePath);
-  assert.ok(existsSync(path), `${label} missing at ${relativePath}`);
+  if (existsSync(path)) {
+    return true;
+  }
+  recordCheckpointFailure(relativePath, `${label} missing at ${relativePath}`);
+  return false;
 }
 
 function assertFileContains(relativePath, needle, label) {
-  assertFileExists(relativePath, label);
+  if (!assertFileExists(relativePath, label)) return;
   const body = readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
     "\r\n",
     "\n",
@@ -18020,11 +18069,16 @@ function assertFileContains(relativePath, needle, label) {
   const hasMarker =
     body.includes(needle) ||
     normalizeWhitespace(body).includes(normalizeWhitespace(needle));
-  assert.ok(hasMarker, `${label} missing expected marker ${needle}`);
+  if (!hasMarker) {
+    recordCheckpointFailure(
+      relativePath,
+      `${label} missing expected marker ${needle}`,
+    );
+  }
 }
 
 function assertFileContainsAny(relativePath, needles, label) {
-  assertFileExists(relativePath, label);
+  if (!assertFileExists(relativePath, label)) return;
   const body = readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
     "\r\n",
     "\n",
@@ -18035,36 +18089,46 @@ function assertFileContainsAny(relativePath, needles, label) {
       body.includes(needle) ||
       normalizedBody.includes(normalizeWhitespace(needle)),
   );
-  assert.ok(
-    hasMarker,
-    `${label} missing one expected marker from ${needles.join(" | ")}`,
-  );
+  if (!hasMarker) {
+    recordCheckpointFailure(
+      relativePath,
+      `${label} missing one expected marker from ${needles.join(" | ")}`,
+    );
+  }
 }
 
 function assertFileContainsNormalized(relativePath, needle, label) {
-  assertFileExists(relativePath, label);
+  if (!assertFileExists(relativePath, label)) return;
   const body = readFileSync(join(repoRoot, relativePath), "utf8");
-  assert.ok(
-    normalizeWhitespace(body).includes(normalizeWhitespace(needle)),
-    `${label} missing expected marker ${needle}`,
-  );
+  if (!normalizeWhitespace(body).includes(normalizeWhitespace(needle))) {
+    recordCheckpointFailure(
+      relativePath,
+      `${label} missing expected marker ${needle}`,
+    );
+  }
 }
 
 function assertFileOccurrenceCount(relativePath, needle, expectedCount, label) {
-  assertFileExists(relativePath, label);
+  if (!assertFileExists(relativePath, label)) return;
   const body = readFileSync(join(repoRoot, relativePath), "utf8");
   const actualCount = body.split(needle).length - 1;
-  assert.equal(
-    actualCount,
-    expectedCount,
-    `${label} expected ${expectedCount} occurrences of ${needle}, found ${actualCount}`,
-  );
+  if (actualCount !== expectedCount) {
+    recordCheckpointFailure(
+      relativePath,
+      `${label} expected ${expectedCount} occurrences of ${needle}, found ${actualCount}`,
+    );
+  }
 }
 
 function assertFileMatches(relativePath, pattern, label) {
-  assertFileExists(relativePath, label);
+  if (!assertFileExists(relativePath, label)) return;
   const body = readFileSync(join(repoRoot, relativePath), "utf8");
-  assert.ok(pattern.test(body), `${label} missing expected marker ${pattern}`);
+  if (!pattern.test(body)) {
+    recordCheckpointFailure(
+      relativePath,
+      `${label} missing expected marker ${pattern}`,
+    );
+  }
 }
 
 function normalizeWhitespace(value) {
@@ -18072,10 +18136,12 @@ function normalizeWhitespace(value) {
 }
 
 function assertFileDoesNotContain(relativePath, needle, label) {
-  assertFileExists(relativePath, label);
+  if (!assertFileExists(relativePath, label)) return;
   const body = readFileSync(join(repoRoot, relativePath), "utf8");
-  assert.ok(
-    !body.includes(needle),
-    `${label} still contains removed marker ${needle}`,
-  );
+  if (body.includes(needle)) {
+    recordCheckpointFailure(
+      relativePath,
+      `${label} still contains removed marker ${needle}`,
+    );
+  }
 }
