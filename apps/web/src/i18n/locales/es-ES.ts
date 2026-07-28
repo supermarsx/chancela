@@ -3650,8 +3650,7 @@ export const esES: Catalog = {
   'data.status.cleanup.pending': 'Limpiando…',
   'data.status.cleanup.done': 'Limpieza completada.',
   'data.status.cleanup.doneTitle': 'Mantenimiento completado',
-  'data.status.cleanup.result':
-    'Se eliminaron {files} archivos y {directories} carpetas, liberando {bytes}.',
+    'data.status.cleanup.result': 'Se eliminaron {files} y {directories}, liberando {bytes}.',
   'data.status.backup.title': 'Copia de seguridad operativa',
   'data.status.backup.body':
     'Crea una copia de seguridad en caliente de la instancia duradera y devuelve solo un manifiesto no secreto.',

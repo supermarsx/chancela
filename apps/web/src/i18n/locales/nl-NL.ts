@@ -3656,8 +3656,7 @@ export const nlNL: Catalog = {
   'data.status.cleanup.pending': 'Opruimen…',
   'data.status.cleanup.done': 'Opruimen voltooid.',
   'data.status.cleanup.doneTitle': 'Onderhoud voltooid',
-  'data.status.cleanup.result':
-    '{files} bestanden en {directories} mappen verwijderd, {bytes} vrijgemaakt.',
+    'data.status.cleanup.result': '{files} en {directories} verwijderd, {bytes} vrijgemaakt.',
   'data.status.backup.title': 'Operationele back-up',
   'data.status.backup.body':
     'Maakt een hot back-up van de duurzame instantie en geeft alleen een niet-geheim manifest terug.',

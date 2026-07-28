@@ -3634,8 +3634,7 @@ export const plPL: Catalog = {
   'data.status.cleanup.pending': 'Czyszczenie…',
   'data.status.cleanup.done': 'Czyszczenie zakończone.',
   'data.status.cleanup.doneTitle': 'Konserwacja zakończona',
-  'data.status.cleanup.result':
-    'Usunięto {files} plików i {directories} folderów, zwalniając {bytes}.',
+    'data.status.cleanup.result': 'Usunięto {files} i {directories}, zwalniając {bytes}.',
   'data.status.backup.title': 'Kopia zapasowa operacyjna',
   'data.status.backup.body':
     'Tworzy gorącą kopię zapasową trwałej instancji i zwraca wyłącznie niepoufny manifest.',

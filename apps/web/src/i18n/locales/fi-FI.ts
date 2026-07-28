@@ -3637,8 +3637,7 @@ export const fiFI: Catalog = {
   'data.status.cleanup.pending': 'Siivotaan…',
   'data.status.cleanup.done': 'Siivous valmis.',
   'data.status.cleanup.doneTitle': 'Ylläpito valmis',
-  'data.status.cleanup.result':
-    'Poistettiin {files} tiedostoa ja {directories} kansiota, vapautui {bytes}.',
+    'data.status.cleanup.result': 'Poistettiin {files} ja {directories}, vapautui {bytes}.',
   'data.status.backup.title': 'Toiminnallinen varmuuskopio',
   'data.status.backup.body':
     'Luo pysyvän instanssin kuuma varmuuskopio ja palauttaa vain ei-salaisen manifestin.',

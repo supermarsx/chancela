@@ -3677,8 +3677,7 @@ export const deDE: Catalog = {
   'data.status.cleanup.pending': 'Wird bereinigt…',
   'data.status.cleanup.done': 'Bereinigung abgeschlossen.',
   'data.status.cleanup.doneTitle': 'Wartung abgeschlossen',
-  'data.status.cleanup.result':
-    '{files} Dateien und {directories} Ordner gelöscht, {bytes} freigegeben.',
+    'data.status.cleanup.result': '{files} und {directories} gelöscht, {bytes} freigegeben.',
   'data.status.backup.title': 'Betriebssicherung',
   'data.status.backup.body':
     'Erstellt eine Hot-Sicherung der dauerhaften Instanz und gibt nur ein nicht geheimes Manifest zurück.',

@@ -3629,8 +3629,7 @@ export const daDK: Catalog = {
   'data.status.cleanup.pending': 'Rydder…',
   'data.status.cleanup.done': 'Rydning fuldført.',
   'data.status.cleanup.doneTitle': 'Vedligeholdelse fuldført',
-  'data.status.cleanup.result':
-    'Slettede {files} filer og {directories} mapper og frigjorde {bytes}.',
+    'data.status.cleanup.result': 'Slettede {files} og {directories} og frigjorde {bytes}.',
   'data.status.backup.title': 'Driftssikkerhedskopi',
   'data.status.backup.body':
     'Opretter en varm sikkerhedskopi af den vedvarende instans og returnerer kun et ikke-hemmeligt manifest.',

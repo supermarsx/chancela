@@ -3788,8 +3788,7 @@ export const ptPT: Catalog = {
   'data.status.cleanup.pending': 'A limpar…',
   'data.status.cleanup.done': 'Limpeza concluída.',
   'data.status.cleanup.doneTitle': 'Manutenção concluída',
-  'data.status.cleanup.result':
-    'Apagados {files} ficheiros e {directories} pastas, libertando {bytes}.',
+    'data.status.cleanup.result': 'Apagados {files} e {directories}, libertando {bytes}.',
   'data.status.backup.title': 'Backup operacional',
   'data.status.backup.body':
     'Cria um backup quente da instância durável e devolve apenas o manifesto sem segredos.',

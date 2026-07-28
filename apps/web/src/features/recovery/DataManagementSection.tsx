@@ -437,24 +437,51 @@ function usageForTarget(
   return concerns?.find((concern) => concern.id === target);
 }
 
+/**
+ * The two `Pré-visualização`/`Limpeza executada` sentences below are pt-PT-only by existing
+ * design (unlike the rest of this function's `t()`-based branch, they are not Catalog keys and
+ * were never translated for the other 13 locales) — so their plural agreement is fixed with
+ * plain local word choice rather than `pluralCount`/`t()`, which would pull in whatever locale
+ * is active and produce a sentence half in Portuguese, half in that locale.
+ */
+function ficheirosCount(count: number, locale: string): string {
+  const n = new Intl.NumberFormat(locale).format(count);
+  return `${n} ${count === 1 ? 'ficheiro' : 'ficheiros'}`;
+}
+
+function pastasCount(count: number, locale: string): string {
+  const n = new Intl.NumberFormat(locale).format(count);
+  return `${n} ${count === 1 ? 'pasta' : 'pastas'}`;
+}
+
 function cleanupSummary(result: DataCleanupResult, t: TFunction, locale: string): string {
   if (result.dry_run) {
-    const files = new Intl.NumberFormat(locale).format(result.would_delete_files ?? 0);
-    const directories = new Intl.NumberFormat(locale).format(result.would_delete_directories ?? 0);
+    const files = ficheirosCount(result.would_delete_files ?? 0, locale);
+    const directories = pastasCount(result.would_delete_directories ?? 0, locale);
     const bytes = formatBytes(result.would_delete_bytes ?? 0, locale);
-    return `Pré-visualização: ${files} ficheiros e ${directories} pastas seriam removidos numa limpeza confirmada, totalizando ${bytes}. Nenhum ficheiro foi removido.`;
+    return `Pré-visualização: ${files} e ${directories} seriam removidos numa limpeza confirmada, totalizando ${bytes}. Nenhum ficheiro foi removido.`;
   }
 
   if (result.target === 'exports') {
-    const files = new Intl.NumberFormat(locale).format(result.deleted_files);
-    const directories = new Intl.NumberFormat(locale).format(result.deleted_directories);
+    const files = ficheirosCount(result.deleted_files, locale);
+    const directories = pastasCount(result.deleted_directories, locale);
     const bytes = formatBytes(result.deleted_bytes, locale);
-    return `Limpeza executada: ${files} ficheiros e ${directories} pastas de exportações locais retidas foram removidos, libertando ${bytes}.`;
+    return `Limpeza executada: ${files} e ${directories} de exportações locais retidas foram removidos, libertando ${bytes}.`;
   }
 
   return t('data.status.cleanup.result', {
-    files: new Intl.NumberFormat(locale).format(result.deleted_files),
-    directories: new Intl.NumberFormat(locale).format(result.deleted_directories),
+    files: pluralCount(
+      result.deleted_files,
+      'data.status.cleanup.filesCount.one',
+      'data.status.cleanup.filesCount.other',
+      t,
+    ),
+    directories: pluralCount(
+      result.deleted_directories,
+      'data.status.cleanup.directoriesCount.one',
+      'data.status.cleanup.directoriesCount.other',
+      t,
+    ),
     bytes: formatBytes(result.deleted_bytes, locale),
   });
 }
@@ -1861,11 +1888,16 @@ function UsageList({
             <th scope="row">{concern.label}</th>
             <td className="mono">{formatBytes(concern.bytes, locale)}</td>
             {/* Each measurement stays its own element rather than one joined sentence: the
-                basis, exactness and counts are separate facts an operator reads individually. */}
+                basis, exactness and counts are separate facts an operator reads individually.
+                The `border-left` between them is a CSS-only separator — invisible to
+                `.textContent`, so adjacent spans with no text node between them read fused to
+                text extraction and screen readers ("medição exataFicheiros: 2"), the same
+                mechanism behind the Ocupação column's size/count concatenation. A plain space
+                text node between spans fixes that without touching the visual design: CSS
+                sibling combinators (`span + span`) skip text nodes, so the border still lands
+                on exactly the same elements. */}
             <td className="data-status-table__meta data-status-table__tags">
-              {meta.map((item) => (
-                <span key={item}>{item}</span>
-              ))}
+              {meta.map((item, index) => [index > 0 ? ' ' : null, <span key={item}>{item}</span>])}
             </td>
           </tr>
         );

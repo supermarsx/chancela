@@ -3598,7 +3598,7 @@ export const enGB: Catalog = {
   'data.status.cleanup.pending': 'Cleaning…',
   'data.status.cleanup.done': 'Cleanup complete.',
   'data.status.cleanup.doneTitle': 'Maintenance complete',
-  'data.status.cleanup.result': 'Deleted {files} files and {directories} folders, freeing {bytes}.',
+    'data.status.cleanup.result': 'Deleted {files} and {directories}, freeing {bytes}.',
   'data.status.backup.title': 'Operational backup',
   'data.status.backup.body':
     'Creates a hot backup of the durable instance and returns only a non-secret manifest.',

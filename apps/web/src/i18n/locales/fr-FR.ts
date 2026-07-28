@@ -3666,8 +3666,7 @@ export const frFR: Catalog = {
   'data.status.cleanup.pending': 'Nettoyage…',
   'data.status.cleanup.done': 'Nettoyage terminé.',
   'data.status.cleanup.doneTitle': 'Maintenance terminée',
-  'data.status.cleanup.result':
-    '{files} fichiers et {directories} dossiers supprimés, libérant {bytes}.',
+    'data.status.cleanup.result': '{files} et {directories} supprimés, libérant {bytes}.',
   'data.status.backup.title': 'Sauvegarde opérationnelle',
   'data.status.backup.body':
     'Crée une sauvegarde à chaud de l’instance durable et ne renvoie qu’un manifeste non secret.',

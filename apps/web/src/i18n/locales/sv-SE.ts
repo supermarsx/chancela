@@ -3633,8 +3633,7 @@ export const svSE: Catalog = {
   'data.status.cleanup.pending': 'Rensar…',
   'data.status.cleanup.done': 'Rensning klar.',
   'data.status.cleanup.doneTitle': 'Underhåll klart',
-  'data.status.cleanup.result':
-    'Tog bort {files} filer och {directories} mappar och frigjorde {bytes}.',
+    'data.status.cleanup.result': 'Tog bort {files} och {directories} och frigjorde {bytes}.',
   'data.status.backup.title': 'Operativ säkerhetskopia',
   'data.status.backup.body':
     'Skapar en varm säkerhetskopia av den beständiga instansen och returnerar endast ett icke-hemligt manifest.',

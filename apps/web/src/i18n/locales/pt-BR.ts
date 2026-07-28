@@ -3635,8 +3635,7 @@ export const ptBR: Catalog = {
   'data.status.cleanup.pending': 'Limpando…',
   'data.status.cleanup.done': 'Limpeza concluída.',
   'data.status.cleanup.doneTitle': 'Manutenção concluída',
-  'data.status.cleanup.result':
-    'Apagados {files} arquivos e {directories} pastas, liberando {bytes}.',
+    'data.status.cleanup.result': 'Apagados {files} e {directories}, liberando {bytes}.',
   'data.status.backup.title': 'Backup operacional',
   'data.status.backup.body':
     'Cria um backup dinâmico da instância durável e retorna apenas o manifesto sem segredos.',

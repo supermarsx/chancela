@@ -758,6 +758,18 @@ describe('DataManagementSection', () => {
     expect(within(databaseRow).getByText('Ficheiros: 2')).toBeTruthy();
     expect(within(databaseRow).getByText('Pastas: 0')).toBeTruthy();
     expect(within(databaseRow).getByText('Raízes: chancela.db, chancela.db-wal')).toBeTruthy();
+    // Regression guard: adjacent `.data-status-table__tags` items must never fuse into one
+    // run-together string ("ficheiro SQLitemedição exata") the way the Ocupação column's
+    // size/count once did — same mechanism (a CSS-only separator with no character in the
+    // DOM), different cell. Five distinct spans, and the cell's raw textContent has a real
+    // space between each pair, not just the border-left's visual gap.
+    const databaseTags = databaseRow.querySelector('.data-status-table__tags')!;
+    const tagSpans = databaseTags.querySelectorAll(':scope > span');
+    expect(tagSpans.length).toBeGreaterThanOrEqual(4);
+    expect(databaseTags.textContent).not.toContain('ficheiro SQLitemedição exata');
+    expect(databaseTags.textContent).toContain('ficheiro SQLite medição exata');
+    expect(databaseTags.textContent).not.toContain('exataFicheiros');
+    expect(databaseTags.textContent).toContain('exata Ficheiros');
     const ledgerRow = within(usageSection).getByText('Ledger payloads').closest('tr')!;
     expect(within(ledgerRow).getByText('Linhas: 3')).toBeTruthy();
     const sqliteGroup = within(usageSection)
@@ -1316,7 +1328,7 @@ describe('DataManagementSection', () => {
     const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
     expect(cleanupCall.method).toBe('POST');
     expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'crash' });
-    expect(await screen.findByText(/Apagados 1 ficheiros e 1 pastas/)).toBeTruthy();
+    expect(await screen.findByText(/Apagados 1 ficheiro e 1 pasta\b/)).toBeTruthy();
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
@@ -1360,7 +1372,7 @@ describe('DataManagementSection', () => {
     const cleanupCall = calls.find((c) => c.url.includes('/v1/data/cleanup'))!;
     expect(cleanupCall.method).toBe('POST');
     expect(JSON.parse(cleanupCall.body as string)).toEqual({ target: 'platform_logs' });
-    expect(await screen.findByText(/Apagados 1 ficheiros e 0 pastas/)).toBeTruthy();
+    expect(await screen.findByText(/Apagados 1 ficheiro e 0 pastas/)).toBeTruthy();
     await waitFor(() =>
       expect(calls.filter((c) => c.url.includes('/v1/data/status'))).toHaveLength(2),
     );
@@ -1486,7 +1498,7 @@ describe('DataManagementSection', () => {
       await screen.findByText('Pré-visualização da limpeza de exportações retidas'),
     ).toBeTruthy();
     expect(
-      screen.getByText(/2 ficheiros e 1 pastas seriam removidos numa limpeza confirmada/),
+      screen.getByText(/2 ficheiros e 1 pasta seriam removidos numa limpeza confirmada/),
     ).toBeTruthy();
     expect(screen.getByText(/Nenhum ficheiro foi removido/)).toBeTruthy();
     expect(exportsRow.querySelector('.data-status-cleanup__main')?.textContent).toContain(
@@ -1518,7 +1530,7 @@ describe('DataManagementSection', () => {
       preview_token: 'export-preview-token-1',
     });
     expect(await screen.findByText('Limpeza de exportações retidas concluída')).toBeTruthy();
-    const result = screen.getByText(/2 ficheiros e 1 pastas de exportações locais retidas/);
+    const result = screen.getByText(/2 ficheiros e 1 pasta de exportações locais retidas/);
     expect(result.textContent).toContain('foram removidos');
     expect(result.textContent).not.toMatch(/apagamento legal|RGPD|descarte|eliminação de arquivo/i);
     await waitFor(() =>
