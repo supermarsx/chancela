@@ -497,11 +497,13 @@ async fn set_entity_archived(
     // company chain.
     let scope = format!("tenant:{}/entity:{}", next.tenant_id, next.id);
     let mut ledger = state.ledger.write().await;
-    // The kind is a **string literal at the call site** on purpose. `apps/web/src/api/labels.test.ts`
-    // scans the crates for emitted kinds by regex over a handful of emit shapes and asserts each has
-    // a pt-PT label; its non-vacuity guard only proves each rule matched *something*, not that it
-    // matched this one. A kind hidden behind a constant would slip that net silently — and a gate
-    // that passes while covering nothing manufactures confidence. Do not lift these into constants.
+    // `apps/web/src/api/labels.test.ts` scans the crates for emitted kinds and asserts each has a
+    // pt-PT label. **The shape of the emit does not decide whether it is seen**: the scanner has five
+    // rules, and a `*_KIND` constant is matched by two of them (`emitConst`, plus `kindConst` on the
+    // declaration alone) where a bare literal at the call site is matched by one (`emitCall`). Two
+    // lanes measured this independently after an earlier version of this comment claimed the reverse.
+    // What actually matters is that **the pt-PT labels land in the same commit as the kinds** — the
+    // failure this guards against is an emitted kind that is *unlabelled*, not one that is *unseen*.
     if archive {
         crate::try_append_event(
             &mut ledger,
