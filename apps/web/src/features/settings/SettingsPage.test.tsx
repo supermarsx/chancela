@@ -4385,10 +4385,12 @@ describe('SettingsPage', () => {
     // t55: composing a DPIA is a page, at its own address — the settings tab lists and links.
     // The full create/patch wire bodies (including the evidence receipt and its six untouched
     // completion flags) are asserted where that form now lives, in RegisterRecordPage.test.tsx.
-    expect(within(dpiaPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href')).toBe(
-      '/settings/privacy/dpias/new',
-    );
-    const dpiaRow = within(dpiaPanel!).getByText('Marketing profiling').closest('tr') as HTMLElement;
+    expect(
+      within(dpiaPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/dpias/new');
+    const dpiaRow = within(dpiaPanel!)
+      .getByText('Marketing profiling')
+      .closest('tr') as HTMLElement;
     for (const name of ['Marketing profiling', 'Editar']) {
       expect(within(dpiaRow).getByRole('link', { name }).getAttribute('href')).toBe(
         '/settings/privacy/dpias/dpia-1',
@@ -4626,9 +4628,9 @@ describe('SettingsPage', () => {
     ]) {
       const flagHeader = within(legalHoldStatusPanel!).getByRole('rowheader', { name: flag });
       expect(flagHeader.textContent).toBe(flag);
-      expect(
-        within(flagHeader.closest('tr') as HTMLElement).getByRole('cell').textContent,
-      ).toBe('false');
+      expect(within(flagHeader.closest('tr') as HTMLElement).getByRole('cell').textContent).toBe(
+        'false',
+      );
     }
 
     const candidatesPanel = (await screen.findByText('Candidatos de retenção vencidos')).closest(

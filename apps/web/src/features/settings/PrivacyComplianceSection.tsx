@@ -1050,11 +1050,7 @@ function RegisterPanel({
         actions={
           <>
             <FilterCountBadge shown={filtered.length} total={records.length} />
-            <ButtonLink
-              to={privacyRecordNewPath(slug)}
-              variant="primary"
-              icon={<Icon.Plus />}
-            >
+            <ButtonLink to={privacyRecordNewPath(slug)} variant="primary" icon={<Icon.Plus />}>
               {t('settings.privacy.action.new')}
             </ButtonLink>
           </>
