@@ -124,7 +124,7 @@ describe('TermoAberturaEditor', () => {
     // actions share one stable outer label column; repeated structures use compact nested tables.
     const rows = container.querySelector('.termo-editor__rows.settings-rows');
     expect(rows).toBeTruthy();
-    expect(rows?.querySelectorAll(':scope > .field')).toHaveLength(10);
+    expect(rows?.querySelectorAll(':scope > .field')).toHaveLength(11);
     expect(title.closest('.field')?.parentElement).toBe(rows);
     expect(screen.getByLabelText('Finalidade').closest('.field')?.parentElement).toBe(rows);
     expect(screen.getByLabelText('Data de abertura').closest('.field')?.parentElement).toBe(rows);
@@ -144,6 +144,119 @@ describe('TermoAberturaEditor', () => {
       ),
     );
     expect(await screen.findByText('Rascunho guardado.')).toBeTruthy();
+  });
+
+  // --- The sede (registered office) the termo declares -----------------------------------------
+  //
+  // These assert on the input's stable id (`#termo-entity-seat`) and on the PATCH payload, never on
+  // rendered pt-PT sentences: the copy is reviewable prose and a substring match on it would pass or
+  // fail for reasons that have nothing to do with the behaviour being pinned.
+
+  const BOOK = { id: 'book-2', entity_id: 'ent-1' };
+
+  /** Stub the three reads the panel makes, plus a PATCH echo; record every request body. */
+  function stubReads(options: { entitySeat: string; termo?: TermoInstrumentView }) {
+    const bodies: { url: string; method: string; body: unknown }[] = [];
+    vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (init?.body) bodies.push({ url, method, body: JSON.parse(String(init.body)) });
+      if (url.endsWith('/termo/abertura')) {
+        return Promise.resolve(jsonResponse(options.termo ?? DRAFT_TERMO));
+      }
+      if (url.endsWith('/entities/ent-1')) {
+        return Promise.resolve(jsonResponse({ ...ENTITY, seat: options.entitySeat }));
+      }
+      if (url.endsWith('/books/book-2')) return Promise.resolve(jsonResponse(BOOK));
+      return Promise.reject(new Error(`no stub for ${method} ${url}`));
+    }) as typeof fetch);
+    return bodies;
+  }
+
+  const ENTITY = {
+    id: 'ent-1',
+    tenant_id: 'tenant-1',
+    group_id: null,
+    name: 'Encosto Estratégico Lda',
+    nipc: '503004642',
+    nipc_validated: true,
+    seat: '',
+    family: 'CommercialCompany',
+    kind: 'Lda',
+  };
+
+  it("seeds the sede from the entity's registered office, postal code included", async () => {
+    stubReads({ entitySeat: 'Rua das Amoreiras, n.º 12, 1250-020 Lisboa' });
+
+    const { container } = renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    await screen.findByLabelText('Título do termo');
+
+    await waitFor(() => {
+      const seat = container.querySelector<HTMLInputElement>('#termo-entity-seat');
+      expect(seat?.value).toBe('Rua das Amoreiras, n.º 12, 1250-020 Lisboa');
+    });
+    // The seeded default is a real seat, so nothing warns about a missing one.
+    expect(container.querySelector('.inline-warning--warn')).toBeNull();
+  });
+
+  it("sends the operator's override as the sede this termo declares", async () => {
+    const bodies = stubReads({ entitySeat: 'Rua das Amoreiras, n.º 12, 1250-020 Lisboa' });
+
+    const { container } = renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    await screen.findByLabelText('Título do termo');
+    await waitFor(() =>
+      expect(container.querySelector<HTMLInputElement>('#termo-entity-seat')?.value).not.toBe(''),
+    );
+
+    const seat = container.querySelector<HTMLInputElement>('#termo-entity-seat')!;
+    fireEvent.change(seat, {
+      target: { value: 'Avenida da Liberdade, n.º 214, 1250-148 Lisboa' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho' }));
+
+    await waitFor(() => expect(bodies.some((b) => b.method === 'PATCH')).toBe(true));
+    const patch = bodies.find((b) => b.method === 'PATCH')!.body as Record<string, unknown>;
+    expect(patch.entity_seat).toBe('Avenida da Liberdade, n.º 214, 1250-148 Lisboa');
+    // The place of drawing up is a different fact and must not have been filled from the seat.
+    expect(patch.place).toBeUndefined();
+  });
+
+  it("keeps the sede the termo already declares over the entity's current one", async () => {
+    stubReads({
+      entitySeat: 'Rua das Amoreiras, n.º 12, 1250-020 Lisboa',
+      termo: {
+        ...DRAFT_TERMO,
+        fields: { ...DRAFT_TERMO.fields, entity_seat: 'Largo da Sé, n.º 3, 3000-138 Coimbra' },
+      },
+    });
+
+    const { container } = renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    await screen.findByLabelText('Título do termo');
+
+    // The entity read resolves too; the declared snapshot must survive its arrival.
+    await waitFor(() =>
+      expect(container.querySelector<HTMLInputElement>('#termo-entity-seat')?.value).toBe(
+        'Largo da Sé, n.º 3, 3000-138 Coimbra',
+      ),
+    );
+  });
+
+  it('says so when neither the termo nor the entity has a sede, instead of showing a blank', async () => {
+    const bodies = stubReads({ entitySeat: '' });
+
+    const { container } = renderWithProviders(<TermoAberturaEditor bookId="book-2" />);
+    await screen.findByLabelText('Título do termo');
+
+    await waitFor(() => expect(container.querySelector('.inline-warning--warn')).toBeTruthy());
+    expect(container.querySelector<HTMLInputElement>('#termo-entity-seat')?.value).toBe('');
+
+    // Saving does not invent one: the empty string clears the override rather than declaring a
+    // blank office, and the server refuses to seal a termo with no seat on either side.
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar rascunho' }));
+    await waitFor(() => expect(bodies.some((b) => b.method === 'PATCH')).toBe(true));
+    expect(
+      (bodies.find((b) => b.method === 'PATCH')!.body as Record<string, unknown>).entity_seat,
+    ).toBe('');
   });
 
   it('collects a signature and surfaces the honest fail-closed 409 on open', async () => {

@@ -109,7 +109,12 @@ export const termoPtPT = {
     'A identificação "livro n.º N". É uma indicação sua; nenhuma norma a exige.',
   'books.termo.field.place': 'Local',
   'books.termo.field.placeHelp':
-    'O local onde o termo é lavrado. A sua ausência não é uma falha de conformidade.',
+    'O local onde o termo é lavrado. A sua ausência não é uma falha de conformidade. Não confundir com a sede, que é a morada registada da entidade.',
+  'books.termo.field.entitySeat': 'Sede',
+  'books.termo.field.entitySeatHelp':
+    'A sede da entidade, tal como fica declarada neste termo. É preenchida a partir da sede registada da entidade, com o código postal, e pode ser corrigida aqui. Fica registada como a indicação que fez ao assinar: alterar mais tarde a sede da entidade não muda o que este termo declara.',
+  'books.termo.field.entitySeatMissing':
+    'Esta entidade não tem sede registada. Indique-a aqui: sem sede, o termo não pode ser selado.',
   'books.termo.field.predecessor': 'Livro anterior',
   'books.termo.field.predecessorHelp':
     'O livro que este sucede, escolhido entre os livros da entidade. É o elo que forma a cadeia verificável.',
@@ -270,7 +275,13 @@ export const termoEnglish = {
   'books.termo.field.bookNumberHelp':
     'The “book no. N” identity. This is your own label; no rule requires it.',
   'books.termo.field.place': 'Place',
-  'books.termo.field.placeHelp': 'Where the term is drawn up. Its absence is not a compliance gap.',
+  'books.termo.field.placeHelp':
+    'Where the term is drawn up. Its absence is not a compliance gap. Not to be confused with the registered office, which is the entity’s registered address.',
+  'books.termo.field.entitySeat': 'Registered office',
+  'books.termo.field.entitySeatHelp':
+    'The entity’s registered office as this term declares it. It is filled in from the entity’s registered address, postcode included, and can be corrected here. It is recorded as the statement you made when signing: changing the entity’s registered office later does not change what this term declares.',
+  'books.termo.field.entitySeatMissing':
+    'This entity has no registered office on record. State it here: without one, the term cannot be sealed.',
   'books.termo.field.predecessor': 'Predecessor book',
   'books.termo.field.predecessorHelp':
     'The book this one succeeds, chosen from the entity’s books. It is the link that forms the verifiable chain.',

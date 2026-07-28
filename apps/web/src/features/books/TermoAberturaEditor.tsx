@@ -20,9 +20,11 @@ import { useMemo, useState } from 'react';
 import { ApiError } from '../../api/client';
 import {
   useAdvanceBookTermoAbertura,
+  useBook,
   useBookTermoAbertura,
   useDownloadBookTermoAberturaDocument,
   useDownloadBookTermoAberturaSignatureDocument,
+  useEntity,
   useOpenBookFromTermo,
   usePatchBookTermoAbertura,
   useSignBookTermoAberturaPkcs12,
@@ -178,8 +180,30 @@ function TermoDocumentActions({ termo }: { termo: TermoInstrumentView }) {
   );
 }
 
-/** The draft-editing form. Remounted (via `key`) when the termo identity changes, so it seeds once. */
-function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
+/**
+ * The draft-editing form. Remounted (via `key`) when the termo identity changes, so it seeds once.
+ *
+ * The sede box is the one field that does NOT seed once. `entitySeatDefault` (the entity's
+ * registered office) arrives from its own query, possibly after this form mounts, so the box shows
+ * the operator's edit when they have made one and the entity default otherwise — a late-arriving
+ * default fills an untouched box instead of clobbering typed text. `entitySeatPending` says the
+ * default is still unknown, which is why the "no registered office" warning waits for it: an empty
+ * box during loading is not evidence the entity has no seat.
+ *
+ * What the operator sees in the box is what the termo declares: the form always sends it, so a
+ * later edit to the entity cannot restate a drafted termo behind their back. Clearing the box sends
+ * `''`, which drops the termo back to tracking the entity — it never declares a blank office, and
+ * the server refuses to seal one either way.
+ */
+function TermoDraftForm({
+  termo,
+  entitySeatDefault,
+  entitySeatPending,
+}: {
+  termo: TermoInstrumentView;
+  entitySeatDefault: string;
+  entitySeatPending: boolean;
+}) {
   const tt = useTermoT();
   const toast = useToast();
   const patch = usePatchBookTermoAbertura(termo.book_id);
@@ -193,6 +217,11 @@ function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
     termo.fields.page_capacity != null ? String(termo.fields.page_capacity) : '',
   );
   const [place, setPlace] = useState(termo.fields.place ?? '');
+  // `null` = the operator has not touched the box, so it still tracks whatever default resolves.
+  const [entitySeatEdit, setEntitySeatEdit] = useState<string | null>(
+    termo.fields.entity_seat ?? null,
+  );
+  const entitySeat = entitySeatEdit ?? entitySeatDefault;
   const [bookNumber, setBookNumber] = useState(
     termo.fields.book_number != null ? String(termo.fields.book_number) : '',
   );
@@ -224,6 +253,9 @@ function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
       place: place.trim() || undefined,
       book_number: bookNumber ? Number(bookNumber) : undefined,
       predecessor_note: predecessorNote.trim() || undefined,
+      // Sent even when empty (unlike the fields above): '' is how the operator clears the
+      // declared office and goes back to tracking the entity's, which omitting the key cannot say.
+      entity_seat: entitySeat.trim(),
       signatories: slots.map((slot, index) => ({
         name: slot.name.trim(),
         email: slot.email.trim() || undefined,
@@ -321,6 +353,24 @@ function TermoDraftForm({ termo }: { termo: TermoInstrumentView }) {
             onChange={(e) => setBookNumber(e.target.value)}
           />
         </Field>
+        {/* The registered office, kept adjacent to "Local" precisely because the two are easy to
+            confuse: this is the entity's registered address, that is where the act was drawn up. */}
+        <Field
+          label={tt('books.termo.field.entitySeat')}
+          htmlFor="termo-entity-seat"
+          help={tt('books.termo.field.entitySeatHelp')}
+        >
+          <Input
+            id="termo-entity-seat"
+            value={entitySeat}
+            onChange={(e) => setEntitySeatEdit(e.target.value)}
+          />
+        </Field>
+        {!entitySeatPending && entitySeat.trim() === '' ? (
+          <InlineWarning tone="warn" title={tt('books.termo.field.entitySeat')}>
+            {tt('books.termo.field.entitySeatMissing')}
+          </InlineWarning>
+        ) : null}
         <Field
           label={tt('books.termo.field.place')}
           htmlFor="termo-place"
@@ -693,6 +743,15 @@ function TermoSealedView({ termo }: { termo: TermoInstrumentView }) {
 export function TermoAberturaEditor({ bookId }: { bookId: string }) {
   const tt = useTermoT();
   const termo = useBookTermoAbertura(bookId);
+  // The sede default: the book names the entity, the entity holds the registered office. Read here
+  // rather than passed down from the page so the panel stays a `bookId`-only component.
+  const book = useBook(bookId);
+  const entityId = book.data?.entity_id;
+  const entity = useEntity(entityId ?? '', !!entityId);
+  const entitySeatDefault = entity.data?.seat ?? '';
+  // Still resolving while the book is in flight, or the entity behind it is. A failure on either
+  // settles it: the office is then simply unknown, and the draft form says so rather than stalling.
+  const entitySeatPending = book.isPending || (!!entityId && entity.isPending);
 
   if (termo.isLoading) {
     return (
@@ -724,7 +783,12 @@ export function TermoAberturaEditor({ bookId }: { bookId: string }) {
     <Card title={tt('books.termo.title')} actions={<StateBadge termo={data} />}>
       <p className="field__hint">{tt('books.termo.subtitle')}</p>
       {data.state === 'Draft' ? (
-        <TermoDraftForm termo={data} key={data.id} />
+        <TermoDraftForm
+          termo={data}
+          entitySeatDefault={entitySeatDefault}
+          entitySeatPending={entitySeatPending}
+          key={data.id}
+        />
       ) : data.state === 'Signing' ? (
         <TermoSigningView termo={data} />
       ) : (

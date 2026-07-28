@@ -5861,6 +5861,14 @@ export interface TermoFieldsView {
   purpose?: string;
   instrument_date?: string;
   predecessor_note?: string;
+  /**
+   * The entity's registered office (sede) as THIS termo declares it — a snapshot the operator
+   * asserted, not a live lookup. Absent means the projection takes the entity's current registered
+   * office; it never means the termo declares a blank one (sealing with no office anywhere is
+   * refused server-side). Distinct from {@link TermoFieldsView.place}, which is where the
+   * instrument was drawn up.
+   */
+  entity_seat?: string;
 }
 
 /** Progress toward completion (`TermoCompletionSummary`), with no legal/certificate assertion. */
@@ -5937,6 +5945,11 @@ export interface PatchTermoAberturaBody {
   /** ISO-8601 date; required (server-side) before the termo can be advanced to signing. */
   opening_date?: string;
   predecessor_note?: string;
+  /**
+   * The registered office (sede) this termo declares. Send an empty string to drop back to the
+   * entity's own; omit the key to leave the current value untouched.
+   */
+  entity_seat?: string;
   signatories?: TermoSlotInput[];
   completion_policy?: TermoCompletionPolicy;
 }
