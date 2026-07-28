@@ -60,7 +60,10 @@ use axum::response::{IntoResponse, Response};
 use chancela_authz::{Permission, Scope};
 use chancela_cmd::{CmdConfig, CmdEnv, HttpScmdTransport, ScmdClient};
 use chancela_core::{Block, DocumentModel, KvRow, Run};
-use chancela_pades::{PreparedSignature, SignOptions, embed_signature, prepare_signature};
+use chancela_pades::validate::PdfSignatureCoverage;
+use chancela_pades::{
+    PreparedSignature, SignOptions, embed_signature, prepare_signature, validate_pdf_signature,
+};
 use chancela_signing::{CmdInitiate, CmdSignSession, cmd_confirm, cmd_initiate};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -226,6 +229,79 @@ pub struct CmdTestSignatureConfirmResponse {
     /// Whether the signed PDF was written to the retention directory. Always `true` on success —
     /// a server that could not retain refuses before signing.
     pub retained: bool,
+    /// What this product's own PAdES validator makes of the bytes it just produced. Present on
+    /// every success, including the ones where the verdict is negative.
+    pub self_validation: CmdTestSelfValidation,
+}
+
+/// What **this product's own PAdES validator** says about the signature this flow just produced.
+///
+/// An end-to-end test that stops at "AMA returned some bytes" proves less than it looks like it
+/// proves: the bytes still have to be a PAdES signature that this product can itself verify over
+/// the document it generated. So the finished PDF is fed straight back through
+/// [`validate_pdf_signature`] — the same validator `POST /v1/documents/validate` uses — and the
+/// verdict is reported as values.
+///
+/// **A negative verdict is reported, never hidden, and never turned into a failed request.** By the
+/// time this runs the qualified signature already exists and has already been retained; converting
+/// "my own validator did not accept it" into a 500 would destroy the operator's only view of a
+/// genuinely interesting result. A test that says its own output did not verify is a successful
+/// test with a bad answer, and the bad answer is the point.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CmdTestSelfValidation {
+    /// Whether the embedded CMS verified against the `/ByteRange` digest recomputed from the file.
+    pub signature_verifies: bool,
+    /// Whether the signature covers the document **as rendered**. A verified CMS whose coverage is
+    /// `altered_after_signing` or `malformed` is not a signature over what a reader would see, and
+    /// this stays `false` for it — the gate `PdfSignatureCoverage::covers_rendered_document`
+    /// exists to enforce.
+    pub covers_rendered_document: bool,
+    /// The coverage verdict as a stable token: `whole_document`,
+    /// `ltv_augmented_signed_revision`, `altered_after_signing`, `malformed`, `unrecognised`
+    /// (a variant this build does not know — the enum is `#[non_exhaustive]`), or `unavailable`
+    /// (validation produced no verdict at all; see `error`).
+    pub coverage: String,
+    /// Whether the validator found an `id-aa-signatureTimeStampToken` unsigned attribute. Read from
+    /// the finished bytes, so it is an independent confirmation of `timestamped` rather than a
+    /// restatement of it.
+    pub signature_timestamp_present: bool,
+    /// Why the validator could not reach a verdict. Absent when it did — the presence of an
+    /// explanation and the absence of one are both meaningful.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Run the product's own validator over the finished bytes. Infallible by construction: every
+/// outcome, including "the validator refused these bytes", is a verdict worth reporting.
+fn self_validate(signed_pdf: &[u8]) -> CmdTestSelfValidation {
+    match validate_pdf_signature(signed_pdf) {
+        Ok(report) => CmdTestSelfValidation {
+            // `validate_pdf_signature` returns `Err` when the CMS does not verify, so an `Ok` is
+            // the verification. Read the flag off the report anyway rather than hard-coding `true`:
+            // the report is the authority on what it checked.
+            signature_verifies: report.cades.attrs_ok,
+            covers_rendered_document: report.coverage.covers_rendered_document(),
+            coverage: match report.coverage {
+                PdfSignatureCoverage::WholeDocument => "whole_document",
+                PdfSignatureCoverage::LtvAugmentedSignedRevision => "ltv_augmented_signed_revision",
+                PdfSignatureCoverage::AlteredAfterSigning => "altered_after_signing",
+                PdfSignatureCoverage::Malformed => "malformed",
+                // The enum is `#[non_exhaustive]`; a variant added later must not be silently
+                // reported as one of the ones above. Naming it as unrecognised is the honest answer.
+                _ => "unrecognised",
+            }
+            .to_owned(),
+            signature_timestamp_present: report.has_signature_timestamp,
+            error: None,
+        },
+        Err(e) => CmdTestSelfValidation {
+            signature_verifies: false,
+            covers_rendered_document: false,
+            coverage: "unavailable".to_owned(),
+            signature_timestamp_present: false,
+            error: Some(e.to_string()),
+        },
+    }
 }
 
 /// The non-secret sidecar written beside each retained signed PDF.
@@ -246,6 +322,10 @@ struct RetainedTestSignature {
     #[serde(skip_serializing_if = "Option::is_none")]
     trusted_list_status: Option<String>,
     legal_effect: String,
+    /// Retained alongside the bytes so the verdict survives with the evidence it is about. A reader
+    /// of the retention directory can re-run the validator; keeping what it said at the time means
+    /// they can also tell whether the answer has since changed.
+    self_validation: CmdTestSelfValidation,
 }
 
 // --- Handlers ----------------------------------------------------------------------------------
@@ -511,6 +591,10 @@ pub async fn confirm_cmd_test_signature(
         .trusted_list_status
         .map(|status| format!("{status:?}"));
     let test_id = Uuid::new_v4().to_string();
+    // Close the loop before anything is written or reported: the point of an end-to-end test is
+    // that the chain holds all the way back, and a signature this product cannot itself verify is a
+    // result the operator needs to see rather than one the server should swallow.
+    let self_validation = self_validate(&final_pdf.bytes);
 
     // Retain OUTSIDE `instrument_signatures`: this record has no subject and no slot_id, and is not
     // written by the instrument-signature writer, so `require_real_signatures` — which reads
@@ -529,6 +613,7 @@ pub async fn confirm_cmd_test_signature(
         environment: "prod".to_owned(),
         trusted_list_status: trusted_list_status.clone(),
         legal_effect: LEGAL_EFFECT_NONE.to_owned(),
+        self_validation: self_validation.clone(),
     };
     let signed_pdf_bytes = final_pdf.bytes.len();
     retain_test_signature(&retention_dir, &record, &final_pdf.bytes)?;
@@ -559,6 +644,9 @@ pub async fn confirm_cmd_test_signature(
             "counts_toward_book_opening": false,
             "counts_toward_act_signature": false,
             "retained": true,
+            "self_validation_signature_verifies": self_validation.signature_verifies,
+            "self_validation_covers_rendered_document": self_validation.covers_rendered_document,
+            "self_validation_coverage": self_validation.coverage.clone(),
         }),
     )
     .await?;
@@ -583,6 +671,7 @@ pub async fn confirm_cmd_test_signature(
         trusted_list_status,
         timestamped: final_pdf.timestamp_token_der.is_some(),
         retained: true,
+        self_validation,
     }))
 }
 
@@ -1062,5 +1151,53 @@ mod tests {
             !prepared.byterange_digest().is_empty(),
             "a prepared revision carries the digest CMD would sign"
         );
+    }
+
+    /// The self-validation must report a bad answer rather than no answer.
+    ///
+    /// The success path needs a real qualified signature and cannot be reached offline, but the
+    /// branch that matters most for honesty can: bytes the validator refuses must come back as an
+    /// explicit negative verdict carrying the reason, not as an absence, not as a default `true`,
+    /// and never as an error that would replace a retained real signature with a 500.
+    #[test]
+    fn bytes_the_validator_refuses_produce_an_explicit_negative_verdict() {
+        let model = build_cmd_test_document(
+            "Encosto Estratégico Lda",
+            "amelia.marques",
+            "2026-07-27T10:15:00Z",
+            "stored_entry",
+            Some("CMD principal"),
+        );
+        // A rendered but UNSIGNED PDF/A: well-formed PDF, no signature dictionary. This is exactly
+        // the shape a broken embed step would leave behind, and it must not read as verified.
+        let unsigned = chancela_doc::pdfa::write(&model).expect("the test document renders");
+
+        let verdict = self_validate(&unsigned);
+
+        assert!(!verdict.signature_verifies);
+        assert!(!verdict.covers_rendered_document);
+        assert_eq!(verdict.coverage, "unavailable");
+        assert!(!verdict.signature_timestamp_present);
+        assert!(
+            verdict.error.is_some(),
+            "a verdict of `unavailable` must say why"
+        );
+
+        // The negative verdict has to survive serialization as VALUES: a client that received an
+        // object with the flags omitted could read the silence as a pass.
+        let json = serde_json::to_value(&verdict).expect("the verdict serializes");
+        assert_eq!(json["signature_verifies"], serde_json::json!(false));
+        assert_eq!(json["covers_rendered_document"], serde_json::json!(false));
+        assert_eq!(json["coverage"], serde_json::json!("unavailable"));
+    }
+
+    /// Garbage that is not a PDF at all takes the same honest branch — the validator's refusal is
+    /// reported, and nothing panics or unwraps its way out of a real signature's result.
+    #[test]
+    fn non_pdf_bytes_are_a_verdict_and_not_a_panic() {
+        let verdict = self_validate(b"this is not a PDF");
+        assert!(!verdict.signature_verifies);
+        assert_eq!(verdict.coverage, "unavailable");
+        assert!(verdict.error.is_some());
     }
 }

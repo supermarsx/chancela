@@ -22,6 +22,7 @@ import type {
   ProviderCredentialsListView,
 } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
+import { providerCredentialsPtPT as copy } from '../../i18n/providerCredentialsFallback';
 
 const CONFIRM_PHRASE = 'ASSINAR TESTE';
 
@@ -107,6 +108,12 @@ const confirmResult: CmdTestSignatureConfirmResult = {
   trusted_list_status: 'Ok',
   timestamped: true,
   retained: true,
+  self_validation: {
+    signature_verifies: true,
+    covers_rendered_document: true,
+    coverage: 'whole_document',
+    signature_timestamp_present: true,
+  },
 };
 
 interface Call {
@@ -173,6 +180,44 @@ function renderSection() {
     </Routes>,
     ['/admin/signing/providers'],
   );
+}
+
+/**
+ * Drive both phases to a completed result. The request shapes themselves are pinned by the first
+ * case in this file; cases that are about what the RESULT renders go through here so they assert
+ * on the panel rather than re-deriving the flow.
+ */
+async function runTestSignatureToResult() {
+  fireEvent.click(await screen.findByRole('button', { name: 'Testar assinatura real (produção)' }));
+  const initiateDialog = await screen.findByRole('dialog');
+  fireEvent.change(within(initiateDialog).getByLabelText('Número de telemóvel'), {
+    target: { value: '+351 912345678' },
+  });
+  fireEvent.change(within(initiateDialog).getByLabelText('PIN de assinatura'), {
+    target: { value: '271828' },
+  });
+  fireEvent.change(
+    within(initiateDialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`),
+    { target: { value: CONFIRM_PHRASE } },
+  );
+  fireEvent.change(within(initiateDialog).getByLabelText('Palavra-passe'), {
+    target: { value: 'operator-pw' },
+  });
+  fireEvent.click(within(initiateDialog).getByRole('button', { name: 'Enviar código' }));
+
+  fireEvent.click(await screen.findByRole('button', { name: 'Introduzir código recebido' }));
+  const confirmDialog = await screen.findByRole('dialog');
+  fireEvent.change(within(confirmDialog).getByLabelText('Código recebido por SMS'), {
+    target: { value: '314159' },
+  });
+  fireEvent.change(
+    within(confirmDialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`),
+    { target: { value: CONFIRM_PHRASE } },
+  );
+  fireEvent.change(within(confirmDialog).getByLabelText('Palavra-passe'), {
+    target: { value: 'operator-pw' },
+  });
+  fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Confirmar código' }));
 }
 
 afterEach(() => {
@@ -304,5 +349,83 @@ describe('CmdTestSignatureAction', () => {
 
     expect(await screen.findByText('Primária')).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Testar assinatura real (produção)' })).toBeNull();
+  });
+
+  /**
+   * The self-validation verdict (t82). The end of the chain is not "AMA answered" but "the product
+   * can verify what AMA produced", so the verdict is rendered — and a NEGATIVE one has to be as
+   * visible as a positive one. The signature is real and retained in both cases; a panel that
+   * quietly dropped a failure would make the test worth less than not running it.
+   *
+   * Asserted through the owned catalog and the panel's own testid rather than guessed pt-PT
+   * substrings: the copy belongs to `providerCredentialsFallback.ts`, and this suite reads it from
+   * there so a wording change is not a test failure.
+   */
+  it('renders a failed self-validation verdict as an explicit negative, with the reason', async () => {
+    const stub = stubFetch(cmdList, {
+      confirmBody: {
+        ...confirmResult,
+        self_validation: {
+          signature_verifies: false,
+          covers_rendered_document: false,
+          coverage: 'malformed',
+          signature_timestamp_present: false,
+          error: 'the /ByteRange gap is not exactly the /Contents value',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+    await runTestSignatureToResult();
+
+    const panel = await screen.findByTestId('cmd-test-self-validation');
+    // Every flag renders as a value. The negatives are present, not omitted.
+    expect(
+      within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationVerifies'])
+        .nextElementSibling?.textContent,
+    ).toBe(copy['providerCredentials.probe.no']);
+    expect(
+      within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationCovers'])
+        .nextElementSibling?.textContent,
+    ).toBe(copy['providerCredentials.probe.no']);
+    expect(
+      within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationCoverage'])
+        .nextElementSibling?.textContent,
+    ).toBe(copy['providerCredentials.cmdTest.coverage.malformed']);
+    // The server's own explanation reaches the operator verbatim.
+    expect(
+      within(panel).getByText('the /ByteRange gap is not exactly the /Contents value'),
+    ).toBeTruthy();
+    // And the panel says the signature nonetheless exists and is downloadable, rather than
+    // implying the test failed to produce one.
+    expect(within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationBad'])).toBeTruthy();
+    expect(screen.getByRole('button', { name: copy['providerCredentials.cmdTest.download'] })).toBeTruthy();
+  });
+
+  /**
+   * A coverage token this build does not know must not be rendered as one of the verdicts it is
+   * not, and must not leak the raw token. `PdfSignatureCoverage` is `#[non_exhaustive]`, so a
+   * newer server can legitimately send one.
+   */
+  it('reports an unknown coverage token as unrecognised rather than guessing or leaking it', async () => {
+    const stub = stubFetch(cmdList, {
+      confirmBody: {
+        ...confirmResult,
+        self_validation: {
+          ...confirmResult.self_validation,
+          coverage: 'some_future_verdict',
+        },
+      },
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+    await runTestSignatureToResult();
+
+    const panel = await screen.findByTestId('cmd-test-self-validation');
+    expect(
+      within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationCoverage'])
+        .nextElementSibling?.textContent,
+    ).toBe(copy['providerCredentials.cmdTest.coverage.unrecognised']);
+    expect(within(panel).queryByText('some_future_verdict')).toBeNull();
   });
 });

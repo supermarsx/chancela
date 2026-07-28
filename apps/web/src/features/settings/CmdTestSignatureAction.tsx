@@ -21,6 +21,7 @@
  */
 import { useState } from 'react';
 import type {
+  CmdTestSelfValidation,
   CmdTestSignatureConfirmResult,
   CmdTestSignatureInitiateResult,
   ProviderCredentialEntryView,
@@ -43,6 +44,87 @@ import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
  * literal string regardless of locale, and the server test suite pins it byte-for-byte.
  */
 const CMD_TEST_CONFIRM_PHRASE = 'ASSINAR TESTE';
+
+/**
+ * The coverage verdicts the server emits as stable tokens. A token outside this set is a server
+ * newer than this build; it renders as the `unrecognised` sentence rather than as a raw token or,
+ * worse, as one of the verdicts it is not.
+ */
+const COVERAGE_KEYS = [
+  'whole_document',
+  'ltv_augmented_signed_revision',
+  'altered_after_signing',
+  'malformed',
+  'unrecognised',
+  'unavailable',
+] as const;
+
+type CoverageKey = (typeof COVERAGE_KEYS)[number];
+
+function coverageKey(coverage: string): CoverageKey {
+  return (COVERAGE_KEYS as readonly string[]).includes(coverage)
+    ? (coverage as CoverageKey)
+    : 'unrecognised';
+}
+
+/**
+ * What the application's own validator said about the bytes it just produced.
+ *
+ * This is the half of "end to end" that the provider cannot answer for us: AMA returning a CMS
+ * proves AMA answered, not that the result is a PAdES signature this product can verify over the
+ * document it generated. A negative verdict is rendered as prominently as a positive one — the
+ * signature is real and retained either way, and hiding a failure here would make the test worth
+ * less than not running it.
+ */
+function CmdTestSelfValidationPanel({
+  validation,
+  pt,
+  yesNo,
+}: {
+  validation: CmdTestSelfValidation;
+  pt: ReturnType<typeof useProviderCredentialsT>;
+  yesNo: (value: boolean) => string;
+}) {
+  const ok = validation.signature_verifies && validation.covers_rendered_document;
+  return (
+    <section className="stack stack--tight" data-testid="cmd-test-self-validation">
+      <div>
+        <Badge tone={ok ? 'ok' : 'warn'}>{pt('providerCredentials.cmdTest.selfValidation')}</Badge>
+      </div>
+      <p className="field__hint">{pt('providerCredentials.cmdTest.selfValidationHint')}</p>
+      <dl className="detail-grid">
+        <div>
+          <dt>{pt('providerCredentials.cmdTest.selfValidationVerifies')}</dt>
+          <dd>{yesNo(validation.signature_verifies)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.cmdTest.selfValidationCovers')}</dt>
+          <dd>{yesNo(validation.covers_rendered_document)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.cmdTest.selfValidationCoverage')}</dt>
+          <dd>{pt(`providerCredentials.cmdTest.coverage.${coverageKey(validation.coverage)}`)}</dd>
+        </div>
+        <div>
+          <dt>{pt('providerCredentials.cmdTest.selfValidationTimestamp')}</dt>
+          <dd>{yesNo(validation.signature_timestamp_present)}</dd>
+        </div>
+        {/* The server's own explanation, rendered verbatim — it names what the validator refused. */}
+        {validation.error ? (
+          <div>
+            <dt>{pt('providerCredentials.cmdTest.selfValidationError')}</dt>
+            <dd>{validation.error}</dd>
+          </div>
+        ) : null}
+      </dl>
+      <p className="field__hint">
+        {ok
+          ? pt('providerCredentials.cmdTest.selfValidationOk')
+          : pt('providerCredentials.cmdTest.selfValidationBad')}
+      </p>
+    </section>
+  );
+}
 
 function CmdTestSignatureResultPanel({
   result,
@@ -121,6 +203,10 @@ function CmdTestSignatureResultPanel({
           <dd>{yesNo(result.timestamped)}</dd>
         </div>
       </dl>
+      {/* Older servers predate `self_validation`; render nothing rather than inventing a verdict. */}
+      {result.self_validation ? (
+        <CmdTestSelfValidationPanel validation={result.self_validation} pt={pt} yesNo={yesNo} />
+      ) : null}
       <p className="field__hint">{pt('providerCredentials.cmdTest.disclaimer')}</p>
       <Button type="button" variant="secondary" disabled={download.isPending} onClick={onDownload}>
         {download.isPending

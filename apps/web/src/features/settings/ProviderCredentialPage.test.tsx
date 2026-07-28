@@ -7,6 +7,7 @@ import type { ProviderCredentialProbeResponse, ProviderCredentialsListView } fro
 import { renderWithProviders } from '../../test/utils';
 import { hasUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { permissionsValue, StaticPermissionsProvider } from '../session/permissions';
+import { providerCredentialsPtPT as copy } from '../../i18n/providerCredentialsFallback';
 
 const list: ProviderCredentialsListView = {
   strict: false,
@@ -69,6 +70,29 @@ function entryView(
     ],
   };
 }
+
+/** A stored CMD entry — the only mode with an end-to-end test to reach from this page (t82). */
+const cmdEntryView: ProviderCredentialsListView = {
+  ...list,
+  providers: [
+    {
+      mode: 'cmd',
+      provider_id: '',
+      entries: [
+        {
+          entry_id: 'cmd-entry-1',
+          label: 'CMD principal',
+          priority: 0,
+          enabled: true,
+          selectors: { env: 'prod' },
+          fields: [{ field_name: 'application_id', configured: true }],
+          created_at: '2026-07-01T10:00:00Z',
+          updated_at: '2026-07-01T10:00:00Z',
+        },
+      ],
+    },
+  ],
+};
 
 const probe: ProviderCredentialProbeResponse = {
   mode: 'csc',
@@ -475,5 +499,39 @@ describe('ProviderCredentialPage', () => {
 
     expect(screen.getByText('Sem permissão')).toBeTruthy();
     expect(stub.calls).toHaveLength(0);
+  });
+
+  /**
+   * The route from the safe probe to the real end-to-end test (t82).
+   *
+   * An operator who probes a CMD credential on this page reads `live_provider_operation` as NOT
+   * RUN, with a correct explanation of why no live CMD operation is safe. Until now that was the
+   * last word on the page: the end-to-end control existed only in the credential list's table row,
+   * so the product looked like it could not test CMD at all. The real test therefore lives on this
+   * page too — and only for CMD, since no other provider has this two-phase flow.
+   */
+  it('offers the end-to-end CMD test on the same page as the probe that refuses to run one', async () => {
+    vi.stubGlobal('fetch', stubFetch({ view: cmdEntryView }).fn);
+    // `_` is the empty-provider sentinel `providerCredentialEditPath` mints; CMD has no provider id.
+    renderPage('/admin/signing/providers/cmd/_/cmd-entry-1/edit');
+
+    expect(
+      await screen.findByRole('button', {
+        name: copy['providerCredentials.cmdTest.button'],
+      }),
+    ).toBeTruthy();
+    // The section names the connection to the probe rather than sitting there unexplained.
+    expect(screen.getByText(copy['providerCredentials.cmdTest.sectionIntro'])).toBeTruthy();
+    expect(screen.getByText(copy['providerCredentials.cmdTest.sectionWhatItDoes'])).toBeTruthy();
+  });
+
+  it('does not offer the end-to-end CMD test on a non-CMD credential page', async () => {
+    vi.stubGlobal('fetch', stubFetch().fn);
+    renderPage('/admin/signing/providers/csc/encosto%20qtsp/entry-a/edit');
+
+    expect(await screen.findByRole('button', { name: 'Testar' })).toBeTruthy();
+    expect(
+      screen.queryByRole('button', { name: copy['providerCredentials.cmdTest.button'] }),
+    ).toBeNull();
   });
 });

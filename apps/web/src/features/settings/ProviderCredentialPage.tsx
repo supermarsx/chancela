@@ -22,6 +22,7 @@ import {
   ProviderCredentialProbeResult,
   canStoreSecrets,
 } from './ProviderCredentialsSection';
+import { CmdTestSignatureAction } from './CmdTestSignatureAction';
 import { decodeProviderSegment, isCredentialMode } from './providerCredentialRoutes';
 
 const LIST_PATH = '/admin/signing/providers';
@@ -190,6 +191,23 @@ export function ProviderCredentialPage() {
       />
       {probe.data ? <ProviderCredentialProbeResult result={probe.data} /> : null}
       {probe.error ? <ErrorNote error={probe.error} /> : null}
+      {/*
+        The route from the safe probe to the real thing (t82). An operator who runs the probe on
+        this page reads `live_provider_operation — Not run` and, until now, had nowhere to go from
+        there: the end-to-end control existed only in the credential list's table row. That refusal
+        is correct — CMD has no non-signing health operation — but leaving it as the last word made
+        the product look like it could not test CMD at all. So the real test lives immediately
+        under the panel that explains why the probe stopped, and its intro names that connection.
+      */}
+      {mode === 'cmd' && isEdit && existing ? (
+        <Card title={pt('providerCredentials.cmdTest.sectionTitle')}>
+          <div className="stack stack--tight">
+            <p className="field__hint">{pt('providerCredentials.cmdTest.sectionIntro')}</p>
+            <p className="field__hint">{pt('providerCredentials.cmdTest.sectionWhatItDoes')}</p>
+            <CmdTestSignatureAction entry={existing} canPerform={canPerform} />
+          </div>
+        </Card>
+      ) : null}
     </>,
     testAction,
   );

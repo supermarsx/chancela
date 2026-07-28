@@ -88,6 +88,39 @@ export const providerCredentialsPtPT = {
   'providerCredentials.cmdTest.download': 'Transferir PDF assinado',
   'providerCredentials.cmdTest.downloadPending': 'A transferir…',
   'providerCredentials.cmdTest.newTest': 'Testar novamente',
+
+  // --- Self-validation: what the application's own validator says about what it produced -------
+  // Each coverage verdict is its OWN sentence rather than a token dropped into a shared one:
+  // pt-PT inflects, and the verdicts differ in gender and number.
+  'providerCredentials.cmdTest.selfValidation': 'Verificação pela própria aplicação',
+  'providerCredentials.cmdTest.selfValidationHint':
+    'A aplicação voltou a ler o PDF que acabou de produzir e verificou a assinatura com o mesmo validador que usa para validar documentos.',
+  'providerCredentials.cmdTest.selfValidationVerifies': 'Assinatura verificada',
+  'providerCredentials.cmdTest.selfValidationCovers': 'Cobre o documento apresentado',
+  'providerCredentials.cmdTest.selfValidationCoverage': 'Âmbito da assinatura',
+  'providerCredentials.cmdTest.selfValidationTimestamp': 'Carimbo temporal encontrado no ficheiro',
+  'providerCredentials.cmdTest.selfValidationError': 'Motivo',
+  'providerCredentials.cmdTest.selfValidationOk': 'A aplicação verificou a assinatura que produziu.',
+  'providerCredentials.cmdTest.selfValidationBad':
+    'A assinatura qualificada foi produzida e está conservada, mas a aplicação não a conseguiu verificar. O ficheiro está disponível para transferir e analisar.',
+  'providerCredentials.cmdTest.coverage.whole_document': 'Todo o ficheiro',
+  'providerCredentials.cmdTest.coverage.ltv_augmented_signed_revision':
+    'A revisão assinada, com material de validação a longo prazo acrescentado depois',
+  'providerCredentials.cmdTest.coverage.altered_after_signing':
+    'Apenas a revisão assinada; o ficheiro foi alterado depois',
+  'providerCredentials.cmdTest.coverage.malformed': 'Intervalo de bytes malformado',
+  'providerCredentials.cmdTest.coverage.unrecognised':
+    'Âmbito não reconhecido por esta versão da aplicação',
+  'providerCredentials.cmdTest.coverage.unavailable': 'Não foi possível determinar',
+
+  // --- The route from the safe probe to the real end-to-end test -------------------------------
+  // An operator who ran the probe reads «live_provider_operation — Não executado» and has no way of
+  // knowing where the real test lives. This section sits directly under that panel and says so.
+  'providerCredentials.cmdTest.sectionTitle': 'Teste de ponta a ponta em produção',
+  'providerCredentials.cmdTest.sectionIntro':
+    'O teste acima verifica a configuração guardada e não contacta a Chave Móvel Digital: não existe operação de diagnóstico que não seja já uma assinatura. Para experimentar a integração de ponta a ponta, use o teste abaixo.',
+  'providerCredentials.cmdTest.sectionWhatItDoes':
+    'A aplicação gera um documento de exemplo em PDF/A cujo texto declara que é um teste, envia-lhe um código por SMS e, se o confirmar, produz sobre esse documento uma assinatura eletrónica qualificada real. No fim pode transferir o PDF assinado e ver o que o validador da própria aplicação diz sobre ele.',
 } as const;
 
 export type ProviderCredentialsCopyKey = keyof typeof providerCredentialsPtPT;
@@ -168,6 +201,32 @@ export const providerCredentialsEnglish = {
   'providerCredentials.cmdTest.download': 'Download signed PDF',
   'providerCredentials.cmdTest.downloadPending': 'Downloading…',
   'providerCredentials.cmdTest.newTest': 'Test again',
+  'providerCredentials.cmdTest.selfValidation': "Checked by the application itself",
+  'providerCredentials.cmdTest.selfValidationHint':
+    'The application read back the PDF it just produced and verified the signature with the same validator it uses to validate documents.',
+  'providerCredentials.cmdTest.selfValidationVerifies': 'Signature verified',
+  'providerCredentials.cmdTest.selfValidationCovers': 'Covers the document as displayed',
+  'providerCredentials.cmdTest.selfValidationCoverage': 'Signature scope',
+  'providerCredentials.cmdTest.selfValidationTimestamp': 'Timestamp found in the file',
+  'providerCredentials.cmdTest.selfValidationError': 'Reason',
+  'providerCredentials.cmdTest.selfValidationOk':
+    'The application verified the signature it produced.',
+  'providerCredentials.cmdTest.selfValidationBad':
+    'The qualified signature was produced and is retained, but the application could not verify it. The file is available to download and inspect.',
+  'providerCredentials.cmdTest.coverage.whole_document': 'The whole file',
+  'providerCredentials.cmdTest.coverage.ltv_augmented_signed_revision':
+    'The signed revision, with long-term validation material appended afterwards',
+  'providerCredentials.cmdTest.coverage.altered_after_signing':
+    'Only the signed revision; the file was altered afterwards',
+  'providerCredentials.cmdTest.coverage.malformed': 'Malformed byte range',
+  'providerCredentials.cmdTest.coverage.unrecognised':
+    'A scope this version of the application does not recognise',
+  'providerCredentials.cmdTest.coverage.unavailable': 'Could not be determined',
+  'providerCredentials.cmdTest.sectionTitle': 'End-to-end production test',
+  'providerCredentials.cmdTest.sectionIntro':
+    'The test above checks the stored configuration and does not contact Chave Móvel Digital: there is no diagnostic operation that is not already a signature. To exercise the integration end to end, use the test below.',
+  'providerCredentials.cmdTest.sectionWhatItDoes':
+    'The application generates a sample PDF/A document whose own text states that it is a test, sends you a code by SMS and, if you confirm it, produces a real qualified electronic signature over that document. At the end you can download the signed PDF and see what the application\'s own validator makes of it.',
 } as const satisfies Record<ProviderCredentialsCopyKey, string>;
 
 export function useProviderCredentialsT(): (
