@@ -11038,7 +11038,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "apps/web/src/i18n/locales/pt-PT.ts",
-    "Não certificam cifragem em repouso de produção, migração plaintext concluída, runbook de custódia ou ciclo legal/GDPR",
+    "Não certificam cifragem em repouso de produção, migração plaintext concluída, runbook de custódia ou ciclo legal/RGPD",
     "web data management key custody no-claim copy pt-PT marker",
   );
   assertFileContains(
