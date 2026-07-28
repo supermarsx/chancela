@@ -1725,6 +1725,11 @@ export const esES: Catalog = {
   'users.edit.status.hint.inactive':
     'Esta cuenta no puede iniciar sesión. Sigue atribuyendo todo lo que hizo antes de ser desactivada.',
   'users.edit.status.pending': 'Actualizando…',
+  'users.disable.confirm.title': 'Desactivar la cuenta',
+  'users.disable.confirm.intro':
+    'La cuenta dejará de poder iniciar sesión. No se elimina nada: la atribución de todo lo que ya ha hecho se mantiene intacta y puede reactivarla más adelante.',
+  'users.disable.confirm.subject': 'Cuenta: {username}',
+  'users.disable.confirm.action': 'Desactivar la cuenta',
   'users.edit.notFound': 'Usuario no encontrado.',
   'users.edit.save': 'Guardar nombre',
   'users.create.cardTitle': 'Nuevo usuario',

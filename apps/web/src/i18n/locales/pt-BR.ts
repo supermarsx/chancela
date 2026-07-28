@@ -1722,6 +1722,11 @@ export const ptBR: Catalog = {
   'users.edit.status.hint.inactive':
     'Esta conta não pode iniciar sessão. Continua atribuindo tudo o que fez antes de ser desativada.',
   'users.edit.status.pending': 'Atualizando…',
+  'users.disable.confirm.title': 'Desativar a conta',
+  'users.disable.confirm.intro':
+    'A conta deixa de poder entrar. Nada é excluído — a atribuição de tudo o que ela já fez permanece intacta, e você pode reativá-la depois.',
+  'users.disable.confirm.subject': 'Conta: {username}',
+  'users.disable.confirm.action': 'Desativar a conta',
   'users.edit.notFound': 'Usuário não encontrado.',
   'users.edit.save': 'Salvar nome',
   'users.create.cardTitle': 'Novo usuário',

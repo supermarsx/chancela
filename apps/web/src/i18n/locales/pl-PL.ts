@@ -1721,6 +1721,11 @@ export const plPL: Catalog = {
   'users.edit.status.hint.inactive':
     'To konto nie może się logować. Nadal jest przypisane do wszystkiego, co zrobiło przed dezaktywacją.',
   'users.edit.status.pending': 'Aktualizowanie…',
+  'users.disable.confirm.title': 'Dezaktywuj konto',
+  'users.disable.confirm.intro':
+    'Konto nie będzie mogło się już zalogować. Nic nie zostaje usunięte — przypisanie wszystkiego, co już na nim zrobiono, pozostaje nienaruszone i można je później ponownie aktywować.',
+  'users.disable.confirm.subject': 'Konto: {username}',
+  'users.disable.confirm.action': 'Dezaktywuj konto',
   'users.edit.notFound': 'Nie znaleziono użytkownika.',
   'users.edit.save': 'Zapisz nazwę',
   'users.create.cardTitle': 'Nowy użytkownik',

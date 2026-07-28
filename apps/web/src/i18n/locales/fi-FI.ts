@@ -1717,6 +1717,11 @@ export const fiFI: Catalog = {
   'users.edit.status.hint.inactive':
     'Tämä tili ei voi kirjautua sisään. Se kohdistaa edelleen kaiken, mitä se teki ennen käytöstä poistamista.',
   'users.edit.status.pending': 'Päivitetään…',
+  'users.disable.confirm.title': 'Poista tili käytöstä',
+  'users.disable.confirm.intro':
+    'Tili ei voi enää kirjautua sisään. Mitään ei poisteta — kaikki, mitä tilillä on jo tehty, säilyy sen nimissä, ja voit ottaa tilin uudelleen käyttöön myöhemmin.',
+  'users.disable.confirm.subject': 'Tili: {username}',
+  'users.disable.confirm.action': 'Poista tili käytöstä',
   'users.edit.notFound': 'Käyttäjää ei löytynyt.',
   'users.edit.save': 'Tallenna nimi',
   'users.create.cardTitle': 'Uusi käyttäjä',

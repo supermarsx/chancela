@@ -108,6 +108,39 @@ afterEach(() => {
   saveFileMock.saveBlobResultMessage.mockClear();
 });
 
+// --- The guarded-action confirm step (t68) --------------------------------------------
+//
+// Both screens address the toggle and the dialog's confirm STRUCTURALLY — a `data-testid` and
+// the dialog's submit control — never by their rendered Portuguese. A test that matched the
+// copy would go red the day a translator fixed a word, which is a false signal about a guard;
+// worse, it would go green for the wrong reason if two controls happened to share a label.
+
+/** The account activate/deactivate toggle, on either screen. */
+function toggleControl(): HTMLElement {
+  return screen.getByTestId('user-toggle-active');
+}
+
+/** The confirm dialog's submit control, or `null` when no dialog is open. */
+function dialogConfirm(): HTMLButtonElement | null {
+  const dialog = screen.queryByRole('dialog');
+  return dialog?.querySelector<HTMLButtonElement>('button[type=submit]') ?? null;
+}
+
+/** The policy `GET /v1/confirmation-policy` answers with, shaped as the server emits it. */
+function confirmationPolicyJson(effective = 'confirm'): Response {
+  return jsonResponse({
+    actions: [
+      {
+        action: 'user.disable',
+        floor: 'confirm',
+        effective,
+        consequence: 'destructive',
+        wired: true,
+      },
+    ],
+  });
+}
+
 describe('username validation', () => {
   it('accepts a lowercase slug and rejects uppercase/spaces/overlong', () => {
     expect(isValidUsername('amelia.marques')).toBe(true);
@@ -197,7 +230,7 @@ describe('UsersList (Configurações → Utilizadores)', () => {
     expect(screen.getByLabelText('location').textContent).toBe('/users/u1/access');
   });
 
-  it('toggles a user active/inactive via PATCH', async () => {
+  it('toggles a user active/inactive via PATCH, once the confirmation is accepted', async () => {
     const { fn, calls } = recordingFetch((r) =>
       r.method === 'PATCH'
         ? jsonResponse({ ...AMELIA, active: false })
@@ -207,7 +240,11 @@ describe('UsersList (Configurações → Utilizadores)', () => {
 
     renderWithProviders(<UsersList />, ['/settings/users']);
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Desativar' }));
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    fireEvent.click(toggleControl());
+    // t68: the write now happens on the dialog's confirm, not on the row click.
+    await waitFor(() => expect(dialogConfirm()?.disabled).toBe(false));
+    fireEvent.click(dialogConfirm()!);
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
     const patch = calls.find((c) => c.method === 'PATCH');
@@ -215,6 +252,91 @@ describe('UsersList (Configurações → Utilizadores)', () => {
     expect(patch?.body).toMatchObject({ active: false });
     // Deactivating fires the distinct deactivated toast (t44 retrofit-b).
     expect(await screen.findByText('Utilizador desativado.')).toBeTruthy();
+  });
+
+  /**
+   * **The guard itself (t68).** Deactivation is the only way the product takes an account's
+   * access away, and on a dense roster the toggle sits one pointer-width from Editar.
+   *
+   * The assertion that carries the weight is the NEGATIVE one: after the click that used to
+   * deactivate, no write has left the client. "A dialog appeared" would pass just as happily
+   * with the mutation still firing behind it, so it is not the guard — the absent PATCH is.
+   */
+  it('issues no write when the toggle is clicked but the confirmation is not accepted', async () => {
+    const { fn, calls } = recordingFetch((r) =>
+      r.method === 'PATCH'
+        ? jsonResponse({ ...AMELIA, active: false })
+        : rosterJson(r.url, [AMELIA]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UsersList />, ['/settings/users']);
+
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    fireEvent.click(toggleControl());
+
+    // The dialog is up and the account is untouched.
+    await waitFor(() => expect(dialogConfirm()).not.toBeNull());
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+
+    // Dismissing it leaves the account untouched too — a cancelled guard must not "fall through"
+    // to the action it was guarding.
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(dialogConfirm()).toBeNull());
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+  });
+
+  /**
+   * Reactivation is deliberately NOT gated: the server registry models `user.disable` and has
+   * no counterpart for granting sign-in back, and a prompt with no severity behind it devalues
+   * the ones that have some. Without this, "gate the toggle" would quietly become "gate both
+   * directions" and nothing would notice.
+   */
+  it('reactivates on the first click, with no confirmation step', async () => {
+    const inactive: UserView = { ...AMELIA, active: false };
+    const { fn, calls } = recordingFetch((r) =>
+      r.method === 'PATCH' ? jsonResponse(AMELIA) : rosterJson(r.url, [inactive]),
+    );
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UsersList />, ['/settings/users']);
+
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    fireEvent.click(toggleControl());
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
+    expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({ active: true });
+    expect(dialogConfirm()).toBeNull();
+  });
+
+  /**
+   * The dialog's strictness comes from `GET /v1/confirmation-policy`, not from this screen —
+   * that is what makes it operator-configurable rather than hardcoded. An operator who raises
+   * `user.disable` to the step-up level must get a step-up field with no code change here.
+   *
+   * Asserted on the FIELD's type, not on its label: the label is translated copy.
+   */
+  it('takes its strictness from the server policy rather than a hardcoded verdict', async () => {
+    const { fn, calls } = recordingFetch((r) => {
+      if (r.url.includes('/v1/confirmation-policy')) {
+        return confirmationPolicyJson('confirm_with_reauth');
+      }
+      return r.method === 'PATCH'
+        ? jsonResponse({ ...AMELIA, active: false })
+        : rosterJson(r.url, [AMELIA]);
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<UsersList />, ['/settings/users']);
+
+    expect(await screen.findByText('amelia.marques')).toBeTruthy();
+    fireEvent.click(toggleControl());
+
+    const dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(dialog.querySelector('input[type=password]')).not.toBeNull());
+    // Still nothing written, and the raised level cannot be satisfied by an empty proof.
+    expect(dialogConfirm()?.disabled).toBe(true);
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
   });
 });
 
@@ -270,6 +392,7 @@ const ROLES = [
 ];
 
 function rosterJson(url: string, users: UserView[]): Response {
+  if (url.includes('/v1/confirmation-policy')) return confirmationPolicyJson();
   if (url.includes('/v1/roles')) return jsonResponse(ROLES);
   if (url.includes('/v1/users/page')) return jsonResponse(collectionPageFixture(url, users));
   return jsonResponse(users);
@@ -1150,11 +1273,13 @@ describe('EditUserPage (/users/:id) — identity + access manager', () => {
 describe('EditUserPage — account status reads as a state with an action', () => {
   function stubUser(user: UserView) {
     const { fn, calls } = recordingFetch((r) =>
-      r.method === 'PATCH'
-        ? jsonResponse({ ...user, active: !user.active })
-        : r.url.endsWith(`/v1/users/${user.id}`)
-          ? jsonResponse(user)
-          : jsonResponse([user]),
+      r.url.includes('/v1/confirmation-policy')
+        ? confirmationPolicyJson()
+        : r.method === 'PATCH'
+          ? jsonResponse({ ...user, active: !user.active })
+          : r.url.endsWith(`/v1/users/${user.id}`)
+            ? jsonResponse(user)
+            : jsonResponse([user]),
     );
     vi.stubGlobal('fetch', fn);
     return calls;
@@ -1193,14 +1318,32 @@ describe('EditUserPage — account status reads as a state with an action', () =
     expect(screen.getByText(/não pode iniciar sessão/)).toBeTruthy();
   });
 
-  it('still performs the toggle', async () => {
+  it('still performs the toggle, once the confirmation is accepted', async () => {
     const calls = stubUser(AMELIA);
     renderEditAt('u1');
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Desativar' }));
+    expect(await screen.findByRole('button', { name: 'Desativar' })).toBeTruthy();
+    fireEvent.click(toggleControl());
+    await waitFor(() => expect(dialogConfirm()?.disabled).toBe(false));
+    fireEvent.click(dialogConfirm()!);
 
     await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
     expect(calls.find((c) => c.method === 'PATCH')?.body).toMatchObject({ active: false });
+  });
+
+  /**
+   * The same guard as the roster's, asserted independently on this screen: the two wire the
+   * shared hook separately, so one of them could regress alone.
+   */
+  it('issues no write when the toggle is clicked but the confirmation is not accepted', async () => {
+    const calls = stubUser(AMELIA);
+    renderEditAt('u1');
+
+    expect(await screen.findByRole('button', { name: 'Desativar' })).toBeTruthy();
+    fireEvent.click(toggleControl());
+
+    await waitFor(() => expect(dialogConfirm()).not.toBeNull());
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
   });
 
   it('gates the toggle on user.manage, like the identical control on the roster', async () => {

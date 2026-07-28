@@ -301,6 +301,7 @@ export const keys = {
   roster: ['session', 'roster'] as const,
   roles: ['roles'] as const,
   permissionCatalog: ['permissions'] as const,
+  confirmationPolicy: ['confirmation-policy'] as const,
   delegations: ['delegations'] as const,
   apiKeys: ['api-keys'] as const,
   pairingDevices: ['pairing', 'devices'] as const,
@@ -3236,6 +3237,24 @@ export function usePermissionCatalog() {
   return useQuery({
     queryKey: keys.permissionCatalog,
     queryFn: () => api.listPermissions(),
+    staleTime: 5 * 60_000,
+  });
+}
+
+/**
+ * The resolved guarded-action confirmation policy (`GET /v1/confirmation-policy`, t56-e0).
+ *
+ * One read per session backs every guarded call site in the app, which is why it is a plain
+ * query on a single key rather than a per-action fetch: the response is the whole registry.
+ * Operator configuration changes it, so it is not `Infinity`-stale — but it is stable enough
+ * that re-reading it per dialog would be waste.
+ *
+ * Call sites consume it through `ui/GuardedActionModal`, never by comparing levels themselves.
+ */
+export function useConfirmationPolicy() {
+  return useQuery({
+    queryKey: keys.confirmationPolicy,
+    queryFn: () => api.getConfirmationPolicy(),
     staleTime: 5 * 60_000,
   });
 }

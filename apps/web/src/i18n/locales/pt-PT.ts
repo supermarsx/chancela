@@ -1763,6 +1763,11 @@ export const ptPT: Catalog = {
   'users.edit.status.hint.inactive':
     'Esta conta não pode iniciar sessão. Continua a atribuir tudo o que fez antes de ser desativada.',
   'users.edit.status.pending': 'A atualizar…',
+  'users.disable.confirm.title': 'Desativar a conta',
+  'users.disable.confirm.intro':
+    'A conta deixa de poder iniciar sessão. Nada é eliminado — mantém-se intacta a atribuição de tudo o que já fez, e pode reativá-la mais tarde.',
+  'users.disable.confirm.subject': 'Conta: {username}',
+  'users.disable.confirm.action': 'Desativar a conta',
   'users.edit.notFound': 'Utilizador não encontrado.',
   'users.edit.save': 'Guardar nome',
 

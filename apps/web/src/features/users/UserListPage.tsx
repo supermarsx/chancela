@@ -101,6 +101,7 @@ import {
   CollectionPager,
   useCollectionNavigation,
 } from '../common/CollectionPager';
+import { useDeactivateUserGuard } from './DeactivateUserGuard';
 import { editUserPath, editUserSectionPath, NEW_USER_PATH, USERS_LIST_PATH } from './paths';
 
 /** The edit screen's access tab (t103). Was the '#acesso' anchor before the screen was tabbed. */
@@ -301,17 +302,18 @@ function UserRow({ user }: { user: UserView }) {
   const update = useUpdateUser(user.id);
 
   // Activate/deactivate; distinct toast per action (the target state is `!user.active`).
-  function toggleActive() {
-    const nextActive = !user.active;
-    update.mutate(
-      { active: nextActive },
-      {
-        onSuccess: () =>
-          toast.success(nextActive ? t('toast.user.activated') : t('toast.user.deactivated')),
-        onError: (e) => toast.error(e),
-      },
-    );
+  //
+  // t68: deactivation now passes the guarded-action confirm step first — the roster is the dense
+  // screen where a misplaced click is likeliest, and taking an account's access away is not
+  // something a single click on a row should do. Reactivation is untouched (see the guard).
+  // Rejects rather than reporting: the guard toasts the failure on the direct path and the
+  // dialog surfaces it inline on the confirmed one, so reporting here would double it.
+  async function applyActive(nextActive: boolean) {
+    await update.mutateAsync({ active: nextActive });
+    toast.success(nextActive ? t('toast.user.activated') : t('toast.user.deactivated'));
   }
+
+  const deactivate = useDeactivateUserGuard(user, applyActive);
 
   return (
     <tr>
@@ -351,7 +353,8 @@ function UserRow({ user }: { user: UserView }) {
           icon={<Icon.Power />}
           label={user.active ? t('users.action.deactivate') : t('users.action.reactivate')}
           disabled={update.isPending}
-          onClick={toggleActive}
+          data-testid="user-toggle-active"
+          onClick={deactivate.requestToggle}
         />
         <GateIconButton
           perm="user.manage"
@@ -359,6 +362,7 @@ function UserRow({ user }: { user: UserView }) {
           label={t('users.access.title')}
           onClick={() => navigate(editUserSectionPath(user.id, USER_ACCESS_SECTION))}
         />
+        {deactivate.dialog}
       </td>
     </tr>
   );

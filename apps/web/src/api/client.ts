@@ -244,6 +244,7 @@ import type {
   VerifyAiHumanReviewBody,
   RoleView,
   SeededRoleReconciliationView,
+  ConfirmationPolicyView,
   PermissionCatalogView,
   CreateRoleBody,
   PatchRoleBody,
@@ -1678,6 +1679,12 @@ export const api = {
   // of what the UI offers — a rejected escalation comes back as an honest 403/409.
   listRoles: () => get<RoleView[]>('/v1/roles'),
   listPermissions: () => get<PermissionCatalogView>('/v1/permissions'),
+
+  // The resolved guarded-action confirmation policy (`GET /v1/confirmation-policy`, t56-e0).
+  // Any valid session may read it: it is UI-shaping metadata, exactly like `GET /v1/permissions`.
+  // The server is the sole authority on which actions demand confirmation and how strictly —
+  // a call site must consume this rather than hardcode a verdict of its own.
+  getConfirmationPolicy: () => get<ConfirmationPolicyView>('/v1/confirmation-policy'),
   createRole: (body: CreateRoleBody) => post<RoleView>('/v1/roles', body),
   patchRole: (id: string, body: PatchRoleBody) => patch<RoleView>(`/v1/roles/${id}`, body),
   deleteRole: (id: string) => del<void>(`/v1/roles/${id}`),

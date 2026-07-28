@@ -1726,6 +1726,11 @@ export const itIT: Catalog = {
   'users.edit.status.hint.inactive':
     'Questo account non può accedere. Continua ad attribuire tutto ciò che ha fatto prima della disattivazione.',
   'users.edit.status.pending': 'Aggiornamento…',
+  'users.disable.confirm.title': 'Disattivare l’account',
+  'users.disable.confirm.intro':
+    'L’account non potrà più accedere. Non viene eliminato nulla: l’attribuzione di tutto ciò che ha già fatto resta intatta e potrai riattivarlo in seguito.',
+  'users.disable.confirm.subject': 'Account: {username}',
+  'users.disable.confirm.action': 'Disattiva l’account',
   'users.edit.notFound': 'Utente non trovato.',
   'users.edit.save': 'Salva nome',
   'users.create.cardTitle': 'Nuovo utente',

@@ -1737,6 +1737,11 @@ export const deDE: Catalog = {
   'users.edit.status.hint.inactive':
     'Dieses Konto kann sich nicht anmelden. Es bleibt weiterhin allem zugeordnet, was es vor der Deaktivierung getan hat.',
   'users.edit.status.pending': 'Wird aktualisiert…',
+  'users.disable.confirm.title': 'Konto deaktivieren',
+  'users.disable.confirm.intro':
+    'Das Konto kann sich danach nicht mehr anmelden. Es wird nichts gelöscht — die Zuordnung von allem, was damit bereits getan wurde, bleibt erhalten, und Sie können es später wieder aktivieren.',
+  'users.disable.confirm.subject': 'Konto: {username}',
+  'users.disable.confirm.action': 'Konto deaktivieren',
   'users.edit.notFound': 'Benutzer nicht gefunden.',
   'users.edit.save': 'Namen speichern',
   'users.create.cardTitle': 'Neuer Benutzer',

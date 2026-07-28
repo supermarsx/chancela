@@ -1723,6 +1723,11 @@ export const svFI: Catalog = {
   'users.edit.status.hint.inactive':
     'Det här kontot kan inte logga in. Det tillskrivs fortfarande allt det gjorde innan det inaktiverades.',
   'users.edit.status.pending': 'Uppdaterar…',
+  'users.disable.confirm.title': 'Inaktivera kontot',
+  'users.disable.confirm.intro':
+    'Kontot kan därefter inte logga in. Ingenting raderas — tillskrivningen av allt som redan har gjorts med det förblir intakt, och du kan aktivera det igen senare.',
+  'users.disable.confirm.subject': 'Konto: {username}',
+  'users.disable.confirm.action': 'Inaktivera kontot',
   'users.edit.notFound': 'Användaren hittades inte.',
   'users.edit.save': 'Spara namn',
   'users.create.cardTitle': 'Ny användare',

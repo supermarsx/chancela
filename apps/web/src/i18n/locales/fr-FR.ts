@@ -1735,6 +1735,11 @@ export const frFR: Catalog = {
   'users.edit.status.hint.inactive':
     'Ce compte ne peut pas se connecter. Il continue d’attribuer tout ce qu’il a fait avant sa désactivation.',
   'users.edit.status.pending': 'Mise à jour…',
+  'users.disable.confirm.title': 'Désactiver le compte',
+  'users.disable.confirm.intro':
+    'Le compte ne pourra plus se connecter. Rien n\'est supprimé : l\'attribution de tout ce qu\'il a déjà fait reste intacte, et vous pourrez le réactiver plus tard.',
+  'users.disable.confirm.subject': 'Compte : {username}',
+  'users.disable.confirm.action': 'Désactiver le compte',
   'users.edit.notFound': 'Utilisateur introuvable.',
   'users.edit.save': 'Enregistrer le nom',
   'users.create.cardTitle': 'Nouvel utilisateur',

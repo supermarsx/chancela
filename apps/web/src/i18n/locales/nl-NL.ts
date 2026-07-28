@@ -1726,6 +1726,11 @@ export const nlNL: Catalog = {
   'users.edit.status.hint.inactive':
     'Dit account kan zich niet aanmelden. Het blijft toegewezen aan alles wat het deed voordat het werd gedeactiveerd.',
   'users.edit.status.pending': 'Bijwerken…',
+  'users.disable.confirm.title': 'Account deactiveren',
+  'users.disable.confirm.intro':
+    'Het account kan daarna niet meer inloggen. Er wordt niets verwijderd — de toewijzing van alles wat er al mee is gedaan blijft intact, en je kunt het later weer activeren.',
+  'users.disable.confirm.subject': 'Account: {username}',
+  'users.disable.confirm.action': 'Account deactiveren',
   'users.edit.notFound': 'Gebruiker niet gevonden.',
   'users.edit.save': 'Naam opslaan',
   'users.create.cardTitle': 'Nieuwe gebruiker',

@@ -93,6 +93,7 @@ import {
 } from '../../ui';
 import { ApiError } from '../../api/client';
 import { QrCode } from '../pairing/QrCode';
+import { useDeactivateUserGuard } from './DeactivateUserGuard';
 import { UserAccessManager } from './UserAccessManager';
 import { editUserSectionPath, USERS_LIST_PATH } from './paths';
 import type { MessageKey } from '../../i18n/types';
@@ -808,17 +809,16 @@ function ActivationSection({ user }: { user: UserView }) {
   const toast = useToast();
   const update = useUpdateUser(user.id);
 
-  function toggleActive() {
-    const nextActive = !user.active;
-    update.mutate(
-      { active: nextActive },
-      {
-        onSuccess: () =>
-          toast.success(nextActive ? t('toast.user.activated') : t('toast.user.deactivated')),
-        onError: (e) => toast.error(e),
-      },
-    );
+  // t68: deactivation passes the guarded-action confirm step first; reactivation does not (the
+  // server registry models `user.disable` and has no counterpart for granting access back).
+  // Rejects rather than reporting — the guard toasts on the direct path, the dialog reports on
+  // the confirmed one, so reporting here too would double it.
+  async function applyActive(nextActive: boolean) {
+    await update.mutateAsync({ active: nextActive });
+    toast.success(nextActive ? t('toast.user.activated') : t('toast.user.deactivated'));
   }
+
+  const deactivate = useDeactivateUserGuard(user, applyActive);
 
   return (
     <Card title={t('users.edit.activationCard')}>
@@ -844,7 +844,8 @@ function ActivationSection({ user }: { user: UserView }) {
             variant="secondary"
             icon={<Icon.Power />}
             disabled={update.isPending}
-            onClick={toggleActive}
+            data-testid="user-toggle-active"
+            onClick={deactivate.requestToggle}
           >
             {update.isPending
               ? t('users.edit.status.pending')
@@ -854,6 +855,7 @@ function ActivationSection({ user }: { user: UserView }) {
           </GateButton>
         </div>
       </div>
+      {deactivate.dialog}
     </Card>
   );
 }

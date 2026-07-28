@@ -1717,6 +1717,11 @@ export const enGB: Catalog = {
   'users.edit.status.hint.inactive':
     'This account cannot sign in. It still attributes everything it did before it was deactivated.',
   'users.edit.status.pending': 'Updating…',
+  'users.disable.confirm.title': 'Deactivate this account',
+  'users.disable.confirm.intro':
+    'The account will no longer be able to sign in. Nothing is deleted — the attribution of everything it has already done stays intact, and you can reactivate it later.',
+  'users.disable.confirm.subject': 'Account: {username}',
+  'users.disable.confirm.action': 'Deactivate account',
   'users.edit.notFound': 'User not found.',
   'users.edit.save': 'Save name',
   'users.create.cardTitle': 'New user',

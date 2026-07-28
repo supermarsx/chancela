@@ -50,6 +50,12 @@ export {
   type ConfirmActionArgs,
   type ExportFirstMode,
 } from './ConfirmActionModal';
+export {
+  GuardedActionModal,
+  useGuardedActionPolicy,
+  type GuardedActionModalProps,
+  type GuardedActionPolicy,
+} from './GuardedActionModal';
 
 // --- Button ---------------------------------------------------------------------
 

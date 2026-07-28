@@ -1719,6 +1719,11 @@ export const daDK: Catalog = {
   'users.edit.status.hint.inactive':
     'Denne konto kan ikke logge ind. Den tilskriver stadig alt, den gjorde, før den blev deaktiveret.',
   'users.edit.status.pending': 'Opdaterer…',
+  'users.disable.confirm.title': 'Deaktivér kontoen',
+  'users.disable.confirm.intro':
+    'Kontoen kan derefter ikke logge ind. Intet slettes — tilskrivningen af alt, hvad der allerede er gjort med den, forbliver intakt, og du kan aktivere den igen senere.',
+  'users.disable.confirm.subject': 'Konto: {username}',
+  'users.disable.confirm.action': 'Deaktivér kontoen',
   'users.edit.notFound': 'Bruger blev ikke fundet.',
   'users.edit.save': 'Gem navn',
   'users.create.cardTitle': 'Ny bruger',

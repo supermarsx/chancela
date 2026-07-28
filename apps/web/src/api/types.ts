@@ -10352,3 +10352,125 @@ export const RESET_PHRASE = {
   backend_factory: 'REPOR FÁBRICA',
   instance: 'RECOMEÇAR',
 } as const;
+
+// --- Guarded-action confirmation policy (t56-e0 registry, consumed by t68) --------
+//
+// The web half of `crates/chancela-api/src/confirmation.rs`. That module is the single
+// authority on WHICH actions demand confirmation and HOW hard each one is to proceed with;
+// the client's job is to read the resolved policy and honour it, never to re-decide it.
+//
+// Two independent axes, mirrored here exactly as the server models them: `strictness` (how
+// hard to proceed) and `consequence` (how the action is framed). They are deliberately not
+// one dial — a real gate with neutral framing is a legitimate rung, and calling such an act
+// "destructive" would be a misstatement.
+
+/**
+ * How hard an action is to proceed with. **Ordered** — `off < confirm < confirm_with_reauth <
+ * confirm_with_reauth_and_phrase`. Compare levels through `ui/GuardedActionModal`'s single
+ * comparison point, never inline at a call site.
+ */
+export type ConfirmationStrictness =
+  'off' | 'confirm' | 'confirm_with_reauth' | 'confirm_with_reauth_and_phrase';
+
+/**
+ * How an action is framed, independent of how hard it is to proceed with. `destructive` earns
+ * the red treatment; `consequential` is a legitimate administrative act whose copy must not
+ * borrow destructive vocabulary.
+ */
+export type ConfirmationConsequence = 'destructive' | 'consequential';
+
+/**
+ * The stable wire id of a guarded action — the server's `ConfirmationAction::as_str()`.
+ *
+ * Frozen: the settings map keys on these and the UI derives its copy from them. Listed in full
+ * so a call site naming an action that does not exist is a compile error rather than a silent
+ * fail-closed at runtime.
+ */
+export type ConfirmationActionId =
+  | 'book.close'
+  | 'termo_abertura.advance'
+  | 'termo_abertura.open'
+  | 'termo_encerramento.advance'
+  | 'termo_encerramento.close'
+  | 'termo.withdraw'
+  | 'book.start_over'
+  | 'book.archive_disposal'
+  | 'book.import'
+  | 'legal_hold.release'
+  | 'signature.cmd_test'
+  | 'act.seal'
+  | 'act.archive'
+  | 'act.revert'
+  | 'act.reopen'
+  | 'user.disable'
+  | 'user.bulk_disable'
+  | 'user.bulk_role_change'
+  | 'role.assign'
+  | 'role.unassign'
+  | 'role.delete'
+  | 'role.permission_change'
+  | 'role.seeded_reconciliation'
+  | 'delegation.revoke'
+  | 'delegation.suspend'
+  | 'api_key.revoke'
+  | 'api_key.rotate'
+  | 'device.pairing'
+  | 'device.revoke'
+  | 'session.revoke'
+  | 'session.revoke_others'
+  | 'two_factor.disable'
+  | 'two_factor.backup_codes_regenerate'
+  | 'ledger.reanchor'
+  | 'ledger.restore'
+  | 'data.key_rotation'
+  | 'data.cleanup_exports'
+  | 'data.cleanup_operational'
+  | 'privacy.erasure_execute'
+  | 'settings.replace'
+  | 'entity_type.disable'
+  | 'platform.env_replace'
+  | 'platform.service_control'
+  | 'trust.list_refresh'
+  | 'email.password_delete'
+  | 'search.rebuild'
+  | 'search.pause'
+  | 'template.replace'
+  | 'template.delete'
+  | 'template.version_delete'
+  | 'template.version_restore'
+  | 'template_library.archive'
+  | 'entity.archive'
+  | 'group.archive'
+  | 'group.entity_remove'
+  | 'repository.delete'
+  | 'repository.policy_delete'
+  | 'connector_target.archive'
+  | 'connector_job.cancel'
+  | 'signing_credential.delete'
+  | 'external_signer_invite.revoke'
+  | 'signature.stored_credential'
+  | 'signature.batch'
+  | 'law.pdf_delete';
+
+/**
+ * One action's resolved policy.
+ *
+ * `floor` ships alongside `effective` on purpose: an operator entry may only ever RAISE
+ * strictness, so `effective` is `max(floor, configured)` and `floor` is what lets an admin
+ * screen render a sub-floor level as disabled-with-an-explanation.
+ */
+export interface ConfirmationActionPolicyView {
+  action: ConfirmationActionId;
+  floor: ConfirmationStrictness;
+  effective: ConfirmationStrictness;
+  consequence: ConfirmationConsequence;
+  /** The byte-exact phrase to transcribe. Present iff the level is the phrase one. */
+  phrase?: string;
+  /** `false` while no route reaches this action yet — do not offer to configure it. */
+  wired: boolean;
+}
+
+/** `GET /v1/confirmation-policy` response. */
+export interface ConfirmationPolicyView {
+  actions: ConfirmationActionPolicyView[];
+}
