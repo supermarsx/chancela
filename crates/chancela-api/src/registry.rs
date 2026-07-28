@@ -625,7 +625,7 @@ pub async fn registry_lookup(
     // make this installation fire live outbound requests at a third party using a purchased
     // credential. The verbs differ in blast radius, so they differ in permission.
     let authz = authorizer(&state, &actor).await?;
-    authz.require(Permission::EntityRead, Scope::Global)?; // PROBE: t99 red/green check
+    authz.require(Permission::EntityRegistryLookup, Scope::Global)?;
     let redaction = read_redaction_for_actor(&state, &actor).await?;
     let extract = consult(&state, &req.code, req.email.as_deref()).await?;
     let cae = state.cae.read().await;
