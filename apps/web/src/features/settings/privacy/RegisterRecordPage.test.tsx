@@ -143,7 +143,12 @@ beforeEach(() => {
     query.isLoading = false;
     query.error = null;
   }
-  for (const m of [hooks.createProcessor, hooks.patchProcessor, hooks.createDpia, hooks.patchDpia]) {
+  for (const m of [
+    hooks.createProcessor,
+    hooks.patchProcessor,
+    hooks.createDpia,
+    hooks.patchDpia,
+  ]) {
     m.mutateAsync.mockReset().mockResolvedValue({});
     m.isPending = false;
   }
@@ -343,7 +348,9 @@ describe('the edit route', () => {
     // write a NEW record. The page must show the operator nothing to type into until the record
     // it is addressing has actually resolved.
     expect(screen.queryByLabelText('Nome do processador')).toBeNull();
-    expect(screen.getByRole('heading', { level: 1, name: 'Editar registo de atividades de tratamento' })).toBeTruthy();
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Editar registo de atividades de tratamento' }),
+    ).toBeTruthy();
   });
 
   it('names the register on a stale id instead of falling through to a create form', () => {

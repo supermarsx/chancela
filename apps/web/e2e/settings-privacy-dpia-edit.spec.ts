@@ -1,11 +1,16 @@
 /**
- * Route-stubbed browser proof for the Settings > Privacidade DPIA surface (t15). Two things the
- * user asked for are asserted end-to-end:
+ * Route-stubbed browser proof for the Settings > Privacidade DPIA surface (t15, rewritten by t55).
+ * Three things are asserted end-to-end:
  *
- *   1. DPIA records edit in their OWN WINDOW — a `role="dialog"` modal, not an inline card. The
- *      window opens seeded from the row, a change saves through `PATCH /v1/privacy/dpias/{id}`,
- *      the window closes, and the row reflects the new value.
- *   2. The DPIA guidance template renders TRANSLATED. Its wire copy is English; the panel resolves
+ *   1. A DPIA record edits on its OWN PAGE, at its own address. t15 put this editor in a
+ *      `role="dialog"` modal; t55 replaced that with `/settings/privacy/dpias/{id}`, because a
+ *      modal that closes on Escape and on a backdrop click with no confirmation is the wrong
+ *      container for a nine-field compliance record. The row's affordances are now links, the
+ *      page opens seeded from the record the address names, a change saves through
+ *      `PATCH /v1/privacy/dpias/{id}`, and the operator lands back on the list with the new value.
+ *   2. That address is a real, cold deep link — a pasted URL resolves the record on its own,
+ *      without first visiting the list. This is the feature, so it is proven in a real browser.
+ *   3. The DPIA guidance template renders TRANSLATED. Its wire copy is English; the panel resolves
  *      each stable section/checklist/prompt/operator-action id to the pt-PT catalog key, so the
  *      reader sees Portuguese. The `field_type` wire identifier and the no_claims flags stay
  *      verbatim.
@@ -31,10 +36,15 @@ type RouteState = {
   dpias: DpiaRecordView[];
 };
 
-test('Settings Privacidade edits a DPIA in its own window and shows the guidance template translated', async ({
+test('Settings Privacidade edits a DPIA on its own page and shows the guidance template translated', async ({
   page,
 }) => {
   const routes = await routePrivacyDpiaFixtures(page);
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text());
+  });
+  page.on('pageerror', (error) => consoleErrors.push(String(error)));
 
   await page.goto('/settings/privacy');
 
@@ -42,41 +52,71 @@ test('Settings Privacidade edits a DPIA in its own window and shows the guidance
   await expect(page.getByRole('heading', { name: 'Configurações' })).toBeVisible();
   await expect(settingsSectionButton(page, 'Privacidade')).toHaveAttribute('aria-pressed', 'true');
 
-  // --- 1. Edit a DPIA record in its own window ------------------------------------------------
+  // --- 1. Edit a DPIA record on its own page --------------------------------------------------
   const dpiaPanel = panelByTitle(page, 'DPIAs');
   await expect(dpiaPanel).toBeVisible();
 
-  // No window until the operator opens one.
+  // 🔒 The modal is gone for good. Nothing dialog-shaped, and no authoring form on the list.
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel('Título da DPIA')).toHaveCount(0);
 
   const dpiaRow = dpiaPanel.locator('tbody tr').filter({ hasText: 'High-risk profiling' });
   await expect(dpiaRow).toHaveCount(1);
-  await dpiaRow.getByRole('button', { name: 'Editar', exact: true }).click();
 
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await expect(dialog).toHaveAttribute('aria-modal', 'true');
-  await expect(dialog.getByText('Editar registo')).toBeVisible();
+  // Two affordances on the row, one address: the primary cell and the explicit action.
+  await expect(
+    dpiaRow.getByRole('link', { name: 'High-risk profiling', exact: true }),
+  ).toHaveAttribute('href', '/settings/privacy/dpias/dpia-1');
+  await dpiaRow.getByRole('link', { name: 'Editar', exact: true }).click();
 
-  // The window opened seeded from the row it was launched from.
-  const titleInput = dialog.getByLabel('Título da DPIA');
+  // The editor is a page with an address, reachable by Back.
+  await expect(page).toHaveURL(/\/settings\/privacy\/dpias\/dpia-1$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Editar AIPD' })).toBeVisible();
+
+  // It opened seeded from the record the ADDRESS names — not from a blank create form.
+  const titleInput = page.getByLabel('Título da DPIA');
   await expect(titleInput).toHaveValue('High-risk profiling');
 
   await titleInput.fill('High-risk profiling (revisto)');
-  await dialog.getByRole('button', { name: 'Guardar alterações' }).click();
+  await page.getByRole('button', { name: 'Guardar alterações' }).click();
 
-  // The change persisted through PATCH /v1/privacy/dpias/{id} with the edited title.
+  // The change persisted through PATCH /v1/privacy/dpias/{id} with the edited title — and it is a
+  // PATCH of the addressed record, never a POST that would leave the original untouched.
   await expect.poll(() => routes.dpiaPatches.length).toBe(1);
   expect(routes.dpiaPatches[0].id).toBe('dpia-1');
   expect(routes.dpiaPatches[0].body.title).toBe('High-risk profiling (revisto)');
+  expect(routes.requests.filter((entry) => entry === 'POST /v1/privacy/dpias')).toEqual([]);
 
-  // A successful save closes the window and the row reflects the new value.
-  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // A successful save returns to the list — with no unsaved-changes prompt — and the row shows it.
+  await expect(page).toHaveURL(/\/settings\/privacy$/);
   await expect(
-    dpiaPanel.locator('tbody tr').filter({ hasText: 'High-risk profiling (revisto)' }),
+    panelByTitle(page, 'DPIAs')
+      .locator('tbody tr')
+      .filter({ hasText: 'High-risk profiling (revisto)' }),
   ).toHaveCount(1);
 
-  // --- 2. Guidance template renders translated ------------------------------------------------
+  // --- 2. The address is a cold deep link -----------------------------------------------------
+  await page.goto('/settings/privacy/dpias/dpia-1');
+  await expect(page.getByRole('heading', { level: 1, name: 'Editar AIPD' })).toBeVisible();
+  await expect(page.getByLabel('Título da DPIA')).toHaveValue('High-risk profiling (revisto)');
+  // Both exits lead back to the list, and both are real links.
+  await expect(page.getByRole('link', { name: 'Cancelar', exact: true })).toHaveCount(2);
+
+  // A stale id says so by name instead of quietly offering a blank create form.
+  await page.goto('/settings/privacy/dpias/dpia-desaparecida');
+  await expect(
+    page.getByText('Não foi encontrada nenhuma AIPD com este identificador.'),
+  ).toBeVisible();
+  await expect(page.getByLabel('Título da DPIA')).toHaveCount(0);
+
+  // The create address is its own page, titled as a complete pt-PT sentence.
+  await page.goto('/settings/privacy/dpias/new');
+  await expect(page.getByRole('heading', { level: 1, name: 'Nova AIPD' })).toBeVisible();
+  await expect(page.getByLabel('Título da DPIA')).toHaveValue('');
+
+  await page.goto('/settings/privacy');
+
+  // --- 3. Guidance template renders translated ------------------------------------------------
   await privacySubTab(page, 'Orientação').click();
   await expect(privacySubTab(page, 'Orientação')).toHaveAttribute('aria-pressed', 'true');
 
@@ -105,6 +145,10 @@ test('Settings Privacidade edits a DPIA in its own window and shows the guidance
   // The no_claims flag identifiers stay verbatim behind their disclosure.
   await guidancePanel.getByText('Flags sem alegação').click();
   await expect(guidancePanel.getByText('cnpd_filing_completed')).toBeVisible();
+
+  // Render verification, not just assertion: a missing i18n key or an unguarded read throws at
+  // render time and shows up here even when every locator above still matched.
+  expect(consoleErrors).toEqual([]);
 });
 
 function settingsSectionButton(page: Page, name: string): Locator {
