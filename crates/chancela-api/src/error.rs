@@ -145,24 +145,35 @@ pub enum ApiError {
     /// error *by variant* — as opposed to rendering it — must go through
     /// [`as_uncoded`](ApiError::as_uncoded) / [`into_uncoded`](ApiError::into_uncoded).
     ///
-    /// **Every in-crate production classifier now does.** The audit behind this list was re-derived
-    /// by tracking brace depth to decide whether each site sits inside a `#[cfg(test)]` module,
-    /// rather than judging by proximity — the two earlier counts (15, then 8) were both wrong, in
-    /// opposite directions, because one guessed from proximity and the other used a pattern that
-    /// missed bare match arms and `ApiError` nested inside another enum's pattern.
+    /// **Every in-crate production classifier now does.** The audit behind this list is re-derived
+    /// mechanically, per *arm*: each `match`/`matches!` is split at brace depth and an arm counts
+    /// only when `ApiError::<Variant>` appears in its **pattern**, never when it merely appears on
+    /// the right-hand side. That distinction is the whole difficulty — `WorkerError::X =>
+    /// ApiError::NotFound` is a mapper, not a classifier, and a flat search cannot tell them apart.
+    /// `#[cfg(test)]` membership is decided by tracking brace depth, not by proximity.
     ///
-    /// **10 production classifier expressions, in 6 files**, all now peeling — named by function
-    /// rather than by line, because line numbers drift under concurrent work and a stale number is
-    /// what let the previous version of this list go unchecked:
+    /// **12 production classifier expressions, in 7 files.** Every previous number here was wrong:
+    /// 15 (grep hits, never checked against `#[cfg(test)]`), then 8 (a regex that missed bare arms
+    /// like `ApiError::NotFound => …` and `ApiError` nested inside another enum's pattern, as in
+    /// `SendFailure::NotConfigured(ApiError::Unprocessable(msg))`), then 10 — and that 10 did not
+    /// even agree with the list printed beneath it, which enumerated 11. If you change this list,
+    /// re-derive the number from the list rather than editing one of them.
     ///
-    /// - `documents.rs` — the two `render_persisted_act_document_model` `map_err`s, the model match
-    ///   in `pdf_accessibility_evidence_for_act_document`, and the conflict guard in
+    /// Named by function rather than by line, because line numbers drift under concurrent work and
+    /// a stale number is what let the previous version of this list go unchecked:
+    ///
+    /// - `documents.rs` (4) — the `render_persisted_act_document_model` `map_err` in
+    ///   `export_working_copy` and its twin in `export_office_document`, the model match in
+    ///   `pdf_accessibility_evidence_for_act_document`, and the conflict guard in
     ///   `persist_created_user_template`
-    /// - `signature.rs` — `cc_bridge_operation_error_code`, `cc_batch_doc_error_message`,
+    /// - `signature.rs` (3) — `cc_bridge_operation_error_code`, `cc_batch_doc_error_message`,
     ///   `resolve_cc_batch_doc`
-    /// - `batch_signing.rs` / `zk_repository.rs` — their respective `api_error_message`
-    /// - `smtp_settings.rs` — the `SendFailure::NotConfigured` arm
-    /// - `lib.rs` — `clear_domain_memory_raw`'s warn-log filter
+    /// - `batch_signing.rs` / `zk_repository.rs` (1 each) — their respective `api_error_message`
+    /// - `smtp_settings.rs` (1) — the `SendFailure::NotConfigured` arm
+    /// - `lib.rs` (1) — `clear_domain_memory_raw`'s warn-log filter
+    /// - `provider_credentials_write.rs` (1) — `credential_assembly_detail`, the CMD preflight's
+    ///   field-naming line. It was **latent, not live**: neither of its producers attached a code,
+    ///   so nothing had broken yet — which is exactly why three audits walked past it.
     ///
     /// Roughly 110 further by-variant matches live in `#[cfg(test)]` modules; they assert on
     /// uncoded errors and are correct as written.

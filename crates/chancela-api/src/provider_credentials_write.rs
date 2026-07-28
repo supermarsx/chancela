@@ -1215,8 +1215,15 @@ fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeC
 /// fields** an operator can go and fill. [`ApiError`] has no `Display`, and the messages that reach
 /// here are the sanitized `stored_credentials_*` strings, which carry no secret value — only field
 /// names. Any other variant degrades to a generic line rather than guessing at its content.
+///
+/// **`into_uncoded` first (t58).** A Tier-2 code wraps the real variant, so `ApiError::Unprocessable`
+/// silently stops matching the moment any producer upstream attaches one — and this classifier's
+/// `_` arm degrades to a generic line rather than failing, so the loss would be invisible: the
+/// preflight would quietly stop naming the credential fields the operator has to fill in. Consuming
+/// the peel is correct here because the return is a `String`; a classifier that returns an *error*
+/// must pass the ORIGINAL through on its passthrough arm instead, or it strips the caller's code.
 fn credential_assembly_detail(err: ApiError) -> String {
-    match err {
+    match err.into_uncoded() {
         ApiError::Unprocessable(message) | ApiError::Conflict(message) => message,
         _ => "The stored credential entry could not be assembled into a usable CMD configuration."
             .to_owned(),
