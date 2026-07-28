@@ -5952,6 +5952,9 @@ export const daDK: Catalog = {
   'pairing.expiresIn': 'Udløber om {time}',
   'pairing.waiting': 'Venter på, at telefonen fuldfører parringen…',
   'pairing.expired.title': 'Kode udløbet',
+  'pairing.emailCode.label': 'Send mig en bekræftelseskode med e-mail',
+  'pairing.emailCode.hint':
+    'Koden sendes til din kontos adresse og skrives på enheden. Der sendes aldrig et link.',
   'pairing.expired.body': 'Denne kode er udløbet. Generér en ny for at fortsætte.',
   'pairing.expired.renew': 'Generér ny kode',
   'companionPair.title': 'Par denne enhed',

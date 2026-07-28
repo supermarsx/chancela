@@ -6029,6 +6029,9 @@ export const deDE: Catalog = {
   'pairing.expiresIn': 'Läuft ab in {time}',
   'pairing.waiting': 'Warten, bis das Telefon die Kopplung abschließt…',
   'pairing.expired.title': 'Code abgelaufen',
+  'pairing.emailCode.label': 'Mir einen Bestätigungscode per E-Mail senden',
+  'pairing.emailCode.hint':
+    'Der Code geht an die Adresse Ihres Kontos und wird auf dem Gerät eingegeben. Es wird nie ein Link versendet.',
   'pairing.expired.body': 'Dieser Code ist abgelaufen. Erzeugen Sie einen neuen, um fortzufahren.',
   'pairing.expired.renew': 'Neuen Code erzeugen',
   'companionPair.title': 'Dieses Gerät koppeln',

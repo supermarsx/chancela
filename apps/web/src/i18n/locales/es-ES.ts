@@ -6002,6 +6002,9 @@ export const esES: Catalog = {
   'pairing.expiresIn': 'Caduca en {time}',
   'pairing.waiting': 'Esperando a que el teléfono complete la vinculación…',
   'pairing.expired.title': 'Código caducado',
+  'pairing.emailCode.label': 'Enviarme un código de confirmación por correo',
+  'pairing.emailCode.hint':
+    'El código llega a la dirección de su cuenta y se escribe en el dispositivo. Nunca se envía un enlace.',
   'pairing.expired.body': 'Este código ha caducado. Genere uno nuevo para continuar.',
   'pairing.expired.renew': 'Generar código nuevo',
   'companionPair.title': 'Vincular este dispositivo',

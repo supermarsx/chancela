@@ -6009,6 +6009,9 @@ export const itIT: Catalog = {
   'pairing.expiresIn': 'Scade tra {time}',
   'pairing.waiting': 'In attesa che il telefono completi l’associazione…',
   'pairing.expired.title': 'Codice scaduto',
+  'pairing.emailCode.label': 'Inviami un codice di conferma per email',
+  'pairing.emailCode.hint':
+    'Il codice arriva all’indirizzo del tuo account e si digita sul dispositivo. Non viene mai inviato un link.',
   'pairing.expired.body': 'Questo codice è scaduto. Generane uno nuovo per continuare.',
   'pairing.expired.renew': 'Genera nuovo codice',
   'companionPair.title': 'Associa questo dispositivo',

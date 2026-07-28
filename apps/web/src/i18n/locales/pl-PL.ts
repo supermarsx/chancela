@@ -5980,6 +5980,9 @@ export const plPL: Catalog = {
   'pairing.expiresIn': 'Wygasa za {time}',
   'pairing.waiting': 'Oczekiwanie na zakończenie parowania przez telefon…',
   'pairing.expired.title': 'Kod wygasł',
+  'pairing.emailCode.label': 'Wyślij mi kod potwierdzenia e-mailem',
+  'pairing.emailCode.hint':
+    'Kod trafia na adres Twojego konta i wpisuje się go na urządzeniu. Link nie jest wysyłany nigdy.',
   'pairing.expired.body': 'Ten kod wygasł. Wygeneruj nowy, aby kontynuować.',
   'pairing.expired.renew': 'Wygeneruj nowy kod',
   'companionPair.title': 'Sparuj to urządzenie',

@@ -5969,6 +5969,9 @@ export const ptBR: Catalog = {
   'pairing.expiresIn': 'Expira daqui a {time}',
   'pairing.waiting': 'Aguardando o celular finalizar o pareamento…',
   'pairing.expired.title': 'O código expirou',
+  'pairing.emailCode.label': 'Enviar um código de confirmação por email',
+  'pairing.emailCode.hint':
+    'O código chega ao endereço da sua conta e é digitado no dispositivo. Nunca é enviado um link.',
   'pairing.expired.body': 'Este código expirou. Gere um novo código para continuar.',
   'pairing.expired.renew': 'Gerar novo código',
   'companionPair.title': 'Parear este dispositivo',

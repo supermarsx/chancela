@@ -5958,6 +5958,9 @@ export const svSE: Catalog = {
   'pairing.expiresIn': 'Upphör om {time}',
   'pairing.waiting': 'Väntar på att telefonen ska slutföra parkopplingen…',
   'pairing.expired.title': 'Koden har upphört',
+  'pairing.emailCode.label': 'Skicka mig en bekräftelsekod med e-post',
+  'pairing.emailCode.hint':
+    'Koden går till ditt kontos adress och skrivs in på enheten. Ingen länk skickas någonsin.',
   'pairing.expired.body': 'Denna kod har upphört. Skapa en ny för att fortsätta.',
   'pairing.expired.renew': 'Skapa ny kod',
   'companionPair.title': 'Parkoppla den här enheten',

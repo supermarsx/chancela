@@ -5961,6 +5961,9 @@ export const svFI: Catalog = {
   'pairing.expiresIn': 'Går ut om {time}',
   'pairing.waiting': 'Väntar på att telefonen ska slutföra parkopplingen…',
   'pairing.expired.title': 'Koden har gått ut',
+  'pairing.emailCode.label': 'Skicka mig en bekräftelsekod med e-post',
+  'pairing.emailCode.hint':
+    'Koden går till ditt kontos adress och skrivs in på enheten. Det skickas aldrig någon länk.',
   'pairing.expired.body': 'Den här koden har gått ut. Skapa en ny för att fortsätta.',
   'pairing.expired.renew': 'Skapa en ny kod',
   'companionPair.title': 'Parkoppla den här enheten',

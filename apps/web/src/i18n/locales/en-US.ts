@@ -5909,6 +5909,9 @@ export const enUS = {
   'pairing.expiresIn': 'Expires in {time}',
   'pairing.waiting': 'Waiting for the phone to finish pairing…',
   'pairing.expired.title': 'Code expired',
+  'pairing.emailCode.label': 'Email me a confirmation code',
+  'pairing.emailCode.hint':
+    'The code goes to your account address and is typed on the device. No link is ever sent.',
   'pairing.expired.body': 'This code expired. Generate a new one to continue.',
   'pairing.expired.renew': 'Generate new code',
   'companionPair.title': 'Pair this device',

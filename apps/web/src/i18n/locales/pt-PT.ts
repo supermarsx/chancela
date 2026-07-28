@@ -5974,6 +5974,9 @@ export const ptPT: Catalog = {
   'pairing.expiresIn': 'Expira em {time}',
   'pairing.waiting': 'A aguardar que o telemóvel conclua o emparelhamento…',
   'pairing.expired.title': 'Código expirado',
+  'pairing.emailCode.label': 'Enviar-me um código de confirmação por email',
+  'pairing.emailCode.hint':
+    'O código chega ao endereço da sua conta e é escrito no dispositivo. Nunca é enviada uma ligação.',
   'pairing.expired.body': 'Este código expirou. Gere um novo código para continuar.',
   'pairing.expired.renew': 'Gerar novo código',
   'companionPair.title': 'Emparelhar este dispositivo',

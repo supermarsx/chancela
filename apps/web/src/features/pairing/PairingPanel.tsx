@@ -47,6 +47,7 @@ import {
   Input,
   Skeleton,
   SkeletonRegion,
+  Toggle,
   SkeletonTable,
   Table,
   useToast,
@@ -363,6 +364,7 @@ export function PairingPanel({
   const [enrolled, setEnrolled] = useState<PairingDeviceView | null>(null);
   const [label, setLabel] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [emailCode, setEmailCode] = useState(false);
 
   const mint = useCreatePairingCode();
   const devices = usePairingDevices({
@@ -408,7 +410,11 @@ export function PairingPanel({
     setSession({ label: trimmed, baseline });
     return new Promise<void>((resolve, reject) => {
       mint.mutate(
-        { label: trimmed || undefined, confirmation: { reauth } },
+        {
+          label: trimmed || undefined,
+          confirmation: { reauth },
+          email_confirmation_code: emailCode,
+        },
         {
           onSuccess: (res) => {
             setMinted(res);
@@ -489,6 +495,20 @@ export function PairingPanel({
                 autoComplete="off"
               />
             </Field>
+            {/* Offered unconditionally, and deliberately not gated on the accepted-method set.
+                That set only arrives on a MINT RESPONSE, and this control has to be chosen before
+                the mint — so hiding it until we know would hide it forever on the first pairing of
+                a session. The server answers the question properly instead: asking for a mailed
+                code on an instance that does not accept the method, or on an account with no
+                address, is a specific 422 raised BEFORE any code is minted, so nothing is spent
+                learning the answer. A guess here would either hide a working option or promise a
+                broken one. */}
+            <Toggle
+              checked={emailCode}
+              onChange={setEmailCode}
+              label={t('pairing.emailCode.label')}
+            />
+            <p className="field__hint">{t('pairing.emailCode.hint')}</p>
             <div className="form__actions">
               <GateButton
                 perm="user.manage"

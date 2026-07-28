@@ -6022,6 +6022,9 @@ export const frFR: Catalog = {
   'pairing.expiresIn': 'Expire dans {time}',
   'pairing.waiting': 'En attente que le téléphone termine l’association…',
   'pairing.expired.title': 'Code expiré',
+  'pairing.emailCode.label': 'M’envoyer un code de confirmation par courriel',
+  'pairing.emailCode.hint':
+    'Le code arrive à l’adresse de votre compte et se saisit sur l’appareil. Aucun lien n’est jamais envoyé.',
   'pairing.expired.body': 'Ce code a expiré. Générez-en un nouveau pour continuer.',
   'pairing.expired.renew': 'Générer un nouveau code',
   'companionPair.title': 'Associer cet appareil',
