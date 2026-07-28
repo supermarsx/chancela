@@ -69,6 +69,14 @@ pub async fn draft_act(
         )));
     }
     let entity_id = book.entity_id;
+    // t60: drafting an act is new authorship, so an archived entity refuses it. Advancing, signing
+    // and SEALING an act already drafted stay permitted — archiving withdraws the invitation to
+    // start work, never the ability to finish it. Deliberately tolerant of an entity absent from the
+    // read model: the tenant resolution below already treats that as the default tenant rather than
+    // a `404`, and this guard must not be the thing that turns it into one.
+    if let Some(entity) = entities.get(&entity_id) {
+        crate::books::ensure_entity_not_archived(entity, "no new act can be drafted in its books")?;
+    }
     // Tenancy (wp27-e3): the act genesis joins its tenant chain, mirroring e1's entity/`book.opened`
     // change. Derive the tenant from the parent entity; a single-tenant deployment (or an entity not
     // yet in the read model) resolves to the default tenant, keeping behaviour byte-identical.

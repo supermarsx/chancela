@@ -2699,3 +2699,90 @@ async fn paper_book_import_preservation_requires_store_and_is_blocked_while_degr
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "degraded: {body}");
     assert_eq!(body["read_only"], true);
 }
+
+/// t60-e3: OCR paper import is the **second** production act-creation path, and the one a sweep of
+/// `Act::draft` piped through `head` cut out of its own result set. Without a guard here, archiving
+/// an entity would still permit creating acts through this door — the front door refuses, the side
+/// door does not, and the refusal reads as enforcement while enforcing nothing.
+///
+/// The archive is applied through the core `Entity::archive` transition rather than
+/// `POST /v1/entities/{id}/archive`, which lands in a parallel executor; the state reached is the
+/// same one the route will produce. The rest of the enforcement suite lives in
+/// `tests/entity_archive_enforcement.rs`; this case is here to reuse the OCR fixture scaffolding
+/// rather than duplicate three hundred lines of it.
+#[tokio::test]
+async fn archiving_the_entity_refuses_a_new_act_draft_from_an_accepted_ocr_draft() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.path());
+    let token = bootstrap(&state).await;
+    let book_id = create_open_book(&state, &token).await;
+    let (status, created) = preserve(
+        &state,
+        &token,
+        preserve_body_for_book(&package_bytes(), &book_id),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "preserve: {created}");
+    let import_id = created["import_id"].as_str().expect("import id");
+
+    let ocr_text = "Deliberacao importada por OCR para revisao humana.";
+    let digest = hex(&Sha256::digest(ocr_text));
+    let (status, draft) = create_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        json!({
+            "extracted_text": ocr_text,
+            "text_digest": digest,
+            "page_spans": [{ "start_page": 1, "end_page": 3 }],
+            "confidence": 0.92,
+            "engine_name": "operator-supplied-ocr"
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "draft: {draft}");
+    let draft_id = draft["draft_id"].as_str().expect("draft id");
+    let (status, reviewed) = review_ocr_draft(
+        &state,
+        &token,
+        import_id,
+        draft_id,
+        json!({ "review_status": "accepted", "review_note": "Checked." }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "review: {reviewed}");
+
+    // Archive the entity that owns the target book.
+    let entity_id = {
+        let books = state.books.read().await;
+        let id = chancela_core::BookId(
+            uuid::Uuid::parse_str(&book_id).expect("book uuid"),
+        );
+        books.get(&id).expect("the target book").entity_id
+    };
+    state
+        .entities
+        .write()
+        .await
+        .get_mut(&entity_id)
+        .expect("the entity is in the read model")
+        .archive(time::OffsetDateTime::now_utc())
+        .expect("an active entity archives");
+
+    let acts_before = state.acts.read().await.len();
+    let (status, body) = create_act_draft_from_ocr_draft(&state, &token, import_id, draft_id).await;
+
+    assert_eq!(status, StatusCode::CONFLICT, "canonical-draft: {body}");
+    let error = body["error"].as_str().unwrap_or_default();
+    assert!(
+        error.contains("is archived")
+            && error.contains("Encosto Estrategico, S.A.")
+            && error.contains("Unarchive it first"),
+        "the refusal must name the entity and the remedy, not just fail: {body}"
+    );
+    assert_eq!(
+        state.acts.read().await.len(),
+        acts_before,
+        "a refused OCR canonical draft must not leave an act behind: {body}"
+    );
+}

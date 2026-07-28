@@ -69,6 +69,42 @@ pub struct LegalHoldOperatorWorkflowView {
     legal_compliance_claimed: bool,
 }
 
+/// Refuse an operation that would begin **new authorship** on an entity retired from it (t60 §1).
+///
+/// Archiving an entity is not a soft delete. It withdraws exactly one thing — the invitation to
+/// start new work — and withdraws nothing evidentiary: reading, searching, exporting, generating
+/// documents, advancing, signing and **sealing an act already drafted**, and **closing a book with
+/// its termo de encerramento** all stay open on an archived entity. Blocking any of those would
+/// strand a legal instrument unexecuted as a side effect of an administrative action, and an
+/// archive that hid records would be a delete wearing a euphemism.
+///
+/// So this guard is called only from the paths that mint something new: `create_book` (both the
+/// one-shot and the two-phase branch), `acts::draft_act`,
+/// `paper_import::create_act_draft_from_accepted_paper_book_ocr_draft`, and
+/// `bundles::start_over_book` (which mints a successor book) — plus the D3 content-edit freeze on
+/// `registry::import_into_entity`, mirroring the `CompanyGroup` precedent's *"archived groups
+/// cannot be edited"*.
+///
+/// **Deliberately NOT called from `termo::open_from_termo`.** A two-phase book sitting in `Created`
+/// with a drafted and possibly already-signed termo de abertura is precisely the stranded-instrument
+/// case: *creating* a book is authorship beginning and is refused, *opening* one already created is
+/// finishing what was begun and is permitted. Do not "fix" that omission without revisiting the
+/// stranding rule.
+///
+/// `refused` names what was refused, in the caller's own words, so the 409 is a sentence and not a
+/// code. The refusal is always loud — never a silent no-op that would leave an operator believing
+/// work had been recorded.
+pub(crate) fn ensure_entity_not_archived(entity: &Entity, refused: &str) -> Result<(), ApiError> {
+    if !entity.is_archived() {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(format!(
+        "entity {} ({}) is archived: {refused}. Unarchive it first — everything already written \
+         about it stays readable, and work already in flight can still be finished.",
+        entity.id, entity.name
+    )))
+}
+
 /// Validate the D3 custom-label rule: `kind == Other` **requires** a non-empty `kind_label`, and any
 /// other kind **forbids** one. Returns the trimmed label (assurance value) or `None`.
 fn resolve_kind_label(
@@ -227,6 +263,11 @@ pub async fn create_book(
     // entities → books → ledger.
     let entities = state.entities.read().await;
     let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
+    // t60: opening a book on an archived entity is new authorship. Checked here, under the entity
+    // read lock that is already held, rather than at the top of the handler: hoisting it would move
+    // the entity lookup ahead of `parse_date` and turn today's `422` on a malformed date into a
+    // `404`. The two-phase branch carries the twin of this check at its own entity lookup.
+    ensure_entity_not_archived(entity, "no new book can be opened on it")?;
     validate_effective_layout(
         &instance_layout,
         entity.document_layout_override.as_ref(),
@@ -383,6 +424,10 @@ async fn create_book_two_phase(
     // entities → books → ledger (ledger held only to serialize the durable write, no append).
     let entities = state.entities.read().await;
     let entity = entities.get(&entity_id).ok_or(ApiError::NotFound)?;
+    // t60: the twin of the one-shot branch's guard. `build_created_book` is shared by both paths,
+    // so guarding the two entity lookups covers one-shot, two-phase, `Other`-kind and
+    // predecessor-linked creation alike — every way this API mints a book.
+    ensure_entity_not_archived(entity, "no new book can be opened on it")?;
     let family = entity.family;
     validate_effective_layout(
         &instance_layout,

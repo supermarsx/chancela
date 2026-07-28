@@ -35,6 +35,7 @@ use chancela_authz::{Permission, Scope};
 use crate::AppState;
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::{require_permission, scope_of_book};
+use crate::books::ensure_entity_not_archived;
 use crate::data::{ReAuth, require_step_up};
 use crate::dto::{BookView, TermoSignatoryInput, normalize_termo_signatories, parse_date};
 use crate::error::ApiError;
@@ -530,6 +531,11 @@ pub async fn start_over_book(
     let entity = entities
         .get(&old_book.entity_id)
         .ok_or(ApiError::NotFound)?;
+    // t60: start-over mints a fresh successor book (`Book::new_successor`, a new `book.opened`
+    // genesis) outside `books.rs` entirely — so it is a fourth creation path and an archived entity
+    // refuses it here. Checked BEFORE the blocking task below, which archives and exports the old
+    // book: a refusal after that point would have already moved the record.
+    ensure_entity_not_archived(entity, "no successor book can be opened on it")?;
 
     let at = OffsetDateTime::now_utc();
     // Steps 1 & 2 both drive the sync store backend; fold them into ONE blocking-pool task (wp28).

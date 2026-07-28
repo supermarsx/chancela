@@ -1238,7 +1238,11 @@ pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
     require_permission(&state, &actor, Permission::ActDraft, scope_of_book(book_id)).await?;
     let created_by = actor.resolve("api");
 
-    // books → acts → ledger.
+    // entities → books → acts → ledger. The entity read joins the front of the canonical order
+    // (t60): this is the SECOND production act-creation path, so archiving an entity has to retire
+    // it from OCR paper import exactly as it does from `acts::draft_act` — otherwise an archived
+    // entity would still accept new atas through this door.
+    let entities = state.entities.read().await;
     let books = state.books.read().await;
     let book = books.get(&book_id).ok_or(ApiError::NotFound)?;
     if !book.is_open() {
@@ -1247,6 +1251,11 @@ pub async fn create_act_draft_from_accepted_paper_book_ocr_draft(
         )));
     }
     let entity_id = book.entity_id;
+    // Tolerant of an entity absent from the read model, matching `acts::draft_act`: this handler
+    // never resolved the entity before, so the guard must not introduce a new `404`.
+    if let Some(entity) = entities.get(&entity_id) {
+        crate::books::ensure_entity_not_archived(entity, "no new act can be drafted in its books")?;
+    }
 
     let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut acts = state.acts.write().await;

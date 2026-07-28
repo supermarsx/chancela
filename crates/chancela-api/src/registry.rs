@@ -901,6 +901,12 @@ pub async fn import_into_entity(
     let _search_source_mutation = crate::search::begin_source_mutation(&state).await;
     let mut entities = state.entities.write().await;
     let entity = entities.get_mut(&eid).ok_or(ApiError::NotFound)?;
+    // t60 (D3): re-importing the registry extract rewrites the entity's own content — firma, seat,
+    // legal form. An archived entity is frozen against content edits, mirroring the `CompanyGroup`
+    // precedent's "archived groups cannot be edited". This is `import_into_entity`, which MUTATES an
+    // existing entity; the sibling `import_from_registry` CREATES one and is deliberately untouched,
+    // since an entity that does not exist yet cannot be archived.
+    crate::books::ensure_entity_not_archived(entity, "its content is frozen while archived")?;
 
     // Cross-check a clone, so the enriched entity + stored extract are committed to the read model
     // only after the durable write (event + both aggregate rows) commits.
@@ -2443,5 +2449,74 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    /// t60-e3 (D3): re-importing the extract rewrites the entity's own content — firma, seat, legal
+    /// form. An archived entity is frozen against that, mirroring the `CompanyGroup` precedent's
+    /// *"archived groups cannot be edited"*. Unarchive → edit → re-archive is the escape hatch, and
+    /// it is fully audited, which is why freezing costs nothing an operator cannot undo.
+    ///
+    /// This is `import_into_entity`. Its sibling `import_from_registry` **creates** an entity and is
+    /// deliberately unguarded: an entity that does not exist yet cannot be archived, so the check
+    /// would be meaningless there. The two are different handlers on different routes.
+    #[tokio::test]
+    async fn registry_import_into_an_archived_entity_is_refused() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Avenida da Liberdade, Lisboa",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        let id = create_entity(
+            &state,
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Avenida da Liberdade, Lisboa",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        // Archive through the core transition (the route is t60-e2's, landing in parallel).
+        let eid = EntityId(Uuid::parse_str(&id).expect("entity uuid"));
+        let before = {
+            let mut entities = state.entities.write().await;
+            let entity = entities.get_mut(&eid).expect("entity in the read model");
+            entity
+                .archive(time::OffsetDateTime::now_utc())
+                .expect("an active entity archives");
+            entity.clone()
+        };
+
+        let (status, body) = send(
+            state.clone(),
+            post_json(
+                &format!("/v1/entities/{id}/registry/import"),
+                json!({ "code": "1234-5678-9012" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let error = body["error"].as_str().unwrap_or_default();
+        assert!(
+            error.contains("is archived")
+                && error.contains("Encosto Estratégico, Lda")
+                && error.contains("Unarchive it first"),
+            "the refusal must name the entity and the remedy: {body}"
+        );
+
+        // Refused before the cross-check, so not one field moved.
+        let after = state
+            .entities
+            .read()
+            .await
+            .get(&eid)
+            .expect("an archived entity is never removed from the read model")
+            .clone();
+        assert_eq!(
+            serde_json::to_value(&before).expect("serializes"),
+            serde_json::to_value(&after).expect("serializes"),
+            "a refused import must leave the entity byte-identical"
+        );
     }
 }

@@ -7,6 +7,8 @@ mod act_reopen;
 mod act_revert;
 #[path = "closed_book_acts.rs"]
 mod closed_book_acts;
+#[path = "entity_archive_enforcement.rs"]
+mod entity_archive_enforcement;
 #[path = "law_reference_coverage.rs"]
 mod law_reference_coverage;
 #[path = "notifications.rs"]
