@@ -653,7 +653,17 @@ const checks = [
 
 for (const check of checks) {
   console.log(`\n==> ${check.name}`);
-  check.before?.();
+  try {
+    check.before?.();
+  } catch (error) {
+    // A marker miss is collected, but an unexpected throw — a marker path that is a directory, an
+    // unreadable file — would escape and discard everything collected before it, putting the run
+    // back to reporting one problem at a time. Record it and let the report below name it too.
+    recordCheckpointFailure(
+      "scripts/checkpoint-recent-landed.mjs",
+      `${check.name} setup threw: ${error.message}`,
+    );
+  }
   // The static map collects rather than throws, so ask for the whole list before running anything.
   reportCheckpointFailures();
 
