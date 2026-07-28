@@ -20619,7 +20619,7 @@ mod tests {
         assert_eq!(unknown_status, StatusCode::UNAUTHORIZED);
         assert_eq!(wrong_status, unknown_status);
         assert_eq!(empty_status, unknown_status);
-        assert_eq!(unknown_body, json!({ "error": "credenciais inválidas" }));
+        assert_eq!(unknown_body, json!({ "error": "credenciais inválidas", "code": "http.unauthorized" }));
         assert_eq!(
             wrong_body, unknown_body,
             "the two failures must be identical"
@@ -20750,7 +20750,7 @@ mod tests {
         }
 
         let (_, reference_status, reference_body) = observed[0].clone();
-        assert_eq!(reference_body, json!({ "error": "credenciais inválidas" }));
+        assert_eq!(reference_body, json!({ "error": "credenciais inválidas", "code": "http.unauthorized" }));
         for (label, status, body) in &observed[1..] {
             assert_eq!(*status, reference_status, "{label} differs in status");
             assert_eq!(
@@ -20864,7 +20864,7 @@ mod tests {
         )
         .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
-        assert_eq!(body, json!({ "error": "credenciais inválidas" }));
+        assert_eq!(body, json!({ "error": "credenciais inválidas", "code": "http.unauthorized" }));
     }
 
     // --- tg1: the unauthenticated surface answers nothing about who exists -----------------
