@@ -287,12 +287,11 @@ pub async fn create_envelope(
         .map_err(map_external_signing_error)?;
     let view = EnvelopeView::from(&envelope);
 
-    state
-        .external_signing_envelopes
-        .write()
-        .await
-        .insert(envelope.id, envelope);
-    persist_envelopes(&state).await?;
+    {
+        let mut envelopes = state.external_signing_envelopes.write().await;
+        envelopes.insert(envelope.id, envelope);
+        write_envelopes_snapshot(&state, &envelopes)?;
+    }
     record_envelope_event(
         &state,
         &actor_name,
@@ -353,25 +352,42 @@ pub async fn patch_envelope(
     }
 
     let envelope_id = ExternalSignatureEnvelopeId(id);
-    let mut envelope = find_envelope(&state, envelope_id).await?;
-    let scope = scope_of_act(&state, envelope.act_id).await;
+    // Read once for authorization only: the scope needs the owning act, and `require_permission`
+    // locks other stores, so it must not run under the envelope write guard. Nothing read here is
+    // carried into the mutation — the aggregate is re-read under the guard below.
+    let authorized_act_id = find_envelope(&state, envelope_id).await?.act_id;
+    let scope = scope_of_act(&state, authorized_act_id).await;
     require_permission(&state, &actor, Permission::SigningPerform, scope).await?;
     let actor_name = actor.resolve(req.actor.as_deref().unwrap_or("api"));
 
-    for slot in req.slots {
-        apply_slot_update(&mut envelope, slot)?;
-    }
-    if req.complete {
-        envelope.complete().map_err(map_external_signing_error)?;
-    }
-    let view = EnvelopeView::from(&envelope);
+    let view = {
+        let mut envelopes = state.external_signing_envelopes.write().await;
+        // Re-read, mutate and persist inside one critical section. A concurrent update to a
+        // *different* slot of the same envelope would otherwise be silently overwritten by this
+        // whole-aggregate insert, destroying its evidence outright: operator-recorded evidence
+        // exists nowhere else, and the slot would revert to `Pending` with no error raised.
+        let mut envelope = envelopes
+            .get(&envelope_id)
+            .ok_or(ApiError::NotFound)?
+            .clone();
+        if envelope.act_id != authorized_act_id {
+            // The permission just granted was resolved against a different act. Fail closed.
+            return Err(ApiError::NotFound);
+        }
+        // Mutate a clone rather than in place so a rejected update in the middle of a multi-slot
+        // request leaves the stored aggregate exactly as it was.
+        for slot in req.slots {
+            apply_slot_update(&mut envelope, slot)?;
+        }
+        if req.complete {
+            envelope.complete().map_err(map_external_signing_error)?;
+        }
+        let view = EnvelopeView::from(&envelope);
+        envelopes.insert(envelope_id, envelope);
+        write_envelopes_snapshot(&state, &envelopes)?;
+        view
+    };
 
-    state
-        .external_signing_envelopes
-        .write()
-        .await
-        .insert(envelope_id, envelope);
-    persist_envelopes(&state).await?;
     record_envelope_event(
         &state,
         &actor_name,
@@ -467,17 +483,12 @@ pub(crate) async fn commit_envelope_slot_for_external_invite(
             }
             None => return Err(ApiError::NotFound),
         }
-    }
-
-    if let Err(err) = persist_envelopes(state).await {
-        if let Err(rollback_err) =
-            restore_envelope_snapshot(state, envelope_id, previous.clone()).await
-        {
-            eprintln!(
-                "warning: failed to roll back linked external invite slot initiation after persist error: {rollback_err:?}"
-            );
+        // Persist under the same guard as the compare-and-swap. The rollback can then be an
+        // in-guard restore that cannot itself fail or race a concurrent writer.
+        if let Err(err) = write_envelopes_snapshot(state, &envelopes) {
+            envelopes.insert(envelope_id, previous);
+            return Err(err);
         }
-        return Err(err);
     }
 
     Ok(CommittedExternalInviteSlotInitiation {
@@ -498,35 +509,43 @@ pub(crate) async fn sign_linked_external_invite_slot_from_signed_pdf(
     let evidence =
         linked_external_invite_signed_pdf_evidence(req.invite_id, req.document_id, digest);
 
-    let previous = find_envelope(state, req.envelope_id).await?;
-    if previous.act_id != req.act_id {
-        return Err(ApiError::NotFound);
-    }
-    let slot = previous.slot(req.slot_id).ok_or(ApiError::NotFound)?;
-    if !slot.identity_requirements.is_empty() {
-        return Ok(LinkedExternalInviteSlotSignOutcome::IdentityRequirementsPresent);
-    }
-    if slot.status == ExternalSignerSlotStatus::Signed {
-        if linked_external_invite_slot_has_evidence(slot, &evidence) {
-            return Ok(LinkedExternalInviteSlotSignOutcome::AlreadySigned);
+    // Everything from here — the guards, the mutation and the durable write — runs inside one
+    // critical section. The PAdES validation that produced `req` ran upstream in
+    // `prepare_external_signed_pdf_evidence`, so no slow work is held under this guard; what used to
+    // span it was the read-modify-write, whose blind whole-aggregate insert could drop a concurrent
+    // sibling slot's signature and silently revert that slot to `Pending`.
+    let view = {
+        let mut envelopes = state.external_signing_envelopes.write().await;
+        let mut updated = envelopes
+            .get(&req.envelope_id)
+            .ok_or(ApiError::NotFound)?
+            .clone();
+        if updated.act_id != req.act_id {
+            return Err(ApiError::NotFound);
         }
-        return Err(ApiError::Conflict(
-            "linked external envelope slot is already signed with different evidence".to_owned(),
-        ));
-    }
+        let slot = updated.slot(req.slot_id).ok_or(ApiError::NotFound)?;
+        if !slot.identity_requirements.is_empty() {
+            return Ok(LinkedExternalInviteSlotSignOutcome::IdentityRequirementsPresent);
+        }
+        if slot.status == ExternalSignerSlotStatus::Signed {
+            if linked_external_invite_slot_has_evidence(slot, &evidence) {
+                return Ok(LinkedExternalInviteSlotSignOutcome::AlreadySigned);
+            }
+            return Err(ApiError::Conflict(
+                "linked external envelope slot is already signed with different evidence"
+                    .to_owned(),
+            ));
+        }
 
-    let mut updated = previous;
-    updated
-        .sign_slot_with_evidence(req.slot_id, evidence)
-        .map_err(map_external_signing_error)?;
-    let view = EnvelopeView::from(&updated);
+        updated
+            .sign_slot_with_evidence(req.slot_id, evidence)
+            .map_err(map_external_signing_error)?;
+        let view = EnvelopeView::from(&updated);
+        envelopes.insert(req.envelope_id, updated);
+        write_envelopes_snapshot(state, &envelopes)?;
+        view
+    };
 
-    state
-        .external_signing_envelopes
-        .write()
-        .await
-        .insert(req.envelope_id, updated);
-    persist_envelopes(state).await?;
     record_envelope_event(
         state,
         req.actor,
@@ -573,12 +592,9 @@ async fn restore_envelope_snapshot(
     envelope_id: ExternalSignatureEnvelopeId,
     envelope: ExternalSignatureEnvelope,
 ) -> Result<(), ApiError> {
-    state
-        .external_signing_envelopes
-        .write()
-        .await
-        .insert(envelope_id, envelope);
-    persist_envelopes(state).await
+    let mut envelopes = state.external_signing_envelopes.write().await;
+    envelopes.insert(envelope_id, envelope);
+    write_envelopes_snapshot(state, &envelopes)
 }
 
 pub(crate) fn load_envelopes(
@@ -797,10 +813,21 @@ impl From<ExternalSignatureCompletionSummary> for CompletionSummaryView {
     }
 }
 
-async fn persist_envelopes(state: &AppState) -> Result<(), ApiError> {
+/// Serialize an envelope map the caller already holds a guard on.
+///
+/// Every mutating path calls this **while still holding the write guard**, so the in-memory update
+/// and the durable write are one critical section. Persisting after the guard drops would leave a
+/// second lost-update window of its own: two writers could each read a snapshot and rename their
+/// files in the opposite order, leaving `external-signing-envelopes.json` holding the older state
+/// even though memory is correct — a loss that only surfaces on restart.
+///
+/// The whole-file rewrite is unchanged and deliberate; its cost is t57's separate finding.
+fn write_envelopes_snapshot(
+    state: &AppState,
+    envelopes: &HashMap<ExternalSignatureEnvelopeId, ExternalSignatureEnvelope>,
+) -> Result<(), ApiError> {
     if let Some(path) = &state.external_signing_envelopes_path {
-        let envelopes = state.external_signing_envelopes.read().await;
-        write_envelopes_atomic(path, &envelopes)
+        write_envelopes_atomic(path, envelopes)
             .map_err(|e| ApiError::Internal(format!("failed to persist envelopes: {e}")))?;
     }
     Ok(())

@@ -659,3 +659,243 @@ async fn sequential_flow_blocks_later_required_slots_until_earlier_resolves() {
     assert_eq!(status, StatusCode::OK, "second now allowed: {updated}");
     assert_eq!(updated["slots"][1]["status"], "initiated");
 }
+
+/// A parallel-order envelope whose two slots are **both required**, so each can be resolved
+/// independently and both must be signed for the envelope to complete.
+async fn parallel_two_required_envelope(state: &AppState, token: &str, act_id: &str) -> Value {
+    let (status, envelope) = send(
+        state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/external-signing/envelopes"),
+            token,
+            json!({
+                "order_policy": "parallel",
+                "slots": [
+                    { "signer_label": "Chair", "required": true },
+                    { "signer_label": "Secretary", "required": true }
+                ]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "create envelope: {envelope}");
+    envelope
+}
+
+fn sign_slot_body(slot_id: &str, reference: &str) -> Value {
+    json!({
+        "slots": [{
+            "id": slot_id,
+            "status": "signed",
+            "evidence": [{ "label": "provider event", "reference": reference }]
+        }]
+    })
+}
+
+/// Assert `slot_id` is signed in `envelope` **and** still carries its own evidence reference.
+///
+/// Status alone is not enough: the failure this guards against reverts the status *and* drops the
+/// evidence, and evidence recorded through this path exists in no other store.
+///
+/// `signed` is spelled by the caller because the two serializations differ: the API DTO is
+/// `#[serde(rename_all = "snake_case")]` and emits `"signed"`, while the persisted domain enum
+/// emits its variant name `"Signed"`. Asserting the exact spelling of whichever document is in
+/// hand keeps this from quietly passing on the wrong shape.
+fn assert_signed_with_evidence(envelope: &Value, slot_id: &str, signed: &str, reference: &str) {
+    let slot = envelope["slots"]
+        .as_array()
+        .expect("slots")
+        .iter()
+        .find(|slot| slot["id"] == slot_id)
+        .unwrap_or_else(|| panic!("slot {slot_id} is missing: {envelope}"));
+    assert_eq!(
+        slot["status"], signed,
+        "slot {slot_id} lost its update and reverted: {envelope}"
+    );
+    assert!(
+        slot["evidence"]
+            .as_array()
+            .expect("evidence")
+            .iter()
+            .any(|item| item["reference"] == reference),
+        "slot {slot_id} lost the evidence recorded against it: {envelope}"
+    );
+}
+
+/// **Lost-update regression.** Two operators record evidence on two *different* slots of one
+/// envelope at the same time. Before the fix, each request read the aggregate, mutated a detached
+/// clone, and blind-inserted the whole aggregate back: the second insert overwrote the first, the
+/// first slot silently reverted to `pending`, and its evidence — which exists nowhere but this
+/// aggregate — was destroyed. Both requests still answered `200 OK`. That is the silent drop this
+/// guards against; a refusal would have been fine.
+///
+/// **How the overlap is forced.** `require_permission` reaches `authz::scope_relations`, which
+/// snapshots `group_template_libraries` on every authorization decision. In `patch_envelope` that
+/// snapshot happens *after* the aggregate has been read and *before* it is written back, and
+/// nothing else on this request path touches that map — its only other readers are the groups
+/// handlers and the cluster feed, neither of which this test calls. Holding the write side parks
+/// both requests inside the read-modify-write window; releasing it lets both proceed to their
+/// writes having already read the same pre-state.
+///
+/// **Why it repeats.** Neither guard below is airtight on its own, and a concurrency test that
+/// interleaves nothing passes green while the defect ships. The barrier proves both tasks reached
+/// the same starting line with their code paths already warm; `is_finished` proves neither request
+/// *completed* before the gate dropped. Neither proves a request had actually reached the gate
+/// rather than still being on its way there, and a starved task that arrives late makes an attempt
+/// prove nothing. Measured against the unfixed code a single attempt reproduces the loss about four
+/// times in five, so the attempts repeat on independent envelopes and *every* attempt must preserve
+/// both signatures.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_updates_to_different_slots_keep_both_signatures() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(dir.0.clone());
+    let token = bootstrap(&state).await;
+    let act_id = signing_act(&state, &token).await;
+
+    for attempt in 1..=5 {
+        let envelope = parallel_two_required_envelope(&state, &token, &act_id).await;
+        let envelope_id = envelope["id"].as_str().expect("envelope id").to_owned();
+        let chair = envelope["slots"][0]["id"]
+            .as_str()
+            .expect("slot id")
+            .to_owned();
+        let secretary = envelope["slots"][1]["id"]
+            .as_str()
+            .expect("slot id")
+            .to_owned();
+
+        // Two rendezvous, and they must be separate. The warm-up GET goes through
+        // `require_permission` too, so it needs the *read* side of the very map this test gates on.
+        // Closing the gate before the writers have finished warming would block them inside the
+        // warm-up, they would never reach the rendezvous, and the test would deadlock rather than
+        // race. So: `warmed` proves both warm-ups are done and the read lock is free, *then* the
+        // gate closes, and only then does `go` release both writers into the racing PATCH.
+        let warmed = std::sync::Arc::new(tokio::sync::Barrier::new(3));
+        let go = std::sync::Arc::new(tokio::sync::Barrier::new(3));
+        let spawn_sign = |slot_id: String, reference: String| {
+            let state = state.clone();
+            let token = token.clone();
+            let warmed = warmed.clone();
+            let go = go.clone();
+            let uri = format!("/v1/external-signing/envelopes/{envelope_id}");
+            tokio::spawn(async move {
+                // Warm the whole path first — router construction, session resolution, permission
+                // resolution — so that after `go` the only work left before the gate is code this
+                // task has already executed once.
+                let (status, body) = send(&state, get_req(&uri, &token)).await;
+                assert_eq!(status, StatusCode::OK, "warm-up read: {body}");
+                warmed.wait().await;
+                go.wait().await;
+                send(
+                    &state,
+                    json_req("PATCH", &uri, &token, sign_slot_body(&slot_id, &reference)),
+                )
+                .await
+            })
+        };
+        let chair_write = spawn_sign(chair.clone(), "provider:event:chair-signed".to_owned());
+        let secretary_write = spawn_sign(
+            secretary.clone(),
+            "provider:event:secretary-signed".to_owned(),
+        );
+
+        warmed.wait().await;
+        let gate = state.group_template_libraries.write().await;
+        go.wait().await;
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        assert!(
+            !chair_write.is_finished(),
+            "attempt {attempt}: the chair request completed before the gate was released, so the \
+             two writes never overlapped and this attempt would prove nothing"
+        );
+        assert!(
+            !secretary_write.is_finished(),
+            "attempt {attempt}: the secretary request completed before the gate was released, so \
+             the two writes never overlapped and this attempt would prove nothing"
+        );
+        drop(gate);
+
+        let (chair_status, chair_body) = chair_write.await.expect("chair request completes");
+        let (secretary_status, secretary_body) =
+            secretary_write.await.expect("secretary request completes");
+        assert_eq!(
+            chair_status,
+            StatusCode::OK,
+            "attempt {attempt} chair signed: {chair_body}"
+        );
+        assert_eq!(
+            secretary_status,
+            StatusCode::OK,
+            "attempt {attempt} secretary signed: {secretary_body}"
+        );
+
+        let (status, read) = send(
+            &state,
+            get_req(
+                &format!("/v1/external-signing/envelopes/{envelope_id}"),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "attempt {attempt} read: {read}");
+        assert_signed_with_evidence(&read, &chair, "signed", "provider:event:chair-signed");
+        assert_signed_with_evidence(
+            &read,
+            &secretary,
+            "signed",
+            "provider:event:secretary-signed",
+        );
+        assert_eq!(
+            read["completion"]["signed_required_slot_count"], 2,
+            "attempt {attempt}: both required slots must be counted as signed: {read}"
+        );
+        assert!(
+            read["completion"]["blocking_required_slot_ids"]
+                .as_array()
+                .expect("blocking ids")
+                .is_empty(),
+            "attempt {attempt}: a required slot regained blocking status after being signed: {read}"
+        );
+
+        // The durable record must carry both updates too. Persisting after the write guard dropped
+        // left a second, quieter window: two writers could rename their files in the opposite order
+        // and leave the older snapshot on disk with memory still correct — a loss that surfaces
+        // only on restart.
+        let persisted: Value = serde_json::from_slice(
+            &std::fs::read(dir.0.join("external-signing-envelopes.json"))
+                .expect("envelopes persisted"),
+        )
+        .expect("envelope document parses");
+        let stored = persisted
+            .as_array()
+            .expect("envelope list")
+            .iter()
+            .find(|stored| stored["id"] == envelope_id.as_str())
+            .unwrap_or_else(|| panic!("attempt {attempt}: the envelope is not on disk"))
+            .clone();
+        assert_signed_with_evidence(&stored, &chair, "Signed", "provider:event:chair-signed");
+        assert_signed_with_evidence(
+            &stored,
+            &secretary,
+            "Signed",
+            "provider:event:secretary-signed",
+        );
+    }
+
+    // Both writes of every attempt were recorded. Note what this can and cannot show: the ledger
+    // retains only `payload_digest`, never the payload, so the completion counts these events carry
+    // are not readable back and a lost update leaves no detectable trace in the event history.
+    let updates = {
+        let ledger = state.ledger.read().await;
+        ledger
+            .events()
+            .iter()
+            .filter(|event| event.kind == "signature.external_envelope.updated")
+            .count()
+    };
+    assert_eq!(
+        updates, 10,
+        "both slot updates of all five attempts recorded"
+    );
+}
