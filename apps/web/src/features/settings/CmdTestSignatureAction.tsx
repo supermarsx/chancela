@@ -64,8 +64,11 @@ import './cmdTestSignature.css';
 /**
  * The typed phrase `ConfirmationAction::CmdTestSignature` is floored at (`confirmation.rs`). Fixed
  * and non-localised by the server's own decision — this constant must reproduce it exactly, not
- * translate it; the confirmation input in `ConfirmActionModal` asks the operator to type this
- * literal string regardless of locale, and the server test suite pins it byte-for-byte.
+ * translate it; the gate's phrase input asks the operator to type this literal string regardless
+ * of locale, and the server test suite pins it byte-for-byte. It is supplied here at the call
+ * site rather than read back out of {@link useConfirmationGate}, which deliberately does not
+ * expose the typed value — the literal at the call site is what pins the byte-exact string the
+ * server compares against.
  */
 const CMD_TEST_CONFIRM_PHRASE = 'ASSINAR TESTE';
 
