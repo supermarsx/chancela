@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { collectionPageFixture, renderWithProviders } from '../../test/utils';
 
@@ -124,6 +124,20 @@ function toggleControl(): HTMLElement {
 function dialogConfirm(): HTMLButtonElement | null {
   const dialog = screen.queryByRole('dialog');
   return dialog?.querySelector<HTMLButtonElement>('button[type=submit]') ?? null;
+}
+
+/**
+ * Let anything a click started reach the transport.
+ *
+ * One macrotask is enough: an unguarded toggle calls `mutateAsync` inside the handler, so its
+ * request is recorded before this resolves. That is what lets the no-write assertions below be
+ * the FIRST thing a lost guard trips, instead of failing on a missing dialog — a proxy that
+ * would also go red for reasons that have nothing to do with whether the account was written.
+ */
+async function settle(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
 }
 
 /** The policy `GET /v1/confirmation-policy` answers with, shaped as the server emits it. */
@@ -274,15 +288,19 @@ describe('UsersList (Configurações → Utilizadores)', () => {
 
     expect(await screen.findByText('amelia.marques')).toBeTruthy();
     fireEvent.click(toggleControl());
+    await settle();
 
-    // The dialog is up and the account is untouched.
-    await waitFor(() => expect(dialogConfirm()).not.toBeNull());
+    // THE assertion. Ordered first so that a regression fails HERE, on the absent write, rather
+    // than on some proxy for it further down.
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+    // …and the click was not merely swallowed: the operator is being asked.
+    expect(dialogConfirm()).not.toBeNull();
 
-    // Dismissing it leaves the account untouched too — a cancelled guard must not "fall through"
+    // Dismissing leaves the account untouched too — a cancelled guard must not "fall through"
     // to the action it was guarding.
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(dialogConfirm()).toBeNull());
+    await settle();
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
   });
 
@@ -1341,9 +1359,10 @@ describe('EditUserPage — account status reads as a state with an action', () =
 
     expect(await screen.findByRole('button', { name: 'Desativar' })).toBeTruthy();
     fireEvent.click(toggleControl());
+    await settle();
 
-    await waitFor(() => expect(dialogConfirm()).not.toBeNull());
     expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
+    expect(dialogConfirm()).not.toBeNull();
   });
 
   it('gates the toggle on user.manage, like the identical control on the roster', async () => {
