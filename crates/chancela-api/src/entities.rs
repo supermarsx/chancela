@@ -226,6 +226,12 @@ pub async fn patch_entity(
 
     let entity = entities.get_mut(&EntityId(id)).ok_or(ApiError::NotFound)?;
 
+    // D3: an archived entity's content is frozen, the same refusal `registry::import_into_entity`
+    // makes. Deliberately **before** the no-op early return below: a PATCH that happens to change
+    // nothing would otherwise answer `200 OK` on a frozen entity, and an operator who edits, sees
+    // success and finds nothing recorded has been told the archive does not apply to them.
+    crate::books::ensure_entity_not_archived(entity, "its content is frozen while archived")?;
+
     // Apply to a clone so the in-memory map is mutated only after the durable write commits (a
     // store failure rolls back the appended event and leaves the entity untouched).
     let mut next = entity.clone();
@@ -3157,5 +3163,98 @@ mod tests {
                 "archived={value} must reject a cursor minted under include: {body}"
             );
         }
+    }
+
+    /// **D3: an archived entity's content is frozen**, the sibling refusal to
+    /// `registry::import_into_entity`'s.
+    ///
+    /// The no-op case is the one worth having a test for. `patch_entity` returns early with `200`
+    /// when a request changes nothing, so a guard placed after that branch would let a PATCH with
+    /// no effective change succeed against a frozen entity — an operator would edit, see success,
+    /// find nothing recorded, and reasonably conclude the archive did not apply to them. The guard
+    /// sits before the branch, and this asserts it there rather than trusting the placement.
+    #[tokio::test]
+    async fn an_archived_entity_refuses_content_edits_including_ones_that_change_nothing() {
+        let state = AppState::default();
+        let token = token_for_role(&state, "amelia.marques", OWNER_ROLE_ID).await;
+        let id = created_entity(&state, &token, "Encosto Estratégico Lda", "patch-nipc").await;
+        let uri = format!("/v1/entities/{id}");
+
+        // Editable while active.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(&uri, json!({ "fiscal_year_end": "12-31" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(post_json(&format!("/v1/entities/{id}/archive"), json!({})), &token),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+
+        // A real edit: refused, loudly, naming the entity and the remedy.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(&uri, json!({ "fiscal_year_end": "06-30" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CONFLICT, "{body}");
+        let message = body["error"].as_str().expect("a conflict carries a message");
+        assert!(message.contains("Encosto Estratégico Lda"), "{message}");
+        assert!(message.contains("Unarchive it first"), "{message}");
+
+        // An edit that would change nothing: refused too, not a silent `200`.
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(patch_layout_json(&uri, json!({})), &token),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::CONFLICT,
+            "a no-op PATCH must not report success against a frozen entity: {body}"
+        );
+
+        // Nothing was written by either refusal.
+        assert_eq!(
+            state
+                .entities
+                .read()
+                .await
+                .get(&id)
+                .expect("entity present")
+                .fiscal_year_end
+                .as_deref(),
+            Some("12-31"),
+        );
+
+        // And the freeze lifts on unarchive — the refusal is a state, not a one-way door.
+        let (status, _) = send_raw(
+            state.clone(),
+            with_session(
+                post_json(&format!("/v1/entities/{id}/unarchive"), json!({})),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NO_CONTENT);
+        let (status, body) = send_raw(
+            state.clone(),
+            with_session(
+                patch_layout_json(&uri, json!({ "fiscal_year_end": "06-30" })),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
     }
 }

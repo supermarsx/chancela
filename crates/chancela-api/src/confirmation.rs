@@ -166,6 +166,7 @@ pub enum ConfirmationAction {
     TemplateVersionDelete,
     TemplateVersionRestore,
     TemplateLibraryArchive,
+    EntityArchive,
     GroupArchive,
     GroupEntityRemove,
     RepositoryDelete,
@@ -235,6 +236,7 @@ impl ConfirmationAction {
         Self::TemplateVersionDelete,
         Self::TemplateVersionRestore,
         Self::TemplateLibraryArchive,
+        Self::EntityArchive,
         Self::GroupArchive,
         Self::GroupEntityRemove,
         Self::RepositoryDelete,
@@ -306,6 +308,7 @@ impl ConfirmationAction {
             Self::TemplateVersionDelete => "template.version_delete",
             Self::TemplateVersionRestore => "template.version_restore",
             Self::TemplateLibraryArchive => "template_library.archive",
+            Self::EntityArchive => "entity.archive",
             Self::GroupArchive => "group.archive",
             Self::GroupEntityRemove => "group.entity_remove",
             Self::RepositoryDelete => "repository.delete",
@@ -395,6 +398,14 @@ impl ConfirmationAction {
             | Self::TemplateVersionDelete
             | Self::TemplateVersionRestore
             | Self::TemplateLibraryArchive => Confirm,
+            // Retires an entity from *new authorship* and nothing else: every book, act, document
+            // and ledger row stays readable, resolvable and exportable, and `unarchive` reverses it
+            // with its own ledger event. A confirm step, but no re-auth and no phrase — those are
+            // priced for acts that cannot be undone, and charging them here would spend the
+            // operator's attention on the one archival action in the product that is cheap to
+            // reverse. `unarchive` carries no floor at all: granting authorship back is not the
+            // dangerous direction, and a prompt with no severity behind it devalues the real ones.
+            Self::EntityArchive => Confirm,
             Self::GroupArchive
             | Self::GroupEntityRemove
             | Self::RepositoryDelete
@@ -462,6 +473,12 @@ impl ConfirmationAction {
             | Self::ActArchive
             | Self::ActRevert
             | Self::ActReopen
+            // Deliberately **not** `Destructive`, and deliberately unlike `GroupArchive` above.
+            // A `CompanyGroup` is documented in-tree as a convenience view and its archiving is
+            // one-way; an entity is a legal person whose archiving is reversible, removes no
+            // record, and leaves sealed acts naming their parties. Borrowing destructive
+            // vocabulary for it would train operators to click through the guards that matter.
+            | Self::EntityArchive
             | Self::RoleAssign
             | Self::RoleSeededReconciliation
             | Self::DelegationSuspend
@@ -562,6 +579,17 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         "/v1/entities/{id}",
         RouteGuard::NotGuarded(
             "Edits mutable draft state and is refused once the record is frozen.",
+        ),
+    ),
+    (
+        "/v1/entities/{id}/archive",
+        RouteGuard::Actions(&[ConfirmationAction::EntityArchive]),
+    ),
+    (
+        "/v1/entities/{id}/unarchive",
+        RouteGuard::NotGuarded(
+            "Returns an entity to active authorship. Granting the ability to start work back is \
+             not the dangerous direction, and it is separately ledgered.",
         ),
     ),
     (
