@@ -573,8 +573,12 @@ export function ExternalValidatorReportsPanel() {
       <div className="pdf-validator stack">
         <InlineWarning tone="info" title={t('externalValidatorReports.notice.title')}>
           <p>{t('externalValidatorReports.notice.body')}</p>
-          <p>{t('externalValidatorReports.notice.noClaims')}</p>
         </InlineWarning>
+        {/* The no-claims statement stands alone rather than riding inside the scope note above.
+            Bundled, it would inherit whatever treatment that note is given — which is how a
+            disclaimer ends up switchable by accident the day the scope note becomes dismissable.
+            It carries no `notice` key and so cannot acquire one without a deliberate edit here. */}
+        <InlineWarning tone="info">{t('externalValidatorReports.notice.noClaims')}</InlineWarning>
 
         <div className="pdf-validator-upload">
           <Field

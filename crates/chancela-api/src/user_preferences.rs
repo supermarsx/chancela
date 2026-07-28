@@ -203,6 +203,16 @@ pub enum NoticeKey {
     /// reader is a single tool surface, and the caveat's meaning does not depend on which
     /// citation was last pinned.
     LegCitations,
+    /// The termo editors' signing legend (`books.termo.signing.legend`) — the unconditional
+    /// orientation block introducing the signature slots, shared by the abertura and encerramento
+    /// editors. One key for both: it is the same sentence with the same meaning, so an operator who
+    /// has read it on one editor has read it on the other. It is NOT the fail-closed termo state,
+    /// which is a separate, permanently visible banner gated on `isNotSignedRefusal`.
+    TermoSigningLegend,
+    /// The open-book form's orientation block (`books.open.guidanceTitle`) — which book suits which
+    /// body, and where the signature type is chosen. Dismissable because the same explanation stays
+    /// reachable per field through the form's help glyphs, so hiding it loses nothing.
+    BookOpenGuidance,
 }
 
 impl std::fmt::Display for NoticeKey {
@@ -211,6 +221,8 @@ impl std::fmt::Display for NoticeKey {
             Self::ExternalSigning => "external_signing",
             Self::PlatformLogScope => "platform_log_scope",
             Self::LegCitations => "leg_citations",
+            Self::TermoSigningLegend => "termo_signing_legend",
+            Self::BookOpenGuidance => "book_open_guidance",
         })
     }
 }
@@ -1041,6 +1053,36 @@ mod tests {
         .expect_err("unknown notice key refused");
         assert!(matches!(error, ApiError::Unprocessable(_)));
         assert!(state.user_preferences.read().await.users.is_empty());
+    }
+
+    /// `Display` is a hand-written second copy of the `rename_all = "snake_case"` wire names, and
+    /// it has no caller in the workspace — so nothing would notice it drifting from the serde name
+    /// a key is actually stored under. Pin the two together for every variant.
+    #[test]
+    fn every_notice_key_displays_as_the_name_it_is_stored_under() {
+        const ALL: [NoticeKey; 5] = [
+            NoticeKey::ExternalSigning,
+            NoticeKey::PlatformLogScope,
+            NoticeKey::LegCitations,
+            NoticeKey::TermoSigningLegend,
+            NoticeKey::BookOpenGuidance,
+        ];
+        for key in ALL {
+            // Compiler-enforced coverage: adding a variant makes this match non-exhaustive, which
+            // is the prompt to extend `ALL` two lines up as well.
+            match key {
+                NoticeKey::ExternalSigning => (),
+                NoticeKey::PlatformLogScope => (),
+                NoticeKey::LegCitations => (),
+                NoticeKey::TermoSigningLegend => (),
+                NoticeKey::BookOpenGuidance => (),
+            }
+            assert_eq!(
+                serde_json::to_value(key).unwrap(),
+                serde_json::Value::String(key.to_string()),
+                "Display disagrees with the serde wire name for {key:?}",
+            );
+        }
     }
 
     #[tokio::test]

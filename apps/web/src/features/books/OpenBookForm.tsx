@@ -313,7 +313,11 @@ export function OpenBookForm({ entityId, entities }: Props) {
       <form className="form" onSubmit={onSubmit}>
         {/* Autonomy-oriented orientation: which book matches which body, and where the
             signature type is chosen. The per-field help glyphs cover each option in detail. */}
-        <InlineWarning tone="info" title={t('books.open.guidanceTitle')}>
+        <InlineWarning
+          tone="info"
+          notice="book_open_guidance"
+          title={t('books.open.guidanceTitle')}
+        >
           <p>{t('books.open.guidanceBody')}</p>
         </InlineWarning>
         {!entityId && entities ? (

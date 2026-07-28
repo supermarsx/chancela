@@ -8458,7 +8458,12 @@ export interface TableColumnPreferences {
 export type NoticeDismissal = { mode: 'snoozed'; until: string } | { mode: 'permanent' };
 
 /** Bounded notice keys accepted by the preferences API; arbitrary user-supplied keys are refused. */
-export type NoticeKey = 'external_signing' | 'platform_log_scope' | 'leg_citations';
+export type NoticeKey =
+  | 'external_signing'
+  | 'platform_log_scope'
+  | 'leg_citations'
+  | 'termo_signing_legend'
+  | 'book_open_guidance';
 
 export interface UserPreferences {
   table_columns: TableColumnPreferences;

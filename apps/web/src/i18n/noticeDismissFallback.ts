@@ -76,6 +76,20 @@ const SELF_PT_PT: Record<NoticeKey, NoticeSelfCopy> = {
       confirmation: 'Aviso sobre as citações reposto.',
     },
   },
+  termo_signing_legend: {
+    dismissActions: 'Opções para ocultar este aviso',
+    restore: {
+      label: 'Repor legenda das assinaturas do termo',
+      confirmation: 'Legenda das assinaturas do termo reposta.',
+    },
+  },
+  book_open_guidance: {
+    dismissActions: 'Opções para ocultar este aviso',
+    restore: {
+      label: 'Repor orientação sobre a abertura de livros',
+      confirmation: 'Orientação sobre a abertura de livros reposta.',
+    },
+  },
 };
 
 const SELF_ENGLISH: Record<NoticeKey, NoticeSelfCopy> = {
@@ -94,6 +108,21 @@ const SELF_ENGLISH: Record<NoticeKey, NoticeSelfCopy> = {
     restore: {
       label: 'Restore citations notice',
       confirmation: 'Citations notice restored.',
+    },
+  },
+  // "termo" is the legal instrument's own name and stays Portuguese in every locale.
+  termo_signing_legend: {
+    dismissActions: 'Options for hiding this notice',
+    restore: {
+      label: 'Restore termo signature legend',
+      confirmation: 'Termo signature legend restored.',
+    },
+  },
+  book_open_guidance: {
+    dismissActions: 'Options for hiding this notice',
+    restore: {
+      label: 'Restore book-opening guidance',
+      confirmation: 'Book-opening guidance restored.',
     },
   },
 };

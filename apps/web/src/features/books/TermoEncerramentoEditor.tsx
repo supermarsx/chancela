@@ -579,7 +579,11 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
 
   return (
     <div className="stack termo-editor">
-      <InlineWarning tone="info" title={tt('books.termo.signing.legend')}>
+      <InlineWarning
+        tone="info"
+        notice="termo_signing_legend"
+        title={tt('books.termo.signing.legend')}
+      >
         {et('books.encerramento.signing.intro')}
       </InlineWarning>
 
