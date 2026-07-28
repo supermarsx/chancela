@@ -736,6 +736,10 @@ pub struct TermoFieldsView {
     pub instrument_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub predecessor_note: Option<String>,
+    /// The seat this termo declares, present only when the operator overrode the entity's own.
+    /// Absent means "use the entity's registered seat"; it never means the seat is blank.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entity_seat: Option<String>,
 }
 
 impl From<&TermoFields> for TermoFieldsView {
@@ -747,6 +751,7 @@ impl From<&TermoFields> for TermoFieldsView {
             purpose: f.purpose.clone(),
             instrument_date: f.instrument_date.map(format_date),
             predecessor_note: f.predecessor_note.clone(),
+            entity_seat: f.entity_seat.clone(),
         }
     }
 }
@@ -852,6 +857,10 @@ pub struct PatchTermoAbertura {
     pub opening_date: Option<String>,
     #[serde(default)]
     pub predecessor_note: Option<String>,
+    /// F21 — the entity's registered seat (sede) as asserted on this termo. Send an empty string
+    /// to drop back to the entity's own seat; omit the key to leave the current value untouched.
+    #[serde(default)]
+    pub entity_seat: Option<String>,
     #[serde(default)]
     pub signatories: Option<Vec<TermoSlotInput>>,
     #[serde(default)]

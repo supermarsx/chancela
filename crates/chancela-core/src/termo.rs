@@ -497,6 +497,23 @@ pub struct TermoFields {
     /// gated by kind.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub predecessor_note: Option<String>,
+    /// F21 — the entity's registered seat (sede) as the operator asserts it on **this** termo,
+    /// or `None` to take the entity's current seat.
+    ///
+    /// Distinct from [`Self::place`] (F2): `place` is where the act of drawing up happened, this
+    /// is the entity's registered seat. Both may name the same city and still mean different
+    /// things, so neither ever fills in for the other.
+    ///
+    /// **`ASSURANCE`.** The seat that reaches the sealed payload is a *documented snapshot* — the
+    /// same treatment `entity_name`/`entity_nipc` already get — so a later change to the entity's
+    /// registered seat cannot restate what an opened book declared. Seeding this from the entity
+    /// and letting the operator correct it is what makes the snapshot theirs to assert.
+    ///
+    /// Draft-only and skippable: this lives on the editable instrument, never on the
+    /// [`TermoDeAbertura`] digest preimage, which has carried `entity_seat` since its original
+    /// shape. [`TermoInstrument::project_abertura`] resolves the two.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_seat: Option<String>,
 }
 
 impl TermoFields {
@@ -528,6 +545,13 @@ impl TermoFields {
             self.predecessor_note.as_deref(),
             MAX_TERMO_TEXT_CHARS,
         )?;
+        // A blank override is rejected by `check_len` as `EmptyField`, never quietly dropped back
+        // to the entity default: an operator who cleared the seat must be told, not second-guessed.
+        check_len(
+            "entity_seat",
+            self.entity_seat.as_deref(),
+            MAX_TERMO_TEXT_CHARS,
+        )?;
 
         match kind {
             TermoKind::Abertura => {
@@ -552,6 +576,14 @@ impl TermoFields {
                 if self.page_capacity.is_some() {
                     return Err(TermoError::FieldNotApplicable {
                         field: "page_capacity",
+                        kind,
+                    });
+                }
+                // Only the abertura projects an entity snapshot; a seat set here would be
+                // recorded and never reach a payload, so it is refused rather than ignored.
+                if self.entity_seat.is_some() {
+                    return Err(TermoError::FieldNotApplicable {
+                        field: "entity_seat",
                         kind,
                     });
                 }
@@ -1038,11 +1070,47 @@ impl TermoInstrument {
             .collect()
     }
 
+    /// The seat this termo declares: its own [`TermoFields::entity_seat`] when the operator set
+    /// one, otherwise the entity's current registered seat as supplied by the caller.
+    ///
+    /// Neither value is rewritten — only *emptiness* is judged on the trimmed text, so any seat
+    /// that seals today seals byte-identically. When both are blank this returns
+    /// [`TermoError::MissingField`]: the caller must be told the entity has no seat on record,
+    /// not handed a plausible-looking blank.
+    pub fn effective_entity_seat(
+        &self,
+        entity_seat: impl Into<String>,
+    ) -> Result<String, TermoError> {
+        if let Some(declared) = self
+            .fields
+            .entity_seat
+            .as_ref()
+            .filter(|seat| !seat.trim().is_empty())
+        {
+            return Ok(declared.clone());
+        }
+        let from_entity = entity_seat.into();
+        if from_entity.trim().is_empty() {
+            return Err(TermoError::MissingField("entity_seat"));
+        }
+        Ok(from_entity)
+    }
+
     /// Project this instrument into the sealed [`TermoDeAbertura`] payload.
     ///
     /// The entity snapshot and numbering scheme are supplied by the caller, which holds the
     /// entity aggregate. The payload binds the filled body and the collected signatures, so
     /// the genesis event digests the final, filled, signed termo rather than declared names.
+    ///
+    /// ⚠️ `entity_seat` is the entity's *current* registered seat, used only when this termo
+    /// declares no seat of its own ([`TermoFields::entity_seat`]). Callers on the snapshot and
+    /// seal paths must pass the same value for the same reason they must agree on
+    /// `numbering_scheme`: the bytes the signatures bind and the bytes the genesis event digests
+    /// cannot be allowed to disagree.
+    ///
+    /// Fails with [`TermoError::MissingField`] when neither source yields a seat. A termo de
+    /// abertura identifies the entity whose book it opens; sealing one with a blank Sede would
+    /// print an empty line on the instrument, and an empty line is not a statement.
     pub fn project_abertura(
         &self,
         entity_name: impl Into<String>,
@@ -1060,11 +1128,12 @@ impl TermoInstrument {
             .fields
             .instrument_date
             .ok_or(TermoError::MissingField("instrument_date"))?;
+        let seat = self.effective_entity_seat(entity_seat)?;
         let declared = self.declared_signatory_records();
         Ok(TermoDeAbertura {
             entity_name: entity_name.into(),
             entity_nipc: entity_nipc.into(),
-            entity_seat: entity_seat.into(),
+            entity_seat: seat,
             purpose: self.fields.purpose.clone().unwrap_or_default(),
             numbering_scheme,
             opening_date,
@@ -1179,6 +1248,145 @@ mod tests {
             Some(DEFAULT_PAGE_CAPACITY)
         );
         assert_eq!(TermoFields::for_encerramento().page_capacity, None);
+    }
+
+    // ---- F21: the entity seat (sede) the termo declares ----
+
+    /// The seat the entity holds today is what a termo that declares none of its own seals.
+    #[test]
+    fn a_termo_declaring_no_seat_projects_the_entitys_seat() {
+        let termo = draft_abertura();
+        assert_eq!(termo.fields.entity_seat, None, "no override by default");
+        let payload = termo
+            .project_abertura(
+                "Encosto Estratégico Lda",
+                "503004642",
+                "Rua das Amoreiras, n.º 12, 1250-020 Lisboa",
+                crate::book::NumberingScheme::Sequential,
+            )
+            .unwrap();
+        assert_eq!(
+            payload.entity_seat,
+            "Rua das Amoreiras, n.º 12, 1250-020 Lisboa"
+        );
+    }
+
+    /// The override is what the operator asserts on *this* instrument, so it wins over whatever
+    /// the entity aggregate currently says.
+    #[test]
+    fn a_declared_seat_overrides_the_entitys_seat() {
+        let mut termo = draft_abertura();
+        termo.fields.entity_seat = Some("Avenida da Liberdade, n.º 214, 1250-148 Lisboa".into());
+        let payload = termo
+            .project_abertura(
+                "Encosto Estratégico Lda",
+                "503004642",
+                "Rua das Amoreiras, n.º 12, 1250-020 Lisboa",
+                crate::book::NumberingScheme::Sequential,
+            )
+            .unwrap();
+        assert_eq!(
+            payload.entity_seat,
+            "Avenida da Liberdade, n.º 214, 1250-148 Lisboa",
+            "the operator's assertion, not the entity's current seat"
+        );
+    }
+
+    /// With nothing to declare on either side the projection must refuse. Sealing a blank Sede
+    /// would print an empty line on the instrument, which states nothing while looking complete.
+    #[test]
+    fn a_projection_with_no_seat_anywhere_is_refused() {
+        let termo = draft_abertura();
+        for blank in ["", "   "] {
+            assert!(
+                matches!(
+                    termo.project_abertura(
+                        "Encosto Estratégico Lda",
+                        "503004642",
+                        blank,
+                        crate::book::NumberingScheme::Sequential,
+                    ),
+                    Err(TermoError::MissingField("entity_seat"))
+                ),
+                "blank entity seat {blank:?} must be refused, not sealed"
+            );
+        }
+    }
+
+    /// An override rescues an entity with no seat on record — the operator supplies what the
+    /// aggregate lacks, rather than the termo sealing empty.
+    #[test]
+    fn a_declared_seat_satisfies_an_entity_with_no_seat() {
+        let mut termo = draft_abertura();
+        termo.fields.entity_seat = Some("Largo da Sé, n.º 3, 3000-138 Coimbra".into());
+        let payload = termo
+            .project_abertura(
+                "Encosto Estratégico Lda",
+                "503004642",
+                "",
+                crate::book::NumberingScheme::Sequential,
+            )
+            .unwrap();
+        assert_eq!(payload.entity_seat, "Largo da Sé, n.º 3, 3000-138 Coimbra");
+    }
+
+    /// The registered seat and the place of drawing up are different facts about the termo and
+    /// must reach the payload through different fields, even when both name Lisboa.
+    #[test]
+    fn the_seat_and_the_place_stay_distinct() {
+        let mut termo = draft_abertura();
+        termo.fields.entity_seat = Some("Rua do Almada, n.º 7, 4050-036 Porto".into());
+        termo.fields.place = Some("Lisboa".into());
+        let payload = termo
+            .project_abertura(
+                "Encosto Estratégico Lda",
+                "503004642",
+                "Coimbra",
+                crate::book::NumberingScheme::Sequential,
+            )
+            .unwrap();
+        assert_eq!(payload.entity_seat, "Rua do Almada, n.º 7, 4050-036 Porto");
+        assert_eq!(payload.place.as_deref(), Some("Lisboa"));
+    }
+
+    /// A whitespace-only override is an operator who cleared the field; validation says so
+    /// instead of quietly restoring the entity default behind their back.
+    #[test]
+    fn a_blank_declared_seat_is_rejected_by_validation() {
+        let mut termo = draft_abertura();
+        termo.fields.entity_seat = Some("   ".into());
+        assert!(matches!(
+            termo.advance_to_signing("csc-termo-abertura", now()),
+            Err(TermoError::EmptyField("entity_seat"))
+        ));
+        termo.fields.entity_seat = Some("x".repeat(MAX_TERMO_TEXT_CHARS + 1));
+        assert!(matches!(
+            termo.advance_to_signing("csc-termo-abertura", now()),
+            Err(TermoError::TextTooLong {
+                field: "entity_seat",
+                ..
+            })
+        ));
+        termo.fields.entity_seat = Some("Rua das Amoreiras, n.º 12, 1250-020 Lisboa".into());
+        assert!(termo.advance_to_signing("csc-termo-abertura", now()).is_ok());
+    }
+
+    /// Only the abertura projects an entity snapshot, so a seat on an encerramento would be
+    /// stored and never sealed. Refused rather than silently ignored.
+    #[test]
+    fn an_encerramento_refuses_a_declared_seat() {
+        let mut fields = TermoFields::for_encerramento();
+        fields.instrument_date = Some(date!(2026 - 12 - 31));
+        fields.closing_reason = Some(ClosingReason::BookFull);
+        assert!(fields.validate(TermoKind::Encerramento).is_ok());
+        fields.entity_seat = Some("Rua das Amoreiras, n.º 12, 1250-020 Lisboa".into());
+        assert!(matches!(
+            fields.validate(TermoKind::Encerramento),
+            Err(TermoError::FieldNotApplicable {
+                field: "entity_seat",
+                kind: TermoKind::Encerramento,
+            })
+        ));
     }
 
     // ---- F6: at least one signatory (LAW) ----

@@ -360,6 +360,11 @@ fn apply_patch(termo: &mut TermoInstrument, patch: PatchTermoAbertura) -> Result
     if let Some(predecessor_note) = patch.predecessor_note {
         termo.fields.predecessor_note = non_empty(predecessor_note);
     }
+    // Clearing the override is not clearing the seat: `None` here means the projection falls back
+    // to the entity's registered seat, which `project_abertura` still refuses to leave blank.
+    if let Some(entity_seat) = patch.entity_seat {
+        termo.fields.entity_seat = non_empty(entity_seat);
+    }
     if let Some(slots) = patch.signatories {
         replace_signatory_slots(termo, slots)?;
     }
