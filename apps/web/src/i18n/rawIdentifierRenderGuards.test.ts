@@ -40,10 +40,16 @@
  *
  * Only MULTI-WORD snake_case is detected. Single-word identifier unions — `DataDurableBackendFamily`
  * is `'sqlite' | 'postgres'`, `DataSidecarStorageMode` is `'file' | 'database' | 'in_memory'` — are
- * invisible except for the member that happens to carry an underscore. `active_backend_family`
- * renders raw in the same card as `sidecar_storage_mode` and this guard cannot see it. Widening the
- * pattern to any lowercase literal would flag every `'ok'`/`'warn'` tone union in the app, which is
- * the noisy-guard failure mode. The limit is recorded rather than papered over.
+ * invisible except for the member that happens to carry an underscore. Widening the pattern to any
+ * lowercase literal would flag every `'ok'`/`'warn'` tone union in the app, which is the noisy-guard
+ * failure mode. The limit is recorded rather than papered over.
+ *
+ * `active_backend_family` was the worked example: it rendered raw in the SAME CARD as
+ * `sidecar_storage_mode`, and this guard could see only the cardmate. t98 fixed both together
+ * through `dataRecoveryStatusFallback.ts`, whose own divergence test derives that population from
+ * the `DurableBackendFamily` enum in Rust — which is where a single-word union can be checked
+ * without guessing at render sites. The general limit stands: this scan will not enumerate the next
+ * one, so a single-word union has to be noticed by whoever touches its card.
  */
 import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
@@ -121,24 +127,6 @@ const EXPECTED: readonly ExpectedSite[] = [
   // recorded rather than fixed here because they are three coherent features (paper-book import,
   // data recovery, retention execution) that each want their own label module and their own
   // divergence guard against Rust — not a tail-end of this lane.
-  {
-    site: 'features/recovery/DataManagementSection.tsx::data.persistence.sidecar_storage_mode',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/recovery/DataManagementSection.tsx::report.readiness.status',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/recovery/DataManagementSection.tsx::verification.status',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
   {
     site: 'features/settings/PrivacyComplianceSection.tsx::candidate.candidate_evidence_state',
     mono: false,

@@ -65,6 +65,10 @@ import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../de
 import { formatTimestamp } from '../../format';
 import { t as translateNow, useLocale, useT, type MessageKey, type TFunction } from '../../i18n';
 import {
+  useDataRecoveryStatusResolver,
+  type DataRecoveryStatusGroup,
+} from '../../i18n/dataRecoveryStatusFallback';
+import {
   Badge,
   Button,
   Card,
@@ -523,6 +527,40 @@ function buildRecoveryDrillBody(
   return body;
 }
 
+/**
+ * A server-emitted status token, as a badge plus the sentence saying what it means, with the
+ * identifier kept beside it.
+ *
+ * Four fields on this surface used to render their raw wire token as the whole visible value; this
+ * is the one shape all four now go through. The identifier is not dropped — a technical panel gets
+ * pasted into a support thread and the token is the stable thing to search for — it just stops being
+ * the only thing on screen.
+ *
+ * `token` is typed `string | null` rather than each field's literal union on purpose: that widening
+ * is what makes the site a prop rather than a raw JSX text child, which is the shape
+ * `rawIdentifierRenderGuards.test.ts` records as resolved. `null` is only reachable for
+ * `backendFamily`, where it is the `Option::None` the wire really sends.
+ */
+function DataRecoveryStatus({
+  group,
+  token,
+}: {
+  group: DataRecoveryStatusGroup;
+  token: string | null;
+}) {
+  const describe = useDataRecoveryStatusResolver();
+  const status = describe(group, token);
+  return (
+    <div className="external-validator-status">
+      <Badge tone={status.tone} wrap>
+        {status.label}
+      </Badge>
+      <p className="muted">{status.meaning}</p>
+      {token === null ? null : <code className="mono">{token}</code>}
+    </div>
+  );
+}
+
 function StatusBadge({
   value,
   positive = true,
@@ -788,12 +826,8 @@ function IsolatedRestoreVerificationReport({
 }) {
   const verification = receipt.isolated_restore_verification;
   const verified = receipt.isolated_restore_verified && verification.status === 'verified';
-  const statusTone =
-    verification.status === 'verified'
-      ? 'ok'
-      : verification.status === 'not_recorded'
-        ? 'neutral'
-        : 'warn';
+  // The status row's tone now travels with its copy in `dataRecoveryStatusFallback.ts`, so the
+  // local ternary that used to pick it is gone rather than left to drift against it.
   const booleanRows = [
     { label: 'Snapshot materializado', value: verification.db_snapshot_materialized },
     { label: 'Snapshot aberto', value: verification.db_snapshot_opened },
@@ -827,7 +861,9 @@ function IsolatedRestoreVerificationReport({
           {
             key: 'status',
             label: translateNow('uiLiteral.gestaoDadosSection.estado'),
-            value: <Badge tone={statusTone}>{verification.status}</Badge>,
+            value: (
+              <DataRecoveryStatus group="isolatedRestoreStatus" token={verification.status} />
+            ),
           },
           {
             key: 'isolated_restore_verified',
@@ -1205,7 +1241,7 @@ function SyncHandoffPreflightReportCard({
     : blocked
       ? 'data.status.syncHandoff.verdictWhyBlocked'
       : 'data.status.syncHandoff.verdictWhyMissing';
-  const readinessTone = ready ? 'ok' : blocked ? 'warn' : 'neutral';
+  // As above: the readiness row's tone comes from the resolved entry, not from a local ternary.
   const hasActionable =
     report.blockers.length > 0 ||
     report.missing_evidence.length > 0 ||
@@ -1292,7 +1328,7 @@ function SyncHandoffPreflightReportCard({
                 {
                   key: 'readiness',
                   label: translateNow('uiLiteral.gestaoDadosSection.estado'),
-                  value: <Badge tone={readinessTone}>{report.readiness.status}</Badge>,
+                  value: <DataRecoveryStatus group="readinessStatus" token={report.readiness.status} />,
                 },
                 {
                   key: 'generated_at',
@@ -2292,22 +2328,20 @@ function DataStatusPanel({ tab, resetControls }: { tab: DataTab; resetControls: 
                       key: 'backend',
                       label: t('uiLiteral.gestaoDadosSection.backendDuravel'),
                       value: (
-                        <Badge tone={data.persistence.active_backend_family ? 'ok' : 'neutral'}>
-                          {data.persistence.active_backend_family ?? '—'}
-                        </Badge>
+                        <DataRecoveryStatus
+                          group="backendFamily"
+                          token={data.persistence.active_backend_family}
+                        />
                       ),
                     },
                     {
                       key: 'sidecars',
                       label: t('uiLiteral.gestaoDadosSection.sidecars'),
                       value: (
-                        <Badge
-                          tone={
-                            data.persistence.sidecar_storage_mode === 'database' ? 'ok' : 'neutral'
-                          }
-                        >
-                          {data.persistence.sidecar_storage_mode}
-                        </Badge>
+                        <DataRecoveryStatus
+                          group="sidecarStorageMode"
+                          token={data.persistence.sidecar_storage_mode}
+                        />
                       ),
                     },
                     {
