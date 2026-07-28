@@ -54,7 +54,6 @@ export const providerCredentialsPtPT = {
   'providerCredentials.cmdTest.pendingBody':
     'Foi enviado um código por SMS para «{phone}». Introduza-o para concluir o teste.',
   'providerCredentials.cmdTest.confirmButton': 'Introduzir código recebido',
-  'providerCredentials.cmdTest.initiateTitle': 'Testar a Chave Móvel Digital em produção?',
   'providerCredentials.cmdTest.initiateIntro1':
     'Este teste produz uma assinatura eletrónica qualificada real, contra o serviço de produção da AMA, com o telemóvel e o PIN indicados abaixo. Não existe modo de simulação: o que aqui se assina é apenas uma folha gerada pela aplicação que descreve o próprio teste, e a assinatura não conta para a abertura de qualquer livro nem para a assinatura de qualquer ato.',
   'providerCredentials.cmdTest.initiateIntro2': 'Credencial a testar: «{label}».',
@@ -64,9 +63,6 @@ export const providerCredentialsPtPT = {
   'providerCredentials.cmdTest.phoneLabel': 'Número de telemóvel',
   'providerCredentials.cmdTest.phoneHint': 'Formato +351 XXXXXXXXX.',
   'providerCredentials.cmdTest.pinLabel': 'PIN de assinatura',
-  'providerCredentials.cmdTest.confirmTitle': 'Confirmar a assinatura de teste',
-  'providerCredentials.cmdTest.confirmIntro':
-    'Introduza o código recebido por SMS em «{phone}». Ao confirmar, é produzida a assinatura eletrónica qualificada real.',
   'providerCredentials.cmdTest.confirmConfirm': 'Confirmar código',
   'providerCredentials.cmdTest.confirmPending': 'A confirmar…',
   'providerCredentials.cmdTest.otpLabel': 'Código recebido por SMS',
@@ -88,6 +84,37 @@ export const providerCredentialsPtPT = {
   'providerCredentials.cmdTest.download': 'Transferir PDF assinado',
   'providerCredentials.cmdTest.downloadPending': 'A transferir…',
   'providerCredentials.cmdTest.newTest': 'Testar novamente',
+
+  // --- The stepped flow dialog (t94) -----------------------------------------------------------
+  // One dialog walking four steps, replacing two separate confirm dialogs with the pending state
+  // and the whole result panel spilled into the table cell between them. The step names are the
+  // stages a CLIENT can actually distinguish; nothing here names a stage the browser cannot see.
+  'providerCredentials.cmdTest.flowTitle': 'Teste de assinatura em produção',
+  'providerCredentials.cmdTest.stepperLabel': 'Fases do teste de assinatura',
+  'providerCredentials.cmdTest.step.credentials': 'Credenciais',
+  'providerCredentials.cmdTest.step.authorisation': 'Autorização',
+  'providerCredentials.cmdTest.step.signature': 'Assinatura',
+  'providerCredentials.cmdTest.step.result': 'Resultado',
+  // Two confirmations in one flow is a server rule, not an oversight, so the flow says why —
+  // otherwise the second one reads as a defect and invites someone to «fix» it.
+  'providerCredentials.cmdTest.gateNoteInitiate':
+    'Esta fase é confirmada com a frase exata e com uma prova de identidade.',
+  'providerCredentials.cmdTest.gateNoteConfirm':
+    'Esta fase é confirmada de novo: o servidor não aceita a confirmação da fase anterior, por isso a frase e a prova de identidade voltam a ser pedidas.',
+  'providerCredentials.cmdTest.waitingTitle': 'A aguardar a sua confirmação',
+  'providerCredentials.cmdTest.waitingNote':
+    'A aplicação está à espera de si, não do servidor: nada avança enquanto o código não for introduzido aqui.',
+  'providerCredentials.cmdTest.waitingExpiry': 'O código é válido até {time}.',
+  'providerCredentials.cmdTest.signingTitle': 'A produzir e a verificar a assinatura',
+  'providerCredentials.cmdTest.signingBody':
+    'A Chave Móvel Digital está a assinar a folha de teste. A seguir, a aplicação lê o ficheiro devolvido e verifica-o com o seu próprio validador.',
+  'providerCredentials.cmdTest.expiredTitle': 'O código expirou',
+  'providerCredentials.cmdTest.expiredBody':
+    'O código deixou de ser válido antes de ser confirmado e nenhum documento foi assinado. Para tentar de novo, o teste recomeça nas credenciais e é enviado um código novo.',
+  'providerCredentials.cmdTest.close': 'Fechar',
+  'providerCredentials.cmdTest.viewResult': 'Ver resultado do teste',
+  'providerCredentials.cmdTest.rowDone': 'Teste concluído',
+  'providerCredentials.cmdTest.rowDoneUnverified': 'Concluído — não verificado',
 
   // --- Self-validation: what the application's own validator says about what it produced -------
   // Each coverage verdict is its OWN sentence rather than a token dropped into a shared one:
@@ -167,7 +194,6 @@ export const providerCredentialsEnglish = {
   'providerCredentials.cmdTest.pendingBody':
     'An SMS code was sent to "{phone}". Enter it to complete the test.',
   'providerCredentials.cmdTest.confirmButton': 'Enter received code',
-  'providerCredentials.cmdTest.initiateTitle': 'Test Chave Móvel Digital in production?',
   'providerCredentials.cmdTest.initiateIntro1':
     'This test produces a real qualified electronic signature, against AMA\'s live production service, with the phone and PIN below. There is no simulation mode: what is signed is only a sheet generated by the application describing the test itself, and the signature does not count toward opening any book or signing any act.',
   'providerCredentials.cmdTest.initiateIntro2': 'Credential under test: "{label}".',
@@ -177,9 +203,6 @@ export const providerCredentialsEnglish = {
   'providerCredentials.cmdTest.phoneLabel': 'Phone number',
   'providerCredentials.cmdTest.phoneHint': 'Format +351 XXXXXXXXX.',
   'providerCredentials.cmdTest.pinLabel': 'Signature PIN',
-  'providerCredentials.cmdTest.confirmTitle': 'Confirm the test signature',
-  'providerCredentials.cmdTest.confirmIntro':
-    'Enter the SMS code received at "{phone}". Confirming produces the real qualified electronic signature.',
   'providerCredentials.cmdTest.confirmConfirm': 'Confirm code',
   'providerCredentials.cmdTest.confirmPending': 'Confirming…',
   'providerCredentials.cmdTest.otpLabel': 'SMS code received',
@@ -201,6 +224,30 @@ export const providerCredentialsEnglish = {
   'providerCredentials.cmdTest.download': 'Download signed PDF',
   'providerCredentials.cmdTest.downloadPending': 'Downloading…',
   'providerCredentials.cmdTest.newTest': 'Test again',
+  'providerCredentials.cmdTest.flowTitle': 'Production test signature',
+  'providerCredentials.cmdTest.stepperLabel': 'Test signature phases',
+  'providerCredentials.cmdTest.step.credentials': 'Credentials',
+  'providerCredentials.cmdTest.step.authorisation': 'Authorisation',
+  'providerCredentials.cmdTest.step.signature': 'Signature',
+  'providerCredentials.cmdTest.step.result': 'Result',
+  'providerCredentials.cmdTest.gateNoteInitiate':
+    'This phase is confirmed with the exact phrase and a proof of identity.',
+  'providerCredentials.cmdTest.gateNoteConfirm':
+    'This phase is confirmed again: the server does not accept the previous phase\'s confirmation, so the phrase and the proof of identity are asked for once more.',
+  'providerCredentials.cmdTest.waitingTitle': 'Waiting for you to confirm',
+  'providerCredentials.cmdTest.waitingNote':
+    'The application is waiting for you, not for the server: nothing moves until the code is entered here.',
+  'providerCredentials.cmdTest.waitingExpiry': 'The code is valid until {time}.',
+  'providerCredentials.cmdTest.signingTitle': 'Producing and checking the signature',
+  'providerCredentials.cmdTest.signingBody':
+    'Chave Móvel Digital is signing the test sheet. The application then reads the returned file back and checks it with its own validator.',
+  'providerCredentials.cmdTest.expiredTitle': 'The code expired',
+  'providerCredentials.cmdTest.expiredBody':
+    'The code stopped being valid before it was confirmed, and no document was signed. To try again, the test restarts at the credentials and a new code is sent.',
+  'providerCredentials.cmdTest.close': 'Close',
+  'providerCredentials.cmdTest.viewResult': 'View test result',
+  'providerCredentials.cmdTest.rowDone': 'Test completed',
+  'providerCredentials.cmdTest.rowDoneUnverified': 'Completed — not verified',
   'providerCredentials.cmdTest.selfValidation': "Checked by the application itself",
   'providerCredentials.cmdTest.selfValidationHint':
     'The application read back the PDF it just produced and verified the signature with the same validator it uses to validate documents.',

@@ -23,12 +23,17 @@
  * inputs (a reason, an archive name) are injected as `children` and gated with `canConfirm`.
  * Nothing here is silently destructive — the copy is scary-but-clear and the button label
  * spells out the pending action.
+ *
+ * The first two rails are rendered by {@link useConfirmationGate}, which this module used to own
+ * inline. They moved out (t94) when a second surface — a multi-phase flow that must collect the
+ * same proof once per phase — needed them; the fields, ids and copy are unchanged.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReAuth } from '../api/types';
 import { ApiError } from '../api/client';
 import { useT } from '../i18n';
+import { useConfirmationGate } from './ConfirmationGate';
 import { Button } from './index';
 import { useToast } from './toast';
 import { useFocusTrap } from './useFocusTrap';
@@ -90,10 +95,6 @@ export function ConfirmActionModal({
 }: ConfirmActionModalProps) {
   const t = useT();
   const toast = useToast();
-  const [typed, setTyped] = useState('');
-  const [useRecovery, setUseRecovery] = useState(false);
-  const [password, setPassword] = useState('');
-  const [recovery, setRecovery] = useState('');
   const [doExport, setDoExport] = useState(true);
   const [skipConfirmed, setSkipConfirmed] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -106,14 +107,19 @@ export function ConfirmActionModal({
   // container, the trap's initial-focus branch (which fires only when focus is outside) never
   // fights it.
   const trapRef = useFocusTrap<HTMLDivElement>(open);
+  // The phrase + step-up rails. A dialog gathers fresh proofs each time it opens, so `open` is
+  // the reset key; a 403 clears the inline error when the operator switches proof kind.
+  const gate = useConfirmationGate({
+    resetKey: open,
+    phrase,
+    requireReauth,
+    idPrefix: titleId,
+    onProofKindChange: () => setError(null),
+  });
 
   // Reset the gathered state whenever the dialog (re)opens, and focus the first field.
   useEffect(() => {
     if (!open) return;
-    setTyped('');
-    setUseRecovery(false);
-    setPassword('');
-    setRecovery('');
     setDoExport(true);
     setSkipConfirmed(false);
     setError(null);
@@ -142,14 +148,8 @@ export function ConfirmActionModal({
 
   if (!open) return null;
 
-  const phraseOk = phrase === undefined || typed === phrase;
-  const reauthValue = useRecovery ? recovery.trim() : password;
-  const reauthOk = !requireReauth || reauthValue.length > 0;
   const exportOk = exportFirst !== 'skippable' || doExport || skipConfirmed;
-  const ready = phraseOk && reauthOk && exportOk && canConfirm && !busy;
-
-  const buildReauth = (): ReAuth =>
-    !requireReauth ? {} : useRecovery ? { recovery_phrase: recovery.trim() } : { password };
+  const ready = gate.ready && exportOk && canConfirm && !busy;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -158,7 +158,7 @@ export function ConfirmActionModal({
     setSubmitting(true);
     try {
       await onConfirm({
-        reauth: buildReauth(),
+        reauth: gate.reauth,
         exportFirst: exportFirst === 'skippable' ? doExport : true,
         skipExportConfirm: exportFirst === 'skippable' && !doExport && skipConfirmed,
       });
@@ -209,68 +209,7 @@ export function ConfirmActionModal({
 
           {children}
 
-          {phrase !== undefined ? (
-            <div className="field">
-              <label className="field__label" htmlFor={`${titleId}-phrase`}>
-                {t('confirm.phraseLabel', { phrase })}
-              </label>
-              <input
-                id={`${titleId}-phrase`}
-                className="control mono"
-                value={typed}
-                autoComplete="off"
-                autoCapitalize="characters"
-                spellCheck={false}
-                placeholder={phrase}
-                onChange={(e) => setTyped(e.target.value)}
-              />
-              {typed.length > 0 && !phraseOk ? (
-                <p className="field__error" role="alert">
-                  {t('confirm.phraseMismatch')}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
-          {requireReauth ? (
-            <div className="field">
-              <label className="field__label" htmlFor={`${titleId}-reauth`}>
-                {useRecovery ? t('confirm.reauth.recovery') : t('confirm.reauth.password')}
-              </label>
-              {useRecovery ? (
-                <input
-                  id={`${titleId}-reauth`}
-                  className="control"
-                  type="text"
-                  value={recovery}
-                  autoComplete="off"
-                  onChange={(e) => setRecovery(e.target.value)}
-                />
-              ) : (
-                <input
-                  id={`${titleId}-reauth`}
-                  className="control"
-                  type="password"
-                  value={password}
-                  autoComplete="current-password"
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              )}
-              <p className="field__hint">
-                {t('confirm.reauth.hint')}{' '}
-                <button
-                  type="button"
-                  className="linkish"
-                  onClick={() => {
-                    setUseRecovery((v) => !v);
-                    setError(null);
-                  }}
-                >
-                  {useRecovery ? t('confirm.reauth.usePassword') : t('confirm.reauth.useRecovery')}
-                </button>
-              </p>
-            </div>
-          ) : null}
+          {gate.fields}
 
           {exportFirst === 'enforced' ? (
             <p className="modal__note">

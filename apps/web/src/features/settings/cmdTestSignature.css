@@ -1,0 +1,122 @@
+/* The CMD production test-signature flow modal (t94).
+ *
+ * The flow is a stepped dialog rather than a chain of separate dialogs, so it needs a little
+ * more width than the shared 34rem confirm modal and one genuinely new piece of presentation:
+ * a "waiting on the PERSON" state. Everything else reuses the app's existing modal, stepper,
+ * badge and field classes.
+ *
+ * Scoped to this feature rather than added to `theme.css`, which several lanes hold at once. */
+
+/* A step rail plus a step body needs more room than a one-question confirm dialog. */
+.modal--flow {
+  width: min(40rem, 100%);
+}
+
+.cmd-test-step {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+/* The long wait. The product is not working here — it is waiting for the operator to read an
+   SMS — so this reads as an addressed state, not as a progress bar that implies server work. */
+.cmd-test-wait {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.cmd-test-wait__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.cmd-test-wait__title {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.cmd-test-wait__body p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* Three dots breathing in sequence — decorative only (`aria-hidden`), because the same fact is
+   already stated in words beside it. Infinite by nature: it marks an open-ended wait, not
+   elapsed progress, so it must never suggest a completion percentage it does not know.
+   It STOPS DEAD under both universal kill-switches — the global
+   `@media (prefers-reduced-motion: reduce)` block forces `animation-iteration-count: 1` at
+   0.01ms, and `:root[data-safe-mode='on']` sets `animation: none` on `*` — leaving three
+   static dots and the words carrying the meaning. */
+.cmd-test-wait__pulse {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding-top: 0.4rem;
+  flex: none;
+}
+
+.cmd-test-wait__pulse span {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: cmd-test-wait-pulse 1.4s ease-in-out infinite;
+}
+
+.cmd-test-wait__pulse span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.cmd-test-wait__pulse span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes cmd-test-wait-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A phase that expired, said as its own fact rather than as a generic failure: the previous
+   code aged out, nothing was signed, and the flow is back at the first step on purpose. */
+.cmd-test-expired {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.cmd-test-expired p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+/* The per-phase confirmation note. Two confirmations inside one flow is a server rule, so the
+   flow says why rather than letting the second one read as a bug. */
+.cmd-test-gate-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  border-left: 2px solid var(--rule);
+  padding-left: 0.6rem;
+}

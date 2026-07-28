@@ -1,16 +1,26 @@
 /**
- * The CMD PRODUCTION test-signature wiring (t51-e3/t69): the backend
- * (`crates/chancela-api/src/cmd_test_signature.rs`) shipped with no caller anywhere in the
- * frontend. This proves the client side end to end — both phases, the exact request shapes the
- * server's own test suite pins (`CONFIRM_PHRASE`, the nested `confirmation` proof), and that a
- * completed test renders the honest legal-effect negatives rather than omitting them.
+ * The CMD PRODUCTION test-signature flow (t51-e3/t69/t82), rebuilt as one stepped dialog (t94).
  *
- * Interacts with `ConfirmActionModal`'s shared phrase/re-auth fields the same way every other
- * gated-action test in this codebase does (`getByLabelText('Palavra-passe')` /
- * `getByLabelText('Escreva … para confirmar')` — see `DataManagementSection.test.tsx`), since
- * those labels are shared app-wide copy this suite does not own. Everything this suite DOES own
- * (the trigger button, field labels, result copy) is asserted through its own dedicated fallback
- * catalog (`providerCredentialsFallback.ts`), not a guessed substring.
+ * What these tests are guarding is not "a dialog rendered". They pin:
+ *
+ *  - the EXACT request bodies of both phases, including the nested `confirmation` proof the
+ *    server's own test suite pins byte-for-byte;
+ *  - that NO request is issued until that phase's confirmation is complete — asserted per phase,
+ *    because `ConfirmationAction::CmdTestSignature` is floored at `ConfirmWithReauthAndPhrase`
+ *    and `initiate` and `confirm` each demand their own proof;
+ *  - that folding the two phases into one dialog did NOT fold the two confirmations into one:
+ *    the proof typed for phase 1 must not survive into phase 2;
+ *  - that failures stay individually recognisable — a server refusal keeps its own diagnostic
+ *    text, and an expired session is presented as a phase that aged out rather than as a
+ *    generic error;
+ *  - that the honest legal-effect negatives and the self-validation verdict are rendered rather
+ *    than omitted, a negative verdict as prominently as a positive one.
+ *
+ * Interacts with the shared confirmation gate's fields the same way every other gated-action test
+ * in this codebase does (`getByLabelText('Palavra-passe')` / `getByLabelText('Escreva … para
+ * confirmar')` — see `DataManagementSection.test.tsx`), since those labels are shared app-wide
+ * copy this suite does not own. Everything this suite DOES own is read from its own fallback
+ * catalog (`providerCredentialsFallback.ts`), never guessed as a substring.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -25,6 +35,8 @@ import { renderWithProviders } from '../../test/utils';
 import { providerCredentialsPtPT as copy } from '../../i18n/providerCredentialsFallback';
 
 const CONFIRM_PHRASE = 'ASSINAR TESTE';
+const PHRASE_LABEL = `Escreva ${CONFIRM_PHRASE} para confirmar`;
+const PASSWORD_LABEL = 'Palavra-passe';
 
 const cmdList: ProviderCredentialsListView = {
   strict: false,
@@ -182,42 +194,53 @@ function renderSection() {
   );
 }
 
+const initiateCalls = (calls: Call[]) =>
+  calls.filter((c) => c.url.endsWith('/signature/cmd/test-signature/initiate'));
+const confirmCalls = (calls: Call[]) =>
+  calls.filter((c) => c.url.endsWith('/signature/cmd/test-signature/confirm'));
+
+/** Open the flow from the credentials table row. */
+async function openFlow() {
+  fireEvent.click(await screen.findByRole('button', { name: copy['providerCredentials.cmdTest.button'] }));
+  return screen.findByRole('dialog');
+}
+
+/** Fill a phase's confirmation proof — the phrase and the step-up — inside the open dialog. */
+function fillConfirmationProof(dialog: HTMLElement) {
+  fireEvent.change(within(dialog).getByLabelText(PHRASE_LABEL), {
+    target: { value: CONFIRM_PHRASE },
+  });
+  fireEvent.change(within(dialog).getByLabelText(PASSWORD_LABEL), {
+    target: { value: 'operator-pw' },
+  });
+}
+
 /**
- * Drive both phases to a completed result. The request shapes themselves are pinned by the first
- * case in this file; cases that are about what the RESULT renders go through here so they assert
- * on the panel rather than re-deriving the flow.
+ * Drive both phases to a completed result. The request shapes and the per-phase gating are pinned
+ * by the first two cases in this file; cases that are about what the RESULT renders go through
+ * here so they assert on the panel rather than re-deriving the flow.
  */
 async function runTestSignatureToResult() {
-  fireEvent.click(await screen.findByRole('button', { name: 'Testar assinatura real (produção)' }));
-  const initiateDialog = await screen.findByRole('dialog');
-  fireEvent.change(within(initiateDialog).getByLabelText('Número de telemóvel'), {
+  const dialog = await openFlow();
+  fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
     target: { value: '+351 912345678' },
   });
-  fireEvent.change(within(initiateDialog).getByLabelText('PIN de assinatura'), {
+  fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
     target: { value: '271828' },
   });
-  fireEvent.change(
-    within(initiateDialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`),
-    { target: { value: CONFIRM_PHRASE } },
+  fillConfirmationProof(dialog);
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: copy['providerCredentials.cmdTest.initiateConfirm'] }),
   );
-  fireEvent.change(within(initiateDialog).getByLabelText('Palavra-passe'), {
-    target: { value: 'operator-pw' },
-  });
-  fireEvent.click(within(initiateDialog).getByRole('button', { name: 'Enviar código' }));
 
-  fireEvent.click(await screen.findByRole('button', { name: 'Introduzir código recebido' }));
-  const confirmDialog = await screen.findByRole('dialog');
-  fireEvent.change(within(confirmDialog).getByLabelText('Código recebido por SMS'), {
+  await screen.findByTestId('cmd-test-step-authorisation');
+  fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.otpLabel']), {
     target: { value: '314159' },
   });
-  fireEvent.change(
-    within(confirmDialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`),
-    { target: { value: CONFIRM_PHRASE } },
+  fillConfirmationProof(dialog);
+  fireEvent.click(
+    within(dialog).getByRole('button', { name: copy['providerCredentials.cmdTest.confirmConfirm'] }),
   );
-  fireEvent.change(within(confirmDialog).getByLabelText('Palavra-passe'), {
-    target: { value: 'operator-pw' },
-  });
-  fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Confirmar código' }));
 }
 
 afterEach(() => {
@@ -227,86 +250,175 @@ afterEach(() => {
 });
 
 describe('CmdTestSignatureAction', () => {
-  it('runs the full initiate -> confirm production test-signature flow with the exact request shapes', async () => {
+  it('walks both phases inside one dialog with the exact request shapes, and steps through the flow', async () => {
     const stub = stubFetch(cmdList);
     vi.stubGlobal('fetch', stub.fn);
     renderSection();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Testar assinatura real (produção)' }));
-    const initiateDialog = await screen.findByRole('dialog');
-    const sendCode = within(initiateDialog).getByRole('button', { name: 'Enviar código' });
-    expect((sendCode as HTMLButtonElement).disabled).toBe(true);
+    const dialog = await openFlow();
+    // Step 1 of 4. The rail is the app's shared STATUS stepper, not a set of controls — so the
+    // progress is read off its per-step state rather than off any styling.
+    const rail = () =>
+      within(screen.getByRole('dialog')).getByRole('list', {
+        name: copy['providerCredentials.cmdTest.stepperLabel'],
+      });
+    const railStates = () =>
+      Array.from(rail().querySelectorAll('li')).map((li) => li.getAttribute('data-state'));
+    expect(railStates()).toEqual(['current', 'upcoming', 'upcoming', 'upcoming']);
+    expect(within(dialog).getByTestId('cmd-test-step-credentials')).toBeTruthy();
 
-    fireEvent.change(within(initiateDialog).getByLabelText('Número de telemóvel'), {
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
       target: { value: '+351 912345678' },
     });
-    fireEvent.change(within(initiateDialog).getByLabelText('PIN de assinatura'), {
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
       target: { value: '271828' },
     });
-    // Phone + PIN alone are not enough — T3 (phrase + step-up) is still required.
-    expect((sendCode as HTMLButtonElement).disabled).toBe(true);
+    fillConfirmationProof(dialog);
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.initiateConfirm'],
+      }),
+    );
+
+    await waitFor(() => expect(initiateCalls(stub.calls).length).toBe(1));
+    expect(JSON.parse(initiateCalls(stub.calls)[0].body ?? '{}')).toEqual({
+      phone: '+351 912345678',
+      pin: '271828',
+      entry_id: 'cmd-entry-1',
+      confirmation: { reauth: { password: 'operator-pw' }, confirm_phrase: CONFIRM_PHRASE },
+    });
+
+    // The dialog does NOT close between phases — it advances a step, and the waiting state says
+    // the product is waiting on the person.
+    const stillOpen = screen.getByRole('dialog');
+    expect(await within(stillOpen).findByTestId('cmd-test-step-authorisation')).toBeTruthy();
+    expect(
+      within(stillOpen).getByText(copy['providerCredentials.cmdTest.waitingTitle']),
+    ).toBeTruthy();
+    expect(within(stillOpen).getByText(copy['providerCredentials.cmdTest.waitingNote'])).toBeTruthy();
+    // The rail advanced: the credentials step is done, the wait is where the run is.
+    expect(railStates()).toEqual(['done', 'current', 'upcoming', 'upcoming']);
 
     fireEvent.change(
-      within(initiateDialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`),
-      { target: { value: CONFIRM_PHRASE } },
+      within(stillOpen).getByLabelText(copy['providerCredentials.cmdTest.otpLabel']),
+      { target: { value: '314159' } },
     );
-    expect((sendCode as HTMLButtonElement).disabled).toBe(true); // phrase alone still isn't enough
-    fireEvent.change(within(initiateDialog).getByLabelText('Palavra-passe'), {
+    fillConfirmationProof(stillOpen);
+    fireEvent.click(
+      within(stillOpen).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.confirmConfirm'],
+      }),
+    );
+
+    await waitFor(() => expect(confirmCalls(stub.calls).length).toBe(1));
+    expect(JSON.parse(confirmCalls(stub.calls)[0].body ?? '{}')).toEqual({
+      session_id: 'sess-1',
+      otp: '314159',
+      confirmation: { reauth: { password: 'operator-pw' }, confirm_phrase: CONFIRM_PHRASE },
+    });
+
+    // The result lands on the last step, inside the same dialog, with the honest negatives
+    // rendered rather than omitted — an explicit `false` is a claim; absence is ambiguity.
+    const result = await screen.findByTestId('cmd-test-signature-result');
+    expect(railStates()).toEqual(['done', 'done', 'done', 'current']);
+    expect(within(result).getByText(copy['providerCredentials.cmdTest.resultSigned'])).toBeTruthy();
+    expect(
+      within(result).getByText(copy['providerCredentials.cmdTest.legalEffectNone']),
+    ).toBeTruthy();
+    expect(
+      within(result).getByText(copy['providerCredentials.cmdTest.countsBookOpening'])
+        .nextElementSibling?.textContent,
+    ).toBe(copy['providerCredentials.probe.no']);
+    expect(
+      within(result).getByText(copy['providerCredentials.cmdTest.countsActSignature'])
+        .nextElementSibling?.textContent,
+    ).toBe(copy['providerCredentials.probe.no']);
+    expect(within(result).getByText(copy['providerCredentials.cmdTest.disclaimer'])).toBeTruthy();
+    expect(within(result).getByText('ab12cd34')).toBeTruthy();
+    // And the application's own verdict on the bytes it produced.
+    expect(within(result).getByTestId('cmd-test-self-validation')).toBeTruthy();
+  });
+
+  /**
+   * The constraint that a "single modal with steps" would otherwise quietly break. The server
+   * FLOORS this action at `ConfirmWithReauthAndPhrase` and re-checks the proof on `confirm`
+   * independently of `initiate`, so one dialog must still collect two proofs — and must issue
+   * NEITHER request before the proof for that phase is complete.
+   */
+  it('issues no request until each phase has its own complete confirmation, and does not carry phase 1 into phase 2', async () => {
+    const stub = stubFetch(cmdList);
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+
+    const dialog = await openFlow();
+    const send = () =>
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.initiateConfirm'],
+      }) as HTMLButtonElement;
+
+    expect(send().disabled).toBe(true);
+    fireEvent.click(send());
+    expect(initiateCalls(stub.calls).length).toBe(0);
+
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
+      target: { value: '+351 912345678' },
+    });
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
+      target: { value: '271828' },
+    });
+    // Phone + PIN alone are not enough — the phrase and the step-up are still required.
+    expect(send().disabled).toBe(true);
+    fireEvent.click(send());
+    expect(initiateCalls(stub.calls).length).toBe(0);
+
+    fireEvent.change(within(dialog).getByLabelText(PHRASE_LABEL), {
+      target: { value: CONFIRM_PHRASE },
+    });
+    expect(send().disabled).toBe(true); // the phrase alone still isn't enough
+    fireEvent.click(send());
+    expect(initiateCalls(stub.calls).length).toBe(0);
+
+    fireEvent.change(within(dialog).getByLabelText(PASSWORD_LABEL), {
       target: { value: 'operator-pw' },
     });
-    expect((sendCode as HTMLButtonElement).disabled).toBe(false);
+    expect(send().disabled).toBe(false);
+    fireEvent.click(send());
+    await waitFor(() => expect(initiateCalls(stub.calls).length).toBe(1));
 
-    fireEvent.click(sendCode);
+    // --- Phase 2. The proof gathered for phase 1 must NOT survive the phase boundary: the
+    // server does not accept it, and a UI that kept it would imply one confirmation covered
+    // two requests.
+    const phase2 = screen.getByRole('dialog');
+    await within(phase2).findByTestId('cmd-test-step-authorisation');
+    expect((within(phase2).getByLabelText(PHRASE_LABEL) as HTMLInputElement).value).toBe('');
+    expect((within(phase2).getByLabelText(PASSWORD_LABEL) as HTMLInputElement).value).toBe('');
 
-    await waitFor(() => {
-      const call = stub.calls.find((c) => c.url.endsWith('/signature/cmd/test-signature/initiate'));
-      expect(call).toBeTruthy();
-      expect(JSON.parse(call!.body ?? '{}')).toEqual({
-        phone: '+351 912345678',
-        pin: '271828',
-        entry_id: 'cmd-entry-1',
-        confirmation: { reauth: { password: 'operator-pw' }, confirm_phrase: CONFIRM_PHRASE },
-      });
-    });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(screen.getByText(/Foi enviado um código por SMS/)).toBeTruthy();
+    const confirmBtn = () =>
+      within(screen.getByRole('dialog')).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.confirmConfirm'],
+      }) as HTMLButtonElement;
 
-    fireEvent.click(screen.getByRole('button', { name: 'Introduzir código recebido' }));
-    const confirmDialog = await screen.findByRole('dialog');
-    fireEvent.change(within(confirmDialog).getByLabelText('Código recebido por SMS'), {
+    fireEvent.change(within(phase2).getByLabelText(copy['providerCredentials.cmdTest.otpLabel']), {
       target: { value: '314159' },
     });
-    fireEvent.change(
-      within(confirmDialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`),
-      { target: { value: CONFIRM_PHRASE } },
-    );
-    fireEvent.change(within(confirmDialog).getByLabelText('Palavra-passe'), {
+    // The OTP alone does not sign: the second confirmation is a separate gate.
+    expect(confirmBtn().disabled).toBe(true);
+    fireEvent.click(confirmBtn());
+    expect(confirmCalls(stub.calls).length).toBe(0);
+
+    fireEvent.change(within(phase2).getByLabelText(PHRASE_LABEL), {
+      target: { value: CONFIRM_PHRASE },
+    });
+    expect(confirmBtn().disabled).toBe(true);
+    fireEvent.click(confirmBtn());
+    expect(confirmCalls(stub.calls).length).toBe(0);
+
+    fireEvent.change(within(phase2).getByLabelText(PASSWORD_LABEL), {
       target: { value: 'operator-pw' },
     });
-    fireEvent.click(within(confirmDialog).getByRole('button', { name: 'Confirmar código' }));
-
-    await waitFor(() => {
-      const call = stub.calls.find((c) => c.url.endsWith('/signature/cmd/test-signature/confirm'));
-      expect(call).toBeTruthy();
-      expect(JSON.parse(call!.body ?? '{}')).toEqual({
-        session_id: 'sess-1',
-        otp: '314159',
-        confirmation: { reauth: { password: 'operator-pw' }, confirm_phrase: CONFIRM_PHRASE },
-      });
-    });
-
-    // The pending affordance is gone and the honest result — including the explicit `false`
-    // counters, rendered rather than omitted — is shown.
-    expect(screen.queryByText(/Foi enviado um código por SMS/)).toBeNull();
-    expect(await screen.findByText('Teste de produção concluído')).toBeTruthy();
-    expect(screen.getByText('Nenhum — não é uma ata nem um termo')).toBeTruthy();
-    expect(screen.getByText('ab12cd34')).toBeTruthy();
-    expect(screen.getByText('Conta para a abertura de um livro').nextElementSibling?.textContent).toBe(
-      'Não',
-    );
-    expect(
-      screen.getByText('Conta para a assinatura de um ato').nextElementSibling?.textContent,
-    ).toBe('Não');
+    expect(confirmBtn().disabled).toBe(false);
+    fireEvent.click(confirmBtn());
+    await waitFor(() => expect(confirmCalls(stub.calls).length).toBe(1));
   });
 
   it('surfaces the server refusal reason inline and never signs on an initiate failure', async () => {
@@ -320,35 +432,79 @@ describe('CmdTestSignatureAction', () => {
     vi.stubGlobal('fetch', stub.fn);
     renderSection();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Testar assinatura real (produção)' }));
-    const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText('Número de telemóvel'), {
+    const dialog = await openFlow();
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']), {
       target: { value: '+351 912345678' },
     });
-    fireEvent.change(within(dialog).getByLabelText('PIN de assinatura'), {
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
       target: { value: '271828' },
     });
-    fireEvent.change(within(dialog).getByLabelText(`Escreva ${CONFIRM_PHRASE} para confirmar`), {
-      target: { value: CONFIRM_PHRASE },
-    });
-    fireEvent.change(within(dialog).getByLabelText('Palavra-passe'), {
-      target: { value: 'operator-pw' },
-    });
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Enviar código' }));
+    fillConfirmationProof(dialog);
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.initiateConfirm'],
+      }),
+    );
 
     // The server's own diagnostic message — naming pré-produção specifically, not a generic
-    // failure — surfaces (inline in the dialog, and as a toast). The dialog stays open (no
-    // pending session was ever created).
+    // failure — surfaces (inline in the dialog, and as a toast), and the flow stays on the step
+    // it failed on. No session was ever created, so the waiting step is not reachable.
     expect((await screen.findAllByText(/pré-produção/)).length).toBeGreaterThan(0);
-    expect(screen.queryByText(/Foi enviado um código por SMS/)).toBeNull();
+    expect(screen.getByTestId('cmd-test-step-credentials')).toBeTruthy();
+    expect(screen.queryByTestId('cmd-test-step-authorisation')).toBeNull();
+    expect(confirmCalls(stub.calls).length).toBe(0);
   });
 
+  /**
+   * A 410 is the single-use session ageing out, not a failure of the integration. The flow must
+   * drop the session so it falls back to a fresh initiate rather than re-offering a confirm that
+   * can only 410 again — and must say THAT, rather than presenting it as one more error.
+   */
+  it('presents an expired session as a phase that aged out and falls back to a fresh initiate', async () => {
+    const stub = stubFetch(cmdList, {
+      confirmStatus: 410,
+      confirmBody: { error: 'a sessão de assinatura de teste expirou' },
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+    await runTestSignatureToResult();
+
+    await waitFor(() => expect(confirmCalls(stub.calls).length).toBe(1));
+
+    // Back on step 1, with the expiry named as itself.
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByTestId('cmd-test-step-credentials')).toBeTruthy();
+    expect(within(dialog).getByText(copy['providerCredentials.cmdTest.expiredTitle'])).toBeTruthy();
+    expect(within(dialog).getByText(copy['providerCredentials.cmdTest.expiredBody'])).toBeTruthy();
+
+    // The confirm affordance is gone: a second confirm could only 410 again.
+    expect(
+      within(dialog).queryByRole('button', {
+        name: copy['providerCredentials.cmdTest.confirmConfirm'],
+      }),
+    ).toBeNull();
+    expect(
+      within(dialog).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.initiateConfirm'],
+      }),
+    ).toBeTruthy();
+    // And nothing was signed.
+    expect(screen.queryByTestId('cmd-test-signature-result')).toBeNull();
+  });
+
+  /**
+   * NEGATIVE SPACE — this asserts an absence, so it passes under many mutations of the flow's
+   * own logic and must not be counted as coverage of it. It guards one thing only: that the
+   * production control never appears on a credential that is not CMD.
+   */
   it('does not offer the production test-signature control on a non-CMD credential', async () => {
     vi.stubGlobal('fetch', stubFetch(cscList).fn);
     renderSection();
 
     expect(await screen.findByText('Primária')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: 'Testar assinatura real (produção)' })).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: copy['providerCredentials.cmdTest.button'] }),
+    ).toBeNull();
   });
 
   /**
@@ -356,10 +512,6 @@ describe('CmdTestSignatureAction', () => {
    * can verify what AMA produced", so the verdict is rendered — and a NEGATIVE one has to be as
    * visible as a positive one. The signature is real and retained in both cases; a panel that
    * quietly dropped a failure would make the test worth less than not running it.
-   *
-   * Asserted through the owned catalog and the panel's own testid rather than guessed pt-PT
-   * substrings: the copy belongs to `providerCredentialsFallback.ts`, and this suite reads it from
-   * there so a wording change is not a test failure.
    */
   it('renders a failed self-validation verdict as an explicit negative, with the reason', async () => {
     const stub = stubFetch(cmdList, {
@@ -400,6 +552,41 @@ describe('CmdTestSignatureAction', () => {
     // implying the test failed to produce one.
     expect(within(panel).getByText(copy['providerCredentials.cmdTest.selfValidationBad'])).toBeTruthy();
     expect(screen.getByRole('button', { name: copy['providerCredentials.cmdTest.download'] })).toBeTruthy();
+  });
+
+  /**
+   * The unverified verdict must survive the dialog being closed: the row is where an operator
+   * comes back to it, and a test the application could not verify does not get to look like a
+   * clean pass from there either.
+   */
+  it('summarises an unverified completed test on the row rather than as a plain success', async () => {
+    const stub = stubFetch(cmdList, {
+      confirmBody: {
+        ...confirmResult,
+        self_validation: {
+          signature_verifies: false,
+          covers_rendered_document: false,
+          coverage: 'altered_after_signing',
+          signature_timestamp_present: false,
+        },
+      },
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+    await runTestSignatureToResult();
+
+    await screen.findByTestId('cmd-test-signature-result');
+    fireEvent.click(
+      screen.getByRole('button', { name: copy['providerCredentials.cmdTest.close'] }),
+    );
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByText(copy['providerCredentials.cmdTest.rowDoneUnverified'])).toBeTruthy();
+    expect(screen.queryByText(copy['providerCredentials.cmdTest.rowDone'])).toBeNull();
+    // The result is not lost with the dialog — it is one click away again.
+    expect(
+      screen.getByRole('button', { name: copy['providerCredentials.cmdTest.viewResult'] }),
+    ).toBeTruthy();
   });
 
   /**
