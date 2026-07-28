@@ -276,6 +276,20 @@ export interface CollectionPageParams {
   order?: 'asc' | 'desc';
 }
 
+/**
+ * The tri-state archived filter both entity list endpoints accept (`ArchivedFilter`, server-side).
+ *
+ * **Absent means `'include'`,** and the server rejects any other spelling with `422` rather than
+ * quietly falling back — a caller who asked to hide archived rows and was silently given all of them
+ * would be shown more than they asked for and never know.
+ */
+export type ArchivedEntityFilter = 'include' | 'exclude' | 'only';
+
+/** Query parameters for the unpaged `GET /v1/entities`. `archived` is its only knob. */
+export interface EntityListParams {
+  archived?: ArchivedEntityFilter;
+}
+
 export interface EntityPageParams extends CollectionPageParams {
   tenant_id?: string;
   group_id?: string;
@@ -289,6 +303,8 @@ export interface EntityPageParams extends CollectionPageParams {
   last_book?: BookState | 'none';
   activity?: 'registry' | 'entity' | 'book' | 'act' | 'document' | 'none';
   activity_kind?: string;
+  /** See {@link ArchivedEntityFilter}. Omitted ⇒ the server's `include`, which returns every row. */
+  archived?: ArchivedEntityFilter;
 }
 
 export interface BookPageParams extends CollectionPageParams {

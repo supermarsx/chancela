@@ -212,7 +212,8 @@ describe('EntitiesPage', () => {
     expect(advanced.open).toBe(false);
     const advancedBody = advanced.querySelector('.entities-advanced-filters__body.filter');
     expect(advancedBody).toBeTruthy();
-    expect(advancedBody?.querySelectorAll('.field')).toHaveLength(8);
+    // Nine since t84 added the tri-state archived filter as the panel's first field.
+    expect(advancedBody?.querySelectorAll('.field')).toHaveLength(9);
     expect(within(advanced).getByLabelText('NIPC')).toBeTruthy();
     expect(within(advanced).getByLabelText('Registo')).toBeTruthy();
 

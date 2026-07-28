@@ -185,6 +185,15 @@ export function collectionPageFixture(url: string, input: unknown[]) {
         (item) => !!item.opening_date && item.opening_date <= p.get('opened_to')!,
       );
   } else if (resource === 'entities') {
+    // Mirrors the server's tri-state `ArchivedFilter`. An ABSENT `archived=` is `include`, i.e.
+    // every row — archiving gates writing, not reading, so the default listing hides nothing.
+    if (p.has('archived'))
+      items = items.filter((item) => {
+        const isArchived = item.archived ?? item.archived_at != null;
+        if (p.get('archived') === 'exclude') return !isArchived;
+        if (p.get('archived') === 'only') return isArchived;
+        return true;
+      });
     if (p.has('family')) items = items.filter((item) => item.family === p.get('family'));
     if (p.has('kind')) items = items.filter((item) => item.kind === p.get('kind'));
     if (p.has('nipc_validated'))

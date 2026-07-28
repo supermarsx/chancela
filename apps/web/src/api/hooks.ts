@@ -399,6 +399,43 @@ export function useUpdateEntity(id: string) {
   });
 }
 
+/**
+ * Retire an entity from new authorship (`POST /v1/entities/{id}/archive`, t83).
+ *
+ * The endpoint answers `204` with no body, so unlike {@link useUpdateEntity} there is no fresh
+ * entity to seed the cache with — every entity query is invalidated instead and the new
+ * `archived_at` arrives on the refetch. `keys.entities` is the `['entities']` PREFIX of both
+ * `keys.entitiesPage(…)` and `keys.entity(id)`, so one invalidation reaches the row, the paged
+ * list and the detail screen; the ledger gains an `entity.archived` event, and the dashboard
+ * counts an entity that is no longer available for new work.
+ *
+ * Not to be called on a click: the action is `ConfirmationAction::EntityArchive` in the server's
+ * registry, so it belongs behind `GuardedActionModal` (see `EntityArchiveGuard`).
+ */
+export function useArchiveEntity(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.archiveEntity(id),
+    onSuccess: () => invalidateEntityArchival(qc),
+  });
+}
+
+/** The reverse (`POST /v1/entities/{id}/unarchive`), same permission and same invalidations. */
+export function useUnarchiveEntity(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.unarchiveEntity(id),
+    onSuccess: () => invalidateEntityArchival(qc),
+  });
+}
+
+/** Shared so the two directions cannot drift into refreshing different parts of the screen. */
+function invalidateEntityArchival(qc: QueryClient) {
+  void qc.invalidateQueries({ queryKey: keys.entities });
+  void qc.invalidateQueries({ queryKey: ['ledger'] });
+  void qc.invalidateQueries({ queryKey: keys.dashboard });
+}
+
 // --- Registry — certidão permanente (plan t11) ----------------------------------
 
 /**

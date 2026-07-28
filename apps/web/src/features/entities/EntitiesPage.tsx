@@ -19,6 +19,7 @@ import {
   BOOK_KINDS,
   DEFAULT_SETTINGS,
   ENTITY_KINDS,
+  type ArchivedEntityFilter,
   type BookKind,
   type BookState,
   type BookView,
@@ -37,6 +38,7 @@ import {
   type MessageKey,
   type TFunction,
 } from '../../i18n';
+import { useEntityArchiveT } from '../../i18n/entityArchiveFallback';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnPicker } from '../tableColumns/ColumnPicker';
 import { resolveColumnOrigin } from '../tableColumns/columnOrigin';
@@ -66,13 +68,14 @@ import {
   TooltipText,
   Truncate,
 } from '../../ui';
-import { GateButtonLink } from '../session/permissions';
+import { GateButtonLink, GateIconButton, scopeEntity } from '../session/permissions';
 import {
   CollectionPageCount,
   CollectionPager,
   useCollectionNavigation,
   useDebouncedValue,
 } from '../common/CollectionPager';
+import { useEntityArchiveGuard } from './EntityArchiveGuard';
 import { NipcBadge } from './NipcBadge';
 
 type BookFilter = 'all' | 'open' | 'created' | 'closed' | 'no-open' | 'none';
@@ -644,6 +647,61 @@ function LastRegistryChange({ registry }: { registry: EntityRegistrySummary | nu
 }
 
 /**
+ * The "already retired from new authorship" marker on a list row.
+ *
+ * Rendered beside the name rather than in a column of its own because the fact qualifies the
+ * entity, and because the column set is a user setting — a badge in a hideable column could be
+ * switched off, and an archived row would then look active.
+ *
+ * The `title` states what archiving did AND what it did not do. `GET /v1/entities` returns archived
+ * rows by default, so an operator will meet this badge without having asked to see archived
+ * entities; if it read as "removed", the list would appear to be showing deleted records.
+ */
+function ArchivedBadge({ entity }: { entity: Entity }) {
+  const at = useEntityArchiveT();
+  const since = entity.archived_at ? at('badgeSince', { date: formatDateValue(entity.archived_at) }) : null;
+  return (
+    <Badge tone="warn">
+      <span title={joinCellParts([at('badgeTitle'), since])}>{at('badge')}</span>
+    </Badge>
+  );
+}
+
+/**
+ * The row's archive/unarchive control.
+ *
+ * Its own component so `useEntityArchiveGuard` runs unconditionally — `EntityColumnCell` reaches
+ * this through a `switch`, where a hook would be conditional.
+ *
+ * Gated on the `entity.archive` PERMISSION at the entity's own scope (`GateIconButton` disables
+ * with an honest tooltip rather than hiding, the house rule), and — separately — on the
+ * `entity.archive` CONFIRMATION action, which the guard resolves from the server policy. Both
+ * gates are required, and neither substitutes for the server, which re-checks both.
+ */
+function EntityArchiveAction({ entity }: { entity: Entity }) {
+  const at = useEntityArchiveT();
+  const guard = useEntityArchiveGuard(entity);
+  const isArchived = entity.archived ?? entity.archived_at != null;
+  return (
+    <>
+      <GateIconButton
+        perm="entity.archive"
+        scope={scopeEntity(entity.id)}
+        icon={isArchived ? <Icon.Refresh /> : <Icon.Archive />}
+        label={isArchived ? at('unarchiveAction') : at('archiveAction')}
+        disabled={guard.pending}
+        onClick={guard.requestToggle}
+        // The direction as a stable English token, alongside the localized accessible name.
+        // Tests address the control through this instead of through rendered Portuguese, where
+        // matching a substring of one inflected variant is how a green test hides a real bug.
+        data-archive-direction={isArchived ? 'unarchive' : 'archive'}
+      />
+      {guard.dialog}
+    </>
+  );
+}
+
+/**
  * The width token each column consumes (declared on `.entities-table` in the theme).
  * `Name` is the one column left `auto` so it absorbs the table's slack; its token is
  * therefore only a FLOOR, and it takes part in the sum below like every other column.
@@ -715,13 +773,21 @@ function EntityColumnCell({
     case 'Name':
       return (
         <EntityTableCell column={column}>
-          <Link
-            className="truncate entity-cell-line__link"
-            to={`/entities/${entity.id}`}
-            title={entity.name}
-          >
-            {entity.name}
-          </Link>
+          {/* A plain line, not `CellLine`: that helper wraps the whole cell in one tooltip, and
+              the name and the badge each carry their own — the name's is the de-truncated name,
+              the badge's explains archiving. */}
+          <span className="entity-cell-line">
+            <Link
+              className="truncate entity-cell-line__link"
+              to={`/entities/${entity.id}`}
+              title={entity.name}
+            >
+              {entity.name}
+            </Link>
+            {entity.archived ?? entity.archived_at != null ? (
+              <ArchivedBadge entity={entity} />
+            ) : null}
+          </span>
         </EntityTableCell>
       );
     case 'Nipc':
@@ -818,6 +884,7 @@ function EntityColumnCell({
       return (
         <EntityTableCell column={column} actions>
           <span className="users-actions entities-table__actions">
+            <EntityArchiveAction entity={entity} />
             <IconButton icon={<Icon.ArrowRight />} label={openLabel} onClick={onOpen} />
           </span>
         </EntityTableCell>
@@ -827,6 +894,7 @@ function EntityColumnCell({
 
 export function EntitiesPage() {
   const t = useT();
+  const at = useEntityArchiveT();
   const ct = useTableColumnsT();
   const navigate = useNavigate();
   const settings = useSettings();
@@ -843,6 +911,10 @@ export function EntitiesPage() {
   const [registryImportFilter, setRegistryImportFilter] = useState<RegistryImportFilter>('all');
   const [registryFreshnessFilter, setRegistryFreshnessFilter] =
     useState<RegistryFreshnessFilter>('all');
+  // Seeded to the SERVER's default, not to a UI "all": `include` is what an omitted `archived=`
+  // means, so the initial listing is byte-identical to the pre-t84 one. This filter therefore has
+  // no "all" member — `include` already is it.
+  const [archivedFilter, setArchivedFilter] = useState<ArchivedEntityFilter>('include');
 
   const filters = {
     q: debouncedSearch.trim() || undefined,
@@ -856,6 +928,8 @@ export function EntitiesPage() {
     last_book: lastBookFilter === 'all' ? undefined : lastBookFilter,
     activity: activityFilter === 'all' ? undefined : activityFilter,
     activity_kind: activityKindFilter === 'all' ? undefined : activityKindFilter,
+    // Left off the wire at the default so an untouched filter sends no `archived=` at all.
+    archived: archivedFilter === 'include' ? undefined : archivedFilter,
     limit: 50,
     sort: 'name',
     order: 'asc' as const,
@@ -900,6 +974,11 @@ export function EntitiesPage() {
   const bookKindFilterOptions = optionLabels(BOOK_KIND_FILTER_OPTIONS, t);
   const lastBookFilterOptions = optionLabels(LAST_BOOK_FILTER_OPTIONS, t);
   const activityFilterOptions = optionLabels(ACTIVITY_FILTER_OPTIONS, t);
+  const archivedFilterOptions: { value: ArchivedEntityFilter; label: string }[] = [
+    { value: 'include', label: at('filterInclude') },
+    { value: 'exclude', label: at('filterExclude') },
+    { value: 'only', label: at('filterOnly') },
+  ];
   // The per-user column set (t37). The fallback chain is: personal override → the instance org
   // default (`settings.ui.registered_entity_columns`, set by an admin in Configurações) → the
   // product default. `useTableColumns` resolves the override; the fallback here supplies the rest.
@@ -937,7 +1016,8 @@ export function EntitiesPage() {
     bookKindFilter !== 'all' ||
     lastBookFilter !== 'all' ||
     activityFilter !== 'all' ||
-    activityKindFilter !== 'all';
+    activityKindFilter !== 'all' ||
+    archivedFilter !== 'include';
 
   function clearFilters() {
     setSearch('');
@@ -951,6 +1031,8 @@ export function EntitiesPage() {
     setLastBookFilter('all');
     setActivityFilter('all');
     setActivityKindFilter('all');
+    // Clearing returns to the server's default, which INCLUDES archived rows.
+    setArchivedFilter('include');
   }
 
   return (
@@ -1046,6 +1128,18 @@ export function EntitiesPage() {
               <details className="entities-advanced-filters">
                 <summary>{t('entities.filters.advanced')}</summary>
                 <div className="entities-advanced-filters__body filter">
+                  <Field
+                    label={at('filterLabel')}
+                    htmlFor="entities-archived-filter"
+                    hint={at('filterHint')}
+                  >
+                    <Select
+                      id="entities-archived-filter"
+                      value={archivedFilter}
+                      onChange={(e) => setArchivedFilter(e.target.value as ArchivedEntityFilter)}
+                      options={archivedFilterOptions}
+                    />
+                  </Field>
                   <Field label={t('entities.filters.nipc.label')} htmlFor="entities-nipc-filter">
                     <Select
                       id="entities-nipc-filter"

@@ -74,6 +74,7 @@ import type {
   DpiaTemplateView,
   DsrRequestView,
   Entity,
+  EntityListParams,
   EntityPageParams,
   EntityChronologyView,
   EntityFamily,
@@ -990,7 +991,15 @@ export const api = {
     put<ServerEnvResponse>('/v1/platform/env', body),
 
   // Entities (§2.3)
-  listEntities: () => get<Entity[]>('/v1/entities'),
+  /**
+   * Both list endpoints take the tri-state `archived` filter. **Omitting it means `include`** —
+   * the server's default returns archived entities alongside active ones, deliberately, because
+   * archiving gates *writing*, not *reading*: six of the seven `useEntities()` consumers only
+   * resolve names, and hiding by default would render an archived entity's ledger rows as a bare
+   * UUID. Pass `exclude` only from a caller choosing a target for NEW work.
+   */
+  listEntities: (params: EntityListParams = {}) =>
+    get<Entity[]>(`/v1/entities${query({ archived: params.archived })}`),
   listEntitiesPage: (params: EntityPageParams = {}) =>
     get<CollectionPage<Entity>>(`/v1/entities/page${query(pageQuery(params))}`),
   getEntity: (id: string) => get<Entity>(`/v1/entities/${id}`),
@@ -999,6 +1008,21 @@ export const api = {
   // Statute overlay (ENT-03, t31). Omit `statute` to leave it untouched, `null` to
   // clear it, or an object to set it; appends an `entity.statute_updated` ledger event.
   updateEntity: (id: string, body: UpdateEntityBody) => patch<Entity>(`/v1/entities/${id}`, body),
+  /**
+   * Retire an entity from new authorship — `204`, idempotent, and gated on `entity.archive` at the
+   * entity's scope. It does NOT hide or remove anything: books, acts, documents, ledger rows and
+   * exports stay readable, and the entity keeps appearing in the default listing.
+   *
+   * Guarded by `ConfirmationAction::EntityArchive` (floor `Confirm`, class `Consequential`), so
+   * call sites go through `GuardedActionModal` rather than firing this on a click.
+   */
+  archiveEntity: (id: string) => post<void>(`/v1/entities/${encodeURIComponent(id)}/archive`),
+  /**
+   * Return an archived entity to active authorship — `204`, idempotent, and gated on the SAME
+   * `entity.archive` permission: the authority to retire is the authority to un-retire. The round
+   * trip loses no history, because each direction appends its own ledger event.
+   */
+  unarchiveEntity: (id: string) => post<void>(`/v1/entities/${encodeURIComponent(id)}/unarchive`),
 
   // Tenant-local company groups and immutable shared-template-library revisions.
   listCompanyGroups: (tenantId: string) =>
