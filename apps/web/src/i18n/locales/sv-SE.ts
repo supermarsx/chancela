@@ -1912,7 +1912,7 @@ export const svSE: Catalog = {
   'settings.platform.logs.filter.level': 'Nivå',
   'settings.platform.logs.filter.level.all': 'Alla nivåer',
   'settings.platform.logs.filter.tail': 'Poster',
-  'settings.platform.logs.order.chronological': 'kronologisk',
+  'settings.platform.logs.order.newestFirst': 'nyaste först',
   'settings.platform.logs.order.unknown': 'okänd ordning',
   'settings.platform.logs.summary': '{count} poster · svans {tail} · {order}',
   'settings.platform.logs.empty.title': 'Inga plattformsloggar',

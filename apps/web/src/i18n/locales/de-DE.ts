@@ -1930,7 +1930,7 @@ export const deDE: Catalog = {
   'settings.platform.logs.filter.level': 'Stufe',
   'settings.platform.logs.filter.level.all': 'Alle Stufen',
   'settings.platform.logs.filter.tail': 'Einträge',
-  'settings.platform.logs.order.chronological': 'chronologisch',
+  'settings.platform.logs.order.newestFirst': 'neueste zuerst',
   'settings.platform.logs.order.unknown': 'unbekannte Reihenfolge',
   'settings.platform.logs.summary': '{count} Einträge · Auszug {tail} · {order}',
   'settings.platform.logs.empty.title': 'Keine Plattform-Logs',

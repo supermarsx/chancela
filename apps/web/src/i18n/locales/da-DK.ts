@@ -1911,7 +1911,7 @@ export const daDK: Catalog = {
   'settings.platform.logs.filter.level': 'Niveau',
   'settings.platform.logs.filter.level.all': 'Alle niveauer',
   'settings.platform.logs.filter.tail': 'Poster',
-  'settings.platform.logs.order.chronological': 'kronologisk',
+  'settings.platform.logs.order.newestFirst': 'nyeste først',
   'settings.platform.logs.order.unknown': 'ukendt rækkefølge',
   'settings.platform.logs.summary': '{count} poster · hale {tail} · {order}',
   'settings.platform.logs.empty.title': 'Ingen platformlogfiler',

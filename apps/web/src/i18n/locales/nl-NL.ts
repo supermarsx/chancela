@@ -1919,7 +1919,7 @@ export const nlNL: Catalog = {
   'settings.platform.logs.filter.level': 'Niveau',
   'settings.platform.logs.filter.level.all': 'Alle niveaus',
   'settings.platform.logs.filter.tail': 'Regels',
-  'settings.platform.logs.order.chronological': 'chronologisch',
+  'settings.platform.logs.order.newestFirst': 'nieuwste eerst',
   'settings.platform.logs.order.unknown': 'onbekende volgorde',
   'settings.platform.logs.summary': '{count} regels · staart {tail} · {order}',
   'settings.platform.logs.empty.title': 'Geen platformlogs',

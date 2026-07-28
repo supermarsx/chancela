@@ -1914,7 +1914,7 @@ export const ptBR: Catalog = {
   'settings.platform.logs.filter.level': 'Nível',
   'settings.platform.logs.filter.level.all': 'Todos os níveis',
   'settings.platform.logs.filter.tail': 'Entradas',
-  'settings.platform.logs.order.chronological': 'cronológica',
+  'settings.platform.logs.order.newestFirst': 'mais recentes primeiro',
   'settings.platform.logs.order.unknown': 'ordem desconhecida',
   'settings.platform.logs.summary': '{count} entradas · cauda {tail} · {order}',
   'settings.platform.logs.empty.title': 'Nenhum registro de plataforma',

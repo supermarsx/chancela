@@ -1912,7 +1912,7 @@ export const plPL: Catalog = {
   'settings.platform.logs.filter.level': 'Poziom',
   'settings.platform.logs.filter.level.all': 'Wszystkie poziomy',
   'settings.platform.logs.filter.tail': 'Wpisy',
-  'settings.platform.logs.order.chronological': 'chronologicznie',
+  'settings.platform.logs.order.newestFirst': 'najnowsze najpierw',
   'settings.platform.logs.order.unknown': 'nieznana kolejność',
   'settings.platform.logs.summary': '{count} wpisów · końcówka {tail} · {order}',
   'settings.platform.logs.empty.title': 'Brak dzienników platformy',

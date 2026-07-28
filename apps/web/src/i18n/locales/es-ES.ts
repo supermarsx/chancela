@@ -1917,7 +1917,7 @@ export const esES: Catalog = {
   'settings.platform.logs.filter.level': 'Nivel',
   'settings.platform.logs.filter.level.all': 'Todos los niveles',
   'settings.platform.logs.filter.tail': 'Entradas',
-  'settings.platform.logs.order.chronological': 'cronológico',
+  'settings.platform.logs.order.newestFirst': 'más recientes primero',
   'settings.platform.logs.order.unknown': 'orden desconocido',
   'settings.platform.logs.summary': '{count} entradas · cola {tail} · {order}',
   'settings.platform.logs.empty.title': 'Sin registros de plataforma',

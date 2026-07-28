@@ -1908,7 +1908,7 @@ export const fiFI: Catalog = {
   'settings.platform.logs.filter.level': 'Taso',
   'settings.platform.logs.filter.level.all': 'Kaikki tasot',
   'settings.platform.logs.filter.tail': 'Merkinnät',
-  'settings.platform.logs.order.chronological': 'kronologinen',
+  'settings.platform.logs.order.newestFirst': 'uusimmat ensin',
   'settings.platform.logs.order.unknown': 'tuntematon järjestys',
   'settings.platform.logs.summary': '{count} merkintää · häntä {tail} · {order}',
   'settings.platform.logs.empty.title': 'Ei alustan lokeja',

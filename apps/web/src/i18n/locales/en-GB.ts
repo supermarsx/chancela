@@ -1908,7 +1908,7 @@ export const enGB: Catalog = {
   'settings.platform.logs.filter.level': 'Level',
   'settings.platform.logs.filter.level.all': 'All levels',
   'settings.platform.logs.filter.tail': 'Entries',
-  'settings.platform.logs.order.chronological': 'chronological',
+  'settings.platform.logs.order.newestFirst': 'newest first',
   'settings.platform.logs.order.unknown': 'unknown order',
   'settings.platform.logs.summary': '{count} entries · tail {tail} · {order}',
   'settings.platform.logs.empty.title': 'No platform logs',

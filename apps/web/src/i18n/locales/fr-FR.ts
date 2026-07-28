@@ -1927,7 +1927,7 @@ export const frFR: Catalog = {
   'settings.platform.logs.filter.level': 'Niveau',
   'settings.platform.logs.filter.level.all': 'Tous les niveaux',
   'settings.platform.logs.filter.tail': 'Entrées',
-  'settings.platform.logs.order.chronological': 'chronologique',
+  'settings.platform.logs.order.newestFirst': 'les plus récents en premier',
   'settings.platform.logs.order.unknown': 'ordre inconnu',
   'settings.platform.logs.summary': '{count} entrées · file {tail} · {order}',
   'settings.platform.logs.empty.title': 'Aucun journal de plateforme',

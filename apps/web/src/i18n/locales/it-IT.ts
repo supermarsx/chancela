@@ -1919,7 +1919,7 @@ export const itIT: Catalog = {
   'settings.platform.logs.filter.level': 'Livello',
   'settings.platform.logs.filter.level.all': 'Tutti i livelli',
   'settings.platform.logs.filter.tail': 'Voci',
-  'settings.platform.logs.order.chronological': 'cronologico',
+  'settings.platform.logs.order.newestFirst': 'prima i più recenti',
   'settings.platform.logs.order.unknown': 'ordine sconosciuto',
   'settings.platform.logs.summary': '{count} voci · coda {tail} · {order}',
   'settings.platform.logs.empty.title': 'Nessun log della piattaforma',
