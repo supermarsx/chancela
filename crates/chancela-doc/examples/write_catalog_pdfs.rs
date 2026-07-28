@@ -367,7 +367,7 @@ fn termo_ctx(termo: &TermoDeAbertura, kind: BookKind) -> Value {
         .iter()
         .map(|role| json!({ "role": role, "name": "" }))
         .collect();
-    json!({
+    let mut ctx = json!({
         "title": "Termo de abertura do livro de atas",
         "created_at": "2026-01-02",
         "entity": {
@@ -381,7 +381,15 @@ fn termo_ctx(termo: &TermoDeAbertura, kind: BookKind) -> Value {
         "numbering_label": numbering_label(termo.numbering_scheme),
         "opening_date": "2026-01-02",
         "required_signatories": signatories,
-    })
+    });
+    // Mirrors the real builder: present only when the termo declares a capacity, so the key stays
+    // undefined (not null) otherwise and the row drops instead of rendering blank.
+    if let Some(capacity) = termo.page_capacity
+        && let Some(map) = ctx.as_object_mut()
+    {
+        map.insert("page_capacity".to_owned(), json!(capacity));
+    }
+    ctx
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {

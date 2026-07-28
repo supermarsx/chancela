@@ -872,7 +872,7 @@ fn termo_ctx(termo: &TermoDeAbertura, book: &Book) -> Value {
         &termo.required_signatory_records,
         &termo.required_signatories,
     );
-    json!({
+    let mut ctx = json!({
         "title": "Termo de abertura do livro de atas",
         "created_at": format_date(termo.opening_date),
         "entity": {
@@ -886,7 +886,20 @@ fn termo_ctx(termo: &TermoDeAbertura, book: &Book) -> Value {
         "numbering_label": numbering_label(termo.numbering_scheme),
         "opening_date": format_date(termo.opening_date),
         "required_signatories": signatories,
-    })
+    });
+    // The declared page count (F3), as a bare number for a labelled row — never built into a
+    // sentence, because "100 páginas" and "1 página" do not inflect the same way.
+    //
+    // Inserted only when the termo declares one, so the key is *undefined* rather than null for a
+    // termo that does not: minijinja renders undefined as empty, and `render_kv_rows` drops a row
+    // whose value renders empty. A book opened one-shot declares no capacity and is genuinely
+    // unlimited, so its termo states no page count instead of printing a blank or a `none`.
+    if let Some(capacity) = termo.page_capacity
+        && let Some(map) = ctx.as_object_mut()
+    {
+        map.insert("page_capacity".to_owned(), json!(capacity));
+    }
+    ctx
 }
 
 fn book_kind_label(kind: BookKind) -> &'static str {
@@ -15324,6 +15337,36 @@ mod tests {
             LifecycleStage::TermoAbertura,
         )
         .expect("csc termo abertura spec")
+    }
+
+    /// F3 reaches the render context as a bare number, so a template can put it in a labelled row
+    /// without composing "N páginas" — the noun would have to agree with N, and it cannot.
+    #[test]
+    fn the_declared_page_count_reaches_the_termo_render_context() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        termo.page_capacity = Some(100);
+
+        let ctx = termo_ctx(&termo, &book);
+        assert_eq!(ctx["page_capacity"], json!(100));
+    }
+
+    /// A book opened one-shot declares no capacity and is genuinely unlimited. The key must be
+    /// **absent**, not null: minijinja renders undefined as empty and `render_kv_rows` then drops
+    /// the row, whereas a null would print `none` on the instrument.
+    #[test]
+    fn a_termo_declaring_no_page_count_carries_no_page_count_key() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        assert_eq!(termo.page_capacity, None, "the one-shot shape declares none");
+
+        let ctx = termo_ctx(&termo, &book);
+        assert!(
+            ctx.get("page_capacity").is_none(),
+            "absent, not null: a null would render as `none` on the termo"
+        );
     }
 
     #[test]
