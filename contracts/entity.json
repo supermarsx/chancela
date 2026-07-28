@@ -39,5 +39,7 @@
       "Other"
     ]
   },
-  "statute": null
+  "statute": null,
+  "archived_at": null,
+  "archived": false
 }

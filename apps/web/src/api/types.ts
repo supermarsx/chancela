@@ -486,6 +486,13 @@ export interface Entity {
   statute: StatuteOverrides | null;
   /** Optional per-field document layout overrides; absent/null means inherit. */
   document_layout_override?: DocumentLayoutOverrides | null;
+  /**
+   * When the entity was retired from new authorship (RFC 3339), or `null` while active. Sent on
+   * every entity read, including the archived rows `GET /v1/entities` keeps returning.
+   */
+  archived_at?: string | null;
+  /** Derived from `archived_at`, so a badge renders without parsing a timestamp. */
+  archived?: boolean;
   /** Present on `GET /v1/entities`; omitted by create/detail responses. */
   activity_summary?: EntityActivitySummary;
   /** Present on GET /v1/entities; null when no certidão has been imported. */
@@ -7523,6 +7530,30 @@ export interface CmdTestSignatureConfirmBody {
   confirmation: ConfirmationProof;
 }
 
+/**
+ * What the product's OWN PAdES validator makes of the signature the test just produced.
+ *
+ * The server runs `chancela_pades::validate_pdf_signature` over the finished bytes and reports the
+ * verdict as values. A negative verdict is a legitimate outcome of a successful test, not an error:
+ * the qualified signature exists and has been retained by then. Render every field — never treat a
+ * missing flag as a pass.
+ */
+export interface CmdTestSelfValidation {
+  /** Whether the embedded CMS verified against the `/ByteRange` digest recomputed from the file. */
+  signature_verifies: boolean;
+  /** Whether the signature covers the document as rendered. */
+  covers_rendered_document: boolean;
+  /**
+   * Stable token: `'whole_document'`, `'ltv_augmented_signed_revision'`,
+   * `'altered_after_signing'`, `'malformed'`, `'unrecognised'`, or `'unavailable'`.
+   */
+  coverage: string;
+  /** Whether the validator found a signature timestamp in the finished bytes. */
+  signature_timestamp_present: boolean;
+  /** Why no verdict was reached. Absent when one was. */
+  error?: string;
+}
+
 /** The outcome of a completed production test signature. */
 export interface CmdTestSignatureConfirmResult {
   test_id: string;
@@ -7546,6 +7577,7 @@ export interface CmdTestSignatureConfirmResult {
   trusted_list_status?: string | null;
   timestamped: boolean;
   retained: boolean;
+  self_validation: CmdTestSelfValidation;
 }
 
 // --- Qualified Cartão de Cidadão signing (§ t58 / t67, desktop / co-located) ------

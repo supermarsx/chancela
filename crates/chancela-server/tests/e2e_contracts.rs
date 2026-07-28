@@ -5,6 +5,10 @@
 //! fixture with [`assert_shape`] (recursive key-set + JSON-type over real bytes). Drift in any handler
 //! or DTO — a renamed, added, removed, or retyped field — fails here; the peer web suite (t15-e3)
 //! asserts the same fixtures parse on the client, so drift breaks whichever side moved.
+//!
+//! **A plain `cargo test` on this target proves nothing.** The journey is `#[ignore]`d without the
+//! `e2e` feature and cargo calls an all-ignored target `ok` with exit 0. Run it with
+//! `cargo test -p chancela-server --features e2e`; see [`the_contract_journey_is_wired_into_ci`].
 
 mod common;
 
@@ -13,10 +17,52 @@ use serde_json::json;
 
 const CODE: &str = "1234-5678-9012";
 
+/// The `--features e2e` invocation that actually runs the journey below. Pinned as a constant so
+/// [`the_contract_journey_is_wired_into_ci`] and the ignore reason cannot drift apart.
+const E2E_INVOCATION: &str = "cargo test -p chancela-server --features e2e";
+
+/// The one test in this file a plain `cargo test` actually runs.
+///
+/// The journey below is `#[ignore]`d without the `e2e` feature, and **cargo reports an all-ignored
+/// target as `ok. 0 passed; 0 failed; 1 ignored` with exit status 0**. That green is vacuous: it
+/// says nothing about the contracts, and a reader who trusts it learns nothing. Un-ignoring is not
+/// the answer — the journey spawns the real server binary, which is exactly what the gate exists to
+/// keep out of `cargo test --workspace`.
+///
+/// So the residual risk is not "the journey fails unnoticed" (CI runs it, below) but "the CI job
+/// that runs it quietly goes away", after which every journey in `tests/e2e_*.rs` becomes dead code
+/// behind two greens. This test is the tripwire for that: it always runs, needs no server, and
+/// fails if the workflow stops invoking the feature.
+///
+/// It deliberately does **not** claim to catch contract drift. Only the journey does that, and only
+/// under `E2E_INVOCATION`.
+#[test]
+fn the_contract_journey_is_wired_into_ci() {
+    let workflow = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .join(".github")
+        .join("workflows")
+        .join("ci.yml");
+    let yaml = std::fs::read_to_string(&workflow)
+        .unwrap_or_else(|e| panic!("read {}: {e}", workflow.display()));
+    assert!(
+        yaml.contains(E2E_INVOCATION),
+        "{} no longer runs `{E2E_INVOCATION}`.\n\
+         Every journey in crates/chancela-server/tests/e2e_*.rs is `#[ignore]`d without that \
+         feature, so dropping it turns them all into dead code that still reports green locally \
+         (`0 passed; 1 ignored`, exit 0). Restore the invocation, or move it somewhere this \
+         assertion can see.",
+        workflow.display()
+    );
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[cfg_attr(
     not(feature = "e2e"),
-    ignore = "composed-system e2e: spawns the real server binary (run with --features e2e)"
+    ignore = "composed-system e2e: spawns the real server binary. A plain `cargo test` reports this \
+              IGNORED and exits 0 — that green is vacuous, it checks no contract. Run \
+              `cargo test -p chancela-server --features e2e` (npm: `test:e2e`); CI's `e2e` job does."
 )]
 async fn live_responses_match_the_canonical_contracts() {
     let registry = spawn_registry_fixture(CERTIDAO_HTML).await;

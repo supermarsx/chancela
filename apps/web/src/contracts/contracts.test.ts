@@ -3741,11 +3741,17 @@ describe('contract fixtures parse through the real client', () => {
         statute: true,
       },
       'Entity',
-      ['fiscal_year_end', 'document_layout_override'],
+      ['fiscal_year_end', 'document_layout_override', 'archived_at', 'archived'],
     );
     expect(entity, 'Entity should expose fiscal_year_end on the wire').toHaveProperty(
       'fiscal_year_end',
     );
+    // Optional in the TS interface (like fiscal_year_end) but sent on EVERY entity read, so pin the
+    // presence here rather than letting `?:` imply the server may omit them.
+    expect(entity, 'Entity should expose archived_at on the wire').toHaveProperty('archived_at');
+    expect(entity, 'Entity should expose archived on the wire').toHaveProperty('archived');
+    expect(entity.archived_at === null || typeof entity.archived_at === 'string').toBe(true);
+    expect(typeof entity.archived).toBe('boolean');
     expect(entity.id).not.toHaveLength(0);
     expect(entity.tenant_id).not.toHaveLength(0);
     expect(entity.group_id === null || entity.group_id.length > 0).toBe(true);
