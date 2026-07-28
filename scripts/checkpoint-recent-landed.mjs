@@ -12051,7 +12051,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3b13a5e`",
+    "Current checkpoint metadata/static checks through `613e144`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12641,7 +12641,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `3b13a5e0d51a6e8a7317c2581c3f7be07cfd76ce`",
+    "implementation snapshot `613e144bb585f42e502b310b7019d844965f7fbe`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12731,7 +12731,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `3b13a5e`",
+    "Current checkpoint metadata/static checks through `613e144`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(

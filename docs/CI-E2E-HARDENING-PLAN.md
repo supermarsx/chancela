@@ -2875,7 +2875,7 @@ password onboarding, recovery phrase, then opens the app` in
   substitute for the live Postgres ACL/restart smoke, hosted Docker jobs,
   production secret custody, multi-host network policy, or deployment
   certification.
-- Current checkpoint metadata/static checks through `3b13a5e`
+- Current checkpoint metadata/static checks through `613e144`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
 test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and

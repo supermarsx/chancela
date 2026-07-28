@@ -1,7 +1,21 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-27 from current implementation snapshot `3b13a5e0d51a6e8a7317c2581c3f7be07cfd76ce`,
-with committed evidence for the floating template-block settings drawer; the
+*Updated 2026-07-28 from current implementation snapshot `613e144bb585f42e502b310b7019d844965f7fbe`,
+with committed evidence for the per-verb permission enforcement audit that made
+`tenant.admin` gate a real route, split `entity.registry.lookup` out of
+`entity.read`, and recorded `book.reopen` as unbuildable rather than merely
+unbuilt; the device-pairing exchange now gated on a confirmation with the
+declared `DevicePairing` floor enforced at the mint, an optional emailed
+confirmation code, and the companion page the deep link already pointed at; the
+lookup-only Certidão de Registo Permanente tool over the existing
+`POST /v1/registry/lookup` with nine separately coded registry failure classes;
+the CMD production test signature validated through the product's own
+`validate_pdf_signature`; the operator-declared termo de abertura sede and the
+declared page count on a new termo template version; the entity archiving UI
+over the `archived_at` lifecycle flag; stable machine-readable codes on every
+`ApiError` with request-id correlation and pt-PT resolution; and the pt-PT
+owned-fallback i18n modules whose divergence guards read the emitting Rust
+sources directly; plus the earlier floating template-block settings drawer; the
 permissioned full-management search surface, durable external projector,
 isolated projector compile graph and slim runtime image; proof-governed
 exact-volume performance harness with bounded topology-start readiness and
@@ -335,6 +349,126 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `613e144` keeps Roles & Access/Architecture/API/Data/Entity/Documents
+  & Archive/Workflows/Signatures & Trust/Template Catalog/UX/CI **PARTIAL**. It
+  is a large batch, and none of it moves a top-level status: every item below is
+  a bounded local slice, and several of them are refusals recorded as such.
+
+  **Roles & access.** `8fd74de4` gives `tenant.admin` a real operation
+  (`PATCH /v1/tenants/{tenant_id}`), so the checkbox stops being inert.
+  `0ded8cb4` splits `entity.registry.lookup` out of `entity.read`, closing a
+  hole where any read-only principal could trigger a live outbound registry
+  consultation; `4c27c632` restores that gate after a probe race removed it.
+  `ddac11a0`, `ad35d158`, and `39a2767c`/`992c984c` record a per-verb
+  enforcement status derived from enumerated authorization call sites rather
+  than from verb spellings, bound to those call sites by test, with a
+  `ReachableUnchecked` state that exists so an audit cannot file a live hole as
+  "not built"; none of the 53 catalog verbs is in that state, and `book.reopen`
+  is the single `FeatureNotBuilt` arm. `0653dc5d` and t77's analysis record
+  `book.reopen` as **unbuildable**, not merely unbuilt: reopening a closed book
+  would leave the signed termo de encerramento's `ata_count` asserting a false
+  fact under a still-valid signature. That is a documented refusal, not a
+  delivered capability — the verb remains in the catalog and grants nothing.
+  This is local enforcement evidence; the tenant/group model, tenant-scoped
+  data partitioning, and multi-tenant isolation remain absent.
+
+  **Confirmation and device pairing.** `662c089e` adds an exhaustive
+  guarded-action registry with a `GET /v1/confirmation-policy` endpoint.
+  `7b49ba9b` enforces at the mint the `DevicePairing` floor the registry had
+  declared since t56-e0 with nothing enforcing it; `4cbfd8b3` requires a
+  confirmed proof to exchange a pairing code and burns the code on a failed
+  confirmation; `f5bb274b`/`ff82ff25` add an optional emailed confirmation code
+  the operator transcribes; `9ff8a2a3` refuses to mail one when the step-up
+  would be vacuous; `c370040f` builds the companion page the deep link already
+  pointed at. `8c0d9258`, `149aad0b`, and `b3817fc0` route account
+  deactivation, entity archiving, and the termo routes through the same
+  confirmation gate. These are local step-up controls only: not device
+  attestation, not a second-factor trust anchor, and not proof that the
+  operator's mailbox is authenticated or that the mail was delivered.
+
+  **Registry lookup.** `10f69960` adds a lookup-only Certidão de Registo
+  Permanente tool over the pre-existing `POST /v1/registry/lookup`. It
+  deliberately persists nothing — no entity created, matched, or updated, no
+  aggregate row, no domain-ledger event — and it writes no read-audit record
+  because the product has no read-audit sink; that residual risk (an operator
+  may consult arbitrary companies untraced) is recorded rather than closed.
+  `81fbd003` replaces a single opaque `502 http.upstream` with nine separately
+  coded `RegistryError` variants, so a mistyped código de acesso, a rejected
+  credential, a quota refusal, and an unreachable registry are distinguishable,
+  and an unanswered consultation can no longer read as "this company has no
+  registry record". This adds no registry credentials, no provider onboarding,
+  and no claim that a consulted certidão is authoritative or current.
+
+  **API error surface.** `4453ddb7` puts a stable machine-readable code on
+  every `ApiError`; `9f582e4f`, `29632b66`, and `ebfaaf6c` peel Tier-2 codes
+  before classifying by variant and re-derive a classifier count that was
+  never right; `08fd0da4` localises API errors without discarding the
+  operator's detail; `93203fca`/`afedc0fd`/`d28fea28` rebuild the web
+  `ErrorNote` on that code table and match the client catalog to the codes the
+  server actually emits; `67c0917c` adds request-id middleware for correlation
+  across logs and error bodies. These are diagnosis and correlation surfaces:
+  they grant no authorization, change no provider behaviour, and carry no legal
+  claim.
+
+  **Signatures & trust.** `27f57100` routes the CMD production test signature
+  through `validate_pdf_signature` — the same validator `POST
+  /v1/documents/validate` uses — so a passing test signature is checked by the
+  product instead of asserted; `73bd4469` wires that flow into the UI and
+  `284ac809` steps it through one modal, while `389afec6` names which trust
+  anchor a test signature would use.
+  `65af98e2` submits the DER `DigestInfo` to CCMovelSign rather than a bare
+  digest, with `bdd0bdca` pinning the full `DigestInfo` on the wire.
+  `eb078d57` honours settings trust anchors at signing time and `25ec641a`
+  proves the settings anchor reaches signing without a hand-built source;
+  `87692479`, `fe754b15`, and `897efa05` separate a stale trust anchor from an
+  untrusted signer and keep three faults on three codes. `42376dd1` finishes
+  the `SignedAttrsProfile` PAdES/CAdES migration and `a3216c2d` closes a
+  lost-update race on the co-signature envelope — a concurrency fix on a record,
+  not a signing capability. Nothing here is AMA/SCMD credentials, production CMD
+  approval, qualified-signature status, or eIDAS legal effect.
+
+  **Books, termo, entities, documents.** `e3438fc9`/`be90a8f4` let the termo de
+  abertura declare its own sede instead of recording whatever the entity
+  aggregate said at seal time; the projection fails closed with
+  `MissingField("entity_seat")` rather than sealing a blank Sede line, and no
+  genesis digest moves because `TermoDeAbertura` has carried `entity_seat`
+  since its original shape. `8d57c239`/`c5444516` carry the declared page count
+  into the termo context and state it on a new termo-abertura template version,
+  with both versions resolving and only v2 stating the count. `cf94cd51`,
+  `4230d1cd`, and `d9fdad18` align the web termo actions with what the server
+  declares guarded and stop telling operators that real termo signing is
+  unbuilt. `b5c9fe19`/`149aad0b`/`a9af6010`/`70112b87` add the `archived_at`
+  lifecycle flag, confirm before archiving, retire an archived entity from new
+  authorship only, and give entity archiving the UI it shipped without.
+  `3b37cd2f` and `6e17f76b` give the five RGPD registers and the
+  breach/transfer controls real record pages. These remain workflow and
+  metadata slices; they add no destructive execution, no legal disposal, and no
+  certification.
+
+  **i18n.** Server-authored English prose is replaced with pt-PT through owned
+  fallback modules, and eight of those modules' guards derive their expectations
+  from the emitting Rust source itself (`privacy.rs`, `platform_logs.rs`,
+  `platform_ops.rs`, `paper_import.rs`, `data_status.rs`/`sync_handoff.rs`/
+  `backup_recovery.rs`, `external_validator_evidence.rs`, and
+  `permission.rs`/`permission_description.rs`), so a newly emitted server status
+  cannot land untranslated without going red. `05ee3aab` and `dc48bdd2` name the
+  RGPD and the AIPD in pt-PT rather than transliterating GDPR/DPIA; `832e8b09`
+  registers two legitimate pt-BR/pt-PT cognates in the leak gate. This is copy
+  and guard coverage, not a translation-quality or legal-terminology review.
+
+  **Structural UI guards.** `2a538e87` (inline banner margins), `7bb5dcd8`
+  (one metric for every hand-built menu's entry row), `c6695bae` (container
+  rhythm frozen), `e441635f` (raw-identifier render class, type-checked), and
+  `558a3315`/`14cdaf05` (opt-in notice dismissal) freeze current structure
+  against regression. They are not visual QA and not a resolved design system:
+  `fcf0f437` records the spacing diagnosis and explicitly leaves the Pass 2
+  decision open.
+
+  **Designed, not built.** `daf118ee`/`0947efd0` (`docs/signing-companion.md`)
+  and `80071200` (`docs/record-deletion.md`) are design records committed
+  without implementation. No crate or web module implements either; they raise
+  no coverage in any spec area and are listed under Remaining Blockers.
 
 - Current `3b13a5e` keeps Architecture/Data/Documents/Template Catalog/UX/CI
   **PARTIAL**. `fb7e9dcd` and `c6c34e9a` move friendly block configuration into
@@ -3646,6 +3780,27 @@ book-only or unavailable evidence remains false/unavailable. These lanes keep
 the matrix at **PARTIAL=11** and do not claim DGLAB/legal archive certification
 or universal PDF/UA completion.
 
+Current enforcement, pairing, and registry alignment note: the `613e144`
+checkpoint changes what several verbs and routes actually do and changes no
+top-level status. `tenant.admin` and the new `entity.registry.lookup` verb now
+gate real routes, and the per-verb enforcement audit is bound by test to
+enumerated authorization call sites — but it audits *this* codebase's checks,
+not scope correctness, not a tenancy or isolation model, and not an external
+security review. `book.reopen` moving from "unbuilt" to "unbuildable" withdraws
+a capability from the roadmap; it delivers none, and the verb still ships in the
+catalog granting nothing. The confirmed pairing exchange, the floor enforced at
+the mint, the emailed confirmation code, and the companion page are local
+step-up and delivery plumbing, not device attestation, not a qualified second
+factor, and not mailbox authentication. The lookup-only certidão tool and its
+nine coded registry failure classes are a read surface that persists nothing and
+audits nothing, so they add no registry integration, no provenance, and no
+authoritative-source claim; the untraced-consultation residual risk is recorded,
+not closed. The CMD test signature is now checked by the product's own PAdES
+validator, which is self-validation, not third-party validation or production
+CMD approval. `docs/signing-companion.md` and `docs/record-deletion.md` are
+design records with no implementation and contribute no coverage in any area.
+Statuses remain **PARTIAL=11**.
+
 ---
 
 ## Recent Coverage Added
@@ -5294,6 +5449,19 @@ or universal PDF/UA completion.
 
 ### Local product work
 
+- Designed but not implemented: `docs/signing-companion.md` (the signing
+  companion, its settled name and rollback constraint) and
+  `docs/record-deletion.md` (record deletion, and the recount that must never
+  land) are committed design decisions with no code behind them. Both remain
+  entirely unbuilt.
+- Catalog hygiene: `book.reopen` is audited `FeatureNotBuilt` and established as
+  unbuildable without contradicting a signed termo de encerramento. It is still
+  seeded into roles and rendered in the RBAC matrix, where it grants nothing;
+  removing the verb from the catalog outright is the remaining work.
+- Read auditability: `POST /v1/registry/lookup` and the certidão tool built on
+  it consult an external registry and write no audit record, because the product
+  has no read-audit sink. Designing that sink — the first one in the product —
+  is outstanding local work, not a gap this checkpoint closed.
 - Legal/product depth: per-family rule-pack completeness, legally verified
   threshold values, exhaustive/verified template/citation law references, guest/privacy redaction
   coverage beyond the current read-response slices, destructive/automated DSR execution workflows
@@ -5427,6 +5595,33 @@ or universal PDF/UA completion.
 
 ## Do Not Overstate
 
+- A per-verb enforcement status derived from real authorization call sites tells
+  an administrator whether a ticked permission gates anything. It is an audit of
+  this codebase's own checks — not proof that each check is at the right scope,
+  not a tenancy or isolation model, and not an external security review.
+- `book.reopen` is recorded as **unbuildable**, which is a refusal to build a
+  capability rather than a delivered one. The verb still ships in the catalog
+  granting nothing, and removing it outright remains outstanding work.
+- The device-pairing confirmation, the floor enforced at the mint, and the
+  emailed confirmation code are local step-up controls. They are not device
+  attestation, not a qualified second factor, and not proof that the mail was
+  delivered or that the mailbox belongs to the operator.
+- The lookup-only certidão tool consults the registry and keeps nothing —
+  including no read-audit record, because no read-audit sink exists. Nine
+  distinguishable failure classes make an unanswered consultation legible as
+  such; they do not make a returned certidão authoritative, current, complete,
+  or legally usable, and they add no registry credentials or provider
+  onboarding.
+- A CMD test signature validated through `validate_pdf_signature` shows that the
+  product's own validator accepts what the product's own signing path produced.
+  That is self-validation: not production CMD approval, not qualified-signature
+  status, not third-party or provider validation, and not eIDAS legal effect.
+- `docs/signing-companion.md` and `docs/record-deletion.md` are design decisions
+  committed without implementation. Neither raises coverage in any spec area,
+  and neither may be cited as a landed capability.
+- pt-PT owned-fallback modules whose guards read the emitting Rust source keep a
+  newly emitted server status from landing untranslated. That is divergence
+  detection, not a translation-quality, legal-terminology, or linguistic review.
 - The exact-volume performance profiles and CI workflow make capacity evidence
   reproducible; they are not capacity proof until the full target profile is
   executed successfully with reviewed SLO and resource evidence.
