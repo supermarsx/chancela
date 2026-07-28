@@ -276,10 +276,6 @@ a:focus-visible {
   min-width: min(100%, 11rem);
 }
 
-.external-signing-workflows .inline-warning__body > p {
-  margin: 0;
-}
-
 @media (max-width: 620px) {
   .external-signature-deflist {
     grid-template-columns: 1fr;
@@ -1599,6 +1595,35 @@ a.btn.btn--iconOnly {
 
 .inline-warning__body {
   font-size: 0.92rem;
+}
+
+/* The body holds whatever the caller passed, and 62 of the 238 call sites pass block-level
+   content (`<p>`, `<ul>`, `<dl>`, …). Those carry the UA stylesheet's own `margin-block: 1em`,
+   which lands INSIDE this box's 0.85rem padding: the first child pushes the text down off the
+   top padding and the last pushes the bottom out, so the banner reads as a lopsided box with
+   far more air above and below its text than beside it.
+
+   Nothing reset that globally. `theme.css` only ever zeroed it one surface at a time — this
+   replaces a `.external-signing-workflows .inline-warning__body > p { margin: 0 }` patch — which
+   is why the complaint kept returning on every banner that was not the patched one, and why the
+   rule belongs here, next to the primitive, instead of on a page.
+
+   Two declarations, because collapsing the outer edge and spacing siblings are different jobs:
+   zero the block margins so the box's own padding is the only thing setting the inset, then give
+   consecutive blocks a real gap. 20 call sites pass more than one block, and the blanket
+   `margin: 0` of the page-scoped patch glued those together — a fix that reintroduces the
+   complaint one level down is not a fix.
+
+   `:where()` pins both at (0,0,0) specificity, matching the `margin-top` rules above and for the
+   same reason: a call site or a surface that wants its own rhythm still wins with a plain class
+   selector, with no `!important` and no specificity war. */
+:where(.inline-warning__body) > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+:where(.inline-warning__body) > * + * {
+  margin-top: 0.5rem;
 }
 
 /* `ErrorNote` — the reviewed pt-PT sentence, then everything the server actually said.
