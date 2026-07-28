@@ -1120,6 +1120,7 @@ export const frFR: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Sélectionner…',
   'ledger.export.table.package': 'Paquet',
   'ledger.export.table.purpose': 'Description',
+  'ledger.export.table.actions': 'Actions',
   'ledger.export.preservation.title': 'Paquet de préservation — versement et preuve',
   'ledger.export.preservation.body':
     'Une archive ZIP déterministe et en lecture seule, destinée au versement d’archives et à la preuve. Elle n’est pas réimportable et sa génération n’écrit rien dans le journal.',

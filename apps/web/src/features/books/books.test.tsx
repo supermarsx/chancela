@@ -704,6 +704,16 @@ describe('BookDetailPage — preservation package download', () => {
     };
   }
 
+  it('labels every export-table column, including the actions header (t86)', async () => {
+    vi.stubGlobal('fetch', bookDetailFetch().fn);
+
+    renderAtBook();
+
+    expect(await screen.findByRole('columnheader', { name: 'Pacote' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Descrição' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Ações' })).toBeTruthy();
+  });
+
   it('saves the Chancela internal preservation package through the shared helper', async () => {
     saveFileMock.saveBlobAs.mockResolvedValue({
       kind: 'browser-download',

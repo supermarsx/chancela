@@ -1107,6 +1107,7 @@ export const enGB: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Select…',
   'ledger.export.table.package': 'Package',
   'ledger.export.table.purpose': 'Description',
+  'ledger.export.table.actions': 'Actions',
   'ledger.export.preservation.title': 'Preservation package — deposit and evidence',
   'ledger.export.preservation.body':
     'A deterministic, read-only ZIP meant for archival deposit and evidence. It cannot be imported back, and generating it writes nothing to the log.',

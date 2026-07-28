@@ -3101,6 +3101,36 @@ a.btn.btn--iconOnly {
   }
 }
 
+/* The book/Arquivo export comparison table (t52/t86) — deliberately NOT the dense,
+   truncating `.books-table`/`.entities-table` treatment: its cells hold prose, an
+   `InlineWarning`, a legal-hold `Toggle` and a conditional reason `Input`, all of which
+   need to WRAP, not `nowrap`+ellipsis (see `LedgerPage.tsx`'s "prose measure" comment on
+   why this sub-tab stays off the wide-page grid). Two fixes only, scoped so they never
+   touch the base `.table` every other surface shares:
+    - `vertical-align: top` on every cell. The base `.table td` rule centers content
+      (`middle`), which is fine for single-line values but reads as broken here: row 2's
+      tall `InlineWarning` stretches the row, and a `middle`-aligned action button then
+      floats at that row's vertical center instead of sitting level with the row's own
+      label/description — the two rows read as inconsistently aligned rather than as one
+      rhythm. Pinning every cell to the top removes the dependency on sibling height
+      entirely; both rows' `th`/`td`/action content start flush with the row's top edge.
+    - Row-header (`th scope="row"`) border normalized to match the sibling `td`'s. The
+      base `.table th` rule (`border-bottom: 2px solid var(--rule)`) is written for
+      `<thead>` column headers and applies to EVERY `th` regardless of nesting, so a
+      body-row header inherits a thicker, differently-colored bottom border than the
+      `td`s beside it — same y-position, mismatched weight/color, which reads as the row
+      rule breaking rather than continuing. Only the border is overridden; the row-header
+      keeps the same bold/uppercase label treatment the legal-hold table
+      (`BookDetailPage.tsx`'s Indicador/Valor rows) already established. */
+.book-export-table .table th,
+.book-export-table .table td {
+  vertical-align: top;
+}
+
+.book-export-table .table tbody th {
+  border-bottom: 1px solid var(--border);
+}
+
 /* --------------------------------------------------------------------------
  * A book's atas (minutes) list (t47) — the same filter bar + fixed-layout,
  * truncating table the Livros list uses, so a book's atas read as the same

@@ -1112,6 +1112,7 @@ export const esES: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Seleccione…',
   'ledger.export.table.package': 'Paquete',
   'ledger.export.table.purpose': 'Descripción',
+  'ledger.export.table.actions': 'Acciones',
   'ledger.export.preservation.title': 'Paquete de preservación: depósito y prueba',
   'ledger.export.preservation.body':
     'Un ZIP determinista y de solo lectura, pensado para el depósito archivístico y como prueba. No se puede reimportar y su generación no escribe nada en el registro.',

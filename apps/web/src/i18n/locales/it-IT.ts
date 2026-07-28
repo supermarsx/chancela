@@ -1114,6 +1114,7 @@ export const itIT: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Seleziona…',
   'ledger.export.table.package': 'Pacchetto',
   'ledger.export.table.purpose': 'Descrizione',
+  'ledger.export.table.actions': 'Azioni',
   'ledger.export.preservation.title': 'Pacchetto di conservazione — versamento e prova',
   'ledger.export.preservation.body':
     'Uno ZIP deterministico e di sola lettura, pensato per il versamento archivistico e come prova. Non è reimportabile e la sua generazione non scrive nulla nel registro.',

@@ -1107,6 +1107,7 @@ export const daDK: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Vælg…',
   'ledger.export.table.package': 'Pakke',
   'ledger.export.table.purpose': 'Beskrivelse',
+  'ledger.export.table.actions': 'Handlinger',
   'ledger.export.preservation.title': 'Bevaringspakke — aflevering og bevis',
   'ledger.export.preservation.body':
     'En deterministisk, skrivebeskyttet ZIP beregnet til arkivaflevering og bevisførelse. Den kan ikke importeres tilbage, og dannelsen skriver intet i loggen.',

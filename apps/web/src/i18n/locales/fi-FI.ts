@@ -1109,6 +1109,7 @@ export const fiFI: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Valitse…',
   'ledger.export.table.package': 'Paketti',
   'ledger.export.table.purpose': 'Kuvaus',
+  'ledger.export.table.actions': 'Toiminnot',
   'ledger.export.preservation.title': 'Säilytyspaketti — talletus ja todiste',
   'ledger.export.preservation.body':
     'Deterministinen, vain luettava ZIP arkistotalletukseen ja todisteeksi. Sitä ei voi tuoda takaisin, eikä sen luonti kirjoita lokiin mitään.',

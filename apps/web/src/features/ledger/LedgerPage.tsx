@@ -376,7 +376,7 @@ function BookExportControls() {
           <tr>
             <th scope="col">{t('ledger.export.table.package')}</th>
             <th scope="col">{t('ledger.export.table.purpose')}</th>
-            <th scope="col" />
+            <th scope="col">{t('ledger.export.table.actions')}</th>
           </tr>
         }
       >

@@ -690,6 +690,11 @@ describe('LedgerPage — sub-tabs', () => {
     expect(screen.getByText('Pacote de portabilidade — mudar de instância')).toBeTruthy();
     expect(screen.getByText('chancela-internal-preservation-package/v1')).toBeTruthy();
     expect(screen.getByText('chancela-book-bundle/v1')).toBeTruthy();
+    // The comparison table's own three column headers, including the actions header (t86) —
+    // an empty `<th>` there left the action column unlabelled for screen readers.
+    expect(screen.getByRole('columnheader', { name: 'Pacote' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Descrição' })).toBeTruthy();
+    expect(screen.getByRole('columnheader', { name: 'Ações' })).toBeTruthy();
     // The bundle's retained/logged side effect is stated, the preservation package's is not.
     expect(screen.getByText('Esta exportação fica registada')).toBeTruthy();
     // The cascade auto-selects the sole entity → type → book, so the book step offers the

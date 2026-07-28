@@ -1109,6 +1109,7 @@ export const svSE: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Välj…',
   'ledger.export.table.package': 'Paket',
   'ledger.export.table.purpose': 'Beskrivning',
+  'ledger.export.table.actions': 'Åtgärder',
   'ledger.export.preservation.title': 'Bevarandepaket — leverans och bevis',
   'ledger.export.preservation.body':
     'En deterministisk, skrivskyddad ZIP avsedd för arkivleverans och som bevis. Den kan inte importeras tillbaka, och att skapa den skriver ingenting i loggen.',

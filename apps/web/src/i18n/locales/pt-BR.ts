@@ -1110,6 +1110,7 @@ export const ptBR: Catalog = {
   'ledger.export.book.selectPlaceholder': 'Selecione…',
   'ledger.export.table.package': 'Pacote',
   'ledger.export.table.purpose': 'Descrição',
+  'ledger.export.table.actions': 'Ações',
   'ledger.export.preservation.title': 'Pacote de preservação — depósito e evidência',
   'ledger.export.preservation.body':
     'ZIP determinístico e somente de leitura, destinado a depósito arquivístico e a evidência. Não é reimportável e sua geração não escreve no registro.',
