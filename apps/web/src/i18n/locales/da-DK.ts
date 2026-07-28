@@ -3620,7 +3620,10 @@ export const daDK: Catalog = {
   'data.status.cleanup.exports.button': 'Ryd eksporter',
   'data.status.cleanup.exports.confirm':
     'Slet bevarede eksporter i denne datamappe? Kontrollér, at du allerede har de kopier, du har brug for.',
-  'data.status.cleanup.items': '{files} filer · {directories} mapper',
+  'data.status.cleanup.filesCount.one': '{count} fil',
+  'data.status.cleanup.filesCount.other': '{count} filer',
+  'data.status.cleanup.directoriesCount.one': '{count} mappe',
+  'data.status.cleanup.directoriesCount.other': '{count} mapper',
   'data.status.cleanup.pending': 'Rydder…',
   'data.status.cleanup.done': 'Rydning fuldført.',
   'data.status.cleanup.doneTitle': 'Vedligeholdelse fuldført',

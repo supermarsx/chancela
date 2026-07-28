@@ -3605,7 +3605,10 @@ export const enUS = {
   'data.status.cleanup.exports.button': 'Clean exports',
   'data.status.cleanup.exports.confirm':
     'Delete retained exports in this data folder? Check that you already have the copies you need.',
-  'data.status.cleanup.items': '{files} files · {directories} folders',
+  'data.status.cleanup.filesCount.one': '{count} file',
+  'data.status.cleanup.filesCount.other': '{count} files',
+  'data.status.cleanup.directoriesCount.one': '{count} folder',
+  'data.status.cleanup.directoriesCount.other': '{count} folders',
   'data.status.cleanup.pending': 'Cleaning…',
   'data.status.cleanup.done': 'Cleanup complete.',
   'data.status.cleanup.doneTitle': 'Maintenance complete',

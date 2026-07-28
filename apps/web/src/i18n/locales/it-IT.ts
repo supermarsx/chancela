@@ -3640,7 +3640,10 @@ export const itIT: Catalog = {
   'data.status.cleanup.exports.button': 'Pulisci le esportazioni',
   'data.status.cleanup.exports.confirm':
     'Eliminare le esportazioni conservate in questa cartella dei dati? Verifica di avere già le copie necessarie.',
-  'data.status.cleanup.items': '{files} file · {directories} cartelle',
+  'data.status.cleanup.filesCount.one': '{count} file',
+  'data.status.cleanup.filesCount.other': '{count} file',
+  'data.status.cleanup.directoriesCount.one': '{count} cartella',
+  'data.status.cleanup.directoriesCount.other': '{count} cartelle',
   'data.status.cleanup.pending': 'Pulizia…',
   'data.status.cleanup.done': 'Pulizia completata.',
   'data.status.cleanup.doneTitle': 'Manutenzione completata',

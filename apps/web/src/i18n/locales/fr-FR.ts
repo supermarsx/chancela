@@ -3657,7 +3657,10 @@ export const frFR: Catalog = {
   'data.status.cleanup.exports.button': 'Nettoyer les exports',
   'data.status.cleanup.exports.confirm':
     'Supprimer les exports conservés dans ce dossier de données ? Vérifiez que vous disposez déjà des copies nécessaires.',
-  'data.status.cleanup.items': '{files} fichiers · {directories} dossiers',
+  'data.status.cleanup.filesCount.one': '{count} fichier',
+  'data.status.cleanup.filesCount.other': '{count} fichiers',
+  'data.status.cleanup.directoriesCount.one': '{count} dossier',
+  'data.status.cleanup.directoriesCount.other': '{count} dossiers',
   'data.status.cleanup.pending': 'Nettoyage…',
   'data.status.cleanup.done': 'Nettoyage terminé.',
   'data.status.cleanup.doneTitle': 'Maintenance terminée',

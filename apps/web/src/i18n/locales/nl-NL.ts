@@ -3647,7 +3647,10 @@ export const nlNL: Catalog = {
   'data.status.cleanup.exports.button': 'Exports opruimen',
   'data.status.cleanup.exports.confirm':
     'Bewaarde exports in deze gegevensmap verwijderen? Controleer of u de benodigde kopieën al hebt.',
-  'data.status.cleanup.items': '{files} bestanden · {directories} mappen',
+  'data.status.cleanup.filesCount.one': '{count} bestand',
+  'data.status.cleanup.filesCount.other': '{count} bestanden',
+  'data.status.cleanup.directoriesCount.one': '{count} map',
+  'data.status.cleanup.directoriesCount.other': '{count} mappen',
   'data.status.cleanup.pending': 'Opruimen…',
   'data.status.cleanup.done': 'Opruimen voltooid.',
   'data.status.cleanup.doneTitle': 'Onderhoud voltooid',

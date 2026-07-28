@@ -3779,7 +3779,10 @@ export const ptPT: Catalog = {
   'data.status.cleanup.exports.button': 'Limpar exportações',
   'data.status.cleanup.exports.confirm':
     'Apagar exportações retidas nesta pasta de dados? Verifique primeiro que já tem as cópias necessárias.',
-  'data.status.cleanup.items': '{files} ficheiros · {directories} pastas',
+  'data.status.cleanup.filesCount.one': '{count} ficheiro',
+  'data.status.cleanup.filesCount.other': '{count} ficheiros',
+  'data.status.cleanup.directoriesCount.one': '{count} pasta',
+  'data.status.cleanup.directoriesCount.other': '{count} pastas',
   'data.status.cleanup.pending': 'A limpar…',
   'data.status.cleanup.done': 'Limpeza concluída.',
   'data.status.cleanup.doneTitle': 'Manutenção concluída',

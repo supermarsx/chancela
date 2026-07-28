@@ -6,6 +6,8 @@ import {
   type DataStatusResponse,
   type SyncHandoffPreflightReport,
 } from '../../api/types';
+import { interpolate } from '../../i18n/interpolate';
+import { ptPT } from '../../i18n/locales/pt-PT';
 
 const saveFileMock = vi.hoisted(() => ({
   saveBlobAs: vi.fn(),
@@ -794,6 +796,104 @@ describe('DataManagementSection', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copiar caminho' }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('F:\\ChancelaData'));
+  });
+
+  it('keeps the maintenance usage size and counts in separate nodes, correctly pluralised', async () => {
+    // crash: bytes 512, file_count 1, directory_count 1 — singular for both counts.
+    // platform_logs: bytes 256, file_count 1, directory_count 0 — singular files, zero folders.
+    // exports: bytes 512, file_count 2, directory_count 1 — plural files, singular folders.
+    installFetch();
+    renderWithProviders(<DataManagementSection />);
+    await screen.findByText('Durável');
+
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+
+    const metricFor = (rowLabel: string) => {
+      const row = within(maintenanceSection).getByText(rowLabel).closest('tr')!;
+      const metric = row.querySelector('.data-status-cleanup__metric')!;
+      const size = metric.querySelector('.data-status-cleanup__metric-size')!;
+      const count = metric.querySelector('.data-status-cleanup__metric-count')!;
+      // The component joins the two pluralised phrases with ' · ' inside `count` — split back
+      // apart so each phrase is compared exactly, not by substring (which would let "1 pastas"
+      // pass a `.toContain('1 pasta')` check on a shared prefix).
+      const [filesPhrase, directoriesPhrase] = (count.textContent ?? '').split(' · ');
+      return { metric, size, count, filesPhrase, directoriesPhrase };
+    };
+
+    const filesOne = (n: number) => interpolate(ptPT['data.status.cleanup.filesCount.one'], { count: n });
+    const filesOther = (n: number) =>
+      interpolate(ptPT['data.status.cleanup.filesCount.other'], { count: n });
+    const dirsOne = (n: number) =>
+      interpolate(ptPT['data.status.cleanup.directoriesCount.one'], { count: n });
+    const dirsOther = (n: number) =>
+      interpolate(ptPT['data.status.cleanup.directoriesCount.other'], { count: n });
+
+    // Regression guard #1 — the byte size and the file/folder counts must be two distinct
+    // DOM nodes, never one run-together string ("594 KB2 ficheiros"). A single fused text
+    // node would leave `.data-status-cleanup__metric-size` and `-count` pointing at the
+    // same element (or one of them null); asserting both exist as separate elements is what
+    // actually catches the regression, independent of wording.
+    for (const label of ['Relatórios de falha', 'Registos de plataforma', 'Exportações retidas']) {
+      const { metric, size, count } = metricFor(label);
+      expect(size).toBeTruthy();
+      expect(count).toBeTruthy();
+      expect(size).not.toBe(count);
+      expect(Array.from(metric.children)).toEqual([size, count]);
+    }
+
+    // Regression guard #2 — plural agreement. count === 1 must render the discrete
+    // singular catalog string exactly, never the "other" template with 1 spliced in.
+    const crash = metricFor('Relatórios de falha');
+    expect(crash.size.textContent).toContain('512 B');
+    expect(crash.filesPhrase).toBe(filesOne(1));
+    expect(crash.directoriesPhrase).toBe(dirsOne(1));
+    expect(crash.filesPhrase).not.toBe(filesOther(1));
+    expect(crash.directoriesPhrase).not.toBe(dirsOther(1));
+
+    const platformLogs = metricFor('Registos de plataforma');
+    expect(platformLogs.size.textContent).toContain('256 B');
+    expect(platformLogs.filesPhrase).toBe(filesOne(1));
+    expect(platformLogs.directoriesPhrase).toBe(dirsOther(0)); // zero uses the plural form
+    expect(platformLogs.directoriesPhrase).not.toBe(dirsOne(0));
+
+    const exportsRow = metricFor('Exportações retidas');
+    expect(exportsRow.size.textContent).toContain('512 B');
+    expect(exportsRow.filesPhrase).toBe(filesOther(2));
+    expect(exportsRow.directoriesPhrase).toBe(dirsOne(1));
+    expect(exportsRow.filesPhrase).not.toBe(filesOne(2));
+  });
+
+  it('pluralises zero files and zero folders as "other", not the singular form', async () => {
+    const zeroedStatus: DataStatusResponse = {
+      ...durableStatus,
+      usage: {
+        ...durableStatus.usage,
+        filesystem: durableStatus.usage.filesystem.map((concern) =>
+          concern.id === 'crash' ? { ...concern, bytes: 0, file_count: 0, directory_count: 0 } : concern,
+        ),
+      },
+    };
+    installFetch([zeroedStatus]);
+    renderWithProviders(<DataManagementSection />);
+    await screen.findByText('Durável');
+
+    const maintenanceSection = screen
+      .getByRole('heading', { name: 'Manutenção' })
+      .closest('section')!;
+    const row = within(maintenanceSection).getByText('Relatórios de falha').closest('tr')!;
+    const count = row.querySelector('.data-status-cleanup__metric-count')!;
+    const [filesPhrase, directoriesPhrase] = (count.textContent ?? '').split(' · ');
+
+    expect(filesPhrase).toBe(interpolate(ptPT['data.status.cleanup.filesCount.other'], { count: 0 }));
+    expect(directoriesPhrase).toBe(
+      interpolate(ptPT['data.status.cleanup.directoriesCount.other'], { count: 0 }),
+    );
+    expect(filesPhrase).not.toBe(interpolate(ptPT['data.status.cleanup.filesCount.one'], { count: 0 }));
+    expect(directoriesPhrase).not.toBe(
+      interpolate(ptPT['data.status.cleanup.directoriesCount.one'], { count: 0 }),
+    );
   });
 
   it('renders the in-memory empty state without a data folder', async () => {

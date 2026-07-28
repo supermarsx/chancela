@@ -258,6 +258,16 @@ function formatOptionalNumber(value: number | null | undefined, locale: string):
   return value === null || value === undefined ? '—' : new Intl.NumberFormat(locale).format(value);
 }
 
+/**
+ * Picks the discrete singular/other catalog string for a count instead of splicing a noun
+ * into one templated sentence — "1 ficheiros" is wrong pt-PT agreement, and a shared
+ * `{count} noun` template can never fix that on its own. Mirrors the `.one`/`.other` key
+ * pair convention already used by `compliance.errors`/`compliance.warnings`.
+ */
+function pluralCount(count: number, oneKey: MessageKey, otherKey: MessageKey, t: TFunction): string {
+  return t(count === 1 ? oneKey : otherKey, { count });
+}
+
 function yesNo(value: boolean | null, t: TFunction): string {
   if (value === null) return '—';
   return value ? t('common.yes') : t('common.no');
@@ -2507,17 +2517,28 @@ function DataStatusPanel({ tab, resetControls }: { tab: DataTab; resetControls: 
                             </div>
                           </th>
                           <td>
+                            {/* Headline size on its own line, the file/folder counts as
+                                secondary detail beneath — never on the same text run as the
+                                size, so "594 KB" and "2 ficheiros" can never read as one
+                                run-together token. */}
                             <p className="data-status-cleanup__metric">
-                              <span className="mono">{formatBytes(usage?.bytes ?? 0, locale)}</span>
-                              <span>
-                                {t('data.status.cleanup.items', {
-                                  files: new Intl.NumberFormat(locale).format(
-                                    usage?.file_count ?? 0,
-                                  ),
-                                  directories: new Intl.NumberFormat(locale).format(
-                                    usage?.directory_count ?? 0,
-                                  ),
-                                })}
+                              <span className="data-status-cleanup__metric-size mono">
+                                {formatBytes(usage?.bytes ?? 0, locale)}
+                              </span>
+                              <span className="data-status-cleanup__metric-count data-status-table__meta">
+                                {pluralCount(
+                                  usage?.file_count ?? 0,
+                                  'data.status.cleanup.filesCount.one',
+                                  'data.status.cleanup.filesCount.other',
+                                  t,
+                                )}
+                                {' · '}
+                                {pluralCount(
+                                  usage?.directory_count ?? 0,
+                                  'data.status.cleanup.directoriesCount.one',
+                                  'data.status.cleanup.directoriesCount.other',
+                                  t,
+                                )}
                               </span>
                             </p>
                           </td>

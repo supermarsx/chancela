@@ -3625,7 +3625,10 @@ export const plPL: Catalog = {
   'data.status.cleanup.exports.button': 'Wyczyść eksporty',
   'data.status.cleanup.exports.confirm':
     'Usunąć zachowane eksporty w tym folderze danych? Sprawdź, czy masz już potrzebne kopie.',
-  'data.status.cleanup.items': '{files} plików · {directories} folderów',
+  'data.status.cleanup.filesCount.one': '{count} plik',
+  'data.status.cleanup.filesCount.other': '{count} plików',
+  'data.status.cleanup.directoriesCount.one': '{count} folder',
+  'data.status.cleanup.directoriesCount.other': '{count} folderów',
   'data.status.cleanup.pending': 'Czyszczenie…',
   'data.status.cleanup.done': 'Czyszczenie zakończone.',
   'data.status.cleanup.doneTitle': 'Konserwacja zakończona',

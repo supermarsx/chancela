@@ -3641,7 +3641,10 @@ export const esES: Catalog = {
   'data.status.cleanup.exports.button': 'Limpiar exportaciones',
   'data.status.cleanup.exports.confirm':
     '¿Eliminar las exportaciones conservadas en esta carpeta de datos? Compruebe que ya tiene las copias que necesita.',
-  'data.status.cleanup.items': '{files} archivos · {directories} carpetas',
+  'data.status.cleanup.filesCount.one': '{count} archivo',
+  'data.status.cleanup.filesCount.other': '{count} archivos',
+  'data.status.cleanup.directoriesCount.one': '{count} carpeta',
+  'data.status.cleanup.directoriesCount.other': '{count} carpetas',
   'data.status.cleanup.pending': 'Limpiando…',
   'data.status.cleanup.done': 'Limpieza completada.',
   'data.status.cleanup.doneTitle': 'Mantenimiento completado',

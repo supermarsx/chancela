@@ -3668,7 +3668,10 @@ export const deDE: Catalog = {
   'data.status.cleanup.exports.button': 'Exporte bereinigen',
   'data.status.cleanup.exports.confirm':
     'Aufbewahrte Exporte in diesem Datenordner löschen? Prüfen Sie, ob Sie bereits die benötigten Kopien haben.',
-  'data.status.cleanup.items': '{files} Dateien · {directories} Ordner',
+  'data.status.cleanup.filesCount.one': '{count} Datei',
+  'data.status.cleanup.filesCount.other': '{count} Dateien',
+  'data.status.cleanup.directoriesCount.one': '{count} Ordner',
+  'data.status.cleanup.directoriesCount.other': '{count} Ordner',
   'data.status.cleanup.pending': 'Wird bereinigt…',
   'data.status.cleanup.done': 'Bereinigung abgeschlossen.',
   'data.status.cleanup.doneTitle': 'Wartung abgeschlossen',

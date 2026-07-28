@@ -3626,7 +3626,10 @@ export const ptBR: Catalog = {
   'data.status.cleanup.exports.button': 'Limpar exportações',
   'data.status.cleanup.exports.confirm':
     'Excluir exportações retidas nesta pasta de dados? Verifique primeiro que já tem as cópias necessárias.',
-  'data.status.cleanup.items': '{files} arquivos · {directories} pastas',
+  'data.status.cleanup.filesCount.one': '{count} arquivo',
+  'data.status.cleanup.filesCount.other': '{count} arquivos',
+  'data.status.cleanup.directoriesCount.one': '{count} pasta',
+  'data.status.cleanup.directoriesCount.other': '{count} pastas',
   'data.status.cleanup.pending': 'Limpando…',
   'data.status.cleanup.done': 'Limpeza concluída.',
   'data.status.cleanup.doneTitle': 'Manutenção concluída',

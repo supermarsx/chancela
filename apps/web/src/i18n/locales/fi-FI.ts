@@ -3628,7 +3628,10 @@ export const fiFI: Catalog = {
   'data.status.cleanup.exports.button': 'Siivoa viennit',
   'data.status.cleanup.exports.confirm':
     'Poistetaanko tähän datakansioon säilytetyt viennit? Varmista, että sinulla on jo tarvitsemasi kopiot.',
-  'data.status.cleanup.items': '{files} tiedostoa · {directories} kansiota',
+  'data.status.cleanup.filesCount.one': '{count} tiedosto',
+  'data.status.cleanup.filesCount.other': '{count} tiedostoa',
+  'data.status.cleanup.directoriesCount.one': '{count} kansio',
+  'data.status.cleanup.directoriesCount.other': '{count} kansiota',
   'data.status.cleanup.pending': 'Siivotaan…',
   'data.status.cleanup.done': 'Siivous valmis.',
   'data.status.cleanup.doneTitle': 'Ylläpito valmis',

@@ -3624,7 +3624,10 @@ export const svSE: Catalog = {
   'data.status.cleanup.exports.button': 'Rensa exporter',
   'data.status.cleanup.exports.confirm':
     'Ta bort behållna exporter i den här datamappen? Kontrollera att du redan har de kopior du behöver.',
-  'data.status.cleanup.items': '{files} filer · {directories} mappar',
+  'data.status.cleanup.filesCount.one': '{count} fil',
+  'data.status.cleanup.filesCount.other': '{count} filer',
+  'data.status.cleanup.directoriesCount.one': '{count} mapp',
+  'data.status.cleanup.directoriesCount.other': '{count} mappar',
   'data.status.cleanup.pending': 'Rensar…',
   'data.status.cleanup.done': 'Rensning klar.',
   'data.status.cleanup.doneTitle': 'Underhåll klart',
