@@ -44,6 +44,7 @@ import {
 } from '../../api/hooks';
 import { PAPER_BOOK_OCR_DRAFT_REVIEW_STATUSES } from '../../api/types';
 import type {
+  BookLegalHoldOperatorWorkflow,
   BookView,
   BookTermoSignatory,
   LocalDglabInterchangeManifest,
@@ -69,6 +70,7 @@ import {
 import { useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { t as translateNow, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
+import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import {
   Badge,
@@ -394,8 +396,22 @@ async function sha256Hex(buffer: ArrayBuffer): Promise<string> {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
+/**
+ * The three workflow-completion flags on `BookLegalHoldOperatorWorkflow` — typed literal `false`
+ * on the wire (see api/types.ts), the same "no claims" shape as `RETENTION_LEGAL_HOLD_NO_CLAIMS`
+ * in `PrivacyComplianceSection.tsx`. Verbatim wire identifiers, not translated, not badged: one
+ * row per flag, one stated value, mirroring that panel's convention rather than inventing a
+ * second one.
+ */
+const BOOK_LEGAL_HOLD_WORKFLOW_FLAGS = [
+  'destructive_disposal_completed',
+  'disposal_approved',
+  'legal_compliance_claimed',
+] as const satisfies readonly (keyof BookLegalHoldOperatorWorkflow)[];
+
 function LegalHoldPanel({ bookId }: { bookId: string }) {
   const t = useT();
+  const lt = usePrivacyLegalHoldT();
   const toast = useToast();
   const hold = useBookLegalHold(bookId);
   const setHold = useSetBookLegalHold(bookId);
@@ -453,58 +469,71 @@ function LegalHoldPanel({ bookId }: { bookId: string }) {
               {' '}
               {t('uiLiteral.bookDetailPage.aRetencaoLegalBloqueiaODescartePorRegras')}{' '}
             </InlineWarning>
-            <dl className="deflist">
-              <div>
-                <dt>{t('uiLiteral.bookDetailPage.estado')}</dt>
-                <dd>
+            {/*
+              A real table, not the `.deflist` this used to be — the same conversion
+              `PrivacyComplianceSection.tsx`'s org-wide legal-hold panel already went through
+              (t54-e3), reusing its Indicador/Valor column pair (`usePrivacyLegalHoldT`) so the
+              per-book and org-wide views read as one system. No `caption`: the Card title above
+              already names this table, the same reason that panel's tables are captionless.
+            */}
+            <Table
+              className="data-status-table"
+              head={
+                <tr>
+                  <th scope="col">{lt('settings.privacy.legalHold.column.indicator')}</th>
+                  <th scope="col">{lt('settings.privacy.legalHold.column.value')}</th>
+                </tr>
+              }
+            >
+              <tr>
+                <th scope="row">{t('uiLiteral.bookDetailPage.estado')}</th>
+                <td>
                   <Badge tone={active ? 'warn' : 'neutral'}>
                     {active ? 'Retenção legal ativa' : 'Sem retenção legal'}
                   </Badge>
-                </dd>
-              </div>
+                </td>
+              </tr>
               {hold.data?.actor ? (
-                <div>
-                  <dt>{t('uiLiteral.bookDetailPage.ator')}</dt>
-                  <dd>{hold.data.actor}</dd>
-                </div>
+                <tr>
+                  <th scope="row">{t('uiLiteral.bookDetailPage.ator')}</th>
+                  <td>{hold.data.actor}</td>
+                </tr>
               ) : null}
               {hold.data?.set_at ? (
-                <div>
-                  <dt>{t('uiLiteral.bookDetailPage.definidaEm')}</dt>
+                <tr>
+                  <th scope="row">{t('uiLiteral.bookDetailPage.definidaEm')}</th>
                   {/* When the hold was placed is part of the retention audit trail — evidentiary. */}
-                  <dd>
+                  <td>
                     <DateTime value={hold.data.set_at} evidentiary />
-                  </dd>
-                </div>
+                  </td>
+                </tr>
               ) : null}
               {workflow ? (
                 <>
-                  <div>
-                    <dt>{t('uiLiteral.bookDetailPage.fluxoOperador')}</dt>
-                    <dd>{workflow.status}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte')}</dt>
-                    <dd>{String(workflow.disposal_review_blocked)}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('uiLiteral.bookDetailPage.proximoPasso')}</dt>
-                    <dd>{workflow.next_step}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('uiLiteral.bookDetailPage.flagsSemExecucao')}</dt>
-                    <dd>
-                      destructive_disposal_completed:{' '}
-                      {String(workflow.destructive_disposal_completed)}{' '}
-                      {t('uiLiteral.bookDetailPage.disposalApproved')}{' '}
-                      {String(workflow.disposal_approved)}{' '}
-                      {t('uiLiteral.bookDetailPage.legalComplianceClaimed')}{' '}
-                      {String(workflow.legal_compliance_claimed)}
-                    </dd>
-                  </div>
+                  <tr>
+                    <th scope="row">{t('uiLiteral.bookDetailPage.fluxoOperador')}</th>
+                    <td>{workflow.status}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">{t('uiLiteral.bookDetailPage.bloqueiaRevisaoDeDescarte')}</th>
+                    <td>{String(workflow.disposal_review_blocked)}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">{t('uiLiteral.bookDetailPage.proximoPasso')}</th>
+                    <td>{workflow.next_step}</td>
+                  </tr>
+                  {BOOK_LEGAL_HOLD_WORKFLOW_FLAGS.map((flag) => (
+                    <tr key={flag}>
+                      {/* Identifier verbatim, value bare — see BOOK_LEGAL_HOLD_WORKFLOW_FLAGS. */}
+                      <th scope="row" className="mono">
+                        {flag}
+                      </th>
+                      <td className="mono">{String(workflow[flag])}</td>
+                    </tr>
+                  ))}
                 </>
               ) : null}
-            </dl>
+            </Table>
             {workflow ? <p className="field__hint">{workflow.review_note}</p> : null}
           </>
         )}

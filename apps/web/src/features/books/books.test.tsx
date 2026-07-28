@@ -2229,6 +2229,23 @@ describe('BookDetailPage — legal hold', () => {
     );
   }
 
+  /**
+   * The per-book legal-hold panel used to be a `<dl className="deflist">`, the same shape the
+   * org-wide Privacidade panel had before t54-e3 converted it to a `<Table>`
+   * (`PrivacyComplianceSection.test.tsx` has the sibling helpers this mirrors). "Retenção legal"
+   * also names the subnav tab button, so the panel is reached via its `<h3>` heading, not by text.
+   */
+  function legalHoldTable(): HTMLElement {
+    const panel = screen
+      .getByRole('heading', { name: 'Retenção legal', level: 3 })
+      .closest('section') as HTMLElement;
+    return within(panel).getByRole('table');
+  }
+
+  function legalHoldRow(table: HTMLElement, label: string): HTMLElement {
+    return within(table).getByRole('rowheader', { name: label }).closest('tr') as HTMLElement;
+  }
+
   it('sets and clears a legal hold for the current book', async () => {
     const inactiveWorkflow = {
       status: 'advisory_only',
@@ -2293,7 +2310,18 @@ describe('BookDetailPage — legal hold', () => {
     expect(screen.getByText(/bloqueia o descarte por regras de retenção/i)).toBeTruthy();
     expect(screen.getByText(/não aprova descarte nem declara cumprimento legal/i)).toBeTruthy();
     expect(screen.getByText('advisory_only')).toBeTruthy();
-    expect(screen.getByText(/destructive_disposal_completed:\s*false/)).toBeTruthy();
+    // The three workflow flags used to share one `·`-joined `<dd>` with the identifier text
+    // ("destructive_disposal_completed: false") baked in; that blob must not come back — each
+    // flag now gets its own row, identifier in the `rowheader`, bare value in the `cell`.
+    const initialTable = legalHoldTable();
+    for (const flag of [
+      'destructive_disposal_completed',
+      'disposal_approved',
+      'legal_compliance_claimed',
+    ]) {
+      const row = legalHoldRow(initialTable, flag);
+      expect(within(row).getAllByRole('cell')[0].textContent).toBe('false');
+    }
 
     fireEvent.change(screen.getByLabelText('Motivo da retenção legal'), {
       target: { value: 'litígio pendente' },
@@ -2320,6 +2348,66 @@ describe('BookDetailPage — legal hold', () => {
       ).toBe(true),
     );
     expect(await screen.findByText('Retenção legal removida.')).toBeTruthy();
+  });
+
+  it('renders every legal-hold field as its own table row (t71)', async () => {
+    // Every field the old `<dl>` carried, all present at once, so a row silently dropped in the
+    // table conversion has nowhere to hide: Estado, Ator, Definida em, then the workflow block
+    // (Fluxo operador, Bloqueia revisão de descarte, Próximo passo) and its three flags.
+    const workflow = {
+      status: 'blocked_by_legal_hold',
+      disposal_review_blocked: true,
+      review_note: 'Nota de revisão de teste.',
+      next_step: 'Passo seguinte de teste.',
+      destructive_disposal_completed: false,
+      disposal_approved: false,
+      legal_compliance_claimed: false,
+    } satisfies BookLegalHoldView['operator_workflow'];
+    const hold: BookLegalHoldView = {
+      legal_hold: true,
+      reason: 'litígio pendente',
+      actor: 'operator-9',
+      set_at: '2026-07-09T10:00:00Z',
+      operator_workflow: workflow,
+    };
+    const { fn } = bookDetailFetch((url, method) => {
+      if (url === '/v1/books/book-1/legal-hold' && method === 'GET') {
+        return jsonResponse(hold);
+      }
+      return null;
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderAtBook();
+    await screen.findByText('operator-9');
+    const table = legalHoldTable();
+
+    expect(
+      within(legalHoldRow(table, 'Estado')).getByText('Retenção legal ativa'),
+    ).toBeTruthy();
+    expect(within(legalHoldRow(table, 'Ator')).getAllByRole('cell')[0].textContent).toBe(
+      'operator-9',
+    );
+    // "Definida em" renders through the shared evidentiary `<DateTime>` — assert the row and its
+    // `<time>` element exist rather than the locale-formatted text, which is not this panel's copy.
+    expect(legalHoldRow(table, 'Definida em').querySelector('time')).toBeTruthy();
+    expect(
+      within(legalHoldRow(table, 'Fluxo operador')).getAllByRole('cell')[0].textContent,
+    ).toBe('blocked_by_legal_hold');
+    expect(
+      within(legalHoldRow(table, 'Bloqueia revisão de descarte')).getAllByRole('cell')[0]
+        .textContent,
+    ).toBe('true');
+    expect(
+      within(legalHoldRow(table, 'Próximo passo')).getAllByRole('cell')[0].textContent,
+    ).toBe('Passo seguinte de teste.');
+    for (const flag of [
+      'destructive_disposal_completed',
+      'disposal_approved',
+      'legal_compliance_claimed',
+    ]) {
+      expect(within(legalHoldRow(table, flag)).getAllByRole('cell')[0].textContent).toBe('false');
+    }
   });
 });
 
