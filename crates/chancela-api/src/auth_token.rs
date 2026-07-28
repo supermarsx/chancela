@@ -70,7 +70,7 @@ pub const TOKEN_ENTROPY_BYTES: usize = 32;
 
 /// The alphabet a **transcribed** secret is drawn from: 31 symbols, with `0`, `O`, `1`, `I` and `L`
 /// removed so that what a human reads off a screen cannot be a different string from what was sent.
-/// The same alphabet `totp::generate_backup_code` uses, for one transcription vocabulary.
+/// Byte-identical to `totp::BACKUP_CODE_ALPHABET`, for one transcription vocabulary.
 const TRANSCRIBABLE_ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
 
 /// Symbols in a transcribed secret. **16 × log2(31) ≈ 79.3 bits** — see
@@ -86,11 +86,16 @@ const TRANSCRIBABLE_UNBIASED_CEILING: u8 = 248;
 
 /// Draw one uniformly-distributed symbol, redrawing on the biased tail.
 ///
-/// **Rejection sampling, deliberately, and deliberately unlike `totp::generate_backup_code`**, which
-/// takes `byte % 31` on a uniform byte. 256 is not a multiple of 31, so that favours the first eight
-/// symbols by a factor of 9/8 and leaks a fraction of a bit per character. It is a small effect at
-/// backup-code length and this lane is not the place to change how backup codes are minted, but
-/// copying the pattern into new code would be propagating a flaw for the sake of symmetry.
+/// **Rejection sampling, not `byte % 31`.** 256 is not a multiple of 31, so reducing a uniform byte
+/// modulo the alphabet favours the first eight symbols by 9/8 and leaks a fraction of a bit per
+/// character.
+///
+/// `totp::generate_backup_code` took the modulo shortcut when this was written, and this comment
+/// used to say so and decline to fix it. It no longer does: `totp::backup_code_symbol` now rejects
+/// the same `248..=255` tail against the same 31 symbols. The two are separate functions over
+/// separate constants on purpose — they mint different credentials, and coupling them would mean a
+/// change aimed at one silently reaching the other — but they must not diverge in *this*, so a
+/// change to either belongs in the same commit as a look at the other.
 fn transcribable_symbol() -> u8 {
     let mut buf = [0u8; 1];
     loop {

@@ -1102,7 +1102,9 @@ mod tests {
                 favoured += 1;
             }
         }
-        // Unbiased: 8/31 ≈ 25.8%. The old modulo path: 9/(9*8 + 8*23) ≈ 28.1%. A 1.2-point band
+        // Unbiased: 8/31 ≈ 25.8%. The old modulo path: (9*8)/(9*8 + 8*23) = 72/256 ≈ 28.1% —
+        // each of the first eight residues landed 9 times per 256 bytes against the other 23
+        // residues' 8, so the eight of them together took 72 of every 256 draws. A 1.2-point band
         // around the true rate separates them with enormous margin at this sample size while
         // staying far outside normal sampling noise (σ ≈ 0.18 points).
         let rate = favoured as f64 / DRAWS as f64;
