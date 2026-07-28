@@ -66,8 +66,20 @@ date is not decoration.
 > "on **both** trust paths: the operator-triggered LOTL bootstrap (`POST /v1/trust/refresh`) and the
 > trusted-list policy consulted at **signing time**"
 
-`crates/chancela-tsl/tests/tsl_fixture.rs` ·
-`client_with_explicit_anchors_authenticates_a_list_the_env_path_would_reject`
+- `crates/chancela-api/src/signature.rs` ·
+  `settings_provisioned_anchor_authenticates_trusted_list_at_signing_time` — **the citation that
+  proves the claim as worded.** It signs a real Trusted List with an ephemeral XML-DSig signer and
+  drives `build_trust_policy` → `issuer_status` end to end: a settings-only certificate anchor and a
+  settings-only SHA-256 anchor each reach `Granted`.
+- `crates/chancela-tsl/tests/tsl_fixture.rs` ·
+  `client_with_explicit_anchors_authenticates_a_list_the_env_path_would_reject` — the seam beneath
+  it: `TslClient` honours explicitly-supplied anchors.
+
+The second citation alone would **not** discharge this claim, and the distinction is this entry's
+whole point. `validate_tsl_signature_with_anchors` and `TslTrustPolicy::from_client` both existed
+before t61-e1 — the seam was never missing, it was never *walked*. A test that exercises the seam
+directly would have passed for as long as the bug existed. Only a test entering through
+`build_trust_policy`, the function the signing path actually calls, can tell the two apart.
 
 **This entry is the reason the register exists.** The claim was **false** until t61-e1: the
 signing-time chain resolved anchors via `TslTrustAnchors::from_env()` inline, so no settings anchor
@@ -80,12 +92,22 @@ reading the prose against the code found it.
 > "the union can only ever *add* anchors, and an install that provisions none in settings **or**
 > environment trusts no list at all"
 
-Four independent tests, because this is the property that must not regress:
+Five independent tests, because this is the property that must not regress — and because t61-e1
+expanded the trust surface, so fail-closed is what bounds it:
 
+- `crates/chancela-api/src/signature.rs` ·
+  `settings_provisioned_anchor_authenticates_trusted_list_at_signing_time` — its third case is the
+  signing-time half: the *identical* list that two settings anchors authenticate stays `Unknown`
+  when none is provisioned. The other four prove fail-closed below the policy; only this one proves
+  it at the surface t61-e1 opened.
 - `crates/chancela-tsl/tests/tsl_fixture.rs` · `tsl_signature_validation_fails_closed_with_empty_anchor_set`
 - `crates/chancela-tsl/tests/tsl_fixture.rs` · `tsl_signature_env_entry_point_fails_closed_without_configured_anchor`
 - `crates/chancela-api/src/trust.rs` · `resolve_lotl_trust_anchors_empty_is_fail_closed`
 - `crates/chancela-api/src/settings.rs` · `tsl_trust_anchors_default_is_empty_and_fail_closed`
+
+A malformed settings anchor is also fail-closed, one step earlier — `build_trust_policy` refuses to
+build rather than degrading to "unanchored"
+(`crates/chancela-api/src/signature.rs` · `malformed_settings_anchor_fails_the_trust_policy_closed`).
 
 ### ST-4 · A set-but-unparseable environment anchor is a hard error · **REVIEWED 2026-07-28**
 
