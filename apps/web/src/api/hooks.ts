@@ -158,6 +158,8 @@ import type {
   CreateProviderCredentialEntryBody,
   UpdateProviderCredentialEntryBody,
   ReorderProviderCredentialEntriesBody,
+  CmdTestSignatureInitiateBody,
+  CmdTestSignatureConfirmBody,
   DsrRequestView,
   SetBookLegalHoldBody,
   TslCatalogSearchParams,
@@ -4204,6 +4206,37 @@ export function useProbeProviderCredentialEntry() {
       providerId: string;
       entryId: string;
     }) => api.probeProviderCredentialEntry(mode, providerId, entryId),
+  });
+}
+
+/**
+ * The CMD PRODUCTION test signature (t51-e3/t69), phase 1: phone + PIN + T3 confirmation proof →
+ * the server dispatches a real SMS OTP against AMA production and returns a `session_id`. Unlike
+ * {@link useProbeProviderCredentialEntry}, a completed initiate+confirm pair costs a real,
+ * legally binding qualified signature — see the module docs this hook calls into. The PIN is a
+ * transient mutation variable only, never cached.
+ */
+export function useInitiateCmdTestSignature() {
+  return useMutation({
+    mutationFn: (body: CmdTestSignatureInitiateBody) => api.initiateCmdTestSignature(body),
+  });
+}
+
+/**
+ * Phase 2: session_id + OTP + its OWN T3 confirmation proof → the produced signature's metadata.
+ * The OTP is a transient mutation variable only. A `410` means the session aged out (5 minutes);
+ * the caller restarts at phase 1 rather than retrying.
+ */
+export function useConfirmCmdTestSignature() {
+  return useMutation({
+    mutationFn: (body: CmdTestSignatureConfirmBody) => api.confirmCmdTestSignature(body),
+  });
+}
+
+/** Download the retained signed PDF from a completed production test signature. */
+export function useDownloadCmdTestSignatureDocument() {
+  return useMutation({
+    mutationFn: (testId: string) => api.fetchCmdTestSignatureDocument(testId),
   });
 }
 

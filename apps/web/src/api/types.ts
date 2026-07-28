@@ -7389,6 +7389,82 @@ export interface CmdConfirmResult {
   finalization: FinalizationStatus;
 }
 
+// --- CMD production test signature (t51-e3) ---------------------------------------
+//
+// A diagnostic, NOT the act-signing lane above: it exists so an operator with configured CMD
+// credentials can find out whether they actually work against AMA's live production service.
+// There is no rehearsal mode — every completed initiate+confirm pair produces a real, legally
+// binding qualified signature over a server-generated sheet that says of itself that it has no
+// legal effect. `legal_effect` / `counts_toward_*` on the confirm result are always the same
+// honest negatives; they ride as values, not omissions, so a client cannot read a silence as a
+// claim.
+
+/**
+ * `POST /v1/signature/cmd/test-signature/initiate` — phase 1. Mirrors {@link CmdInitiateBody}'s
+ * transient-secret handling (the PIN is sent once and never retained client-side), plus the T3
+ * `confirmation` proof this floored action always requires.
+ */
+export interface CmdTestSignatureInitiateBody {
+  phone: string;
+  pin: string;
+  /** Pin to one exact stored entry; omitted resolves the highest-priority enabled entry. */
+  entry_id?: string;
+  actor?: string;
+  confirmation: ConfirmationProof;
+}
+
+export interface CmdTestSignatureInitiateResult {
+  session_id: string;
+  status: string;
+  masked_phone: string;
+  /** `'stored_entry'` or `'environment'`. */
+  credential_source: string;
+  entry_id?: string;
+  entry_label?: string;
+  environment: string;
+  expires_at: string;
+  provider_contacted: boolean;
+  signer_authorization_requested: boolean;
+  document_signed: boolean;
+}
+
+/**
+ * `POST /v1/signature/cmd/test-signature/confirm` — phase 2, the point at which the real
+ * qualified signature comes into existence. Carries its OWN `confirmation` proof; the server does
+ * not trust initiate's.
+ */
+export interface CmdTestSignatureConfirmBody {
+  session_id: string;
+  otp: string;
+  actor?: string;
+  confirmation: ConfirmationProof;
+}
+
+/** The outcome of a completed production test signature. */
+export interface CmdTestSignatureConfirmResult {
+  test_id: string;
+  status: string;
+  provider_contacted: boolean;
+  document_signed: boolean;
+  /** Always `'none'` — this document is not an ata, not a termo, and not a business record. */
+  legal_effect: string;
+  /** Always `false`, structurally: the record carries no subject and no `slot_id`. */
+  counts_toward_book_opening: boolean;
+  counts_toward_act_signature: boolean;
+  signed_pdf_digest: string;
+  signed_pdf_bytes: number;
+  signing_time: string;
+  signed_at: string;
+  masked_phone: string;
+  credential_source: string;
+  entry_id?: string;
+  entry_label?: string;
+  environment: string;
+  trusted_list_status?: string | null;
+  timestamped: boolean;
+  retained: boolean;
+}
+
 // --- Qualified Cartão de Cidadão signing (§ t58 / t67, desktop / co-located) ------
 //
 // The SYNCHRONOUS smartcard signing flow (frozen `chancela-api::signature::cc` DTOs,
@@ -9041,6 +9117,17 @@ export interface IntegrityReportView {
 export interface ReAuth {
   password?: string;
   recovery_phrase?: string;
+}
+
+/**
+ * The T3 step-up + typed-phrase proof carried by a `ConfirmationAction`-gated request
+ * (`chancela_api::confirmation`). Both fields are optional client-side — an incomplete proof is
+ * simply refused server-side with a 403 — but a floored action (e.g. the CMD production test
+ * signature) always requires both in practice.
+ */
+export interface ConfirmationProof {
+  reauth?: ReAuth;
+  confirm_phrase?: string;
 }
 
 /** `POST /v1/ledger/recovery/reanchor` request (reason required; reauth required, t54-R1). */

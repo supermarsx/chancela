@@ -72,6 +72,7 @@ import {
 } from '../../ui';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
 import { GateButton, GateIconButton, useCan } from '../session/permissions';
+import { CmdTestSignatureAction } from './CmdTestSignatureAction';
 import { providerCredentialsFieldHelp, providerCredentialFieldHelp } from './fieldHelp';
 import {
   providerCredentialCreatePath,
@@ -1046,6 +1047,12 @@ function EntryRow({
         />
         {probe.data ? <ProviderCredentialProbeSummary result={probe.data} /> : null}
         {probe.error ? <ErrorNote error={probe.error} /> : null}
+        {/* The CMD PRODUCTION test signature (t51-e3/t69) is deliberately its own control, never
+            folded into the safe probe button above: a completed run costs one real qualified
+            signature against AMA's live service, so it needs its own gate and its own space. */}
+        {group.mode === 'cmd' ? (
+          <CmdTestSignatureAction entry={entry} canPerform={can('signing.perform')} />
+        ) : null}
       </td>
     </tr>
   );

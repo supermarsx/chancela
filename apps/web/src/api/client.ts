@@ -266,6 +266,10 @@ import type {
   UpdateProviderCredentialEntryBody,
   ReorderProviderCredentialEntriesBody,
   SignStoredPkcs12Body,
+  CmdTestSignatureInitiateBody,
+  CmdTestSignatureInitiateResult,
+  CmdTestSignatureConfirmBody,
+  CmdTestSignatureConfirmResult,
   SessionPermissions,
   DelegationView,
   GrantDelegationBody,
@@ -1758,6 +1762,14 @@ export const api = {
       `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/${encodeURIComponent(entryId)}/probe`,
       mode === 'pkcs12' ? { confirm_private_key_operation: true } : {},
     ),
+  // The CMD PRODUCTION test signature (t51-e3) — a real qualified signature against AMA, not the
+  // safe provider probe above. See `crates/chancela-api/src/cmd_test_signature.rs` module docs.
+  initiateCmdTestSignature: (body: CmdTestSignatureInitiateBody) =>
+    post<CmdTestSignatureInitiateResult>('/v1/signature/cmd/test-signature/initiate', body),
+  confirmCmdTestSignature: (body: CmdTestSignatureConfirmBody) =>
+    post<CmdTestSignatureConfirmResult>('/v1/signature/cmd/test-signature/confirm', body),
+  fetchCmdTestSignatureDocument: (testId: string) =>
+    fetchBlob(`/v1/signature/cmd/test-signature/${encodeURIComponent(testId)}/document`),
   // Sign a sealed act with a STORED PKCS#12 identity (no secret in the request body).
   signStoredPkcs12: (actId: string, body: SignStoredPkcs12Body) =>
     post<LocalPkcs12SignResult>(
