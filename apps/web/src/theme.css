@@ -3156,6 +3156,28 @@ a.btn.btn--iconOnly {
   border-bottom: 1px solid var(--border);
 }
 
+/* The two profile identifiers (`chancela-internal-preservation-package/v1`,
+   `chancela-book-bundle/v1`) sit inline in `.field__hint` prose as a bare `<code>` — no
+   `.mono` class, so t87-statuses's global `overflow-wrap: anywhere` on `.mono` (508fde22)
+   does not reach them, and would be the wrong fix here regardless: that rule ADDS break
+   opportunities to stop an unbreakable token from blowing out its container, but these
+   identifiers already break at every `-` and the `/`, so the browser was happily splitting
+   an operator-facing identifier across two lines even where the row had room not to.
+   `nowrap` removes those opportunities so the identifier reads as one token; the
+   `max-width: 700px` flip restores them below the width where nowrap would otherwise force
+   the table to scroll — measured directly (a probe against this table's real column widths
+   overflows starting exactly at 700px viewport, clean down to 720px), not guessed. */
+.book-export-table code {
+  white-space: nowrap;
+}
+
+@media (max-width: 700px) {
+  .book-export-table code {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+}
+
 /* --------------------------------------------------------------------------
  * A book's atas (minutes) list (t47) — the same filter bar + fixed-layout,
  * truncating table the Livros list uses, so a book's atas read as the same
