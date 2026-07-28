@@ -21,7 +21,7 @@
  * in the address without creating anything.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import type { RetentionPolicyView } from '../../../api/types';
 import { renderWithProviders } from '../../../test/utils';
@@ -34,14 +34,23 @@ const hooks = vi.hoisted(() => ({
   patch: { mutateAsync: vi.fn(), isPending: false },
   /** Records whether the list query was enabled, so the gate can be proved to fail closed. */
   enabled: vi.fn(),
+  /**
+   * Re-renders the page as if the list query had just settled. Flipping the fields above changes
+   * what the mocked hook returns, but nothing tells React to ask again — and the moment the list
+   * settles is precisely where the edit→create bug lives, so it has to be reachable from a test.
+   */
+  settle: (() => {}) as () => void,
 }));
 
 vi.mock('../../../api/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../api/hooks')>();
+  const { useReducer } = await import('react');
   return {
     ...actual,
     usePrivacyRetentionPolicies: (enabled: boolean) => {
       hooks.enabled(enabled);
+      const [, bump] = useReducer((n: number) => n + 1, 0);
+      hooks.settle = bump as unknown as () => void;
       return hooks.policies;
     },
     useCreatePrivacyRetentionPolicy: () => hooks.create,
@@ -212,15 +221,47 @@ describe('the edit route', () => {
     hooks.policies.isLoading = true;
     renderAt('/settings/privacy/retention-policies/retention-1');
 
-    // 🔴 REGRESSION GUARD for the edit→create bug. Handing `EMPTY_RETENTION_FORM` to the draft
-    // hook as a placeholder here would paint a blank form on a real policy's address. The draft
-    // hook must receive `null` until the record resolves.
+    // Nothing empty is on screen to type into while the record is still being resolved.
+    //
+    // ⚠️ On its own this assertion does NOT prove the draft hook received `null` — verified by
+    // mutation: seeding `EMPTY_RETENTION_FORM` here leaves this case GREEN, because the shell
+    // renders the skeleton on `state === 'loading'` and never reaches the form either way. The
+    // case below is the one that actually kills that mutant; this one only covers the paint.
     expect(screen.queryByLabelText('Nome da política')).toBeNull();
     expect(screen.queryByRole('button', { name: 'Guardar alterações' })).toBeNull();
     // The header is already painted, so the page is not a blank screen while it waits.
     expect(
       screen.getByRole('heading', { level: 1, name: 'Editar política de retenção' }),
     ).toBeTruthy();
+  });
+
+  it('seeds from the record when the list resolves AFTER the first paint', async () => {
+    // 🔴 THE REGRESSION GUARD for the edit→create bug, and the only case that kills it.
+    //
+    // `usePrivacyRecordDraft` installs the FIRST non-null seed it is handed and ignores every
+    // later one — it has to, or a background refetch would discard what the operator has typed.
+    // So handing it `EMPTY_RETENTION_FORM` as a placeholder while the list is in flight does not
+    // merely paint a blank form for an instant: it POISONS the draft permanently. The list then
+    // settles, the shell flips to `ready`, and the operator gets a blank form sitting on a real
+    // policy's address, with the record's own schedule, period and legal basis nowhere on screen.
+    // Whatever they type is then written over that live policy.
+    //
+    // Every other case in this file stays green under that mutation, because they each observe
+    // one side of the transition and never the transition itself. This one crosses it.
+    hooks.policies.isLoading = true;
+    hooks.policies.data = [];
+    renderAt('/settings/privacy/retention-policies/retention-1');
+    expect(screen.queryByLabelText('Nome da política')).toBeNull();
+
+    hooks.policies.isLoading = false;
+    hooks.policies.data = [policy];
+    act(() => hooks.settle());
+
+    const name = (await screen.findByLabelText('Nome da política')) as HTMLInputElement;
+    expect(name.value).toBe('Arquivo de livros encerrados');
+    // The record's own values, not the enum defaults `EMPTY_RETENTION_FORM` would have carried.
+    expect((screen.getByLabelText('Período de retenção') as HTMLInputElement).value).toBe('P10Y');
+    expect((screen.getByLabelText('Estado') as HTMLSelectElement).value).toBe('suspended');
   });
 
   it('names the register on a stale id instead of falling through to a create form', () => {
