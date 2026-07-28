@@ -3731,17 +3731,26 @@ fn sanitize_signing_probe_error(error: &chancela_signing::SigningError) -> CcBri
 pub(crate) fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
     match e {
+        // MUST NOT BE SOFTENED, AND MUST NOT BE MERGED (t58 §4 item 10). These three arms are the
+        // three states t61-e2 split apart, and each sends the operator somewhere different: the
+        // signer's provider, the configuration surface they have not filled in, and the anchor they
+        // filled in wrongly. One shared code would put all three back behind one sentence, which is
+        // precisely the misdirection the split exists to remove — the old single message named the
+        // signer's trust service for all three, and was diagnostically false in two of them.
         S::UntrustedService { status } => ApiError::Unprocessable(format!(
             "o certificado do Cartão de Cidadão não está ativo na Lista de Confiança ({})",
             status_label(status)
-        )),
+        ))
+        .with_code("signer_service_not_active"),
         // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
         // are client-actionable, so both are 422 — never the `other =>` 502 below.
-        S::TrustAnchorNotConfigured { .. } => {
-            ApiError::Unprocessable(TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned())
+        S::TrustAnchorNotConfigured { checked } => {
+            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked))
+                .with_code("trust_anchor_not_configured")
         }
-        S::TrustedListNotAnchored { .. } => {
-            ApiError::Unprocessable(TRUSTED_LIST_NOT_ANCHORED_PT.to_owned())
+        S::TrustedListNotAnchored { configured_in, .. } => {
+            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in))
+                .with_code("trusted_list_not_anchored")
         }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do Cartão de Cidadão".to_owned(),
@@ -5580,9 +5589,14 @@ fn remote_batch_doc_error_message(e: &chancela_signing::SigningError) -> String 
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(*status)
         ),
-        // t61-e2: the operator's own trust-anchor configuration, not the signer's service.
-        S::TrustAnchorNotConfigured { .. } => TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned(),
-        S::TrustedListNotAnchored { .. } => TRUSTED_LIST_NOT_ANCHORED_PT.to_owned(),
+        // t61-e2: the operator's own trust-anchor configuration, not the signer's service. This
+        // mapper returns a per-document String rather than an `ApiError`, so it carries the source
+        // citation but no code — the batch surfaces these as per-document reasons, not as the
+        // request's own error.
+        S::TrustAnchorNotConfigured { checked } => trust_anchor_not_configured_detail(*checked),
+        S::TrustedListNotAnchored { configured_in, .. } => {
+            trusted_list_not_anchored_detail(*configured_in)
+        }
         S::MissingIssuerCertificate => {
             "não foi possível resolver o emissor do certificado do signatário".to_owned()
         }
@@ -5937,17 +5951,22 @@ fn csc_config_err(e: CscError) -> ApiError {
 fn map_remote_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
     match e {
+        // MUST NOT BE SOFTENED, AND MUST NOT BE MERGED (t58 §4 item 10) — see
+        // `map_cc_signing_error` for why the three states keep three codes.
         S::UntrustedService { status } => ApiError::Unprocessable(format!(
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(status)
-        )),
+        ))
+        .with_code("signer_service_not_active"),
         // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
         // are client-actionable, so both are 422 — never the `other =>` 502 below.
-        S::TrustAnchorNotConfigured { .. } => {
-            ApiError::Unprocessable(TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned())
+        S::TrustAnchorNotConfigured { checked } => {
+            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked))
+                .with_code("trust_anchor_not_configured")
         }
-        S::TrustedListNotAnchored { .. } => {
-            ApiError::Unprocessable(TRUSTED_LIST_NOT_ANCHORED_PT.to_owned())
+        S::TrustedListNotAnchored { configured_in, .. } => {
+            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in))
+                .with_code("trusted_list_not_anchored")
         }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
@@ -9119,17 +9138,22 @@ async fn consume_pending(state: &AppState, session_id: &str) {
 pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
     match e {
+        // MUST NOT BE SOFTENED, AND MUST NOT BE MERGED (t58 §4 item 10) — see
+        // `map_cc_signing_error` for why the three states keep three codes.
         S::UntrustedService { status } => ApiError::Unprocessable(format!(
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(status)
-        )),
+        ))
+        .with_code("signer_service_not_active"),
         // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
         // are client-actionable, so both are 422 — never the `other =>` 502 below.
-        S::TrustAnchorNotConfigured { .. } => {
-            ApiError::Unprocessable(TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned())
+        S::TrustAnchorNotConfigured { checked } => {
+            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked))
+                .with_code("trust_anchor_not_configured")
         }
-        S::TrustedListNotAnchored { .. } => {
-            ApiError::Unprocessable(TRUSTED_LIST_NOT_ANCHORED_PT.to_owned())
+        S::TrustedListNotAnchored { configured_in, .. } => {
+            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in))
+                .with_code("trusted_list_not_anchored")
         }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
@@ -9176,6 +9200,73 @@ pub(crate) const TRUSTED_LIST_NOT_ANCHORED_PT: &str = concat!(
     "A âncora pode não corresponder a esta lista ou ter sido substituída por rotação de ",
     "chaves — verifique a âncora configurada."
 );
+
+/// Where the anchor set was resolved from, as a **quoted citation** (t58 §2.2).
+///
+/// Guillemets are load-bearing, not decoration: a quoted string is *cited*, not grammatically
+/// incorporated, so it cannot disagree with the sentence around it. pt-PT inflects for gender and
+/// number, and this value is chosen at runtime — dropping it bare into a sentence is the defect the
+/// whole error-copy design is shaped to prevent.
+///
+/// `ApplicationSettings` names both surfaces because that is what it means: the pinned set is the
+/// union of the `signing.tsl_trust_anchor_*` settings fields with the environment anchors
+/// (`chancela_signing::TrustAnchorSource::ApplicationSettings`). Naming only the settings document
+/// would send an operator to the one surface they may not have used.
+///
+/// `None` for a source this build does not recognise. `TrustAnchorSource` is `#[non_exhaustive]`, so
+/// a future variant compiles here silently — and the honest answer to "where did the anchors come
+/// from" is then *nothing*, not a guess. The caller drops the citation entirely rather than
+/// attributing the anchor set to a surface that may not be where the operator has to go.
+fn trust_anchor_source_pt(source: chancela_signing::TrustAnchorSource) -> Option<&'static str> {
+    match source {
+        chancela_signing::TrustAnchorSource::ApplicationSettings => {
+            Some("definições da aplicação e ambiente")
+        }
+        chancela_signing::TrustAnchorSource::Environment => Some("ambiente"),
+        _ => None,
+    }
+}
+
+/// [`TRUST_ANCHOR_NOT_CONFIGURED_PT`] with the resolved anchor source appended as a labelled
+/// citation (t58 §2.2; the deferred half of §4.0).
+///
+/// **The label is `procuradas`, not `configuradas`, and that is the point.** This fault fires when
+/// *nothing* is configured, so a message reading "Âncoras configuradas em: «ambiente»" would assert
+/// a state the error exists to report the absence of — the same class of defect as blaming the
+/// signer's trust service for the operator's anchor. What is true here is where the resolver
+/// *looked*, and that is what it says.
+///
+/// This is what an operator who filled in the settings fields but is being served by the environment
+/// resolver needs in order to understand why their configuration appears ignored. A bare `&str`
+/// const cannot carry it, which is why it is appended here rather than folded into the copy.
+///
+/// The citation names only where the anchor set came from. It reports **nothing** about the signer's
+/// standing — the consts deliberately carry no trusted-list status label, because an unauthenticated
+/// list is not a verdict about anybody, and appending an origin must not smuggle one back in.
+fn trust_anchor_not_configured_detail(checked: chancela_signing::TrustAnchorSource) -> String {
+    match trust_anchor_source_pt(checked) {
+        Some(source) => {
+            format!("{TRUST_ANCHOR_NOT_CONFIGURED_PT} Âncoras procuradas em: «{source}».")
+        }
+        None => TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned(),
+    }
+}
+
+/// [`TRUSTED_LIST_NOT_ANCHORED_PT`] with the resolved anchor source appended as a labelled citation.
+///
+/// Here `configuradas` **is** true — this fault means anchors exist and did not authenticate the
+/// list — so the label states it. `anchor_count` is deliberately left out: a bare integer is
+/// agreement-inert, but "1 âncora" and "2 âncoras" are not the same sentence, and building a
+/// singular/plural switch into a citation is the trap this whole convention avoids. The count stays
+/// in the error type for logs.
+fn trusted_list_not_anchored_detail(configured_in: chancela_signing::TrustAnchorSource) -> String {
+    match trust_anchor_source_pt(configured_in) {
+        Some(source) => {
+            format!("{TRUSTED_LIST_NOT_ANCHORED_PT} Âncoras configuradas em: «{source}».")
+        }
+        None => TRUSTED_LIST_NOT_ANCHORED_PT.to_owned(),
+    }
+}
 
 /// The stable string label for a trusted-list status (used in payloads and views).
 pub(crate) fn status_label(status: TrustedListStatus) -> String {
@@ -10633,6 +10724,103 @@ mod tests {
         assert_ne!(absent, stale);
         assert_ne!(absent, untrusted_service);
         assert_ne!(stale, untrusted_service);
+    }
+
+    /// t58 §4 item 10 — the three signals must survive the *mapping* too, in every mapper.
+    ///
+    /// `trust_anchor_failure_states_are_distinct` proves the signals are distinct where they are
+    /// raised. That is only half the guarantee: three duplicated mappers stand between the raise
+    /// site and the client, and a client reads the `code`, not the enum. A mapper that folded two
+    /// of them onto one code — or left them on the `422` tier default — would restore the exact
+    /// misdirection the split removed, and no test on the raise side would notice.
+    #[test]
+    fn every_mapper_keeps_the_three_trust_states_on_three_codes() {
+        use chancela_signing::{SigningError, TrustAnchorSource};
+
+        let cases = || {
+            [
+                SigningError::TrustAnchorNotConfigured {
+                    checked: TrustAnchorSource::Environment,
+                },
+                SigningError::TrustedListNotAnchored {
+                    configured_in: TrustAnchorSource::ApplicationSettings,
+                    anchor_count: 1,
+                },
+                SigningError::UntrustedService {
+                    status: TrustedListStatus::Withdrawn,
+                },
+            ]
+        };
+        let expected = [
+            "trust_anchor_not_configured",
+            "trusted_list_not_anchored",
+            "signer_service_not_active",
+        ];
+
+        for (mapper_name, mapper) in [
+            (
+                "map_cc_signing_error",
+                map_cc_signing_error as fn(SigningError) -> ApiError,
+            ),
+            ("map_remote_error", map_remote_error),
+            ("map_signing_error", map_signing_error),
+        ] {
+            let codes: Vec<&str> = cases().into_iter().map(|e| mapper(e).code()).collect();
+            assert_eq!(codes, expected, "{mapper_name} collapsed a trust state");
+            // Every one is client-actionable: a local anchor fault reported as a `502` would send
+            // the operator to a third party for their own configuration. Read through
+            // `into_response` because that is the status the client actually receives — and it is
+            // the path a Tier-2 wrapper has to keep transparent.
+            for error in cases() {
+                assert_eq!(
+                    mapper(error).into_response().status(),
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "{mapper_name} must not report a trust fault as a gateway error"
+                );
+            }
+        }
+    }
+
+    /// The appended source citation (t58 §2.2), and the two things it must not do.
+    #[test]
+    fn the_anchor_source_is_cited_and_asserts_nothing_else() {
+        use chancela_signing::TrustAnchorSource;
+
+        let absent = trust_anchor_not_configured_detail(TrustAnchorSource::Environment);
+        let stale = trusted_list_not_anchored_detail(TrustAnchorSource::ApplicationSettings);
+
+        // Quoted, so it is cited rather than grammatically incorporated — the guillemets are what
+        // make a runtime value safe to append to pt-PT at all.
+        assert!(absent.contains("«ambiente»"), "{absent}");
+        // The settings citation names BOTH surfaces, because the pinned set is their union — naming
+        // only the settings document would send an operator to a surface they may not have used.
+        assert!(
+            stale.contains("«definições da aplicação e ambiente»"),
+            "{stale}"
+        );
+
+        // The label tracks what is true. Nothing is configured in case A, so it must not claim
+        // anything was — that is the same defect class as blaming the signer's trust service.
+        assert!(absent.contains("Âncoras procuradas em"), "{absent}");
+        assert!(!absent.contains("Âncoras configuradas em"), "{absent}");
+        assert!(stale.contains("Âncoras configuradas em"), "{stale}");
+
+        // A citation of the anchor's origin must not smuggle back the trusted-list verdict the
+        // copy deliberately withholds: an unauthenticated list says nothing about any signer.
+        for detail in [&absent, &stale] {
+            for status_label in ["Granted", "Withdrawn", "Unknown"] {
+                assert!(
+                    !detail.contains(status_label),
+                    "{detail} reports a status verdict it has not established"
+                );
+            }
+        }
+        // The copy planner-t58 settled is carried verbatim; the citation only follows it.
+        assert!(
+            absent.starts_with(TRUST_ANCHOR_NOT_CONFIGURED_PT),
+            "{absent}"
+        );
+        assert!(stale.starts_with(TRUSTED_LIST_NOT_ANCHORED_PT), "{stale}");
     }
 
     /// A settings anchor that cannot be parsed must fail the policy build closed, never degrade to

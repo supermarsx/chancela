@@ -1724,9 +1724,32 @@ async fn cc_sign_rejects_real_tsl_source_with_invalid_signature() {
     // `Unknown` trust outcome for the signer's service, which sent the operator to diagnose a
     // service that was never the problem. It must now name the anchor, and must not report a
     // trusted-list status label for a list nothing vouches for.
+    //
+    // t58: the load-bearing assertion is now the CODE, not the prose. Both anchor faults are
+    // accepted here because which one fires depends on whether this environment happens to carry
+    // `CHANCELA_TSL_TRUST_ANCHOR`; what must never fire is `signer_service_not_active`, which is the
+    // misdirection the split removed. Asserting only on the sentence made a reword able to turn this
+    // green while the client branched the wrong way — the same coupling t58 cut on the termo path.
+    let code = err["code"].as_str().unwrap_or_default();
+    assert!(
+        matches!(
+            code,
+            "trust_anchor_not_configured" | "trusted_list_not_anchored"
+        ),
+        "an unauthenticated TSL must be coded as the operator's anchor configuration, and never as \
+         `signer_service_not_active` — a verdict about a signer nothing here vouched for: {err}"
+    );
+    // The prose stays asserted too — it is the operator's detail line and must keep naming the
+    // anchor, even though nothing branches on it any more.
     assert!(
         msg.contains("Lista de Confiança") && msg.contains("âncora de confiança"),
         "an unauthenticated TSL is reported as the operator's anchor configuration: {err}"
+    );
+    // The appended source citation (t58 §2.2): quoted, so it is cited rather than grammatically
+    // incorporated, and it names only where the anchors were looked for.
+    assert!(
+        msg.contains("«definições da aplicação e ambiente»") || msg.contains("«ambiente»"),
+        "the anchor source is cited so an operator knows which surface is in play: {err}"
     );
     for status_label in ["Unknown", "Withdrawn", "Granted"] {
         assert!(
