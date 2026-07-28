@@ -5462,7 +5462,7 @@ describe('contract fixtures parse through the real client', () => {
       'PlatformLogsResponse',
     );
     expect(parsed.tail).toBe(5);
-    expect(parsed.order).toBe('chronological');
+    expect(parsed.order).toBe('newest_first');
     expect(Array.isArray(parsed.logs), 'PlatformLogsResponse.logs should be an array').toBe(true);
     expect(
       Array.isArray(parsed.limitations),
@@ -5483,10 +5483,14 @@ describe('contract fixtures parse through the real client', () => {
       basis: 'memory',
       source: 'process_memory',
     });
+    // Newest first: the higher seq leads, and it is the entry WITHOUT a context — so this also
+    // pins that `context` stays optional per entry rather than tracking the array position.
     const first = assertPlatformLogEntry(parsed.logs[0], 'PlatformLogsResponse.logs[0]');
-    expect(first.context).toEqual({ service_count: 2 });
+    expect(first.seq).toBe(2);
+    expect(first).not.toHaveProperty('context');
     const second = assertPlatformLogEntry(parsed.logs[1], 'PlatformLogsResponse.logs[1]');
-    expect(second).not.toHaveProperty('context');
+    expect(second.seq).toBe(1);
+    expect(second.context).toEqual({ service_count: 2 });
   });
 
   it('registry.extract.json → RegistryExtractView (GET /v1/entities/{id}/registry)', async () => {

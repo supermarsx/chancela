@@ -7231,7 +7231,9 @@ export interface PlatformLogRetentionMetadata {
 export interface PlatformLogsResponse {
   logs: PlatformLogEntry[];
   tail: number;
-  order: 'chronological';
+  /** The direction of `logs`. The newest entry is first — an operator opens this panel to see
+   *  what just happened, and the server anchors the window at the newest end to match. */
+  order: 'newest_first';
   retention: PlatformLogRetentionMetadata;
   limitations: string[];
 }

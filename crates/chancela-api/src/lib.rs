@@ -15230,7 +15230,7 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(body["logs"], json!([]));
         assert_eq!(body["tail"], platform_logs::PLATFORM_LOG_DEFAULT_TAIL);
-        assert_eq!(body["order"], "chronological");
+        assert_eq!(body["order"], "newest_first");
         assert_eq!(
             body["retention"],
             json!({
@@ -15254,6 +15254,59 @@ mod tests {
                     .expect("limitation text")
                     .contains("in-memory API-owned structured log ring"))
         );
+    }
+
+    /// An admin opening the log panel gets the NEWEST default-tail entries, newest first.
+    ///
+    /// Seeded deliberately past the default tail: with a fixture that fits inside the window, an
+    /// implementation that takes the OLDEST hundred and merely displays them upside-down passes
+    /// every descending-order assertion. So this pins the seqs themselves — the last hundred must
+    /// be present and the first fifty absent — which is the part a display-side reverse can never
+    /// satisfy. The ring-level counterpart lives in `platform_logs::tests`.
+    #[tokio::test]
+    async fn platform_logs_default_tail_returns_the_newest_entries_newest_first() {
+        const SEEDED: usize = platform_logs::PLATFORM_LOG_DEFAULT_TAIL + 50;
+        let state = AppState::default();
+        for idx in 1..=SEEDED {
+            seed_platform_log(
+                &state,
+                "api",
+                PlatformLogLevel::Info,
+                "platform.test",
+                &format!("event {idx}"),
+                None,
+            )
+            .await;
+        }
+
+        let (status, body) = send(state, get("/v1/platform/logs")).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(body["order"], "newest_first");
+        assert_eq!(body["tail"], platform_logs::PLATFORM_LOG_DEFAULT_TAIL);
+        let seqs = body["logs"]
+            .as_array()
+            .expect("logs array")
+            .iter()
+            .map(|entry| entry["seq"].as_u64().expect("seq"))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            seqs,
+            (1..=SEEDED as u64)
+                .rev()
+                .take(platform_logs::PLATFORM_LOG_DEFAULT_TAIL)
+                .collect::<Vec<_>>(),
+            "the default window must be the newest {} seqs, newest first",
+            platform_logs::PLATFORM_LOG_DEFAULT_TAIL
+        );
+        assert_eq!(body["logs"][0]["message"], format!("event {SEEDED}"));
+        assert!(
+            !seqs.contains(&1) && !seqs.contains(&50),
+            "the oldest seeded entries must fall outside the newest-first window: {seqs:?}"
+        );
+        // The window is a view; the retained ring still spans everything that was seeded.
+        assert_eq!(body["retention"]["oldest_seq"], 1);
+        assert_eq!(body["retention"]["newest_seq"], SEEDED as u64);
+        assert_eq!(body["retention"]["retained_count"], SEEDED);
     }
 
     #[tokio::test]
@@ -15317,7 +15370,7 @@ mod tests {
             .iter()
             .map(|entry| entry["message"].as_str().expect("message"))
             .collect::<Vec<_>>();
-        assert_eq!(messages, vec!["api warn two", "api error"]);
+        assert_eq!(messages, vec!["api error", "api warn two"]);
     }
 
     #[tokio::test]
@@ -15552,9 +15605,9 @@ mod tests {
         assert_eq!(
             messages,
             vec![
-                "api warn recorded",
+                "app warn recorded",
                 "mcp error recorded",
-                "app warn recorded"
+                "api warn recorded"
             ]
         );
     }
@@ -15664,8 +15717,8 @@ mod tests {
         assert_eq!(
             messages,
             vec![
-                "api debug recorded by service override",
-                "api warn recorded above service override"
+                "api warn recorded above service override",
+                "api debug recorded by service override"
             ]
         );
     }

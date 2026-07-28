@@ -463,7 +463,7 @@ function platformLogsFixture(): PlatformLogsResponse {
   return {
     logs: [],
     tail: 100,
-    order: 'chronological',
+    order: 'newest_first',
     retention: {
       retention_limit: 512,
       retained_count: 0,

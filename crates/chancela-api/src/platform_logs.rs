@@ -138,17 +138,27 @@ impl PlatformLogRing {
         self.entries.iter().cloned().collect()
     }
 
+    /// The newest `tail` matching entries, newest first.
+    ///
+    /// Both the selection and the order are anchored on `seq`, never on `timestamp`. `timestamp`
+    /// is RFC3339 at second resolution, so a burst of entries recorded inside the same second all
+    /// carry the same value: sorting on it is not a total order, and two reads could hand back
+    /// equal-timestamp rows in different relative positions. `seq` is assigned once per `push` and
+    /// never reused, so it breaks those ties deterministically.
+    ///
+    /// The filter runs BEFORE the take, so a filtered read returns the newest `tail` *matching*
+    /// entries — not whatever survives filtering an unfiltered newest-`tail` slice.
+    ///
+    /// Nothing here touches storage order: `entries` stays in append order (see [`Self::push`] and
+    /// [`Self::retention_metadata`], which read its ends to report the retained window).
     pub fn tail(&self, filter: PlatformLogFilter, tail: usize) -> Vec<PlatformLogEntry> {
         let mut logs = self
             .entries
             .iter()
-            .rev()
             .filter(|entry| filter.matches(entry))
-            .take(tail)
-            .cloned()
             .collect::<Vec<_>>();
-        logs.reverse();
-        logs
+        logs.sort_unstable_by_key(|entry| std::cmp::Reverse(entry.seq));
+        logs.into_iter().take(tail).cloned().collect()
     }
 
     fn retention_metadata(&self, durable: bool) -> PlatformLogRetentionMetadata {
@@ -475,7 +485,11 @@ pub struct PlatformLogRetentionMetadata {
     pub source: &'static str,
 }
 
-/// `GET /v1/platform/logs` — read the newest API-owned platform log tail in chronological order.
+/// `GET /v1/platform/logs` — read the newest API-owned platform log tail, newest entry first.
+///
+/// An operator opening this panel is looking for what just happened, so the window is anchored at
+/// the newest end and presented in that direction. `order` names the direction of `logs` and is the
+/// only thing the UI may label the table with.
 pub async fn list_logs(
     State(state): State<AppState>,
     actor: CurrentActor,
@@ -501,7 +515,7 @@ pub async fn list_logs(
     Ok(Json(PlatformLogsResponse {
         logs,
         tail,
-        order: "chronological",
+        order: "newest_first",
         retention,
         limitations: limitations(durable),
     }))
@@ -993,4 +1007,191 @@ fn validate_emitted_level(level: PlatformLogLevel) -> Result<(), ApiError> {
         ));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Deliberately larger than [`PLATFORM_LOG_DEFAULT_TAIL`], and larger than any tail these tests
+    /// ask for. A fixture that fits inside the window cannot tell "selects the newest N" apart from
+    /// "returns everything, sorted" — both pass, so such a test proves nothing about the selection.
+    const MORE_THAN_ONE_WINDOW: usize = PLATFORM_LOG_DEFAULT_TAIL + 50;
+
+    const NO_FILTER: PlatformLogFilter<'static> = PlatformLogFilter {
+        service_id: None,
+        level: None,
+    };
+
+    fn seq_of(entries: &[PlatformLogEntry]) -> Vec<u64> {
+        entries.iter().map(|entry| entry.seq).collect()
+    }
+
+    /// A ring holding `count` entries, seq 1..=count in append order.
+    fn ring_with(count: usize) -> PlatformLogRing {
+        let mut ring = PlatformLogRing::default();
+        for idx in 1..=count {
+            ring.push(
+                "api",
+                PlatformLogLevel::Info,
+                "platform.test",
+                format!("event {idx}"),
+                None,
+            )
+            .expect("push a valid entry");
+        }
+        ring
+    }
+
+    /// A ring built from a persisted document, so the test controls `timestamp` and `seq`
+    /// independently of the wall clock.
+    fn ring_from_entries(entries: Vec<PlatformLogEntry>) -> PlatformLogRing {
+        let next_seq = entries.iter().map(|entry| entry.seq).max().unwrap_or(0) + 1;
+        let ring = PlatformLogRing::from_persisted(next_seq, entries.clone());
+        assert_eq!(
+            ring.entries.len(),
+            entries.len(),
+            "the fixture entries must all survive from_persisted's validity filter"
+        );
+        ring
+    }
+
+    fn entry_at(seq: u64, timestamp: &str, service_id: &str) -> PlatformLogEntry {
+        PlatformLogEntry {
+            id: format!("platform-log-{seq}"),
+            seq,
+            timestamp: timestamp.to_owned(),
+            service_id: service_id.to_owned(),
+            level: PlatformLogLevel::Info,
+            target: "platform.test".to_owned(),
+            message: format!("event {seq}"),
+            context: None,
+        }
+    }
+
+    /// THE load-bearing one: with more entries retained than the window is wide, the window must be
+    /// taken from the NEWEST end. Reversing a page selected from the oldest end would satisfy the
+    /// descending-order assertion below while still handing back seq 1..=100, so this test also
+    /// pins which seqs are present and which are excluded.
+    #[test]
+    fn tail_selects_the_newest_window_not_the_oldest() {
+        let ring = ring_with(MORE_THAN_ONE_WINDOW);
+        let logs = ring.tail(NO_FILTER, PLATFORM_LOG_DEFAULT_TAIL);
+
+        assert_eq!(logs.len(), PLATFORM_LOG_DEFAULT_TAIL);
+        assert_eq!(
+            seq_of(&logs),
+            (1..=MORE_THAN_ONE_WINDOW as u64)
+                .rev()
+                .take(PLATFORM_LOG_DEFAULT_TAIL)
+                .collect::<Vec<_>>(),
+            "the window must be the newest {PLATFORM_LOG_DEFAULT_TAIL} seqs, newest first"
+        );
+        // The boundary, stated both ways: the oldest retained entry is outside the window, and the
+        // window's own oldest member sits exactly one seq above it.
+        let oldest_in_window = (MORE_THAN_ONE_WINDOW - PLATFORM_LOG_DEFAULT_TAIL + 1) as u64;
+        assert_eq!(logs.last().expect("a last entry").seq, oldest_in_window);
+        assert!(
+            !logs.iter().any(|entry| entry.seq < oldest_in_window),
+            "no entry older than the window boundary may appear"
+        );
+        assert!(
+            !logs.iter().any(|entry| entry.seq == 1),
+            "the oldest retained entry must NOT be in a newest-first window this narrow"
+        );
+    }
+
+    /// The window walks without gaps or repeats: two adjacent windows over the same ring must abut
+    /// at the boundary seq exactly once.
+    #[test]
+    fn adjacent_windows_abut_without_gap_or_repeat() {
+        let ring = ring_with(MORE_THAN_ONE_WINDOW);
+        let wide = ring.tail(NO_FILTER, MORE_THAN_ONE_WINDOW);
+        let narrow = ring.tail(NO_FILTER, PLATFORM_LOG_DEFAULT_TAIL);
+
+        assert_eq!(
+            &seq_of(&wide)[..PLATFORM_LOG_DEFAULT_TAIL],
+            seq_of(&narrow).as_slice(),
+            "a narrower tail must be a prefix of the wider one — same rows, same order"
+        );
+        let all = seq_of(&wide);
+        assert!(
+            all.windows(2).all(|pair| pair[0] == pair[1] + 1),
+            "the newest-first walk must be gapless and strictly descending: {all:?}"
+        );
+    }
+
+    /// Entries recorded inside the same second share an RFC3339 timestamp. Ordering must still be
+    /// total and deterministic, which is why `tail` sorts on `seq`.
+    #[test]
+    fn tied_timestamps_are_ordered_by_seq() {
+        let tied = "2026-07-27T12:00:00Z";
+        // Deliberately shuffled: if `tail` leaned on storage position rather than `seq`, this order
+        // would survive into the response.
+        let ring = ring_from_entries(vec![
+            entry_at(2, tied, "api"),
+            entry_at(4, tied, "api"),
+            entry_at(1, tied, "api"),
+            entry_at(3, tied, "api"),
+        ]);
+
+        assert_eq!(seq_of(&ring.tail(NO_FILTER, 4)), vec![4, 3, 2, 1]);
+        assert_eq!(
+            seq_of(&ring.tail(NO_FILTER, 2)),
+            vec![4, 3],
+            "a narrower window over tied timestamps must still take the highest seqs"
+        );
+    }
+
+    /// The filter runs before the take, so a filtered read is the newest N *matching* entries. Were
+    /// it the other way round, filtering a newest-N slice would return far fewer rows than asked.
+    #[test]
+    fn filtered_tail_selects_the_newest_matching_entries() {
+        let mut ring = PlatformLogRing::default();
+        for idx in 1..=MORE_THAN_ONE_WINDOW {
+            let service_id = if idx % 2 == 0 { "api" } else { "app" };
+            ring.push(
+                service_id,
+                PlatformLogLevel::Info,
+                "platform.test",
+                format!("event {idx}"),
+                None,
+            )
+            .expect("push a valid entry");
+        }
+
+        let logs = ring.tail(
+            PlatformLogFilter {
+                service_id: Some("api"),
+                level: None,
+            },
+            10,
+        );
+        assert_eq!(logs.len(), 10);
+        assert!(logs.iter().all(|entry| entry.service_id == "api"));
+        assert_eq!(
+            seq_of(&logs),
+            vec![150, 148, 146, 144, 142, 140, 138, 136, 134, 132],
+            "the newest ten api entries, newest first"
+        );
+    }
+
+    /// Reading never reorders storage: the ring stays in append order, so the retention window it
+    /// reports is unaffected by how a caller asked to see it.
+    #[test]
+    fn tail_leaves_storage_order_and_retention_metadata_alone() {
+        let ring = ring_with(MORE_THAN_ONE_WINDOW);
+        let before = seq_of(&ring.persisted_entries());
+        let _ = ring.tail(NO_FILTER, PLATFORM_LOG_DEFAULT_TAIL);
+
+        assert_eq!(
+            before,
+            (1..=MORE_THAN_ONE_WINDOW as u64).collect::<Vec<_>>(),
+            "persisted entries stay oldest-first"
+        );
+        assert_eq!(seq_of(&ring.persisted_entries()), before);
+        let retention = ring.retention_metadata(false);
+        assert_eq!(retention.oldest_seq, Some(1));
+        assert_eq!(retention.newest_seq, Some(MORE_THAN_ONE_WINDOW as u64));
+    }
 }
