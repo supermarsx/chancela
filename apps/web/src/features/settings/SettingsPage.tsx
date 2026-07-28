@@ -63,6 +63,7 @@ import {
   type CatalogSettings,
   type DataManagementSettings,
   type DocumentSettings,
+  type EntitiesSettings,
   type Locale,
   type NumberingScheme,
   type NoticeDismissal,
@@ -132,6 +133,7 @@ import { ServerEnvSection } from './ServerEnvSection';
 import { CacheSection } from './CacheSection';
 import { DatabaseSection } from './DatabaseSection';
 import { McpSection } from './McpSection';
+import { EntityKindsSection } from './EntityKindsSection';
 import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSection';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
 import { RegistryAutoUpdateSection } from './RegistryAutoUpdateSection';
@@ -466,6 +468,10 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       registered_entity_columns:
         settings.ui?.registered_entity_columns ?? DEFAULT_SETTINGS.ui.registered_entity_columns,
     },
+    // Absent from the wire whenever the instance has never narrowed its registrable entity types
+    // (the server skip-serialises the slice at its default), so the working copy hydrates it to the
+    // every-kind value `[]` rather than leaving it undefined for the card to guess at.
+    entities: { enabled_kinds: settings.entities?.enabled_kinds ?? [] },
     platform: {
       ...DEFAULT_SETTINGS.platform,
       ...platform,
@@ -1838,6 +1844,10 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     setDraft((d) => (d ? { ...d, ui: { ...d.ui, [key]: value } } : d));
   const setRegistryAutoUpdate = (registry_auto_update: RegistryAutoUpdateSettings) =>
     setDraft((d) => (d ? { ...d, registry_auto_update } : d));
+  // Always written whole, and always written explicitly: the server carries the stored value
+  // forward only for a client that OMITS the slice, so echoing what this card shows is what makes
+  // a save say exactly what the operator chose — never a narrowing this form did not display.
+  const setEntities = (entities: EntitiesSettings) => setDraft((d) => (d ? { ...d, entities } : d));
   const setConnectors = (connectors: ConnectorSettings) =>
     setDraft((d) => (d ? { ...d, connectors } : d));
   const setWorkflowReminder = <K extends keyof WorkflowReminderSettings>(
@@ -2006,6 +2016,9 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   };
 
   const a = draft.appearance;
+  // `withSettingsDefaults` always hydrates the slice, so the fallback is only for the type: the
+  // field is optional on the wire because the server skip-serialises it at its default.
+  const entityKinds = draft.entities ?? { enabled_kinds: [] };
   const reminderPolicy = draft.workflow.reminders;
   const retainedExportCleanupPolicy = draft.data_management.retained_export_cleanup;
   const backupRecoveryPolicy = draft.data_management.backup_recovery;
@@ -3051,6 +3064,12 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   />
                 </div>
               </Card>
+              {/* Which legal types may be REGISTERED — the domain half, next to the presentation
+                  half above. It gates creation only: nothing already registered is hidden,
+                  narrowed or invalidated by it, and the entities page's kind filter still offers
+                  all ten types. See `EntityKindsSection` for why "todos os tipos" is a named state
+                  rather than an empty grid. */}
+              <EntityKindsSection value={entityKinds} onChange={setEntities} />
             </div>
           ) : null}
 

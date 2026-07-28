@@ -4371,7 +4371,7 @@ describe('SettingsPage', () => {
     expect(templateCalls.every((call) => call.method === 'GET')).toBe(true);
   });
 
-  it('creates and patches DPIA local review receipts from the privacy settings tab', async () => {
+  it('lists DPIAs with their advisory state, links to the record page, and quick-edits inline', async () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -4381,94 +4381,37 @@ describe('SettingsPage', () => {
     expect(dpiaPanel).toBeTruthy();
     expect(await within(dpiaPanel!).findByText('Marketing profiling')).toBeTruthy();
     expect(await within(dpiaPanel!).findByText(/Sem certificação de conformidade/)).toBeTruthy();
-    fireEvent.click(within(dpiaPanel!).getByRole('button', { name: 'Novo registo' }));
 
-    // t15: the register editor is now its own modal window, not an inline card. The form lives
-    // inside the dialog; drive it there.
-    let form = await screen.findByRole('dialog');
-    expect(within(form).getByText('Novo registo')).toBeTruthy();
-    fireEvent.change(within(form).getByLabelText('Título da DPIA'), {
-      target: { value: 'Biometric entry DPIA' },
-    });
-    fireEvent.change(within(form).getByLabelText('Finalidade'), {
-      target: { value: 'Entrada segura no edifício' },
-    });
-    fireEvent.change(within(form).getByLabelText('Base legal'), {
-      target: { value: 'Interesse legítimo' },
-    });
-    fireEvent.change(within(form).getByLabelText('Categorias de dados'), {
-      target: { value: 'Identificação\nDados biométricos' },
-    });
-    fireEvent.change(within(form).getByLabelText('Subprocessadores'), {
-      target: { value: 'Access Processor SA' },
-    });
-    fireEvent.change(within(form).getByLabelText('Tipo de evidência'), {
-      target: { value: 'drill' },
-    });
-    fireEvent.change(within(form).getByLabelText('Notas de evidência'), {
-      target: { value: 'Operator DPIA drill receipt only.' },
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Criar registo' }));
+    // t55: composing a DPIA is a page, at its own address — the settings tab lists and links.
+    // The full create/patch wire bodies (including the evidence receipt and its six untouched
+    // completion flags) are asserted where that form now lives, in RegisterRecordPage.test.tsx.
+    expect(within(dpiaPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href')).toBe(
+      '/settings/privacy/dpias/new',
+    );
+    const dpiaRow = within(dpiaPanel!).getByText('Marketing profiling').closest('tr') as HTMLElement;
+    for (const name of ['Marketing profiling', 'Editar']) {
+      expect(within(dpiaRow).getByRole('link', { name }).getAttribute('href')).toBe(
+        '/settings/privacy/dpias/dpia-1',
+      );
+    }
 
-    const post = await waitFor(() => {
-      const call = calls.find((c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/dpias'));
-      expect(call).toBeTruthy();
-      return call!;
+    // What the tab still writes itself: the row-level quick edit, over the real wire.
+    fireEvent.change(screen.getByLabelText('Estado de Marketing profiling'), {
+      target: { value: 'active' },
     });
-    expect(JSON.parse(post.body as string)).toMatchObject({
-      title: 'Biometric entry DPIA',
-      purpose: 'Entrada segura no edifício',
-      legal_basis: 'Interesse legítimo',
-      data_categories: ['Identificação', 'Dados biométricos'],
-      subprocessors: ['Access Processor SA'],
-      risk_level: 'medium',
-      status: 'draft',
-      evidence_receipt: {
-        evidence_type: 'drill',
-        notes: 'Operator DPIA drill receipt only.',
-        authority_filing_completed: false,
-        legal_review_accepted: false,
-        legal_certification_completed: false,
-        external_delivery_completed: false,
-        dpia_completed: false,
-        compliance_certification_completed: false,
-      },
-    });
-    expect(await screen.findByText('Biometric entry DPIA')).toBeTruthy();
-
-    fireEvent.click(within(dpiaPanel!).getAllByRole('button', { name: 'Editar' })[0]);
-    form = await screen.findByRole('dialog');
-    expect(within(form).getByText('Editar registo')).toBeTruthy();
-    fireEvent.change(within(form).getByLabelText('Notas de evidência'), {
-      target: { value: 'Follow-up local DPIA review only.' },
-    });
-    fireEvent.click(within(form).getByRole('button', { name: 'Guardar alterações' }));
-
     const patch = await waitFor(() => {
       const call = calls.find(
-        (c) =>
-          c.method === 'PATCH' &&
-          c.url.endsWith('/v1/privacy/dpias/dpia-1') &&
-          c.body?.includes('Follow-up local DPIA review only.'),
+        (c) => c.method === 'PATCH' && c.url.endsWith('/v1/privacy/dpias/dpia-1'),
       );
       expect(call).toBeTruthy();
       return call!;
     });
-    expect(JSON.parse(patch.body as string)).toMatchObject({
-      evidence_receipt: {
-        evidence_type: 'review',
-        notes: 'Follow-up local DPIA review only.',
-        authority_filing_completed: false,
-        legal_review_accepted: false,
-        legal_certification_completed: false,
-        external_delivery_completed: false,
-        dpia_completed: false,
-        compliance_certification_completed: false,
-      },
-    });
+    expect(JSON.parse(patch.body as string)).toEqual({ status: 'active' });
+    // A one-field quick edit files no evidence receipt — that is the record page's business.
+    expect(patch.body).not.toContain('evidence_receipt');
   });
 
-  it('creates and patches GDPR processor records from the privacy settings tab', async () => {
+  it('lists processor records, links to the record page, and quick-edits status inline', async () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -4476,49 +4419,26 @@ describe('SettingsPage', () => {
 
     const processorPanel = (await screen.findByText('Processadores GDPR')).closest('section');
     expect(processorPanel).toBeTruthy();
-    fireEvent.click(within(processorPanel!).getByRole('button', { name: 'Novo registo' }));
+    expect(await within(processorPanel!).findByText('Cloud Processor')).toBeTruthy();
 
-    // t15: the register editor is now its own modal window, not an inline card.
-    const form = await screen.findByRole('dialog');
-    expect(within(form).getByText('Novo registo')).toBeTruthy();
-    fireEvent.change(within(form).getByLabelText('Nome do processador'), {
-      target: { value: 'Payroll Processor' },
-    });
-    fireEvent.change(within(form).getByLabelText('Finalidade'), {
-      target: { value: 'Processamento salarial' },
-    });
-    fireEvent.change(within(form).getByLabelText('Base legal'), {
-      target: { value: 'Contrato de trabalho' },
-    });
-    fireEvent.change(within(form).getByLabelText('Categorias de dados'), {
-      target: { value: 'Identificação\nRemuneração' },
-    });
-    fireEvent.change(within(form).getByLabelText('Subprocessadores'), {
-      target: { value: 'Payroll Backup SA' },
-    });
-    fireEvent.change(within(form).getByLabelText('Risco'), { target: { value: 'high' } });
-    fireEvent.change(within(form).getByLabelText('Estado'), { target: { value: 'active' } });
-    fireEvent.click(within(form).getByRole('button', { name: 'Criar registo' }));
-
-    const post = await waitFor(() => {
-      const call = calls.find(
-        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/processors'),
+    // t55: the record editor is a page. The tab offers its two addresses and nothing else —
+    // no authoring form is reachable from the list, and nothing dialog-shaped exists.
+    expect(
+      within(processorPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/processors/new');
+    const processorRow = within(processorPanel!)
+      .getByText('Cloud Processor')
+      .closest('tr') as HTMLElement;
+    for (const name of ['Cloud Processor', 'Editar']) {
+      expect(within(processorRow).getByRole('link', { name }).getAttribute('href')).toBe(
+        '/settings/privacy/processors/processor-1',
       );
-      expect(call).toBeTruthy();
-      return call!;
-    });
-    expect(JSON.parse(post!.body as string)).toMatchObject({
-      name: 'Payroll Processor',
-      purpose: 'Processamento salarial',
-      legal_basis: 'Contrato de trabalho',
-      data_categories: ['Identificação', 'Remuneração'],
-      subprocessors: ['Payroll Backup SA'],
-      risk_level: 'high',
-      status: 'active',
-    });
-    expect(await screen.findByText('Payroll Processor')).toBeTruthy();
+    }
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('Nome do processador')).toBeNull();
 
-    fireEvent.change(screen.getByLabelText('Estado de Payroll Processor'), {
+    // The quick edit stays, and it still writes one field over the real wire.
+    fireEvent.change(screen.getByLabelText('Estado de Cloud Processor'), {
       target: { value: 'under_review' },
     });
 
@@ -4526,13 +4446,17 @@ describe('SettingsPage', () => {
       const call = calls.find(
         (c) =>
           c.method === 'PATCH' &&
-          c.url.endsWith('/v1/privacy/processors/processor-2') &&
+          c.url.endsWith('/v1/privacy/processors/processor-1') &&
           c.body?.includes('under_review'),
       );
       expect(call).toBeTruthy();
       return call!;
     });
     expect(JSON.parse(patch!.body as string)).toEqual({ status: 'under_review' });
+    // The list never posts: creation belongs to the page.
+    expect(calls.some((c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/processors'))).toBe(
+      false,
+    );
   });
 
   it('creates breach playbook and transfer-control records from the privacy settings tab', async () => {
@@ -5987,7 +5911,7 @@ describe('SettingsPage', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('lists, creates, patches, and dry-runs retention policies without destructive execution', async () => {
+  it('lists and dry-runs retention policies without destructive execution', async () => {
     const { fn, calls } = privacyFetch();
     vi.stubGlobal('fetch', fn);
 
@@ -6025,83 +5949,26 @@ describe('SettingsPage', () => {
     expect(within(executionQueue!).getByText('privacy-board-42')).toBeTruthy();
     await waitFor(() => expect(within(executionQueue!).queryByText('ticket-123')).toBeNull());
 
-    fireEvent.click(within(retentionPanel!).getByRole('button', { name: 'Novo registo' }));
+    // t55-e4: the editor is a PAGE now (`/settings/privacy/retention-policies/{new,:id}`), gated
+    // on its own `retention.manage` verb. From here it is reached by ADDRESS, twice — the primary
+    // cell and the Editar action — and the panel itself writes nothing, which the
+    // no-destructive-call assertions at the end of this test now also cover for create and patch.
+    expect(
+      within(retentionPanel!).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/retention-policies/new');
+    expect(within(retentionPanel!).queryByRole('button', { name: 'Novo registo' })).toBeNull();
 
-    let formCard = await screen.findByRole('heading', { name: 'Novo registo' });
-    let form = formCard.closest('section');
-    expect(form).toBeTruthy();
-    fireEvent.change(within(form!).getByLabelText('Nome da política'), {
-      target: { value: 'Registos de auditoria' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Âmbito'), {
-      target: { value: 'audit' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Categoria'), {
-      target: { value: 'events' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Identificador do calendário'), {
-      target: { value: 'audit-events-v1' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Período de retenção'), {
-      target: { value: 'P10Y' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Base legal'), {
-      target: { value: 'Obrigação legal' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Ação prevista'), {
-      target: { value: 'archive' },
-    });
-    fireEvent.change(within(form!).getByLabelText('Estado'), {
-      target: { value: 'active' },
-    });
-    fireEvent.click(within(form!).getByRole('button', { name: 'Criar registo' }));
-
-    const retentionPost = await waitFor(() => {
-      const call = calls.find(
-        (c) => c.method === 'POST' && c.url.endsWith('/v1/privacy/retention-policies'),
+    const policyRow = within(retentionPanel!)
+      .getByText('Mensagens de suporte')
+      .closest('tr') as HTMLElement;
+    for (const name of ['Mensagens de suporte', 'Editar']) {
+      expect(within(policyRow).getByRole('link', { name }).getAttribute('href')).toBe(
+        '/settings/privacy/retention-policies/retention-1',
       );
-      expect(call).toBeTruthy();
-      return call!;
-    });
-    expect(JSON.parse(retentionPost.body as string)).toMatchObject({
-      name: 'Registos de auditoria',
-      scope: 'audit',
-      category: 'events',
-      schedule_id: 'audit-events-v1',
-      retention_period: 'P10Y',
-      legal_basis: 'Obrigação legal',
-      disposal_action: 'archive',
-      status: 'active',
-      active: true,
-    });
-    expect(await screen.findByText('Registos de auditoria')).toBeTruthy();
-
-    const updatedPanel = screen.getByText('Políticas de retenção').closest('section');
-    expect(updatedPanel).toBeTruthy();
-    fireEvent.click(within(updatedPanel!).getAllByRole('button', { name: 'Editar' }).at(-1)!);
-
-    formCard = await screen.findByRole('heading', { name: 'Editar registo' });
-    form = formCard.closest('section');
-    expect(form).toBeTruthy();
-    fireEvent.change(within(form!).getByLabelText('Estado'), {
-      target: { value: 'suspended' },
-    });
-    fireEvent.click(within(form!).getByRole('button', { name: 'Guardar alterações' }));
-
-    const retentionPatch = await waitFor(() => {
-      const call = calls.find(
-        (c) =>
-          c.method === 'PATCH' &&
-          c.url.endsWith('/v1/privacy/retention-policies/retention-2') &&
-          c.body?.includes('suspended'),
-      );
-      expect(call).toBeTruthy();
-      return call!;
-    });
-    expect(JSON.parse(retentionPatch.body as string)).toMatchObject({
-      status: 'suspended',
-      disposal_action: 'archive',
-    });
+    }
+    expect(within(policyRow).queryByRole('button', { name: 'Editar' })).toBeNull();
+    expect(document.getElementById('privacy-retention-new-name')).toBeNull();
+    expect(document.getElementById('privacy-retention-edit-name')).toBeNull();
 
     const dryRunPanel = (await screen.findByText('Simulação de retenção')).closest('section');
     expect(dryRunPanel).toBeTruthy();

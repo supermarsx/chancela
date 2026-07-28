@@ -24,8 +24,34 @@ export const ENTITY_KINDS = [
 ] as const;
 export type EntityKind = (typeof ENTITY_KINDS)[number];
 
-export type EntityFamily =
-  'CommercialCompany' | 'Condominium' | 'Association' | 'Foundation' | 'Cooperative';
+export const ENTITY_FAMILIES = [
+  'CommercialCompany',
+  'Condominium',
+  'Association',
+  'Foundation',
+  'Cooperative',
+] as const;
+export type EntityFamily = (typeof ENTITY_FAMILIES)[number];
+
+/**
+ * Which family each legal type belongs to — the mirror of `EntityKind::family()`
+ * (`chancela-core/src/entity.rs`). Derived, never stored: an entity carries both `kind` and
+ * `family` on the wire and the server is the authority on the pairing. This map exists only so a
+ * client-side *grouping* (the entity-type settings card) can show the ten kinds under their five
+ * families without inventing an ordering of its own.
+ */
+export const ENTITY_KIND_FAMILY: Record<EntityKind, EntityFamily> = {
+  SociedadeEmNomeColetivo: 'CommercialCompany',
+  SociedadePorQuotas: 'CommercialCompany',
+  SociedadeUnipessoalPorQuotas: 'CommercialCompany',
+  SociedadeAnonima: 'CommercialCompany',
+  SociedadeEmComanditaSimples: 'CommercialCompany',
+  SociedadeEmComanditaPorAcoes: 'CommercialCompany',
+  Condominio: 'Condominium',
+  Associacao: 'Association',
+  Fundacao: 'Foundation',
+  Cooperativa: 'Cooperative',
+};
 
 export const BOOK_KINDS = [
   'AssembleiaGeral',
@@ -8658,6 +8684,28 @@ export interface SearchResponse {
   index: SearchStatusResponse;
 }
 
+/**
+ * Which entity legal types this instance may **register** (t54 §6.2). An installation that only
+ * ever keeps books for, say, condomínios can narrow the create form to that one type instead of
+ * offering all ten.
+ *
+ * 🔒 **An admissions policy at the front door, not a statement about the archive.** It gates
+ * creation and nothing else — never read, list, filter, export or render. Entities already
+ * registered under a kind that is later disabled stay listed, readable and editable, their books
+ * and acts keep working, and every existing seal is untouched ({@link EntityKind} is baked into
+ * `ActSealMetadata.profile`). The entities list's kind filter therefore always offers all ten
+ * kinds, and `entityKindLabels` stays complete for all ten, permanently.
+ *
+ * **Empty means every kind** — the same reading as
+ * {@link RegistryAutoUpdateEntityDefaults.enabled_profiles}, and load-bearing rather than
+ * cosmetic: every settings document written before this slice existed deserialises to `[]`, so an
+ * upgrade migrates nothing and changes no behaviour. "No kind at all" is unrepresentable by
+ * construction — the only value that could express it is `[]`, which already means "every kind".
+ */
+export interface EntitiesSettings {
+  enabled_kinds: EntityKind[];
+}
+
 export interface Settings {
   schema_version: number;
   organization: OrganizationSettings;
@@ -8675,6 +8723,18 @@ export interface Settings {
   onboarding: OnboardingSettings;
   ai: AiSettings;
   email: EmailSettings;
+  /**
+   * OPTIONAL on the wire, deliberately. The server `skip_serializing_if`s the whole slice while it
+   * is at its default (`enabled_kinds: []` ⇒ every kind), exactly like `auth` and
+   * `registry_auto_update` — so a `GET /v1/settings` from an instance that has never narrowed its
+   * entity types is byte-identical to one from before this slice existed, and
+   * `contracts/settings.json` never moved. Read it as `settings.entities?.enabled_kinds ?? []`.
+   *
+   * A client that *does* send it replaces the stored value; a client that omits it has the stored
+   * value carried forward server-side, so saving an unrelated settings tab from a stale form can
+   * never silently re-open a type an administrator narrowed away.
+   */
+  entities?: EntitiesSettings;
 }
 
 /** The server's default document (contract §2.8) — used as the pre-load fallback so
@@ -8895,6 +8955,11 @@ export const DEFAULT_SETTINGS: Settings = {
     helo_name: null,
     allow_insecure: false,
   },
+  // Present here, absent from the wire: the server omits the slice while it is at this value, so
+  // seeding the fallback document with it gives the settings form a complete shape to edit without
+  // claiming the server sent anything. `[]` is the every-kind default (see {@link
+  // EntitiesSettings}); it is not "no kinds".
+  entities: { enabled_kinds: [] },
 };
 
 export interface HealthResponse {

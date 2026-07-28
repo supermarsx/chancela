@@ -4821,9 +4821,11 @@ describe('contract fixtures parse through the real client', () => {
         email: true,
       },
       'Settings',
-      // Both are `skip_serializing_if`-default on the server: `connectors` is absent whenever no
-      // runtime egress allowlist is set and no deployment ceiling is stamped.
-      ['registry_auto_update', 'connectors'],
+      // All three are `skip_serializing_if`-default on the server: `connectors` is absent whenever
+      // no runtime egress allowlist is set and no deployment ceiling is stamped; `entities` is
+      // absent whenever the instance has never narrowed its registrable entity types (t54 §6.2.1),
+      // which is why this fixture — the default document — does not carry it and did not move.
+      ['registry_auto_update', 'connectors', 'entities'],
     );
     expect(typeof settings.schema_version).toBe('number');
     assertExactKeys<OrganizationSettings>(

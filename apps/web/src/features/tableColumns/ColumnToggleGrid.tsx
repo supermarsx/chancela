@@ -31,9 +31,26 @@
  * regularity this grid exists to provide, and it made a screen reader recite the same phrase once
  * per checkbox. {@link ColumnPicker} now states it once, as the group's accessible description.
  *
- * Presentational only: visibility and persistence live outside. The per-column labels are passed in
- * (they belong to the table), while the grid's own two headers are read from the module this feature
- * owns, since they are identical at every call site.
+ * Presentational only: visibility and persistence live outside. The per-row labels are passed in
+ * (they belong to the table), while the grid's own two headers default to the module this feature
+ * owns, since they are identical at every *column* call site.
+ *
+ * ## Not only columns (t54 §6.5)
+ *
+ * The layout — "a list of named things, each with one checkbox, all lining up" — is not specific to
+ * table columns, and the entity-type allowlist card in Configurações is the same control at a
+ * different scope. It reuses this grid rather than cloning it, which is why `headers`, `showHead`
+ * and `note` exist:
+ *
+ * - `headers` — a grid of legal types is not a grid of columns, and labelling its tracks
+ *   "Coluna / Visível" would be copy that is simply untrue. The default stays the column wording,
+ *   so no existing call site changes.
+ * - `showHead` — lets a caller stack several grids under ONE header strip (the entity types are
+ *   grouped by family). Repeating the strip five times would be five times the noise for the same
+ *   two words.
+ * - `note` — a per-row aside beside the name (e.g. how many records already carry that type). It
+ *   lives inside the row's `<label>` so the grid stays two tracks at every width; a third track
+ *   would reintroduce exactly the misalignment this component exists to remove.
  */
 import { useId, type ReactNode } from 'react';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
@@ -44,11 +61,16 @@ export function ColumnToggleGrid<C extends string>({
   onToggle,
   columnLabel,
   ariaLabel,
+  headers,
+  showHead = true,
+  note,
+  isDisabled,
 }: {
   /**
-   * The toggleable columns, in order. Only `data` columns belong here: a table's controls are not
-   * offered, and its structural columns are always shown. Build this with `dataColumns(entry)` —
-   * a control id is not even a member of the type a caller can pass it through.
+   * The toggleable rows, in order. For a table's columns only `data` columns belong here: its
+   * controls are not offered, and its structural columns are always shown. Build that with
+   * `dataColumns(entry)` — a control id is not even a member of the type a caller can pass it
+   * through.
    */
   columns: readonly C[];
   isVisible: (column: C) => boolean;
@@ -56,6 +78,18 @@ export function ColumnToggleGrid<C extends string>({
   columnLabel: (column: C) => ReactNode;
   /** Names the grid as a group. Omit when the caller already names it (a `<fieldset>`/`<legend>`). */
   ariaLabel?: string;
+  /** Overrides the two header words. Defaults to the column-picker wording. */
+  headers?: { name: ReactNode; toggle: ReactNode };
+  /** Draw the header strip. Set false on all but the first of a stack of grouped grids. */
+  showHead?: boolean;
+  /** A per-row aside rendered after the name (a count, a state). */
+  note?: (column: C) => ReactNode;
+  /**
+   * Refuse a row's checkbox, with the reason. A disabled checkbox is only honest when the caller
+   * says why somewhere the operator can read; the callers that use it render that sentence beside
+   * the grid.
+   */
+  isDisabled?: (column: C) => boolean;
 }) {
   const ct = useTableColumnsT();
   const id = useId();
@@ -66,24 +100,30 @@ export function ColumnToggleGrid<C extends string>({
       role={ariaLabel === undefined ? undefined : 'group'}
       aria-label={ariaLabel}
     >
-      <div className="column-picker__head" aria-hidden="true">
-        <span className="column-picker__cell">{ct('tableColumns.head.column')}</span>
-        <span className="column-picker__cell column-picker__cell--center">
-          {ct('tableColumns.head.visible')}
-        </span>
-      </div>
+      {showHead ? (
+        <div className="column-picker__head" aria-hidden="true">
+          <span className="column-picker__cell">
+            {headers?.name ?? ct('tableColumns.head.column')}
+          </span>
+          <span className="column-picker__cell column-picker__cell--center">
+            {headers?.toggle ?? ct('tableColumns.head.visible')}
+          </span>
+        </div>
+      ) : null}
       {columns.map((column) => {
         const inputId = `${id}${column}`;
         return (
           <div key={column} className="column-picker__row">
             <label className="column-picker__cell column-picker__name" htmlFor={inputId}>
               {columnLabel(column)}
+              {note ? note(column) : null}
             </label>
             <span className="column-picker__cell column-picker__cell--center">
               <input
                 id={inputId}
                 type="checkbox"
                 checked={isVisible(column)}
+                disabled={isDisabled ? isDisabled(column) : undefined}
                 onChange={(event) => onToggle(column, event.target.checked)}
               />
             </span>

@@ -7,7 +7,13 @@
  * default must NOT "upgrade" it to https (that mismatch was the t57 Slice-1 bug this pins closed).
  */
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_SETTINGS } from './types';
+import {
+  DEFAULT_SETTINGS,
+  ENTITY_FAMILIES,
+  ENTITY_KINDS,
+  ENTITY_KIND_FAMILY,
+  type Settings,
+} from './types';
 
 describe('DEFAULT_SETTINGS.documents', () => {
   it('mirrors the canonical 10 pt product body font default', () => {
@@ -141,5 +147,55 @@ describe('DEFAULT_SETTINGS.data_management', () => {
       target_rpo_minutes: 1440,
       target_rto_minutes: 240,
     });
+  });
+});
+
+describe('DEFAULT_SETTINGS.entities', () => {
+  it('defaults to the every-kind reading, which is an EMPTY list and not "no kinds"', () => {
+    // `[]` ⇒ every kind is what makes an existing settings document need no migration and keeps
+    // the whole slice off the wire (the server skip-serialises it at this value, so
+    // `contracts/settings.json` never moved). Inverting it to a fail-closed reading would brick
+    // entity creation on every deployment the moment it upgraded.
+    expect(DEFAULT_SETTINGS.entities).toEqual({ enabled_kinds: [] });
+    expect(DEFAULT_SETTINGS.entities?.enabled_kinds).toHaveLength(0);
+  });
+
+  it('is optional on the wire, mirroring the server’s skip_serializing_if', () => {
+    // A settings document that omits the slice is not malformed — it is the ordinary shape from an
+    // instance that has never narrowed its entity types, and every reader must treat the absence
+    // as "every kind" rather than as an error or as "none".
+    const wireDocument: Settings = { ...DEFAULT_SETTINGS };
+    delete wireDocument.entities;
+    expect(wireDocument.entities?.enabled_kinds ?? []).toEqual([]);
+  });
+});
+
+describe('ENTITY_KIND_FAMILY', () => {
+  it('places every one of the ten legal types in exactly one of the five families', () => {
+    expect(Object.keys(ENTITY_KIND_FAMILY).sort()).toEqual([...ENTITY_KINDS].sort());
+    for (const kind of ENTITY_KINDS) {
+      expect(ENTITY_FAMILIES, kind).toContain(ENTITY_KIND_FAMILY[kind]);
+    }
+    // Every family holds at least one type: an empty group would render as a heading over nothing
+    // in the settings card.
+    for (const family of ENTITY_FAMILIES) {
+      expect(
+        ENTITY_KINDS.some((kind) => ENTITY_KIND_FAMILY[kind] === family),
+        family,
+      ).toBe(true);
+    }
+  });
+
+  it('mirrors EntityKind::family() — the six CSC company types are one family', () => {
+    expect(ENTITY_KINDS.filter((kind) => ENTITY_KIND_FAMILY[kind] === 'CommercialCompany')).toEqual(
+      [
+        'SociedadeEmNomeColetivo',
+        'SociedadePorQuotas',
+        'SociedadeUnipessoalPorQuotas',
+        'SociedadeAnonima',
+        'SociedadeEmComanditaSimples',
+        'SociedadeEmComanditaPorAcoes',
+      ],
+    );
   });
 });

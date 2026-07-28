@@ -642,79 +642,49 @@ describe('PrivacyComplianceSection', () => {
     });
   });
 
-  it('surfaces mutation failures and leaves the operator form open for correction', async () => {
-    hooks.createProcessor.mutateAsync.mockRejectedValueOnce(new Error('processor write denied'));
-    renderWithProviders(<PrivacyComplianceSection />);
-    const processorPanel = screen.getByText('Processadores GDPR').closest<HTMLElement>('.panel')!;
-    fireEvent.click(within(processorPanel).getByRole('button', { name: 'Novo registo' }));
-    const values: [string, string][] = [
-      ['Nome do processador', 'New Processor'],
-      ['Finalidade', 'Hosting'],
-      ['Base legal', 'Contract'],
-      ['Categorias de dados', 'Identity'],
-    ];
-    for (const [label, value] of values) {
-      fireEvent.change(screen.getByLabelText(label), { target: { value } });
-    }
-    fireEvent.click(screen.getByRole('button', { name: 'Criar registo' }));
-
-    expect(await screen.findByText('processor write denied')).toBeTruthy();
-    expect(screen.getByLabelText('Nome do processador')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
-    expect(screen.queryByLabelText('Nome do processador')).toBeNull();
-  });
-
-  it('edits a DPIA record inside a modal window and dismisses it with Escape without saving', () => {
+  it('offers both registers as addresses and keeps no editor in the list at all', () => {
+    hooks.processors.data = [processor];
     hooks.dpias.data = [dpia];
     renderWithProviders(<PrivacyComplianceSection />);
 
-    // The editor is a window, not an inline card: nothing dialog-shaped until it is opened.
+    // 🔒 REGRESSION GUARD. The register editor used to be a portalled window that closed on
+    // Escape and on a backdrop click with no confirmation — one stray click discarded a
+    // nine-field DPIA silently. Nothing dialog-shaped may come back to this list, and no
+    // authoring form may render inline either.
     expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByLabelText('Título da DPIA')).toBeNull();
+    expect(screen.queryByLabelText('Nome do processador')).toBeNull();
 
-    const dpiaRow = screen.getByText('High-risk profiling').closest('tr') as HTMLElement;
-    fireEvent.click(within(dpiaRow).getByRole('button', { name: 'Editar' }));
+    const processorPanel = screen.getByText('Processadores GDPR').closest<HTMLElement>('.panel')!;
+    expect(
+      within(processorPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href'),
+    ).toBe('/settings/privacy/processors/new');
+    expect(within(processorPanel).queryByRole('button', { name: 'Novo registo' })).toBeNull();
 
-    const dialog = screen.getByRole('dialog');
-    expect(dialog.getAttribute('aria-modal')).toBe('true');
-    // The window is titled by its heading (wired through aria-labelledby).
-    expect(dialog.getAttribute('aria-labelledby')).toBeTruthy();
-    expect(within(dialog).getByText('Editar registo')).toBeTruthy();
-    // The form opened seeded from the row it was launched from.
-    expect((within(dialog).getByLabelText('Título da DPIA') as HTMLInputElement).value).toBe(
-      'High-risk profiling',
+    const dpiaPanel = screen.getByText('DPIAs').closest<HTMLElement>('.panel')!;
+    expect(within(dpiaPanel).getByRole('link', { name: 'Novo registo' }).getAttribute('href')).toBe(
+      '/settings/privacy/dpias/new',
     );
 
-    // Escape closes the window and persists nothing.
-    fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
-    expect(hooks.patchDpia.mutateAsync).not.toHaveBeenCalled();
-  });
+    // Two affordances per row, ONE address: the primary cell and the explicit action. Both are
+    // real links, so they can be middle-clicked, copied and bookmarked.
+    const dpiaRow = screen.getByText('High-risk profiling').closest('tr') as HTMLElement;
+    expect(
+      within(dpiaRow).getByRole('link', { name: 'High-risk profiling' }).getAttribute('href'),
+    ).toBe('/settings/privacy/dpias/dpia-1');
+    expect(within(dpiaRow).getByRole('link', { name: 'Editar' }).getAttribute('href')).toBe(
+      '/settings/privacy/dpias/dpia-1',
+    );
+    expect(within(dpiaRow).queryByRole('button', { name: 'Editar' })).toBeNull();
 
-  it('creates a DPIA record from the modal window and closes it on success', async () => {
-    renderWithProviders(<PrivacyComplianceSection />);
-    const dpiaPanel = screen.getByText('DPIAs').closest<HTMLElement>('.panel')!;
-    fireEvent.click(within(dpiaPanel).getByRole('button', { name: 'Novo registo' }));
+    const processorRow = screen.getByText('Alpha Processor').closest('tr') as HTMLElement;
+    expect(
+      within(processorRow).getByRole('link', { name: 'Alpha Processor' }).getAttribute('href'),
+    ).toBe('/settings/privacy/processors/processor-1');
 
-    const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('Novo registo')).toBeTruthy();
-    const values: [string, string][] = [
-      ['Título da DPIA', 'New DPIA'],
-      ['Finalidade', 'Profiling'],
-      ['Base legal', 'Consent'],
-      ['Categorias de dados', 'Behaviour'],
-    ];
-    for (const [label, value] of values) {
-      fireEvent.change(within(dialog).getByLabelText(label), { target: { value } });
-    }
-    fireEvent.click(within(dialog).getByRole('button', { name: 'Criar registo' }));
-
-    await waitFor(() => {
-      expect(hooks.createDpia.mutateAsync).toHaveBeenCalledWith(
-        expect.objectContaining({ title: 'New DPIA', data_categories: ['Behaviour'] }),
-      );
-    });
-    // A successful save closes the window.
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The list creates nothing any more; that mutation belongs to the record page.
+    expect(hooks.createProcessor.mutateAsync).not.toHaveBeenCalled();
+    expect(hooks.createDpia.mutateAsync).not.toHaveBeenCalled();
   });
 
   it('covers guidance loading, error, empty, and translated static-pack states', () => {
@@ -765,7 +735,7 @@ describe('PrivacyComplianceSection', () => {
     expect(within(claimRow as HTMLElement).getByText('Não alegado')).toBeTruthy();
   });
 
-  it('filters and edits retention policy metadata and performs a non-destructive dry run', async () => {
+  it('filters retention policies and performs a non-destructive dry run', async () => {
     hooks.retentionPolicies.data = [retentionPolicy];
     hooks.dryRun.mutateAsync.mockResolvedValueOnce({});
     renderWithProviders(<PrivacyComplianceSection />);
@@ -778,22 +748,6 @@ describe('PrivacyComplianceSection', () => {
     expect(screen.getByText('Sem resultados')).toBeTruthy();
     fireEvent.change(document.getElementById('privacy-retention-search')!, {
       target: { value: 'P10Y' },
-    });
-    const row = screen.getByText('Closed books archive').closest('tr') as HTMLElement;
-    fireEvent.click(within(row).getByRole('button', { name: 'Editar' }));
-    fireEvent.change(document.getElementById('privacy-retention-edit-status')!, {
-      target: { value: 'active' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar alterações' }));
-    await waitFor(() => {
-      expect(hooks.patchRetention.mutateAsync).toHaveBeenCalledWith({
-        id: 'retention-1',
-        body: expect.objectContaining({
-          status: 'active',
-          active: false,
-          notes: 'Manual legal review',
-        }),
-      });
     });
 
     fireEvent.change(screen.getByLabelText('Âmbito'), { target: { value: 'book_archive' } });
@@ -808,6 +762,49 @@ describe('PrivacyComplianceSection', () => {
       });
     });
     expect(hooks.executionHook).toHaveBeenCalledWith('all', true);
+  });
+
+  /**
+   * t55-e4 — the retention-policy editor is a PAGE now
+   * (`/settings/privacy/retention-policies/{new,:id}`), not an inline `<Card>` shoved above the
+   * list. The panel lists and links; it no longer holds a draft.
+   */
+  it('offers the retention editor as addresses, not as an inline form', () => {
+    hooks.retentionPolicies.data = [retentionPolicy];
+    renderWithProviders(<PrivacyComplianceSection />);
+    fireEvent.click(screen.getByRole('button', { name: 'Retenção' }));
+
+    const row = screen.getByText('Closed books archive').closest('tr') as HTMLElement;
+    // Two affordances, ONE address: the primary cell and the Editar action.
+    expect(
+      within(row).getByRole('link', { name: 'Closed books archive' }).getAttribute('href'),
+    ).toBe('/settings/privacy/retention-policies/retention-1');
+    expect(within(row).getByRole('link', { name: 'Editar' }).getAttribute('href')).toBe(
+      '/settings/privacy/retention-policies/retention-1',
+    );
+    // Neither affordance is a button any more — a button has no address to paste or middle-click.
+    expect(within(row).queryByRole('button', { name: 'Editar' })).toBeNull();
+
+    const panel = screen.getByText('Políticas de retenção').closest('section') as HTMLElement;
+    expect(within(panel).getByRole('link', { name: 'Novo registo' }).getAttribute('href')).toBe(
+      '/settings/privacy/retention-policies/new',
+    );
+    expect(within(panel).queryByRole('button', { name: 'Novo registo' })).toBeNull();
+  });
+
+  it('holds no retention draft: opening the list can no longer create or patch a policy', () => {
+    // 🔒 REGRESSION GUARD. The inline form's state left a create/patch path inside the LIST, on a
+    // panel the section renders under its own `retention.manage` check. The record page owns that
+    // path now and re-checks the verb itself; the panel must not grow a second one back.
+    hooks.retentionPolicies.data = [retentionPolicy];
+    renderWithProviders(<PrivacyComplianceSection />);
+    fireEvent.click(screen.getByRole('button', { name: 'Retenção' }));
+
+    expect(document.getElementById('privacy-retention-edit-status')).toBeNull();
+    expect(document.getElementById('privacy-retention-new-status')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Guardar alterações' })).toBeNull();
+    expect(hooks.createRetention.mutateAsync).not.toHaveBeenCalled();
+    expect(hooks.patchRetention.mutateAsync).not.toHaveBeenCalled();
   });
 
   /**

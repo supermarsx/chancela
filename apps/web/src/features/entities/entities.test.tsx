@@ -650,7 +650,10 @@ describe('NewEntityPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /criar entidade/i }));
 
     expect(await screen.findByText('Use uma data válida no formato MM-DD.')).toBeTruthy();
-    expect(calls).toHaveLength(0);
+    // What this asserts is that NOTHING WAS CREATED — not that the page is silent. The form also
+    // reads `GET /v1/settings` for the registrable-entity-type allowlist (t54), so counting every
+    // fetch would fail on a request that has nothing to do with the guard under test.
+    expect(calls.filter((c) => c.url.includes('/v1/entities'))).toHaveLength(0);
   });
 
   it('sends allow_invalid_nipc when the override tickbox is checked', async () => {

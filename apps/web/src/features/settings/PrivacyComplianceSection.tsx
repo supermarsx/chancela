@@ -1,16 +1,13 @@
 import { useDeferredValue, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   useCreatePrivacyBreachPlaybook,
-  useCreatePrivacyDpia,
-  useCreatePrivacyProcessor,
-  useCreatePrivacyRetentionPolicy,
   useCreatePrivacyTransferControl,
   useClosePrivacyRetentionExecutionReview,
   useDryRunPrivacyRetentionPolicy,
   usePatchPrivacyBreachPlaybook,
   usePatchPrivacyDpia,
   usePatchPrivacyProcessor,
-  usePatchPrivacyRetentionPolicy,
   usePatchPrivacyTransferControl,
   usePrivacyBreachPlaybooks,
   usePrivacyDpiaTemplate,
@@ -32,9 +29,6 @@ import {
   RETENTION_DISPOSAL_ACTIONS,
   RETENTION_EXECUTION_STATUSES,
   RETENTION_POLICY_STATUSES,
-  type CreateDpiaRecordBody,
-  type CreateProcessorRecordBody,
-  type CreateRetentionPolicyBody,
   type CreateTransferControlBody,
   type DpiaRecordView,
   type DpiaTemplateNoClaims,
@@ -42,7 +36,6 @@ import {
   type PatchBreachPlaybookBody,
   type PatchDpiaRecordBody,
   type PatchProcessorRecordBody,
-  type PatchRetentionPolicyBody,
   type PatchTransferControlBody,
   PRIVACY_ADVISORY_REVIEW_STATUSES,
   type PrivacyRecordStatus,
@@ -69,6 +62,7 @@ import { t as translateNow, useT, type MessageKey, type TFunction } from '../../
 import {
   Badge,
   Button,
+  ButtonLink,
   Card,
   EmptyState,
   ErrorNote,
@@ -93,35 +87,25 @@ import {
   dpiaSectionTitleKey,
 } from '../../i18n/dpiaTemplateLabels';
 import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
-import { RegisterEditModal } from './RegisterEditModal';
 // The record editors are real pages now (t55). The form shapes, the record↔form↔body conversions,
 // the labels and the four forms themselves moved into `privacy/`, so the list panels below and the
 // five record pages share ONE definition of each rather than two that can drift.
 import {
   EMPTY_BREACH_FORM,
-  EMPTY_FORM,
-  EMPTY_RETENTION_FORM,
   EMPTY_TRANSFER_FORM,
   breachCreateBody,
   breachFormFromRecord,
-  createBody,
-  formFromRecord,
   optionalText,
-  patchBody,
   primaryValue,
-  retentionCreateBody,
-  retentionFormFromRecord,
   transferCreateBody,
   transferFormFromRecord,
   type BreachPlaybookFormState,
-  type PrivacyCreateBody,
   type PrivacyPatchBody,
-  type RegisterFormState,
   type RegisterKind,
   type RegisterRecord,
-  type RetentionPolicyFormState,
   type TransferControlFormState,
 } from './privacy/privacyFormState';
+import { privacyRecordNewPath, privacyRecordPath } from './privacy/privacyRoutes';
 import {
   AdvisoryReviewBadge,
   advisoryReviewLabel,
@@ -136,8 +120,6 @@ import {
   statusTone,
 } from './privacy/privacyLabels';
 import { BreachPlaybookForm } from './privacy/forms/BreachPlaybookForm';
-import { RegisterForm } from './privacy/forms/RegisterForm';
-import { RetentionPolicyForm } from './privacy/forms/RetentionPolicyForm';
 import { TransferControlForm } from './privacy/forms/TransferControlForm';
 
 interface RetentionDryRunFormState {
@@ -970,7 +952,6 @@ function RegisterPanel({
   loading,
   error,
   saving,
-  onCreate,
   onPatch,
 }: {
   kind: RegisterKind;
@@ -981,11 +962,13 @@ function RegisterPanel({
   loading: boolean;
   error: unknown;
   saving: boolean;
-  onCreate: (body: PrivacyCreateBody) => Promise<RegisterRecord>;
   onPatch: (id: string, body: PrivacyPatchBody) => Promise<RegisterRecord>;
 }) {
   const t = useT();
   const toast = useToast();
+  // Slugs are English identifiers, not copy (t97b), and they are the API resource name — which is
+  // why the pt-PT rename of these two registers does not move a single address.
+  const slug = kind === 'processor' ? 'processors' : 'dpias';
   const [search, setSearch] = useState('');
   // `useDeferredValue` is the debounce every list page in this app uses — it keeps the input
   // responsive while the filter pass runs against the stale value, with no timer to clean up.
@@ -995,8 +978,6 @@ function RegisterPanel({
   const [subprocessorFilter, setSubprocessorFilter] = useState('all');
   const [evidenceFilter, setEvidenceFilter] = useState('all');
   const [reviewFilter, setReviewFilter] = useState('all');
-  const [form, setForm] = useState<RegisterFormState | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
 
   // Only DPIAs carry evidence receipts and an advisory-review summary; the processor register
   // has neither, so it does not get the two filters that would always read "all".
@@ -1044,33 +1025,10 @@ function RegisterPanel({
     setReviewFilter('all');
   }
 
-  function startCreate() {
-    setEditingId(null);
-    setForm(EMPTY_FORM);
-  }
-
-  function startEdit(record: RegisterRecord) {
-    setEditingId(record.id);
-    setForm(formFromRecord(kind, record));
-  }
-
-  async function submitForm() {
-    if (!form) return;
-    try {
-      if (editingId) {
-        await onPatch(editingId, patchBody(kind, form));
-        toast.success(t('settings.privacy.toast.updated'));
-      } else {
-        await onCreate(createBody(kind, form));
-        toast.success(t('settings.privacy.toast.created'));
-      }
-      setForm(null);
-      setEditingId(null);
-    } catch (e) {
-      toast.error(e);
-    }
-  }
-
+  // The full record editor is a page now (t55) — `/settings/privacy/dpias/<id>`. What stays here is
+  // the row-level quick edit: two `<Select>`s that change one field and save it immediately. It is a
+  // different affordance with a different cost, and moving it to the page would make "mark this
+  // register active" a four-navigation errand.
   async function patchOne(id: string, body: PrivacyPatchBody) {
     try {
       await onPatch(id, body);
@@ -1080,32 +1038,8 @@ function RegisterPanel({
     }
   }
 
-  function closeForm() {
-    setForm(null);
-    setEditingId(null);
-  }
-
   return (
     <div className="stack">
-      <RegisterEditModal
-        open={form !== null}
-        onClose={closeForm}
-        busy={saving}
-        title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}
-      >
-        {form ? (
-          <RegisterForm
-            kind={kind}
-            form={form}
-            setForm={setForm}
-            editing={editingId !== null}
-            saving={saving}
-            onCancel={closeForm}
-            onSubmit={submitForm}
-          />
-        ) : null}
-      </RegisterEditModal>
-
       <Card
         title={
           <span className="row-wrap">
@@ -1116,9 +1050,13 @@ function RegisterPanel({
         actions={
           <>
             <FilterCountBadge shown={filtered.length} total={records.length} />
-            <Button type="button" variant="primary" icon={<Icon.Plus />} onClick={startCreate}>
+            <ButtonLink
+              to={privacyRecordNewPath(slug)}
+              variant="primary"
+              icon={<Icon.Plus />}
+            >
               {t('settings.privacy.action.new')}
-            </Button>
+            </ButtonLink>
           </>
         }
       >
@@ -1249,7 +1187,11 @@ function RegisterPanel({
                 const dpiaReceipt = dpiaRecord ? latestReceipt(dpiaRecord.evidence_receipts) : null;
                 return (
                   <tr key={record.id}>
-                    <td>{label}</td>
+                    {/* The primary cell is the record's address, the way a book's title is
+                        (BooksTable). Two affordances, one destination: this and "Editar". */}
+                    <td>
+                      <Link to={privacyRecordPath(slug, record.id)}>{label}</Link>
+                    </td>
                     <td>{record.purpose}</td>
                     <td>{record.data_categories.join(', ')}</td>
                     <td>
@@ -1322,15 +1264,13 @@ function RegisterPanel({
                       <span className="muted">{record.updated_by}</span>
                     </td>
                     <td className="users-actions">
-                      <Button
-                        type="button"
+                      <ButtonLink
+                        to={privacyRecordPath(slug, record.id)}
                         variant="ghost"
                         icon={<Icon.Pencil />}
-                        disabled={saving}
-                        onClick={() => startEdit(record)}
                       >
                         {t('settings.privacy.action.edit')}
-                      </Button>
+                      </ButtonLink>
                     </td>
                   </tr>
                 );
@@ -2758,7 +2698,6 @@ function RetentionPolicyPanel({
   records,
   loading,
   error,
-  saving,
   runningDryRun,
   dryRunReport,
   dueCandidatesReport,
@@ -2773,8 +2712,6 @@ function RetentionPolicyPanel({
   executionLoading,
   executionError,
   executionStatusFilter,
-  onCreate,
-  onPatch,
   onDryRun,
   onRecordResolution,
   onRequestReview,
@@ -2783,7 +2720,6 @@ function RetentionPolicyPanel({
   records: RetentionPolicyView[];
   loading: boolean;
   error: unknown;
-  saving: boolean;
   runningDryRun: boolean;
   dryRunReport: RetentionDryRunReport | null;
   dueCandidatesReport: RetentionDueCandidatesReport | null;
@@ -2798,8 +2734,6 @@ function RetentionPolicyPanel({
   executionLoading: boolean;
   executionError: unknown;
   executionStatusFilter: RetentionExecutionStatus | 'all';
-  onCreate: (body: CreateRetentionPolicyBody) => Promise<RetentionPolicyView>;
-  onPatch: (id: string, body: PatchRetentionPolicyBody) => Promise<RetentionPolicyView>;
   onDryRun: (form: RetentionDryRunFormState) => Promise<void>;
   onRecordResolution: (candidate: RetentionDueCandidate) => Promise<void>;
   onRequestReview: (
@@ -2809,7 +2743,6 @@ function RetentionPolicyPanel({
   onExecutionStatusFilterChange: (status: RetentionExecutionStatus | 'all') => void;
 }) {
   const t = useT();
-  const toast = useToast();
   const [search, setSearch] = useState('');
   const deferredSearch = useDeferredValue(search);
   const [statusFilter, setStatusFilter] = useState('all');
@@ -2819,8 +2752,6 @@ function RetentionPolicyPanel({
     value: status,
     label: retentionStatusLabel(t, status),
   }));
-  const [form, setForm] = useState<RetentionPolicyFormState | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
   const filtered = useMemo(() => {
     const q = normalizeSearch(deferredSearch.trim());
     return records.filter((record) => {
@@ -2844,40 +2775,8 @@ function RetentionPolicyPanel({
     setActiveFilter('all');
   }
 
-  async function submitForm() {
-    if (!form) return;
-    try {
-      if (editingId) {
-        await onPatch(editingId, retentionCreateBody(form));
-        toast.success(t('settings.privacy.toast.updated'));
-      } else {
-        await onCreate(retentionCreateBody(form));
-        toast.success(t('settings.privacy.toast.created'));
-      }
-      setForm(null);
-      setEditingId(null);
-    } catch (e) {
-      toast.error(e);
-    }
-  }
-
   return (
     <div className="stack">
-      {form ? (
-        <Card title={editingId ? t('settings.privacy.form.edit') : t('settings.privacy.form.new')}>
-          <RetentionPolicyForm
-            form={form}
-            setForm={setForm}
-            editing={editingId !== null}
-            saving={saving}
-            onCancel={() => {
-              setForm(null);
-              setEditingId(null);
-            }}
-            onSubmit={submitForm}
-          />
-        </Card>
-      ) : null}
       <Card
         title={
           <span className="row-wrap">
@@ -2888,17 +2787,13 @@ function RetentionPolicyPanel({
         actions={
           <>
             <FilterCountBadge shown={filtered.length} total={records.length} />
-            <Button
-              type="button"
+            <ButtonLink
+              to={privacyRecordNewPath('retention-policies')}
               variant="primary"
               icon={<Icon.Plus />}
-              onClick={() => {
-                setEditingId(null);
-                setForm(EMPTY_RETENTION_FORM);
-              }}
             >
               {t('settings.privacy.action.new')}
-            </Button>
+            </ButtonLink>
           </>
         }
       >
@@ -2994,7 +2889,13 @@ function RetentionPolicyPanel({
               {filtered.map((record) => (
                 <tr key={record.id}>
                   <td>
-                    {record.name}
+                    {/* The primary cell is the record's address (the BooksTable entity-link
+                        pattern). The Editar action below is the second affordance on the same
+                        address — two ways in, one URL. No className: t55 writes no CSS, and the
+                        cell needs none. */}
+                    <Link to={privacyRecordPath('retention-policies', record.id)}>
+                      {record.name}
+                    </Link>
                     <br />
                     <span className="muted">{record.legal_basis}</span>
                   </td>
@@ -3022,18 +2923,13 @@ function RetentionPolicyPanel({
                   </td>
                   <td>{t('settings.privacy.retention.execution.false')}</td>
                   <td className="users-actions">
-                    <Button
-                      type="button"
+                    <ButtonLink
+                      to={privacyRecordPath('retention-policies', record.id)}
                       variant="ghost"
                       icon={<Icon.Pencil />}
-                      disabled={saving}
-                      onClick={() => {
-                        setEditingId(record.id);
-                        setForm(retentionFormFromRecord(record));
-                      }}
                     >
                       {t('settings.privacy.action.edit')}
-                    </Button>
+                    </ButtonLink>
                   </td>
                 </tr>
               ))}
@@ -3108,16 +3004,18 @@ export function PrivacyComplianceSection() {
     retentionExecutionStatusFilter,
     canManageRetention,
   );
-  const createProcessor = useCreatePrivacyProcessor();
+  // No create mutation for the two register-shaped surfaces either: creation happens on
+  // `RegisterRecordPage`. The patch mutations stay for the row-level quick edit.
   const patchProcessor = usePatchPrivacyProcessor();
-  const createDpia = useCreatePrivacyDpia();
   const patchDpia = usePatchPrivacyDpia();
   const createBreachPlaybook = useCreatePrivacyBreachPlaybook();
   const patchBreachPlaybook = usePatchPrivacyBreachPlaybook();
   const createTransferControl = useCreatePrivacyTransferControl();
   const patchTransferControl = usePatchPrivacyTransferControl();
-  const createRetentionPolicy = useCreatePrivacyRetentionPolicy();
-  const patchRetentionPolicy = usePatchPrivacyRetentionPolicy();
+  // No create/patch mutation for retention policies here any more: the record editor is
+  // `RetentionPolicyPage` (`/settings/privacy/retention-policies/{new,:id}`), gated on its own
+  // `retention.manage` verb. This panel lists and links; the dry-run below is a separate
+  // operational surface and stays.
   const dryRunRetentionPolicy = useDryRunPrivacyRetentionPolicy();
   const recordRetentionCandidateResolution = useRecordPrivacyRetentionCandidateResolution();
   const toast = useToast();
@@ -3226,10 +3124,7 @@ export function PrivacyComplianceSection() {
                   records={processors.data ?? []}
                   loading={processors.isLoading}
                   error={processors.error}
-                  saving={createProcessor.isPending || patchProcessor.isPending}
-                  onCreate={(body) =>
-                    createProcessor.mutateAsync(body as CreateProcessorRecordBody)
-                  }
+                  saving={patchProcessor.isPending}
                   onPatch={(id, body) =>
                     patchProcessor.mutateAsync({ id, body: body as PatchProcessorRecordBody })
                   }
@@ -3243,8 +3138,7 @@ export function PrivacyComplianceSection() {
                   records={dpias.data ?? []}
                   loading={dpias.isLoading}
                   error={dpias.error}
-                  saving={createDpia.isPending || patchDpia.isPending}
-                  onCreate={(body) => createDpia.mutateAsync(body as CreateDpiaRecordBody)}
+                  saving={patchDpia.isPending}
                   onPatch={(id, body) =>
                     patchDpia.mutateAsync({ id, body: body as PatchDpiaRecordBody })
                   }
@@ -3283,7 +3177,6 @@ export function PrivacyComplianceSection() {
                 records={retentionPolicies.data ?? []}
                 loading={retentionPolicies.isLoading}
                 error={retentionPolicies.error}
-                saving={createRetentionPolicy.isPending || patchRetentionPolicy.isPending}
                 runningDryRun={dryRunRetentionPolicy.isPending}
                 dryRunReport={dryRunRetentionPolicy.data ?? null}
                 dueCandidatesReport={retentionDueCandidates.data ?? null}
@@ -3298,8 +3191,6 @@ export function PrivacyComplianceSection() {
                 executionLoading={retentionExecutions.isLoading}
                 executionError={retentionExecutions.error}
                 executionStatusFilter={retentionExecutionStatusFilter}
-                onCreate={(body) => createRetentionPolicy.mutateAsync(body)}
-                onPatch={(id, body) => patchRetentionPolicy.mutateAsync({ id, body })}
                 onDryRun={dryRunRetention}
                 onRecordResolution={recordRetentionResolution}
                 onRequestReview={requestRetentionReview}

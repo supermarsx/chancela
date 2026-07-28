@@ -5,9 +5,9 @@
  * freshly created entity to its detail page. The NIPC field still surfaces the API's 422
  * (bad check digit) inline via the `ApiError` message.
  */
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { useCreateEntity } from '../../api/hooks';
+import { useCreateEntity, useSettings } from '../../api/hooks';
 import { entityKindLabels, optionsFrom } from '../../api/labels';
 import { ENTITY_KINDS, type EntityKind } from '../../api/types';
 import { ApiError } from '../../api/client';
@@ -52,6 +52,30 @@ export function NewEntityPage() {
   const [kind, setKind] = useState<EntityKind>('SociedadePorQuotas');
   const [fiscalYearEnd, setFiscalYearEnd] = useState('');
   const [fiscalYearEndError, setFiscalYearEndError] = useState<string | null>(null);
+
+  // Which legal types this instance permits at REGISTRATION (t54 §6.2). `[]` — and a settings
+  // document that has not loaded yet — mean every kind, the same reading the server holds. This is
+  // a courtesy on the form, not the control: `POST /v1/entities` refuses a disabled kind by name
+  // whatever the form offers, so the worst a stale narrowing can cause is an honest 422.
+  const settings = useSettings();
+  const enabledKinds = settings.data?.entities?.enabled_kinds ?? [];
+  const availableKinds = useMemo(
+    () =>
+      enabledKinds.length === 0
+        ? ENTITY_KINDS
+        : ENTITY_KINDS.filter((candidate) => enabledKinds.includes(candidate)),
+    // Compared by content: the array is rebuilt on every settings render, and the identity churn
+    // would otherwise reset the operator's choice mid-typing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [enabledKinds.join(',')],
+  );
+
+  // The default selection is a *product* default, so it can be a type this instance no longer
+  // registers. Move to the first permitted one rather than leaving the select showing a value that
+  // is not among its options — which would submit a kind the operator never saw offered.
+  useEffect(() => {
+    if (availableKinds.length > 0 && !availableKinds.includes(kind)) setKind(availableKinds[0]);
+  }, [availableKinds, kind]);
   // §entity-v2 override: create even when the NIPC fails control-digit validation
   // (foreign entities / special registrations). Sends `allow_invalid_nipc: true`.
   const [allowInvalidNipc, setAllowInvalidNipc] = useState(false);
@@ -160,7 +184,7 @@ export function NewEntityPage() {
               id="ent-kind"
               value={kind}
               onChange={(e) => setKind(e.target.value as EntityKind)}
-              options={optionsFrom(ENTITY_KINDS, entityKindLabels)}
+              options={optionsFrom(availableKinds, entityKindLabels)}
             />
           </Field>
           <Field
