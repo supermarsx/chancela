@@ -190,11 +190,26 @@ machinery (`crates/chancela-api/src/pairing.rs`, schema v22 `pairing_devices` ta
 
 **A code alone does not pair a device.** The exchange body carries
 `{code, confirmation}`, and the confirmation must satisfy **one** proof from the operator the
-code is bound to — `{"password": …}` or `{"totp_code": …}`. Which proofs an instance accepts
+code is bound to — `{"password": …}`, `{"totp_code": …}` or `{"emailed_code": …}`. Which proofs an instance accepts
 is `auth.device_pairing.accepted` (defaults to all of them; an empty list is refused at
 `PUT /v1/settings`, because it would make pairing impossible rather than optional). The mint
 response advertises the accepted set so the desktop can tell the operator what the phone will
 ask for — the phone is unauthenticated and cannot read `GET /v1/confirmation-policy` itself.
+
+**Minting is itself gated.** `POST /v1/pairing/codes` carries a `confirmation` proof and is
+floored at `confirm_with_reauth` by the guarded-action registry: minting enrols a new device as
+this operator, so an unattended signed-in browser must not be one click from it. The desktop
+panel therefore has **no automatic re-mint** on expiry — a silent re-mint loop is no clicks at
+all — and an expired code asks for the confirmation again.
+
+**The emailed method is a code the operator transcribes, never a link.** It is ~79 bits (16
+symbols from a 31-symbol unambiguous alphabet), single-use, superseded by the next mint, and
+lives 10 minutes. Nothing clickable is ever mailed: this product promises every recipient, in
+all 14 locales, that it never sends access links and that a message which does should be
+reported to an administrator (`email_template.rs`'s `welcome_never_sends`). That promise is
+unchanged — the credential changed shape instead. The mail is opt-in
+(`email_confirmation_code`), and asking for it on an instance that does not accept the method,
+or on an account with no address, is a `422` raised **before** any pairing code is minted.
 
 This does not reintroduce the password the handshake exists to avoid: the password is one
 accepted proof and never the only one. A TOTP code proves the same operator with no reusable
@@ -223,19 +238,23 @@ over GF(256), the eight data masks, and BCH format/version information) and draw
 SVG — no QR library is added. Its Galois-field and generator-polynomial correctness is
 pinned against the published ISO/IEC 18004 values in `qr.test.ts`.
 
-**Deep-link contract.** The QR encodes `<origin>/?companion_pair=<code>`, where `<origin>`
+**Deep-link contract.** The QR encodes `<origin>/pair?code=<code>&methods=<accepted>`, where `<origin>`
 is the resolved API base URL (`resolveApiBaseUrl`) or, when the client is same-origin, the
 desktop's own origin. Loading it on the phone gives the companion both the server base (the
-URL origin) and the code to POST to `/v1/pairing/exchange`. The plaintext code is shown once
+URL origin), the code to POST to `/v1/pairing/exchange`, and which proofs to ask for. The plaintext code is shown once
 and lives only in local component state — never cached or persisted, mirroring the API-key
 secret panel.
 
-**The companion-side page that consumes `?companion_pair=` is not built.** The deep link is
-minted and encoded, and the endpoint it names is implemented and tested server-side, but no
-route in `apps/web` reads the parameter — `companion_pair` appears only in `PairingPanel.tsx`
-and its test. Enrolling a phone today therefore means calling `/v1/pairing/exchange` directly.
-Recorded here rather than left to be discovered: the desktop half of this flow looks finished,
-which is exactly what makes the missing half easy to assume.
+**The companion page is `/pair`** (`apps/web/src/features/pairing/CompanionPairPage.tsx`). It
+sits **outside** the authenticated shell, beside `/external-signature`: a phone arriving from
+the QR has no session by design, so routing it through the auth gate would send it to the one
+screen this handshake exists to avoid. It reads the code once, strips it from the address bar,
+collects exactly one proof, and posts the exchange.
+
+The `methods` parameter chooses which inputs to draw and is **presentational only** — it rides
+in a URL an operator can edit, so a tampered value can add a field but can never make the
+server accept a proof. Absent or unreadable, the page offers every method: being shown one
+field too many is a smaller failure than being shown none of the one you hold.
 
 The minted companion session is **identity-only** (no unlocked attestation signing key — the
 phone never authenticated a key), so a paired phone can act as the operator for RBAC-gated
