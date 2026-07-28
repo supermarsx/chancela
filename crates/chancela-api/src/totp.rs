@@ -616,6 +616,68 @@ pub async fn confirm_totp(
     }
 }
 
+/// Verify a TOTP code for `user` outside the interactive-session surface, advancing the replay
+/// guard on success. Returns `false` for every "did not prove it" outcome; `Err` only for a real
+/// failure to read or persist.
+///
+/// **This exists so there is exactly one TOTP verification path.** The device-pairing exchange
+/// (`crate::pairing`) is unauthenticated — it has no `CurrentActor` and cannot go through
+/// [`require_self`] — but it must not therefore grow its own copy of "read the secret, check the
+/// code, remember the step". Everything specific to TOTP stays in this module: the secret is read
+/// from the credential store under [`CredentialMode::TwoFactorTotp`] as always, and it is never
+/// returned to the caller.
+///
+/// Three deliberate refusals, all rendered as a plain `false` so the caller's message can stay
+/// uniform:
+///
+/// - **No enrolment**, or a **pending** one. A secret that has never been proved against a live
+///   authenticator is not a factor, so it cannot confirm anything.
+/// - A **torn** enrolment (record present, stored secret gone). Refused, and — unlike
+///   [`confirm_totp`] — *not* cleared: this path is reachable by an unauthenticated caller
+///   presenting a code, and letting it delete an operator's second-factor record would hand that
+///   caller a way to strip a factor without ever proving anything.
+/// - A code at or below `last_accepted_step`, refused by [`verify_code_against_secret`]'s replay
+///   guard.
+///
+/// On success the accepted step is persisted **before** returning, so a code cannot be spent twice
+/// even if the caller goes on to fail.
+pub(crate) async fn verify_totp_for_user(
+    state: &AppState,
+    user: &User,
+    code: &str,
+    now: OffsetDateTime,
+) -> Result<bool, ApiError> {
+    let Some(enrolment) = user.totp.clone() else {
+        return Ok(false);
+    };
+    if !enrolment.is_active() {
+        return Ok(false);
+    }
+    let Some(secret) = read_totp_secret(state, user.id).await? else {
+        return Ok(false);
+    };
+    match verify_code_against_secret(
+        &secret,
+        code,
+        now.unix_timestamp(),
+        enrolment.last_accepted_step,
+    ) {
+        VerifyOutcome::Accepted { step } => {
+            {
+                let mut users = state.users.write().await;
+                if let Some(user) = users.get_mut(&user.id)
+                    && let Some(enrolment) = user.totp.as_mut()
+                {
+                    enrolment.last_accepted_step = Some(step);
+                }
+            }
+            crate::sidecar_store::persist_users(state).await?;
+            Ok(true)
+        }
+        VerifyOutcome::Rejected => Ok(false),
+    }
+}
+
 /// `DELETE /v1/users/{id}/two-factor/totp` — disable the factor (self-only).
 ///
 /// Refused while the account carries `two_factor_required`: a user cannot opt out of a requirement

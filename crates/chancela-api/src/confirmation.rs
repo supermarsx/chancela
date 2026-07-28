@@ -52,17 +52,20 @@
 //! no acting user to step up and no session to prove anything with. A confirmation gate on one would
 //! be decoration.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use axum::Json;
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::AppState;
 use crate::actor::CurrentActor;
+use crate::attestation::verify_secret;
 use crate::data::{ReAuth, require_step_up};
 use crate::error::ApiError;
 use crate::settings::AuthSettings;
+use crate::users::User;
 
 // =================================================================================================
 // Strictness and consequence
@@ -2173,6 +2176,183 @@ pub(crate) async fn require_confirmation(
             }
         }
     }
+}
+
+// =================================================================================================
+// Device-pairing confirmation
+// =================================================================================================
+//
+// **Why this does not go through [`require_confirmation`] above, and is not a parallel mechanism.**
+//
+// `ConfirmationAction::DevicePairing` guards `POST /v1/pairing/codes` — the *mint*, performed by an
+// operator who already holds an interactive session. The act the user's decision is about is the
+// *exchange* (`POST /v1/pairing/exchange`), the moment a device actually receives a session. That
+// route is `Exempt`: it is unauthenticated by construction, because the whole point of the pairing
+// handshake (`crate::pairing`) is that the operator never types their password into a remote
+// WebView. So there is no [`CurrentActor`] to hand [`require_step_up`], which is what
+// [`require_confirmation`] is built out of — the module header above says exactly this about
+// `Exempt` routes, and it is still true.
+//
+// The strictness ladder is also the wrong axis. `Off < Confirm < ConfirmWithReauth <
+// ConfirmWithReauthAndPhrase` answers *how hard*; the user's decision answers *with what*: any ONE
+// of a password, an emailed confirmation link, or a TOTP token. That is a set of alternatives, not
+// a rung. Modelling it as strictness would either collapse the three into "re-auth" (which means
+// password, the one thing the pairing design exists to avoid) or invent rungs whose ordering has no
+// meaning.
+//
+// So: the *policy* lives here, next to [`ConfirmationSettings`], because there should be one place
+// an operator's confirmation configuration is read from. The *gate* takes a resolved [`User`]
+// instead of an actor, and is the only difference.
+//
+// `/v1/pairing/exchange` is deliberately NOT added to [`ROUTE_GUARD`]: that table's key set is
+// asserted equal to the `Gated`/`Session` half of the frozen `ROUTE_CLASSIFICATION`, and adding an
+// `Exempt` route to it would break the exhaustiveness proof to record a verdict the strictness
+// engine cannot act on anyway.
+
+/// A proof a device pairing may be confirmed with. **Any one** of these satisfies the requirement —
+/// they are alternatives, not a checklist.
+///
+/// The password is deliberately *one* accepted method and never the only available one: an operator
+/// pairing a phone can prove themselves with a TOTP token instead, so the password never has to
+/// reach the device being enrolled. A deployment that wants that guarantee absolutely can drop
+/// [`Password`](Self::Password) from [`PairingConfirmationSettings::accepted`].
+///
+/// **`EmailLink` is deliberately absent for now.** The emailed-link method is not implemented yet
+/// (it needs a two-round-trip pending-exchange protocol, and it collides with a promise this
+/// product's outgoing mail currently makes in all 14 locales — `email_template.rs`'s
+/// `welcome_never_sends`). Naming a method here that the server cannot actually perform would put a
+/// value in the settings surface and on the wire that resolves to "pairing is impossible". Adding
+/// the variant later is purely additive.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PairingConfirmationMethod {
+    /// The operator's account password, verified on the same argon2id path as sign-in.
+    Password,
+    /// A live TOTP code from the operator's **confirmed** second factor.
+    TotpCode,
+}
+
+impl PairingConfirmationMethod {
+    /// Every variant, in wire order.
+    pub const ALL: &'static [Self] = &[Self::Password, Self::TotpCode];
+
+    /// The stable wire identifier (matches the serde representation).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Password => "password",
+            Self::TotpCode => "totp_code",
+        }
+    }
+}
+
+/// Which confirmation methods this deployment accepts for a device pairing.
+///
+/// Default is **every implemented method**, so an instance that has never configured anything still
+/// requires a confirmation — the requirement itself is not optional, only the choice of proof is.
+///
+/// An operator may narrow the set (e.g. to `{totp_code}` alone, so a password can never be typed
+/// into a paired device) but an **empty** set is refused by
+/// [`AuthSettings::validate`](crate::settings::AuthSettings), because a set that accepts nothing
+/// does not mean "no confirmation" — it means no device can ever pair, and an operator who writes
+/// it almost certainly meant the opposite. Should one reach the gate anyway, the gate refuses; the
+/// unsatisfiable direction is closed at both ends.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PairingConfirmationSettings {
+    /// The accepted proofs. `BTreeSet` for a deterministic serialisation order.
+    pub accepted: BTreeSet<PairingConfirmationMethod>,
+}
+
+impl Default for PairingConfirmationSettings {
+    fn default() -> Self {
+        PairingConfirmationSettings {
+            accepted: PairingConfirmationMethod::ALL.iter().copied().collect(),
+        }
+    }
+}
+
+impl PairingConfirmationSettings {
+    /// The accepted methods as stable wire identifiers, in a deterministic order. This is what the
+    /// mint response advertises so the desktop can tell the operator what the device will ask for.
+    #[must_use]
+    pub fn accepted_ids(&self) -> Vec<&'static str> {
+        self.accepted.iter().map(|m| m.as_str()).collect()
+    }
+}
+
+/// The confirmation a device presents when it redeems a pairing code.
+///
+/// Every field is `#[serde(default)]`, so an exchange body carrying no confirmation at all
+/// deserialises to an empty proof and the gate refuses it — the fail-closed direction. A client that
+/// forgets to thread the proof gets a `403`, never a silent pairing.
+///
+/// Deliberately **no `Debug`**, for the same reason [`ConfirmationProof`] has none: it carries a
+/// plaintext password, and a derived `Debug` is one `tracing` call away from logging it.
+#[derive(Default, Deserialize)]
+pub struct PairingConfirmationProof {
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub totp_code: Option<String>,
+}
+
+/// The single, uniform refusal for an unconfirmed pairing.
+///
+/// One message for every failure mode on purpose: a wrong password, a wrong TOTP code, a method the
+/// deployment does not accept, a proof for a factor the operator never enrolled, and a deployment
+/// that accepts nothing all read identically. A caller learns that the pairing was not confirmed
+/// and nothing else — in particular not whether the bound operator holds a second factor.
+///
+/// `403`, not `401`, matching [`require_confirmation`]: a failed credential proof must not read as
+/// "your code was bad". The pairing code is already consumed by the time this fires, so the fact
+/// that the status distinguishes "valid code, bad proof" from the exchange's uniform `401` is not
+/// an oracle worth anything — what it identifies is dead.
+fn pairing_not_confirmed() -> ApiError {
+    ApiError::Forbidden("o emparelhamento do dispositivo não foi confirmado".to_owned())
+}
+
+/// **The pairing gate.** Verify that `proof` satisfies **one** method this deployment accepts for
+/// `user`, and report which one.
+///
+/// Fail-closed by construction: the only way out of this function without an error is a proof that
+/// was both *accepted by the deployment* and *verified against the operator's own credential*. There
+/// is no arm that passes for lack of a credential — unlike [`require_step_up`], which lets a
+/// credential-less operator through on their session alone, because there a valid self session is
+/// the strongest proof available. Here there is no session: the caller is an unauthenticated device
+/// holding a code. An operator with no password and no confirmed second factor therefore cannot pair
+/// a device, and that is the correct outcome rather than a lockout to route around.
+pub(crate) async fn require_pairing_confirmation(
+    state: &AppState,
+    user: &User,
+    proof: &PairingConfirmationProof,
+    now: OffsetDateTime,
+) -> Result<PairingConfirmationMethod, ApiError> {
+    let accepted = {
+        let settings = state.settings.read().await;
+        settings.auth.device_pairing.accepted.clone()
+    };
+
+    // A password the deployment accepts, that the operator actually has, and that verifies.
+    if accepted.contains(&PairingConfirmationMethod::Password)
+        && let Some(supplied) = proof.password.as_deref()
+        && let Some(stored) = user.password_hash.as_deref()
+        && verify_secret(supplied, stored)
+    {
+        return Ok(PairingConfirmationMethod::Password);
+    }
+
+    // A live code from a **confirmed** factor. `verify_totp_for_user` owns the whole TOTP path —
+    // reading the secret from the credential store and advancing `last_accepted_step` so the code
+    // cannot be replayed — so there is no second TOTP implementation here.
+    if accepted.contains(&PairingConfirmationMethod::TotpCode)
+        && let Some(supplied) = proof.totp_code.as_deref()
+        && crate::totp::verify_totp_for_user(state, user, supplied, now).await?
+    {
+        return Ok(PairingConfirmationMethod::TotpCode);
+    }
+
+    Err(pairing_not_confirmed())
 }
 
 // =================================================================================================

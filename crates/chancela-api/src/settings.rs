@@ -881,6 +881,11 @@ pub struct AuthSettings {
     pub password_recovery: PasswordRecoverySettings,
     /// Second-factor policy.
     pub two_factor: TwoFactorSettings,
+    /// Which proofs are accepted to confirm a **device pairing**. Absent from an older settings
+    /// document, which deserialises to the default — every implemented method accepted, i.e. the
+    /// confirmation is still required. The requirement is not configurable; only the choice of
+    /// proof is.
+    pub device_pairing: crate::confirmation::PairingConfirmationSettings,
 }
 
 /// Who may create an account without an administrator doing it for them.
@@ -1057,6 +1062,21 @@ impl AuthSettings {
     /// [`validate_default_role_against`](Self::validate_default_role_against). Both run on every
     /// `PUT /v1/settings`.
     fn validate(&self) -> Result<(), ApiError> {
+        // --- Device-pairing confirmation ------------------------------------------------------
+        // Refused rather than reinterpreted. An empty set does not mean "pair without confirming"
+        // — the gate fails closed, so it means no device on this instance can ever be paired. An
+        // operator who writes it has almost certainly mistaken it for "off", and silently obeying
+        // either reading would be wrong: one of them disables a security requirement the operator
+        // cannot disable, and the other breaks a feature without saying so.
+        if self.device_pairing.accepted.is_empty() {
+            return Err(ApiError::Unprocessable(
+                "auth.device_pairing.accepted must list at least one method; an empty list does \
+                 not turn the pairing confirmation off (it cannot be turned off) — it makes every \
+                 device pairing impossible"
+                    .to_owned(),
+            ));
+        }
+
         // --- §2.6 ceiling, the half that needs no catalog -------------------------------------
         if self.signup.default_role == chancela_authz::OWNER_ROLE_ID {
             return Err(ApiError::Unprocessable(

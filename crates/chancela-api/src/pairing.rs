@@ -9,8 +9,9 @@
 //!    QR / deep-link by the desktop UI, wp27-e5). Only the code's **SHA-256 digest** is retained.
 //! 2. **Exchange** — the phone posts the code to the **unauthenticated** `POST /v1/pairing/exchange`.
 //!    The server verifies the code (fail-closed: unknown, expired, and already-used are one uniform
-//!    `401`), mints an identity-only companion [`session`](crate::session) (no unlocked attestation
-//!    key), records a durable **device** row, and returns the session token + device id.
+//!    `401`), **requires a confirmation** (below), mints an identity-only companion
+//!    [`session`](crate::session) (no unlocked attestation key), records a durable **device** row,
+//!    and returns the session token + device id.
 //! 3. **List / revoke** — `GET /v1/pairing/devices` lists the operator's enrolled devices;
 //!    `DELETE /v1/pairing/devices/{device_id}` soft-revokes one and kills its companion session.
 //!
@@ -24,6 +25,25 @@
 //! same constant-work path the session token check uses — the secret is only ever compared as its
 //! SHA-256 preimage). Expiry and reuse fail **closed** with a uniform error that leaks nothing. The
 //! password sign-in path is untouched; pairing is strictly additive.
+//!
+//! ## Confirming the exchange (t70)
+//!
+//! A live pairing code is not on its own enough to enrol a device. The exchange additionally
+//! requires **one** proof from the operator the code is bound to — see
+//! [`crate::confirmation::PairingConfirmationMethod`] for the accepted set and
+//! [`require_pairing_confirmation`](crate::confirmation::require_pairing_confirmation) for the gate.
+//!
+//! **This does not undo the password-free rationale at the top of this file.** The password is one
+//! accepted proof, never the only one: a TOTP token proves the same operator without any reusable
+//! secret reaching the device, and a deployment that wants that guarantee absolutely can narrow
+//! `auth.device_pairing.accepted` so a password is not accepted here at all. What the confirmation
+//! closes is the gap where possession of a code — shoulder-surfed from a QR, or photographed off an
+//! unattended screen — was by itself a session as the operator.
+//!
+//! **A failed confirmation burns the code**, because [`PairingRegistry::redeem_code`] consumes it
+//! before the proof is checked. That is deliberate and is not a rough edge to smooth: leaving the
+//! code live for the rest of its five minutes would turn a six-digit TOTP into an unlimited online
+//! guessing target. One attempt per code; a mistyped proof costs the operator a fresh QR.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -41,6 +61,9 @@ use uuid::Uuid;
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::cluster_shared_state;
+use crate::confirmation::{
+    PairingConfirmationMethod, PairingConfirmationProof, require_pairing_confirmation,
+};
 use crate::error::ApiError;
 use crate::session::{mint_session, session_token_digest};
 use crate::users::{UserId, UserView};
@@ -68,6 +91,13 @@ struct DurablePairingDevice {
     token_sha256: String,
     created_at_unix: i64,
     revoked_at_unix: Option<i64>,
+    /// Which proof confirmed this enrollment (t70). `None` **only** for a row written before the
+    /// confirmation existed — `#[serde(default)]` is what keeps those rows parseable, and it
+    /// matters more than it looks: [`PairingRegistry::from_store`] *skips* a row it cannot
+    /// deserialize, so without the default an upgrade would silently drop every already-enrolled
+    /// device out of the operator's list, taking their ability to revoke it with them.
+    #[serde(default)]
+    confirmed_by: Option<PairingConfirmationMethod>,
 }
 
 /// One outstanding, not-yet-redeemed pairing code. Held in memory only — a code is an ephemeral
@@ -265,6 +295,12 @@ pub struct PairingCodeMinted {
     pub expires_in_secs: i64,
     /// The resolved device label bound to this code.
     pub label: String,
+    /// The proofs this deployment accepts to confirm the exchange, as stable identifiers. The
+    /// device redeeming the code is unauthenticated and so cannot read `GET /v1/confirmation-policy`
+    /// itself; the desktop, which is signed in, learns the accepted set here and tells the operator
+    /// what they are about to be asked for. Not a secret — knowing that an instance accepts a TOTP
+    /// code tells an attacker nothing they could not learn by trying.
+    pub accepted_confirmation_methods: Vec<&'static str>,
 }
 
 /// `POST /v1/pairing/codes` — mint a short-lived, single-use pairing code for the signed-in operator.
@@ -278,19 +314,33 @@ pub async fn create_pairing_code(
     let now = OffsetDateTime::now_utc();
     let code = state.pairing.mint_code(uid.0, label.clone(), now).await;
     let expires_at = now + Duration::seconds(PAIRING_CODE_TTL_SECS);
+    let accepted_confirmation_methods = state
+        .settings
+        .read()
+        .await
+        .auth
+        .device_pairing
+        .accepted_ids();
     Ok(Json(PairingCodeMinted {
         code,
         expires_at: expires_at.format(&Rfc3339).unwrap_or_else(|_| rfc3339(0)),
         expires_in_secs: PAIRING_CODE_TTL_SECS,
         label,
+        accepted_confirmation_methods,
     }))
 }
 
 /// Body of `POST /v1/pairing/exchange`.
+///
+/// Deliberately **no `Debug`**: [`PairingConfirmationProof`] carries a plaintext password.
 #[derive(Deserialize)]
 pub struct ExchangePairingCode {
     /// The pairing code the desktop showed the phone.
     pub code: String,
+    /// The operator's proof that they meant this. `#[serde(default)]`, so a body that omits it
+    /// deserialises to an empty proof and is refused — never accepted.
+    #[serde(default)]
+    pub confirmation: PairingConfirmationProof,
 }
 
 /// Response of `POST /v1/pairing/exchange` — the minted companion session + the enrolled device.
@@ -304,14 +354,23 @@ pub struct PairingExchanged {
     pub label: String,
     /// The operator the companion now acts as.
     pub user: UserView,
+    /// Which proof confirmed this enrollment, as a stable identifier. The client renders it as its
+    /// own labelled line rather than folding it into a sentence.
+    pub confirmed_by: &'static str,
 }
 
 /// `POST /v1/pairing/exchange` — **unauthenticated**: the phone redeems a pairing code for a session.
 ///
 /// Fail-closed and uniform: an unknown, expired, or already-redeemed code all return the same `401`
-/// so a caller cannot distinguish them. On success the code is consumed (single-use), an identity-only
-/// companion session is minted (no unlocked attestation key — the phone never authenticated a key),
-/// and a durable device row is written before the token is returned.
+/// so a caller cannot distinguish them. A live code additionally has to carry a confirmation the
+/// bound operator can prove (`403` if it does not — see the module header). Only then is the code
+/// consumed (single-use), an identity-only companion session minted (no unlocked attestation key —
+/// the phone never authenticated a key), and a durable device row written before the token returns.
+///
+/// **Order matters and is load-bearing.** The confirmation is checked *before* anything is minted or
+/// written, so an unconfirmed exchange leaves no session, no device row, and no durable state at
+/// all — it does not pair. The only thing it does spend is the code itself, which
+/// [`PairingRegistry::redeem_code`] consumes on any attempt by design.
 pub async fn exchange_pairing_code(
     State(state): State<AppState>,
     Json(req): Json<ExchangePairingCode>,
@@ -333,6 +392,11 @@ pub async fn exchange_pairing_code(
         }
     };
 
+    // The confirmation. A live code proves someone saw the desktop screen; this proves the operator
+    // meant to enrol *this* device. Nothing above has written anything yet, so a refusal here is a
+    // pairing that simply did not happen.
+    let confirmed_by = require_pairing_confirmation(&state, &user, &req.confirmation, now).await?;
+
     // Mint an identity-only companion session, then bind a durable device to its token digest. A
     // paired companion carries no web device/IP origin here — the pairing device directory (wp27-e4)
     // is its own device record — so the active-sign-ins list shows it without a browser label.
@@ -344,6 +408,7 @@ pub async fn exchange_pairing_code(
         token_sha256: session_token_digest(&token),
         created_at_unix: now.unix_timestamp(),
         revoked_at_unix: None,
+        confirmed_by: Some(confirmed_by),
     };
     // Durable write first; on failure tear the just-minted session back down so we never leave an
     // untracked, unrevocable companion session behind.
@@ -359,6 +424,7 @@ pub async fn exchange_pairing_code(
         device_id,
         label,
         user: UserView::from(&user),
+        confirmed_by: confirmed_by.as_str(),
     }))
 }
 
@@ -373,6 +439,11 @@ pub struct PairingDeviceView {
     pub revoked: bool,
     /// RFC 3339 revoke instant, or `null` while active.
     pub revoked_at: Option<String>,
+    /// Which proof confirmed this enrollment, as a stable identifier — or `null` for a device
+    /// enrolled before the confirmation requirement existed. The UI must render `null` as "not
+    /// recorded" and **never** as a method: this field is evidence, and a device whose enrollment
+    /// nobody confirmed must not read as one that somebody did.
+    pub confirmed_by: Option<&'static str>,
     /// Sort key, excluded from the wire (view ordering only).
     #[serde(skip)]
     created_at_unix: i64,
@@ -386,6 +457,7 @@ impl From<&DurablePairingDevice> for PairingDeviceView {
             created_at: rfc3339(device.created_at_unix),
             revoked: device.revoked_at_unix.is_some(),
             revoked_at: device.revoked_at_unix.map(rfc3339),
+            confirmed_by: device.confirmed_by.map(PairingConfirmationMethod::as_str),
             created_at_unix: device.created_at_unix,
         }
     }
@@ -535,32 +607,118 @@ mod tests {
             .unwrap()
     }
 
-    async fn operator_session(state: &AppState) -> String {
+    /// The operator's password in these tests. The exchange now needs a confirmation, and for most
+    /// of these cases the password is the cheapest true one.
+    const OPERATOR_PASSWORD: &str = "Cavalo-Certo9!";
+
+    /// Create the operator and sign in, returning `(session token, user id)`.
+    async fn operator_account(state: &AppState) -> (String, String) {
         let (status, user) = json_response(
             crate::router(state.clone())
                 .oneshot(json_request(
                     Method::POST,
                     "/v1/users",
-                    json!({ "username": "amelia.marques", "password": "Cavalo-Certo9!" }),
+                    json!({ "username": "amelia.marques", "password": OPERATOR_PASSWORD }),
                 ))
                 .await
                 .unwrap(),
         )
         .await;
         assert_eq!(status, StatusCode::CREATED, "create user: {user}");
+        let user_id = user["id"].as_str().unwrap().to_owned();
         let (status, session) = json_response(
             crate::router(state.clone())
                 .oneshot(json_request(
                     Method::POST,
                     "/v1/session",
-                    json!({ "user_id": user["id"], "password": "Cavalo-Certo9!" }),
+                    json!({ "user_id": user["id"], "password": OPERATOR_PASSWORD }),
                 ))
                 .await
                 .unwrap(),
         )
         .await;
         assert_eq!(status, StatusCode::OK, "sign in: {session}");
-        session["token"].as_str().unwrap().to_owned()
+        (session["token"].as_str().unwrap().to_owned(), user_id)
+    }
+
+    async fn operator_session(state: &AppState) -> String {
+        operator_account(state).await.0
+    }
+
+    /// Enrol and confirm a real second factor for `user_id`, returning the base32 secret.
+    ///
+    /// The enrolment is confirmed with the code for the **previous** step, deliberately: confirming
+    /// stores the accepted step as the replay floor, so confirming with the *current* step would
+    /// leave every code this test could then present already spent. Using step `N-1` (inside the
+    /// ±1 acceptance window) leaves step `N` unspent, which is what a real operator has when they
+    /// pair a device some time after enrolling.
+    async fn enrol_confirmed_totp(state: &AppState, token: &str, user_id: &str) -> String {
+        let (status, started) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    &format!("/v1/users/{user_id}/two-factor/totp/enrol"),
+                    token,
+                    Value::Null,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "enrol totp: {started}");
+        let secret = started["secret"].as_str().unwrap().to_owned();
+
+        let previous_step = OffsetDateTime::now_utc().unix_timestamp() - crate::totp::STEP_SECONDS;
+        let code = crate::totp::code_for_secret(&secret, previous_step).unwrap();
+        let (status, confirmed) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    &format!("/v1/users/{user_id}/two-factor/totp/confirm"),
+                    token,
+                    json!({ "code": code }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "confirm totp: {confirmed}");
+        secret
+    }
+
+    /// A live code for `secret` at the current step.
+    fn live_totp_code(secret: &str) -> String {
+        crate::totp::code_for_secret(secret, OffsetDateTime::now_utc().unix_timestamp()).unwrap()
+    }
+
+    /// Narrow this deployment's accepted confirmation methods.
+    async fn accept_only(state: &AppState, methods: &[PairingConfirmationMethod]) {
+        state
+            .settings
+            .write()
+            .await
+            .auth
+            .device_pairing
+            .accepted = methods.iter().copied().collect();
+    }
+
+    /// The operator's enrolled devices. The refusal tests assert on this: "did not pair" means no
+    /// device row exists, not merely that the response was an error.
+    async fn devices_of(state: &AppState, operator: &str) -> Vec<Value> {
+        let (status, devices) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::GET,
+                    "/v1/pairing/devices",
+                    operator,
+                    Value::Null,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "list devices: {devices}");
+        devices["devices"].as_array().cloned().unwrap_or_default()
     }
 
     async fn mint_code(state: &AppState, operator: &str) -> String {
@@ -581,18 +739,29 @@ mod tests {
         minted["code"].as_str().unwrap().to_owned()
     }
 
-    async fn exchange(state: &AppState, code: &str) -> (StatusCode, Value) {
+    /// Redeem `code` carrying an arbitrary confirmation object.
+    async fn exchange_with(
+        state: &AppState,
+        code: &str,
+        confirmation: Value,
+    ) -> (StatusCode, Value) {
         json_response(
             crate::router(state.clone())
                 .oneshot(json_request(
                     Method::POST,
                     "/v1/pairing/exchange",
-                    json!({ "code": code }),
+                    json!({ "code": code, "confirmation": confirmation }),
                 ))
                 .await
                 .unwrap(),
         )
         .await
+    }
+
+    /// Redeem `code` with the operator's correct password — the default happy path for the tests
+    /// that are about something other than the confirmation itself.
+    async fn exchange(state: &AppState, code: &str) -> (StatusCode, Value) {
+        exchange_with(state, code, json!({ "password": OPERATOR_PASSWORD })).await
     }
 
     async fn session_user(state: &AppState, token: &str) -> Value {
@@ -759,6 +928,302 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    // =============================================================================================
+    // t70 — the exchange must be confirmed
+    //
+    // Every refusal test asserts that nothing was PAIRED, not merely that the response was an
+    // error: no companion token in the body, and no device row in the operator's list. "Renders a
+    // refusal" is not the guard; "does not pair" is.
+    // =============================================================================================
+
+    #[tokio::test]
+    async fn exchange_without_a_confirmation_does_not_pair() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let code = mint_code(&state, &operator).await;
+
+        // A body carrying no confirmation at all — the shape every pre-t70 client sent.
+        let (status, body) = json_response(
+            crate::router(state.clone())
+                .oneshot(json_request(
+                    Method::POST,
+                    "/v1/pairing/exchange",
+                    json!({ "code": code }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(body["token"].is_null(), "no companion token was issued");
+        assert!(
+            devices_of(&state, &operator).await.is_empty(),
+            "an unconfirmed exchange enrolled no device"
+        );
+    }
+
+    #[tokio::test]
+    async fn exchange_with_a_wrong_password_does_not_pair() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, body) =
+            exchange_with(&state, &code, json!({ "password": "Cavalo-Errado9!" })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(body["token"].is_null(), "no companion token was issued");
+        assert!(
+            devices_of(&state, &operator).await.is_empty(),
+            "a wrong password enrolled no device"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_wrong_totp_code_does_not_pair() {
+        // A stored TOTP secret needs a durable credential store, so this case cannot run
+        // on the in-memory state the password cases use.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let (operator, user_id) = operator_account(&state).await;
+        enrol_confirmed_totp(&state, &operator, &user_id).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, body) = exchange_with(&state, &code, json!({ "totp_code": "000000" })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(
+            devices_of(&state, &operator).await.is_empty(),
+            "a wrong code enrolled no device"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_totp_code_confirms_the_exchange_without_a_password() {
+        // A stored TOTP secret needs a durable credential store, so this case cannot run
+        // on the in-memory state the password cases use.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let (operator, user_id) = operator_account(&state).await;
+        let secret = enrol_confirmed_totp(&state, &operator, &user_id).await;
+        let code = mint_code(&state, &operator).await;
+
+        // No password anywhere in this body — the point of the password-free path.
+        let (status, exchanged) =
+            exchange_with(&state, &code, json!({ "totp_code": live_totp_code(&secret) })).await;
+        assert_eq!(status, StatusCode::OK, "exchange: {exchanged}");
+        assert_eq!(exchanged["confirmed_by"], "totp_code");
+        assert_eq!(
+            session_user(&state, exchanged["token"].as_str().unwrap()).await["username"],
+            "amelia.marques"
+        );
+        let devices = devices_of(&state, &operator).await;
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0]["confirmed_by"], "totp_code");
+    }
+
+    #[tokio::test]
+    async fn a_deployment_can_accept_only_password_free_confirmation() {
+        // A stored TOTP secret needs a durable credential store, so this case cannot run
+        // on the in-memory state the password cases use.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let (operator, user_id) = operator_account(&state).await;
+        let secret = enrol_confirmed_totp(&state, &operator, &user_id).await;
+        accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
+
+        // The operator's own, correct password is now not an accepted proof.
+        let refused_code = mint_code(&state, &operator).await;
+        let (status, body) = exchange(&state, &refused_code).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "password refused: {body}");
+        assert!(
+            devices_of(&state, &operator).await.is_empty(),
+            "a correct-but-unaccepted password enrolled no device"
+        );
+
+        // The accepted method still works.
+        let code = mint_code(&state, &operator).await;
+        let (status, exchanged) =
+            exchange_with(&state, &code, json!({ "totp_code": live_totp_code(&secret) })).await;
+        assert_eq!(status, StatusCode::OK, "totp accepted: {exchanged}");
+        assert_eq!(exchanged["confirmed_by"], "totp_code");
+    }
+
+    #[tokio::test]
+    async fn a_deployment_accepting_nothing_pairs_nothing() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        // `AuthSettings::validate` refuses this at the settings door; the gate refuses it here too,
+        // so the unsatisfiable configuration is closed at both ends rather than defaulting open.
+        accept_only(&state, &[]).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, body) = exchange(&state, &code).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(
+            devices_of(&state, &operator).await.is_empty(),
+            "an empty accepted set enrolled no device"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_totp_code_cannot_confirm_two_pairings() {
+        // A stored TOTP secret needs a durable credential store, so this case cannot run
+        // on the in-memory state the password cases use.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let (operator, user_id) = operator_account(&state).await;
+        let secret = enrol_confirmed_totp(&state, &operator, &user_id).await;
+        let presented = live_totp_code(&secret);
+
+        let first = mint_code(&state, &operator).await;
+        let (status, exchanged) =
+            exchange_with(&state, &first, json!({ "totp_code": presented })).await;
+        assert_eq!(status, StatusCode::OK, "first exchange: {exchanged}");
+
+        // The replay guard in `totp::verify_totp_for_user` has spent this step. Same code, fresh
+        // pairing code: refused, and the second device is not enrolled.
+        let second = mint_code(&state, &operator).await;
+        let (status, body) = exchange_with(&state, &second, json!({ "totp_code": presented })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "replay refused: {body}");
+        assert_eq!(
+            devices_of(&state, &operator).await.len(),
+            1,
+            "the replayed code enrolled no second device"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_pending_second_factor_cannot_confirm_a_pairing() {
+        // A stored TOTP secret needs a durable credential store, so this case cannot run
+        // on the in-memory state the password cases use.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let (operator, user_id) = operator_account(&state).await;
+        // Enrol but never confirm: a secret exists, an active factor does not.
+        let (status, started) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    &format!("/v1/users/{user_id}/two-factor/totp/enrol"),
+                    &operator,
+                    Value::Null,
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "enrol totp: {started}");
+        let secret = started["secret"].as_str().unwrap().to_owned();
+        accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
+
+        let code = mint_code(&state, &operator).await;
+        let (status, body) =
+            exchange_with(&state, &code, json!({ "totp_code": live_totp_code(&secret) })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "refused: {body}");
+        assert!(
+            devices_of(&state, &operator).await.is_empty(),
+            "an unconfirmed enrolment enrolled no device"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_failed_confirmation_burns_the_pairing_code() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        let code = mint_code(&state, &operator).await;
+
+        let (status, _) = exchange_with(&state, &code, json!({ "password": "Cavalo-Errado9!" })).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // Retrying the same code with the CORRECT password is refused as an unknown code: one
+        // attempt per code, so a live code is not an unlimited guessing target.
+        let (status, body) = exchange(&state, &code).await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED, "code is spent: {body}");
+        assert!(devices_of(&state, &operator).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_device_row_written_before_the_confirmation_still_rehydrates() {
+        // `DurablePairingDevice` is `deny_unknown_fields` and `from_store` SKIPS a row it cannot
+        // parse, so a `confirmed_by` without `#[serde(default)]` would not fail loudly — it would
+        // quietly drop every device enrolled before t70 out of the operator's list, taking the
+        // ability to revoke them with it. This pins the compatibility, not the field.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let operator = operator_session(&state).await;
+        let user_id = {
+            let users = state.users.read().await;
+            users.values().find(|u| u.active).unwrap().id.0
+        };
+
+        let device_id = Uuid::new_v4().to_string();
+        let legacy = json!({
+            "device_id": device_id,
+            "user_id": user_id,
+            "label": "Telemóvel antigo",
+            "token_sha256": session_token_digest("legacy-companion-token"),
+            "created_at_unix": OffsetDateTime::now_utc().unix_timestamp(),
+            "revoked_at_unix": null,
+        })
+        .to_string();
+        let store = state.store.clone().expect("a data dir gives a store");
+        let id = device_id.clone();
+        store
+            .persist_blocking_async(move |tx| tx.upsert_pairing_device(&id, &legacy))
+            .await
+            .expect("write the legacy row");
+
+        let restarted = AppState::with_data_dir(temp.path.clone());
+        let devices = devices_of(&restarted, &operator).await;
+        assert_eq!(devices.len(), 1, "the pre-t70 row survived rehydration");
+        assert_eq!(devices[0]["device_id"], device_id);
+        // Not recorded, and rendered as such — never as a method nobody proved.
+        assert!(devices[0]["confirmed_by"].is_null());
+    }
+
+    #[tokio::test]
+    async fn the_mint_advertises_the_accepted_methods() {
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+
+        let (status, minted) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    &operator,
+                    json!({}),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "mint: {minted}");
+        assert_eq!(
+            minted["accepted_confirmation_methods"],
+            json!(["password", "totp_code"]),
+            "an unconfigured instance accepts every implemented method"
+        );
+
+        accept_only(&state, &[PairingConfirmationMethod::TotpCode]).await;
+        let (status, minted) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    &operator,
+                    json!({}),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "mint: {minted}");
+        assert_eq!(
+            minted["accepted_confirmation_methods"],
+            json!(["totp_code"])
+        );
     }
 
     #[tokio::test]
