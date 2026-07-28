@@ -12,8 +12,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { NewEntityPage } from './NewEntityPage';
-import { ENTITY_KINDS, type EntityKind } from '../../api/types';
+import { ENTITY_KINDS, type EntityKind, type UpdateEntityBody } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
+
+/** `true` only while `UpdateEntityBody` has no `kind` field; otherwise `never`, which will not compile. */
+type EntityKindIsNotEditable = 'kind' extends keyof UpdateEntityBody ? never : true;
 
 const CREATED = {
   id: 'ent-1',
@@ -131,5 +134,21 @@ describe('NewEntityPage — the legal-form select follows the allowlist', () => 
     // that fell outside the list, never overwrite a permitted one the operator picked.
     await waitFor(() => expect(legalForm().value).toBe('Associacao'));
     expect(legalForm().value).toBe('Associacao');
+  });
+});
+
+describe('NewEntityPage — the allowlist is create-only', () => {
+  it('has no entity-kind field to edit, which is what satisfies §6.4 by construction', () => {
+    // t54 §6.4 obliges an entity EDIT form to keep offering a record's current kind once that kind
+    // stops being creatable, so saving an unrelated field cannot force a type change. Today no such
+    // form exists to fix: entity kind is immutable server-side and is absent from the PATCH body,
+    // and `NewEntityPage` holds the only entity-kind <Select> in the app.
+    //
+    // The real assertion is the TYPE: if a later lane adds `kind` to `UpdateEntityBody`,
+    // `EntityKindIsNotEditable` resolves to `never` and this stops COMPILING. Whoever adds it then
+    // has to face §6.4 deliberately instead of shipping an edit form that silently narrows a saved
+    // record's type. Do not "fix" that by deleting this — build the current-kind preservation.
+    const entityKindIsNotEditable: EntityKindIsNotEditable = true;
+    expect(entityKindIsNotEditable).toBe(true);
   });
 });
