@@ -38,6 +38,7 @@ const GUARDED_MUTATORS: &[&str] = &[
     "cluster_feed.rs::cluster_swap_loaded_state",
     "entities.rs::create_entity",
     "entities.rs::patch_entity",
+    "entities.rs::set_entity_archived",
     "followups.rs::complete_follow_up",
     "followups.rs::create_follow_up",
     "followups.rs::patch_follow_up",
