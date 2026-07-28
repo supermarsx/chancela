@@ -4831,11 +4831,13 @@ describe('SettingsPage', () => {
       legal_completion_claimed: false,
       legal_disposal_completed: false,
     });
-    expect(
-      await within(candidateRow!).findByText(
-        /evidence_acknowledged · retention-candidate-resolution-1/,
-      ),
-    ).toBeTruthy();
+    // The disposition token and the resolution id used to share one text node. t98 split them: the
+    // token now sits in its own `<code className="mono">` beside the resolved copy. Both are still
+    // on screen verbatim — which is the point of keeping the identifier — so both are still asserted,
+    // just separately. Deliberately NOT asserting the pt-PT sentence: that would turn a correct
+    // wording fix red.
+    expect(await within(candidateRow!).findByText('evidence_acknowledged')).toBeTruthy();
+    expect(within(candidateRow!).getByText('retention-candidate-resolution-1')).toBeTruthy();
     expect(within(candidateRow!).getByText('Disposição local existente')).toBeTruthy();
     expect(
       calls.some(
@@ -4891,9 +4893,9 @@ describe('SettingsPage', () => {
       legal_disposal_completed: false,
     });
     expect(body.disposition).not.toBe('evidence_acknowledged');
-    expect(
-      await within(blockedRow!).findByText(/blocked_follow_up · retention-candidate-resolution-1/),
-    ).toBeTruthy();
+    // Token and id are separate elements since t98; see the note on the acknowledged case above.
+    expect(await within(blockedRow!).findByText('blocked_follow_up')).toBeTruthy();
+    expect(within(blockedRow!).getByText('retention-candidate-resolution-1')).toBeTruthy();
   });
 
   it('shows already queued review state for a due retention candidate without posting again', async () => {
@@ -4964,9 +4966,9 @@ describe('SettingsPage', () => {
     const candidateRow = (await within(candidatesPanel!).findByText('archive-doc-1')).closest('tr');
     expect(candidateRow).toBeTruthy();
     expect(within(candidateRow!).getByText('Revisão já na fila')).toBeTruthy();
-    expect(
-      within(candidateRow!).getByText(/awaiting_review · retention-exec-queued-due/),
-    ).toBeTruthy();
+    // Token and id are separate elements since t98; see the note on the acknowledged case above.
+    expect(within(candidateRow!).getByText('awaiting_review')).toBeTruthy();
+    expect(within(candidateRow!).getByText('retention-exec-queued-due')).toBeTruthy();
     expect(within(candidateRow!).getByText(/Pedido em/)).toBeTruthy();
     expect(
       within(candidateRow!).queryByRole('button', { name: 'Pedir revisão de evidência' }),

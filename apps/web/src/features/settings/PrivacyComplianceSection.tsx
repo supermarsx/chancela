@@ -79,6 +79,10 @@ import {
   dpiaSectionTitleKey,
 } from '../../i18n/dpiaTemplateLabels';
 import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
+import {
+  useRetentionStatusResolver,
+  type RetentionStatusGroup,
+} from '../../i18n/retentionExecutionStatusFallback';
 // The record editors are real pages now (t55). The form shapes, the record↔form↔body conversions,
 // the labels and the four forms themselves moved into `privacy/`, so the list panels below and the
 // five record pages share ONE definition of each rather than two that can drift.
@@ -282,6 +286,64 @@ function retentionOperatorReviewDecisionLabel(
   decision: RetentionOperatorReviewDecision,
 ): string {
   return t(RETENTION_OPERATOR_REVIEW_DECISION_LABEL_KEYS[decision]);
+}
+
+/**
+ * A server-emitted retention token, as a badge plus the sentence saying what it means, with the
+ * identifier kept beside it.
+ *
+ * Ten sites on this surface used to render their raw wire token as the whole visible value; this and
+ * {@link RetentionExecutionStatusTag} are the two shapes they now go through. The identifier is not
+ * dropped — a compliance panel gets pasted into a support thread and the token is the stable thing
+ * to search for — it just stops being the only thing on screen.
+ *
+ * NOT for `PrivacyComplianceSection.tsx::key`, the 28 `no_claims` DPIA flags in this same file.
+ * Those name legal claims the product does not make, and stay verbatim in `mono` with no copy
+ * wrapped around them; `dpiaTemplateLabels.ts` and `rawIdentifierRenderGuards.test.ts` both record
+ * that. The classification here is per expression, not per file.
+ *
+ * `token` is typed `string` rather than each field's literal union on purpose: that widening is what
+ * makes the site a prop rather than a raw JSX text child, which is the shape
+ * `rawIdentifierRenderGuards.test.ts` records as resolved.
+ */
+function RetentionStatus({ group, token }: { group: RetentionStatusGroup; token: string }) {
+  const describe = useRetentionStatusResolver();
+  const status = describe(group, token);
+  return (
+    <span className="external-validator-status">
+      <Badge tone={status.tone} wrap>
+        {status.label}
+      </Badge>
+      <span className="muted">{status.meaning}</span>
+      <code className="mono">{token}</code>
+    </span>
+  );
+}
+
+/**
+ * The execution status, which does NOT go through the fallback module.
+ *
+ * `RetentionExecutionStatus` already has operator copy in the shipped `Catalog`
+ * (`settings.privacy.execution.status.*`, translated across all 14 locales) reached through
+ * {@link retentionExecutionStatusLabel}. Giving these three tokens a second table in
+ * `retentionExecutionStatusFallback.ts` would split their source of truth, so this reuses the
+ * existing label and tone and adds only the identifier beside them. The divergence gate still covers
+ * the population by checking `RETENTION_EXECUTION_STATUSES` against the Rust enum.
+ *
+ * The local `token` widens the literal union to `string` for the same reason as above — without it
+ * the `<code>` child would itself be a raw-identifier render site.
+ */
+function RetentionExecutionStatusTag({ status }: { status: RetentionExecutionStatus }) {
+  const t = useT();
+  const token: string = status;
+  return (
+    <span className="external-validator-status">
+      <Badge tone={retentionExecutionStatusTone(status)}>
+        {retentionExecutionStatusLabel(t, status)}
+      </Badge>
+      <code className="mono">{token}</code>
+    </span>
+  );
 }
 
 function executionDecisionFilterOptions(t: TFunction) {
@@ -1795,7 +1857,10 @@ function RetentionDryRunPanel({
       {report ? (
         <div className="stack">
           <p>
-            <strong>{t('settings.privacy.retention.dryRun.mode')}:</strong> {report.mode} ·{' '}
+            <strong>{t('settings.privacy.retention.dryRun.mode')}:</strong>{' '}
+            <RetentionStatus group="dryRunMode" token={report.mode} />
+          </p>
+          <p>
             <strong>{t('settings.privacy.retention.dryRun.executionSupported')}:</strong>{' '}
             {String(report.execution_supported)} · <strong>destructive_execution_supported:</strong>{' '}
             {String(report.destructive_execution_supported)}
@@ -2001,9 +2066,12 @@ function RetentionDueCandidatesPanel({
                       </span>
                       <span className="muted">{candidate.next_step}</span>
                       <span className="muted">
-                        {t('settings.privacy.dueCandidates.evidenceState')}:{' '}
-                        {candidate.candidate_evidence_state}
+                        {t('settings.privacy.dueCandidates.evidenceState')}:
                       </span>
+                      <RetentionStatus
+                        group="evidenceState"
+                        token={candidate.candidate_evidence_state}
+                      />
                       <span className="muted">
                         {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
                         {candidate.evidence_next_step}
@@ -2013,13 +2081,15 @@ function RetentionDueCandidatesPanel({
                           <Badge tone="ok">
                             {t('settings.privacy.dueCandidates.boundedRecorded')}
                           </Badge>
-                          <span>
-                            {priorExecution.execution_status} · {priorExecution.outcome}
-                          </span>
+                          <RetentionExecutionStatusTag status={priorExecution.execution_status} />
+                          <RetentionStatus group="outcome" token={priorExecution.outcome} />
                           <span className="muted">
-                            {t('settings.privacy.dueCandidates.priorEvidence')}:{' '}
-                            {priorExecution.evidence_state}
+                            {t('settings.privacy.dueCandidates.priorEvidence')}:
                           </span>
+                          <RetentionStatus
+                            group="evidenceState"
+                            token={priorExecution.evidence_state}
+                          />
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.executionRequested', {
                               id: priorExecution.execution_id,
@@ -2045,9 +2115,11 @@ function RetentionDueCandidatesPanel({
                           <Badge tone="accent">
                             {t('settings.privacy.dueCandidates.localDispositionRecorded')}
                           </Badge>
-                          <span>
-                            {latestResolution.disposition} · {latestResolution.id}
-                          </span>
+                          <RetentionStatus
+                            group="disposition"
+                            token={latestResolution.disposition}
+                          />
+                          <span className="mono">{latestResolution.id}</span>
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.recordedByOn', {
                               actor: latestResolution.recorded_by,
@@ -2215,27 +2287,28 @@ function RetentionDueCandidatesPanel({
                       )}
                       {priorExecution ? (
                         <>
-                          <span className="muted">
-                            {priorExecution.execution_status} · {priorExecution.execution_id}
-                          </span>
+                          <RetentionExecutionStatusTag status={priorExecution.execution_status} />
+                          <span className="muted mono">{priorExecution.execution_id}</span>
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.noDuplicate')}
                           </span>
                         </>
                       ) : queuedReview ? (
                         <>
-                          <span className="muted">
-                            {queuedReview.execution_status} · {queuedReview.id}
-                          </span>
+                          <RetentionExecutionStatusTag status={queuedReview.execution_status} />
+                          <span className="muted mono">{queuedReview.id}</span>
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.requestedAt', {
                               date: formatDateTime(queuedReview.requested_at),
                             })}
                           </span>
                           <span className="muted">
-                            {t('settings.privacy.dueCandidates.queueEvidenceState')}:{' '}
-                            {queuedReview.evidence_state}
+                            {t('settings.privacy.dueCandidates.queueEvidenceState')}:
                           </span>
+                          <RetentionStatus
+                            group="evidenceState"
+                            token={queuedReview.evidence_state}
+                          />
                           <span className="muted">
                             {t('settings.privacy.dueCandidates.queueNextStep')}:{' '}
                             {queuedReview.evidence_next_step}
@@ -2451,7 +2524,7 @@ function RetentionExecutionReviewQueue({
                     <Badge tone={retentionExecutionStatusTone(record.execution_status)}>
                       {retentionExecutionStatusLabel(t, record.execution_status)}
                     </Badge>
-                    <span className="muted">{record.outcome}</span>
+                    <RetentionStatus group="outcome" token={record.outcome} />
                     <span className="muted">
                       {retentionOperatorReviewDecisionLabel(t, record.operator_review_decision)}
                     </span>
@@ -2513,8 +2586,9 @@ function RetentionExecutionReviewQueue({
                   <div className="stack--tight">
                     <span>{record.workflow.next_step}</span>
                     <span className="muted">
-                      {t('settings.privacy.dueCandidates.evidenceState')}: {record.evidence_state}
+                      {t('settings.privacy.dueCandidates.evidenceState')}:
                     </span>
+                    <RetentionStatus group="evidenceState" token={record.evidence_state} />
                     <span className="muted">
                       {t('settings.privacy.dueCandidates.evidenceNextStep')}:{' '}
                       {record.evidence_next_step}

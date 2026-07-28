@@ -81,11 +81,18 @@ interface ExpectedSite {
  * token reaches JSX as a component prop rather than a text child. That absence is what a fixed
  * site looks like.
  *
- * `features/books/BookDetailPage.tsx::report.candidate_classification.preservation_status` is absent
- * for the same reason (t98): it resolves through `paperBookPreservationFallback.ts` and reaches JSX
- * as a `token: string` prop. Note that a resolved site does NOT stop rendering its identifier — it
- * still shows it in `mono` beside the copy; what changes is that the identifier is no longer the
- * whole visible value, and the widened prop type is what takes it out of this scan.
+ * The fourteen sites t98 resolved are absent for the same reason — through
+ * `paperBookPreservationFallback.ts`, `dataRecoveryStatusFallback.ts` and
+ * `retentionExecutionStatusFallback.ts`, each reaching JSX as a `token: string` prop. Note that a
+ * resolved site does NOT stop rendering its identifier: it still shows it in `mono` beside the copy.
+ * What changes is that the identifier is no longer the whole visible value, and the widened prop
+ * type is what takes it out of this scan.
+ *
+ * So the population shrinking is the expected direction of travel, and it must shrink only via a
+ * label module. A site that vanishes because someone deleted the render, or widened a type without
+ * adding copy, looks identical here — which is why each of those three modules carries its own
+ * both-direction gate against the Rust emitter. This scan says WHICH tokens reach the screen raw;
+ * those tests say whether every token that can reach the screen has a sentence.
  */
 const EXPECTED: readonly ExpectedSite[] = [
   // --- Correct as they stand: identifier presented as an identifier -----------------------------
@@ -122,71 +129,16 @@ const EXPECTED: readonly ExpectedSite[] = [
     unresolved: false,
   },
 
-  // --- Mapped for a second pass: a raw token standing in for copy -------------------------------
-  // Each is an ordinary operational status, not a legal claim, so each is translatable. They are
-  // recorded rather than fixed here because they are three coherent features (paper-book import,
-  // data recovery, retention execution) that each want their own label module and their own
-  // divergence guard against Rust — not a tail-end of this lane.
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::candidate.candidate_evidence_state',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::latestResolution.disposition',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::priorExecution.evidence_state',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::priorExecution.execution_status',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::priorExecution.outcome',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::queuedReview.evidence_state',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::queuedReview.execution_status',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::record.evidence_state',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::record.outcome',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
-  {
-    site: 'features/settings/PrivacyComplianceSection.tsx::report.mode',
-    mono: false,
-    classification: 'operational',
-    unresolved: true,
-  },
+  // --- Nothing is pending -----------------------------------------------------------------------
+  // This list once carried 14 entries with `unresolved: true`, mapped for a second pass. t98 closed
+  // all of them across three commits — paper-book import, data recovery, retention execution — each
+  // with its own label module and its own divergence guard against Rust. Every remaining entry above
+  // is correct as it stands.
+  //
+  // A NEW entry here should be `unresolved: true` only long enough to be classified. If it is
+  // operational, it wants a label module and a Rust-derived divergence guard, and then it leaves
+  // this list entirely, because the resolved shape passes the token as a prop. If it names a legal
+  // claim the product does not make, it stays, in `mono`, with `unresolved: false` — forever.
 ];
 
 interface FoundSite {
@@ -270,13 +222,24 @@ function monoAncestor(node: ts.Node): boolean {
 
 describe('the raw-identifier scan actually sees the codebase', () => {
   it('resolves types and finds a plausible population', () => {
-    const found = scan();
+    const found = scan().map((f) => f.site);
     // Non-vacuity: a program that failed to resolve, or a walk that matched nothing, would make the
     // set comparison below pass against an empty population.
-    expect(found.length).toBeGreaterThan(10);
-    expect(found.map((f) => f.site)).toContain(
+    //
+    // This used to be a floor of `> 10`, which held while 14 sites were awaiting copy. t98 resolved
+    // all 14 and the population is now 5, so a size floor no longer distinguishes "the scan worked
+    // and most sites are fixed" from "the scan resolved nothing" — and it will keep shrinking. Named
+    // ANCHORS do the job at any size: both are `no_claims` families that must stay raw forever, so
+    // neither can legitimately leave this list, and a checker that failed to resolve types would
+    // find neither.
+    expect(found, 'the DPIA no-claims flags are not being seen — did the program resolve?').toContain(
       'features/settings/PrivacyComplianceSection.tsx::key',
     );
+    expect(
+      found,
+      'the paper-book OCR no-claims flags are not being seen — did the program resolve?',
+    ).toContain('features/books/BookDetailPage.tsx::flag');
+    expect(found.length).toBeGreaterThanOrEqual(2);
   }, SCAN_TIMEOUT);
 
   it('does not flag a site that resolves its token through a label module', () => {
