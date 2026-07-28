@@ -1719,10 +1719,22 @@ async fn cc_sign_rejects_real_tsl_source_with_invalid_signature() {
         "unauthenticated TSL must fail closed: {err}"
     );
     let msg = err["error"].as_str().unwrap_or_default();
+    // t61-e2: a list whose own signature does not authenticate is not a trust *decision* about the
+    // signer at all — it is the operator's anchor configuration. This used to be reported as an
+    // `Unknown` trust outcome for the signer's service, which sent the operator to diagnose a
+    // service that was never the problem. It must now name the anchor, and must not report a
+    // trusted-list status label for a list nothing vouches for.
     assert!(
-        msg.contains("Lista de Confiança") && msg.contains("Unknown"),
-        "invalid TSL signature is reported as an unknown trust decision: {err}"
+        msg.contains("Lista de Confiança") && msg.contains("âncora de confiança"),
+        "an unauthenticated TSL is reported as the operator's anchor configuration: {err}"
     );
+    for status_label in ["Unknown", "Withdrawn", "Granted"] {
+        assert!(
+            !msg.contains(status_label),
+            "an unauthenticated list must not be reported as a {status_label} verdict about the \
+             signer: {err}"
+        );
+    }
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 

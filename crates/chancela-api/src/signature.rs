@@ -3735,6 +3735,14 @@ pub(crate) fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiErro
             "o certificado do Cartão de Cidadão não está ativo na Lista de Confiança ({})",
             status_label(status)
         )),
+        // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
+        // are client-actionable, so both are 422 — never the `other =>` 502 below.
+        S::TrustAnchorNotConfigured { .. } => {
+            ApiError::Unprocessable(TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned())
+        }
+        S::TrustedListNotAnchored { .. } => {
+            ApiError::Unprocessable(TRUSTED_LIST_NOT_ANCHORED_PT.to_owned())
+        }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do Cartão de Cidadão".to_owned(),
         ),
@@ -5572,6 +5580,9 @@ fn remote_batch_doc_error_message(e: &chancela_signing::SigningError) -> String 
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(*status)
         ),
+        // t61-e2: the operator's own trust-anchor configuration, not the signer's service.
+        S::TrustAnchorNotConfigured { .. } => TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned(),
+        S::TrustedListNotAnchored { .. } => TRUSTED_LIST_NOT_ANCHORED_PT.to_owned(),
         S::MissingIssuerCertificate => {
             "não foi possível resolver o emissor do certificado do signatário".to_owned()
         }
@@ -5930,6 +5941,14 @@ fn map_remote_error(e: chancela_signing::SigningError) -> ApiError {
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(status)
         )),
+        // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
+        // are client-actionable, so both are 422 — never the `other =>` 502 below.
+        S::TrustAnchorNotConfigured { .. } => {
+            ApiError::Unprocessable(TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned())
+        }
+        S::TrustedListNotAnchored { .. } => {
+            ApiError::Unprocessable(TRUSTED_LIST_NOT_ANCHORED_PT.to_owned())
+        }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
         ),
@@ -9104,6 +9123,14 @@ pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(status)
         )),
+        // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
+        // are client-actionable, so both are 422 — never the `other =>` 502 below.
+        S::TrustAnchorNotConfigured { .. } => {
+            ApiError::Unprocessable(TRUST_ANCHOR_NOT_CONFIGURED_PT.to_owned())
+        }
+        S::TrustedListNotAnchored { .. } => {
+            ApiError::Unprocessable(TRUSTED_LIST_NOT_ANCHORED_PT.to_owned())
+        }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
         ),
@@ -9123,6 +9150,26 @@ pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
 pub(crate) fn cmd_config_err(e: chancela_cmd::CmdError) -> ApiError {
     ApiError::Unprocessable(format!("configuração CMD inválida: {e}"))
 }
+
+/// Interim pt-PT diagnostics for the two trust-anchor faults t61-e2 split out of
+/// [`chancela_signing::SigningError::UntrustedService`].
+///
+/// **t61-e2 owns the signal and the classification; t58-e3 owns the wording.** The signal is that
+/// these are the operator's own anchor configuration, not the signer's trust service, and the
+/// classification is that both are client-actionable 422s — without an explicit arm they fall to
+/// each mapper's `other =>` catch-all and are reported as a 502 gateway error, which is simply
+/// false about a local configuration fault. The strings live here, in one place, so t58's catalog
+/// replaces them without touching any mapper.
+pub(crate) const TRUST_ANCHOR_NOT_CONFIGURED_PT: &str = concat!(
+    "não está configurada nenhuma âncora de confiança da Lista de Confiança (TSL), ",
+    "pelo que nenhuma lista pode ser autenticada"
+);
+
+/// See [`TRUST_ANCHOR_NOT_CONFIGURED_PT`]. Interim copy; t58-e3 owns the wording.
+pub(crate) const TRUSTED_LIST_NOT_ANCHORED_PT: &str = concat!(
+    "a Lista de Confiança (TSL) não foi autenticada pelas âncoras de confiança ",
+    "configuradas; verifique se a âncora de confiança está atualizada"
+);
 
 /// The stable string label for a trusted-list status (used in payloads and views).
 pub(crate) fn status_label(status: TrustedListStatus) -> String {
@@ -10433,19 +10480,118 @@ mod tests {
             "a settings-provisioned SHA-256 anchor must authenticate the list at signing time"
         );
 
-        // 3. Fail-closed: no settings anchor, so nothing vouches for the signer.
+        // 3. Fail-closed: no settings anchor, so nothing vouches for the signer. Since t61-e2 this
+        //    refuses with the anchor-configuration discriminator instead of resolving to a
+        //    non-trusted status — strictly stronger, and it no longer blames the signer's service.
+        //    Which of the two anchor errors applies depends on whether the runner's environment
+        //    contributes an anchor to the union; neither can ever be a trusted status.
         let mut policy = build_trust_policy(
             None,
             Some(test_anchored_tsl_source(&path, Vec::new(), Vec::new())),
         )
         .expect("policy builds");
-        assert_eq!(
-            policy
-                .issuer_status(&issuer_cert_der, now)
-                .expect("issuer status resolves"),
-            TrustedListStatus::Unknown,
-            "an install that provisions no anchor must still trust no list"
+        let unanchored = policy
+            .issuer_status(&issuer_cert_der, now)
+            .expect_err("an install that provisions no anchor must still trust no list");
+        assert!(
+            matches!(
+                unanchored,
+                chancela_signing::SigningError::TrustAnchorNotConfigured { .. }
+                    | chancela_signing::SigningError::TrustedListNotAnchored { .. }
+            ),
+            "an unanchored list must fail on the anchor configuration, not on the signer: \
+             {unanchored:?}"
         );
+    }
+
+    /// t61-e2 — the three trust failures this gate can hit are three **distinct** signals,
+    /// produced here through the real `build_trust_policy` so the discriminator is exercised on the
+    /// production path and not only on a hand-built client.
+    ///
+    /// Before t61-e2 all three surfaced as `UntrustedService`, whose message names the *signer's*
+    /// trust service. Case B is the one that hits real operators — a scheme-key rotation whose new
+    /// signing certificate is not anchored yet — and it read as "the signer's service is inactive"
+    /// when the truth was "your anchor is stale".
+    #[test]
+    fn trust_anchor_failure_states_are_distinct() {
+        use chancela_signing::{SigningError, TrustAnchorSource};
+
+        let (_issuer_key, issuer_cert_der) = test_self_signed_rsa("Chancela Test CA", 24);
+        let (tsl_xml, signer_cert_der) = test_signed_tsl(&issuer_cert_der);
+
+        let tmp = TempDir::new();
+        let path = tmp.0.join("discriminated-tsl.xml");
+        std::fs::write(&path, &tsl_xml).expect("write signed TSL");
+        let now = OffsetDateTime::now_utc();
+
+        // A — nothing configured anywhere. The anchor set is pinned explicitly empty, which is what
+        // an install with no settings anchor and no environment anchor resolves to; pinning it here
+        // keeps the case deterministic whatever the runner's environment holds.
+        let mut policy = TslTrustPolicy::from_client(
+            chancela_tsl::TslClient::new(chancela_tsl::BytesTslSource::new(tsl_xml.clone()))
+                .with_anchors(chancela_tsl::TslTrustAnchors::new()),
+        );
+        let absent = policy
+            .issuer_status(&issuer_cert_der, now)
+            .expect_err("no anchor at all must refuse");
+        assert_eq!(
+            absent,
+            SigningError::TrustAnchorNotConfigured {
+                checked: TrustAnchorSource::ApplicationSettings,
+            }
+        );
+
+        // B — an anchor *is* provisioned through settings, but it is the wrong certificate: the
+        // issuing CA's own certificate rather than the list's XML-DSig signer. The list grants that
+        // issuer, so "the signer's trust service is not active" would be flatly false here.
+        let mut policy = build_trust_policy(
+            None,
+            Some(test_anchored_tsl_source(
+                &path,
+                vec![test_pem_cert(&issuer_cert_der)],
+                Vec::new(),
+            )),
+        )
+        .expect("policy builds");
+        let stale = policy
+            .issuer_status(&issuer_cert_der, now)
+            .expect_err("an anchor that does not authenticate the list must refuse");
+        assert!(
+            matches!(
+                stale,
+                SigningError::TrustedListNotAnchored {
+                    configured_in: TrustAnchorSource::ApplicationSettings,
+                    anchor_count: 1,
+                }
+            ),
+            "{stale:?}"
+        );
+
+        // C — the anchor is correct, so the list authenticates and its verdict about a signer is
+        // real evidence. This issuer is simply not on the list, so `Unknown` is the honest answer
+        // and every (unchanged) raise site turns a non-`Granted` status into
+        // `UntrustedService { status }` — the only case that error has ever described truthfully.
+        let (_unlisted_key, unlisted_issuer_der) = test_self_signed_rsa("Unlisted Test CA", 25);
+        let mut policy = build_trust_policy(
+            None,
+            Some(test_anchored_tsl_source(
+                &path,
+                vec![test_pem_cert(&signer_cert_der)],
+                Vec::new(),
+            )),
+        )
+        .expect("policy builds");
+        let status = policy
+            .issuer_status(&unlisted_issuer_der, now)
+            .expect("an authenticated list resolves a status rather than an anchor fault");
+        assert_eq!(status, TrustedListStatus::Unknown);
+        assert_ne!(status, TrustedListStatus::Granted);
+        let untrusted_service = SigningError::UntrustedService { status };
+
+        // Three states, three signals — no two of them collapse.
+        assert_ne!(absent, stale);
+        assert_ne!(absent, untrusted_service);
+        assert_ne!(stale, untrusted_service);
     }
 
     /// A settings anchor that cannot be parsed must fail the policy build closed, never degrade to

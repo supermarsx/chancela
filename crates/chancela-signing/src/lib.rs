@@ -88,7 +88,7 @@ pub use pipeline::{
     sign_asic_e, sign_asic_s, sign_detached_cades, sign_pdf_pades, timestamp_pdf,
     timestamp_pdf_with_url,
 };
-pub use policy::{StaticTrustPolicy, TrustPolicy, TslTrustPolicy};
+pub use policy::{StaticTrustPolicy, TrustAnchorSource, TrustPolicy, TslTrustPolicy};
 pub use provider::{CmdProvider, SignerProvider, SmartcardProvider};
 pub use remote::{RemoteInitiate, RemoteSignSession, RemoteSigningSource};
 pub use revocation::{
@@ -472,10 +472,44 @@ pub enum SigningError {
     #[error("signing operation not implemented: {0}")]
     NotImplemented(&'static str),
     /// The chosen trust service is not currently granted on the trusted list (SIG-11/23).
+    ///
+    /// Since t61-e2 this means what it says: the list **did** authenticate against a configured
+    /// trust anchor, and the signer's own service is not `Granted`. The two failures that are
+    /// about the *operator's* anchor configuration rather than the signer are reported as
+    /// [`Self::TrustAnchorNotConfigured`] and [`Self::TrustedListNotAnchored`].
     #[error("trust service is not currently granted on the trusted list: {status:?}")]
     UntrustedService {
         /// The resolved trusted-list status that caused the rejection.
         status: TrustedListStatus,
+    },
+    /// No Trusted List trust anchor is configured at all, so no list can ever be authenticated and
+    /// no signer can be trusted (SIG-11; t61-e2 case A).
+    ///
+    /// This is **not** a statement about the signer's trust service — the operator has provisioned
+    /// nothing. Kept distinct from [`Self::TrustedListNotAnchored`] so a diagnostic can never tell
+    /// an operator who *did* configure an anchor that they configured none, nor the reverse.
+    #[error("no trusted-list trust anchor is configured; anchors were resolved from {checked}")]
+    TrustAnchorNotConfigured {
+        /// Where the anchors were resolved from, so the operator knows which surface to configure.
+        checked: policy::TrustAnchorSource,
+    },
+    /// Trust anchors are configured, but the Trusted List's own XML-DSig signature does not
+    /// authenticate against any of them (SIG-11; t61-e2 case B) — a wrong anchor, or a scheme-key
+    /// rotation whose new signing certificate has not been provisioned yet.
+    ///
+    /// The signer's trusted-list status is therefore *unestablished*, not withdrawn: an
+    /// unauthenticated list is not evidence about anybody. Reporting this as
+    /// [`Self::UntrustedService`] blames the signer's service for the operator's stale anchor.
+    #[error(
+        "the trusted list did not authenticate against any of the {anchor_count} trust anchor(s) \
+         resolved from {configured_in}"
+    )]
+    TrustedListNotAnchored {
+        /// Where the anchors that failed to authenticate the list came from.
+        configured_in: policy::TrustAnchorSource,
+        /// How many anchors were configured. Never zero — that is
+        /// [`Self::TrustAnchorNotConfigured`].
+        anchor_count: usize,
     },
     /// No issuer certificate was available to resolve the signer's trusted-list status, and a
     /// trust policy was configured (a qualified signature must not skip the trust check).
