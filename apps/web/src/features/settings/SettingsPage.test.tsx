@@ -3292,6 +3292,112 @@ describe('SettingsPage', () => {
     );
   });
 
+  it('lays out the retained-export cleanup policy as settings-rows with a column-header row', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/storage']);
+
+    const heading = await screen.findByRole('heading', {
+      name: 'Política de limpeza de exportações retidas',
+    });
+    const card = heading.closest('.panel');
+    const rows = card?.querySelector('.settings-rows');
+    const minimumAge = screen.getByLabelText('Idade mínima das exportações') as HTMLInputElement;
+    const keepLatest = screen.getByLabelText(
+      'Exportações recentes a preservar',
+    ) as HTMLInputElement;
+
+    // Was a `.registry-auto-update-grid` card of two side-by-side Field blocks; now the same
+    // direct-row composition the backup-recovery card already used (t28/t90), so both policy
+    // panels read as one system instead of two different layouts.
+    expect(rows).toBeTruthy();
+    expect(rows?.querySelectorAll(':scope > .field')).toHaveLength(2);
+    expect(rows?.querySelector(':scope > .registry-auto-update-grid')).toBeNull();
+    expect(rows?.firstElementChild?.classList.contains('field__hint')).toBe(true);
+    for (const input of [minimumAge, keepLatest]) {
+      expect(input.closest('.field')?.parentElement).toBe(rows);
+    }
+
+    // The decorative column-header row: aria-hidden (the real names live on each field's own
+    // <label>), exactly two cells, immediately preceding the first field row.
+    const head = rows?.querySelector(':scope > .settings-rows__head');
+    expect(head).toBeTruthy();
+    expect(head?.getAttribute('aria-hidden')).toBe('true');
+    expect(head?.children).toHaveLength(2);
+    expect(head?.nextElementSibling?.classList.contains('field')).toBe(true);
+    expect(head?.textContent).toBe(
+      ptPT['settings.policyTable.head.setting'] + ptPT['settings.policyTable.head.value'],
+    );
+  });
+
+  it('keeps per-field descriptions reachable by keyboard and described-by the input, not lost behind the glyph', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/storage']);
+
+    const minimumAge = await screen.findByLabelText('Idade mínima das exportações');
+    const field = minimumAge.closest('.field')!;
+
+    // A real, keyboard-focusable trigger with its own accessible name — not a bare `title`
+    // attribute and not a hover-only affordance (Tooltip shows on focus too, see Tooltip.tsx).
+    const glyph = within(field as HTMLElement).getByRole('button', { name: 'Ajuda' });
+    expect(glyph.tagName).toBe('BUTTON');
+    expect(glyph.hasAttribute('title')).toBe(false);
+
+    // The input is describedby the SAME id as the glyph — a screen-reader user who tabs
+    // straight to the input (never landing on the glyph itself) still gets the explanation.
+    const describedBy = minimumAge.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    expect(glyph.getAttribute('aria-describedby')).toBe(describedBy);
+
+    // The description text itself is still in the DOM (moving it into a tooltip must not
+    // remove it from the accessibility tree) and carries `role="tooltip"`, at the id both
+    // the glyph and the input point to. Content is derived from the live catalog, not
+    // hardcoded, so a wording change doesn't spuriously break this.
+    const bubble = document.getElementById(describedBy!);
+    expect(bubble).toBeTruthy();
+    expect(bubble?.getAttribute('role')).toBe('tooltip');
+    expect(bubble?.textContent).toBe(ptPT['settings.retainedExportCleanup.minimumAge.hint']);
+
+    // And it is no longer ALSO duplicated as an always-visible hint paragraph on this field.
+    expect(field.querySelector(':scope > .field__hint')).toBeNull();
+  });
+
+  it('never moves a no-claims sentence into a help glyph, on either policy panel', async () => {
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/storage']);
+    const exportsHeading = await screen.findByRole('heading', {
+      name: 'Política de limpeza de exportações retidas',
+    });
+    const exportsNote = exportsHeading
+      .closest('.panel')
+      ?.querySelector('.settings-rows > .field__hint');
+    expect(exportsNote).toBeTruthy();
+    expect(exportsNote?.textContent).toBe(ptPT['settings.retainedExportCleanup.note']);
+    // A no-claims sentence is a panel-level disclaimer: a plain, always-rendered paragraph,
+    // never a tooltip trigger's accessible description reachable only by finding the glyph.
+    expect(exportsNote?.tagName).toBe('P');
+    expect(document.body.textContent).toContain(ptPT['settings.retainedExportCleanup.note']);
+
+    cleanup();
+    const { fn: fn2 } = settingsFetch();
+    vi.stubGlobal('fetch', fn2);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/backups']);
+    const backupsHeading = await screen.findByRole('heading', {
+      name: 'Política local de recuperação de backups',
+    });
+    const backupsNote = backupsHeading
+      .closest('.panel')
+      ?.querySelector('.settings-rows > .field__hint');
+    expect(backupsNote).toBeTruthy();
+    expect(backupsNote?.textContent).toBe(ptPT['settings.backupRecovery.note']);
+    expect(backupsNote?.tagName).toBe('P');
+  });
+
   it('routes Plataforma to the per-service tabs instead of listing services it no longer holds', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);

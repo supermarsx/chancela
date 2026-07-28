@@ -3096,58 +3096,74 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   <DataManagementSection tab="storage" />
                   <fieldset className="settings-fieldset" disabled={!canManageSettings}>
                     <Card title={t('settings.retainedExportCleanup.cardTitle')}>
+                      {/* Was a `.registry-auto-update-grid` card of two side-by-side Field blocks
+                          (each with its own always-visible hint paragraph) — the user asked for
+                          "the table like display which is much nicer". `.settings-rows` already
+                          IS that: the label|control aligned-row system every other settings card
+                          on this page uses (t90's subgrid rules below). Dropping the wrapper grid
+                          makes these two Fields direct `.settings-rows` children like every other
+                          card, and `.settings-rows__head` adds the decorative column headers a
+                          `<table>` would carry — real semantics stay in the `<label>`/`<input>`
+                          pairs `.settings-rows` was already built to align, not in the header. The
+                          per-field description moves from an always-visible hint paragraph into
+                          `Field`'s `help` glyph (t60's FieldHelp — keyboard-reachable, Escape to
+                          dismiss, `aria-describedby`-linked to the input), matching the
+                          backup-recovery card below. The no-claims sentence stays exactly as it
+                          was: a plain, non-dismissable paragraph before the rows. */}
                       <div className="form settings-rows">
                         <p className="field__hint">{t('settings.retainedExportCleanup.note')}</p>
-                        <div className="registry-auto-update-grid">
-                          <Field
-                            label={t('settings.retainedExportCleanup.minimumAge.label')}
-                            htmlFor="retained-export-cleanup-minimum-age-days"
-                            hint={t('settings.retainedExportCleanup.minimumAge.hint')}
-                          >
-                            <Input
-                              id="retained-export-cleanup-minimum-age-days"
-                              type="number"
-                              min={0}
-                              max={RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS}
-                              value={retainedExportCleanupPolicy.minimum_age_days}
-                              onChange={(e) =>
-                                setRetainedExportCleanupPolicy(
-                                  'minimum_age_days',
-                                  boundedNumberValue(
-                                    e.target.value,
-                                    retainedExportCleanupPolicy.minimum_age_days,
-                                    0,
-                                    RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
-                          <Field
-                            label={t('settings.retainedExportCleanup.keepLatest.label')}
-                            htmlFor="retained-export-cleanup-keep-latest"
-                            hint={t('settings.retainedExportCleanup.keepLatest.hint')}
-                          >
-                            <Input
-                              id="retained-export-cleanup-keep-latest"
-                              type="number"
-                              min={0}
-                              max={RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST}
-                              value={retainedExportCleanupPolicy.keep_latest}
-                              onChange={(e) =>
-                                setRetainedExportCleanupPolicy(
-                                  'keep_latest',
-                                  boundedNumberValue(
-                                    e.target.value,
-                                    retainedExportCleanupPolicy.keep_latest,
-                                    0,
-                                    RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
-                                  ),
-                                )
-                              }
-                            />
-                          </Field>
+                        <div className="settings-rows__head" aria-hidden="true">
+                          <span>{t('settings.policyTable.head.setting')}</span>
+                          <span>{t('settings.policyTable.head.value')}</span>
                         </div>
+                        <Field
+                          label={t('settings.retainedExportCleanup.minimumAge.label')}
+                          htmlFor="retained-export-cleanup-minimum-age-days"
+                          help={t('settings.retainedExportCleanup.minimumAge.hint')}
+                        >
+                          <Input
+                            id="retained-export-cleanup-minimum-age-days"
+                            type="number"
+                            min={0}
+                            max={RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS}
+                            value={retainedExportCleanupPolicy.minimum_age_days}
+                            onChange={(e) =>
+                              setRetainedExportCleanupPolicy(
+                                'minimum_age_days',
+                                boundedNumberValue(
+                                  e.target.value,
+                                  retainedExportCleanupPolicy.minimum_age_days,
+                                  0,
+                                  RETAINED_EXPORT_CLEANUP_MAXIMUM_AGE_DAYS,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
+                        <Field
+                          label={t('settings.retainedExportCleanup.keepLatest.label')}
+                          htmlFor="retained-export-cleanup-keep-latest"
+                          help={t('settings.retainedExportCleanup.keepLatest.hint')}
+                        >
+                          <Input
+                            id="retained-export-cleanup-keep-latest"
+                            type="number"
+                            min={0}
+                            max={RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST}
+                            value={retainedExportCleanupPolicy.keep_latest}
+                            onChange={(e) =>
+                              setRetainedExportCleanupPolicy(
+                                'keep_latest',
+                                boundedNumberValue(
+                                  e.target.value,
+                                  retainedExportCleanupPolicy.keep_latest,
+                                  0,
+                                  RETAINED_EXPORT_CLEANUP_MAX_KEEP_LATEST,
+                                ),
+                              )
+                            }
+                          />
+                        </Field>
                       </div>
                     </Card>
                   </fieldset>
@@ -3163,12 +3179,21 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   <DataManagementSection tab="backups" />
                   <fieldset className="settings-fieldset" disabled={!canManageSettings}>
                     <Card title={t('settings.backupRecovery.cardTitle')}>
+                      {/* Same table-like treatment as the retained-exports card above: a decorative
+                          `.settings-rows__head` column-header row, and each field's description
+                          moved from an always-visible hint paragraph into `Field`'s `help` glyph.
+                          The no-claims sentence is unaffected — it is a panel-level disclaimer, not
+                          a per-field description, and stays visible verbatim outside the rows. */}
                       <div className="form settings-rows backup-recovery-policy-rows">
                         <p className="field__hint">{t('settings.backupRecovery.note')}</p>
+                        <div className="settings-rows__head" aria-hidden="true">
+                          <span>{t('settings.policyTable.head.setting')}</span>
+                          <span>{t('settings.policyTable.head.value')}</span>
+                        </div>
                         <Field
                           label={t('settings.backupRecovery.maxDrillAge.label')}
                           htmlFor="backup-recovery-max-drill-age-days"
-                          hint={t('settings.backupRecovery.maxDrillAge.hint')}
+                          help={t('settings.backupRecovery.maxDrillAge.hint')}
                         >
                           <Input
                             id="backup-recovery-max-drill-age-days"
@@ -3192,7 +3217,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                         <Field
                           label={t('settings.backupRecovery.targetRpo.label')}
                           htmlFor="backup-recovery-target-rpo-minutes"
-                          hint={t('settings.backupRecovery.targetRpo.hint')}
+                          help={t('settings.backupRecovery.targetRpo.hint')}
                         >
                           <Input
                             id="backup-recovery-target-rpo-minutes"
@@ -3216,7 +3241,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                         <Field
                           label={t('settings.backupRecovery.targetRto.label')}
                           htmlFor="backup-recovery-target-rto-minutes"
-                          hint={t('settings.backupRecovery.targetRto.hint')}
+                          help={t('settings.backupRecovery.targetRto.hint')}
                         >
                           <Input
                             id="backup-recovery-target-rto-minutes"

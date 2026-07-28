@@ -2052,6 +2052,8 @@ export const frFR: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Hygiène des présences',
   'settings.reminders.sources.privacyReviews': 'Revues de confidentialité',
   'settings.retainedExportCleanup.cardTitle': 'Politique de nettoyage des exports conservés',
+  'settings.policyTable.head.setting': 'Paramètre',
+  'settings.policyTable.head.value': 'Valeur',
   'settings.retainedExportCleanup.note':
     'Valeurs par défaut utilisées uniquement dans l’aperçu de nettoyage des exports locaux conservés. Elles n’approuvent aucune conservation légale, suppression d’archive, mise au rebut ni effacement RGPD.',
   'settings.retainedExportCleanup.minimumAge.label': 'Âge minimal des exports',

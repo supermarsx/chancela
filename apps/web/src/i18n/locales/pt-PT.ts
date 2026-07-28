@@ -2060,6 +2060,8 @@ export const ptPT: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Higiene de presenças',
   'settings.reminders.sources.privacyReviews': 'Revisões de privacidade',
   'settings.retainedExportCleanup.cardTitle': 'Política de limpeza de exportações retidas',
+  'settings.policyTable.head.setting': 'Definição',
+  'settings.policyTable.head.value': 'Valor',
   'settings.retainedExportCleanup.note':
     'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, eliminação de arquivo, descarte ou apagamento RGPD.',
   'settings.retainedExportCleanup.minimumAge.label': 'Idade mínima das exportações',

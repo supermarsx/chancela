@@ -2032,6 +2032,8 @@ export const enUS = {
   'settings.reminders.sources.attendanceHygiene': 'Attendance hygiene',
   'settings.reminders.sources.privacyReviews': 'Privacy reviews',
   'settings.retainedExportCleanup.cardTitle': 'Retained export cleanup policy',
+  'settings.policyTable.head.setting': 'Setting',
+  'settings.policyTable.head.value': 'Value',
   'settings.retainedExportCleanup.note':
     'Default values used only in the retained local export cleanup preview. They do not approve legal retention, archive deletion, disposal or GDPR erasure.',
   'settings.retainedExportCleanup.minimumAge.label': 'Minimum export age',

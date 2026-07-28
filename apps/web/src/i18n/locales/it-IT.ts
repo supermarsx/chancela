@@ -2045,6 +2045,8 @@ export const itIT: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Igiene delle presenze',
   'settings.reminders.sources.privacyReviews': 'Revisioni della privacy',
   'settings.retainedExportCleanup.cardTitle': 'Criterio di pulizia delle esportazioni conservate',
+  'settings.policyTable.head.setting': 'Impostazione',
+  'settings.policyTable.head.value': 'Valore',
   'settings.retainedExportCleanup.note':
     'Valori predefiniti usati solo nell’anteprima di pulizia delle esportazioni locali conservate. Non approvano conservazione legale, eliminazione dall’archivio, smaltimento né cancellazione GDPR.',
   'settings.retainedExportCleanup.minimumAge.label': 'Età minima delle esportazioni',

@@ -2038,6 +2038,8 @@ export const svSE: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Närvarohygien',
   'settings.reminders.sources.privacyReviews': 'Integritetsgranskningar',
   'settings.retainedExportCleanup.cardTitle': 'Policy för rensning av bevarade exporter',
+  'settings.policyTable.head.setting': 'Inställning',
+  'settings.policyTable.head.value': 'Värde',
   'settings.retainedExportCleanup.note':
     'Standardvärden som endast används i förhandsvisningen för rensning av bevarade lokala exporter. De godkänner inte laglig lagring, arkivradering, kassering eller GDPR-radering.',
   'settings.retainedExportCleanup.minimumAge.label': 'Minsta ålder för exporter',

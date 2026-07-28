@@ -2055,6 +2055,8 @@ export const deDE: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Anwesenheitshygiene',
   'settings.reminders.sources.privacyReviews': 'Datenschutzprüfungen',
   'settings.retainedExportCleanup.cardTitle': 'Richtlinie zur Bereinigung aufbewahrter Exporte',
+  'settings.policyTable.head.setting': 'Einstellung',
+  'settings.policyTable.head.value': 'Wert',
   'settings.retainedExportCleanup.note':
     'Standardwerte, die nur in der Vorschau zur Bereinigung aufbewahrter lokaler Exporte verwendet werden. Sie genehmigen keine gesetzliche Aufbewahrung, keine Archivlöschung, keine Entsorgung und keine DSGVO-Löschung.',
   'settings.retainedExportCleanup.minimumAge.label': 'Mindestalter der Exporte',

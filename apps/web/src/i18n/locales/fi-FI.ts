@@ -2033,6 +2033,8 @@ export const fiFI: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Läsnäolohygienia',
   'settings.reminders.sources.privacyReviews': 'Tietosuojatarkastukset',
   'settings.retainedExportCleanup.cardTitle': 'Säilytettyjen vientien siivouskäytäntö',
+  'settings.policyTable.head.setting': 'Asetus',
+  'settings.policyTable.head.value': 'Arvo',
   'settings.retainedExportCleanup.note':
     'Oletusarvot, joita käytetään vain säilytettyjen paikallisten vientien siivouksen esikatselussa. Ne eivät hyväksy laillista säilytystä, arkiston poistoa, hävittämistä eivätkä GDPR-poistoa.',
   'settings.retainedExportCleanup.minimumAge.label': 'Vientien vähimmäisikä',

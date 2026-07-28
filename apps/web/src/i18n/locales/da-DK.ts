@@ -2036,6 +2036,8 @@ export const daDK: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Fremmødehygiejne',
   'settings.reminders.sources.privacyReviews': 'Privatlivsgennemgange',
   'settings.retainedExportCleanup.cardTitle': 'Politik for oprydning af bevarede eksporter',
+  'settings.policyTable.head.setting': 'Indstilling',
+  'settings.policyTable.head.value': 'Værdi',
   'settings.retainedExportCleanup.note':
     'Standardværdier, der kun bruges i forhåndsvisningen af oprydning af bevarede lokale eksporter. De godkender ikke juridisk opbevaring, arkivsletning, bortskaffelse eller GDPR-sletning.',
   'settings.retainedExportCleanup.minimumAge.label': 'Mindstealder for eksporter',

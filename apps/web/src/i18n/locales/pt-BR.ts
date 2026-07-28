@@ -2039,6 +2039,8 @@ export const ptBR: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Higiene de presença',
   'settings.reminders.sources.privacyReviews': 'Avaliações de privacidade',
   'settings.retainedExportCleanup.cardTitle': 'Política de Limpeza de Exportação Retida',
+  'settings.policyTable.head.setting': 'Definição',
+  'settings.policyTable.head.value': 'Valor',
   'settings.retainedExportCleanup.note':
     'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, exclusão de arquivo, descarte nem apagamento RGPD.',
   'settings.retainedExportCleanup.minimumAge.label': 'Idade mínima de exportação',

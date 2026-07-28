@@ -2043,6 +2043,8 @@ export const esES: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Higiene de asistencias',
   'settings.reminders.sources.privacyReviews': 'Revisiones de privacidad',
   'settings.retainedExportCleanup.cardTitle': 'Política de limpieza de exportaciones retenidas',
+  'settings.policyTable.head.setting': 'Ajuste',
+  'settings.policyTable.head.value': 'Valor',
   'settings.retainedExportCleanup.note':
     'Valores predeterminados usados solo en la vista previa de limpieza de exportaciones locales retenidas. No aprueban retención legal, eliminación de archivo, descarte ni supresión RGPD.',
   'settings.retainedExportCleanup.minimumAge.label': 'Edad mínima de las exportaciones',

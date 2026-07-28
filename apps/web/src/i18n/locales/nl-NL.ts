@@ -2044,6 +2044,8 @@ export const nlNL: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Aanwezigheidshygiëne',
   'settings.reminders.sources.privacyReviews': 'Privacybeoordelingen',
   'settings.retainedExportCleanup.cardTitle': 'Opschoningsbeleid voor bewaarde exports',
+  'settings.policyTable.head.setting': 'Instelling',
+  'settings.policyTable.head.value': 'Waarde',
   'settings.retainedExportCleanup.note':
     'Standaardwaarden die alleen worden gebruikt in de voorbeeldweergave voor het opschonen van bewaarde lokale exports. Ze keuren geen wettelijke bewaring, archiefverwijdering, vernietiging of AVG-wissing goed.',
   'settings.retainedExportCleanup.minimumAge.label': 'Minimale leeftijd van exports',

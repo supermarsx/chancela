@@ -4461,6 +4461,32 @@ a,
   grid-column: 2;
 }
 
+/* --- Decorative column headers (t93) ----------------------------------------------
+   A `.settings-rows` card already aligns every `Field`/`Toggle` into a label|control pair of
+   tracks (the subgrid rules below) — visually a table, minus the header row naming the
+   columns. `settings.policyTable.head.*` supplies the two words; `aria-hidden` because the
+   real accessible names live on the `<label>`s beneath, and repeating them here would be a
+   screen reader reading "Definição" before every field's own label. Fixed 2-col split by
+   default (same track sizes as `.field`/`.toggle` immediately above), upgraded to the same
+   `subgrid` treatment they get so it never drifts from the rows it is heading. Hidden in the
+   narrow layout below, where the rows themselves collapse to one column and a header naming
+   two columns that no longer exist would be actively misleading. */
+.settings-rows > .settings-rows__head {
+  display: grid;
+  grid-template-columns: minmax(0, var(--settings-label-col)) minmax(0, 1fr);
+  column-gap: calc(var(--space) * 1.25);
+}
+
+.settings-rows > .settings-rows__head > span {
+  font-family: var(--font-sans);
+  font-size: 0.66rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
 /* Row separation: a hairline instead of `.form`'s plain 1rem gap. This is what makes the
    sections read as neat bands rather than as one undifferentiated column. */
 .settings-rows > * + * {
@@ -4556,6 +4582,10 @@ a,
   .settings-rows > .toggle + .field__hint {
     margin-top: 0.3rem;
   }
+
+  .settings-rows > .settings-rows__head {
+    display: none;
+  }
 }
 
 /* The label column, sized by CONTENT rather than by a guess — this is what actually runs.
@@ -4580,7 +4610,8 @@ a,
     }
 
     .settings-rows > .field,
-    .settings-rows > .toggle {
+    .settings-rows > .toggle,
+    .settings-rows > .settings-rows__head {
       grid-template-columns: subgrid;
     }
   }

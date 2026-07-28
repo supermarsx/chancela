@@ -2036,6 +2036,8 @@ export const plPL: Catalog = {
   'settings.reminders.sources.attendanceHygiene': 'Higiena obecności',
   'settings.reminders.sources.privacyReviews': 'Przeglądy prywatności',
   'settings.retainedExportCleanup.cardTitle': 'Zasada czyszczenia zachowanych eksportów',
+  'settings.policyTable.head.setting': 'Ustawienie',
+  'settings.policyTable.head.value': 'Wartość',
   'settings.retainedExportCleanup.note':
     'Wartości domyślne używane wyłącznie w podglądzie czyszczenia zachowanych eksportów lokalnych. Nie zatwierdzają przechowywania prawnego, usuwania z archiwum, utylizacji ani usunięcia w rozumieniu RODO.',
   'settings.retainedExportCleanup.minimumAge.label': 'Minimalny wiek eksportów',
