@@ -153,10 +153,66 @@ async fn load_book_abertura(
 /// which is **not** an evidentiary cryptographic signature: a termo advanced through the bare
 /// [`sign_abertura`] reference path alone still fails closed here. Real PAdES production over the
 /// snapshot (e2's PKCS#12 path) is what populates `instrument_signatures` and lets a book open.
+/// Which fail-closed signature gate is refusing, so the refusal names the operation the operator
+/// actually attempted rather than the one this helper was first written for.
+///
+/// **MUST NOT BE SOFTENED (t58 §4 items 4 and 5).** Both refusals are deliberate: a book is never
+/// opened, and never closed, on a termo that is not really cryptographically signed. The Tier-2
+/// codes here exist to make the two *distinguishable*, not gentler — a client that renders either as
+/// a routine "try again" is misreporting a refusal that repeating cannot resolve.
+///
+/// **One full sentence per case; the instrument is never interpolated into a shared one.** The
+/// `code` is the localisation key and pt-PT inflects for gender and number, so copy assembled by
+/// dropping "abertura"/"encerramento" into one sentence could not be made to agree. The noun is part
+/// of the code (`termo_abertura_not_signed` / `termo_encerramento_not_signed`), never a parameter.
+#[derive(Clone, Copy)]
+enum TermoSignatureGate {
+    /// `POST /v1/books/{id}/termo/open` — the abertura must be signed before the book may open.
+    Abertura,
+    /// `POST /v1/books/{id}/termo/encerramento/close` — the encerramento must be signed before the
+    /// book may close.
+    Encerramento,
+}
+
+impl TermoSignatureGate {
+    /// The stable Tier-2 code (t58). An English identifier, never copy: the client maps it to pt-PT
+    /// through its own `apiError.<code>` catalog.
+    fn code(self) -> &'static str {
+        match self {
+            Self::Abertura => "termo_abertura_not_signed",
+            Self::Encerramento => "termo_encerramento_not_signed",
+        }
+    }
+
+    /// The English operator detail carried in `error`, unchanged in kind by the code alongside it.
+    ///
+    /// The abertura wording is byte-identical to what the open path has always reported. The
+    /// encerramento previously reported that same sentence — announcing a refusal to *open* a book
+    /// the operator was trying to *close*, and naming the *abertura* as unsigned when the unsigned
+    /// instrument was the encerramento. It now states its own case.
+    fn detail(self) -> &'static str {
+        match self {
+            Self::Abertura => {
+                "refusing to open the book: the termo de abertura is not cryptographically signed. \
+                 Every required signatory must have a real PAdES signature over the termo snapshot \
+                 (recorded in the instrument_signatures history) before the book can be opened; a \
+                 book is never opened on a not-really-signed termo."
+            }
+            Self::Encerramento => {
+                "refusing to close the book: the termo de encerramento is not cryptographically \
+                 signed. Every required signatory must have a real PAdES signature over the termo \
+                 snapshot (recorded in the instrument_signatures history) before the book can be \
+                 closed; a book is never closed on a not-really-signed termo."
+            }
+        }
+    }
+}
+
 async fn require_real_signatures(
     state: &AppState,
     subject: ActId,
     termo: &TermoInstrument,
+    gate: TermoSignatureGate,
 ) -> Result<(), ApiError> {
     let required: Vec<Uuid> = termo
         .signatories
@@ -191,13 +247,7 @@ async fn require_real_signatures(
             .count()
     };
     if covered < required.len() {
-        return Err(ApiError::Conflict(
-            "refusing to open the book: the termo de abertura is not cryptographically signed. \
-             Every required signatory must have a real PAdES signature over the termo snapshot \
-             (recorded in the instrument_signatures history) before the book can be opened; a book is \
-             never opened on a not-really-signed termo."
-                .to_owned(),
-        ));
+        return Err(ApiError::Conflict(gate.detail().to_owned()).with_code(gate.code()));
     }
     Ok(())
 }
@@ -933,7 +983,13 @@ pub async fn open_from_termo(
     // cryptographically signed. Runs BEFORE `seal`, so a not-really-signed termo stays `Signing`
     // (retriable) and never appears as `Sealed`. R1: keyed on `ActId(book.id.0)` so it sees e2's
     // real per-slot signatures.
-    require_real_signatures(&state, ActId(book_id.0), &termo).await?;
+    require_real_signatures(
+        &state,
+        ActId(book_id.0),
+        &termo,
+        TermoSignatureGate::Abertura,
+    )
+    .await?;
 
     // The genesis projection MUST use the scheme pinned before the signing snapshot was rendered.
     // An explicit request value is a compatibility assertion only; reject contradictions rather
@@ -1375,8 +1431,10 @@ pub async fn sign_encerramento_pkcs12(
 /// the book (the CLOSE mirror of [`open_from_termo`]).
 ///
 /// Requires the completion policy satisfied AND — the fail-closed gate — every required slot really
-/// cryptographically signed. Re-derives the authoritative facts and rejects a snapshot whose material
-/// ata count moved under the signers (R12). Appends the `book.closed` event digesting the *final,
+/// cryptographically signed (`termo_encerramento_not_signed`). Re-derives the authoritative facts and
+/// rejects a snapshot that no longer re-renders to the signed bytes (`termo_snapshot_mismatch`, R12).
+/// Both refusals are `409`s that a client tells apart by `code`, never by prose. Appends the
+/// `book.closed` event digesting the *final,
 /// filled, signed* encerramento projection, and **preserves the SET of co-signature PDF/As** (R2):
 /// the frozen snapshot stays as the preserved base PDF/A (keyed `ActId(termo.id.0)`) and a
 /// `document.generated` event digesting the co-signature manifest binds the exact set of real
@@ -1404,7 +1462,7 @@ pub async fn close_from_termo(
     // EVIDENTIARY FAIL-CLOSED GATE (binding, inherited from the abertura): refuse to seal/close a
     // termo that is not really cryptographically signed. Runs BEFORE `seal`, so a not-really-signed
     // termo stays `Signing` (retriable); the book stays `Open`, never auto-closed on a fake signature.
-    require_real_signatures(&state, subject, &termo).await?;
+    require_real_signatures(&state, subject, &termo, TermoSignatureGate::Encerramento).await?;
 
     // Load the SET of co-signature PDF/As recorded at sign time + the frozen snapshot — BEFORE the
     // write locks. The gate above already proved they cover every required slot.
@@ -1450,11 +1508,34 @@ pub async fn close_from_termo(
     let ata_count = book.last_ata_number;
     let pages_used_at_close = book.has_page_capacity().then_some(book.pages_used);
 
-    // STALE-FACT GUARD (R12): the snapshot every signatory signed was frozen at advance with the ata
-    // count as it then stood. Re-render the encerramento from the CURRENT authoritative facts; if the
-    // material figure moved under the signers (a new ata was sealed mid-signing), the re-rendered
-    // bytes differ from the signed snapshot — refuse to seal a signed document that would contradict
-    // the ledger. A signed false fact is unrecoverable; discarding this attempt is the lesser evil.
+    // SNAPSHOT-MISMATCH GUARD (R12, historically "the stale-fact guard"): the snapshot every
+    // signatory signed was frozen at advance. Re-render the encerramento from the CURRENT
+    // authoritative facts; if the bytes differ from the signed snapshot, refuse to seal a signed
+    // document that would contradict the record. A signed false fact is unrecoverable; discarding
+    // this attempt is the lesser evil.
+    //
+    // **MUST NOT BE SOFTENED (t58 §4 item 4).** This is a deliberate refusal on a legal instrument,
+    // not a transient failure: repeating the close cannot resolve it, and the copy must not invite a
+    // retry. The Tier-2 code exists so the client can tell this refusal apart from the
+    // not-cryptographically-signed one **without matching on this sentence** — that regex coupling
+    // is what t58-e3a removed, and re-wording here must never again be able to flip a client branch.
+    //
+    // **AND IT MUST NOT NAME A CAUSE IT HAS NOT ESTABLISHED.** The predicate is a *byte* difference,
+    // so it fires on any moved input, but this message used to assert one specific cause — "o livro
+    // registou uma nova ata … o número de atas declarado deixou de corresponder ao livro". Reading
+    // `crate::documents::encerramento_ctx`, the render context's only mutable inputs are the
+    // template spec, the entity object and `ata_count`; the layout is pinned from the snapshot, the
+    // termo is frozen at advance, and `pages_used_at_close` never reaches the bytes at all. A
+    // template asset or an entity edit therefore trips this guard with no ata registered and the
+    // declared count still correct, sending the operator hunting a change that never happened.
+    // Failing closed with a false explanation is its own evidentiary defect.
+    //
+    // Nothing here records the facts the snapshot was rendered *from*, so which input moved cannot
+    // be established from the artifacts in hand — and `termo_stale_facts` /
+    // `termo_snapshot_render_drift` each assert that it can. This site therefore reports
+    // `termo_snapshot_mismatch`, whose copy says the signed document no longer matches and stops
+    // there. Narrowing it honestly needs the book-derived facts recorded at advance (a field on
+    // `TermoInstrument`, or a column on the snapshot row); escalated rather than guessed.
     if let Some(snapshot_doc) = &snapshot
         && let Some(rederived) = crate::documents::generate_encerramento_snapshot_with_layout(
             &termo,
@@ -1468,13 +1549,23 @@ pub async fn close_from_termo(
         )?
         && rederived.stored.pdf_digest != snapshot_doc.pdf_digest
     {
-        return Err(ApiError::Conflict(
-            "o livro registou uma nova ata depois de o termo de encerramento ter sido congelado \
-             para assinatura; o número de atas declarado deixou de corresponder ao livro. O termo \
-             assinado não pode ser selado porque contradiria o registo — recomece o termo de \
-             encerramento com os factos atualizados."
-                .to_owned(),
-        ));
+        // One observation that *is* established from the artifacts: the encerramento template bound
+        // to the signed snapshot (schema v24 pins its canonical body) is not the one the catalog
+        // renders today. It goes in the operator detail, where an observation belongs — never into
+        // the code, which would promote "the template also moved" into "and the numbers are fine".
+        let template_moved = rederived.stored.template_id != snapshot_doc.template_id
+            || rederived.stored.template_spec_json != snapshot_doc.template_spec_json;
+        let detail = if template_moved {
+            "the termo de encerramento no longer re-renders to the bytes its signatories signed, \
+             and the encerramento template bound to that signed snapshot is not the one the \
+             catalogue renders today; refusing to seal a signed document that would contradict the \
+             record. Draw the termo de encerramento up again."
+        } else {
+            "the termo de encerramento no longer re-renders to the bytes its signatories signed; \
+             refusing to seal a signed document that would contradict the record. Draw the termo de \
+             encerramento up again."
+        };
+        return Err(ApiError::Conflict(detail.to_owned()).with_code("termo_snapshot_mismatch"));
     }
 
     let projected = termo

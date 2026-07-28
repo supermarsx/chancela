@@ -1,9 +1,13 @@
 /**
  * TermoEncerramentoEditor (t44) — the termo de encerramento as a signable ata in its own right, the
  * CLOSE mirror of `TermoAberturaEditor.test.tsx`. These tests cover the Draft edit (incl. the DA1
- * "Other" reason + required note reveal), the Signing collect, and BOTH honest fail-closed `409`
- * causes on close (not-cryptographically-signed and the stale-fact guard), all through the frozen
- * t44-e3 client.
+ * "Other" reason + required note reveal), the Signing collect, and every honest fail-closed `409`
+ * cause on close, all through the frozen t44-e3 client.
+ *
+ * **The close refusals are classified by the server's stable error `code`, never by its prose**
+ * (t58-e3a). Three of the tests below exist specifically to hold that line: one sends the retired
+ * regex's exact prose under a *contradicting* code, one sends that prose with no code at all, and
+ * both assert the branch follows the code. A regex over prose could not have survived either.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
@@ -162,7 +166,13 @@ describe('TermoEncerramentoEditor', () => {
       const method = init?.method ?? 'GET';
       if (url.endsWith('/termo/encerramento/close')) {
         return Promise.resolve(
-          jsonResponse({ error: 'the termo is not cryptographically signed' }, 409),
+          jsonResponse(
+            {
+              error: 'refusing to close the book: the termo de encerramento is not signed.',
+              code: 'termo_encerramento_not_signed',
+            },
+            409,
+          ),
         );
       }
       if (url.endsWith('/termo/encerramento/sign'))
@@ -204,30 +214,100 @@ describe('TermoEncerramentoEditor', () => {
     expect(document.querySelector('.termo-status-table')?.children).toHaveLength(2);
   });
 
-  it('surfaces the stale-fact 409 distinctly on close', async () => {
+  /** Drive `close` to a `409` carrying `body`, and return once the panel has rendered. */
+  function stubCloseRefusal(body: Record<string, unknown>) {
     vi.stubGlobal('fetch', ((input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method ?? 'GET';
       if (url.endsWith('/termo/encerramento/close')) {
-        return Promise.resolve(
-          jsonResponse(
-            {
-              error:
-                'o livro registou uma nova ata depois de o termo de encerramento ter sido congelado; o número de atas declarado deixou de corresponder ao livro.',
-            },
-            409,
-          ),
-        );
+        return Promise.resolve(jsonResponse(body, 409));
       }
       if (url.endsWith('/termo/encerramento')) return Promise.resolve(jsonResponse(SIGNING_TERMO));
       return Promise.reject(new Error(`no stub for ${method} ${url}`));
     }) as typeof fetch);
+  }
+
+  it('surfaces the stale-fact 409 distinctly on close', async () => {
+    // The prose deliberately shares nothing with the retired `/nova ata|número de atas/i` regex:
+    // the `code` alone must select this branch.
+    stubCloseRefusal({
+      error: 'the declared figures no longer match the book',
+      code: 'termo_stale_facts',
+    });
 
     renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
 
     fireEvent.click(await screen.findByRole('button', { name: 'Encerrar livro' }));
 
     expect(await screen.findByText('Os factos do livro mudaram durante a assinatura')).toBeTruthy();
+  });
+
+  /**
+   * THE REGRESSION THE RETIRED REGEX COULD NOT SURVIVE.
+   *
+   * `termo_snapshot_render_drift` means the document's composition moved while the book's figures
+   * stayed correct — the opposite claim to `termo_stale_facts`. The body below carries the OLD
+   * stale-fact prose verbatim, so `/nova ata|número de atas/i` would have classified it `stale` and
+   * told the operator a new ata was registered when none was. The branch must follow the `code`.
+   */
+  it('classifies render drift by code even when the message reads like the old stale-fact prose', async () => {
+    stubCloseRefusal({
+      error:
+        'o livro registou uma nova ata depois de o termo de encerramento ter sido congelado; o número de atas declarado deixou de corresponder ao livro.',
+      code: 'termo_snapshot_render_drift',
+    });
+
+    renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Encerrar livro' }));
+
+    expect(
+      await screen.findByText(/O que mudou foi a composição do documento, não os dados do livro/),
+    ).toBeTruthy();
+    // The stale-fact claim must be absent: no ata was registered.
+    expect(screen.queryByText('Os factos do livro mudaram durante a assinatura')).toBeNull();
+    // And the server's raw prose is never what the operator reads.
+    expect(screen.queryByText(/o livro registou uma nova ata/)).toBeNull();
+  });
+
+  it('surfaces the snapshot-mismatch 409 without naming a cause it has not established', async () => {
+    stubCloseRefusal({
+      error: 'the termo de encerramento no longer re-renders to the bytes its signatories signed',
+      code: 'termo_snapshot_mismatch',
+    });
+
+    renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Encerrar livro' }));
+
+    expect(await screen.findByText(/Não foi possível apurar em que ponto divergiu/)).toBeTruthy();
+    expect(screen.queryByText('Os factos do livro mudaram durante a assinatura')).toBeNull();
+    expect(screen.queryByText('O termo ainda não está assinado criptograficamente')).toBeNull();
+  });
+
+  /**
+   * NO PROSE FALLBACK. A `409` whose message matches the retired regex word for word, but which
+   * carries no `code`, must not be classified at all — it renders through `ErrorNote` rather than
+   * asserting either fail-closed cause on no evidence.
+   */
+  it('does not classify a coded-less 409 from its prose', async () => {
+    stubCloseRefusal({
+      error:
+        'o livro registou uma nova ata depois de o termo de encerramento ter sido congelado; o número de atas declarado deixou de corresponder ao livro.',
+    });
+
+    renderWithProviders(<TermoEncerramentoEditor bookId="book-2" />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Encerrar livro' }));
+
+    // `ErrorNote`'s generic 409 tier headline — it claims no cause, and the English prose is
+    // demoted into the technical-details block rather than becoming the operator's copy.
+    await waitFor(() => expect(document.querySelector('.error-note__headline')).toBeTruthy());
+    expect(document.querySelector('.error-note__headline')?.textContent).toBe(
+      'A operação foi recusada porque o estado atual não a permite.',
+    );
+    expect(screen.queryByText('Os factos do livro mudaram durante a assinatura')).toBeNull();
+    expect(screen.queryByText('O termo ainda não está assinado criptograficamente')).toBeNull();
   });
 
   it('signs a slot with a real PKCS#12 co-signature, then the book closes', async () => {

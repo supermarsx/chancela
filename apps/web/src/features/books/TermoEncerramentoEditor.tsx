@@ -15,8 +15,10 @@
  * Honest until real signing lands: the `close` endpoint FAILS CLOSED with a `409` because no
  * signatory yet carries a real per-slot PAdES signature over the termo's PDF (a reference `sign` is
  * not enough — {@link ../../api/hooks#useSignBookTermoEncerramentoPkcs12} produces the real one). It
- * also fails closed with a `409` if a new ata was sealed mid-signing (the stale-fact guard). Both are
- * surfaced distinctly; the book stays `Open` in either case — the panel never pretends it closed.
+ * also fails closed with a `409` when the frozen snapshot no longer re-renders to the bytes the
+ * signatories signed. Each cause is surfaced distinctly, told apart by the server's stable error
+ * `code` and never by its prose ({@link closeErrorKind}); the book stays `Open` in every case — the
+ * panel never pretends it closed.
  *
  * All copy is ASSURANCE except the two genuinely legal framings reused from the abertura (the
  * capacity allow-list and the at-least-one-signatory minimum). Closing fixity is never described as
@@ -59,6 +61,7 @@ import {
   Toggle,
   useToast,
 } from '../../ui';
+import { useApiErrorHeadline } from '../../i18n/apiErrorFallback';
 import { useTermoT } from './termoStrings';
 import { useEncerramentoT } from './termoEncerramentoStrings';
 import { TermoSlotPkcs12Signer } from './TermoSlotPkcs12Signer';
@@ -94,14 +97,38 @@ function slotToDraft(slot: TermoSlotView): SlotDraft {
   };
 }
 
+/** Which fail-closed `close` refusal came back, one per server `code`. */
+type CloseRefusal = 'notSigned' | 'staleFacts' | 'renderDrift' | 'snapshotMismatch';
+
 /**
- * Classify a `close` failure so the two fail-closed `409` causes read distinctly. The stale-fact
- * guard carries a distinctive pt-PT message ("nova ata"/"número de atas"); every other `409` is the
- * not-cryptographically-signed refusal.
+ * The `close` refusals this panel renders itself, keyed by the server's stable error `code`
+ * (`chancela-api`'s `termo.rs`). Every other error falls through to {@link ErrorNote}.
+ *
+ * `termo_snapshot_mismatch` is what the snapshot guard reports today; `termo_stale_facts` and
+ * `termo_snapshot_render_drift` are the narrower causes the server will report once the facts a
+ * snapshot was rendered from are recorded at advance. They are mapped here because each has its own
+ * reviewed sentence and must never degrade into the generic one.
  */
-function closeErrorKind(error: unknown): 'stale' | 'notSigned' | null {
+const CLOSE_REFUSAL_BY_CODE: Readonly<Record<string, CloseRefusal>> = {
+  termo_encerramento_not_signed: 'notSigned',
+  termo_stale_facts: 'staleFacts',
+  termo_snapshot_render_drift: 'renderDrift',
+  termo_snapshot_mismatch: 'snapshotMismatch',
+};
+
+/**
+ * Classify a `close` failure by the server's stable error **code**.
+ *
+ * This used to test the message with `/nova ata|número de atas/i`, which made the server's prose
+ * load-bearing application behaviour: rewording it — a translation sweep, a corrected explanation —
+ * silently flipped the branch and showed the operator the wrong reason for a fail-closed refusal on
+ * a legal instrument, and no test could catch a regex over prose. **Nothing here reads
+ * `error.message`.** An unrecognised `409` now resolves to `null` and renders through
+ * {@link ErrorNote}, rather than being asserted to be the not-signed refusal on no evidence.
+ */
+function closeErrorKind(error: unknown): CloseRefusal | null {
   if (!(error instanceof ApiError) || error.status !== 409) return null;
-  return /nova ata|número de atas/i.test(error.message) ? 'stale' : 'notSigned';
+  return CLOSE_REFUSAL_BY_CODE[error.code ?? ''] ?? null;
 }
 
 /** Render a completion policy as plain assurance copy — never as a legal claim about who must sign. */
@@ -509,6 +536,7 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
   // Sequential collection: the next slot allowed to sign is the earliest unsigned required one.
   const nextSlotId = orderedSlots.find((slot) => slot.required && !slot.signed)?.id;
 
+  const apiErrorHeadline = useApiErrorHeadline();
   const closeError = closeErrorKind(closeBook.error);
 
   return (
@@ -588,10 +616,16 @@ function TermoSigningView({ termo }: { termo: TermoInstrumentView }) {
         <InlineWarning tone="warn" title={et('books.encerramento.close.notSignedTitle')}>
           {et('books.encerramento.close.notSignedBody')}
         </InlineWarning>
-      ) : closeError === 'stale' ? (
+      ) : closeError === 'staleFacts' ? (
         <InlineWarning tone="warn" title={et('books.encerramento.close.staleTitle')}>
           {et('books.encerramento.close.staleBody')}
         </InlineWarning>
+      ) : closeError !== null ? (
+        // `renderDrift` and `snapshotMismatch` have no titled pair here: each states a *different*
+        // established cause and neither may borrow the stale-fact title, which asserts the book's
+        // facts moved. Their reviewed sentence comes from the shared api-error catalog, keyed by the
+        // same code that selected this branch.
+        <InlineWarning tone="warn">{apiErrorHeadline(closeBook.error)}</InlineWarning>
       ) : closeBook.error ? (
         <ErrorNote error={closeBook.error} />
       ) : null}
