@@ -13,11 +13,20 @@
  * Meta-permissions (`role.*`/`delegation.*`) are flagged with a small "meta" badge (they are
  * non-delegable and administrative) but are otherwise ordinary selectable verbs subject to
  * the same subset rule.
+ *
+ * ## Descriptions (t74)
+ * Each verb renders its stable dotted id in `mono` **and**, beneath it, a plain-language sentence
+ * saying what granting it actually lets someone do — an administrator choosing authority from
+ * `user.manage` alone was choosing from an identifier. The copy lives in
+ * `i18n/permissionDescriptionsFallback.ts`, whose test holds it in set-equality with the Rust
+ * catalog so a new verb cannot ship undescribed. A verb this build has no sentence for renders an
+ * explicit notice, never blank space.
  */
 import { useMemo } from 'react';
 import type { PermissionInfo } from '../../api/types';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
+import { usePermissionDescriptionResolver } from '../../i18n/permissionDescriptionsFallback';
 import { Badge, Button, Tooltip } from '../../ui';
 import { scopeGlobal, useCan } from '../session/permissions';
 
@@ -77,6 +86,7 @@ export function PermissionMatrix({
 }) {
   const t = useT();
   const can = useCan();
+  const describe = usePermissionDescriptionResolver();
   const groups = useMemo(() => groupCatalog(catalog), [catalog]);
 
   // The subset basis: a permission is selectable iff the actor holds it at Global scope
@@ -136,8 +146,19 @@ export function PermissionMatrix({
                     aria-disabled={!canHold}
                     onChange={() => toggle(info.permission)}
                   />
-                  <code className="mono">{info.permission}</code>
-                  {info.meta ? <Badge tone="warn">{t('rbac.matrix.meta')}</Badge> : null}
+                  <span className="rbac-matrix__perm-body">
+                    <span className="rbac-matrix__perm-id">
+                      <code className="mono">{info.permission}</code>
+                      {info.meta ? <Badge tone="warn">{t('rbac.matrix.meta')}</Badge> : null}
+                    </span>
+                    {/* The identifier is stable but says nothing about what ticking it grants, so
+                        the description is rendered beside it — never instead of it. An id this
+                        build has no sentence for resolves to an explicit notice, never to blank
+                        space. */}
+                    <span className="rbac-matrix__perm-desc">
+                      {describe(info.permission).text}
+                    </span>
+                  </span>
                 </label>
               );
               // A verb the actor lacks is wrapped in an honest tooltip so the disabled box

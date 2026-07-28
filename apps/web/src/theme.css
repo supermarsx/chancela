@@ -11810,14 +11810,16 @@ input[type='radio']:disabled {
   padding: 0 0.4rem;
   color: var(--text-muted);
 }
+/* Each cell carries an identifier AND its plain-language description (t74), so the track is wide
+ * enough for a sentence to wrap to two or three lines rather than one word per line. */
 .rbac-matrix__perms {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  gap: 0.4rem 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+  gap: 0.7rem 1.5rem;
 }
 .rbac-matrix__perm {
   display: flex;
-  align-items: center;
+  align-items: start;
   gap: 0.5rem;
   cursor: pointer;
 }
@@ -11827,6 +11829,25 @@ input[type='radio']:disabled {
 }
 .rbac-matrix__perm input {
   flex: none;
+  /* Keep the box on the identifier's line now that the label is two rows tall. */
+  margin-top: 0.15rem;
+}
+.rbac-matrix__perm-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.rbac-matrix__perm-id {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.rbac-matrix__perm-desc {
+  font-size: 0.82rem;
+  line-height: 1.35;
+  color: var(--text-muted);
 }
 
 /* ==========================================================================
