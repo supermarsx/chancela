@@ -6111,15 +6111,21 @@ function assertCheckpointMap() {
     "attendance_list_templates_render_structured_attendees_for_every_supported_family",
     "template catalog all-family attendance-list rendering coverage",
   );
+  // Census repinned 104 -> 109 and CSC 44 -> 45 by `c5444516` (feat(templates): state the
+  // declared page count on a new termo version), which ADDED five assets: one
+  // `<family>-termo-abertura-v2.json` per family, carrying the declared page-count row. The five
+  // v1 assets are byte-untouched and stay in the catalog so documents naming `/v1` keep
+  // resolving. Every family gained exactly one, so the subsets stay consistent with the total:
+  // 45 CSC + 15 condominio + 19 assoc + 15 fundacao + 15 cooperativa = 109.
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    "reg.specs().len(),\n            104",
-    "template catalog 104-asset census marker",
+    "reg.specs().len(),\n            109",
+    "template catalog 109-asset census marker",
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    "per_family(EntityFamily::CommercialCompany), 44",
-    "template catalog 44 CSC census marker",
+    "per_family(EntityFamily::CommercialCompany), 45",
+    "template catalog 45 CSC census marker",
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
@@ -16529,9 +16535,14 @@ function assertCheckpointMap() {
     '&contract("group.dashboard.json")',
     "server group dashboard canonical contract E2E marker",
   );
+  // Extended by `20ec89e2` (fix(contracts): refreeze the entity view): `ac371c09` ADDED
+  // `archived_at`/`archived` to `EntityView` without moving the frozen fixtures. Nothing was
+  // removed or renamed — `dto.rs` documents both as present on every entity read, and
+  // `contracts/entity.json` now carries them. Pinning the full list keeps the two added fields
+  // guarded rather than letting the prefix match a list that silently drops them.
   assertFileContains(
     "apps/web/src/contracts/contracts.test.ts",
-    "['fiscal_year_end', 'document_layout_override']",
+    "['fiscal_year_end', 'document_layout_override', 'archived_at', 'archived']",
     "web Entity contract layout override marker",
   );
   assertFileContains(
