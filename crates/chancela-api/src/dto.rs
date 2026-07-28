@@ -1087,6 +1087,13 @@ pub struct CloseBook {
     pub one_shot: bool,
     #[serde(default = "default_actor")]
     pub actor: String,
+    /// The step-up + typed-phrase proof for `ConfirmationAction::BookClose`, floored at
+    /// `ConfirmWithReauthAndPhrase` (phrase `ENCERRAR LIVRO`). Guards BOTH arms of the route: the
+    /// one-shot arm seals a termo de encerramento and appends `book.closed`, and the two-phase arm
+    /// commits the book to closing. Same fail-closed default as [`CloseBookFromTermo::confirmation`]
+    /// — an absent `confirmation` object deserialises to an empty proof, which the gate refuses.
+    #[serde(default)]
+    pub confirmation: ConfirmationProof,
 }
 
 /// Optional filter for `GET /v1/books`.

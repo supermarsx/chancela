@@ -526,6 +526,10 @@ async fn genuinely_cosigned_termo_opens_and_preserves_the_signed_set() {
                 "closing_date": "2026-06-30",
                 "required_signatories": ["Administrador"],
                 "one_shot": true,
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": CLOSE_PHRASE,
+                },
             }),
         ),
     )
@@ -1026,7 +1030,18 @@ async fn seed_frozen_encerramento(
             "POST",
             &format!("/v1/books/{book_id}/close"),
             token,
-            json!({ "reason": "BookFull", "closing_date": "2026-06-30", "required_signatories": [], "one_shot": false }),
+            json!({
+                "reason": "BookFull",
+                "closing_date": "2026-06-30",
+                "required_signatories": [],
+                "one_shot": false,
+                // `book.close` guards BOTH arms of the route, the two-phase draft included: minting
+                // the encerramento is what commits the book to closing.
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": CLOSE_PHRASE,
+                },
+            }),
         ),
     )
     .await;
@@ -1404,5 +1419,286 @@ async fn pkcs12_termo_sign_requires_local_signing_capability() {
     assert!(
         instrument_signatures(&state, &book_id).await.is_empty(),
         "no signature recorded when local signing is disabled"
+    );
+}
+
+// =================================================================================================
+// `POST /v1/books/{id}/close` — the THIRD route in this family whose declared floor was never checked
+// =================================================================================================
+//
+// `ConfirmationAction::BookClose` has guarded the book-close route in `confirmation::ROUTE_GUARD`
+// since t56-e0, floored at `ConfirmWithReauthAndPhrase` with the phrase `ENCERRAR LIVRO` — and,
+// exactly as with `termo_abertura.open` and `termo_encerramento.close` before b3817fc0, no handler
+// ever called `require_confirmation` for it. A compiler probe (a dummy parameter on
+// `require_confirmation`, which turns every real invocation into an `E0061`) put the true call-site
+// set at seven, none of them in `books.rs`: the registry declared a step-up the route did not
+// verify, so any client could close a book — sealing a termo de encerramento that asserts the book's
+// ata count — with no proof at all.
+//
+// These tests live beside the abertura/encerramento pair above because they need the same fixture
+// machinery (a real PFX per slot, real PAdES co-signature) and assert the same way: the STATE is the
+// assertion, never the status code alone. A `403` that had nonetheless closed the book would pass a
+// status-only test, so every refusal below re-reads the book, the encerramento and the hash chain.
+
+/// `POST /v1/books/{id}/close` — the book-lifecycle route the registry guards with
+/// `ConfirmationAction::BookClose`.
+///
+/// Deliberately NOT [`close_req`], which drives the two-phase *seal* at
+/// `.../termo/encerramento/close`. The two routes carry the same phrase and are one step apart in
+/// the same flow; separate builders stop a test from silently proving the already-fixed sibling.
+fn book_close_req(book_id: &str, token: &str, body: Value) -> Request<Body> {
+    json_req("POST", &format!("/v1/books/{book_id}/close"), token, body)
+}
+
+/// A valid close body with **no confirmation proof** — byte-for-byte the request the shipped client
+/// sent before this gate landed.
+///
+/// `reason`, `closing_date` and `required_signatories` have no serde defaults, so they must be
+/// present or the request dies at deserialisation with a `422` and never reaches the gate at all.
+/// Every refusal case below therefore starts from a fully-formed, otherwise-acceptable request: the
+/// missing proof is the only thing wrong with it.
+///
+/// The signatory is **structured** (a name plus a capacity from the art. 31.º n.º 2 allow-list)
+/// rather than a legacy label, because the two-phase arm rejects a bare string with a `422` — and a
+/// case that 422s on its body would never reach the gate this file exists to test.
+fn book_close_base(one_shot: bool) -> Value {
+    json!({
+        "reason": "BookFull",
+        "closing_date": "2026-06-30",
+        "required_signatories": [{ "name": "Amelia Marques", "capacity": "Manager" }],
+        "one_shot": one_shot,
+    })
+}
+
+/// [`book_close_base`] carrying an arbitrary `confirmation` value — the incomplete-proof cases.
+fn book_close_with(one_shot: bool, confirmation: Value) -> Value {
+    let mut body = book_close_base(one_shot);
+    body["confirmation"] = confirmation;
+    body
+}
+
+/// A **complete** close body. `bootstrap` gives the operator a real argon2 hash of [`TEST_PASSWORD`],
+/// so this proof genuinely passes `require_step_up` rather than merely being present — which is what
+/// lets the passable case below tell "the gate refused me" apart from "the gate can never be
+/// satisfied". See [`open_body`].
+fn book_close_body(one_shot: bool) -> Value {
+    book_close_with(
+        one_shot,
+        json!({
+            "reauth": { "password": TEST_PASSWORD },
+            "confirm_phrase": CLOSE_PHRASE,
+        }),
+    )
+}
+
+/// An OPEN book whose termo de abertura was really co-signed and then sealed.
+///
+/// The fixture is fully co-signed **on purpose**: it leaves nothing evidentiary pending, so a `403`
+/// from the close route can only be the confirmation gate and never some upstream check refusing for
+/// its own reasons. A weaker fixture would let a refusal be scored for the wrong cause.
+async fn open_book_via_cosigned_abertura(state: &AppState, token: &str) -> String {
+    let (book_id, slot0, slot1) = seed_frozen_termo(state, token).await;
+    cosign_both_slots(state, token, &book_id, &slot0, &slot1).await;
+    let (status, view) = send(state, open_req(&book_id, token, open_body(None))).await;
+    assert_eq!(status, StatusCode::OK, "open the fixture book: {view}");
+    assert_eq!(view["state"], "Open");
+    book_id
+}
+
+/// The incomplete proofs a real client can produce. Shared by both arms of the route so neither arm
+/// is tested more weakly than the other. `None` means the `confirmation` key is absent entirely.
+fn incomplete_close_proofs() -> [(&'static str, Option<Value>); 6] {
+    [
+        ("no confirmation key at all (the pre-fix client body)", None),
+        (
+            "step-up only, no phrase",
+            Some(json!({ "reauth": { "password": TEST_PASSWORD } })),
+        ),
+        (
+            "the right phrase but no step-up",
+            Some(json!({ "confirm_phrase": CLOSE_PHRASE })),
+        ),
+        (
+            "the phrase in the wrong case — it is compared byte-exact",
+            Some(json!({
+                "reauth": { "password": TEST_PASSWORD },
+                "confirm_phrase": "encerrar livro",
+            })),
+        ),
+        (
+            "the abertura phrase on the close route",
+            Some(json!({
+                "reauth": { "password": TEST_PASSWORD },
+                "confirm_phrase": OPEN_PHRASE,
+            })),
+        ),
+        (
+            "the right phrase with the wrong password",
+            Some(json!({
+                "reauth": { "password": "nao-e-a-palavra-passe" },
+                "confirm_phrase": CLOSE_PHRASE,
+            })),
+        ),
+    ]
+}
+
+#[tokio::test]
+async fn one_shot_book_close_without_a_complete_confirmation_proof_closes_nothing() {
+    // The one-shot arm is the consequential one: it seals a termo de encerramento asserting the
+    // book's ata count and appends `book.closed` in a single commit. Before this gate it did all of
+    // that on a request carrying no proof whatsoever.
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let book_id = open_book_via_cosigned_abertura(&state, &token).await;
+
+    // The chain as it stands with the book merely Open. Every refusal must leave it exactly here —
+    // a stronger assertion than "no `book.closed`", because it also catches a half-committed close
+    // that appended a `document.generated` for the encerramento and then failed.
+    let events_before = ledger_events(&state, &token).await;
+
+    for (label, confirmation) in incomplete_close_proofs() {
+        let body = match confirmation {
+            Some(proof) => book_close_with(true, proof),
+            None => book_close_base(true),
+        };
+        let (status, response) = send(&state, book_close_req(&book_id, &token, body)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{label}: the confirmation gate must refuse the close with 403: {response}"
+        );
+        assert_ne!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{label}: a confirmation failure must never be a 401 — that signs the operator out"
+        );
+
+        // THE BOOK IS UNTOUCHED — not merely "an error was returned".
+        let (_, book) = send(&state, get_req(&format!("/v1/books/{book_id}"), &token)).await;
+        assert_eq!(book["state"], "Open", "{label}: book still Open: {book}");
+        assert!(
+            book["closing_date"].is_null(),
+            "{label}: a refused close records no closing date: {book}"
+        );
+
+        // NO TERMO WAS SEALED. The gate runs before the branch, so the one-shot arm minted nothing
+        // and the two-phase draft the same route can create does not exist either.
+        let (status, termo) = send(
+            &state,
+            get_req(&format!("/v1/books/{book_id}/termo/encerramento"), &token),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "{label}: a refused close leaves no termo de encerramento behind: {termo}"
+        );
+
+        // THE CHAIN IS UNMOVED, and specifically free of `book.closed`.
+        let events_after = ledger_events(&state, &token).await;
+        assert_eq!(
+            events_after, events_before,
+            "{label}: a refused close appends nothing to the hash chain"
+        );
+        assert!(
+            !events_after.iter().any(|e| e["kind"] == "book.closed"),
+            "{label}: no book.closed on an unproven close: {events_after:?}"
+        );
+    }
+
+    // Same fixture, complete proof: the gate is PASSABLE, so each 403 above was the missing proof
+    // and not a guard that can never be satisfied.
+    let (status, view) = send(
+        &state,
+        book_close_req(&book_id, &token, book_close_body(true)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "the complete proof closes: {view}");
+    assert_eq!(view["state"], "Closed");
+    let events = ledger_events(&state, &token).await;
+    assert!(
+        events.iter().any(|e| e["kind"] == "book.closed"),
+        "the proven close is the one that appends book.closed: {events:?}"
+    );
+}
+
+#[tokio::test]
+async fn two_phase_book_close_without_a_complete_confirmation_proof_mints_no_termo() {
+    // The SAME route with `one_shot: false`. It appends nothing to the chain, which is exactly why
+    // it could be dismissed as harmless — but it is the step that commits the book to closing, and
+    // `RouteGuard::Actions` guards the ROUTE, not one of its arms. Gating only the one-shot arm
+    // would leave the declared guard half-enforced, which is the defect this task exists to close.
+    let tmp = TmpDir::new();
+    let state = signing_state(&tmp).await;
+    let token = bootstrap(&state).await;
+    let book_id = open_book_via_cosigned_abertura(&state, &token).await;
+
+    let events_before = ledger_events(&state, &token).await;
+
+    for (label, confirmation) in incomplete_close_proofs() {
+        let body = match confirmation {
+            Some(proof) => book_close_with(false, proof),
+            None => book_close_base(false),
+        };
+        let (status, response) = send(&state, book_close_req(&book_id, &token, body)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "{label}: the two-phase draft is guarded too: {response}"
+        );
+        assert_ne!(
+            status,
+            StatusCode::UNAUTHORIZED,
+            "{label}: a confirmation failure must never be a 401 — that signs the operator out"
+        );
+
+        // NOTHING WAS DRAFTED: no encerramento exists for the book to be closed through.
+        let (status, termo) = send(
+            &state,
+            get_req(&format!("/v1/books/{book_id}/termo/encerramento"), &token),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "{label}: a refused two-phase close mints no draft encerramento: {termo}"
+        );
+        let (_, book) = send(&state, get_req(&format!("/v1/books/{book_id}"), &token)).await;
+        assert_eq!(book["state"], "Open", "{label}: book still Open: {book}");
+        assert_eq!(
+            ledger_events(&state, &token).await,
+            events_before,
+            "{label}: a refused two-phase close appends nothing to the hash chain"
+        );
+    }
+
+    // Passable on the same fixture: the complete proof mints the Draft encerramento, and still
+    // appends nothing to the chain (the two-phase contract).
+    let (status, view) = send(
+        &state,
+        book_close_req(&book_id, &token, book_close_body(false)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "the complete proof drafts: {view}");
+    assert_eq!(
+        view["state"], "Open",
+        "the two-phase draft leaves the book Open: {view}"
+    );
+    let (status, termo) = send(
+        &state,
+        get_req(&format!("/v1/books/{book_id}/termo/encerramento"), &token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the draft encerramento exists: {termo}"
+    );
+    assert_eq!(termo["state"], "Draft");
+    assert_eq!(
+        ledger_events(&state, &token).await,
+        events_before,
+        "drafting a two-phase close still appends nothing to the hash chain"
     );
 }

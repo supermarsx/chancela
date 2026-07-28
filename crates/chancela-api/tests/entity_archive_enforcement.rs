@@ -517,7 +517,12 @@ async fn a_book_still_closes_with_its_termo_de_encerramento_after_its_entity_is_
             json!({
                 "reason": "BookFull",
                 "closing_date": "2026-12-31",
-                "required_signatories": ["Administrador"]
+                "required_signatories": ["Administrador"],
+                // `book.close` is floored at confirm-with-reauth-and-phrase; the route verifies it.
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": "ENCERRAR LIVRO",
+                },
             }),
         ),
     )

@@ -63,6 +63,18 @@ export const encerramentoPtPT = {
     'O termo assinado é selado e o livro é encerrado. Um livro encerrado não volta a abrir nem aceita novas atas.',
   'books.encerramento.close.confirm.action': 'Selar e encerrar o livro',
 
+  // — Confirmação de `book.close` (o passo que compromete o livro ao encerramento) ————
+  // Dois textos, porque os dois modos fazem coisas diferentes e o diálogo tem de dizer qual: um
+  // passo encerra o livro já; o modo em duas fases apenas cria o termo por assinar.
+  'books.encerramento.start.confirm.title': 'Encerrar este livro?',
+  'books.encerramento.start.confirm.oneShotIntro':
+    'O livro é encerrado agora, num único passo, com um termo de encerramento gerado a partir deste formulário. Um livro encerrado não volta a abrir nem aceita novas atas.',
+  'books.encerramento.start.confirm.twoPhaseIntro':
+    'É criado um termo de encerramento por preencher e assinar. O livro continua aberto até o termo estar assinado e ser selado — mas fica comprometido com o encerramento.',
+  // Deliberadamente distinto de `books.closeBook` ("Encerrar livro"): o botão do formulário abre o
+  // diálogo, este confirma-o. Rótulos iguais tornariam os dois passos indistinguíveis.
+  'books.encerramento.start.confirm.action': 'Confirmar o encerramento',
+
   // — Falha-fechada do encerramento (t44) ————————————————————————————————————
   'books.encerramento.close.notSignedTitle': 'O termo ainda não está assinado criptograficamente',
   'books.encerramento.close.notSignedBody':
@@ -124,6 +136,13 @@ export const encerramentoEnglish = {
   'books.encerramento.close.confirm.intro':
     'The signed term is sealed and the book is closed. A closed book never reopens and accepts no further minutes.',
   'books.encerramento.close.confirm.action': 'Seal and close the book',
+
+  'books.encerramento.start.confirm.title': 'Close this book?',
+  'books.encerramento.start.confirm.oneShotIntro':
+    'The book is closed now, in a single step, with a closing term generated from this form. A closed book never reopens and accepts no further minutes.',
+  'books.encerramento.start.confirm.twoPhaseIntro':
+    'A closing term is created for you to fill in and sign. The book stays open until the term is signed and sealed — but it is committed to closing.',
+  'books.encerramento.start.confirm.action': 'Confirm the close',
 
   'books.encerramento.close.notSignedTitle': 'The term is not yet cryptographically signed',
   'books.encerramento.close.notSignedBody':

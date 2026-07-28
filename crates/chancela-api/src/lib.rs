@@ -5709,10 +5709,20 @@ mod tests {
             .user_id;
         let hash = crate::attestation::hash_secret(password).expect("hash the step-up password");
         let mut users = state.users.write().await;
-        users
-            .get_mut(&uid)
+        let username = users
+            .get(&uid)
             .expect("the session's user exists")
-            .password_hash = Some(hash);
+            .username
+            .clone();
+        // Patch EVERY user sharing this username, not only the session's own. `require_step_up`
+        // resolves its user BY USERNAME, so a duplicate `test.actor` left behind by an earlier
+        // unauthenticated `send` can shadow the patched one and make step-up refuse or pass
+        // depending on hash-map order. Patching the whole name class removes the ordering
+        // dependency instead of racing it — the duplicates are throwaway auto-seeded actors whose
+        // placeholder hash verifies against nothing, so nothing observable is weakened.
+        for user in users.values_mut().filter(|u| u.username == username) {
+            user.password_hash = Some(hash.clone());
+        }
     }
 
     /// A fresh in-memory state with the RBAC catalog seeded — the in-memory equivalent of a real
@@ -9020,6 +9030,9 @@ mod tests {
     #[tokio::test]
     async fn termo_pkcs12_requires_signing_perform_in_addition_to_book_open() {
         let (state, owner, entity_id, _tmp) = state_with_entity().await;
+        // The two-phase close draft below is `book.close`-gated, so the owner needs a verifiable
+        // password for its proof to pass.
+        install_actor_password(&state, &owner, STEP_UP_PASSWORD).await;
         let (status, book) = send(
             state.clone(),
             with_session(
@@ -9165,7 +9178,11 @@ mod tests {
                             "name": "Amélia Marques",
                             "capacity": "Manager"
                         }],
-                        "one_shot": false
+                        "one_shot": false,
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
                     }),
                 ),
                 &owner,
@@ -9229,16 +9246,27 @@ mod tests {
     #[tokio::test]
     async fn one_shot_default_still_closes_in_one_step() {
         // DA4: an unchanged close request (no `one_shot`) closes the book immediately, as before.
+        // "Unchanged" no longer means "bodiless": `book.close` is floored at
+        // confirm-with-reauth-and-phrase and the route now verifies it, so the proof rides along.
         let (state, _entity, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let token = auth_token(&state).await;
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, book) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/books/{book_id}/close"),
-                json!({
-                    "reason": "BookFull",
-                    "closing_date": "2026-06-30",
-                    "required_signatories": ["Administrador"],
-                }),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-06-30",
+                        "required_signatories": ["Administrador"],
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -9275,7 +9303,9 @@ mod tests {
         assert_eq!(book["state"], "Open");
         let book_id = book["id"].as_str().expect("book id").to_owned();
 
-        // Two-phase close: mint a Draft encerramento, nothing on the chain.
+        // Two-phase close: mint a Draft encerramento, nothing on the chain. Still `book.close`-gated
+        // — the draft is what commits the book to closing.
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, view) = send(
             state.clone(),
             with_session(
@@ -9286,6 +9316,10 @@ mod tests {
                         "closing_date": "2026-06-30",
                         "required_signatories": [],
                         "one_shot": false,
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
                     }),
                 ),
                 &token,
@@ -9469,6 +9503,15 @@ mod tests {
     // "Did not open" / "did not close" is the assertion, not "returned an error": the book's state,
     // the termo's state and the hash chain are all checked. Each test also proves the gate is
     // PASSABLE on the same fixture, so a refusal cannot be scored for the wrong reason.
+    //
+    // **The "THREE call sites" above is a historical snapshot, not a live count — do not read it as
+    // one.** It described the crate at the moment t80 opened, and it was already wrong by the time
+    // anyone read it back: `book.close` turned out to be a THIRD route in the same family, declared
+    // in the registry and called by no handler, and was closed the same way (its refusal tests are
+    // the integration-target `*_book_close_without_a_complete_confirmation_proof_*` pair in
+    // `tests/termo_pkcs12_signing.rs`). Establish the real set with the compiler — give
+    // `require_confirmation` a dummy parameter in a throwaway worktree and read the `E0061`s — never
+    // with a text search, which counts doc examples, `use` lines and prose like this paragraph.
     // =============================================================================================
 
     /// Drive a two-phase book to a `Signing` termo de abertura: the state just before `open`.
@@ -9553,6 +9596,7 @@ mod tests {
         assert_eq!(book["state"], "Open");
         let book_id = book["id"].as_str().expect("book id").to_owned();
 
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, view) = send(
             state.clone(),
             with_session(
@@ -9563,6 +9607,10 @@ mod tests {
                         "closing_date": "2026-06-30",
                         "required_signatories": [],
                         "one_shot": false,
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
                     }),
                 ),
                 &token,
@@ -10747,15 +10795,24 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
 
         // Close the book → the encerramento document is generated in the same commit as book.closed.
+        let token = auth_token(&state).await;
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, closed) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/books/{book_id}/close"),
-                json!({
-                    "reason": "BookFull",
-                    "closing_date": "2026-12-31",
-                    "required_signatories": ["Administrador"],
-                }),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-12-31",
+                        "required_signatories": ["Administrador"],
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -11431,15 +11488,24 @@ mod tests {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
 
         // Close the book so it is no longer open.
+        let token = auth_token(&state).await;
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let (status, _) = send(
             state.clone(),
-            post_json(
-                &format!("/v1/books/{book_id}/close"),
-                json!({
-                    "reason": "BookFull",
-                    "closing_date": "2026-12-31",
-                    "required_signatories": ["Administrador"],
-                }),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-12-31",
+                        "required_signatories": ["Administrador"],
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
             ),
         )
         .await;
@@ -11533,14 +11599,23 @@ mod tests {
     #[tokio::test]
     async fn close_non_open_book_is_409() {
         let (state, _entity_id, book_id) = entity_and_open_book("SociedadeAnonima").await;
+        let token = auth_token(&state).await;
+        install_actor_password(&state, &token, STEP_UP_PASSWORD).await;
         let close = || {
-            post_json(
-                &format!("/v1/books/{book_id}/close"),
-                json!({
-                    "reason": "BookFull",
-                    "closing_date": "2026-12-31",
-                    "required_signatories": ["Administrador"],
-                }),
+            with_session(
+                post_json(
+                    &format!("/v1/books/{book_id}/close"),
+                    json!({
+                        "reason": "BookFull",
+                        "closing_date": "2026-12-31",
+                        "required_signatories": ["Administrador"],
+                        "confirmation": {
+                            "reauth": { "password": STEP_UP_PASSWORD },
+                            "confirm_phrase": "ENCERRAR LIVRO",
+                        },
+                    }),
+                ),
+                &token,
             )
         };
         let (status, _) = send(state.clone(), close()).await;

@@ -2681,6 +2681,13 @@ describe('CloseBookForm — structured termo signatories', () => {
       target: { value: 'rui@example.pt' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Encerrar livro' }));
+    // `book.close` is guarded: the submit opens the confirm dialog and the request leaves only once
+    // it is confirmed. The unstubbed policy read fails over to a plain confirm with no gate fields.
+    const dialog = await screen.findByRole('dialog');
+    const confirm = dialog.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    // The confirm stays disabled until the policy read settles; clicking before then is a no-op.
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+    fireEvent.click(confirm);
 
     await waitFor(() =>
       expect(calls.some((call) => call.url === '/v1/books/book-1/close')).toBe(true),

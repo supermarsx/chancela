@@ -242,7 +242,12 @@ async fn close_book(state: &AppState, token: &str, book_id: &str) -> (StatusCode
                 "reason": "BookFull",
                 "closing_date": "2026-12-31",
                 "required_signatories": ["Gerente"],
-                "actor": "paper.owner"
+                "actor": "paper.owner",
+                // `book.close` is floored at confirm-with-reauth-and-phrase; the route verifies it.
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": "ENCERRAR LIVRO",
+                },
             }),
         ),
     )

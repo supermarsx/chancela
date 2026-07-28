@@ -29,6 +29,7 @@ use crate::collection_page::{
     CollectionPage, CollectionPageQuery, CursorPosition, apply_keyset, fold_search,
     query_fingerprint,
 };
+use crate::confirmation::{ConfirmationAction, require_confirmation};
 use crate::dto::{
     ActView, BookView, BooksQuery, CloseBook, CreateBook, EntityView, PatchBook,
     normalize_document_layout_override, normalize_termo_signatories, parse_date,
@@ -869,6 +870,7 @@ pub async fn close_book(
         required_signatories,
         one_shot,
         actor: req_actor,
+        confirmation,
     } = req;
     // RBAC (t64-E3): closing a book is scoped to the book.
     require_permission(
@@ -878,6 +880,15 @@ pub async fn close_book(
         scope_of_book(BookId(id)),
     )
     .await?;
+    // Composes with the RBAC gate above; never replaces it. `book.close` is floored at T3 + the
+    // `ENCERRAR LIVRO` phrase, and the registry has declared that since t56-e0 with nothing
+    // enforcing it — the same defect b3817fc0 closed for the two termo routes.
+    //
+    // Gated at the route, BEFORE the `one_shot` branch, because the registry guards the ROUTE and
+    // both arms are consequential: the one-shot arm is itself the `book.closed` commit, and the
+    // two-phase arm mints the `Draft` encerramento that commits the book to closing. Running first
+    // means a refusal touches nothing at all — no termo minted, no document rendered, no append.
+    require_confirmation(&state, &actor, ConfirmationAction::BookClose, &confirmation).await?;
 
     if !one_shot {
         return close_book_two_phase(

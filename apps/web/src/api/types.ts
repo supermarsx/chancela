@@ -5880,6 +5880,13 @@ export interface CloseBookBody {
    * default (the recommended path).
    */
   one_shot?: boolean;
+  /**
+   * The step-up + typed-phrase proof for the `book.close` guarded action, floored server-side at
+   * `confirm_with_reauth_and_phrase` (phrase `ENCERRAR LIVRO`). The server VERIFIES this: it guards
+   * BOTH arms of the route, so a request without both halves is a `403` that closes nothing and
+   * drafts nothing. Gather it through `ui/GuardedActionModal` — never by prompting ad hoc.
+   */
+  confirmation?: ConfirmationProof;
 }
 
 export type BookTermoSignatoryInput = string | BookTermoSignatory;

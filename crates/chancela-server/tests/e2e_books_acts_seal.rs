@@ -105,6 +105,11 @@ async fn books_acts_full_seal_lifecycle() {
                 "reason": "BookFull",
                 "closing_date": "2026-12-31",
                 "required_signatories": ["Administrador"],
+                // `book.close` is floored at confirm-with-reauth-and-phrase; the route verifies it.
+                "confirmation": {
+                    "reauth": { "password": E2E_TEST_PASSWORD },
+                    "confirm_phrase": "ENCERRAR LIVRO",
+                },
             }),
             &token,
         )

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import { renderWithProviders } from '../../test/utils';
 import { CloseBookPage } from './CloseBookPage';
@@ -70,6 +70,16 @@ describe('CloseBookPage', () => {
       target: { value: '2026-07-13' },
     });
     fireEvent.click(screen.getByRole('button', { name: /encerrar livro/i }));
+
+    // `book.close` is a guarded action, so the submit opens the confirm dialog rather than closing
+    // the book. This stub answers the policy read with a book, so the dialog falls back to a plain
+    // confirm with no gate fields — the page's own contract (navigate on success) is what is
+    // under test here; the proof itself is asserted in CloseBookForm.test.tsx.
+    const dialog = await screen.findByRole('dialog');
+    const confirm = dialog.querySelector<HTMLButtonElement>('button[type=submit]')!;
+    // The confirm stays disabled until the policy read settles; clicking before then is a no-op.
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+    fireEvent.click(confirm);
 
     // onClosed navigates back to the book detail route.
     expect(await screen.findByText('DETALHE DO LIVRO')).toBeTruthy();
