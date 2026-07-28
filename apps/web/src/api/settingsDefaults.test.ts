@@ -164,8 +164,9 @@ describe('DEFAULT_SETTINGS.entities', () => {
     // A settings document that omits the slice is not malformed — it is the ordinary shape from an
     // instance that has never narrowed its entity types, and every reader must treat the absence
     // as "every kind" rather than as an error or as "none".
-    const wireDocument: Settings = { ...DEFAULT_SETTINGS };
-    delete wireDocument.entities;
+    const { entities: _omitted, ...withoutEntities } = DEFAULT_SETTINGS;
+    const wireDocument: Settings = withoutEntities;
+    expect('entities' in wireDocument).toBe(false);
     expect(wireDocument.entities?.enabled_kinds ?? []).toEqual([]);
   });
 });

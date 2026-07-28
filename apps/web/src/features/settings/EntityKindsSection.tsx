@@ -42,35 +42,34 @@
  * acting user the card simply shows no counts and no acknowledgement gate: an absent count is
  * stated by omission, never guessed at, and the server still refuses a disabled kind either way.
  *
- * ## No family-level "toggle all"
+ * ## One flat grid, not five family groups
  *
- * §6.5 offered one as sugar. It is deliberately not here: unticking a family in one gesture would
- * either bypass the per-type acknowledgement above — which is binding — or stack up to six modals
- * for one click. Four of the five families hold a single type, where the control would have been a
- * second checkbox for the row directly beneath it. The grouping (which is what makes ten types
- * readable) is kept; only the bulk switch is not.
+ * §6.5 proposed grouping the ten types under their five families with a family-level "toggle all".
+ * Neither survived being looked at in a browser.
+ *
+ * The **toggle all** would either bypass the per-type acknowledgement above — which is binding — or
+ * stack up to six modals for one click, and four of the five families hold a single type, where it
+ * would have been a second checkbox for the row directly beneath it.
+ *
+ * The **grouping** was built and then removed on measurement: `ColumnToggleGrid` sizes its name
+ * track to its own content, so five separate grids put their checkbox columns at five different
+ * x-positions — destroying the one property the shared grid exists to provide. Fixing that needs a
+ * full-width group row, i.e. CSS this lane does not own. One grid of ten keeps the alignment, and
+ * loses little: `ENTITY_KINDS` is already ordered family by family (the six *sociedades* are
+ * contiguous and say so in their own names), the card above it is one flat grid of thirteen
+ * columns, and §6.5's own decision D2 records that families are a derived grouping, not the unit
+ * being configured.
  */
 import { useMemo, useState } from 'react';
 import { useEntities } from '../../api/hooks';
-import { entityFamilyLabels, entityKindLabels } from '../../api/labels';
-import {
-  ENTITY_FAMILIES,
-  ENTITY_KINDS,
-  ENTITY_KIND_FAMILY,
-  type EntitiesSettings,
-  type EntityKind,
-} from '../../api/types';
+import { entityKindLabels } from '../../api/labels';
+import { ENTITY_KINDS, type EntitiesSettings, type EntityKind } from '../../api/types';
 import { useEntityKindsT } from '../../i18n/entityKindsFallback';
 import { Card, ConfirmActionModal } from '../../ui';
 import { ColumnToggleGrid } from '../tableColumns/ColumnToggleGrid';
 
 /** The two named states. `all` is `enabled_kinds: []`; `selected` is a non-empty explicit list. */
 type Mode = 'all' | 'selected';
-
-/** The types of each family, in the canonical `ENTITY_KINDS` order. */
-const FAMILY_KINDS = ENTITY_FAMILIES.map(
-  (family) => [family, ENTITY_KINDS.filter((kind) => ENTITY_KIND_FAMILY[kind] === family)] as const,
-);
 
 export function EntityKindsSection({
   value,
@@ -174,36 +173,26 @@ export function EntityKindsSection({
           </p>
         ) : null}
 
-        <div className="stack--tight" role="group" aria-label={kt('entityKinds.grid.aria')}>
-          {FAMILY_KINDS.map(([family, kinds], index) => (
-            <div key={family}>
-              <p className="field__label">{entityFamilyLabels[family]}</p>
-              <ColumnToggleGrid
-                columns={kinds}
-                showHead={index === 0}
-                headers={{
-                  name: kt('entityKinds.head.kind'),
-                  toggle: kt('entityKinds.head.available'),
-                }}
-                isVisible={isEnabled}
-                isDisabled={() => mode === 'all'}
-                onToggle={toggleKind}
-                columnLabel={(kind) => entityKindLabels[kind]}
-                note={(kind) => {
-                  const count = counts?.[kind] ?? 0;
-                  if (count === 0) return null;
-                  return (
-                    <span className="muted">
-                      {count === 1
-                        ? kt('entityKinds.inUse.badge.one')
-                        : kt('entityKinds.inUse.badge.many', { count })}
-                    </span>
-                  );
-                }}
-              />
-            </div>
-          ))}
-        </div>
+        <ColumnToggleGrid
+          columns={ENTITY_KINDS}
+          ariaLabel={kt('entityKinds.grid.aria')}
+          headers={{ name: kt('entityKinds.head.kind'), toggle: kt('entityKinds.head.available') }}
+          isVisible={isEnabled}
+          isDisabled={() => mode === 'all'}
+          onToggle={toggleKind}
+          columnLabel={(kind) => entityKindLabels[kind]}
+          note={(kind) => {
+            const count = counts?.[kind] ?? 0;
+            if (count === 0) return null;
+            return (
+              <span className="muted">
+                {count === 1
+                  ? kt('entityKinds.inUse.badge.one')
+                  : kt('entityKinds.inUse.badge.many', { count })}
+              </span>
+            );
+          }}
+        />
       </div>
 
       <ConfirmActionModal

@@ -39,18 +39,22 @@
  *
  * The layout — "a list of named things, each with one checkbox, all lining up" — is not specific to
  * table columns, and the entity-type allowlist card in Configurações is the same control at a
- * different scope. It reuses this grid rather than cloning it, which is why `headers`, `showHead`
- * and `note` exist:
+ * different scope. It reuses this grid rather than cloning it, which is why `headers`, `note` and
+ * `isDisabled` exist:
  *
  * - `headers` — a grid of legal types is not a grid of columns, and labelling its tracks
  *   "Coluna / Visível" would be copy that is simply untrue. The default stays the column wording,
  *   so no existing call site changes.
- * - `showHead` — lets a caller stack several grids under ONE header strip (the entity types are
- *   grouped by family). Repeating the strip five times would be five times the noise for the same
- *   two words.
  * - `note` — a per-row aside beside the name (e.g. how many records already carry that type). It
  *   lives inside the row's `<label>` so the grid stays two tracks at every width; a third track
  *   would reintroduce exactly the misalignment this component exists to remove.
+ * - `isDisabled` — a row whose checkbox is refused, for a caller whose selection is governed by
+ *   something above the grid.
+ *
+ * ⚠️ **One grid per aligned block.** The name track sizes to its own content, so two grids side by
+ * side or stacked put their checkbox columns at two different x-positions. A caller that wants
+ * groups must render one grid and mark the groups inside it — not one grid per group. (Measured:
+ * grouping the entity types into five grids is exactly how that was found.)
  */
 import { useId, type ReactNode } from 'react';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
@@ -62,7 +66,6 @@ export function ColumnToggleGrid<C extends string>({
   columnLabel,
   ariaLabel,
   headers,
-  showHead = true,
   note,
   isDisabled,
 }: {
@@ -80,8 +83,6 @@ export function ColumnToggleGrid<C extends string>({
   ariaLabel?: string;
   /** Overrides the two header words. Defaults to the column-picker wording. */
   headers?: { name: ReactNode; toggle: ReactNode };
-  /** Draw the header strip. Set false on all but the first of a stack of grouped grids. */
-  showHead?: boolean;
   /** A per-row aside rendered after the name (a count, a state). */
   note?: (column: C) => ReactNode;
   /**
@@ -100,16 +101,14 @@ export function ColumnToggleGrid<C extends string>({
       role={ariaLabel === undefined ? undefined : 'group'}
       aria-label={ariaLabel}
     >
-      {showHead ? (
-        <div className="column-picker__head" aria-hidden="true">
-          <span className="column-picker__cell">
-            {headers?.name ?? ct('tableColumns.head.column')}
-          </span>
-          <span className="column-picker__cell column-picker__cell--center">
-            {headers?.toggle ?? ct('tableColumns.head.visible')}
-          </span>
-        </div>
-      ) : null}
+      <div className="column-picker__head" aria-hidden="true">
+        <span className="column-picker__cell">
+          {headers?.name ?? ct('tableColumns.head.column')}
+        </span>
+        <span className="column-picker__cell column-picker__cell--center">
+          {headers?.toggle ?? ct('tableColumns.head.visible')}
+        </span>
+      </div>
       {columns.map((column) => {
         const inputId = `${id}${column}`;
         return (

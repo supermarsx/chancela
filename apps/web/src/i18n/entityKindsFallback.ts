@@ -9,9 +9,9 @@
  * the catalog-leak / literal-copy gates never see these strings. Same shape as its sibling
  * `tableColumnsFallback.ts`; folding these into the catalog later is a mechanical spread.
  *
- * The ten legal-type names and the five family names are NOT here — they already exist in every
- * catalog as `enum.entityKind.*` / `enum.entityFamily.*` and are read through
- * `entityKindLabels` / `entityFamilyLabels`. Only genuinely new strings live here.
+ * The ten legal-type names are NOT here — they already exist in every catalog as
+ * `enum.entityKind.*` and are read through `entityKindLabels`. Only genuinely new strings live
+ * here.
  *
  * ## Two copy rules this module is written against
  *
@@ -52,7 +52,6 @@ export const entityKindsPtPT = {
   'entityKinds.grid.aria': 'Tipos legais disponíveis para registo',
   'entityKinds.head.kind': 'Tipo',
   'entityKinds.head.available': 'Disponível',
-  'entityKinds.family.all': 'Todos os desta família',
 
   // Seleção vazia: não é um estado gravável. A frase diz para onde ir, porque o estado pretendido
   // tem um nome e está mesmo por cima.
@@ -89,7 +88,6 @@ export const entityKindsEnglish = {
   'entityKinds.grid.aria': 'Legal types available for registration',
   'entityKinds.head.kind': 'Type',
   'entityKinds.head.available': 'Available',
-  'entityKinds.family.all': 'All in this family',
   'entityKinds.empty.error':
     'Select at least one type. To allow every type, choose “All types” above.',
   'entityKinds.inUse.title': 'This type already has registered entities',
