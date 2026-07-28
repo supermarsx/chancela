@@ -44,7 +44,8 @@ test('privacy control review reminders stay local and follow the settings source
   await expect(page.getByTestId('session-trigger')).toContainText('Privacy Review E2E');
   await expect(settingsSectionButton(page, 'Privacidade')).toHaveAttribute('aria-pressed', 'true');
 
-  const dpiaPanel = panelByTitle(page, 'DPIAs');
+  // The register is the AIPD in pt-PT, not the DPIA (dc48bdd2) — the panel heading moved with it.
+  const dpiaPanel = panelByTitle(page, 'Avaliações de impacto (AIPD)');
   await expect(dpiaPanel).toContainText('Biometric access DPIA');
   await expect(dpiaPanel).toContainText('Revisão breve');
   await expect(dpiaPanel).toContainText('Próxima revisão local: 2026-07-20.');

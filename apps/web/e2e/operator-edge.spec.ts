@@ -234,24 +234,29 @@ test('trust catalog keeps unsafe metadata inert and TSL/TSA searches accent-inse
     catalog.locator('.trust-pick--service', { hasText: 'Serviço Sem Metadados' }),
   ).toHaveCount(0);
 
+  // Picking a record opens its detail in the floating SidePanel (b1f7e513), which is portaled to
+  // <body> and so sits outside the catalog panel. The unsafe metadata must still render as inert
+  // text wherever it lands, so the assertions follow the detail rather than dropping.
+  const detail = page.getByRole('complementary');
+
   await catalog.locator('.trust-pick--service', { hasText: 'Assinatura Qualificada Ágil' }).click();
-  await expect(catalog.getByText('javascript:alert("service")')).toBeVisible();
-  await expect(catalog.getByText('data:text/html,<b>x</b>')).toBeVisible();
+  await expect(detail.getByText('javascript:alert("service")')).toBeVisible();
+  await expect(detail.getByText('data:text/html,<b>x</b>')).toBeVisible();
   await expectNoUnsafeAnchors(page);
 
   await page
     .getByRole('searchbox', { name: 'Procurar na lista de confiança TSL', exact: true })
     .fill('');
   await catalog.locator('.trust-pick--provider', { hasText: 'Certificação Ágil' }).click();
-  await expect(catalog.getByText('javascript:alert("provider")')).toBeVisible();
-  await expect(catalog.getByText('data:text/html,<svg onload=alert(1)>')).toBeVisible();
+  await expect(detail.getByText('javascript:alert("provider")')).toBeVisible();
+  await expect(detail.getByText('data:text/html,<svg onload=alert(1)>')).toBeVisible();
   await expectNoUnsafeAnchors(page);
 
   await catalog.locator('.trust-pick--service', { hasText: 'Serviço Sem Metadados' }).click();
   await expect(
-    catalog.locator('.trust-detail__title', { hasText: 'Serviço Sem Metadados' }),
+    detail.locator('.trust-detail__title', { hasText: 'Serviço Sem Metadados' }),
   ).toBeVisible();
-  await expect(catalog.getByText('Sem dados publicados.')).toHaveCount(3);
+  await expect(detail.getByText('Sem dados publicados.')).toHaveCount(3);
   await expectNoUnsafeAnchors(page);
 
   await page.getByRole('button', { name: 'Selos temporais (TSA)', exact: true }).click();
@@ -260,7 +265,10 @@ test('trust catalog keeps unsafe metadata inert and TSL/TSA searches accent-inse
   await tsa.getByRole('searchbox', { name: 'Procurar registos TSA', exact: true }).fill('evora');
   await expect(tsa.getByRole('button', { name: /QTST Évora/ })).toBeVisible();
   await expect(tsa.getByRole('button', { name: /TST Lisboa/ })).toHaveCount(0);
-  await expect(tsa.getByText('javascript:alert("tsa")').first()).toBeVisible();
+  // The TSA list no longer floats `records[0]` before anyone asked for it (b1f7e513), so the record
+  // is picked explicitly and its detail asserted in the panel that opens.
+  await tsa.getByRole('button', { name: /QTST Évora/ }).click();
+  await expect(detail.getByText('javascript:alert("tsa")').first()).toBeVisible();
   await expectNoUnsafeAnchors(page);
 });
 

@@ -12,9 +12,16 @@
  * are polled on every route. They are stubbed here, once, so a fake-shell helper cannot forget
  * them. Register this **first** in the fake-shell helper: Playwright matches handlers in
  * reverse registration order, so any stub a spec installs afterwards still wins.
+ *
+ * `/v1/me/preferences` joined them once the acts and ledger tables were wired to per-user column
+ * configuration (daec60a5): the query now loads on the dashboard and Arquivo, not just the three
+ * tables it shipped for. Left unstubbed it is the worst instance of the failure mode above —
+ * `clearSessionToken()` drops the token, the stubbed `/v1/session` immediately restores it, the
+ * shell remounts and refetches, and the loop re-renders the page several times a second. Playwright
+ * then reports "element was detached from the DOM, retrying" against a control that is right there.
  */
 import type { Page, Route } from './fixtures';
-import type { Dashboard, NotificationTriageResponse } from '../src/api/types';
+import type { Dashboard, NotificationTriageResponse, UserPreferences } from '../src/api/types';
 
 /** A well-formed dashboard with nothing in it: renders the shell, raises no alerts. */
 export function emptyDashboardFixture(): Dashboard {
@@ -54,12 +61,31 @@ function emptyTriageFixture(): NotificationTriageResponse {
   return { entries: [], durable: true, max_entries_per_owner: 500 };
 }
 
+/** No column overrides and no dismissed notices: every table renders its default columns. */
+function emptyPreferencesFixture(): UserPreferences {
+  return { table_columns: {} };
+}
+
 /**
- * Stub the shell-polled reads (`/v1/dashboard`, `/v1/notifications/triage`) plus the triage
- * PATCH the bell issues when the operator marks an entry read. Call this at the top of a
- * fake-signed-in-shell helper; specs that need a real payload just route the same URL later.
+ * Stub the shell-polled reads (`/v1/dashboard`, `/v1/notifications/triage`, `/v1/me/preferences`)
+ * plus the triage PATCH the bell issues when the operator marks an entry read. Call this at the top
+ * of a fake-signed-in-shell helper; specs that need a real payload just route the same URL later.
  */
 export async function routeShellPolling(page: Page): Promise<void> {
+  await page.route('**/v1/me/preferences', async (route) => {
+    const request = route.request();
+    if (request.method() === 'GET') {
+      await fulfillJson(route, emptyPreferencesFixture());
+      return;
+    }
+    // A column toggle PUTs the whole document; echo it back so the optimistic cache reconciles.
+    if (request.method() === 'PUT') {
+      await fulfillJson(route, (request.postDataJSON() ?? emptyPreferencesFixture()) as unknown);
+      return;
+    }
+    await route.continue();
+  });
+
   await page.route('**/v1/dashboard', async (route) => {
     if (route.request().method() === 'GET') {
       await fulfillJson(route, emptyDashboardFixture());

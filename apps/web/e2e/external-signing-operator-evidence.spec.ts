@@ -66,7 +66,10 @@ test('signed-in operator records external signer slot evidence as technical evid
   await envelopeSection.getByRole('button', { name: 'Registar evidência' }).click();
   await expect(envelopeSection.getByText('Evidência técnica do operador')).toBeVisible();
   await expect(envelopeSection).toContainText(
-    'Regista evidência técnica fornecida pelo operador para este slot e marca o slot como assinado. Não contacta prestadores nem conclui o envelope ou a ata.',
+    // «marca o slot como assinado» became «marca o slot com assinatura registada» in b15d4be5: an
+    // operator-recorded slot is a workflow register, not a signature, and the copy must not outrank
+    // the guardrail paragraph beside it. This spec exists to pin exactly that claim, so it tracks.
+    'Regista evidência técnica fornecida pelo operador para este slot e marca o slot com assinatura registada. Não contacta prestadores nem conclui o envelope ou a ata.',
   );
   await expect(envelopeSection).toContainText('Evidência de identidade incompleta');
   await expectNoCredentialInputs(envelopeSection);

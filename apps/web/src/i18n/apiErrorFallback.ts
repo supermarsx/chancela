@@ -736,8 +736,17 @@ export const TIER_STATUSES = [400, 401, 403, 404, 409, 410, 422, 429, 500, 502, 
 /**
  * The Tier-1 variant-default codes (`ApiError::code()` with no per-site override). They carry no
  * information beyond the HTTP status, so they resolve to the status tier rather than duplicating it
- * as near-identical copy. They are NOT unmapped — the server said nothing more specific, so nothing
- * more specific is being hidden.
+ * as near-identical copy. They are NOT unmapped: this catalog has no gap, because there is no code
+ * here to write copy for.
+ *
+ * **The CODE says nothing more; the DETAIL usually does.** This once concluded that "nothing more
+ * specific is being hidden" and left the technical-details block collapsed. That is false about the
+ * wire: `ApiError::Unprocessable("declared PDF SHA-256 digest does not match the received bytes")`
+ * emits `http.unprocessable` and a fully specific English message, and `with_code` is opt-in per
+ * site — the server has ~1100 such constructor sites against ~47 refined ones. Resolving to a tier
+ * headline is therefore the COMMON case, not the residual one, and leaving the detail collapsed hid
+ * the reason behind «O pedido não foi aceite tal como foi enviado.» for all of them. So a tier
+ * headline force-opens the block (see {@link ApiErrorResolution.forceDetails}).
  */
 const TIER_DEFAULT_CODES = new Set([
   'http.not_found',
@@ -782,7 +791,14 @@ export interface ApiErrorResolution {
    * open so the operator still sees everything the server said.
    */
   unmapped: boolean;
-  /** The technical-details block must start expanded (unmapped code, or a scrubbed 5xx). */
+  /**
+   * The technical-details block must start expanded, because nothing on screen names the fault.
+   *
+   * True whenever the headline is a bare `apiError.tier.*` sentence — it names the HTTP status and
+   * nothing else, so the server's English detail is the only thing that says what actually went
+   * wrong — and for the scrubbed `internal`/`upstream`, whose copy is generic on purpose and whose
+   * request id is the operator's only route back to the real fault.
+   */
   forceDetails: boolean;
   /** A deliberate refusal: must not render as routine, dismissable, or a bare "try again". */
   nonRoutine: boolean;
@@ -799,8 +815,9 @@ function hasKey(key: string): key is ApiErrorCopyKey {
  *
  * Order: a structured PIN status first (it is finer than the code and PIN-free), then the code, then
  * the status tier. There is no branch that returns the server's raw English as the headline, and no
- * branch that discards it — an unmapped code demotes the English detail into the forced-open details
- * block rather than dropping it (memory: `reject-never-silently-transform`).
+ * branch that discards it — every branch that lands on a tier headline (an unmapped code, a Tier-1
+ * variant default, or no code at all) demotes the English detail into the FORCED-OPEN details block
+ * rather than dropping it or folding it shut (memory: `reject-never-silently-transform`).
  */
 export function resolveApiError(error: ApiErrorLike | null | undefined): ApiErrorResolution {
   const status = error?.status;
@@ -845,7 +862,10 @@ export function resolveApiError(error: ApiErrorLike | null | undefined): ApiErro
     return { key: tierKey(status), unmapped: true, forceDetails: true, nonRoutine: false };
   }
 
-  return { key: tierKey(status), unmapped: false, forceDetails: false, nonRoutine: false };
+  // A Tier-1 variant default, or no code at all: the headline is the bare status tier, which names
+  // the status and NOTHING about the fault. Whatever the server said is the only thing that does, so
+  // it goes up front rather than behind a closed disclosure (see `TIER_DEFAULT_CODES`).
+  return { key: tierKey(status), unmapped: false, forceDetails: true, nonRoutine: false };
 }
 
 function refusal(key: ApiErrorCopyKey): ApiErrorResolution {

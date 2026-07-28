@@ -4,6 +4,7 @@
  * these checks sit in Playwright with mocked API state instead of live providers.
  */
 import { expect, test, type Page, type Route } from './fixtures';
+import { routeShellPolling } from './shell-routes';
 import type {
   Dashboard,
   DashboardAlert,
@@ -103,6 +104,12 @@ async function routeNotificationFixtures(page: Page): Promise<TriageUpdate[]> {
   const triageEntries: NotificationTriageEntry[] = [];
   const triageUpdates: TriageUpdate[] = [];
   const user = userFixture();
+
+  // First, so this spec's own /v1/dashboard and triage stubs below still win. What it adds that
+  // this file never stubbed is `/v1/me/preferences`: unstubbed it 401s against the real server,
+  // which clears the session token on every poll and remounts the shell in a loop — the bell then
+  // detaches from under every click. See shell-routes.ts.
+  await routeShellPolling(page);
 
   await page.route('**/health', async (route) => {
     await fulfillJson(route, { status: 'ok', version: 'e2e', integrity: 'ok', degraded: false });

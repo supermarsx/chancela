@@ -93,6 +93,11 @@ test('settings users, RBAC owner guard, and recovery/data confirmation gates', a
     await expect(row).toContainText('Frase de recuperação');
 
     await row.getByRole('button', { name: 'Desativar' }).click();
+    // Deactivation is a guarded action since t68: the roster row is dense and the click is next to
+    // Editar, so the PATCH only goes out once the confirm dialog is accepted.
+    const disableDialog = page.getByRole('dialog', { name: 'Desativar a conta' });
+    await expect(disableDialog).toBeVisible();
+    await disableDialog.getByRole('button', { name: 'Desativar a conta' }).click();
     await expect(row).toContainText('Inativo');
     await expect(row.getByRole('button', { name: 'Reativar' })).toBeVisible();
   });

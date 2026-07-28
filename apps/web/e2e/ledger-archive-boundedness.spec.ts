@@ -70,7 +70,9 @@ test('arquivo filters and archive export use the current bounded newest-first qu
   await page.getByLabel('Filtrar por âmbito').fill('act:88');
   await page.getByText('Filtros avançados').click();
   await page.getByLabel('Tipo de evento').fill('act.sealed');
-  await page.getByLabel('Autor').fill('amelia.marques');
+  // Role-scoped: the ledger's column-configuration menu now carries a checkbox named «Autor» too
+  // (daec60a5), so the bare label matches two legitimate controls.
+  await page.getByRole('textbox', { name: 'Autor' }).fill('amelia.marques');
   await page.getByLabel('Desde').fill('2026-07-01');
   await page.getByLabel('Até').fill('2026-07-31');
   await page.getByLabel('Eventos por página').selectOption('50');

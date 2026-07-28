@@ -106,7 +106,10 @@ test('TSL catalog structured filters handle accent search, service filters, and 
 
   await catalog.locator('#trust-status-filter').selectOption('Granted');
   await expect(catalog.getByText('Sem resultados')).toBeVisible();
-  await expect(catalog.getByText('Nenhum item selecionado')).toBeVisible();
+  // The record detail floats in a SidePanel since b1f7e513, so the "Nenhum item selecionado"
+  // placeholder that used to sit permanently below the list is gone by design. What replaced it is
+  // asserted instead: with nothing picked, no panel floats over the page at all.
+  await expect(page.getByRole('complementary')).toHaveCount(0);
 });
 
 test('TSA catalog filters qualified timestamp records without live timestamp calls', async ({

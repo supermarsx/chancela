@@ -53,12 +53,15 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   await expect(settingsSectionButton(page, 'Privacidade')).toHaveAttribute('aria-pressed', 'true');
 
   // --- 1. Edit a DPIA record on its own page --------------------------------------------------
-  const dpiaPanel = panelByTitle(page, 'DPIAs');
+  // The register is the AIPD in pt-PT, not the DPIA (dc48bdd2): the panel heading and the title
+  // field label both moved. The negative assertions below matter most — «Título da DPIA» matches
+  // nothing now, so leaving them would make them pass no matter what the page rendered.
+  const dpiaPanel = panelByTitle(page, 'Avaliações de impacto (AIPD)');
   await expect(dpiaPanel).toBeVisible();
 
   // 🔒 The modal is gone for good. Nothing dialog-shaped, and no authoring form on the list.
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByLabel('Título da DPIA')).toHaveCount(0);
+  await expect(page.getByLabel('Título da AIPD')).toHaveCount(0);
 
   const dpiaRow = dpiaPanel.locator('tbody tr').filter({ hasText: 'High-risk profiling' });
   await expect(dpiaRow).toHaveCount(1);
@@ -74,7 +77,7 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   await expect(page.getByRole('heading', { level: 1, name: 'Editar AIPD' })).toBeVisible();
 
   // It opened seeded from the record the ADDRESS names — not from a blank create form.
-  const titleInput = page.getByLabel('Título da DPIA');
+  const titleInput = page.getByLabel('Título da AIPD');
   await expect(titleInput).toHaveValue('High-risk profiling');
 
   await titleInput.fill('High-risk profiling (revisto)');
@@ -90,7 +93,7 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   // A successful save returns to the list — with no unsaved-changes prompt — and the row shows it.
   await expect(page).toHaveURL(/\/settings\/privacy$/);
   await expect(
-    panelByTitle(page, 'DPIAs')
+    panelByTitle(page, 'Avaliações de impacto (AIPD)')
       .locator('tbody tr')
       .filter({ hasText: 'High-risk profiling (revisto)' }),
   ).toHaveCount(1);
@@ -98,7 +101,7 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   // --- 2. The address is a cold deep link -----------------------------------------------------
   await page.goto('/settings/privacy/dpias/dpia-1');
   await expect(page.getByRole('heading', { level: 1, name: 'Editar AIPD' })).toBeVisible();
-  await expect(page.getByLabel('Título da DPIA')).toHaveValue('High-risk profiling (revisto)');
+  await expect(page.getByLabel('Título da AIPD')).toHaveValue('High-risk profiling (revisto)');
   // Both exits lead back to the list, and both are real links.
   await expect(page.getByRole('link', { name: 'Cancelar', exact: true })).toHaveCount(2);
 
@@ -107,12 +110,12 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   await expect(
     page.getByText('Não foi encontrada nenhuma AIPD com este identificador.'),
   ).toBeVisible();
-  await expect(page.getByLabel('Título da DPIA')).toHaveCount(0);
+  await expect(page.getByLabel('Título da AIPD')).toHaveCount(0);
 
   // The create address is its own page, titled as a complete pt-PT sentence.
   await page.goto('/settings/privacy/dpias/new');
   await expect(page.getByRole('heading', { level: 1, name: 'Nova AIPD' })).toBeVisible();
-  await expect(page.getByLabel('Título da DPIA')).toHaveValue('');
+  await expect(page.getByLabel('Título da AIPD')).toHaveValue('');
 
   await page.goto('/settings/privacy');
 
@@ -120,7 +123,7 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   await privacySubTab(page, 'Orientação').click();
   await expect(privacySubTab(page, 'Orientação')).toHaveAttribute('aria-pressed', 'true');
 
-  const guidancePanel = panelByTitle(page, 'Modelo DPIA local');
+  const guidancePanel = panelByTitle(page, 'Modelo local de AIPD');
   await expect(guidancePanel).toBeVisible();
 
   // pt-PT copy, resolved from the English wire ids — not the backend's English strings.

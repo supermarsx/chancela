@@ -89,8 +89,9 @@ export function ErrorNote({ error }: { error: unknown }) {
   }
 
   // Force the block open when the operator would otherwise be left with a sentence that cannot
-  // name the fault: an unmapped code, a scrubbed `internal`/`upstream`, or a thrown `Error` that
-  // never reached the server and so carries no status or code to resolve at all.
+  // name the fault: any bare status-tier headline (an unmapped code, or the Tier-1 variant default
+  // that ~95% of the server's error sites emit), a scrubbed `internal`/`upstream`, or a thrown
+  // `Error` that never reached the server and so carries no status or code to resolve at all.
   const forceOpen = resolution.forceDetails || apiError === undefined;
 
   return (

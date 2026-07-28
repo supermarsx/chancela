@@ -308,14 +308,18 @@ describe('resolution never drops the server detail and never shows raw English a
     expect(resolved.forceDetails).toBe(true);
   });
 
-  it('treats a Tier-1 variant default as mapped, not as a gap', () => {
-    // `http.not_found` carries nothing beyond the status, so the tier headline IS the whole message.
-    // The code is the `http.`-prefixed form the server actually emits: asserting on the bare name
-    // would pass while covering nothing.
+  it('treats a Tier-1 variant default as mapped, not as a gap — but force-opens the detail', () => {
+    // `http.not_found` carries nothing beyond the status, so this catalog has no gap to fill: the
+    // headline is the tier sentence and `unmapped` stays false. The code is the `http.`-prefixed
+    // form the server actually emits: asserting on the bare name would pass while covering nothing.
+    //
+    // What the code does not say, the DETAIL does. A tier headline names the status and nothing
+    // about the fault, so the server's English message is the only thing on screen that does — and
+    // it must not start collapsed. (`with_code` is opt-in per site, so this is the common path.)
     const resolved = resolveApiError({ status: 404, code: 'http.not_found' });
     expect(resolved.key).toBe('apiError.tier.404');
     expect(resolved.unmapped).toBe(false);
-    expect(resolved.forceDetails).toBe(false);
+    expect(resolved.forceDetails).toBe(true);
   });
 
   /**
@@ -341,7 +345,11 @@ describe('resolution never drops the server detail and never shows raw English a
       `apiError.tier.${String(status)}`,
     );
     expect(resolved.unmapped, `${code} was treated as an unwritten-copy gap`).toBe(false);
-    expect(resolved.forceDetails, `${code} force-opened the details block`).toBe(false);
+    // A tier headline names no fault, so the server detail is shown unprompted — the same rule the
+    // unmapped branch follows, reached for a different reason (no code to map, not a missing entry).
+    expect(resolved.forceDetails, `${code} left the operator's only fault detail collapsed`).toBe(
+      true,
+    );
     expect(warn, `${code} warned about missing copy that is not missing`).not.toHaveBeenCalled();
   });
 

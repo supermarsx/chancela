@@ -47,7 +47,9 @@ test('HTML returned from /v1/dashboard is surfaced as a typed inline error', asy
 
   await expect(page.getByText('Resposta inesperada do servidor')).toBeVisible();
   await expect(page.getByText('HTML em vez de JSON')).toBeVisible();
-  await expect(page.getByText('/v1/dashboard')).toBeVisible();
+  // Exact: the path is now its own row of the technical-details block as well as being named in
+  // the detail sentence, and a substring match resolves to both.
+  await expect(page.getByText('/v1/dashboard', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Ocorreu um erro' })).toHaveCount(0);
   expect(pageErrors).toEqual([]);
 });
@@ -368,7 +370,9 @@ test('trust catalog search renders a deterministic empty state', async ({ page }
   await expect(
     catalog.getByText('Nenhum prestador ou serviço corresponde a “semresultado-tsl”.'),
   ).toBeVisible();
-  await expect(catalog.getByText('Nenhum item selecionado')).toBeVisible();
+  // The record detail floats in a SidePanel since b1f7e513, so the permanent "Nenhum item
+  // selecionado" box below the list is gone by design; nothing selected now means no panel at all.
+  await expect(page.getByRole('complementary')).toHaveCount(0);
   await expect(page).toHaveURL(/[?&]trustQ=semresultado-tsl/);
 });
 

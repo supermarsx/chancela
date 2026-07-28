@@ -173,6 +173,12 @@ test('document preview/PDF, sealed deep link, signing fallback, archive filters/
       new RegExp(`^chancela-preservation-book-${escapeRegExp(bookId)}\\.zip$`),
     );
 
+    // Back to the atas list: the export actions moved into their own section (1178706c), and only
+    // one book section renders at a time, so the row's «Abrir» link is not on the Exportação pane.
+    await page
+      .getByRole('group', { name: 'Secções do livro' })
+      .getByRole('button', { name: 'Atas', exact: true })
+      .click();
     await page.getByRole('link', { name: 'Abrir', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/acts/${escapeRegExp(actId)}$`));
     // «Ata selada» is also the title of the follow-ups panel note, so target the act-level

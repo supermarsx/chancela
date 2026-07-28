@@ -60,10 +60,13 @@ describe('ErrorNote — headline resolution', () => {
     // by the opposite route and proved nothing about the Tier-1 path it names.
     render(<ErrorNote error={apiError(404, { error: 'no such thing', code: 'http.not_found' })} />);
     expect(screen.getByText(apiErrorPtPT['apiError.tier.404'])).toBeTruthy();
-    // Not a gap: the server said nothing more specific, so nothing specific is being hidden and
-    // the detail is left collapsed. An unmapped code would have forced it open instead.
+    // Not a gap in the catalog — but the tier sentence names the STATUS and nothing about the
+    // fault, and the Tier-1 default is what almost every server site emits. So «no such thing» is
+    // the only thing on screen that says what went wrong, and the block opens rather than hiding
+    // it behind a disclosure the operator has no reason to suspect holds the answer.
     const details = screen.getByText(SUMMARY).closest('details') as HTMLElement;
-    expect(details.hasAttribute('open')).toBe(false);
+    expect(details.hasAttribute('open')).toBe(true);
+    expect(within(details).getByText(/no such thing/)).toBeTruthy();
   });
 
   it('still produces a pt-PT sentence for a bare thrown Error, and force-opens the detail', () => {
