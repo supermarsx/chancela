@@ -57,6 +57,29 @@ pub(crate) struct CreateTenantBody {
     name: String,
 }
 
+/// Request body for `PATCH /v1/tenants/{tenant_id}`.
+///
+/// `name` is optional so the shape can grow a second administrable field without breaking clients —
+/// but an absent `name` is **refused**, not treated as a no-op (see [`patch_tenant`]).
+#[derive(Debug, Deserialize)]
+pub(crate) struct PatchTenantBody {
+    #[serde(default)]
+    name: Option<String>,
+}
+
+/// The `tenant.renamed` ledger payload: the tenant, and both sides of the change.
+///
+/// A **new** payload type for a new event kind, so no existing digest preimage moves — `Tenant`
+/// itself is the `tenant.created` preimage and is deliberately left untouched. Recording `from` as
+/// well as `to` is what makes the event a statement of fact about a change rather than a snapshot
+/// that happens to follow one: the chain can be read forward without needing the previous row.
+#[derive(Debug, Serialize)]
+struct TenantRenamed<'a> {
+    id: TenantId,
+    from: &'a str,
+    to: &'a str,
+}
+
 /// The canonical `tenant:{id}` audit scope, so `tenant.created` joins its tenant chain (the ledger
 /// derives [`ChainId::Tenant`](chancela_ledger::ChainId::Tenant) from the `tenant:` segment).
 fn tenant_scope(tenant_id: TenantId) -> String {
@@ -183,6 +206,109 @@ pub(crate) async fn get_tenant(
         .cloned()
         .ok_or(ApiError::NotFound)?;
     Ok(Json(tenant_view(&state, &tenant).await))
+}
+
+/// `PATCH /v1/tenants/{tenant_id}` — administer an existing tenant. Today that is exactly one
+/// operation: **rename it**.
+///
+/// This is the operation [`Permission::TenantAdmin`] gates, and until it existed the verb gated
+/// nothing at all — it was seeded into Owner, Platform Administrator and Tenant Administrator,
+/// rendered as a tickable box in the RBAC matrix, and granted no authority whatsoever. The seeded
+/// **Tenant Administrator** holds `tenant.admin` and deliberately *not* `tenant.create`
+/// (`chancela_authz::role`), which is precisely this split: administer the tenant you are rooted
+/// in, without being able to mint new ones. Authorization is therefore at
+/// [`scope_of_tenant`], not `Scope::Global` — a tenant-scoped administrator may rename its own
+/// tenant and no other, and an unknown tenant is non-enumerating exactly as in [`get_tenant`]
+/// (authorize first, then `404`).
+///
+/// ## Why this refuses more than it accepts
+///
+/// Two requests that other APIs would quietly accept are `422`s here, on the same principle: the
+/// ledger event asserts that a rename happened, so it must not be appended when one did not.
+///
+/// - **No `name` in the body.** Nothing was asked for. Returning `200` would report success for an
+///   operation that never ran.
+/// - **A `name` equal to the current one** (after the same trim [`create_tenant`] applies). The
+///   change is a no-op, and `tenant.renamed { from: "X", to: "X" }` would be a permanent, immutable
+///   assertion that something changed when nothing did.
+///
+/// Neither is a transient failure, so neither invites a retry.
+///
+/// ## No confirmation floor
+///
+/// Deliberately not wired to `crate::confirmation`. A rename is reversible by another rename,
+/// touches one subject, destroys nothing and hides no evidentiary state — it does not reach even
+/// the `Confirm` tier's bar, and `POST /v1/tenants`, the more consequential provisioning act, has
+/// no floor either. Charging an operator a confirmation step here would spend their attention where
+/// nothing is at stake.
+pub(crate) async fn patch_tenant(
+    State(state): State<AppState>,
+    Path(tenant): Path<Uuid>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(body): Json<PatchTenantBody>,
+) -> Result<Json<TenantView>, ApiError> {
+    let tenant_id = TenantId(tenant);
+    // AUTHZ: administering an EXISTING tenant is scoped to that tenant — unlike `tenant.create`,
+    // which is Global because there is no tenant to narrow to yet.
+    require_permission(
+        &state,
+        &actor,
+        Permission::TenantAdmin,
+        scope_of_tenant(tenant_id),
+    )
+    .await?;
+
+    // Reject, never silently transform: a PATCH that asks for nothing is not a successful PATCH.
+    let requested = body.name.ok_or_else(|| {
+        ApiError::Unprocessable("name must be supplied; nothing else is administrable".to_owned())
+    })?;
+    let name = normalized_name(requested)?;
+    let actor_name = actor.resolve("api");
+    let scope = tenant_scope(tenant_id);
+
+    // tenants → ledger, the same order `create_tenant` takes (tenants is off the deadlock chain).
+    let mut tenants = state.tenants.write().await;
+    let mut ledger = state.ledger.write().await;
+    let current = tenants.get(&tenant_id).ok_or(ApiError::NotFound)?;
+    if current.name == name {
+        return Err(ApiError::Unprocessable(
+            "the tenant already carries this name; no rename was recorded".to_owned(),
+        ));
+    }
+
+    let renamed = Tenant {
+        id: current.id,
+        name: name.clone(),
+    };
+    let payload = serde_json::to_vec(&TenantRenamed {
+        id: tenant_id,
+        from: &current.name,
+        to: &name,
+    })?;
+    let id = tenant_id.to_string();
+    let json = serde_json::to_string(&renamed)?;
+
+    // The durable write commits the event + the tenant row together; a store failure rolls the
+    // append back, so the in-memory directory below is never mutated on a failed write.
+    crate::try_append_event(
+        &mut ledger,
+        &actor_name,
+        &scope,
+        "tenant.renamed",
+        None,
+        &payload,
+    )?;
+    state
+        .persist_write_through(&mut ledger, 1, move |tx| tx.upsert_tenant(&id, &json))
+        .await?;
+    state.attest_latest(&attestor, &ledger).await;
+    tenants.insert(tenant_id, renamed.clone());
+    // `tenant_view` reads `state.entities`; drop both write locks first, exactly as `create_tenant`
+    // does, so the entity lock is never taken under them.
+    drop(ledger);
+    drop(tenants);
+    Ok(Json(tenant_view(&state, &renamed).await))
 }
 
 #[cfg(test)]
@@ -639,6 +765,279 @@ mod tests {
             StatusCode::FORBIDDEN,
             "tenant.read must not imply tenant.create"
         );
+    }
+
+    /// **The `tenant.admin` guard (t77).** This verb gated nothing until `patch_tenant` existed, so
+    /// the test that matters is the REFUSAL: two roles that hold every *other* tenant verb between
+    /// them — `tenant.read` and `tenant.create` — must still be refused the rename, proving the
+    /// PATCH rides on `tenant.admin` alone and not on the tenant authority axis generally.
+    ///
+    /// Deleting the `require_permission(TenantAdmin, …)` call in `patch_tenant` makes both refusal
+    /// assertions fail (the reader and the creator would both succeed), so this test cannot pass
+    /// vacuously.
+    #[tokio::test]
+    async fn patch_tenant_is_refused_without_tenant_admin_and_records_the_rename_with_it() {
+        use chancela_authz::{COMPANY_OWNER_ROLE_ID, Role};
+        use sha2::{Digest, Sha256};
+
+        let state = AppState::default();
+        install_default_tenant(&state).await;
+        let default_id = chancela_core::DEFAULT_TENANT_ID.to_string();
+        let rename = json!({"name": "Encosto Estratégico Lda"});
+
+        // Mint the seeded-role tokens FIRST: `token_for_role_at` installs the seeded catalog only
+        // while it is still empty, so inserting a custom role before this point would leave
+        // `OWNER_ROLE_ID` unresolvable.
+        let owner = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, Scope::Global).await;
+        let gestor =
+            token_for_role_at(&state, "gestor", COMPANY_OWNER_ROLE_ID, Scope::Global).await;
+
+        // A role holding BOTH other tenant verbs — read AND create — but not `tenant.admin`.
+        let no_admin_role = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: no_admin_role,
+            name: "Tenant Reader and Creator".to_owned(),
+            permission_set: [Permission::TenantRead, Permission::TenantCreate]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        let no_admin = token_for_role_at(&state, "sem.admin", no_admin_role, Scope::Global).await;
+
+        let (status, _) = send_raw(
+            state.clone(),
+            request(
+                Method::PATCH,
+                &format!("/v1/tenants/{default_id}"),
+                Some(rename.clone()),
+                &no_admin,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "renaming a tenant must require tenant.admin — tenant.read + tenant.create must not \
+             add up to it"
+        );
+
+        // …and the refusal really left the tenant alone.
+        assert_eq!(
+            state
+                .tenants
+                .read()
+                .await
+                .get(&chancela_core::DEFAULT_TENANT_ID)
+                .expect("default tenant")
+                .name,
+            "Default",
+            "a refused PATCH must not have renamed anything"
+        );
+
+        // A Company Owner (no tenant verb at all) is refused too.
+        let (status, _) = send_raw(
+            state.clone(),
+            request(
+                Method::PATCH,
+                &format!("/v1/tenants/{default_id}"),
+                Some(rename.clone()),
+                &gestor,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        // An Owner holds `tenant.admin` and renames it. Whitespace is trimmed exactly as on create.
+        let before = state.ledger.read().await.len();
+        let (status, renamed) = send_raw(
+            state.clone(),
+            request(
+                Method::PATCH,
+                &format!("/v1/tenants/{default_id}"),
+                Some(json!({"name": "  Encosto Estratégico Lda  "})),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{renamed}");
+        assert_eq!(renamed["name"], "Encosto Estratégico Lda");
+        assert_eq!(renamed["id"], default_id, "a rename must not mint a new id");
+
+        // The rename is durable in the directory and visible on the read path.
+        let (status, got) = send_raw(
+            state.clone(),
+            request(
+                Method::GET,
+                &format!("/v1/tenants/{default_id}"),
+                None,
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{got}");
+        assert_eq!(got["name"], "Encosto Estratégico Lda");
+
+        // Exactly ONE event, on the tenant's own chain scope, digesting BOTH sides of the change.
+        let ledger = state.ledger.read().await;
+        assert_eq!(ledger.len(), before + 1, "a rename appends exactly one event");
+        let event = ledger
+            .events()
+            .iter()
+            .find(|e| e.kind == "tenant.renamed")
+            .expect("tenant.renamed appended");
+        assert_eq!(event.scope, format!("tenant:{default_id}"));
+        let expected = serde_json::to_vec(&TenantRenamed {
+            id: chancela_core::DEFAULT_TENANT_ID,
+            from: "Default",
+            to: "Encosto Estratégico Lda",
+        })
+        .expect("payload serialises");
+        assert_eq!(
+            event.payload_digest,
+            <[u8; 32]>::from(Sha256::digest(&expected)),
+            "the event must digest the from/to pair, not just the new name"
+        );
+    }
+
+    /// **`tenant.admin` is checked at the ADDRESSED tenant, not globally.** An administrator rooted
+    /// at tenant A renames A and is refused B. If the handler authorized at `Scope::Global` — the
+    /// scope `tenant.create` uses — the second half would pass, so this pins the scope choice.
+    #[tokio::test]
+    async fn patch_tenant_authorizes_at_the_addressed_tenant_not_globally() {
+        use chancela_authz::Role;
+
+        let state = AppState::default();
+        install_default_tenant(&state).await;
+        let global_owner =
+            token_for_role_at(&state, "global.owner", OWNER_ROLE_ID, Scope::Global).await;
+
+        let mut ids = Vec::new();
+        for name in ["Encosto Estratégico A, Lda", "Encosto Estratégico B, Lda"] {
+            let (status, tenant) = send_raw(
+                state.clone(),
+                request(
+                    Method::POST,
+                    "/v1/tenants",
+                    Some(json!({ "name": name })),
+                    &global_owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::CREATED, "{tenant}");
+            ids.push(tenant["id"].as_str().expect("tenant id").to_owned());
+        }
+        let (tenant_a_id, tenant_b_id) = (ids[0].clone(), ids[1].clone());
+
+        // An administrator rooted at tenant A only.
+        let admin_role = RoleId(Uuid::new_v4());
+        state.roles.write().await.insert(Role {
+            id: admin_role,
+            name: "Tenant Administrator (A)".to_owned(),
+            permission_set: [Permission::TenantRead, Permission::TenantAdmin]
+                .into_iter()
+                .collect(),
+            protected: false,
+        });
+        let scope_a = scope_of_tenant(TenantId(Uuid::parse_str(&tenant_a_id).unwrap()));
+        let admin_a = token_for_role_at(&state, "admin.a", admin_role, scope_a).await;
+
+        // Renames its own tenant.
+        let (status, renamed) = send_raw(
+            state.clone(),
+            request(
+                Method::PATCH,
+                &format!("/v1/tenants/{tenant_a_id}"),
+                Some(json!({"name": "Encosto Estratégico A II, Lda"})),
+                &admin_a,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{renamed}");
+        assert_eq!(renamed["name"], "Encosto Estratégico A II, Lda");
+
+        // Refused on tenant B — non-enumerating, and B is untouched.
+        let (status, _) = send_raw(
+            state.clone(),
+            request(
+                Method::PATCH,
+                &format!("/v1/tenants/{tenant_b_id}"),
+                Some(json!({"name": "Sequestrada, Lda"})),
+                &admin_a,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "a tenant-A administrator must not administer tenant B"
+        );
+        let (status, b) = send_raw(
+            state,
+            request(
+                Method::GET,
+                &format!("/v1/tenants/{tenant_b_id}"),
+                None,
+                &global_owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{b}");
+        assert_eq!(b["name"], "Encosto Estratégico B, Lda");
+    }
+
+    /// **Reject, never silently transform.** A PATCH that asks for no change is refused rather than
+    /// reported as a success, because the `tenant.renamed` event asserts that a rename happened and
+    /// must not be appended when none did. Each refusal is checked to leave the ledger untouched.
+    #[tokio::test]
+    async fn patch_tenant_refuses_a_request_that_changes_nothing() {
+        let state = AppState::default();
+        install_default_tenant(&state).await;
+        let default_id = chancela_core::DEFAULT_TENANT_ID.to_string();
+        let owner = token_for_role_at(&state, "amelia.marques", OWNER_ROLE_ID, Scope::Global).await;
+        let before = state.ledger.read().await.len();
+
+        for (body, why) in [
+            (json!({}), "an absent name asks for nothing"),
+            (json!({"name": "   "}), "a blank name is not a name"),
+            (
+                json!({"name": "Default"}),
+                "the tenant already carries this name",
+            ),
+            (
+                json!({"name": "  Default  "}),
+                "trimming must not smuggle a no-op past the equality check",
+            ),
+        ] {
+            let (status, _) = send_raw(
+                state.clone(),
+                request(
+                    Method::PATCH,
+                    &format!("/v1/tenants/{default_id}"),
+                    Some(body),
+                    &owner,
+                ),
+            )
+            .await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{why}");
+            assert_eq!(
+                state.ledger.read().await.len(),
+                before,
+                "a refused rename must append no event: {why}"
+            );
+        }
+
+        // An unknown tenant is an honest 404 for a Global holder (authorize first, then look up).
+        let (status, _) = send_raw(
+            state,
+            request(
+                Method::PATCH,
+                &format!("/v1/tenants/{}", Uuid::new_v4()),
+                Some(json!({"name": "Encosto Estratégico Lda"})),
+                &owner,
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
     }
 
     /// `create_entity` with no `tenant_id` in the body stays byte-identical to the pre-tenancy

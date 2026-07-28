@@ -26,8 +26,20 @@ pub enum Permission {
     /// act with no pre-existing tenant to narrow to, so it is checked at `Scope::Global`.
     #[serde(rename = "tenant.create")]
     TenantCreate,
-    /// Administer an existing tenant (rename / configuration / archival). Reserved for the tenant
-    /// mutation surface; seeded to the platform- and tenant-administrator roles.
+    /// Administer an **existing** tenant: `PATCH /v1/tenants/{tenant_id}`, checked at
+    /// `Scope::Tenant`, so a tenant-scoped administrator may administer its own tenant and no
+    /// other. Today the surface is exactly one operation — renaming — which is why the seeded
+    /// **Tenant Administrator** holds this verb and deliberately not `tenant.create`: administer
+    /// the tenant you are rooted in, without being able to mint new ones.
+    ///
+    /// This verb gated **nothing** until the PATCH handler existed (it was seeded into real funções
+    /// and rendered as a tickable box that granted no authority); its doc comment then promised
+    /// "rename / configuration / archival". Configuration and archival are still not built and are
+    /// no longer named here: `Tenant` is an id and a name by design — isolation lives in the authz
+    /// scope tree, not in fields — so there is nothing to configure, and a tenant archive would
+    /// first have to define whether it cascades to entity creation within the tenant. A doc comment
+    /// that names an authority the holder does not receive is the same misstatement as a
+    /// description written from a verb's spelling.
     #[serde(rename = "tenant.admin")]
     TenantAdmin,
 

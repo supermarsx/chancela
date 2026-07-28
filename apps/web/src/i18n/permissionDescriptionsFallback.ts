@@ -41,16 +41,26 @@
  * {@link usePermissionDescriptionResolver} returns an explicit "not described in this version"
  * sentence with `known: false`, never an empty string.
  *
- * ─── THE TWO VERBS THAT GRANT NOTHING ──────────────────────────────────────────────────────────
+ * ─── THE VERB THAT GRANTS NOTHING ──────────────────────────────────────────────────────────────
  *
- * `tenant.admin` and `book.reopen` are audited `FeatureNotBuilt` in
- * `crates/chancela-authz/src/permission_description.rs`: they are seeded into real funções and
- * rendered in this matrix, but no route reaches the capability they name. Describing them from
- * their spelling — "administra organizações", "reabre livros" — would be a security misstatement,
- * telling an administrator they granted an authority that does not exist. Their sentences
- * therefore state that the capability was never built, which is the audited fact, not reassurance.
- * {@link PERMISSIONS_THAT_GRANT_NOTHING} pins the set and the test re-derives it from Rust, so if
- * t62 ever builds book reopen the sentence cannot silently stay false.
+ * `book.reopen` is audited `FeatureNotBuilt` in
+ * `crates/chancela-authz/src/permission_description.rs`: it is seeded into real funções and
+ * rendered in this matrix, but no route reaches the capability it names. Describing it from its
+ * spelling — "reabre livros" — would be a security misstatement, telling an administrator they
+ * granted an authority that does not exist. Its sentence therefore states that the capability was
+ * never built, which is the audited fact, not reassurance.
+ *
+ * It is not merely unbuilt. t77 established that reopening a closed book cannot be built without
+ * contradicting a signed instrument: the termo de encerramento is co-signed with the book's
+ * authoritative ata count, so reopening and registering one more ata leaves a validly-signed
+ * document asserting something false. Continuing a closed book already has a sound path — a
+ * successor book under its own termo de abertura — so this sentence is not a placeholder waiting
+ * on a feature.
+ *
+ * `tenant.admin` was the second such verb until t77 built `PATCH /v1/tenants/{tenant_id}`; its
+ * sentence moved from "grants nothing" to the rename it now really gates.
+ * {@link PERMISSIONS_THAT_GRANT_NOTHING} pins the set and the test re-derives it from Rust, so a
+ * sentence here cannot silently stay false in either direction.
  *
  * ─── AUTHORING RULES ───────────────────────────────────────────────────────────────────────────
  *
@@ -76,7 +86,7 @@ export const permissionDescriptionsPtPT = {
   'tenant.create':
     'Criar uma organização nova nesta instalação. É um ato de aprovisionamento da plataforma, que não se limita a nenhuma organização já existente.',
   'tenant.admin':
-    'Não concede nada. A alteração, a configuração e o arquivo de uma organização nunca chegaram a ser construídos, pelo que não existe operação nenhuma que esta permissão proteja.',
+    'Alterar o nome de uma organização já existente. Quem só tem alcance sobre a sua própria organização altera apenas essa e mais nenhuma. Não permite criar organizações novas.',
 
   // --- Entities ---
   'entity.read':
@@ -229,7 +239,7 @@ export const permissionDescriptionsEnglish = {
   'tenant.create':
     'Create a new organisation on this installation. This is a platform provisioning act, not narrowed to any existing organisation.',
   'tenant.admin':
-    'Grants nothing. Renaming, configuring and archiving an organisation were never built, so there is no operation for this permission to guard.',
+    'Rename an existing organisation. Someone whose reach is limited to their own organisation renames only that one. It does not allow creating new organisations.',
 
   // --- Entities ---
   'entity.read':
@@ -361,7 +371,6 @@ export const permissionDescriptionsEnglish = {
  * source so it cannot silently go stale in either direction.
  */
 export const PERMISSIONS_THAT_GRANT_NOTHING = [
-  'tenant.admin',
   'book.reopen',
 ] as const satisfies readonly DescribedPermissionId[];
 

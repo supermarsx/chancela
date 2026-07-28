@@ -1,9 +1,9 @@
 //! **Enforcement status** of every catalog verb (t56 §R8 / §R8.1).
 //!
 //! The RBAC matrix lets an administrator tick a permission into a função. That checkbox is a
-//! promise: "the holder may do this". For two verbs in the catalog the promise is false — they
-//! are seeded into roles, rendered in the UI, and gate **nothing**, because the capability they
-//! name has never been built. Describing them from their *name* would be a security misstatement,
+//! promise: "the holder may do this". For one verb in the catalog the promise is false — it is
+//! seeded into roles, rendered in the UI, and gates **nothing**, because the capability it
+//! names has never been built. Describing it from its *name* would be a security misstatement,
 //! so the status is a fact the catalog carries on the wire and the UI renders.
 //!
 //! ## How this file was derived
@@ -41,31 +41,39 @@
 //! render — a verb in that state is a defect to fix, and
 //! [`no_verb_ships_as_reachable_unchecked`](tests) fails the suite if one ever appears here.
 //!
-//! **This audit found none.** Both unenforced verbs are `FeatureNotBuilt`.
+//! **This audit found none.** The one unenforced verb is `FeatureNotBuilt`.
 //!
-//! ## The two phantom verbs
-//!
-//! They are equally *unenforced* but not equally far from existing, which is why the reasons are
-//! recorded per verb rather than shared:
+//! ## The remaining phantom verb
 //!
 //! - **`book.reopen`** — no reopen route exists (the router's only `reopen` is
 //!   `/v1/acts/{id}/reopen`, which is acts and unrelated), **and the domain has no reverse
 //!   transition**: `Book::open` requires `Created`, `Book::close` requires `Open`, and those two
 //!   methods are the only writers of `Book::state`. Unbuildable without a domain-model change.
-//! - **`tenant.admin`** — the tenant surface is `GET`/`POST /v1/tenants` and `GET
-//!   /v1/tenants/{tenant_id}`; `tenants.rs` has exactly three handlers (create, list, get) and no
-//!   mutation handler at all. The rename / configuration / archival authority its doc comment
-//!   names has no endpoint. Unbuilt.
 //!
-//! Neither is reachable-and-unguarded: every tenant- and book-prefixed route is classified
-//! `Gated`, and no route reaches a tenant-mutation or book-reopen capability in the first place.
+//!   t77 established that this is not merely unbuilt but **unrepresentable without breaking a
+//!   sealed instrument**. `Book::close` deliberately overwrites the termo de encerramento's
+//!   `ata_count` with the book's authoritative count, so the signed, co-signed termo asserts "this
+//!   book holds N atas". Reopening and registering one more ata leaves that assertion false while
+//!   its signature stays cryptographically valid — a validly-signed false fact, which is exactly
+//!   what `close_from_termo`'s snapshot-mismatch guard refuses from the other direction. The need
+//!   behind the verb is already met, soundly: a **successor book** (`Book::new_successor` /
+//!   `Book::predecessor`, WFL-13) continues a closed one under its own termo de abertura, wired
+//!   through `POST /v1/books` and gated by `book.open`.
 //!
-//! **`entity.archive` was the third, until t60 built it.** It is now `Enforced` by
-//! `POST /v1/entities/{id}/archive` and `.../unarchive`. That transition is the reason this file
-//! records a status per verb instead of describing verbs from their names: the moment the feature
-//! landed, "this verb grants nothing" became a false statement about a live, permission-gated
-//! route — and a false *reassurance* is worse than no note at all, because an auditor reading it
-//! would conclude the checkbox was inert.
+//!   So this arm is not waiting on a route. Making it `Enforced` would require inventing a
+//!   `Closed → Open` transition that contradicts a signed document, and it must stay
+//!   `FeatureNotBuilt` until the verb is removed from the catalog outright.
+//!
+//! It is not reachable-and-unguarded: every book-prefixed route is classified `Gated`, and no route
+//! reaches a book-reopen capability in the first place.
+//!
+//! **Two verbs have left this list, and that is the intended direction of travel.**
+//! `entity.archive` until t60 built `POST /v1/entities/{id}/archive` and `.../unarchive`;
+//! `tenant.admin` until t77 built `PATCH /v1/tenants/{tenant_id}`. Those transitions are the reason
+//! this file records a status per verb instead of describing verbs from their names: the moment a
+//! feature lands, "this verb grants nothing" becomes a false statement about a live,
+//! permission-gated route — and a false *reassurance* is worse than no note at all, because an
+//! auditor reading it would conclude the checkbox was inert.
 
 use serde::{Deserialize, Serialize};
 
@@ -139,10 +147,12 @@ impl Permission {
             Permission::TenantRead => Enforced,
             // tenants.rs::create_tenant
             Permission::TenantCreate => Enforced,
-            // NO call site and NO route. `tenants.rs` has three handlers — create, list, get — and
-            // no mutation handler; the rename/configuration/archival surface this verb names has
-            // never been built.
-            Permission::TenantAdmin => FeatureNotBuilt,
+            // tenants.rs::patch_tenant — `PATCH /v1/tenants/{tenant_id}`,
+            // `require_permission(TenantAdmin, scope_of_tenant(id))`. Was `FeatureNotBuilt` until
+            // t77 added the tenant mutation handler this verb had always named; the audit that
+            // recorded it as a phantom was correct at the time, and this arm moving is the intended
+            // direction of travel (see `entity.archive` before it).
+            Permission::TenantAdmin => Enforced,
 
             // --- Entities ---
             // entities.rs::{get_entity, list_entities, list_entities_page},
@@ -358,7 +368,7 @@ mod tests {
     ///
     /// `entity.archive` was the third until t60 shipped `POST /v1/entities/{id}/archive`; this
     /// list shrinking is the intended direction of travel.
-    const FEATURE_NOT_BUILT: [Permission; 2] = [Permission::TenantAdmin, Permission::BookReopen];
+    const FEATURE_NOT_BUILT: [Permission; 1] = [Permission::BookReopen];
 
     #[test]
     fn the_phantom_set_is_exactly_the_audited_two() {
@@ -407,8 +417,9 @@ mod tests {
             Permission::ALL.len(),
             "every catalog verb must be either enforced or audited as not-built"
         );
-        // 50 at audit time; 51 once t60 made `entity.archive` real.
-        assert_eq!(enforced, 51);
+        // 50 at audit time; 51 once t60 made `entity.archive` real; 52 once t77 made
+        // `tenant.admin` real. 52 + 1 not-built = the 53 catalog verbs.
+        assert_eq!(enforced, 52);
     }
 
     /// The phantoms are seeded into real funções — that is *why* they matter. An administrator

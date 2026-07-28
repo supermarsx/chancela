@@ -2660,7 +2660,10 @@ pub fn router(state: AppState) -> Router {
             "/v1/tenants",
             get(tenants::list_tenants).post(tenants::create_tenant),
         )
-        .route("/v1/tenants/{tenant_id}", get(tenants::get_tenant))
+        .route(
+            "/v1/tenants/{tenant_id}",
+            get(tenants::get_tenant).patch(tenants::patch_tenant),
+        )
         .route(
             "/v1/tenants/{tenant_id}/groups",
             get(groups::list_groups).post(groups::create_group),
