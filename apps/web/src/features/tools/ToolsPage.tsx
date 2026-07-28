@@ -3,6 +3,9 @@
  *
  * A sub-navigation (segmented control) switches between consultation surfaces:
  *  - **Pesquisa** (default, when authorised) — permission-filtered, cross-domain full search.
+ *  - **Certidão de Registo Permanente** (t95) — a lookup-only consultation: enter a código de
+ *    acesso, read what the registry returns, keep nothing. Separate from the entity import flow on
+ *    purpose, and it persists nothing at all (see `CertidaoLookupPage`).
  *  - **Catálogo CAE** — the CAE explorer (search + revision switch + hierarchy drill-down)
  *    and the catalog's state + "Atualizar catálogo" refresh, relocated here from the former
  *    standalone /cae page, which now redirects to `/tools/cae`.
@@ -26,6 +29,10 @@ import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type SearchCopyKey, useSearchT } from '../../i18n/searchFallback';
+import {
+  type CertidaoLookupCopyKey,
+  useCertidaoLookupT,
+} from '../../i18n/certidaoLookupFallback';
 import { Icon, PageHeader } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { CaeExplorer } from '../cae/CaeExplorer';
@@ -34,18 +41,38 @@ import { LegislationPage } from '../legislation/LegislationPage';
 import { TechnicalValidatorSection } from './TechnicalValidatorSection';
 import { TrustCatalogPage } from './TrustCatalogPage';
 import { ExternalSigningWorkflowsPage } from './ExternalSigningWorkflowsPage';
+import { CertidaoLookupPage } from './CertidaoLookupPage';
 import { SearchPage } from './SearchPage';
 import { usePermissions } from '../session/permissions';
 
-type ToolsSection = 'search' | 'cae' | 'legislation' | 'pdf' | 'trust' | 'external-signing';
+type ToolsSection =
+  | 'search'
+  | 'cae'
+  | 'certidao'
+  | 'legislation'
+  | 'pdf'
+  | 'trust'
+  | 'external-signing';
 
+// Three label sources, because two of these tools own their copy in a self-contained fallback
+// module rather than the locked 14-locale catalogs. Exactly one is set per section.
 type ToolsSectionDefinition =
-  | { id: ToolsSection; label: MessageKey; searchLabel?: never; icon: ReactNode }
-  | { id: ToolsSection; label?: never; searchLabel: SearchCopyKey; icon: ReactNode };
+  | { id: ToolsSection; label: MessageKey; searchLabel?: never; certidaoLabel?: never; icon: ReactNode }
+  | { id: ToolsSection; label?: never; searchLabel: SearchCopyKey; certidaoLabel?: never; icon: ReactNode }
+  | {
+      id: ToolsSection;
+      label?: never;
+      searchLabel?: never;
+      certidaoLabel: CertidaoLookupCopyKey;
+      icon: ReactNode;
+    };
 
 const SECTIONS: ToolsSectionDefinition[] = [
   { id: 'search', searchLabel: 'tools.section.search', icon: <Icon.Search /> },
   { id: 'cae', label: 'tools.section.cae', icon: <Icon.Layers /> },
+  // A lookup-only Certidão de Registo Permanente consultation. Deliberately its own tool rather
+  // than a mode of the import flow: it persists nothing (see `CertidaoLookupPage`).
+  { id: 'certidao', certidaoLabel: 'tools.section.certidao', icon: <Icon.IdCard /> },
   { id: 'legislation', label: 'tools.section.legislacao', icon: <Icon.Scale /> },
   { id: 'pdf', label: 'tools.section.pdfValidator', icon: <Icon.FileText /> },
   { id: 'trust', label: 'tools.section.trust', icon: <Icon.Seal /> },
@@ -58,12 +85,19 @@ const isToolsSection = (value: string | undefined): value is ToolsSection =>
 export function ToolsPage() {
   const t = useT();
   const st = useSearchT();
+  const ct = useCertidaoLookupT();
   const locale = useActiveLocale();
   const { canAny } = usePermissions();
   const canSearch = canAny('search.read');
-  const visibleSections = canSearch
-    ? SECTIONS
-    : SECTIONS.filter((candidate) => candidate.id !== 'search');
+  // `POST /v1/registry/lookup` enforces `entity.read@Global`. The tab is gated on the SAME verb the
+  // server enforces — deliberately not on a lookup-specific one, which would be a phantom verb
+  // enforced only in the client (the cost of which `book.reopen` already demonstrated).
+  const canLookupCertidao = canAny('entity.read');
+  const visibleSections = SECTIONS.filter(
+    (candidate) =>
+      (candidate.id !== 'search' || canSearch) &&
+      (candidate.id !== 'certidao' || canLookupCertidao),
+  );
   // Search is the default and carries no segment. A principal without search.read falls back to
   // CAE without ever rendering the Search label or component; CAE still has the canonical
   // `/tools/cae` address when selected or reached through the legacy `/cae` redirect.
@@ -71,7 +105,13 @@ export function ToolsPage() {
     base: '/tools',
     parse: (raw) => {
       if (raw === undefined) return canSearch ? 'search' : 'cae';
-      if (isToolsSection(raw) && (raw !== 'search' || canSearch)) return raw;
+      if (
+        isToolsSection(raw) &&
+        (raw !== 'search' || canSearch) &&
+        (raw !== 'certidao' || canLookupCertidao)
+      ) {
+        return raw;
+      }
       return canSearch ? 'search' : 'cae';
     },
     fallback: 'search',
@@ -86,6 +126,7 @@ export function ToolsPage() {
   const btnRefs = useRef<Record<ToolsSection, HTMLButtonElement | null>>({
     search: null,
     cae: null,
+    certidao: null,
     legislation: null,
     pdf: null,
     trust: null,
@@ -160,7 +201,11 @@ export function ToolsPage() {
               <span className="tools-subnav__icon" aria-hidden="true">
                 {s.icon}
               </span>
-              {s.searchLabel ? st(s.searchLabel) : t(s.label)}
+              {s.searchLabel
+                ? st(s.searchLabel)
+                : s.certidaoLabel
+                  ? ct(s.certidaoLabel)
+                  : t(s.label)}
             </button>
           ))}
         </div>
@@ -173,6 +218,8 @@ export function ToolsPage() {
       <div className="route-transition" key={section} data-anim-key={section}>
         {section === 'search' ? (
           <SearchPage />
+        ) : section === 'certidao' ? (
+          <CertidaoLookupPage />
         ) : section === 'trust' ? (
           <TrustCatalogPage />
         ) : section === 'pdf' ? (

@@ -1579,6 +1579,114 @@ mod tests {
         assert_eq!(events.as_array().expect("events").len(), 0);
     }
 
+    /// **The load-bearing test for the lookup tool (t95): a lookup writes nothing, anywhere.**
+    ///
+    /// Asserting that a result rendered would prove nothing — the whole point of a lookup-only tool
+    /// is the writes that must be *absent*. So this asserts absence directly, across every sink the
+    /// import path touches, and then asserts idempotence by running it twice.
+    ///
+    /// The `registry_extracts` map matters as much as the ledger here: it is the only thing
+    /// resembling a cache on this path, and a lookup that quietly populated it would be a side
+    /// effect even though no entity changed.
+    #[tokio::test]
+    async fn a_lookup_creates_no_entity_no_extract_and_no_ledger_event_and_is_repeatable() {
+        let state = state_with(MockRegistryTransport::from_fixture_spq());
+
+        let before_entities = state.entities.read().await.len();
+        let before_extracts = state.registry_extracts.read().await.len();
+        let before_events = state.ledger.read().await.events().len();
+
+        for _ in 0..2 {
+            let (status, _) = send(
+                state.clone(),
+                post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+            )
+            .await;
+            assert_eq!(status, StatusCode::OK);
+        }
+
+        assert_eq!(
+            state.entities.read().await.len(),
+            before_entities,
+            "a lookup must create or match no entity"
+        );
+        assert_eq!(
+            state.registry_extracts.read().await.len(),
+            before_extracts,
+            "a lookup must not store an extract — there is no cache for it to warm"
+        );
+        assert_eq!(
+            state.ledger.read().await.events().len(),
+            before_events,
+            "a lookup must append no domain-ledger event"
+        );
+        // Nothing resembling an import event, under any kind.
+        assert!(
+            state
+                .ledger
+                .read()
+                .await
+                .events()
+                .iter()
+                .all(|e| !e.kind.starts_with("registry.") && !e.kind.starts_with("entity.")),
+            "a lookup must not append a registry or entity event"
+        );
+        // The worker-state map is not a lookup's business either.
+        assert!(
+            state.registry_auto_updates.read().await.is_empty(),
+            "a lookup must not touch registry auto-update worker state"
+        );
+    }
+
+    /// A lookup must not modify an entity that already exists and matches the certidão — the
+    /// "match-and-update" behaviour is `import_into_entity`'s, and must not leak into the lookup.
+    #[tokio::test]
+    async fn a_lookup_does_not_modify_an_existing_matching_entity() {
+        let html = certidao_html(
+            "Encosto Estratégico, Lda",
+            "503004642",
+            "Sociedade por quotas",
+            "Porto",
+        );
+        let state = state_with(MockRegistryTransport::empty().with_html(html));
+        // Deliberately divergent from the certidão (a blank seat and a different name) — exactly
+        // the shape `cross_check` would have filled in and overwritten on an import.
+        let id = create_entity(
+            &state,
+            "Nome Original, Lda",
+            "503004642",
+            "",
+            "SociedadePorQuotas",
+        )
+        .await;
+
+        let events_before = state.ledger.read().await.events().len();
+
+        let (status, _) = send(
+            state.clone(),
+            post_json("/v1/registry/lookup", json!({ "code": "1234-5678-9012" })),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let (status, entity) = send(state.clone(), get(&format!("/v1/entities/{id}"))).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(entity["name"], "Nome Original, Lda", "name was rewritten");
+        assert_eq!(entity["seat"], "", "blank seat was backfilled from the certidão");
+        assert_eq!(
+            state.ledger.read().await.events().len(),
+            events_before,
+            "a lookup appended an event for an existing entity"
+        );
+        // And still nothing stored for it.
+        let (status, _) = send(state, get(&format!("/v1/entities/{id}/registry"))).await;
+        assert_eq!(
+            status,
+            StatusCode::NOT_FOUND,
+            "a lookup stored an extract against the entity"
+        );
+    }
+
     #[tokio::test]
     async fn guest_registry_redaction_hides_nested_identifiers_and_provenance() {
         let state = state_with(MockRegistryTransport::from_fixture_constituicao());
