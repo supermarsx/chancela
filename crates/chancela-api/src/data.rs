@@ -81,6 +81,18 @@ pub struct ReAuth {
 /// ANOTHER user's credential when the target is legacy no-hash stays refused (t52 hole stays closed).
 /// RBAC (`require_permission`) at each call site remains the primary who-may gate — step-up is
 /// defense-in-depth layered on top of it, never a substitute.
+/// Whether [`require_step_up`] would pass for this user on their **session alone** — i.e. whether
+/// they hold neither a password nor a recovery phrase, so there is no stronger proof to demand.
+///
+/// **The single definition of the t69 exemption**, so a caller that needs to reason about it does
+/// not restate the condition and drift from it. [`require_step_up`] is the primary reader; the
+/// device-pairing mail path (`crate::pairing`) is the other, because for that one feature a vacuous
+/// step-up is not a neutral outcome — see the refusal there for why.
+#[must_use]
+pub(crate) fn step_up_is_vacuous(password_hash: Option<&str>, recovery_hash: Option<&str>) -> bool {
+    password_hash.is_none() && recovery_hash.is_none()
+}
+
 pub(crate) async fn require_step_up(
     state: &AppState,
     actor: &CurrentActor,
@@ -103,7 +115,7 @@ pub(crate) async fn require_step_up(
     // t69: the acting user holds NEITHER a password NOR a recovery phrase. A valid authenticated
     // self session is the strongest proof they can provide (there is nothing stronger to demand), so
     // it satisfies step-up. SELF only — the cross-user path is untouched.
-    if password_hash.is_none() && recovery_hash.is_none() {
+    if step_up_is_vacuous(password_hash.as_deref(), recovery_hash.as_deref()) {
         return Ok(());
     }
 

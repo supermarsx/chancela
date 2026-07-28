@@ -83,8 +83,26 @@ const MAX_LABEL_LEN: usize = 120;
 ///
 /// **Digest-only:** `token_sha256` is the SHA-256 digest of the companion session token, never the
 /// plaintext bearer. A revoked device is soft-marked with `revoked_at_unix` so it stays listable.
+///
+/// # No `deny_unknown_fields`, deliberately (t70)
+///
+/// It was there, and it was a **deploy-rollback hazard**. The attribute is symmetric, but
+/// `#[serde(default)]` only defends one direction: it lets a NEW binary read OLD rows. The other
+/// direction had nothing. An OLD binary reading rows written by a NEWER one would hit the unknown
+/// field, fail to parse, and be dropped by the skip in [`PairingRegistry::from_store`] — silently
+/// emptying every operator's device list and taking their ability to revoke those devices with it.
+/// That fires on the *next* field anyone adds here, which for a device directory is a matter of
+/// time.
+///
+/// What the attribute bought was strictness against a key this code never writes: the only writer
+/// is this struct's own `serde_json::to_string`, and the store treats the blob as opaque. So it
+/// defended against hand-edited or corrupted rows, and charged silent data loss on every rollback
+/// after a schema change. That is the wrong trade for a row whose whole job is to remain
+/// revocable.
+///
+/// Both directions are now pinned by tests, because a compatibility property with no test is one
+/// the next person deletes by accident.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
 struct DurablePairingDevice {
     device_id: String,
     user_id: Uuid,
@@ -133,9 +151,22 @@ impl PairingRegistry {
     pub(crate) fn from_store(store: &Store) -> Self {
         let mut devices = HashMap::new();
         if let Ok(rows) = store.pairing_devices() {
-            for (_, json) in rows {
-                if let Ok(record) = serde_json::from_str::<DurablePairingDevice>(&json) {
-                    devices.insert(record.device_id.clone(), record);
+            for (id, json) in rows {
+                match serde_json::from_str::<DurablePairingDevice>(&json) {
+                    Ok(record) => {
+                        devices.insert(record.device_id.clone(), record);
+                    }
+                    // **The skip is the dangerous part, so it is no longer silent.** A dropped row
+                    // is a device the operator can no longer see and therefore can no longer
+                    // revoke — a security-relevant loss that used to look exactly like "there were
+                    // no devices". The row id is safe to log: it is the table key, not the token
+                    // digest and not the label. The blob itself is never logged.
+                    Err(error) => tracing::warn!(
+                        device_row = %id,
+                        ?error,
+                        "a pairing_devices row could not be parsed and was skipped; the device it \
+                         describes will not be listable or revocable until this is resolved"
+                    ),
                 }
             }
         }
@@ -427,6 +458,42 @@ async fn prepare_emailed_code(
     }
     let users = state.users.read().await;
     let user = users.get(&uid).ok_or(ApiError::NotFound)?;
+
+    // **The credential-less operator, re-derived now that a mailed code exists.**
+    //
+    // `require_step_up` deliberately passes on the session alone for an operator holding neither a
+    // password nor a recovery phrase (the t69 lockout fix): a valid self session is the strongest
+    // proof they can give, so demanding more would lock them out of their own instance. The mint
+    // inherits that exemption on purpose — one step-up path, not two.
+    //
+    // While the exchange only accepted a password or a TOTP code, the exemption was contained: an
+    // attacker at an unattended signed-in browser could mint a code such an operator could never
+    // redeem, so the pairing simply never completed. **A mailed code removes that containment.**
+    // The chain becomes mint-on-session-alone, then confirm with a code sent to the operator's
+    // mailbox — and if that same unattended browser is signed into that mailbox, which on a shared
+    // workstation is not a stretch, the pairing completes with no secret the operator knows. That
+    // turns transient access to a logged-in screen into a durable companion session on the
+    // attacker's own device, which outlives the operator locking the screen. That is an
+    // escalation, not a lateral move.
+    //
+    // So this one feature refuses. Not the mint, and not step-up itself — narrowing either would
+    // be the special-casing this lane declined, and would re-lock out the operator t69 unlocked.
+    // What is refused is *mailing a code to an operator for whom the first factor is vacuous*,
+    // because then the mailbox is not a second factor at all: it is the only one, reachable from
+    // the same chair. An operator in this state can still pair with a TOTP code, and the honest
+    // fix is for them to set a credential — which the message says.
+    if crate::data::step_up_is_vacuous(
+        user.password_hash.as_deref(),
+        user.recovery_hash.as_deref(),
+    ) {
+        return Err(ApiError::Unprocessable(
+            "a sua conta não tem palavra-passe nem frase de recuperação, por isso o código \
+             enviado por email seria a única prova exigida para emparelhar. Defina uma \
+             palavra-passe, ou confirme o emparelhamento com o código do autenticador."
+                .to_owned(),
+        ));
+    }
+
     let address = user
         .email
         .as_deref()
@@ -1526,6 +1593,104 @@ mod tests {
         assert!(devices_of(&state, &operator).await.is_empty());
     }
 
+    /// Strip the operator's credentials, leaving a valid session — the t69 legacy state in which
+    /// `require_step_up` passes on the session alone. Gives them an address so the refusal under
+    /// test is the credential one and not the missing-address one.
+    async fn make_credential_less(state: &AppState) {
+        let mut users = state.users.write().await;
+        let user = users.values_mut().find(|u| u.active).expect("the operator");
+        user.password_hash = None;
+        user.recovery_hash = None;
+        user.email = Some("amelia.marques@exemplo.pt".to_owned());
+    }
+
+    #[tokio::test]
+    async fn a_credential_less_operator_can_still_mint_on_their_session_alone() {
+        // The inherited t69 behaviour, pinned so the next change to it is deliberate. This is NOT
+        // a hole on its own — the exchange still has to be confirmed, and this operator holds no
+        // password. It is the premise of the test below.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        make_credential_less(&state).await;
+
+        let (status, minted) = mint_with(&state, &operator, json!({})).await;
+        assert_eq!(status, StatusCode::OK, "step-up is vacuous: {minted}");
+    }
+
+    #[tokio::test]
+    async fn a_credential_less_operator_cannot_have_a_code_mailed_to_them() {
+        // The chain this refuses: mint on the session alone, then confirm from the mailbox the
+        // same unattended browser may already be signed into — a full pairing with no secret the
+        // operator knows, turning transient screen access into a durable companion session.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        make_credential_less(&state).await;
+
+        let (status, body) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    &operator,
+                    json!({ "email_confirmation_code": true }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "refused: {body}");
+        assert_eq!(
+            state.pairing.0.codes.read().await.len(),
+            0,
+            "and no pairing code was left outstanding"
+        );
+        assert_eq!(
+            state.auth_tokens.read().await.len(),
+            0,
+            "and no confirmation code was ever issued"
+        );
+    }
+
+    #[tokio::test]
+    async fn an_operator_with_a_credential_can_have_a_code_mailed_to_them() {
+        // The refusal above must be about the missing credential, not about mail being broken:
+        // this operator has a password, so the request gets past the credential gate and fails
+        // only at the relay, which no test here configures.
+        let state = AppState::default();
+        let operator = operator_session(&state).await;
+        {
+            let mut users = state.users.write().await;
+            let user = users.values_mut().find(|u| u.active).expect("the operator");
+            user.email = Some("amelia.marques@exemplo.pt".to_owned());
+        }
+
+        let (status, body) = json_response(
+            crate::router(state.clone())
+                .oneshot(auth_request(
+                    Method::POST,
+                    "/v1/pairing/codes",
+                    &operator,
+                    json!({
+                        "confirmation": { "reauth": { "password": OPERATOR_PASSWORD } },
+                        "email_confirmation_code": true,
+                    }),
+                ))
+                .await
+                .unwrap(),
+        )
+        .await;
+        // Both refusals are 422 and asserting on the prose would be asserting on copy, so the
+        // signal is behaviour: the credential gate refuses BEFORE a token is issued, while a
+        // relay failure happens after. One issued token therefore means the gate was passed and
+        // the request died at the relay — which is the only thing this test claims.
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "no relay here: {body}");
+        assert_eq!(
+            state.auth_tokens.read().await.len(),
+            1,
+            "a credentialed operator reached token issuance"
+        );
+    }
+
     #[tokio::test]
     async fn asking_to_mail_a_code_with_no_address_refuses_and_mints_nothing() {
         // The operator these tests create has no email address. Refusing loudly beats minting a
@@ -1593,6 +1758,48 @@ mod tests {
         assert_eq!(devices[0]["device_id"], device_id);
         // Not recorded, and rendered as such — never as a method nobody proved.
         assert!(devices[0]["confirmed_by"].is_null());
+    }
+
+    #[tokio::test]
+    async fn a_device_row_written_by_a_newer_binary_still_rehydrates() {
+        // The ROLLBACK direction, and the reason `deny_unknown_fields` is gone. `serde(default)`
+        // only protects a new binary reading old rows; nothing protected an old binary reading new
+        // ones. With the attribute in place this row would fail to parse and be dropped by
+        // `from_store`'s skip — silently emptying the operator's device list and taking their
+        // ability to revoke the device with it, on any rollback after a future field is added.
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.path.clone());
+        let operator = operator_session(&state).await;
+        let user_id = {
+            let users = state.users.read().await;
+            users.values().find(|u| u.active).unwrap().id.0
+        };
+
+        let device_id = Uuid::new_v4().to_string();
+        let from_the_future = json!({
+            "device_id": device_id,
+            "user_id": user_id,
+            "label": "Telemóvel do futuro",
+            "token_sha256": session_token_digest("future-companion-token"),
+            "created_at_unix": OffsetDateTime::now_utc().unix_timestamp(),
+            "revoked_at_unix": null,
+            "confirmed_by": "password",
+            // A field this binary has never heard of, exactly as a newer one would write.
+            "kind": "signing_companion",
+        })
+        .to_string();
+        let store = state.store.clone().expect("a data dir gives a store");
+        let id = device_id.clone();
+        store
+            .persist_blocking_async(move |tx| tx.upsert_pairing_device(&id, &from_the_future))
+            .await
+            .expect("write the newer row");
+
+        let restarted = AppState::with_data_dir(temp.path.clone());
+        let devices = devices_of(&restarted, &operator).await;
+        assert_eq!(devices.len(), 1, "a newer row survived the rollback");
+        assert_eq!(devices[0]["device_id"], device_id);
+        assert_eq!(devices[0]["confirmed_by"], "password");
     }
 
     #[tokio::test]
