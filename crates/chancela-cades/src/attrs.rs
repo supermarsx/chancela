@@ -12,6 +12,7 @@ use x509_cert::certificate::Certificate;
 use x509_cert::ext::pkix::name::GeneralName;
 use x509_cert::serial_number::SerialNumber;
 
+use crate::builder::SignedAttrsProfile;
 use crate::error::CadesError;
 use crate::oids;
 
@@ -88,13 +89,17 @@ fn attribute(oid: ObjectIdentifier, value: Any) -> Result<Attribute, CadesError>
     })
 }
 
-/// Build the CAdES-B signed attributes: content-type, message-digest, signing-time, and
-/// signing-certificate-v2 (ESSCertIDv2). Deterministic for identical inputs — the returned
-/// `SetOfVec` is DER-sorted so [`Attributes::to_der`] yields canonical bytes.
+/// Build the CAdES-B signed attributes: content-type, message-digest, signing-certificate-v2
+/// (ESSCertIDv2), and — for [`SignedAttrsProfile::Cades`] only — signing-time. Deterministic for
+/// identical inputs: the returned `SetOfVec` is DER-sorted so [`Attributes::to_der`] yields
+/// canonical bytes.
+///
+/// The `profile` decides the attribute *set*, so it must be the same value on both sides of a
+/// signing round trip — see [`SignedAttrsProfile`].
 pub(crate) fn build_signed_attributes(
     content_digest: &[u8; 32],
     signing_cert_der: &[u8],
-    signing_time: time::OffsetDateTime,
+    profile: SignedAttrsProfile,
 ) -> Result<Attributes, CadesError> {
     let cert =
         Certificate::from_der(signing_cert_der).map_err(|_| CadesError::InvalidCertificate)?;
@@ -105,9 +110,6 @@ pub(crate) fn build_signed_attributes(
     // message-digest = OCTET STRING of the content digest
     let md_octets = OctetString::new(content_digest.as_slice())?;
     let message_digest = attribute(oids::ID_MESSAGE_DIGEST, Any::encode_from(&md_octets)?)?;
-
-    // signing-time
-    let signing_time_attr = attribute(oids::ID_SIGNING_TIME, signing_time_value(signing_time)?)?;
 
     // signing-certificate-v2 (ESSCertIDv2)
     let cert_hash = OctetString::new(sha256(signing_cert_der).to_vec())?;
@@ -126,11 +128,17 @@ pub(crate) fn build_signed_attributes(
     };
     let signing_cert_v2 = attribute(oids::ID_AA_SIGNING_CERTIFICATE_V2, Any::encode_from(&ess)?)?;
 
-    let attrs = SetOfVec::try_from(vec![
-        content_type,
-        message_digest,
-        signing_time_attr,
-        signing_cert_v2,
-    ])?;
+    let mut values = vec![content_type, message_digest, signing_cert_v2];
+
+    // signing-time: CAdES only. `SetOfVec` DER-sorts on construction, so appending it last does
+    // not change the encoded order.
+    if let SignedAttrsProfile::Cades(signing_time) = profile {
+        values.push(attribute(
+            oids::ID_SIGNING_TIME,
+            signing_time_value(signing_time)?,
+        )?);
+    }
+
+    let attrs = SetOfVec::try_from(values)?;
     Ok(attrs)
 }

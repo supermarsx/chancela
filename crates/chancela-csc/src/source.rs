@@ -27,7 +27,7 @@
 
 use zeroize::Zeroizing;
 
-use chancela_cades::{RawSignature, assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
 use chancela_pades::PreparedSignature;
 use chancela_signing::{
     EvidentiaryLevel, RemoteInitiate, RemoteSignSession, RemoteSigningSource, SigningError,
@@ -104,11 +104,13 @@ impl<T: CscTransport> RemoteSigningSource for CscRemoteSource<T> {
         };
 
         // 4. The CAdES signed-attributes digest over the PAdES ByteRange digest — the qualified
-        //    artifact is the signature over this, not the OTP.
+        //    artifact is the signature over this, not the OTP. PAdES profile: no CMS
+        //    `signing-time` attribute (EN 319 142-1 V1.2.1 Table 1); the claimed instant rides the
+        //    PDF `/M` entry baked into `prepared` by the caller's `SignOptions`.
         let signed_attrs = signed_attributes_digest(
             prepared.byterange_digest(),
             &cert.leaf_der,
-            req.signing_time,
+            SignedAttrsProfile::Pades,
         )
         .map_err(cades_err)?;
         // Consistency: `confirm` recomputes this from the session; assert they will match here.
@@ -143,13 +145,13 @@ impl<T: CscTransport> RemoteSigningSource for CscRemoteSource<T> {
         // 1. Re-authenticate (each phase is a stateless request).
         let token = self.client.authenticate().map_err(provider_err)?;
 
-        // 2. Recompute the signed-attributes digest from the session's OWN certificate material and
-        //    signing time — the exact inputs hashed at initiate — so the attributes reproduce the
-        //    digest the QTSP signs (never a re-fetched copy).
+        // 2. Recompute the signed-attributes digest from the session's OWN certificate material —
+        //    the exact inputs hashed at initiate, under the same PAdES profile — so the attributes
+        //    reproduce the digest the QTSP signs (never a re-fetched copy).
         let signed_attrs = signed_attributes_digest(
             &session.byterange_digest,
             &session.signing_cert_der,
-            session.signing_time,
+            SignedAttrsProfile::Pades,
         )
         .map_err(cades_err)?;
 
@@ -179,15 +181,20 @@ impl<T: CscTransport> RemoteSigningSource for CscRemoteSource<T> {
             .sign_hash(&token, &session.provider_ref, &sad, &signed_attrs, &cert)
             .map_err(provider_err)?;
 
-        // 5. Assemble the detached CAdES-B CMS from the SESSION's certificate material + signing
-        //    time (pinning the attributes to exactly what was signed).
+        // 5. Assemble the detached CAdES-B CMS from the SESSION's certificate material under the
+        //    same PAdES profile (pinning the attributes to exactly what was signed).
         let raw = RawSignature::new(
             raw.algorithm,
             raw.signature,
             session.signing_cert_der.clone(),
             session.chain_der.clone(),
         );
-        assemble_cades_b(&raw, &session.byterange_digest, session.signing_time).map_err(cades_err)
+        assemble_cades_b(
+            &raw,
+            &session.byterange_digest,
+            SignedAttrsProfile::Pades,
+        )
+        .map_err(cades_err)
     }
 }
 

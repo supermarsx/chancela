@@ -21,7 +21,8 @@ use x509_cert::time::Validity;
 use crate::attrs::{SigningCertificateV2, sha256};
 use crate::oids;
 use crate::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest, validate_cades_b,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest, validate_cades_b,
 };
 
 /// DER `DigestInfo` prefix for SHA-256 (RFC 8017 §9.2).
@@ -168,15 +169,41 @@ fn fixed_time() -> time::OffsetDateTime {
     time::OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap()
 }
 
+/// Pull the signed attributes out of an assembled CMS, re-encoded as the DER `SET OF` that
+/// RFC 5652 §5.4 says is signed — i.e. exactly the bytes the signature covers.
+fn embedded_signed_attrs_der(cms: &[u8]) -> Vec<u8> {
+    let ci = cms::content_info::ContentInfo::from_der(cms).expect("content info");
+    let sd: cms::signed_data::SignedData = ci.content.decode_as().expect("signed data");
+    let si = sd.signer_infos.0.iter().next().expect("one signer info");
+    si.signed_attrs
+        .as_ref()
+        .expect("signed attrs present")
+        .to_der()
+        .expect("signed attrs der")
+}
+
+/// The OIDs of the signed attributes embedded in an assembled CMS.
+fn embedded_attr_oids(cms: &[u8]) -> Vec<der::asn1::ObjectIdentifier> {
+    let ci = cms::content_info::ContentInfo::from_der(cms).expect("content info");
+    let sd: cms::signed_data::SignedData = ci.content.decode_as().expect("signed data");
+    let si = sd.signer_infos.0.iter().next().expect("one signer info");
+    si.signed_attrs
+        .as_ref()
+        .expect("signed attrs present")
+        .iter()
+        .map(|a| a.oid)
+        .collect()
+}
+
 fn roundtrip(signer: &TestSigner) {
     let content = b"Chancela: livro de atas, ato numero 42";
     let content_digest = sha256(content);
-    let signing_time = fixed_time();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
 
-    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), signing_time)
+    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), profile)
         .expect("signed attrs digest");
     let raw = signer.raw_signature(&digest);
-    let cms = assemble_cades_b(&raw, &content_digest, signing_time).expect("assemble");
+    let cms = assemble_cades_b(&raw, &content_digest, profile).expect("assemble");
 
     let validation = validate_cades_b(&cms, &content_digest).expect("validate");
     assert!(validation.attrs_ok);
@@ -208,9 +235,9 @@ fn ecdsa_roundtrip_validates() {
 fn signed_attributes_digest_is_deterministic() {
     let signer = TestSigner::new_ecdsa("Determinism", 3);
     let content_digest = sha256(b"same content");
-    let t = fixed_time();
-    let a = signed_attributes_digest(&content_digest, &signer.cert_der(), t).unwrap();
-    let b = signed_attributes_digest(&content_digest, &signer.cert_der(), t).unwrap();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
+    let a = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
+    let b = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
     assert_eq!(
         a, b,
         "identical inputs must yield identical signed-attrs digest"
@@ -221,10 +248,10 @@ fn signed_attributes_digest_is_deterministic() {
 fn tampered_content_digest_is_rejected() {
     let signer = TestSigner::new_rsa("Tamper Content", 4);
     let content_digest = sha256(b"original content");
-    let t = fixed_time();
-    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), t).unwrap();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
+    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
     let raw = signer.raw_signature(&digest);
-    let cms = assemble_cades_b(&raw, &content_digest, t).unwrap();
+    let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
 
     // Validate against a *different* content digest → message-digest attribute mismatch.
     let other_digest = sha256(b"a different document entirely");
@@ -239,31 +266,163 @@ fn tampered_content_digest_is_rejected() {
 fn corrupted_signature_is_rejected() {
     let signer = TestSigner::new_rsa("Corrupt Sig", 5);
     let content_digest = sha256(b"content");
-    let t = fixed_time();
-    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), t).unwrap();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
+    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
 
     let mut raw = signer.raw_signature(&digest);
     let last = raw.signature.len() - 1;
     raw.signature[last] ^= 0xff; // flip bits in the signature value
-    let cms = assemble_cades_b(&raw, &content_digest, t).unwrap();
+    let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
 
     assert!(validate_cades_b(&cms, &content_digest).is_err());
 }
 
 #[test]
-fn signing_time_mismatch_breaks_signature() {
-    // If the signer signs attributes for time T but the CMS is assembled with time T', the
-    // embedded attributes no longer hash to what was signed → signature must fail.
+fn cades_signing_time_mismatch_breaks_signature() {
+    // CAdES only. If the signer signs attributes for time T but the CMS is assembled with time T',
+    // the embedded attributes no longer hash to what was signed → signature must fail.
+    //
+    // This is deliberately pinned to `Cades`: under `Pades` the signing-time attribute is absent,
+    // so the attributes do not vary with time at all and this test would be vacuous. That property
+    // is asserted directly by `pades_attributes_do_not_vary_with_time` below.
     let signer = TestSigner::new_ecdsa("Time Mismatch", 6);
     let content_digest = sha256(b"content");
-    let signed_at = fixed_time();
+    let signed_at = SignedAttrsProfile::Cades(fixed_time());
     let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), signed_at).unwrap();
     let raw = signer.raw_signature(&digest);
 
-    let assembled_at = time::OffsetDateTime::from_unix_timestamp(1_750_000_999).unwrap();
+    let assembled_at = SignedAttrsProfile::Cades(
+        time::OffsetDateTime::from_unix_timestamp(1_750_000_999).unwrap(),
+    );
     let cms = assemble_cades_b(&raw, &content_digest, assembled_at).unwrap();
 
     assert!(validate_cades_b(&cms, &content_digest).is_err());
+}
+
+#[test]
+fn pades_profile_omits_the_cms_signing_time_attribute() {
+    // ETSI EN 319 142-1 V1.2.1 Table 1: `signing-time` "shall not be present" in a PAdES signature
+    // at every level (B-B..B-LTA). The claimed instant belongs in the PDF `/M` entry instead.
+    let signer = TestSigner::new_rsa("PAdES No Signing Time", 11);
+    let content_digest = sha256(b"content");
+    let digest =
+        signed_attributes_digest(&content_digest, &signer.cert_der(), SignedAttrsProfile::Pades)
+            .unwrap();
+    let raw = signer.raw_signature(&digest);
+    let cms = assemble_cades_b(&raw, &content_digest, SignedAttrsProfile::Pades).unwrap();
+
+    let oids = embedded_attr_oids(&cms);
+    assert!(
+        !oids.contains(&oids::ID_SIGNING_TIME),
+        "PAdES must not carry the CMS signing-time attribute; got {oids:?}"
+    );
+    // The rest of the CAdES-B attribute set is untouched.
+    assert!(oids.contains(&oids::ID_CONTENT_TYPE));
+    assert!(oids.contains(&oids::ID_MESSAGE_DIGEST));
+    assert!(oids.contains(&oids::ID_AA_SIGNING_CERTIFICATE_V2));
+    assert_eq!(oids.len(), 3, "exactly three attributes: {oids:?}");
+
+    // Still a cryptographically valid signature, and the validator reports no CMS signing time.
+    let validation = validate_cades_b(&cms, &content_digest).expect("validate");
+    assert!(validation.attrs_ok);
+    assert!(validation.signing_certificate_v2_present);
+    assert_eq!(validation.signing_time, None);
+}
+
+#[test]
+fn cades_profile_keeps_the_cms_signing_time_attribute() {
+    // The other side of the profile switch: EN 319 122-1 permits signing-time, and a detached
+    // CAdES has no `/M` to fall back on, so it must still be emitted and must round-trip.
+    let signer = TestSigner::new_rsa("CAdES Signing Time", 12);
+    let content_digest = sha256(b"content");
+    let profile = SignedAttrsProfile::Cades(fixed_time());
+    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
+    let raw = signer.raw_signature(&digest);
+    let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
+
+    let oids = embedded_attr_oids(&cms);
+    assert!(oids.contains(&oids::ID_SIGNING_TIME), "got {oids:?}");
+    assert_eq!(oids.len(), 4, "exactly four attributes: {oids:?}");
+
+    let validation = validate_cades_b(&cms, &content_digest).expect("validate");
+    assert_eq!(
+        validation.signing_time.expect("signing time").unix_timestamp(),
+        1_750_000_000
+    );
+}
+
+#[test]
+fn pades_attributes_do_not_vary_with_time() {
+    // The direct consequence of omitting signing-time: under PAdES the attribute set carries no
+    // time, so two different instants produce the *same* signed bytes. This is what makes
+    // `cades_signing_time_mismatch_breaks_signature` vacuous for PAdES — asserted, not assumed.
+    let signer = TestSigner::new_ecdsa("PAdES Time Invariance", 13);
+    let content_digest = sha256(b"content");
+    let a =
+        signed_attributes_digest(&content_digest, &signer.cert_der(), SignedAttrsProfile::Pades)
+            .unwrap();
+    let raw = signer.raw_signature(&a);
+    // Assembling "later" cannot change the bytes, so the signature still verifies.
+    let cms = assemble_cades_b(&raw, &content_digest, SignedAttrsProfile::Pades).unwrap();
+    assert_eq!(sha256(&embedded_signed_attrs_der(&cms)), a);
+    validate_cades_b(&cms, &content_digest).expect("PAdES signature must still verify");
+}
+
+/// **The lockstep invariant.** `signed_attributes_digest` produces the digest a signer signs;
+/// `assemble_cades_b` produces the attributes embedded in the `SignerInfo`. They are two separate
+/// calls, often separated by a network round trip, and they must agree **byte for byte** — if one
+/// emitted signing-time and the other did not, every signature would cover different bytes than it
+/// embeds while still appearing to succeed.
+///
+/// This asserts the strong form: the digest handed to the signer is exactly SHA-256 over the DER
+/// `SET OF` actually embedded, for **both** profiles.
+#[test]
+fn digest_and_assembly_agree_byte_for_byte_in_both_profiles() {
+    let signer = TestSigner::new_rsa("Lockstep", 14);
+    let content_digest = sha256(b"lockstep content");
+
+    for profile in [
+        SignedAttrsProfile::Cades(fixed_time()),
+        SignedAttrsProfile::Pades,
+    ] {
+        let digest =
+            signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
+        let raw = signer.raw_signature(&digest);
+        let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
+
+        let embedded = embedded_signed_attrs_der(&cms);
+        assert_eq!(
+            sha256(&embedded),
+            digest,
+            "{profile:?}: embedded signed attributes are not the bytes that were signed"
+        );
+        // And the signature over them actually verifies, end to end.
+        validate_cades_b(&cms, &content_digest).unwrap_or_else(|e| panic!("{profile:?}: {e:?}"));
+    }
+}
+
+#[test]
+fn profile_mismatch_between_digest_and_assembly_is_rejected() {
+    // The hazard the profile parameter introduces: sign under one profile, assemble under the
+    // other. The attribute sets differ, so the embedded attributes do not reproduce the signed
+    // digest. This must fail closed in both directions — never silently produce a "valid-looking"
+    // signature. Every production lane runs `validate_cades_b`/`validate_pdf_signature` post-sign,
+    // so this is the gate that catches a mis-threaded profile.
+    let signer = TestSigner::new_ecdsa("Profile Mismatch", 15);
+    let content_digest = sha256(b"content");
+    let cades = SignedAttrsProfile::Cades(fixed_time());
+    let pades = SignedAttrsProfile::Pades;
+
+    for (signed_under, assembled_under) in [(cades, pades), (pades, cades)] {
+        let digest =
+            signed_attributes_digest(&content_digest, &signer.cert_der(), signed_under).unwrap();
+        let raw = signer.raw_signature(&digest);
+        let cms = assemble_cades_b(&raw, &content_digest, assembled_under).unwrap();
+        assert!(
+            validate_cades_b(&cms, &content_digest).is_err(),
+            "signed under {signed_under:?} but assembled under {assembled_under:?} must not validate"
+        );
+    }
 }
 
 #[test]
@@ -272,18 +431,18 @@ fn signer_cert_mismatch_is_rejected() {
     let signer_a = TestSigner::new_rsa("Signer A", 7);
     let signer_b = TestSigner::new_rsa("Signer B", 8);
     let content_digest = sha256(b"content");
-    let t = fixed_time();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
 
     // Attributes digest is computed over B's certificate (so ESSCertIDv2/sid reference B), and
     // signed with A's key → B's public key cannot verify it.
-    let digest = signed_attributes_digest(&content_digest, &signer_b.cert_der(), t).unwrap();
+    let digest = signed_attributes_digest(&content_digest, &signer_b.cert_der(), profile).unwrap();
     let raw = RawSignature::new(
         signer_a.algorithm(),
         signer_a.sign_digest(&digest),
         signer_b.cert_der(),
         vec![],
     );
-    let cms = assemble_cades_b(&raw, &content_digest, t).unwrap();
+    let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
 
     assert!(matches!(
         validate_cades_b(&cms, &content_digest).unwrap_err(),
@@ -296,10 +455,10 @@ fn ess_certid_v2_binds_the_signing_certificate() {
     // The signing-certificate-v2 attribute must carry SHA-256(signing cert).
     let signer = TestSigner::new_ecdsa("ESS Bind", 9);
     let content_digest = sha256(b"content");
-    let t = fixed_time();
-    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), t).unwrap();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
+    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
     let raw = signer.raw_signature(&digest);
-    let cms = assemble_cades_b(&raw, &content_digest, t).unwrap();
+    let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
 
     // Re-parse and pull the ESSCertIDv2 out of the signed attributes.
     let ci = cms::content_info::ContentInfo::from_der(&cms).unwrap();
@@ -324,10 +483,10 @@ fn ess_certid_v2_binds_the_signing_certificate() {
 fn outer_content_type_is_signed_data() {
     let signer = TestSigner::new_rsa("Outer", 10);
     let content_digest = sha256(b"content");
-    let t = fixed_time();
-    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), t).unwrap();
+    let profile = SignedAttrsProfile::Cades(fixed_time());
+    let digest = signed_attributes_digest(&content_digest, &signer.cert_der(), profile).unwrap();
     let raw = signer.raw_signature(&digest);
-    let cms = assemble_cades_b(&raw, &content_digest, t).unwrap();
+    let cms = assemble_cades_b(&raw, &content_digest, profile).unwrap();
 
     let ci = cms::content_info::ContentInfo::from_der(&cms).unwrap();
     assert_eq!(ci.content_type, oids::ID_SIGNED_DATA);

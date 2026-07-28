@@ -42,7 +42,9 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use chancela_cades::{assemble_cades_b, signed_attributes_digest, validate_cades_b};
+use chancela_cades::{
+    SignedAttrsProfile, assemble_cades_b, signed_attributes_digest, validate_cades_b,
+};
 use chancela_pades::{
     PreparedSignature, SealAppearance, SignOptions, embed_signature,
     prepare_signature_with_appearance, validate_pdf_signature,
@@ -689,18 +691,27 @@ fn sign_one_pdf(
     signing_time: OffsetDateTime,
     pin: Option<&Zeroizing<String>>,
 ) -> (bool, Result<Vec<u8>, SigningError>) {
+    // PAdES: the claimed instant goes in the PDF `/M` entry, never in the CMS `signing-time`
+    // attribute (EN 319 142-1 V1.2.1 Table 1, all levels).
+    let options = crate::pipeline::with_pades_signing_time(&doc.options, signing_time);
+
     // Pre-sign preparation (may fail before the card is ever contacted).
-    let prepared =
-        match prepare_signature_with_appearance(doc.pdf, &doc.options, doc.appearance.as_ref()) {
-            Ok(prepared) => prepared,
-            Err(e) => return (false, Err(pades_err(e))),
-        };
-    let signed_attrs_digest =
-        match signed_attributes_digest(prepared.byterange_digest(), signing_cert_der, signing_time)
-        {
-            Ok(digest) => digest,
-            Err(e) => return (false, Err(cades_err(e))),
-        };
+    let prepared = match prepare_signature_with_appearance(
+        doc.pdf,
+        options.as_ref(),
+        doc.appearance.as_ref(),
+    ) {
+        Ok(prepared) => prepared,
+        Err(e) => return (false, Err(pades_err(e))),
+    };
+    let signed_attrs_digest = match signed_attributes_digest(
+        prepared.byterange_digest(),
+        signing_cert_der,
+        SignedAttrsProfile::Pades,
+    ) {
+        Ok(digest) => digest,
+        Err(e) => return (false, Err(cades_err(e))),
+    };
 
     // From here the signer's device/service is contacted — one signing invocation (one
     // context-specific authentication).
@@ -709,7 +720,6 @@ fn sign_one_pdf(
         signing_cert_der,
         &prepared,
         &signed_attrs_digest,
-        signing_time,
         pin,
     );
     (true, result)
@@ -721,7 +731,6 @@ fn sign_prepared_pdf(
     signing_cert_der: &[u8],
     prepared: &chancela_pades::PreparedSignature,
     signed_attrs_digest: &[u8; 32],
-    signing_time: OffsetDateTime,
     pin: Option<&Zeroizing<String>>,
 ) -> Result<Vec<u8>, SigningError> {
     let raw = provider.sign_signed_attributes_with_pin(signed_attrs_digest, pin)?;
@@ -730,8 +739,9 @@ fn sign_prepared_pdf(
             "provider changed signing certificate after batch issuer trust decision".to_owned(),
         ));
     }
-    let cms =
-        assemble_cades_b(&raw, prepared.byterange_digest(), signing_time).map_err(cades_err)?;
+    // The same PAdES profile `sign_one_pdf` hashed — the attribute set must be identical.
+    let cms = assemble_cades_b(&raw, prepared.byterange_digest(), SignedAttrsProfile::Pades)
+        .map_err(cades_err)?;
     let signed_pdf = embed_signature(prepared, &cms).map_err(pades_err)?;
     // Post-sign sanity gate (SIG-24): never emit a malformed signature, even in a batch.
     validate_pdf_signature(&signed_pdf).map_err(pades_err)?;
@@ -746,16 +756,18 @@ fn sign_one_cades(
     signing_time: OffsetDateTime,
     pin: Option<&Zeroizing<String>>,
 ) -> Result<Vec<u8>, SigningError> {
+    // Detached CAdES: no PDF `/M` exists, so the CMS `signing-time` attribute carries the claimed
+    // instant (EN 319 122-1 permits it).
+    let profile = SignedAttrsProfile::Cades(signing_time);
     let signed_attrs_digest =
-        signed_attributes_digest(content_digest, signing_cert_der, signing_time)
-            .map_err(cades_err)?;
+        signed_attributes_digest(content_digest, signing_cert_der, profile).map_err(cades_err)?;
     let raw = provider.sign_signed_attributes_with_pin(&signed_attrs_digest, pin)?;
     if raw.signing_cert_der != signing_cert_der {
         return Err(SigningError::Cades(
             "provider changed signing certificate after batch issuer trust decision".to_owned(),
         ));
     }
-    let cms = assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)?;
+    let cms = assemble_cades_b(&raw, content_digest, profile).map_err(cades_err)?;
     if provider.requires_cms_post_validation() {
         let verified = validate_cades_b(&cms, content_digest).map_err(cades_err)?;
         if verified.signer_cert_der != signing_cert_der {

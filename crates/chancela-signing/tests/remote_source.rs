@@ -35,7 +35,8 @@ use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VAL
 use chancela_cmd::{MockScmdTransport, ScmdClient};
 
 use chancela_cades::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest,
 };
 use chancela_pades::{SignOptions, prepare_signature, validate_pdf_signature};
 use chancela_signing::{
@@ -288,7 +289,7 @@ impl RemoteSigningSource for MockRemoteSource {
         let signed_attrs = signed_attributes_digest(
             &session.byterange_digest,
             &session.signing_cert_der,
-            session.signing_time,
+            SignedAttrsProfile::Pades,
         )
         .map_err(|e| SigningError::Cades(e.to_string()))?;
         let raw = RawSignature::new(
@@ -297,7 +298,7 @@ impl RemoteSigningSource for MockRemoteSource {
             session.signing_cert_der.clone(),
             session.chain_der.clone(),
         );
-        assemble_cades_b(&raw, &session.byterange_digest, session.signing_time)
+        assemble_cades_b(&raw, &session.byterange_digest, SignedAttrsProfile::Pades)
             .map_err(|e| SigningError::Cades(e.to_string()))
     }
 }
@@ -367,10 +368,9 @@ fn mock_remote_source_round_trips_prepare_initiate_confirm_embed_validate() {
     assert!(report.covers_whole_file_except_contents);
     assert_eq!(report.cades.signer_cert_der, session.signing_cert_der);
     assert!(report.cades.signing_certificate_v2_present);
-    assert_eq!(
-        report.cades.signing_time.map(|t| t.unix_timestamp()),
-        Some(1_750_000_000)
-    );
+    // ETSI EN 319 142-1 V1.2.1 Table 1: PAdES omits the CMS `signing-time` attribute; the
+    // authoritative instant lives in the PDF `/M` entry instead.
+    assert_eq!(report.cades.signing_time, None);
 }
 
 /// PROOF 1b — the trait's trusted-list gate fails closed for a withdrawn issuer (no artifact).
@@ -476,7 +476,7 @@ fn cmd_remote_source_is_byte_identical_to_the_cmd_facade() {
     let signed_attrs = signed_attributes_digest(
         &trait_session.byterange_digest,
         &trait_session.signing_cert_der,
-        trait_session.signing_time,
+        SignedAttrsProfile::Pades,
     )
     .expect("signed attrs digest");
     let raw_sig = leaf.sign_digest(&signed_attrs);

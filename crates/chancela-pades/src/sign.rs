@@ -37,13 +37,21 @@ const CONTENTS_HEX_LEN: usize = MAX_CONTENTS_BYTES * 2;
 const ID_AA_SIGNATURE_TIME_STAMP_TOKEN: ObjectIdentifier =
     ObjectIdentifier::new_unwrap("1.2.840.113549.1.9.16.2.14");
 
-/// Options controlling the signature dictionary. All fields are optional and cosmetic — the
-/// authoritative signing time and certificate binding live in the CAdES signed attributes.
+/// Options controlling the signature dictionary.
+///
+/// The certificate binding is carried by the CAdES signed attributes (signing-certificate-v2), but
+/// the **claimed signing time is not**: ETSI EN 319 142-1 V1.2.1 Table 1 requires `/M` and forbids
+/// the CMS `signing-time` attribute at every PAdES level, so [`signing_time`](Self::signing_time)
+/// below is the authoritative carrier, not a cosmetic one. The remaining fields are cosmetic.
 #[derive(Debug, Clone, Default)]
 pub struct SignOptions {
     /// The AcroForm signature field name (`/T`). Defaults to `"Signature1"`.
     pub field_name: Option<String>,
     /// `/M` signing time string, e.g. `"D:20260706142640Z"`.
+    ///
+    /// This is where a PAdES signature states when it was made — EN 319 142-1 Table 1 marks `/M`
+    /// "shall be present" and the CMS `signing-time` attribute "shall not be present". Leaving it
+    /// `None` yields a signature that claims no time at all.
     pub signing_time: Option<String>,
     /// `/Reason` for signing.
     pub reason: Option<String>,

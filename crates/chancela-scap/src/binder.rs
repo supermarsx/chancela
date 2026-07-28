@@ -22,7 +22,7 @@
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
-use chancela_cades::{RawSignature, assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
 
 use crate::error::ScapError;
 use crate::model::ScapSignatureEvidence;
@@ -89,7 +89,9 @@ impl AttributeSignatureBinder for CadesAttributeBinder {
         signing_time: OffsetDateTime,
     ) -> Result<[u8; 32], ScapError> {
         let bound = attribute_bound_content_digest(content_digest, evidence);
-        signed_attributes_digest(&bound, signing_cert_der, signing_time)
+        // Detached CAdES: no PDF `/M` exists, so the CMS `signing-time` attribute carries the
+        // claimed instant (EN 319 122-1 permits it).
+        signed_attributes_digest(&bound, signing_cert_der, SignedAttrsProfile::Cades(signing_time))
             .map_err(|e| ScapError::Signature(e.to_string()))
     }
 
@@ -101,7 +103,9 @@ impl AttributeSignatureBinder for CadesAttributeBinder {
         signing_time: OffsetDateTime,
     ) -> Result<Vec<u8>, ScapError> {
         let bound = attribute_bound_content_digest(content_digest, evidence);
-        assemble_cades_b(raw, &bound, signing_time).map_err(|e| ScapError::Signature(e.to_string()))
+        // Must match `binding_digest`'s profile above.
+        assemble_cades_b(raw, &bound, SignedAttrsProfile::Cades(signing_time))
+            .map_err(|e| ScapError::Signature(e.to_string()))
     }
 }
 

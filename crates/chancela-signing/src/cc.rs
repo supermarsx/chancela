@@ -29,7 +29,8 @@ use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
 use chancela_cades::{
-    SignatureAlgorithm, assemble_cades_b, signed_attributes_digest, validate_cades_b,
+    SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest,
+    validate_cades_b,
 };
 use chancela_pades::{
     SealAppearance, SignOptions, embed_signature, prepare_signature_with_appearance,
@@ -101,10 +102,12 @@ pub fn probe_cc_provider(
         });
     }
 
+    // A detached CAdES challenge, not a PDF: there is no `/M`, so the CMS `signing-time` attribute
+    // is the carrier (EN 319 122-1 permits it). This probe emits no PAdES artifact.
+    let profile = SignedAttrsProfile::Cades(signing_time);
     let signing_cert_der = provider.signing_certificate_der()?;
-    let signed_attrs_digest =
-        signed_attributes_digest(challenge_digest, &signing_cert_der, signing_time)
-            .map_err(cades_err)?;
+    let signed_attrs_digest = signed_attributes_digest(challenge_digest, &signing_cert_der, profile)
+        .map_err(cades_err)?;
     // Deliberately use the no-secret/protected-authentication path. A desktop IPC/native PIN
     // broker is not part of this seam, and accepting an HTTP PIN would turn a diagnostic into a
     // credential-bearing endpoint.
@@ -115,7 +118,7 @@ pub fn probe_cc_provider(
         ));
     }
     let algorithm = raw.algorithm;
-    let cms = assemble_cades_b(&raw, challenge_digest, signing_time).map_err(cades_err)?;
+    let cms = assemble_cades_b(&raw, challenge_digest, profile).map_err(cades_err)?;
     let verified = validate_cades_b(&cms, challenge_digest).map_err(cades_err)?;
 
     // `validate_cades_b` verifies the raw signature against the certificate embedded by the
@@ -236,11 +239,17 @@ pub fn sign_pdf_cc_with_appearance(
 
     // 2. Prepare (with the optional visible seal) → card sign_digest → assemble CAdES-B → embed (the
     //    t57-S2 F5 seam, reused). No two-phase suspend is needed: CC is a single blocking call.
-    let prepared =
-        prepare_signature_with_appearance(pdf, options, appearance).map_err(pades_err)?;
-    let signed_attrs_digest =
-        signed_attributes_digest(prepared.byterange_digest(), &signing_cert_der, signing_time)
-            .map_err(cades_err)?;
+    // PAdES: the claimed instant goes in the PDF `/M` entry, never in the CMS `signing-time`
+    // attribute (EN 319 142-1 V1.2.1 Table 1, all levels).
+    let options = crate::pipeline::with_pades_signing_time(options, signing_time);
+    let prepared = prepare_signature_with_appearance(pdf, options.as_ref(), appearance)
+        .map_err(pades_err)?;
+    let signed_attrs_digest = signed_attributes_digest(
+        prepared.byterange_digest(),
+        &signing_cert_der,
+        SignedAttrsProfile::Pades,
+    )
+    .map_err(cades_err)?;
     // The card signs here; a card/PIN/activation failure surfaces as `SigningError::Provider`. When
     // an in-app PIN is supplied it is presented to `C_Login`; otherwise the protected-auth path runs.
     let raw = provider.sign_signed_attributes_with_pin(&signed_attrs_digest, pin)?;
@@ -252,8 +261,8 @@ pub fn sign_pdf_cc_with_appearance(
             "provider changed signing certificate after issuer trust decision".to_owned(),
         ));
     }
-    let cms =
-        assemble_cades_b(&raw, prepared.byterange_digest(), signing_time).map_err(cades_err)?;
+    let cms = assemble_cades_b(&raw, prepared.byterange_digest(), SignedAttrsProfile::Pades)
+        .map_err(cades_err)?;
     let signed_pdf = embed_signature(&prepared, &cms).map_err(pades_err)?;
 
     // 3. Post-sign validation sanity gate (SIG-24) — never emit a malformed signature.

@@ -1241,7 +1241,8 @@ mod ltv_tests {
     use x509_cert::time::{Time, Validity};
 
     use chancela_cades::{
-        RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+        RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+        signed_attributes_digest,
     };
 
     use super::{
@@ -1259,10 +1260,6 @@ mod ltv_tests {
         0x05, 0x00, 0x04, 0x20,
     ];
     const LEAF_SERIAL: u8 = 0x2a;
-
-    fn fixed_time() -> time::OffsetDateTime {
-        time::OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap()
-    }
 
     fn sha256(data: &[u8]) -> [u8; 32] {
         Sha256::digest(data).into()
@@ -1407,16 +1404,15 @@ mod ltv_tests {
     }
 
     fn sign_pdf_with_leaf(pdf: &[u8], leaf_der: &[u8], leaf_key: &RsaPrivateKey) -> Vec<u8> {
-        let signing_time = fixed_time();
         sign_pdf(pdf, &SignOptions::default(), |digest| {
-            let attrs = signed_attributes_digest(digest, leaf_der, signing_time)?;
+            let attrs = signed_attributes_digest(digest, leaf_der, SignedAttrsProfile::Pades)?;
             let raw = RawSignature::new(
                 SignatureAlgorithm::RsaPkcs1Sha256,
                 sign_rsa_digest_info(leaf_key, &attrs),
                 leaf_der.to_vec(),
                 vec![],
             );
-            assemble_cades_b(&raw, digest, signing_time)
+            assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
         })
         .expect("sign_pdf")
     }

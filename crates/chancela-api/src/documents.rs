@@ -10774,7 +10774,8 @@ mod tests {
     use axum::http::StatusCode;
     use chancela_authz::{OWNER_ROLE_ID, READER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
     use chancela_cades::{
-        RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+        RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+        signed_attributes_digest,
     };
     use chancela_core::book::ClosingReason;
     use chancela_core::{
@@ -11433,16 +11434,15 @@ mod tests {
             &signable_pdf(),
             &chancela_pades::SignOptions::default(),
             |digest| {
-                let signing_time =
-                    OffsetDateTime::from_unix_timestamp(1_750_000_000).expect("fixed signing time");
-                let attrs = signed_attributes_digest(digest, &cert_der, signing_time)?;
+                let attrs =
+                    signed_attributes_digest(digest, &cert_der, SignedAttrsProfile::Pades)?;
                 let raw = RawSignature::new(
                     SignatureAlgorithm::RsaPkcs1Sha256,
                     sign_rsa_digest_info(&key, &attrs),
                     cert_der.clone(),
                     vec![],
                 );
-                assemble_cades_b(&raw, digest, signing_time)
+                assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
             },
         )
         .expect("signed pdf")
@@ -11501,7 +11501,8 @@ mod tests {
         let content_digest: [u8; 32] = Sha256::digest(content).into();
         let signing_time =
             OffsetDateTime::from_unix_timestamp(1_750_000_000).expect("fixed signing time");
-        let attrs = signed_attributes_digest(&content_digest, &cert_der, signing_time)
+        let profile = SignedAttrsProfile::Cades(signing_time);
+        let attrs = signed_attributes_digest(&content_digest, &cert_der, profile)
             .expect("signed attributes");
         let raw = RawSignature::new(
             SignatureAlgorithm::RsaPkcs1Sha256,
@@ -11509,7 +11510,7 @@ mod tests {
             cert_der,
             vec![],
         );
-        assemble_cades_b(&raw, &content_digest, signing_time).expect("assemble detached CAdES")
+        assemble_cades_b(&raw, &content_digest, profile).expect("assemble detached CAdES")
     }
 
     fn enveloping_xades() -> Vec<u8> {

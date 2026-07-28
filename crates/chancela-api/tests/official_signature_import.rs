@@ -25,7 +25,8 @@ use x509_cert::time::Validity;
 use chancela_api::{AppState, User, UserId, router};
 use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, RoleCatalog, Scope};
 use chancela_cades::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest,
 };
 use chancela_core::ActId;
 use chancela_pades::{SignOptions, sign_pdf, validate_pdf_signature};
@@ -484,8 +485,6 @@ async fn seal_signed_act(state: &AppState, token: &str, act_id: &str) {
 fn signed_pdf_for_import(pdf: &[u8], serial: u8) -> Vec<u8> {
     let signer = RsaSigner::new("Official handoff import test", serial);
     let cert_der = signer.cert_der();
-    let signing_time =
-        time::OffsetDateTime::from_unix_timestamp(1_783_596_800).expect("fixed signing time");
     let opts = SignOptions {
         field_name: Some("AssinaturaImportada".to_owned()),
         signing_time: Some("D:20260709120000Z".to_owned()),
@@ -494,7 +493,8 @@ fn signed_pdf_for_import(pdf: &[u8], serial: u8) -> Vec<u8> {
         contact_info: None,
     };
     sign_pdf(pdf, &opts, |byterange_digest| {
-        let attrs_digest = signed_attributes_digest(byterange_digest, &cert_der, signing_time)?;
+        let attrs_digest =
+            signed_attributes_digest(byterange_digest, &cert_der, SignedAttrsProfile::Pades)?;
         let signature = sign_rsa_digest_info(&signer.key, &attrs_digest);
         let raw = RawSignature::new(
             SignatureAlgorithm::RsaPkcs1Sha256,
@@ -502,7 +502,7 @@ fn signed_pdf_for_import(pdf: &[u8], serial: u8) -> Vec<u8> {
             cert_der.clone(),
             Vec::new(),
         );
-        assemble_cades_b(&raw, byterange_digest, signing_time)
+        assemble_cades_b(&raw, byterange_digest, SignedAttrsProfile::Pades)
     })
     .expect("PAdES signing")
 }

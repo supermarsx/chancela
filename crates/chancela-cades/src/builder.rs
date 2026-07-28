@@ -15,19 +15,59 @@ use crate::error::CadesError;
 use crate::oids;
 use crate::raw_signature::{RawSignature, SignatureAlgorithm};
 
+/// Which signature profile the signed attributes are being built for.
+///
+/// The two profiles differ in exactly one attribute, the RFC 5652 `signing-time`:
+///
+/// * **CAdES** (ETSI EN 319 122-1) and the ASiC containers built on it permit `signing-time`, and
+///   a detached CMS has nowhere else to carry the claimed instant — so [`Cades`] emits it.
+/// * **PAdES** (ETSI EN 319 142-1 V1.2.1, Table 1) states that `signing-time` **shall not be
+///   present** — at every level, B-B through B-LTA — because the claimed instant belongs in the
+///   PDF Signature Dictionary `/M` entry, which the same table requires. So [`Pades`] omits it.
+///   `/M` is written by `chancela_pades` from the same instant, so nothing is lost.
+///
+/// The profile decides the attribute *set*, which decides the bytes that get signed. It therefore
+/// **must be identical** at the [`signed_attributes_digest`] call that produces the digest a signer
+/// signs and at the [`assemble_cades_b`] call that embeds the attributes — exactly like
+/// `content_digest` and the signing certificate. A mismatch produces a `SignerInfo` whose embedded
+/// attributes are not the ones that were signed; [`crate::validate_cades_b`] rejects it.
+///
+/// [`Cades`]: SignedAttrsProfile::Cades
+/// [`Pades`]: SignedAttrsProfile::Pades
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SignedAttrsProfile {
+    /// CAdES / ASiC: emit `signing-time` carrying this instant.
+    Cades(time::OffsetDateTime),
+    /// PAdES: omit `signing-time`; the PDF Signature Dictionary `/M` entry carries the instant.
+    Pades,
+}
+
+impl SignedAttrsProfile {
+    /// The instant this profile puts in the CMS `signing-time` attribute, if any.
+    ///
+    /// `None` for [`Pades`](SignedAttrsProfile::Pades) — not because the signature has no claimed
+    /// time, but because the CMS is not where PAdES carries it.
+    pub fn cms_signing_time(&self) -> Option<time::OffsetDateTime> {
+        match self {
+            SignedAttrsProfile::Cades(t) => Some(*t),
+            SignedAttrsProfile::Pades => None,
+        }
+    }
+}
+
 /// Compute the SHA-256 digest of the CAdES-B signed attributes, to be handed to a remote/token
 /// signer (SIG-01/02).
 ///
 /// The signer signs **this** digest; the resulting [`RawSignature`] is then wrapped by
-/// [`assemble_cades_b`], which rebuilds byte-identical attributes from the same inputs. The
-/// digest is over the DER `SET OF` encoding of the attributes, per RFC 5652 §5.4 (the EXPLICIT
-/// `SET OF` tag, not the `[0]` implicit tag carried inside the `SignerInfo`).
+/// [`assemble_cades_b`], which rebuilds byte-identical attributes from the same inputs — including
+/// the same `profile`. The digest is over the DER `SET OF` encoding of the attributes, per RFC 5652
+/// §5.4 (the EXPLICIT `SET OF` tag, not the `[0]` implicit tag carried inside the `SignerInfo`).
 pub fn signed_attributes_digest(
     content_digest: &[u8; 32],
     signing_cert_der: &[u8],
-    signing_time: time::OffsetDateTime,
+    profile: SignedAttrsProfile,
 ) -> Result<[u8; 32], CadesError> {
-    let attrs = build_signed_attributes(content_digest, signing_cert_der, signing_time)?;
+    let attrs = build_signed_attributes(content_digest, signing_cert_der, profile)?;
     let der = attrs.to_der()?;
     Ok(crate::attrs::sha256(&der))
 }
@@ -65,19 +105,18 @@ fn signature_algorithm_id(
 /// Assemble a detached CAdES-B `SignedData` from a [`RawSignature`] produced over the signed
 /// attributes (SIG-01/02).
 ///
-/// `content_digest` is the SHA-256 of the detached content; `signing_time` **must** match the
-/// value passed to [`signed_attributes_digest`] so the embedded attributes hash to the digest the
-/// signer actually signed. Returns the DER-encoded outer `ContentInfo`.
+/// `content_digest` is the SHA-256 of the detached content; `profile` **must** match the value
+/// passed to [`signed_attributes_digest`] so the embedded attributes hash to the digest the signer
+/// actually signed. Returns the DER-encoded outer `ContentInfo`.
 pub fn assemble_cades_b(
     raw: &RawSignature,
     content_digest: &[u8; 32],
-    signing_time: time::OffsetDateTime,
+    profile: SignedAttrsProfile,
 ) -> Result<Vec<u8>, CadesError> {
     let signer_cert =
         Certificate::from_der(&raw.signing_cert_der).map_err(|_| CadesError::InvalidCertificate)?;
 
-    let signed_attrs =
-        build_signed_attributes(content_digest, &raw.signing_cert_der, signing_time)?;
+    let signed_attrs = build_signed_attributes(content_digest, &raw.signing_cert_der, profile)?;
 
     let sid = SignerIdentifier::IssuerAndSerialNumber(IssuerAndSerialNumber {
         issuer: signer_cert.tbs_certificate.issuer.clone(),

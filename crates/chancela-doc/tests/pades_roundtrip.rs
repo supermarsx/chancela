@@ -20,7 +20,8 @@ use chancela_core::{Block, DocumentModel, KvRow, Run, SignatureSlot, VoteRow};
 use chancela_doc::pdfa;
 
 use chancela_cades::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest,
 };
 use chancela_pades::{SignOptions, sign_pdf, validate_pdf_signature};
 
@@ -140,11 +141,6 @@ const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
 
 fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
-}
-
-/// 2025-06-15T14:26:40Z — whole seconds, inside the CAdES UTCTime window.
-fn fixed_time() -> time::OffsetDateTime {
-    time::OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap()
 }
 
 enum TestSigner {
@@ -274,12 +270,11 @@ fn build_self_signed(
 /// Sign `pdf` with `signer`, wiring the CAdES-B assembly into the pades signing callback — exactly
 /// how `chancela-signing` will drive it in production.
 fn sign_with(pdf: &[u8], signer: &TestSigner, opts: &SignOptions) -> Vec<u8> {
-    let signing_time = fixed_time();
     let cert = signer.cert_der();
     sign_pdf(pdf, opts, |digest| {
-        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
         let raw = signer.raw_signature(&attrs);
-        assemble_cades_b(&raw, digest, signing_time)
+        assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
     })
     .expect("sign_pdf must accept the chancela-doc PDF")
 }
@@ -377,10 +372,12 @@ fn generate_sign_validate_roundtrip_rsa() {
         report.cades.signing_certificate_v2_present,
         "CAdES-B signing-certificate-v2 attribute present"
     );
+    // ETSI EN 319 142-1 V1.2.1 Table 1: PAdES omits the CMS `signing-time` attribute at every
+    // level; the authoritative instant is the PDF `/M` entry (set via `opts.signing_time` above),
+    // not the CAdES signed attributes.
     assert_eq!(
-        report.cades.signing_time.map(|t| t.unix_timestamp()),
-        Some(1_750_000_000),
-        "authoritative signing time is carried in the signed attributes"
+        report.cades.signing_time, None,
+        "PAdES signatures carry no CMS signing-time attribute"
     );
     assert!(
         !report.has_signature_timestamp,
@@ -571,8 +568,8 @@ fn sign_with_text_seal(base: &[u8], name: &str, serial: u8) -> Vec<u8> {
         )),
     };
     sign_pdf_with_appearance(base, &SignOptions::default(), Some(&appearance), |digest| {
-        let attrs = signed_attributes_digest(digest, &cert, fixed_time())?;
-        assemble_cades_b(&signer.raw_signature(&attrs), digest, fixed_time())
+        let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
+        assemble_cades_b(&signer.raw_signature(&attrs), digest, SignedAttrsProfile::Pades)
     })
     .expect("visible-seal signing")
 }

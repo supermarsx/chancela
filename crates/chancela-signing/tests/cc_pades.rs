@@ -30,7 +30,8 @@ use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
 use chancela_cades::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest,
 };
 use chancela_pades::{SignOptions, embed_signature, prepare_signature, validate_pdf_signature};
 use chancela_signing::{
@@ -456,10 +457,11 @@ fn cc_seam_round_trip(card: CcTestCard) {
         report.cades.signing_certificate_v2_present,
         "CAdES-B signing-certificate-v2 present"
     );
+    // ETSI EN 319 142-1 V1.2.1 Table 1: PAdES omits the CMS `signing-time` attribute; the
+    // authoritative instant lives in the PDF `/M` entry instead.
     assert_eq!(
-        report.cades.signing_time.map(|t| t.unix_timestamp()),
-        Some(1_750_000_000),
-        "authoritative signing time carried in the signed attributes"
+        report.cades.signing_time, None,
+        "PAdES signatures carry no CMS signing-time attribute"
     );
     assert!(
         !report.has_signature_timestamp,
@@ -486,7 +488,6 @@ fn cc_prepare_sign_embed_validate_explicit() {
     let signature_cert_der = card.signature_cert_der.clone();
     let provider = SmartcardProvider::new(card);
     let pdf = base_pdf();
-    let signing_time = fixed_time();
 
     // Phase 1: prepare — compute the ByteRange digest to sign, reserving the placeholder.
     let prepared = prepare_signature(&pdf, &sign_opts()).expect("prepare");
@@ -494,12 +495,13 @@ fn cc_prepare_sign_embed_validate_explicit() {
     // The card signs the CAdES signed-attributes digest over the prepared ByteRange digest.
     let cert_der = provider.signing_certificate_der().expect("signature cert");
     let signed_attrs =
-        signed_attributes_digest(prepared.byterange_digest(), &cert_der, signing_time)
+        signed_attributes_digest(prepared.byterange_digest(), &cert_der, SignedAttrsProfile::Pades)
             .expect("signed-attrs digest");
     let raw = provider
         .sign_signed_attributes(&signed_attrs)
         .expect("card sign_digest");
-    let cms = assemble_cades_b(&raw, prepared.byterange_digest(), signing_time).expect("cades-b");
+    let cms = assemble_cades_b(&raw, prepared.byterange_digest(), SignedAttrsProfile::Pades)
+        .expect("cades-b");
 
     // Phase 2: embed the CMS into the reserved placeholder, then validate.
     let signed_pdf = embed_signature(&prepared, &cms).expect("embed");

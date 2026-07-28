@@ -8,9 +8,13 @@
 //! around (t4-e7): `sign_cms(byterange_digest) = signed_attributes_digest → provider-sign →
 //! assemble_cades_b`.
 
+use std::borrow::Cow;
+
 use time::OffsetDateTime;
 
-use chancela_cades::{assemble_cades_b, signed_attributes_digest, validate_cades_b};
+use chancela_cades::{
+    SignedAttrsProfile, assemble_cades_b, signed_attributes_digest, validate_cades_b,
+};
 use chancela_pades::archive_timestamp::add_doc_timestamp_revision_with;
 use chancela_pades::renewal::{LtvRenewalExecution, execute_ltv_renewal};
 use chancela_pades::{
@@ -59,16 +63,19 @@ pub fn sign_detached_cades(
     content_digest: &[u8; 32],
     signing_time: OffsetDateTime,
 ) -> Result<Vec<u8>, SigningError> {
+    // Detached CAdES: EN 319 122-1 permits `signing-time`, and there is no PDF `/M` to carry the
+    // claimed instant, so the CMS attribute is the only carrier.
+    let profile = SignedAttrsProfile::Cades(signing_time);
     let cert_der = provider.signing_certificate_der()?;
     let signed_attrs_digest =
-        signed_attributes_digest(content_digest, &cert_der, signing_time).map_err(cades_err)?;
+        signed_attributes_digest(content_digest, &cert_der, profile).map_err(cades_err)?;
     let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
     if raw.signing_cert_der != cert_der {
         return Err(SigningError::Cades(
             "provider changed signing certificate during detached CAdES signing".to_owned(),
         ));
     }
-    let cms = assemble_cades_b(&raw, content_digest, signing_time).map_err(cades_err)?;
+    let cms = assemble_cades_b(&raw, content_digest, profile).map_err(cades_err)?;
     if provider.requires_cms_post_validation() {
         let verified = validate_cades_b(&cms, content_digest).map_err(cades_err)?;
         if verified.signer_cert_der != cert_der {
@@ -144,14 +151,55 @@ pub fn sign_pdf_pades_with_appearance(
     appearance: Option<&SealAppearance>,
 ) -> Result<Vec<u8>, SigningError> {
     let cert_der = provider.signing_certificate_der()?;
-    sign_pdf_with_appearance(pdf, options, appearance, |byterange_digest: &[u8; 32]| {
-        let signed_attrs_digest =
-            signed_attributes_digest(byterange_digest, &cert_der, signing_time)
-                .map_err(cades_err)?;
-        let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
-        assemble_cades_b(&raw, byterange_digest, signing_time).map_err(cades_err)
-    })
+    let options = with_pades_signing_time(options, signing_time);
+    sign_pdf_with_appearance(
+        pdf,
+        options.as_ref(),
+        appearance,
+        |byterange_digest: &[u8; 32]| {
+            // PAdES: the CMS carries no `signing-time` (EN 319 142-1 Table 1); `/M` above does.
+            let signed_attrs_digest =
+                signed_attributes_digest(byterange_digest, &cert_der, SignedAttrsProfile::Pades)
+                    .map_err(cades_err)?;
+            let raw = provider.sign_signed_attributes(&signed_attrs_digest)?;
+            assemble_cades_b(&raw, byterange_digest, SignedAttrsProfile::Pades).map_err(cades_err)
+        },
+    )
     .map_err(pades_err)
+}
+
+/// Ensure the PDF Signature Dictionary `/M` carries the claimed signing instant.
+///
+/// A PAdES signature states its claimed time in `/M` and never in the CMS `signing-time` attribute
+/// (ETSI EN 319 142-1 V1.2.1 Table 1 — see [`SignedAttrsProfile::Pades`]). `/M` is therefore the
+/// only carrier, so a caller that left [`SignOptions::signing_time`] unset gets it filled in from
+/// the `signing_time` argument rather than producing a signature that claims no time at all.
+/// Callers that already set `/M` (every production lane does) are passed through untouched.
+pub(crate) fn with_pades_signing_time(
+    options: &SignOptions,
+    signing_time: OffsetDateTime,
+) -> Cow<'_, SignOptions> {
+    if options.signing_time.is_some() {
+        return Cow::Borrowed(options);
+    }
+    Cow::Owned(SignOptions {
+        signing_time: Some(pdf_m_datetime(signing_time)),
+        ..options.clone()
+    })
+}
+
+/// Format an instant as a PDF date string (`D:YYYYMMDDHHMMSSZ`) for the `/M` entry.
+fn pdf_m_datetime(t: OffsetDateTime) -> String {
+    let t = t.to_offset(time::UtcOffset::UTC);
+    format!(
+        "D:{:04}{:02}{:02}{:02}{:02}{:02}Z",
+        t.year(),
+        t.month() as u8,
+        t.day(),
+        t.hour(),
+        t.minute(),
+        t.second(),
+    )
 }
 
 /// Upgrade a PAdES-B-B signed PDF to PAdES-B-T by embedding a qualified signature timestamp

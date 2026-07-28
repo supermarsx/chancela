@@ -15,7 +15,8 @@ use x509_cert::spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
 use x509_cert::time::{Time, Validity};
 
 use chancela_cades::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest,
 };
 use chancela_pades::{
     DssEvidence, SignOptions, add_doc_timestamp_revision, add_dss_revision,
@@ -127,17 +128,13 @@ fn build_fixtures() -> Vec<(&'static str, Vec<u8>)> {
     ]
 }
 
-fn fixed_time() -> time::OffsetDateTime {
-    time::OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap()
-}
 
 fn sign_with(pdf: &[u8], signer: &CorpusSigner) -> Vec<u8> {
-    let signing_time = fixed_time();
     let cert = signer.cert_der();
     sign_pdf(pdf, &SignOptions::default(), |digest| {
-        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
         let raw = signer.raw_signature(&attrs);
-        assemble_cades_b(&raw, digest, signing_time)
+        assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
     })
     .expect("sign_pdf")
 }

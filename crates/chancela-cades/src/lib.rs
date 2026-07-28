@@ -13,10 +13,17 @@
 //!
 //! 1. Hash the detached content with SHA-256 → `content_digest`.
 //! 2. [`signed_attributes_digest`] builds the CAdES-B signed attributes (content-type,
-//!    message-digest, signing-time, signing-certificate-v2) and returns the SHA-256 to sign.
+//!    message-digest, signing-certificate-v2, and signing-time for CAdES only) and returns the
+//!    SHA-256 to sign.
 //! 3. A token/remote signer signs that digest, producing a [`RawSignature`].
 //! 4. [`assemble_cades_b`] wraps it into a detached CAdES-B `SignedData` (DER `ContentInfo`).
 //! 5. [`validate_cades_b`] structurally and cryptographically verifies such a message.
+//!
+//! ## Profiles (`signing-time`)
+//!
+//! Steps 2 and 4 take a [`SignedAttrsProfile`] and **must be given the same one**. It selects
+//! whether the CMS `signing-time` attribute is emitted: CAdES/ASiC carry it, PAdES must not
+//! (ETSI EN 319 142-1 V1.2.1 Table 1 — the PDF `/M` entry carries the claimed instant instead).
 //!
 //! ## Supported profiles (SIG-01)
 //!
@@ -36,7 +43,7 @@ pub mod error;
 pub mod raw_signature;
 pub mod validate;
 
-pub use builder::{assemble_cades_b, signed_attributes_digest};
+pub use builder::{SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
 pub use error::CadesError;
 pub use raw_signature::{RawSignature, SignatureAlgorithm};
 pub use validate::{CadesValidation, validate_cades_b};

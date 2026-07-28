@@ -33,7 +33,7 @@ use x509_cert::time::Validity;
 use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use chancela_cmd::{MockScmdTransport, ScmdClient};
 
-use chancela_cades::signed_attributes_digest;
+use chancela_cades::{SignedAttrsProfile, signed_attributes_digest};
 use chancela_pades::{SignOptions, prepare_signature, validate_pdf_signature};
 use chancela_signing::{
     CmdInitiate, CmdSignSession, StaticTrustPolicy, TrustedListStatus, cmd_confirm, cmd_initiate,
@@ -86,11 +86,62 @@ impl RsaSigner {
         self.cert.to_pem(LineEnding::LF).expect("cert pem")
     }
 
-    /// Raw PKCS#1 v1.5 signature over the SHA-256 DigestInfo of `digest` — exactly the shape SCMD's
-    /// `ValidateOtp` returns.
-    fn sign_digest(&self, digest: &[u8; 32]) -> Vec<u8> {
-        sign_rsa_digest_info(&self.key, digest)
+    /// Raw PKCS#1 v1.5 signature over the `DigestInfo` **exactly as submitted**, adding nothing.
+    ///
+    /// This is what SCMD's `ValidateOtp` returns and how AMA behaves: per the CMD service
+    /// specification the value Chancela sends in `CCMovelSign` is already the RFC 8017 §9.2
+    /// `DigestInfo` (the construction stops at step 2), so the signer only applies the PKCS#1 v1.5
+    /// padding and the raw RSA operation. A double that built the prefix itself would model the
+    /// opposite convention and would round-trip a bare digest just as happily — leaving the suite
+    /// unable to see a wire-format mismatch at all.
+    fn sign_submitted_digest_info(&self, digest_info: &[u8]) -> Vec<u8> {
+        self.key
+            .sign(rsa::Pkcs1v15Sign::new_unprefixed(), digest_info)
+            .expect("rsa sign")
     }
+}
+
+/// Read the value Chancela actually put in the `CCMovelSign` `Hash` element off the recorded
+/// envelope, and constrain its format: 51 raw bytes / 68 base64 characters, the RFC 8017 §9.2
+/// SHA-256 prefix, then `expected_digest` verbatim.
+///
+/// Reading the wire rather than re-deriving the value is the point — a double that recomputes what
+/// it expects proves only that the test agrees with itself.
+fn submitted_ccmovel_sign_hash(
+    client: &ScmdClient<MockScmdTransport>,
+    expected_digest: &[u8; 32],
+) -> Vec<u8> {
+    let envelope = client
+        .transport()
+        .last_envelope_for(ACTION_CCMOVEL_SIGN)
+        .expect("CCMovelSign was called");
+    let start = envelope.find("<d:Hash>").expect("Hash element") + "<d:Hash>".len();
+    let end = envelope[start..].find("</d:Hash>").expect("Hash close") + start;
+    let hash_b64 = envelope[start..end].trim();
+
+    assert_eq!(
+        hash_b64.len(),
+        68,
+        "51 raw bytes base64-encode to 68 characters; got {hash_b64:?}"
+    );
+    let submitted = STANDARD.decode(hash_b64).expect("Hash is base64");
+    assert_eq!(
+        submitted.len(),
+        51,
+        "CCMovelSign Hash must be the 19-byte DigestInfo prefix + 32-byte digest; got {} bytes",
+        submitted.len()
+    );
+    assert_eq!(
+        &submitted[..19],
+        &SHA256_DIGEST_INFO_PREFIX,
+        "CCMovelSign Hash must open with the RFC 8017 §9.2 SHA-256 DigestInfo prefix"
+    );
+    assert_eq!(
+        &submitted[19..],
+        expected_digest,
+        "the wrapped digest must be the CAdES signed-attributes digest, unaltered"
+    );
+    submitted
 }
 
 fn sign_rsa_digest_info(key: &rsa::RsaPrivateKey, digest: &[u8; 32]) -> Vec<u8> {
@@ -275,15 +326,17 @@ fn prepare_initiate_confirm_embed_validate_round_trip() {
     let session: CmdSignSession = serde_json::from_str(&persisted).expect("session deserializes");
 
     // Out-of-band: the citizen receives the SMS OTP and the server prepares to confirm. Build the
-    // ValidateOtp response = a real RSA signature over the signed-attributes digest the session
-    // reports (this stands in for AMA signing after the OTP is validated).
+    // ValidateOtp response = a real RSA signature over the value Chancela *actually submitted* in
+    // CCMovelSign (this stands in for AMA signing after the OTP is validated). The submitted value
+    // is read back off the recorded envelope and its format is constrained there.
     let signed_attrs = signed_attributes_digest(
         &session.byterange_digest,
         &session.signing_cert_der,
-        session.signing_time,
+        SignedAttrsProfile::Pades,
     )
     .expect("signed attrs digest");
-    let raw_sig = leaf.sign_digest(&signed_attrs);
+    let submitted = submitted_ccmovel_sign_hash(&init_client, &signed_attrs);
+    let raw_sig = leaf.sign_submitted_digest_info(&submitted);
     assert_eq!(raw_sig.len(), 256, "RSA-2048 signature");
 
     // --- REQUEST 2: confirm (ValidateOtp -> assemble CMS) ---
@@ -326,10 +379,11 @@ fn prepare_initiate_confirm_embed_validate_round_trip() {
         report.cades.signing_certificate_v2_present,
         "CAdES-B signing-certificate-v2 present"
     );
+    // ETSI EN 319 142-1 V1.2.1 Table 1: PAdES omits the CMS `signing-time` attribute; the
+    // authoritative instant lives in the PDF `/M` entry instead.
     assert_eq!(
-        report.cades.signing_time.map(|t| t.unix_timestamp()),
-        Some(1_750_000_000),
-        "authoritative signing time carried in the signed attributes"
+        report.cades.signing_time, None,
+        "PAdES signatures carry no CMS signing-time attribute"
     );
     assert!(
         !report.has_signature_timestamp,

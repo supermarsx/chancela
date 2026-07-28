@@ -21,7 +21,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
 use zeroize::Zeroizing;
 
-use chancela_cades::signed_attributes_digest;
+use chancela_cades::{SignedAttrsProfile, signed_attributes_digest};
 use chancela_csc::mock::{
     ERROR_INVALID_OTP, MockCscTransport, credentials_info_response, sign_hash_response,
 };
@@ -56,7 +56,7 @@ fn happy_source(
     let signed_attrs = signed_attributes_digest(
         prepared.byterange_digest(),
         &signer.cert_der(),
-        common::fixed_time(),
+        SignedAttrsProfile::Pades,
     )
     .expect("signed attrs");
     let sig = signer.sign_digest(&signed_attrs);
@@ -142,10 +142,9 @@ fn csc_remote_source_round_trips_prepare_initiate_confirm_embed_validate() {
     assert!(report.covers_whole_file_except_contents);
     assert_eq!(report.cades.signer_cert_der, session.signing_cert_der);
     assert!(report.cades.signing_certificate_v2_present);
-    assert_eq!(
-        report.cades.signing_time.map(|t| t.unix_timestamp()),
-        Some(1_750_000_000)
-    );
+    // ETSI EN 319 142-1 V1.2.1 Table 1: PAdES omits the CMS `signing-time` attribute; the
+    // authoritative instant lives in the PDF `/M` entry instead.
+    assert_eq!(report.cades.signing_time, None);
 }
 
 /// PROOF 2 — the trusted-list gate fails closed for a withdrawn issuer: no artifact, and the OTP

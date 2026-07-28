@@ -18,7 +18,8 @@ use x509_cert::spki::{AlgorithmIdentifierOwned, SubjectPublicKeyInfoOwned};
 use x509_cert::time::Validity;
 
 use chancela_cades::{
-    RawSignature, SignatureAlgorithm, assemble_cades_b, signed_attributes_digest,
+    RawSignature, SignatureAlgorithm, SignedAttrsProfile, assemble_cades_b,
+    signed_attributes_digest,
 };
 
 use crate::error::PadesError;
@@ -59,10 +60,6 @@ fn sha256(data: &[u8]) -> [u8; 32] {
     Sha256::digest(data).into()
 }
 
-fn fixed_time() -> time::OffsetDateTime {
-    // 2025-06-15T14:26:40Z — whole seconds, inside the UTCTime window.
-    time::OffsetDateTime::from_unix_timestamp(1_750_000_000).unwrap()
-}
 
 // --- In-test signer (mirrors chancela-cades/src/tests.rs) ----------------------------------------
 
@@ -236,12 +233,11 @@ fn base_pdf() -> Vec<u8> {
 
 /// Sign `pdf` with `signer`, wiring the CAdES assembly into the signing callback.
 fn sign_with(pdf: &[u8], signer: &TestSigner, opts: &SignOptions) -> Vec<u8> {
-    let signing_time = fixed_time();
     let cert = signer.cert_der();
     sign_pdf(pdf, opts, |digest| {
-        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
         let raw = signer.raw_signature(&attrs);
-        assemble_cades_b(&raw, digest, signing_time)
+        assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
     })
     .expect("sign_pdf")
 }
@@ -253,12 +249,11 @@ fn sign_with_appearance(
     opts: &SignOptions,
     appearance: &SealAppearance,
 ) -> Vec<u8> {
-    let signing_time = fixed_time();
     let cert = signer.cert_der();
     sign_pdf_with_appearance(pdf, opts, Some(appearance), |digest| {
-        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
         let raw = signer.raw_signature(&attrs);
-        assemble_cades_b(&raw, digest, signing_time)
+        assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
     })
     .expect("sign_pdf_with_appearance")
 }
@@ -661,10 +656,10 @@ fn rsa_sign_validates() {
         LtvRenewalPlanAction::AddSignatureTimestamp
     );
     assert!(report.ltv_renewal_plan.has_local_evidence_gap());
-    assert_eq!(
-        report.cades.signing_time.map(|t| t.unix_timestamp()),
-        Some(1_750_000_000)
-    );
+    // ETSI EN 319 142-1 V1.2.1 Table 1: PAdES omits the CMS `signing-time` attribute at every
+    // level, so the CAdES-side report never carries one — the claimed instant belongs in the PDF
+    // `/M` entry (unset here, since this test signs with `SignOptions::default()`).
+    assert_eq!(report.cades.signing_time, None);
 }
 
 #[test]
@@ -1803,12 +1798,11 @@ fn invisible_default_is_unchanged_with_appearance_api() {
     };
     let via_legacy = sign_with(&base_pdf(), &signer, &opts);
 
-    let signing_time = fixed_time();
     let cert = signer.cert_der();
     let via_new = sign_pdf_with_appearance(&base_pdf(), &opts, None, |digest| {
-        let attrs = signed_attributes_digest(digest, &cert, signing_time)?;
+        let attrs = signed_attributes_digest(digest, &cert, SignedAttrsProfile::Pades)?;
         let raw = signer.raw_signature(&attrs);
-        assemble_cades_b(&raw, digest, signing_time)
+        assemble_cades_b(&raw, digest, SignedAttrsProfile::Pades)
     })
     .expect("sign_pdf_with_appearance(None)");
 
@@ -1962,7 +1956,6 @@ fn append_object_override(pdf: &[u8], obj_id: u32, new_body: &str) -> Vec<u8> {
 fn sign_with_overwide_gap(signer: &TestSigner) -> Vec<u8> {
     // Placeholder hex-byte capacity; a self-signed CAdES-B CMS fits with zero padding.
     const CAPACITY: usize = 4096;
-    let signing_time = fixed_time();
     let cert = signer.cert_der();
 
     let mut sig_body = String::from(
@@ -2015,9 +2008,10 @@ fn sign_with_overwide_gap(signer: &TestSigner) -> Vec<u8> {
     hasher.update(&buf[s2..s2 + range2_len]);
     let digest: [u8; 32] = hasher.finalize().into();
 
-    let attrs = signed_attributes_digest(&digest, &cert, signing_time).expect("signed attrs");
+    let attrs =
+        signed_attributes_digest(&digest, &cert, SignedAttrsProfile::Pades).expect("signed attrs");
     let raw = signer.raw_signature(&attrs);
-    let cms = assemble_cades_b(&raw, &digest, signing_time).expect("cades");
+    let cms = assemble_cades_b(&raw, &digest, SignedAttrsProfile::Pades).expect("cades");
     assert!(cms.len() <= CAPACITY, "CMS must fit the placeholder");
 
     let hex = crate::pdf::to_hex(&cms);

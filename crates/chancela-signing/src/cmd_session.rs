@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 use zeroize::Zeroizing;
 
-use chancela_cades::{RawSignature, assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{RawSignature, SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
 use chancela_cmd::rand_core::OsRng;
 use chancela_cmd::{CmdError, ProcessHandle, ScmdClient, ScmdTransport, SignRequest};
 use chancela_pades::PreparedSignature;
@@ -192,9 +192,14 @@ fn initiate_core<T: ScmdTransport>(
 
     // 3. The CAdES signed-attributes digest over the PAdES ByteRange digest — this is what CMD
     //    signs (the OTP is only a confirmation step; the artifact is the qualified signature).
-    let signed_attrs_digest =
-        signed_attributes_digest(prepared.byterange_digest(), &chain.leaf_der, signing_time)
-            .map_err(cades_err)?;
+    //    PAdES profile: no CMS `signing-time` attribute (EN 319 142-1 V1.2.1 Table 1); the claimed
+    //    instant rides the PDF `/M` entry baked into `prepared` by the caller's `SignOptions`.
+    let signed_attrs_digest = signed_attributes_digest(
+        prepared.byterange_digest(),
+        &chain.leaf_der,
+        SignedAttrsProfile::Pades,
+    )
+    .map_err(cades_err)?;
 
     // 4. CCMovelSign — dispatches the OTP. `OsRng` is consumed only by the PROD field-encryption
     //    hook; cleartext (preprod) ignores it (mirrors `CmdProvider`).
@@ -255,7 +260,9 @@ fn confirm_core<T: ScmdTransport>(
         session.signing_cert_der.clone(),
         session.chain_der.clone(),
     );
-    assemble_cades_b(&raw, &session.byterange_digest, session.signing_time).map_err(cades_err)
+    // The PAdES profile that `initiate_core` hashed — the attribute set must be identical or the
+    // embedded attributes would not reproduce the digest CMD signed.
+    assemble_cades_b(&raw, &session.byterange_digest, SignedAttrsProfile::Pades).map_err(cades_err)
 }
 
 /// The **reference** [`RemoteSigningSource`] (t59 F1): Chave Móvel Digital over a `chancela-cmd`

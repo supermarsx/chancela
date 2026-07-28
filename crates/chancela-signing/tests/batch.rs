@@ -26,7 +26,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration as StdDuration;
 
-use chancela_cades::{assemble_cades_b, signed_attributes_digest};
+use chancela_cades::{SignedAttrsProfile, assemble_cades_b, signed_attributes_digest};
 use der::Encode;
 use der::asn1::{Any, BitString, ObjectIdentifier};
 use sha2::{Digest, Sha256};
@@ -245,7 +245,7 @@ impl RemoteSigningSource for CountingRemoteSource {
         let signed_attrs_digest = signed_attributes_digest(
             &session.byterange_digest,
             &session.signing_cert_der,
-            session.signing_time,
+            SignedAttrsProfile::Pades,
         )
         .map_err(|e| SigningError::Cades(e.to_string()))?;
         let raw = RawSignature::new(
@@ -254,7 +254,7 @@ impl RemoteSigningSource for CountingRemoteSource {
             session.signing_cert_der.clone(),
             session.chain_der.clone(),
         );
-        assemble_cades_b(&raw, &session.byterange_digest, session.signing_time)
+        assemble_cades_b(&raw, &session.byterange_digest, SignedAttrsProfile::Pades)
             .map_err(|e| SigningError::Cades(e.to_string()))
     }
 }
