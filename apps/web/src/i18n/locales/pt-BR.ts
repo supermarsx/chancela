@@ -2042,7 +2042,7 @@ export const ptBR: Catalog = {
   'settings.policyTable.head.setting': 'Definição',
   'settings.policyTable.head.value': 'Valor',
   'settings.retainedExportCleanup.note':
-    'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, exclusão de arquivo, descarte nem apagamento RGPD.',
+    'Valores padrão usados apenas na pré-visualização de limpeza de exportações locais retidas. Não aprovam retenção legal, exclusão de arquivo, descarte nem apagamento GDPR.',
   'settings.retainedExportCleanup.minimumAge.label': 'Idade mínima de exportação',
   'settings.retainedExportCleanup.minimumAge.hint':
     'Mínimo de dias antes que uma exportação local retida possa aparecer como elegível na visualização.',
@@ -5890,7 +5890,7 @@ export const ptBR: Catalog = {
   'uiLiteral.gestaoDadosSection.semLacunasLocaisReportadasNesteEstado':
     'Nenhuma lacuna local relatada neste estado.',
   'uiLiteral.gestaoDadosSection.sinaisLocaisDoBackendComSegredosRedigidosNao':
-    'Backend de sinais locais com segredos redigidos. They do not certify production rest encryption, completed plaintext migration, custodial runbook, or legal cycle/GDPR.',
+    'Backend de sinais locais com segredos redigidos. Não certificam criptografia em repouso de produção, migração de texto simples concluída, runbook de custódia nem ciclo legal/GDPR.',
   'uiLiteral.gestaoDadosSection.snapshotIsoladoVerificado': 'Instantâneo isolado verificado',
   'uiLiteral.gestaoDadosSection.sqlcipher': 'SQLCipher',
   'uiLiteral.gestaoDadosSection.sqlcipherNoBuild': 'SQLCipher em construção',
