@@ -5911,6 +5911,25 @@ export const enUS = {
   'pairing.expired.title': 'Code expired',
   'pairing.expired.body': 'This code expired. Generate a new one to continue.',
   'pairing.expired.renew': 'Generate new code',
+  'companionPair.title': 'Pair this device',
+  'companionPair.lede':
+    'To finish pairing, confirm it is you. Any one of the options below is enough.',
+  'companionPair.method.label': 'Confirmation method',
+  'companionPair.method.password': 'Password',
+  'companionPair.method.totp_code': 'Authenticator code',
+  'companionPair.method.emailed_code': 'Code sent by email',
+  'companionPair.hint.password': 'Your account password.',
+  'companionPair.hint.totp_code': 'The six-digit code your authenticator app is showing right now.',
+  'companionPair.hint.emailed_code':
+    'The code you received by email. You can type it with or without the hyphens.',
+  'companionPair.submit': 'Confirm and pair',
+  'companionPair.pending': 'Pairing…',
+  'companionPair.done.title': 'Device paired',
+  'companionPair.done.body': 'This device now has access to your account. You can close this page.',
+  'companionPair.done.confirmedBy': 'Confirmed by:',
+  'companionPair.noCode.title': 'The pairing code is missing',
+  'companionPair.noCode.body':
+    'Open the link from the QR code shown on the computer. Without the pairing code this cannot continue.',
   'pairing.confirm.title': 'Confirm device pairing',
   'pairing.confirm.intro':
     'Generating a pairing code lets a new device be enrolled under your identity. Confirm it is you before continuing.',

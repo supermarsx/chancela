@@ -5954,6 +5954,25 @@ export const daDK: Catalog = {
   'pairing.expired.title': 'Kode udløbet',
   'pairing.expired.body': 'Denne kode er udløbet. Generér en ny for at fortsætte.',
   'pairing.expired.renew': 'Generér ny kode',
+  'companionPair.title': 'Par denne enhed',
+  'companionPair.lede':
+    'Bekræft, at det er dig, for at fuldføre parringen. Én af mulighederne nedenfor er nok.',
+  'companionPair.method.label': 'Bekræftelsesmetode',
+  'companionPair.method.password': 'Adgangskode',
+  'companionPair.method.totp_code': 'Autentifikatorkode',
+  'companionPair.method.emailed_code': 'Kode sendt med e-mail',
+  'companionPair.hint.password': 'Adgangskoden til din konto.',
+  'companionPair.hint.totp_code': 'Den sekscifrede kode, som din autentifikator-app viser lige nu.',
+  'companionPair.hint.emailed_code':
+    'Koden, du har modtaget med e-mail. Du kan skrive den med eller uden bindestreger.',
+  'companionPair.submit': 'Bekræft og par',
+  'companionPair.pending': 'Parrer…',
+  'companionPair.done.title': 'Enhed parret',
+  'companionPair.done.body': 'Denne enhed har nu adgang til din konto. Du kan lukke denne side.',
+  'companionPair.done.confirmedBy': 'Bekræftet med:',
+  'companionPair.noCode.title': 'Parringskoden mangler',
+  'companionPair.noCode.body':
+    'Åbn linket fra QR-koden på computeren. Uden parringskoden kan der ikke fortsættes.',
   'pairing.confirm.title': 'Bekræft parringen',
   'pairing.confirm.intro':
     'At generere en parringskode gør det muligt at tilmelde en ny enhed under din identitet. Bekræft, at det er dig, før du fortsætter.',

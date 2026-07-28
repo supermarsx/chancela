@@ -4403,7 +4403,7 @@ export interface PairingConfirmationProof {
  * accept or the operator cannot prove, is a `403` that mints no session and enrolls no device.
  * The attempt still spends the code — one attempt per code, by design.
  */
-export interface ExchangePairingCode {
+export interface ExchangePairingCodeBody {
   code: string;
   confirmation: PairingConfirmationProof;
 }

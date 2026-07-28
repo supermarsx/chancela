@@ -159,6 +159,7 @@ export function LegacySettingsSigningRedirect() {
 export const routeModuleLoaders = {
   onboarding: () => import('../features/onboarding/OnboardingWizard'),
   externalSigner: () => import('../features/signing/ExternalSignerInvitePage'),
+  companionPair: () => import('../features/pairing/CompanionPairPage'),
   dashboard: () => import('../features/dashboard/DashboardPage'),
   entities: () => import('../features/entities/EntitiesPage'),
   newEntity: () => import('../features/entities/NewEntityPage'),
@@ -210,6 +211,15 @@ export const router = createBrowserRouter([
   {
     path: '/external-signature',
     element: lazyRoute(routeModuleLoaders.externalSigner, 'ExternalSignerInvitePage'),
+    errorElement: <RouteCrash />,
+  },
+  // The companion side of device pairing (t70). Outside Layout for the same reason as the invite
+  // page above, and a stronger one: the whole pairing handshake exists so the operator never types
+  // their password into a remote WebView, so a phone arriving here has no session by design.
+  // Sending it to the sign-in screen would defeat the feature it is part of.
+  {
+    path: '/pair',
+    element: lazyRoute(routeModuleLoaders.companionPair, 'CompanionPairPage'),
     errorElement: <RouteCrash />,
   },
   {

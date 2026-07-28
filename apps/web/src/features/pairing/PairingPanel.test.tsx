@@ -134,7 +134,7 @@ describe('PairingPanel', () => {
     // The hand-rolled QR renders as an accessible <svg role="img">.
     expect(await screen.findByRole('img', { name: 'Código QR de emparelhamento' })).toBeTruthy();
     // The copyable deep-link carries the code, and the TTL countdown is shown.
-    expect(screen.getByText(/companion_pair=9b1f6c0000004000800000000000a1de/)).toBeTruthy();
+    expect(screen.getByText(/[/]pair[?]code=9b1f6c0000004000800000000000a1de/)).toBeTruthy();
     expect(screen.getByText('Expira em 5:00')).toBeTruthy();
     expect(screen.getByText('Copiar ligação')).toBeTruthy();
   });
@@ -163,7 +163,7 @@ describe('PairingPanel', () => {
       'Convite para emparelhar um telemóvel com o Chancela',
     );
     expect(emailUrl.searchParams.get('body')).toContain(
-      '/?companion_pair=9b1f6c0000004000800000000000a1de',
+      '/pair?code=9b1f6c0000004000800000000000a1de',
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'Enviar por WhatsApp' }));
@@ -171,7 +171,7 @@ describe('PairingPanel', () => {
     const whatsappUrl = new URL(openExternalMock.mock.calls[1][0] as string);
     expect(whatsappUrl.origin).toBe('https://wa.me');
     expect(whatsappUrl.searchParams.get('text')).toContain(
-      '/?companion_pair=9b1f6c0000004000800000000000a1de',
+      '/pair?code=9b1f6c0000004000800000000000a1de',
     );
 
     // Both actions only hand a draft to another app; no notification/send endpoint is called.

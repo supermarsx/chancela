@@ -5971,6 +5971,27 @@ export const ptBR: Catalog = {
   'pairing.expired.title': 'O código expirou',
   'pairing.expired.body': 'Este código expirou. Gere um novo código para continuar.',
   'pairing.expired.renew': 'Gerar novo código',
+  'companionPair.title': 'Parear este dispositivo',
+  'companionPair.lede':
+    'Para concluir o pareamento, confirme que é você. Basta uma das formas abaixo.',
+  'companionPair.method.label': 'Forma de confirmação',
+  'companionPair.method.password': 'Senha',
+  'companionPair.method.totp_code': 'Código do autenticador',
+  'companionPair.method.emailed_code': 'Código enviado por email',
+  'companionPair.hint.password': 'A senha da sua conta.',
+  'companionPair.hint.totp_code':
+    'O código de seis dígitos que o seu aplicativo de autenticação mostra neste momento.',
+  'companionPair.hint.emailed_code':
+    'O código que você recebeu por email. Pode digitá-lo com ou sem os hifens.',
+  'companionPair.submit': 'Confirmar e parear',
+  'companionPair.pending': 'Pareando…',
+  'companionPair.done.title': 'Dispositivo pareado',
+  'companionPair.done.body':
+    'Este dispositivo passou a ter acesso à sua conta. Você pode fechar esta página.',
+  'companionPair.done.confirmedBy': 'Confirmado por:',
+  'companionPair.noCode.title': 'Falta o código de pareamento',
+  'companionPair.noCode.body':
+    'Abra o link a partir do código QR exibido no computador. Sem o código de pareamento não é possível continuar.',
   'pairing.confirm.title': 'Confirmar o pareamento',
   'pairing.confirm.intro':
     'Gerar um código de pareamento permite inscrever um novo dispositivo com a sua identidade. Confirme que é você antes de continuar.',

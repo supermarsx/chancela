@@ -5960,6 +5960,25 @@ export const svSE: Catalog = {
   'pairing.expired.title': 'Koden har upphört',
   'pairing.expired.body': 'Denna kod har upphört. Skapa en ny för att fortsätta.',
   'pairing.expired.renew': 'Skapa ny kod',
+  'companionPair.title': 'Parkoppla den här enheten',
+  'companionPair.lede':
+    'Bekräfta att det är du för att slutföra parkopplingen. Ett av alternativen nedan räcker.',
+  'companionPair.method.label': 'Bekräftelsesätt',
+  'companionPair.method.password': 'Lösenord',
+  'companionPair.method.totp_code': 'Kod från autentiseringsappen',
+  'companionPair.method.emailed_code': 'Kod skickad med e-post',
+  'companionPair.hint.password': 'Lösenordet till ditt konto.',
+  'companionPair.hint.totp_code': 'Den sexsiffriga kod som din autentiseringsapp visar just nu.',
+  'companionPair.hint.emailed_code':
+    'Koden du fick med e-post. Du kan skriva den med eller utan bindestreck.',
+  'companionPair.submit': 'Bekräfta och parkoppla',
+  'companionPair.pending': 'Parkopplar…',
+  'companionPair.done.title': 'Enheten är parkopplad',
+  'companionPair.done.body': 'Den här enheten har nu åtkomst till ditt konto. Du kan stänga sidan.',
+  'companionPair.done.confirmedBy': 'Bekräftat med:',
+  'companionPair.noCode.title': 'Parkopplingskoden saknas',
+  'companionPair.noCode.body':
+    'Öppna länken från QR-koden som visas på datorn. Utan parkopplingskoden går det inte att fortsätta.',
   'pairing.confirm.title': 'Bekräfta parkopplingen',
   'pairing.confirm.intro':
     'Att skapa en parkopplingskod gör det möjligt att registrera en ny enhet under din identitet. Bekräfta att det är du innan du fortsätter.',

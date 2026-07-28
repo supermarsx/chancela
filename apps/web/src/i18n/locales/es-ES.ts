@@ -6004,6 +6004,27 @@ export const esES: Catalog = {
   'pairing.expired.title': 'Código caducado',
   'pairing.expired.body': 'Este código ha caducado. Genere uno nuevo para continuar.',
   'pairing.expired.renew': 'Generar código nuevo',
+  'companionPair.title': 'Vincular este dispositivo',
+  'companionPair.lede':
+    'Para terminar la vinculación, confirme que es usted. Basta con una de las opciones siguientes.',
+  'companionPair.method.label': 'Forma de confirmación',
+  'companionPair.method.password': 'Contraseña',
+  'companionPair.method.totp_code': 'Código del autenticador',
+  'companionPair.method.emailed_code': 'Código enviado por correo',
+  'companionPair.hint.password': 'La contraseña de su cuenta.',
+  'companionPair.hint.totp_code':
+    'El código de seis dígitos que muestra ahora mismo su aplicación de autenticación.',
+  'companionPair.hint.emailed_code':
+    'El código que ha recibido por correo. Puede escribirlo con o sin los guiones.',
+  'companionPair.submit': 'Confirmar y vincular',
+  'companionPair.pending': 'Vinculando…',
+  'companionPair.done.title': 'Dispositivo vinculado',
+  'companionPair.done.body':
+    'Este dispositivo ya tiene acceso a su cuenta. Puede cerrar esta página.',
+  'companionPair.done.confirmedBy': 'Confirmado mediante:',
+  'companionPair.noCode.title': 'Falta el código de vinculación',
+  'companionPair.noCode.body':
+    'Abra el enlace desde el código QR mostrado en el ordenador. Sin el código de vinculación no se puede continuar.',
   'pairing.confirm.title': 'Confirmar la vinculación',
   'pairing.confirm.intro':
     'Generar un código de vinculación permite inscribir un dispositivo nuevo con su identidad. Confirme que es usted antes de continuar.',

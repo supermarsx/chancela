@@ -6010,6 +6010,26 @@ export const nlNL: Catalog = {
   'pairing.expired.title': 'Code verlopen',
   'pairing.expired.body': 'Deze code is verlopen. Genereer een nieuwe om door te gaan.',
   'pairing.expired.renew': 'Nieuwe code genereren',
+  'companionPair.title': 'Dit apparaat koppelen',
+  'companionPair.lede':
+    'Bevestig om de koppeling af te ronden dat u het bent. Eén van de onderstaande manieren volstaat.',
+  'companionPair.method.label': 'Wijze van bevestiging',
+  'companionPair.method.password': 'Wachtwoord',
+  'companionPair.method.totp_code': 'Authenticator-code',
+  'companionPair.method.emailed_code': 'Per e-mail verzonden code',
+  'companionPair.hint.password': 'Het wachtwoord van uw account.',
+  'companionPair.hint.totp_code': 'De zescijferige code die uw authenticator-app op dit moment toont.',
+  'companionPair.hint.emailed_code':
+    'De code die u per e-mail hebt ontvangen. U mag deze met of zonder koppeltekens typen.',
+  'companionPair.submit': 'Bevestigen en koppelen',
+  'companionPair.pending': 'Bezig met koppelen…',
+  'companionPair.done.title': 'Apparaat gekoppeld',
+  'companionPair.done.body':
+    'Dit apparaat heeft nu toegang tot uw account. U kunt deze pagina sluiten.',
+  'companionPair.done.confirmedBy': 'Bevestigd via:',
+  'companionPair.noCode.title': 'De koppelingscode ontbreekt',
+  'companionPair.noCode.body':
+    'Open de link via de QR-code op de computer. Zonder de koppelingscode kan dit niet doorgaan.',
   'pairing.confirm.title': 'Koppeling bevestigen',
   'pairing.confirm.intro':
     'Het genereren van een koppelingscode maakt het mogelijk een nieuw apparaat onder uw identiteit te registreren. Bevestig dat u het bent voordat u doorgaat.',

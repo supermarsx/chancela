@@ -5968,6 +5968,25 @@ export const fiFI: Catalog = {
   'pairing.expired.title': 'Koodi vanhentunut',
   'pairing.expired.body': 'Tämä koodi on vanhentunut. Luo uusi jatkaaksesi.',
   'pairing.expired.renew': 'Luo uusi koodi',
+  'companionPair.title': 'Parita tämä laite',
+  'companionPair.lede':
+    'Viimeistele paritus vahvistamalla, että se olet sinä. Yksi alla olevista tavoista riittää.',
+  'companionPair.method.label': 'Vahvistustapa',
+  'companionPair.method.password': 'Salasana',
+  'companionPair.method.totp_code': 'Todennussovelluksen koodi',
+  'companionPair.method.emailed_code': 'Sähköpostitse lähetetty koodi',
+  'companionPair.hint.password': 'Tilisi salasana.',
+  'companionPair.hint.totp_code': 'Kuusinumeroinen koodi, jonka todennussovelluksesi näyttää juuri nyt.',
+  'companionPair.hint.emailed_code':
+    'Sähköpostitse saamasi koodi. Voit kirjoittaa sen väliviivojen kanssa tai ilman.',
+  'companionPair.submit': 'Vahvista ja parita',
+  'companionPair.pending': 'Paritetaan…',
+  'companionPair.done.title': 'Laite paritettu',
+  'companionPair.done.body': 'Tällä laitteella on nyt pääsy tilillesi. Voit sulkea tämän sivun.',
+  'companionPair.done.confirmedBy': 'Vahvistettu tavalla:',
+  'companionPair.noCode.title': 'Parituskoodi puuttuu',
+  'companionPair.noCode.body':
+    'Avaa linkki tietokoneella näkyvästä QR-koodista. Ilman parituskoodia ei voi jatkaa.',
   'pairing.confirm.title': 'Vahvista paritus',
   'pairing.confirm.intro':
     'Parituskoodin luominen mahdollistaa uuden laitteen liittämisen henkilöllisyydelläsi. Vahvista, että se olet sinä, ennen kuin jatkat.',

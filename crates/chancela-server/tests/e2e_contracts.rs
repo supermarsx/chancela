@@ -103,23 +103,68 @@ async fn live_responses_match_the_canonical_contracts() {
     // exchanges it (unauthenticated) for a companion session + device, and the enrolled device is
     // then listed. (wp27-e4: the pairing/device-enrollment protocol atop the durable session
     // machinery — the code is single-use, the session is identity-only, the device is reload-safe.)
+    // t70: minting is floored at `confirm_with_reauth`, so the mint carries a step-up proof.
     let (status, minted) = h
         .post_json_auth(
             "/v1/pairing/codes",
-            json!({ "label": "Telemóvel da Amélia" }),
+            json!({
+                "label": "Telemóvel da Amélia",
+                "confirmation": { "reauth": { "password": common::E2E_TEST_PASSWORD } },
+            }),
             &token,
         )
         .await;
     assert_eq!(status, 200, "mint pairing code: {minted}");
     let pairing_code = minted["code"].as_str().expect("pairing code").to_owned();
-    // The phone exchanges the code with NO session (it has none yet) and receives its own token.
-    let (status, exchanged) = h
+    // t70: and a live code alone does not pair. Prove the refusal end-to-end BEFORE the success,
+    // because the success path would pass just as well against a server that never checked.
+    let (status, unconfirmed) = h
         .post_json(
             "/v1/pairing/exchange",
             json!({ "code": pairing_code.clone() }),
         )
         .await;
+    assert_eq!(
+        status, 403,
+        "an unconfirmed exchange is refused: {unconfirmed}"
+    );
+    let (status, devices_after_refusal) = h.get_json_auth("/v1/pairing/devices", &token).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        devices_after_refusal["devices"]
+            .as_array()
+            .map(Vec::len)
+            .unwrap_or_default(),
+        0,
+        "a refused exchange enrolled no device"
+    );
+    // The refused attempt spent that code (single attempt per code, by design), so the operator
+    // mints a fresh one to actually pair.
+    let (status, minted) = h
+        .post_json_auth(
+            "/v1/pairing/codes",
+            json!({
+                "label": "Telemóvel da Amélia",
+                "confirmation": { "reauth": { "password": common::E2E_TEST_PASSWORD } },
+            }),
+            &token,
+        )
+        .await;
+    assert_eq!(status, 200, "mint a second pairing code: {minted}");
+    let pairing_code = minted["code"].as_str().expect("pairing code").to_owned();
+    // The phone exchanges the code with NO session (it has none yet), carrying the operator's
+    // confirmation, and receives its own token.
+    let (status, exchanged) = h
+        .post_json(
+            "/v1/pairing/exchange",
+            json!({
+                "code": pairing_code.clone(),
+                "confirmation": { "password": common::E2E_TEST_PASSWORD },
+            }),
+        )
+        .await;
     assert_eq!(status, 200, "exchange pairing code: {exchanged}");
+    assert_eq!(exchanged["confirmed_by"], "password");
     let companion_token = exchanged["token"]
         .as_str()
         .expect("companion token")
@@ -134,7 +179,13 @@ async fn live_responses_match_the_canonical_contracts() {
     assert_eq!(exchanged["user"]["username"], "amelia.marques");
     // The single-use code cannot be exchanged a second time.
     let (status, reused) = h
-        .post_json("/v1/pairing/exchange", json!({ "code": pairing_code }))
+        .post_json(
+            "/v1/pairing/exchange",
+            json!({
+                "code": pairing_code,
+                "confirmation": { "password": common::E2E_TEST_PASSWORD },
+            }),
+        )
         .await;
     assert_eq!(status, 401, "a pairing code is single-use: {reused}");
     // The companion token authenticates as the operator's user.

@@ -254,7 +254,9 @@ import type {
   ApiKeyRotated,
   ApiKeyView,
   CreateApiKeyBody,
+  ExchangePairingCodeBody,
   MintPairingCodeBody,
+  PairingExchanged,
   PairingCodeMinted,
   PairingDevices,
   CredentialMode,
@@ -1959,10 +1961,15 @@ export const api = {
 
   // Companion pairing / device enrollment (wp27). The desktop mints a single-use code
   // (shown as a QR / deep-link), polls the device list until the phone exchanges it, and
-  // can revoke an enrolled device. The phone-side `exchange` is unauthenticated and not
-  // driven from this client.
+  // can revoke an enrolled device.
   createPairingCode: (body: MintPairingCodeBody = {}) =>
     post<PairingCodeMinted>('/v1/pairing/codes', body),
+  // The phone-side exchange (t70). Unauthenticated by design — the caller holds a pairing code
+  // and a confirmation proof, not a session — so it deliberately does NOT go through a react-query
+  // hook: nothing about it is cacheable, and the response carries a session token that must not
+  // land in a query cache.
+  exchangePairingCode: (body: ExchangePairingCodeBody) =>
+    post<PairingExchanged>('/v1/pairing/exchange', body),
   listPairingDevices: () => get<PairingDevices>('/v1/pairing/devices'),
   revokePairingDevice: (deviceId: string) =>
     del<void>(`/v1/pairing/devices/${encodeURIComponent(deviceId)}`),

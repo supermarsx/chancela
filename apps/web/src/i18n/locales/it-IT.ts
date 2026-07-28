@@ -6011,6 +6011,27 @@ export const itIT: Catalog = {
   'pairing.expired.title': 'Codice scaduto',
   'pairing.expired.body': 'Questo codice è scaduto. Generane uno nuovo per continuare.',
   'pairing.expired.renew': 'Genera nuovo codice',
+  'companionPair.title': 'Associa questo dispositivo',
+  'companionPair.lede':
+    'Per completare l’associazione, conferma che sei tu. Basta una delle opzioni qui sotto.',
+  'companionPair.method.label': 'Modalità di conferma',
+  'companionPair.method.password': 'Password',
+  'companionPair.method.totp_code': 'Codice dell’autenticatore',
+  'companionPair.method.emailed_code': 'Codice inviato per email',
+  'companionPair.hint.password': 'La password del tuo account.',
+  'companionPair.hint.totp_code':
+    'Il codice di sei cifre che la tua app di autenticazione mostra in questo momento.',
+  'companionPair.hint.emailed_code':
+    'Il codice che hai ricevuto per email. Puoi digitarlo con o senza i trattini.',
+  'companionPair.submit': 'Conferma e associa',
+  'companionPair.pending': 'Associazione in corso…',
+  'companionPair.done.title': 'Dispositivo associato',
+  'companionPair.done.body':
+    'Questo dispositivo ora ha accesso al tuo account. Puoi chiudere questa pagina.',
+  'companionPair.done.confirmedBy': 'Confermato con:',
+  'companionPair.noCode.title': 'Manca il codice di associazione',
+  'companionPair.noCode.body':
+    'Apri il link dal codice QR mostrato sul computer. Senza il codice di associazione non si può continuare.',
   'pairing.confirm.title': 'Conferma l’associazione',
   'pairing.confirm.intro':
     'Generare un codice di associazione consente di registrare un nuovo dispositivo con la tua identità. Conferma che sei tu prima di continuare.',

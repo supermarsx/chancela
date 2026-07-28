@@ -5982,6 +5982,26 @@ export const plPL: Catalog = {
   'pairing.expired.title': 'Kod wygasł',
   'pairing.expired.body': 'Ten kod wygasł. Wygeneruj nowy, aby kontynuować.',
   'pairing.expired.renew': 'Wygeneruj nowy kod',
+  'companionPair.title': 'Sparuj to urządzenie',
+  'companionPair.lede':
+    'Aby zakończyć parowanie, potwierdź swoją tożsamość. Wystarczy jeden ze sposobów poniżej.',
+  'companionPair.method.label': 'Sposób potwierdzenia',
+  'companionPair.method.password': 'Hasło',
+  'companionPair.method.totp_code': 'Kod z aplikacji uwierzytelniającej',
+  'companionPair.method.emailed_code': 'Kod wysłany e-mailem',
+  'companionPair.hint.password': 'Hasło do Twojego konta.',
+  'companionPair.hint.totp_code':
+    'Sześciocyfrowy kod, który Twoja aplikacja uwierzytelniająca pokazuje w tej chwili.',
+  'companionPair.hint.emailed_code': 'Kod otrzymany e-mailem. Możesz go wpisać z myślnikami lub bez nich.',
+  'companionPair.submit': 'Potwierdź i sparuj',
+  'companionPair.pending': 'Parowanie…',
+  'companionPair.done.title': 'Urządzenie sparowane',
+  'companionPair.done.body':
+    'To urządzenie ma teraz dostęp do Twojego konta. Możesz zamknąć tę stronę.',
+  'companionPair.done.confirmedBy': 'Potwierdzono przez:',
+  'companionPair.noCode.title': 'Brak kodu parowania',
+  'companionPair.noCode.body':
+    'Otwórz link z kodu QR wyświetlonego na komputerze. Bez kodu parowania nie można kontynuować.',
   'pairing.confirm.title': 'Potwierdź parowanie',
   'pairing.confirm.intro':
     'Wygenerowanie kodu parowania pozwala zarejestrować nowe urządzenie pod Twoją tożsamością. Potwierdź swoją tożsamość, zanim przejdziesz dalej.',

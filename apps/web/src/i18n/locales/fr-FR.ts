@@ -6024,6 +6024,27 @@ export const frFR: Catalog = {
   'pairing.expired.title': 'Code expiré',
   'pairing.expired.body': 'Ce code a expiré. Générez-en un nouveau pour continuer.',
   'pairing.expired.renew': 'Générer un nouveau code',
+  'companionPair.title': 'Associer cet appareil',
+  'companionPair.lede':
+    'Pour terminer l’association, confirmez qu’il s’agit bien de vous. Une seule des options ci-dessous suffit.',
+  'companionPair.method.label': 'Mode de confirmation',
+  'companionPair.method.password': 'Mot de passe',
+  'companionPair.method.totp_code': 'Code de l’authentificateur',
+  'companionPair.method.emailed_code': 'Code envoyé par courriel',
+  'companionPair.hint.password': 'Le mot de passe de votre compte.',
+  'companionPair.hint.totp_code':
+    'Le code à six chiffres affiché en ce moment par votre application d’authentification.',
+  'companionPair.hint.emailed_code':
+    'Le code reçu par courriel. Vous pouvez le saisir avec ou sans les traits d’union.',
+  'companionPair.submit': 'Confirmer et associer',
+  'companionPair.pending': 'Association en cours…',
+  'companionPair.done.title': 'Appareil associé',
+  'companionPair.done.body':
+    'Cet appareil a désormais accès à votre compte. Vous pouvez fermer cette page.',
+  'companionPair.done.confirmedBy': 'Confirmé par :',
+  'companionPair.noCode.title': 'Le code d’association est absent',
+  'companionPair.noCode.body':
+    'Ouvrez le lien depuis le code QR affiché sur l’ordinateur. Sans le code d’association, impossible de continuer.',
   'pairing.confirm.title': 'Confirmer l’association',
   'pairing.confirm.intro':
     'Générer un code d’association permet d’enrôler un nouvel appareil sous votre identité. Confirmez qu’il s’agit bien de vous avant de continuer.',

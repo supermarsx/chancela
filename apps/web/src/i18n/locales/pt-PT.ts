@@ -5976,6 +5976,26 @@ export const ptPT: Catalog = {
   'pairing.expired.title': 'Código expirado',
   'pairing.expired.body': 'Este código expirou. Gere um novo código para continuar.',
   'pairing.expired.renew': 'Gerar novo código',
+  'companionPair.title': 'Emparelhar este dispositivo',
+  'companionPair.lede':
+    'Para concluir o emparelhamento, confirme que é você. Basta uma das formas abaixo.',
+  'companionPair.method.label': 'Forma de confirmação',
+  'companionPair.method.password': 'Palavra-passe',
+  'companionPair.method.totp_code': 'Código do autenticador',
+  'companionPair.method.emailed_code': 'Código enviado por email',
+  'companionPair.hint.password': 'A palavra-passe da sua conta.',
+  'companionPair.hint.totp_code':
+    'O código de seis dígitos que a sua aplicação de autenticação mostra neste momento.',
+  'companionPair.hint.emailed_code': 'O código que recebeu por email. Pode escrevê-lo com ou sem os hífenes.',
+  'companionPair.submit': 'Confirmar e emparelhar',
+  'companionPair.pending': 'A emparelhar…',
+  'companionPair.done.title': 'Dispositivo emparelhado',
+  'companionPair.done.body':
+    'Este dispositivo passou a ter acesso à sua conta. Pode fechar esta página.',
+  'companionPair.done.confirmedBy': 'Confirmado por:',
+  'companionPair.noCode.title': 'Falta o código de emparelhamento',
+  'companionPair.noCode.body':
+    'Abra a ligação a partir do código QR mostrado no computador. Sem o código de emparelhamento não é possível continuar.',
   'pairing.confirm.title': 'Confirmar o emparelhamento',
   'pairing.confirm.intro':
     'Gerar um código de emparelhamento permite inscrever um novo dispositivo com a sua identidade. Confirme que é você antes de continuar.',

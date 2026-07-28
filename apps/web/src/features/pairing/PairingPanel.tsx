@@ -67,12 +67,26 @@ function resolveAppOrigin(): string {
 }
 
 /**
- * The deep-link the QR encodes: the companion app origin plus the pairing code as a query
- * parameter. Loading it on the phone gives the companion both the server base (the URL
- * origin) and the code to POST to `/v1/pairing/exchange`.
+ * The deep link the QR encodes: the companion origin, the `/pair` route, the pairing code, and
+ * which proofs this deployment accepts.
+ *
+ * **It points at `/pair`, not `/`.** The original link put `?companion_pair=` on the root path,
+ * which is inside the authenticated shell — a phone loading it met the sign-in screen, which is
+ * the one screen this whole handshake exists to avoid. Nothing had ever consumed that link, so
+ * moving it cost nothing.
+ *
+ * `methods` is **presentational only**. It rides in a URL the operator can edit, so it can add an
+ * input but can never make the server accept a proof: `POST /v1/pairing/exchange` re-decides from
+ * `auth.device_pairing.accepted` every time. It is here because the phone is unauthenticated and
+ * cannot read `GET /v1/confirmation-policy` for itself, and rendering a field for a method the
+ * deployment refuses would waste the operator's one attempt at the code.
  */
-function buildDeepLink(code: string): string {
-  return `${resolveAppOrigin()}/?companion_pair=${encodeURIComponent(code)}`;
+function buildDeepLink(minted: PairingCodeMinted): string {
+  const query = new URLSearchParams({
+    code: minted.code,
+    methods: minted.accepted_confirmation_methods.join(','),
+  });
+  return `${resolveAppOrigin()}/pair?${query.toString()}`;
 }
 
 /** Format a remaining-seconds count as `m:ss` for the countdown. */
@@ -111,7 +125,7 @@ function ActiveCodePanel({
   const t = useT();
   const pt = usePairingShareT();
   const toast = useToast();
-  const deepLink = useMemo(() => buildDeepLink(minted.code), [minted.code]);
+  const deepLink = useMemo(() => buildDeepLink(minted), [minted]);
   const shareMessage = pt('pairing.share.message', { link: deepLink });
 
   async function copy(value: string, message: string) {
@@ -503,7 +517,7 @@ export function PairingPanel({
         title={t('pairing.confirm.title')}
         intro={t('pairing.confirm.intro')}
         confirmLabel={t('pairing.confirm.action')}
-        pendingLabel={t('pairing.confirm.pending')}
+        pendingLabel={t('pairing.minting')}
         pending={mint.isPending}
         onConfirm={({ reauth }) => runMint(reauth)}
       />

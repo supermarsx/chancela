@@ -3833,6 +3833,7 @@ describe('contract fixtures parse through the real client', () => {
         created_at: string;
         revoked: boolean;
         revoked_at: string | null;
+        confirmed_by: string | null;
       }>;
     };
     assertExactKeys<{ devices: unknown[] }>(parsed, { devices: true }, 'PairingDevices');
@@ -3849,9 +3850,19 @@ describe('contract fixtures parse through the real client', () => {
         created_at: string;
         revoked: boolean;
         revoked_at: string | null;
+        confirmed_by: string | null;
       }>(
         device,
-        { device_id: true, label: true, created_at: true, revoked: true, revoked_at: true },
+        {
+          device_id: true,
+          label: true,
+          created_at: true,
+          revoked: true,
+          revoked_at: true,
+          // t70: which proof confirmed the enrolment. Nullable — `null` is the honest value for a
+          // device enrolled before the confirmation existed, and must stay representable.
+          confirmed_by: true,
+        },
         'PairingDevice',
       );
       expect(device.device_id, 'PairingDevice.device_id should be a non-empty id').not.toHaveLength(
@@ -7597,6 +7608,7 @@ describe('contract fixtures parse through the real client', () => {
           created_at: true,
           revoked: true,
           revoked_at: true,
+          confirmed_by: true,
         },
         'PairingDeviceView',
       );
@@ -7611,6 +7623,13 @@ describe('contract fixtures parse through the real client', () => {
       } else {
         expect(view.revoked).toBe(false);
       }
+      // Which proof confirmed the enrolment, or `null` for a device enrolled before the
+      // confirmation existed. `null` must stay representable: it is the honest value for
+      // "not recorded", and collapsing it to a method would make an unconfirmed device read
+      // as a confirmed one.
+      if (view.confirmed_by !== null) {
+        expect(['password', 'totp_code', 'emailed_code']).toContain(view.confirmed_by);
+      }
     }
   });
 
@@ -7621,12 +7640,21 @@ describe('contract fixtures parse through the real client', () => {
         expires_at: '2026-07-16T10:20:30Z',
         expires_in_secs: 300,
         label: 'Telemóvel da Amélia',
+        accepted_confirmation_methods: ['password', 'totp_code', 'emailed_code'],
+        emailed_code_sent: false,
       }),
     );
     const minted: PairingCodeMinted = await api.createPairingCode({ label: 'Telemóvel da Amélia' });
     const parsed = assertExactKeys<PairingCodeMinted>(
       minted,
-      { code: true, expires_at: true, expires_in_secs: true, label: true },
+      {
+        code: true,
+        expires_at: true,
+        expires_in_secs: true,
+        label: true,
+        accepted_confirmation_methods: true,
+        emailed_code_sent: true,
+      },
       'PairingCodeMinted',
     );
     expect(parsed.code).toBeTypeOf('string');
@@ -7634,6 +7662,11 @@ describe('contract fixtures parse through the real client', () => {
     assertTimestamp(parsed.expires_at, 'PairingCodeMinted.expires_at');
     expect(parsed.expires_in_secs).toBeGreaterThan(0);
     expect(parsed.label).toBe('Telemóvel da Amélia');
+    // The device redeeming the code is unauthenticated and cannot read the confirmation policy
+    // itself, so the accepted set has to ride on the mint response or the phone cannot know what
+    // to ask the operator for.
+    expect(parsed.accepted_confirmation_methods.length).toBeGreaterThan(0);
+    expect(parsed.emailed_code_sent).toBeTypeOf('boolean');
   });
 });
 

@@ -6031,6 +6031,26 @@ export const deDE: Catalog = {
   'pairing.expired.title': 'Code abgelaufen',
   'pairing.expired.body': 'Dieser Code ist abgelaufen. Erzeugen Sie einen neuen, um fortzufahren.',
   'pairing.expired.renew': 'Neuen Code erzeugen',
+  'companionPair.title': 'Dieses Gerät koppeln',
+  'companionPair.lede':
+    'Bestätigen Sie zum Abschluss der Kopplung, dass Sie es sind. Eine der folgenden Möglichkeiten genügt.',
+  'companionPair.method.label': 'Art der Bestätigung',
+  'companionPair.method.password': 'Passwort',
+  'companionPair.method.totp_code': 'Authenticator-Code',
+  'companionPair.method.emailed_code': 'Per E-Mail gesendeter Code',
+  'companionPair.hint.password': 'Das Passwort Ihres Kontos.',
+  'companionPair.hint.totp_code': 'Der sechsstellige Code, den Ihre Authenticator-App gerade anzeigt.',
+  'companionPair.hint.emailed_code':
+    'Der Code, den Sie per E-Mail erhalten haben. Sie können ihn mit oder ohne Bindestriche eingeben.',
+  'companionPair.submit': 'Bestätigen und koppeln',
+  'companionPair.pending': 'Kopplung läuft…',
+  'companionPair.done.title': 'Gerät gekoppelt',
+  'companionPair.done.body':
+    'Dieses Gerät hat jetzt Zugriff auf Ihr Konto. Sie können diese Seite schließen.',
+  'companionPair.done.confirmedBy': 'Bestätigt durch:',
+  'companionPair.noCode.title': 'Der Kopplungscode fehlt',
+  'companionPair.noCode.body':
+    'Öffnen Sie den Link über den QR-Code auf dem Computer. Ohne den Kopplungscode kann es nicht weitergehen.',
   'pairing.confirm.title': 'Kopplung bestätigen',
   'pairing.confirm.intro':
     'Das Erzeugen eines Kopplungscodes ermöglicht die Registrierung eines neuen Geräts unter Ihrer Identität. Bestätigen Sie, dass Sie es sind, bevor Sie fortfahren.',
