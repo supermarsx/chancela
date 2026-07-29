@@ -239,7 +239,7 @@ export function TemplateCreatePage() {
         crumbs={<Link to="/templates">{t('templates.title')}</Link>}
         title={title}
         actions={
-          <ButtonLink to="/templates" variant="ghost" icon={<Icon.ArrowRight />}>
+          <ButtonLink to="/templates" variant="ghost" icon={<Icon.Close />}>
             {t('templates.actions.cancel')}
           </ButtonLink>
         }

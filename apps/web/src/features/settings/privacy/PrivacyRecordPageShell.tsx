@@ -96,7 +96,7 @@ export function PrivacyRecordPageShell({
         crumbs={crumbs}
         title={title}
         actions={
-          <ButtonLink to={listPath} variant="ghost" icon={<Icon.ArrowLeft />}>
+          <ButtonLink to={listPath} variant="ghost" icon={<Icon.Close />}>
             {t('settings.privacy.action.cancel')}
           </ButtonLink>
         }
