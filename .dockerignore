@@ -6,6 +6,20 @@ target
 # 911 GB, which makes `docker build` transfer the context for days before the
 # first instruction runs. Same rationale as the .claude entry below.
 target-*
+# `target-*` anchors at the context root, so a per-executor dir nested in a
+# workspace member (.gitignore /apps/web/target-t91) needs its own rule.
+**/target-*
+# The remaining scratch roots .gitignore knows about. EVERY gitignored build
+# scratch directory needs a rule here too: git status cannot show it, so nothing
+# else makes it visible, and `COPY . .` in both build stages pulls it in.
+# Measured on this tree: .cargo-target-lanes alone was 44 GB, which is why
+# `docker compose build` sat in "transferring context" past 25 GB instead of
+# reaching the first RUN. These are agent/measurement lanes and no stage reads
+# them.
+.cargo-target-lanes
+.perf-work
+Projectschancelatarget-*
+Book.termo_abertura
 dist
 apps/web/dist
 lib*.rlib
