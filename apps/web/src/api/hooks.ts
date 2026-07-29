@@ -136,6 +136,8 @@ import type {
   StartOverInstanceBody,
   CreateRoleBody,
   DpiaRecordView,
+  DpiaTemplateView,
+  PutDpiaTemplateBody,
   PatchRoleBody,
   PatchFollowUpBody,
   PatchBreachPlaybookBody,
@@ -258,6 +260,7 @@ export const keys = {
   settings: ['settings'] as const,
   mePreferences: ['me', 'preferences'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
+  emailDeliveries: ['settings', 'email', 'deliveries'] as const,
   platformServices: ['platform', 'services'] as const,
   serverEnv: ['platform', 'env'] as const,
   zkStorageStatus: ['zk-repositories', 'storage-status'] as const,
@@ -3613,6 +3616,32 @@ export function usePrivacyDpiaTemplate(enabled = true) {
   });
 }
 
+/** Replace the DPIA guidance model with the operator's own (`PUT /v1/privacy/dpia-template`). */
+export function usePutPrivacyDpiaTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: PutDpiaTemplateBody) => api.putDpiaTemplate(body),
+    onSuccess: (saved) => {
+      qc.setQueryData<DpiaTemplateView>(keys.privacyDpiaTemplate, saved);
+      void qc.invalidateQueries({ queryKey: keys.privacyDpiaTemplate });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** Discard the operator's model (`DELETE /v1/privacy/dpia-template`) and serve the shipped one. */
+export function useResetPrivacyDpiaTemplate() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.resetDpiaTemplate(),
+    onSuccess: (shipped) => {
+      qc.setQueryData<DpiaTemplateView>(keys.privacyDpiaTemplate, shipped);
+      void qc.invalidateQueries({ queryKey: keys.privacyDpiaTemplate });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
 export function useCreatePrivacyDpia() {
   const qc = useQueryClient();
   return useMutation({
@@ -4069,6 +4098,39 @@ export function useTestEmail() {
     mutationFn: (to: string) => api.testEmail(to),
     onSuccess: () => {
       // The attempt itself is audited, so the ledger view is stale either way.
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/** The recorded outcome of every outbound message, newest first (t108). `retry: false` for the same
+ *  reason as {@link useEmailStatus}: a non-administrator's 403 should surface at once rather than
+ *  after a retry storm. An instance with no durable store answers `[]`, which is data, not an
+ *  error — the panel distinguishes the two. */
+export function useEmailDeliveries() {
+  return useQuery({
+    queryKey: keys.emailDeliveries,
+    queryFn: () => api.listEmailDeliveries(),
+    retry: false,
+  });
+}
+
+/**
+ * Re-send one recorded message (`POST …/deliveries/{id}/resend`).
+ *
+ * A resend INSERTS a new attempt rather than mutating the one it retried, so the list is stale on
+ * success in a way `setQueryData` could not patch honestly — invalidate and let the server say what
+ * the history now is. The resolved value is the NEW row, and it may carry `status: 'failed'`: the
+ * request succeeded, the send did not, and the caller reads that off `.data` exactly as
+ * {@link useTestEmail} reads a relay refusal.
+ */
+export function useResendEmailDelivery() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.resendEmailDelivery(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.emailDeliveries });
+      // The new attempt appended its own ledger event, whether it was sent or refused.
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });

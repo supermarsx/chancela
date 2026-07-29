@@ -72,6 +72,7 @@ import type {
   DraftActBody,
   DpiaRecordView,
   DpiaTemplateView,
+  PutDpiaTemplateBody,
   DsrRequestView,
   Entity,
   EntityListParams,
@@ -237,6 +238,7 @@ import type {
   SearchStatusResponse,
   Settings,
   UserPreferences,
+  EmailDeliveryView,
   EmailStatusView,
   EmailTestResult,
   UpdateActBody,
@@ -960,6 +962,22 @@ export const api = {
    *  an `ApiError` only when the request itself was bad (no permission, mail not configured). */
   testEmail: (to: string) => post<EmailTestResult>('/v1/settings/email/test', { to }),
 
+  /** The recorded outcome of every outbound message, newest first (t108). Capped server-side at
+   *  {@link EMAIL_DELIVERIES_LIMIT} with no pagination params — there is nothing to page with, so a
+   *  full page means "the oldest attempts are not in this list", not "this is all of them". An
+   *  instance with no durable store answers `[]`, not an error. */
+  listEmailDeliveries: () => get<EmailDeliveryView[]>('/v1/settings/email/deliveries'),
+
+  /** Re-send one recorded message. The path id is the whole input — there is no request body.
+   *
+   *  Resolves with the NEW attempt's row, not the one it retried, and that row may be
+   *  `status: 'failed'`: a relay refusal on a resend is reported as a recorded failure, not as an
+   *  HTTP error. It REJECTS with an `ApiError` for `404` (unknown id, or the linked account is
+   *  gone) and `422` (the message carried a one-time credential, or is not linked to an account,
+   *  or this instance keeps no delivery record). */
+  resendEmailDelivery: (id: string) =>
+    post<EmailDeliveryView>(`/v1/settings/email/deliveries/${encodeURIComponent(id)}/resend`),
+
   /** The live zero-knowledge object-root interlock. Read-only: the value that governs it is
    *  written through the settings document, not here. */
   getZkStorageStatus: () => get<ZkStorageStatus>('/v1/zk-repositories/storage-status'),
@@ -1656,6 +1674,10 @@ export const api = {
     patch<ProcessorRecordView>(`/v1/privacy/processors/${id}`, body),
   listDpiaRecords: () => get<DpiaRecordView[]>('/v1/privacy/dpias'),
   getDpiaTemplate: () => get<DpiaTemplateView>('/v1/privacy/dpia-template'),
+  putDpiaTemplate: (body: PutDpiaTemplateBody) =>
+    put<DpiaTemplateView>('/v1/privacy/dpia-template', body),
+  /** Discard the operator's model and serve the template shipped with this build again. */
+  resetDpiaTemplate: () => del<DpiaTemplateView>('/v1/privacy/dpia-template'),
   createDpiaRecord: (body: CreateDpiaRecordBody) => post<DpiaRecordView>('/v1/privacy/dpias', body),
   patchDpiaRecord: (id: string, body: PatchDpiaRecordBody) =>
     patch<DpiaRecordView>(`/v1/privacy/dpias/${id}`, body),

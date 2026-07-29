@@ -5098,7 +5098,18 @@ export interface DpiaTemplateNoClaims {
   secrets_included: false;
 }
 
-/** Static local/offline DPIA guidance pack (`GET /v1/privacy/dpia-template`). */
+/**
+ * Who authored the template body being served.
+ *
+ * This single field decides how the body renders. `shipped` means the ids are the ones this build
+ * ships, which the catalog carries in fourteen languages, so the client resolves them through
+ * `dpiaTemplateLabels.ts`. `operator` means the body is user content typed in one language, and it
+ * renders VERBATIM — running it through the catalog would either hide the operator's own words
+ * behind a shipped string or claim a translation nobody wrote.
+ */
+export type DpiaTemplateSource = 'shipped' | 'operator';
+
+/** Local/offline DPIA guidance pack (`GET /v1/privacy/dpia-template`). */
 export interface DpiaTemplateView {
   schema: 'chancela-privacy-dpia-template/v1' | string;
   template_id: 'privacy-dpia-guidance/v1' | string;
@@ -5110,6 +5121,26 @@ export interface DpiaTemplateView {
   sections: DpiaTemplateSection[];
   operator_actions: string[];
   no_claims: DpiaTemplateNoClaims;
+  source: DpiaTemplateSource;
+  /** Present only for an operator-authored body. */
+  updated_at?: string;
+  updated_by?: string;
+}
+
+/**
+ * `PUT /v1/privacy/dpia-template` body — the operator's own model.
+ *
+ * 🔒 There is deliberately no `no_claims` field. The 28 flags name legal claims this product does
+ * not make; the server emits them from a compile-time constant and REFUSES (422) a payload that
+ * tries to set one. Not sending them is the client half of the same boundary. The immutable slot
+ * fields (`schema`, `template_id`, `scope`, `version`, `local_offline_guidance_only`) are absent
+ * for the same reason: an edit changes the model's body, never what document this is.
+ */
+export interface PutDpiaTemplateBody {
+  title: string;
+  language: string;
+  sections: DpiaTemplateSection[];
+  operator_actions: string[];
 }
 
 export interface BreachPlaybookView {
@@ -7127,6 +7158,7 @@ export const SERVER_ENV_GROUPS = [
   'connectors',
   'storage',
   'paper_book',
+  'search',
   'mcp',
 ] as const;
 export type ServerEnvVarGroup = (typeof SERVER_ENV_GROUPS)[number];
@@ -7171,6 +7203,13 @@ export interface ServerEnvVarView {
   acknowledgement_required: boolean;
   /** Non-null → managed by a typed settings slice; shown read-only with a cross-link (the reason). */
   excluded_typed_slice: string | null;
+  /**
+   * Non-null → a *different* process reads this var and does not load the override file (today the
+   * standalone `chancela-mcp` stdio binary). The row is a fact plus the reason, never an editor: an
+   * override stored here would be stamped into this process's environment and the actual reader
+   * would never see it.
+   */
+  external_reader: string | null;
   source: ServerEnvVarSource;
   /** The live process currently has a value (the only signal for secrets). */
   configured: boolean;
@@ -8758,6 +8797,71 @@ export interface EmailTestResult {
   /** The full protocol trace (t70). Present on success as well as failure: a send that works but
    *  runs unencrypted, or takes 19 seconds, is worth seeing. */
   trace: SmtpTrace;
+}
+
+/**
+ * How many recorded deliveries `GET /v1/settings/email/deliveries` returns at most —
+ * `DELIVERIES_PAGE_LIMIT`, `smtp_settings.rs`.
+ *
+ * Mirrored here because the endpoint takes no pagination parameters, so a caller cannot ask for
+ * the next page and cannot ask how many rows exist. A response of exactly this length therefore
+ * means "older attempts are not in this list", and the panel has to say so rather than presenting
+ * a truncated window as the complete history. If the server's cap moves, this must move with it.
+ */
+export const EMAIL_DELIVERIES_LIMIT = 200;
+
+/** The two terminal outcomes a recorded delivery can have.
+ *
+ *  There is deliberately no `queued`/`sending`: nothing drains a queue in this build, every
+ *  recorded attempt is already over, and a pending state in the UI would assert a mechanism that
+ *  does not exist (`EmailDeliveryView`, `smtp_settings.rs`). */
+export const EMAIL_DELIVERY_STATUSES = ['sent', 'failed'] as const;
+export type EmailDeliveryStatus = (typeof EMAIL_DELIVERY_STATUSES)[number];
+
+/**
+ * `GET /v1/settings/email/deliveries` — one recorded outbound attempt (t108).
+ *
+ * Every optional field is `#[serde(skip_serializing_if = "Option::is_none")]` server-side, so it is
+ * ABSENT from the JSON rather than `null`. Hence `?:` throughout and never `| null`: a `| null`
+ * declaration here would invite `=== null` checks that can never be true.
+ *
+ * `failure_stage` is the SMTP stage vocabulary ({@link SMTP_STAGES}) PLUS `not_configured`, the
+ * stage of a send that never reached a socket, and `failure_kind` is {@link SMTP_FAILURE_KINDS}
+ * plus the same token — so both stay `string` rather than borrowing those unions, which would be a
+ * lie about what can arrive.
+ */
+export interface EmailDeliveryView {
+  id: string;
+  /** e.g. `user.welcome`, `device.pairing_code`. Only `user.welcome` is resendable — see below. */
+  template_id: string;
+  /** The account the message was about, when it was about one. */
+  user_id?: string;
+  /** The full recipient address, as the server chose to expose it. */
+  recipient: string;
+  status: EmailDeliveryStatus;
+  /** 1-based; a resend records attempt N+1 rather than overwriting attempt N. */
+  attempt: number;
+  /** The attempt this one retried, when it retried one — the chain, not a replacement. */
+  previous_id?: string;
+  failure_stage?: string;
+  failure_kind?: string;
+  /** The relay's reply code, when the relay actually answered. */
+  failure_code?: number;
+  /** The relay's own words. Present only on a `failed` row. */
+  failure_detail?: string;
+  created_at: string;
+  /** The ledger event this attempt appended, for cross-reference with the immutable record. */
+  event_seq?: number;
+  actor: string;
+  /**
+   * Whether this exact message can be re-sent from durable non-secret state.
+   *
+   * `false` for anything that carried a one-time credential: the secret is unrecoverable, and
+   * minting a fresh one GRANTS ACCESS, so it belongs to the flow that owns the token (and its
+   * permission), not to whoever administers the mail relay. The honest counterpart of a refused
+   * resend is a re-issue, which is a different operation entirely.
+   */
+  resendable: boolean;
 }
 
 /** Tenant-level gate for AI features and the MCP surface. Defaults disabled. */
