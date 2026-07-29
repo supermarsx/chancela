@@ -1,0 +1,41 @@
+/**
+ * Email delivery record — table-cell layout only (t108).
+ *
+ * Its own file rather than a block in `theme.css`: this is one panel's cell composition, and the
+ * shared stylesheet is edited by every lane at once.
+ *
+ * All three rules stack their children on separate LINES rather than separating them with a
+ * character. That is fine here because each child is its own element and each carries its own
+ * meaning (a stage name, a reply code, the relay's text) — but it is exactly why no rule below
+ * relies on `gap` to make two spans read as two values: a gap inserts no character, so anything a
+ * reader must parse as separate must be separate elements, which these are.
+ */
+
+.email-deliveries__failure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+/* The relay's own words can be a full sentence; let the cell wrap instead of forcing the table
+   into a horizontal scroll. `break-word` because a bounce message often contains a long URL. */
+.email-deliveries__failure code {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.email-deliveries__attempt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+}
+
+/* The button and its explanation glyph sit on one line; `.field-help-wrap` is already
+   `inline-flex`, so this only needs to keep them from wrapping apart at a narrow width. */
+.email-deliveries__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}

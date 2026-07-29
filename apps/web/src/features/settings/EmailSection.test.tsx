@@ -14,8 +14,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { EmailSection } from './EmailSection';
-import { DEFAULT_SETTINGS } from '../../api/types';
-import type { EmailSettings, EmailStatusView, EmailTestResult, SmtpTrace } from '../../api/types';
+import { DEFAULT_SETTINGS, EMAIL_DELIVERIES_LIMIT } from '../../api/types';
+import type {
+  EmailDeliveryView,
+  EmailSettings,
+  EmailStatusView,
+  EmailTestResult,
+  SmtpTrace,
+} from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 
 interface Call {
@@ -62,10 +68,62 @@ function statusView(overrides: Partial<EmailStatusView> = {}): EmailStatusView {
   };
 }
 
+/**
+ * A recorded delivery as the API serialises one (t108).
+ *
+ * Every optional field is ABSENT rather than `null` server-side, so the fixture omits them too —
+ * a fixture that spelled `failure_detail: null` would be testing a shape the API cannot produce.
+ */
+function delivery(overrides: Partial<EmailDeliveryView> = {}): EmailDeliveryView {
+  return {
+    id: 'del-1',
+    template_id: 'user.welcome',
+    user_id: '11111111-1111-4111-8111-111111111111',
+    recipient: 'amelia.marques@encosto-estrategico.pt',
+    status: 'sent',
+    attempt: 1,
+    created_at: '2026-07-20T10:15:00Z',
+    actor: 'sistema',
+    resendable: true,
+    ...overrides,
+  };
+}
+
+/** Every row rendered by the delivery table, in DOM order. */
+function deliveryRows(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>('[data-email-delivery]'));
+}
+
+/** The resend control of one row, located by a stable hook rather than by translated copy. */
+function resendButton(id: string): HTMLButtonElement {
+  const button = document.querySelector<HTMLButtonElement>(
+    `[data-testid="email-delivery-resend-${id}"]`,
+  );
+  expect(button, `a resend control exists for ${id}`).toBeTruthy();
+  return button!;
+}
+
 function stubFetch(
-  opts: { status?: EmailStatusView; test?: TestResultFixture; writeStatus?: number } = {},
+  opts: {
+    status?: EmailStatusView;
+    test?: TestResultFixture;
+    writeStatus?: number;
+    deliveries?: EmailDeliveryView[];
+    deliveriesStatus?: number;
+    /** The NEW attempt's row the resend endpoint answers with — which may itself be `failed`. */
+    resend?: EmailDeliveryView;
+    resendStatus?: number;
+  } = {},
 ): { fn: typeof fetch; calls: Call[] } {
-  const { status = statusView(), test, writeStatus = 200 } = opts;
+  const {
+    status = statusView(),
+    test,
+    writeStatus = 200,
+    deliveries = [],
+    deliveriesStatus = 200,
+    resend,
+    resendStatus = 200,
+  } = opts;
   const calls: Call[] = [];
   const json = (body: unknown, code = 200) =>
     new Response(JSON.stringify(body), {
@@ -76,6 +134,15 @@ function stubFetch(
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
     calls.push({ url, method, body: (init?.body as string) ?? null });
+    // Both the list and the resend live under `/deliveries`; the method separates them.
+    if (url.includes('/v1/settings/email/deliveries')) {
+      if (method === 'POST') {
+        return Promise.resolve(
+          json(resend ?? delivery({ id: 'del-resent', attempt: 2 }), resendStatus),
+        );
+      }
+      return Promise.resolve(json(deliveries, deliveriesStatus));
+    }
     if (url.includes('/v1/settings/email/test')) {
       const result: EmailTestResult = {
         ...(test ?? { ok: true, tls: true, authenticated: true }),
@@ -520,5 +587,217 @@ describe('EmailSection', () => {
         'A username is configured but no password is stored, so authentication will fail.',
       ),
     ).toBeTruthy();
+  });
+});
+
+/**
+ * The delivery record (t108).
+ *
+ * Every assertion below is on a ROLE, a stable `data-` hook, or a value the SERVER supplied
+ * (a recipient address, a relay's reply). None is on translated copy: the panel's own sentences
+ * exist in fourteen locales and are rewritten by translators, so asserting them here would make
+ * this suite a grammar test rather than a behaviour test.
+ *
+ * The properties worth pinning are the ones a plausible refactor would quietly break:
+ *
+ * 1. **Empty is not an error.** An instance with no durable store answers `[]`. Collapsing that
+ *    into the error path would tell an operator their mail is broken when it is not.
+ * 2. **Non-resendable is a fact about the message, not about the caller.** The control is inert
+ *    and carries the reason; a version that simply omitted the button, or that fired anyway and
+ *    let the server 422, would both be regressions.
+ * 3. **A refused resend arrives as a 200.** The request succeeded and describes a send that did
+ *    not, exactly like the test-send card's relay rejection.
+ * 4. **A resend appends an attempt**, so the list it was launched from is stale and must refetch.
+ */
+describe('EmailSection delivery record', () => {
+  it('renders one row per recorded attempt, in the order the API returned them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        deliveries: [
+          delivery({ id: 'del-2', attempt: 2, previous_id: 'del-1' }),
+          delivery({ id: 'del-1' }),
+        ],
+      }).fn,
+    );
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(deliveryRows()).toHaveLength(2));
+    // Newest first is the server's ordering; the panel must not re-sort it into something else.
+    expect(deliveryRows().map((row) => row.getAttribute('data-email-delivery'))).toEqual([
+      'del-2',
+      'del-1',
+    ]);
+    // The recipient is server data, not copy: the operator diagnoses a bounce by reading it.
+    expect(screen.getAllByText('amelia.marques@encosto-estrategico.pt')).toHaveLength(2);
+  });
+
+  it('shows an empty record as empty, not as a failure', async () => {
+    // `[]` is what an instance with no durable store answers. It is an honest answer about
+    // history, and reporting it as an error would send an operator hunting a relay fault.
+    vi.stubGlobal('fetch', stubFetch({ deliveries: [] }).fn);
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector('.empty')).toBeTruthy());
+    expect(document.querySelector('.email-deliveries')).toBeNull();
+    expect(document.querySelector('.error-note')).toBeNull();
+  });
+
+  it('reports a failed list request instead of an empty record', async () => {
+    vi.stubGlobal('fetch', stubFetch({ deliveriesStatus: 500 }).fn);
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(document.querySelector('.error-note')).toBeTruthy());
+    // Neither the grid nor "nothing here yet": a request that failed says nothing about whether
+    // messages were sent, and claiming an empty history would be a fabrication.
+    expect(document.querySelector('.email-deliveries')).toBeNull();
+    expect(document.querySelector('.empty')).toBeNull();
+  });
+
+  it('shows the relay’s own code and words on a failed row', async () => {
+    const relay = '550 5.1.1 Recipient address rejected: user unknown';
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        deliveries: [
+          delivery({
+            id: 'del-f',
+            status: 'failed',
+            failure_stage: 'rcpt_to',
+            failure_kind: 'rejected',
+            failure_code: 550,
+            failure_detail: relay,
+          }),
+        ],
+      }).fn,
+    );
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    // A translated paraphrase would be useless here: `550 … user unknown` and a greylisting
+    // need completely different responses from the operator.
+    expect(await screen.findByText(relay)).toBeTruthy();
+    expect(screen.getByText('550')).toBeTruthy();
+  });
+
+  it('renders a failure stage it has no sentence for verbatim rather than mislabelling it', async () => {
+    // `not_configured` is in the stored vocabulary but is not an SMTP stage. A mapper with a
+    // catch-all default would file an unknown token under "session close", inventing a fact.
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        deliveries: [
+          delivery({ id: 'del-x', status: 'failed', failure_stage: 'stage_from_the_future' }),
+        ],
+      }).fn,
+    );
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    const token = await screen.findByText('stage_from_the_future');
+    expect(token.tagName).toBe('CODE');
+  });
+
+  it('offers no resend for a message that carried a one-time credential', async () => {
+    const stub = stubFetch({
+      deliveries: [
+        delivery({ id: 'del-invite', template_id: 'user.invite', resendable: false }),
+        delivery({ id: 'del-welcome', resendable: true }),
+      ],
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(deliveryRows()).toHaveLength(2));
+    expect(resendButton('del-invite').disabled).toBe(true);
+    expect(resendButton('del-welcome').disabled).toBe(false);
+
+    // Inert, not merely styled: the secret is unrecoverable, so letting the click through to be
+    // refused by the server would teach the operator that the button sometimes works.
+    fireEvent.click(resendButton('del-invite'));
+    expect(stub.calls.some((c) => c.method === 'POST')).toBe(false);
+
+    // And the row carries the explanation, as a real focusable control rather than a hover-only
+    // hint — a disabled button is not a tab stop, so the reason has to live beside it.
+    const blocked = deliveryRows().find(
+      (r) => r.getAttribute('data-email-delivery') === 'del-invite',
+    );
+    expect(within(blocked as HTMLElement).getAllByRole('button').length).toBeGreaterThan(1);
+  });
+
+  it('resends from the row and refetches, because a resend appends an attempt', async () => {
+    const stub = stubFetch({
+      deliveries: [delivery({ id: 'del-1' })],
+      resend: delivery({ id: 'del-2', attempt: 2, previous_id: 'del-1' }),
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(deliveryRows()).toHaveLength(1));
+    const listGets = () =>
+      stub.calls.filter((c) => c.method === 'GET' && c.url.includes('/deliveries')).length;
+    const before = listGets();
+
+    fireEvent.click(resendButton('del-1'));
+
+    await waitFor(() => {
+      const post = stub.calls.find((c) => c.method === 'POST' && c.url.includes('/deliveries'));
+      expect(post, 'a resend POST was issued').toBeTruthy();
+      expect(post!.url).toContain('/v1/settings/email/deliveries/del-1/resend');
+      // The path id is the whole input. A body here would be inventing a request shape the
+      // endpoint does not read, and the next reader would believe it mattered.
+      expect(post!.body).toBeNull();
+    });
+    // The new attempt exists only on the server; without the invalidation the operator would be
+    // looking at a list that still claims one attempt.
+    await waitFor(() => expect(listGets()).toBeGreaterThan(before));
+  });
+
+  it('reports a resend the relay refused, even though the request succeeded', async () => {
+    const relay = '451 4.7.1 Greylisted, please try again later';
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        deliveries: [delivery({ id: 'del-1' })],
+        resend: delivery({
+          id: 'del-2',
+          attempt: 2,
+          previous_id: 'del-1',
+          status: 'failed',
+          failure_stage: 'rcpt_to',
+          failure_kind: 'rejected',
+          failure_code: 451,
+          failure_detail: relay,
+        }),
+      }).fn,
+    );
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(deliveryRows()).toHaveLength(1));
+    fireEvent.click(resendButton('del-1'));
+
+    // `200` describing a `failed` row. Treating the resolved promise as success would tell the
+    // operator the message went out when the relay had just refused it.
+    expect(await screen.findByText(relay)).toBeTruthy();
+  });
+
+  it('admits that a full list is a window, not the whole history', async () => {
+    // The endpoint takes no pagination parameters, so a full page is the only signal that older
+    // attempts were cut off. Silence here would present 200 rows as everything that ever went out.
+    const full = Array.from({ length: EMAIL_DELIVERIES_LIMIT }, (_, i) =>
+      delivery({ id: `del-${i}` }),
+    );
+    vi.stubGlobal('fetch', stubFetch({ deliveries: full }).fn);
+    const capped = renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(deliveryRows()).toHaveLength(EMAIL_DELIVERIES_LIMIT));
+    expect(document.querySelector('.inline-warning')).toBeTruthy();
+    capped.unmount();
+    cleanup();
+
+    // One short of the cap is the complete history, and must claim nothing about older sends.
+    vi.stubGlobal('fetch', stubFetch({ deliveries: full.slice(1) }).fn);
+    renderWithProviders(<EmailSection email={email()} onChange={vi.fn()} />);
+
+    await waitFor(() => expect(deliveryRows()).toHaveLength(EMAIL_DELIVERIES_LIMIT - 1));
+    expect(document.querySelector('.inline-warning')).toBeNull();
   });
 });

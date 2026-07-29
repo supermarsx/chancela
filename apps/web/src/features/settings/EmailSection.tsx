@@ -20,11 +20,13 @@
  * mutating controls, inline error + toast, and RBAC-gated on `settings.manage`.
  */
 import { useState } from 'react';
-import type { EmailSettings, SmtpEncryption } from '../../api/types';
-import { SMTP_ENCRYPTIONS } from '../../api/types';
+import type { EmailDeliveryView, EmailSettings, SmtpEncryption } from '../../api/types';
+import { EMAIL_DELIVERIES_LIMIT, SMTP_ENCRYPTIONS } from '../../api/types';
 import {
   useClearEmailPassword,
+  useEmailDeliveries,
   useEmailStatus,
+  useResendEmailDelivery,
   useSetEmailPassword,
   useTestEmail,
 } from '../../api/hooks';
@@ -33,6 +35,9 @@ import type { MessageKey } from '../../i18n';
 import {
   Badge,
   Card,
+  ColumnHead,
+  DateTime,
+  EmptyState,
   ErrorNote,
   Field,
   FieldHelp,
@@ -40,12 +45,16 @@ import {
   InlineWarning,
   Input,
   Select,
+  SkeletonRegion,
+  SkeletonTable,
+  Table,
   Toggle,
   useToast,
 } from '../../ui';
 import { GateButton, useCan } from '../session/permissions';
 import { emailFieldHelp } from './fieldHelp';
 import { EmailTestDetail } from './EmailTestDetail';
+import './emailDeliveries.css';
 
 type Props = {
   /** The working copy's email slice, owned by `SettingsPage`. */
@@ -112,6 +121,58 @@ function remedyLabel(kind: string): MessageKey {
       return 'settings.email.remedy.protocol';
     default:
       return 'settings.email.remedy.rejected';
+  }
+}
+
+/**
+ * i18n key naming the stage a recorded delivery died at (t108).
+ *
+ * Deliberately NOT [`stageLabel`]: that one is for a test send, whose failure always came from a
+ * real SMTP session, so folding an unknown token into "session close" is harmless there. A recorded
+ * delivery can also carry `not_configured` — the stage of a send that never reached a socket — and
+ * calling that "session close" would be a fabrication. `undefined` means "no sentence for this
+ * token", and the caller renders it verbatim as an identifier rather than inventing one.
+ */
+function deliveryStageLabel(stage: string): MessageKey | undefined {
+  switch (stage) {
+    case 'connect':
+      return 'settings.email.stage.connect';
+    case 'tls':
+      return 'settings.email.stage.tls';
+    case 'greeting':
+      return 'settings.email.stage.greeting';
+    case 'ehlo':
+      return 'settings.email.stage.ehlo';
+    case 'starttls':
+      return 'settings.email.stage.starttls';
+    case 'auth':
+      return 'settings.email.stage.auth';
+    case 'mail_from':
+      return 'settings.email.stage.mailFrom';
+    case 'rcpt_to':
+      return 'settings.email.stage.rcptTo';
+    case 'data':
+      return 'settings.email.stage.data';
+    case 'quit':
+      return 'settings.email.stage.quit';
+    case 'not_configured':
+      return 'settings.email.deliveries.stage.notConfigured';
+    default:
+      return undefined;
+  }
+}
+
+/** i18n key naming what a recorded message WAS, for the two templates this build actually sends.
+ *  An id with no sentence renders verbatim in `mono`: an unnamed identifier is honest, a guessed
+ *  name is not. */
+function templateLabel(templateId: string): MessageKey | undefined {
+  switch (templateId) {
+    case 'user.welcome':
+      return 'settings.email.deliveries.template.welcome';
+    case 'device.pairing_code':
+      return 'settings.email.deliveries.template.pairingCode';
+    default:
+      return undefined;
   }
 }
 
@@ -424,7 +485,259 @@ export function EmailSection({ email, onChange }: Props) {
             in its own component so this file owns the summary and that one owns the detail. */}
         {test.data ? <EmailTestDetail result={test.data} /> : null}
       </Card>
+
+      {/* The delivery record — what actually went out, and what the relay said about it. */}
+      <EmailDeliveriesCard />
     </>
+  );
+}
+
+/**
+ * The recorded outcome of every outbound message (t108).
+ *
+ * ## This is a record, not a queue
+ *
+ * Nothing drains a queue in this build. `status` is `sent` or `failed` and never `queued`, so there
+ * is no pending state to render and no "retrying…" to animate — every row is already over. Calling
+ * this a queue, or showing a spinner per row, would assert a mechanism that does not exist.
+ *
+ * ## Resend is narrower than it looks, and the UI says why
+ *
+ * Only a message whose body is fully derivable from durable NON-SECRET state can be re-sent —
+ * today exactly the welcome mail. Anything that carried a one-time credential is refused, and the
+ * refusal is cryptographic rather than a policy setting: the secret was never stored and cannot be
+ * recovered. Minting a fresh one would GRANT ACCESS, which belongs to the flow that owns the token
+ * and its permission, not to whoever administers the mail relay. So the disabled button carries the
+ * sentence naming the alternative (re-issue), and never reads as "you are not allowed to".
+ *
+ * ## A refused resend is a 200
+ *
+ * The endpoint answers with the NEW attempt's row, which may itself be `failed`. That is a
+ * successful request describing an unsuccessful send — the same shape the test-send card handles —
+ * so it is surfaced as a warning carrying the relay's own words, not swallowed as a success.
+ */
+function EmailDeliveriesCard() {
+  const t = useT();
+  const toast = useToast();
+  const deliveries = useEmailDeliveries();
+  const resend = useResendEmailDelivery();
+  // The row a resend produced when the relay refused it. Held here rather than read off
+  // `resend.data` so it survives the list refetch and clears on the next attempt.
+  const [refused, setRefused] = useState<EmailDeliveryView | null>(null);
+
+  const rows = deliveries.data ?? [];
+  // No pagination parameters exist on this endpoint, so a full page is the ONLY signal that older
+  // attempts were cut off. Saying nothing here would present a window as the whole history.
+  const capped = rows.length >= EMAIL_DELIVERIES_LIMIT;
+
+  function submitResend(id: string) {
+    setRefused(null);
+    resend.mutate(id, {
+      onSuccess: (row) => {
+        if (row.status === 'failed') setRefused(row);
+        else toast.success(t('settings.email.deliveries.resentToast'));
+      },
+      onError: (e) => toast.error(e),
+    });
+  }
+
+  return (
+    <Card className="email-card" title={t('settings.email.deliveries.cardTitle')}>
+      <p className="lede">{t('settings.email.deliveries.lede')}</p>
+
+      {deliveries.error ? <ErrorNote error={deliveries.error} /> : null}
+      {resend.error ? <ErrorNote error={resend.error} /> : null}
+      {refused ? <ResendRefused row={refused} t={t} /> : null}
+
+      {deliveries.isLoading ? (
+        <SkeletonRegion>
+          <SkeletonTable cols={7} />
+        </SkeletonRegion>
+      ) : deliveries.error ? null : rows.length === 0 ? (
+        // An empty record and a failed request are different facts: this instance may simply keep
+        // no delivery history, which the API reports as `[]` rather than as an error.
+        <EmptyState title={t('settings.email.deliveries.empty')}>
+          <p>{t('settings.email.deliveries.emptyBody')}</p>
+        </EmptyState>
+      ) : (
+        <>
+          {capped ? (
+            <InlineWarning tone="info" title={t('settings.email.deliveries.cappedTitle')}>
+              <p>{t('settings.email.deliveries.cappedBody', { count: EMAIL_DELIVERIES_LIMIT })}</p>
+            </InlineWarning>
+          ) : null}
+
+          <Table
+            className="email-deliveries"
+            caption={t('settings.email.deliveries.caption')}
+            head={
+              <tr>
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.when')}
+                  help={t('settings.email.deliveries.help.when')}
+                />
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.template')}
+                  help={t('settings.email.deliveries.help.template')}
+                />
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.recipient')}
+                  help={t('settings.email.deliveries.help.recipient')}
+                />
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.status')}
+                  help={t('settings.email.deliveries.help.status')}
+                />
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.attempt')}
+                  help={t('settings.email.deliveries.help.attempt')}
+                />
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.failure')}
+                  help={t('settings.email.deliveries.help.failure')}
+                />
+                <ColumnHead
+                  label={t('settings.email.deliveries.col.action')}
+                  help={t('settings.email.deliveries.help.action')}
+                />
+              </tr>
+            }
+          >
+            {rows.map((row) => (
+              <DeliveryRow
+                key={row.id}
+                row={row}
+                t={t}
+                busy={resend.isPending}
+                onResend={submitResend}
+              />
+            ))}
+          </Table>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** One recorded attempt. */
+function DeliveryRow({
+  row,
+  t,
+  busy,
+  onResend,
+}: {
+  row: EmailDeliveryView;
+  t: TFunction;
+  busy: boolean;
+  onResend: (id: string) => void;
+}) {
+  const template = templateLabel(row.template_id);
+  const failed = row.status === 'failed';
+
+  return (
+    <tr data-email-delivery={row.id}>
+      <td>
+        <DateTime value={row.created_at} />
+      </td>
+      <td>{template ? t(template) : <code className="mono">{row.template_id}</code>}</td>
+      {/* The full address, exactly as the server chose to expose it. Monospace because it is an
+          identifier an operator reads character by character when chasing a bounce. */}
+      <td className="mono">{row.recipient}</td>
+      <td>
+        <Badge tone={failed ? 'error' : 'ok'}>
+          {failed
+            ? t('settings.email.deliveries.status.failed')
+            : t('settings.email.deliveries.status.sent')}
+        </Badge>
+      </td>
+      <td>
+        <span className="email-deliveries__attempt">
+          <span>{row.attempt}</span>
+          {/* `previous_id` is the chain the API preserves rather than overwriting; without this
+              marker two rows for the same message read as two unrelated sends. */}
+          {row.previous_id ? (
+            <Badge tone="neutral">{t('settings.email.deliveries.retry')}</Badge>
+          ) : null}
+        </span>
+      </td>
+      <td>{failed ? <FailureDetail row={row} t={t} /> : null}</td>
+      <td>
+        <span className="email-deliveries__action">
+          <GateButton
+            perm="settings.manage"
+            type="button"
+            icon={<Icon.Refresh />}
+            data-testid={`email-delivery-resend-${row.id}`}
+            disabled={!row.resendable || busy}
+            onClick={() => onResend(row.id)}
+          >
+            {t('settings.email.deliveries.resend')}
+          </GateButton>
+          {/* A disabled control with no reason reads as an arbitrary restriction. This one is not:
+              the credential is unrecoverable, and the sentence names the operation that IS
+              available. `FieldHelp` rather than a tooltip on the button because a disabled button
+              is not a tab stop, and an explanation only a mouse can reach is decoration. */}
+          {row.resendable ? null : (
+            <FieldHelp text={t('settings.email.deliveries.notResendable')} />
+          )}
+        </span>
+      </td>
+    </tr>
+  );
+}
+
+/** Why a recorded send failed: the stage it stopped at, the relay's code, and the relay's own
+ *  words. An unmapped stage token is shown verbatim rather than folded into a neighbouring
+ *  sentence, so a vocabulary the UI has not caught up with is visible instead of mislabelled. */
+function FailureDetail({ row, t }: { row: EmailDeliveryView; t: TFunction }) {
+  const stageKey = row.failure_stage ? deliveryStageLabel(row.failure_stage) : undefined;
+  return (
+    <div className="email-deliveries__failure">
+      {row.failure_stage ? (
+        stageKey ? (
+          <span>{t(stageKey)}</span>
+        ) : (
+          <code className="mono">{row.failure_stage}</code>
+        )
+      ) : null}
+      {row.failure_code === undefined ? null : <code className="mono">{row.failure_code}</code>}
+      {row.failure_detail ? <code className="mono">{row.failure_detail}</code> : null}
+    </div>
+  );
+}
+
+/** A resend the relay refused. The request succeeded — this is the new attempt's own row, already
+ *  recorded as `failed` — so it must not be reported as a send that went out. */
+function ResendRefused({ row, t }: { row: EmailDeliveryView; t: TFunction }) {
+  const stageKey = row.failure_stage ? deliveryStageLabel(row.failure_stage) : undefined;
+  return (
+    <InlineWarning tone="error" title={t('settings.email.deliveries.resendFailedTitle')}>
+      <p>{t('settings.email.deliveries.resendFailedBody')}</p>
+      <dl className="deflist">
+        {row.failure_stage ? (
+          <>
+            <dt>{t('settings.email.test.stage')}</dt>
+            <dd>{stageKey ? t(stageKey) : <code className="mono">{row.failure_stage}</code>}</dd>
+          </>
+        ) : null}
+        {row.failure_code === undefined ? null : (
+          <>
+            <dt>{t('settings.email.test.code')}</dt>
+            <dd>
+              <code>{row.failure_code}</code>
+            </dd>
+          </>
+        )}
+        {row.failure_detail ? (
+          <>
+            <dt>{t('settings.email.test.serverReply')}</dt>
+            <dd>
+              <code>{row.failure_detail}</code>
+            </dd>
+          </>
+        ) : null}
+      </dl>
+    </InlineWarning>
   );
 }
 
