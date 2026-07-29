@@ -1,0 +1,27 @@
+{
+  "id": "assoc-termo-transporte/v2",
+  "family": "Association",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "assoc-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de transporte do livro de atas" },
+    {
+      "kind": "Paragraph",
+      "template": "Aos {{ closing_date | long_date }}, transporta-se a presente escrituração da associação {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}{% if book.kind %}, respeitante ao órgão {{ book.kind }}{% endif %}, para continuação no livro sucessor, mantendo a continuidade sequencial da numeração das atas e da cadeia de registo."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if book.predecessor.book_reference %}A escrituração transportada provém de {{ book.predecessor.book_reference }}.{% endif %}"
+    },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

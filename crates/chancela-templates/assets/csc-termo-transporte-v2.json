@@ -1,0 +1,33 @@
+{
+  "id": "csc-termo-transporte/v2",
+  "family": "CommercialCompany",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Termo de transporte do livro de atas"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Aos {{ closing_date | long_date }}, transporta-se a presente escrituração da sociedade {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}{% if book.kind %}, respeitante ao órgão {{ book.kind }}{% endif %}, para continuação no livro sucessor, dando-se por encerrado o livro anterior e assegurando-se a continuidade sequencial da numeração e da cadeia de registo, nos termos do artigo 63.º do Código das Sociedades Comerciais."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if book.predecessor %}A escrituração transportada provém de {{ book.predecessor }}.{% endif %}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

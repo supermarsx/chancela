@@ -1353,6 +1353,11 @@ mod tests {
             "condominio-termo-abertura/v2",
             "cooperativa-termo-abertura/v2",
             "fundacao-termo-abertura/v2",
+            "csc-termo-abertura/v3",
+            "assoc-termo-abertura/v3",
+            "condominio-termo-abertura/v3",
+            "cooperativa-termo-abertura/v3",
+            "fundacao-termo-abertura/v3",
         ] {
             let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
             let body = spec.default_body();
@@ -1372,13 +1377,17 @@ mod tests {
         }
     }
 
-    /// Two versions of one template ship side by side, which is the whole point of putting the
-    /// version in the **filename**: `/v1` keeps resolving for every document already generated from
-    /// it, while `/v2` is what new termos render. Renumbering in place would have left those
-    /// documents naming an unresolvable id; editing `/v1`'s blocks would have tripped the
-    /// retroactive-edit detector for all of them.
+    /// Three versions of one template ship side by side, which is the whole point of putting the
+    /// version in the **filename**: `/v1` and `/v2` keep resolving for every document already
+    /// generated from them, while `/v3` is what new termos render. Renumbering in place would have
+    /// left those documents naming an unresolvable id; editing a shipped version's blocks would
+    /// have tripped the retroactive-edit detector for all of them.
+    ///
+    /// `/v2` added the page count as a labelled `KeyValue` row; `/v3` rewrote the identification
+    /// into notarial prose and moved the count into a sentence. Both *state* the count, which is
+    /// why the assertion is on the binding rather than on the block kind.
     #[test]
-    fn both_termo_abertura_versions_resolve_and_only_v2_states_the_page_count() {
+    fn every_termo_abertura_version_resolves_and_only_v1_omits_the_page_count() {
         let reg = load_registry().expect("registry loads");
         for family in ["csc", "assoc", "condominio", "cooperativa", "fundacao"] {
             let v1 = reg
@@ -1386,29 +1395,62 @@ mod tests {
                 .unwrap_or_else(|| panic!("{family} v1 still resolves"));
             let v2 = reg
                 .get(&format!("{family}-termo-abertura/v2"))
-                .unwrap_or_else(|| panic!("{family} v2 present"));
+                .unwrap_or_else(|| panic!("{family} v2 still resolves"));
+            let v3 = reg
+                .get(&format!("{family}-termo-abertura/v3"))
+                .unwrap_or_else(|| panic!("{family} v3 present"));
 
-            // Assert on the merge tag, not on the rendered pt-PT label: the row's wording is
-            // reviewable copy, but the field it binds is the contract.
+            // Assert on the merge tag, not on the rendered pt-PT text: the wording is reviewable
+            // copy, but the field it binds is the contract.
             assert!(
                 !binds_page_capacity(v1),
-                "{family} v1 must stay as shipped, with no page-count row"
+                "{family} v1 must stay as shipped, with no page count"
             );
             assert!(
                 binds_page_capacity(v2),
                 "{family} v2 must state the declared page count"
             );
-            // Same instrument, same family/stage binding — only the added row differs.
+            assert!(
+                binds_page_capacity(v3),
+                "{family} v3 must state the declared page count"
+            );
+
+            // The identification moved from a field list to prose: `/v2` still carries a KeyValue
+            // block, `/v3` must carry none at all. Without this, dropping the rewrite back to a row
+            // would pass every other assertion here.
+            assert!(
+                v2.blocks
+                    .iter()
+                    .any(|b| matches!(b, BlockSpec::KeyValue { .. })),
+                "{family} v2 must stay as shipped, identifying the entity in a field list"
+            );
+            assert!(
+                !v3.blocks
+                    .iter()
+                    .any(|b| matches!(b, BlockSpec::KeyValue { .. })),
+                "{family} v3 identifies the entity in prose, so it carries no KeyValue block"
+            );
+
+            // Same instrument, same family/stage binding across every version.
             assert_eq!(v1.family, v2.family);
+            assert_eq!(v2.family, v3.family);
             assert_eq!(v1.stage, v2.stage);
+            assert_eq!(v2.stage, v3.stage);
         }
     }
 
-    /// Whether any `KeyValue` row of `spec` binds the termo's declared page capacity.
+    /// Whether any block of `spec` binds the termo's declared page capacity.
+    ///
+    /// Scans `Paragraph` templates as well as `KeyValue` rows: the identification is now prose, so
+    /// `/v2` states the page count in a sentence rather than in a labelled row. Narrowing this to
+    /// `KeyValue` again would make the `/v2` half of the assertion vacuously false.
     fn binds_page_capacity(spec: &TemplateSpec) -> bool {
         spec.blocks.iter().any(|block| match block {
             BlockSpec::KeyValue { rows, .. } => {
                 rows.iter().any(|r| r.value.contains("page_capacity"))
+            }
+            BlockSpec::Paragraph { template, .. } | BlockSpec::Heading { template, .. } => {
+                template.contains("page_capacity")
             }
             _ => false,
         })
@@ -1618,6 +1660,11 @@ mod tests {
             "condominio-termo-encerramento/v1",
             "cooperativa-termo-encerramento/v1",
             "fundacao-termo-encerramento/v1",
+            "csc-termo-encerramento/v2",
+            "assoc-termo-encerramento/v2",
+            "condominio-termo-encerramento/v2",
+            "cooperativa-termo-encerramento/v2",
+            "fundacao-termo-encerramento/v2",
         ] {
             let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
             let body = spec.default_body();
@@ -1648,6 +1695,11 @@ mod tests {
             "condominio-termo-encerramento/v1",
             "cooperativa-termo-encerramento/v1",
             "fundacao-termo-encerramento/v1",
+            "csc-termo-encerramento/v2",
+            "assoc-termo-encerramento/v2",
+            "condominio-termo-encerramento/v2",
+            "cooperativa-termo-encerramento/v2",
+            "fundacao-termo-encerramento/v2",
         ] {
             let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
             assert!(spec.places_narrative_body(), "{id} lacks the anchor");
@@ -1701,6 +1753,11 @@ mod tests {
             "condominio-termo-encerramento/v1",
             "cooperativa-termo-encerramento/v1",
             "fundacao-termo-encerramento/v1",
+            "csc-termo-encerramento/v2",
+            "assoc-termo-encerramento/v2",
+            "condominio-termo-encerramento/v2",
+            "cooperativa-termo-encerramento/v2",
+            "fundacao-termo-encerramento/v2",
         ] {
             let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
             let mut slotless = spec.clone();
@@ -3090,6 +3147,11 @@ mod tests {
             ("assoc-termo-transporte/v1", EntityFamily::Association),
             ("fundacao-termo-transporte/v1", EntityFamily::Foundation),
             ("cooperativa-termo-transporte/v1", EntityFamily::Cooperative),
+            ("csc-termo-transporte/v2", EntityFamily::CommercialCompany),
+            ("condominio-termo-transporte/v2", EntityFamily::Condominium),
+            ("assoc-termo-transporte/v2", EntityFamily::Association),
+            ("fundacao-termo-transporte/v2", EntityFamily::Foundation),
+            ("cooperativa-termo-transporte/v2", EntityFamily::Cooperative),
         ];
 
         let ctx = coverage_ctx();
@@ -3658,26 +3720,29 @@ mod tests {
         let reg = load_registry().expect("the full catalog loads (deserializes + no duplicate id)");
 
         // Whole-catalog census — a dropped or duplicated asset changes these counts.
-        // Each family carries **two** termo de abertura specs: `/v1` as shipped and `/v2` adding
-        // the declared page-count row. Both stay in the catalog on purpose — documents already
-        // generated from `/v1` name it and must keep resolving.
+        //
+        // Every termo ships in more than one version, and every superseded version stays in the
+        // catalog on purpose: a document already generated from it names it and must keep
+        // resolving. Per family that is four termo de abertura/encerramento/retificação/transporte
+        // stems carrying nine specs in total — abertura `/v1` (as shipped), `/v2` (page-count row)
+        // and `/v3` (prose identification), plus `/v1` and `/v2` of each of the other three.
         assert_eq!(
             reg.specs().len(),
-            109,
-            "expected the full authored catalog (~109 templates)"
+            129,
+            "expected the full authored catalog (~129 templates)"
         );
         let per_family = |f: EntityFamily| reg.specs().iter().filter(|s| s.family == f).count();
-        assert_eq!(per_family(EntityFamily::CommercialCompany), 45, "csc count");
+        assert_eq!(per_family(EntityFamily::CommercialCompany), 49, "csc count");
         assert_eq!(
             per_family(EntityFamily::Condominium),
-            15,
+            19,
             "condominio count"
         );
-        assert_eq!(per_family(EntityFamily::Association), 19, "assoc count");
-        assert_eq!(per_family(EntityFamily::Foundation), 15, "fundacao count");
+        assert_eq!(per_family(EntityFamily::Association), 23, "assoc count");
+        assert_eq!(per_family(EntityFamily::Foundation), 19, "fundacao count");
         assert_eq!(
             per_family(EntityFamily::Cooperative),
-            15,
+            19,
             "cooperativa count"
         );
 

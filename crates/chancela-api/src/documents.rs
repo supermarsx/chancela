@@ -10397,16 +10397,32 @@ mod spec_binding_tests {
                 "3b9dc5678cd61d15a3f724d76f2e20a2237f1859d2c9d6deb28e3decde37c0c0",
             ),
             (
+                "assoc-termo-abertura/v3",
+                "6d3dded913cb5fe00279185c8d07b2f3665c7173e2d58b857cb0c0873bad9f6d",
+            ),
+            (
                 "assoc-termo-encerramento/v1",
                 "15e20a35c7cf4c2eaf54015b3a5f5aba3a1cf96a4edc3aa9f5eb31905186e487",
+            ),
+            (
+                "assoc-termo-encerramento/v2",
+                "3b7dea223fd38b4c413fa17b52ef143abcc6a0db36f4a28506cbcf1fddeae768",
             ),
             (
                 "assoc-termo-retificacao/v1",
                 "06b0975dac3d224d2952a03804776f1f8883bd0c58a1eab4352b2b1067a833fb",
             ),
             (
+                "assoc-termo-retificacao/v2",
+                "cb4631640659ff41e343f86c0e69419c84c6ca3aebd5793c73afc84553e84bac",
+            ),
+            (
                 "assoc-termo-transporte/v1",
                 "b79a6d37fc472880964ed3d3b76bae90263be293d522f8128c6275384e96e1f6",
+            ),
+            (
+                "assoc-termo-transporte/v2",
+                "28e81a527375fa29e81981c9cf383af195c877bb45ca519d465d133d313ad2a0",
             ),
             (
                 "condominio-anexo-acordo-email/v1",
@@ -10457,16 +10473,32 @@ mod spec_binding_tests {
                 "5009a599e3377959ea90af9d7cf58fdacc83ba622938528d82cbcb1b63518ce4",
             ),
             (
+                "condominio-termo-abertura/v3",
+                "d249c2e3e420a0429c7679e0f0dd69496cce10f0438bd041af23d55df2761cc3",
+            ),
+            (
                 "condominio-termo-encerramento/v1",
                 "b8a9c0277368fae50cf89d7faea2f7bb12b193b9a3de812b601723d099e2d6f3",
+            ),
+            (
+                "condominio-termo-encerramento/v2",
+                "7c47c2f941314b2d8adfd3ee4ecff03977a6bcbb56579649e469082f5c9ac25f",
             ),
             (
                 "condominio-termo-retificacao/v1",
                 "baefc56c1ec86a2204aa4171924eff003851a155464485c92a327f3783e40b85",
             ),
             (
+                "condominio-termo-retificacao/v2",
+                "831d532f08f92e5cc2c9383c2b3cb4b31bdf2ad04b57877b157f576b65d31eee",
+            ),
+            (
                 "condominio-termo-transporte/v1",
                 "84fb754893b1b070adfe2c318b08baec6c692d572587071915121da6ee95d1bc",
+            ),
+            (
+                "condominio-termo-transporte/v2",
+                "d40cde2f671ad51651511487d49e5fd5599080217769e4d9b78bd666a221ff5c",
             ),
             (
                 "cooperativa-ata-ag/v1",
@@ -10517,16 +10549,32 @@ mod spec_binding_tests {
                 "0b47a3518e7a280486c33eecb6f318b49bf413203bf9dc33aff3e97e3619e568",
             ),
             (
+                "cooperativa-termo-abertura/v3",
+                "56fe9743061339f1133ddf92ae433b56dca2845e6417ef42a98137aea838ae84",
+            ),
+            (
                 "cooperativa-termo-encerramento/v1",
                 "b0644ef5aa8e6b3c6401440a624e4cd587a7b55b68bac9ff971f0c60f5d8fff0",
+            ),
+            (
+                "cooperativa-termo-encerramento/v2",
+                "71592e752ca62e9019fcdf43da0fbc980709595150a01d0b27e715bf3ded7730",
             ),
             (
                 "cooperativa-termo-retificacao/v1",
                 "4a9df5fc1b1846d2ce50ff61fbc30299c6c5dd9db56078b82ed1f4a4fcc6c147",
             ),
             (
+                "cooperativa-termo-retificacao/v2",
+                "35b4577edf34d747e06f891acaeef71b46c739de197bdd17532d5ed516963917",
+            ),
+            (
                 "cooperativa-termo-transporte/v1",
                 "a34a07c5a266da8d0eb41680853c856053b95ee7fdccc3b9b0d87973066136f3",
+            ),
+            (
+                "cooperativa-termo-transporte/v2",
+                "3e90bab71662b67fd2c30777b6528715bd698be2aad3201906aa99851102c070",
             ),
             (
                 "csc-ata-ag/v1",
@@ -10697,16 +10745,32 @@ mod spec_binding_tests {
                 "c6b44878ebbd303421dea7a93e2d9df348552b38d0d0f9f2f85b6480cc9cd6e3",
             ),
             (
+                "csc-termo-abertura/v3",
+                "6cc38d92b1d2a71367e6aa7f3404de72b0dae4fecc2823e8c596b842a3d04225",
+            ),
+            (
                 "csc-termo-encerramento/v1",
                 "bac01ebf10ebbfccacc166db6673f18a9b0215b485b0b908590df707a67172c5",
+            ),
+            (
+                "csc-termo-encerramento/v2",
+                "6dde7af7ee8fc2323fd37aaac01b8fe688a069836587babf1edbcc2b3c98df22",
             ),
             (
                 "csc-termo-retificacao/v1",
                 "70b16e75070355635cb6d118172a0e10c725fc7f05875d6a19caecf4f4449d03",
             ),
             (
+                "csc-termo-retificacao/v2",
+                "a7c4fcf50a04b2775288d98eecc282292c20fe0335f63ecec26241a262dfb874",
+            ),
+            (
                 "csc-termo-transporte/v1",
                 "37f5a064faf703690e14874e87fe1caee8a3cd321bac53efdf43276c7351308b",
+            ),
+            (
+                "csc-termo-transporte/v2",
+                "1098f6bb6ae251e93f8a113ec482c2cd0b86f255e0452e06bb92359975c7acc5",
             ),
             (
                 "fundacao-ata-ca/v1",
@@ -10757,16 +10821,32 @@ mod spec_binding_tests {
                 "f2bd8471e4ef48034376b317fc476dda31e6f6726d400ff12daa99b9334c4418",
             ),
             (
+                "fundacao-termo-abertura/v3",
+                "f0298db1f38f2d5acfdc54fe0abec77dc6eb6aee5a48f1c2ef648aa3b65fddc1",
+            ),
+            (
                 "fundacao-termo-encerramento/v1",
                 "0e586fee39dceef8251048da74a6783fca3b7387219e6adffa77b9daf55bdc3f",
+            ),
+            (
+                "fundacao-termo-encerramento/v2",
+                "cbb2cf3135d2e2524d8478cfbb0f45152d0c94e6ed47b74a4af889da801e8044",
             ),
             (
                 "fundacao-termo-retificacao/v1",
                 "a641b9ff46caf0b4a5d793b0f593ff5ee9ce27ad5fe4f2ca8bb54c5e311b9ca5",
             ),
             (
+                "fundacao-termo-retificacao/v2",
+                "8dd83e820a9a4be03875af1345a55414855261a22670a114facf744886a88256",
+            ),
+            (
                 "fundacao-termo-transporte/v1",
                 "a3a3c5bafc5fec9408f6b182f799c182783e7bcc116614c5e8663defe95365d1",
+            ),
+            (
+                "fundacao-termo-transporte/v2",
+                "f96d18bfa4f338668c2c928d3ae45dc3f07660080463a2b40ddbc5b06a0cbcae",
             ),
         ];
         let reg = registry();
@@ -15444,6 +15524,113 @@ mod tests {
         );
     }
 
+    /// Flatten a rendered document to one string, for assertions about a fact reaching the
+    /// instrument without pinning the sentence it reaches it in.
+    fn document_text(model: &DocumentModel) -> String {
+        let mut out = String::new();
+        for block in &model.blocks {
+            match block {
+                Block::Heading { text, .. } => out.push_str(text),
+                Block::Paragraph { runs } => {
+                    for run in runs {
+                        out.push_str(&run.text);
+                    }
+                }
+                Block::KeyValue { rows } => {
+                    for row in rows {
+                        out.push_str(&row.key);
+                        out.push_str(": ");
+                        out.push_str(&row.value);
+                        out.push(' ');
+                    }
+                }
+                _ => {}
+            }
+            out.push('\n');
+        }
+        out
+    }
+
+    /// `/v3` identifies the entity in notarial prose instead of a field list, and states the page
+    /// count in a sentence — digits followed by the same quantity in words, per the convention the
+    /// user asked for.
+    ///
+    /// The guarantee `/v2` protected with a labelled row is unchanged and still protected here: the
+    /// declared count reaches the instrument. What moved is only *where*. Asserted on the digits
+    /// and on the written form (which also proves the feminine agreement survived — `páginas` is
+    /// feminine, so 250 is *duzentas*, never *duzentos*), never on the whole sentence, which is
+    /// reviewable copy.
+    #[test]
+    fn the_prose_termo_states_the_declared_page_count_in_a_sentence() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        termo.page_capacity = Some(250);
+
+        let v3 = registry()
+            .get("csc-termo-abertura/v3")
+            .expect("the prose abertura resolves");
+        let model = chancela_templates::render_with_body(v3, &termo_ctx(&termo, &book), &[])
+            .expect("v3 renders");
+
+        assert!(
+            !model
+                .blocks
+                .iter()
+                .any(|b| matches!(b, Block::KeyValue { .. })),
+            "v3 identifies the entity in prose, so it emits no field list"
+        );
+        let text = document_text(&model);
+        assert!(
+            text.contains("250") && text.contains("duzentas e cinquenta"),
+            "the declared page count must reach the instrument as digits and words: {text}"
+        );
+        assert!(
+            !text.contains("duzentos e cinquenta"),
+            "`páginas` is feminine — the masculine form is a grammatical defect: {text}"
+        );
+        // Every fact the field list carried is still stated somewhere in the prose.
+        for fact in [
+            entity.name.as_str(),
+            &entity.nipc.to_string(),
+            entity.seat.as_str(),
+        ] {
+            assert!(
+                text.contains(fact),
+                "prose identification dropped {fact:?}: {text}"
+            );
+        }
+    }
+
+    /// A one-shot book declares no capacity, so the prose must omit the page-count sentence
+    /// entirely — not render a fragment, a blank or a `none`. This is the branch that would break
+    /// if the sentence were built without an `is defined` guard.
+    #[test]
+    fn the_prose_termo_omits_the_page_count_sentence_when_none_was_declared() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
+        assert_eq!(
+            termo.page_capacity, None,
+            "the one-shot shape declares none"
+        );
+
+        let v3 = registry()
+            .get("csc-termo-abertura/v3")
+            .expect("the prose abertura resolves");
+        let model = chancela_templates::render_with_body(v3, &termo_ctx(&termo, &book), &[])
+            .expect("v3 renders");
+        let text = document_text(&model);
+        assert!(
+            !text.contains("compõe-se de"),
+            "a termo declaring no page count must state no page count at all: {text}"
+        );
+        assert!(
+            !text.contains("none") && !text.contains("()"),
+            "and must leave no fragment behind: {text}"
+        );
+    }
+
     /// F3 reaches the render context as a bare number, so a template can put it in a labelled row
     /// without composing "N páginas" — the noun would have to agree with N, and it cannot.
     #[test]
@@ -15763,6 +15950,114 @@ mod tests {
                 .expect("a Motivo row");
             assert_eq!(motivo, expected, "{kind:?} names the wrong legal person");
         }
+    }
+
+    /// The prose encerramento (`/v2`) states the closing reason as a clause of the identification
+    /// sentence rather than a `Motivo` row. Same guarantees as the two row-based tests above, held
+    /// against the version that will render once the spine moves: every modelled reason is named in
+    /// Portuguese, an unmodelled one still prints loudly rather than vanishing, the operator's free
+    /// text reaches the instrument instead of a serialized map, and each family names its own legal
+    /// person with the gender baked into a whole literal sentence.
+    #[test]
+    fn the_prose_encerramento_states_every_closing_reason_and_its_own_dissolution() {
+        let closing_date =
+            time::Date::from_calendar_date(2026, time::Month::December, 31).expect("valid date");
+        let termo_with = |reason: ClosingReason| TermoDeEncerramento {
+            ata_count: 3,
+            reason,
+            closing_date,
+            required_signatories: vec!["Amélia Marques (Administrator)".to_owned()],
+            required_signatory_records: Vec::new(),
+            ..Default::default()
+        };
+        let render = |kind: EntityKind, termo: &TermoDeEncerramento| -> String {
+            let entity = entity_of(kind);
+            let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+            let stem = match kind.family() {
+                EntityFamily::CommercialCompany => "csc",
+                EntityFamily::Condominium => "condominio",
+                EntityFamily::Association => "assoc",
+                EntityFamily::Foundation => "fundacao",
+                EntityFamily::Cooperative => "cooperativa",
+            };
+            let spec = registry()
+                .get(&format!("{stem}-termo-encerramento/v2"))
+                .expect("the prose encerramento resolves");
+            let model = chancela_templates::render_with_body(
+                spec,
+                &encerramento_ctx(termo, &book, &entity),
+                &[],
+            )
+            .expect("encerramento renders");
+            assert!(
+                !model
+                    .blocks
+                    .iter()
+                    .any(|b| matches!(b, Block::KeyValue { .. })),
+                "the prose encerramento emits no field list"
+            );
+            document_text(&model)
+        };
+
+        // Per-family dissolution wording — five whole sentences, never one interpolated shell,
+        // which would produce "extinção da condomínio".
+        for (kind, expected) in [
+            (EntityKind::SociedadePorQuotas, "extinção da sociedade"),
+            (EntityKind::Associacao, "extinção da associação"),
+            (EntityKind::Condominio, "extinção do condomínio"),
+            (EntityKind::Cooperativa, "extinção da cooperativa"),
+            (EntityKind::Fundacao, "extinção da entidade"),
+        ] {
+            let text = render(kind, &termo_with(ClosingReason::EntityDissolved));
+            assert!(
+                text.contains(expected),
+                "{kind:?} names the wrong legal person: {text}"
+            );
+        }
+
+        let csc = EntityKind::SociedadePorQuotas;
+        assert!(
+            render(csc, &termo_with(ClosingReason::BookFull)).contains("esgotado"),
+            "a full book must say so"
+        );
+        assert!(
+            render(csc, &termo_with(ClosingReason::MigrationToSuccessor))
+                .contains("migração para livro sucessor"),
+            "a migration must say so"
+        );
+        // The operator's free text, not the serialized `{"Other":{"note":…}}` map that would be
+        // structural garbage in a signed legal instrument.
+        let other = termo_with(ClosingReason::Other {
+            note: "novo exercício económico".to_owned(),
+        });
+        let text = render(csc, &other);
+        assert!(
+            text.contains("novo exercício económico") && !text.contains("{\"Other\""),
+            "the operator's note must reach the instrument verbatim: {text}"
+        );
+
+        // An unmodelled reason keeps printing its raw name — deliberately the loud outcome, where a
+        // silently dropped clause would remove a stated fact from a signed legal instrument.
+        let entity = entity_of(csc);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let spec = registry()
+            .get("csc-termo-encerramento/v2")
+            .expect("the prose encerramento resolves");
+        let mut ctx = encerramento_ctx(&termo_with(ClosingReason::BookFull), &book, &entity);
+        ctx["reason"] = json!("AVariantAddedLater");
+        let model = chancela_templates::render_with_body(spec, &ctx, &[])
+            .expect("an unmodelled reason must still render, not abort the document");
+        assert!(
+            document_text(&model).contains("AVariantAddedLater"),
+            "an unmodelled reason must stay visible"
+        );
+
+        // The ata count reaches the prose as digits and words, feminine (`atas`, not `atos`).
+        let counted = render(csc, &termo_with(ClosingReason::BookFull));
+        assert!(
+            counted.contains('3') && counted.contains("três") && counted.contains("atas"),
+            "the ata count must reach the instrument as digits and words: {counted}"
+        );
     }
 
     // -----------------------------------------------------------------------------------------

@@ -1,0 +1,34 @@
+{
+  "id": "condominio-termo-retificacao/v2",
+  "family": "Condominium",
+  "stage": "Ata",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    { "kind": "Heading", "level": 1, "template": "Termo de retificação" },
+    {
+      "kind": "Paragraph",
+      "template": "Pelo presente termo, o condomínio {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}, procede à retificação do ato anteriormente selado e identificado por {{ retifies }}{% if ata_number %}, mediante a ata de retificação n.º {{ ata_number }}{% endif %}."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "A retificação é feita nos termos do artigo 1432.º do Código Civil e do Decreto-Lei n.º 268/94, mantendo-se este termo encadeado com o registo original para preservar a cadeia de retificação."
+    },
+    { "kind": "Heading", "level": 2, "template": "Retificações" },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    { "kind": "NarrativeBody" },
+    { "kind": "Rule" },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "id": "csc-termo-retificacao/v2",
+  "family": "CommercialCompany",
+  "stage": "Ata",
+  "channels": [
+    "Physical",
+    "Hybrid",
+    "Telematic",
+    "WrittenResolution"
+  ],
+  "signature_policy": "QualifiedPreferred",
+  "rule_pack_id": "csc-art63/v2",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Termo de retificação"
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "{{ title | default(\"Retificação de ata\") }}"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Aos {{ meeting_date | long_date }}, a sociedade {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}, lavra o presente termo{% if ata_number %}, correspondente à ata de retificação n.º {{ ata_number }}{% endif %}, que retifica o ato anteriormente selado e identificado por {{ retifies }}, mantendo-se a cadeia de registo, nos seguintes termos."
+    },
+    {
+      "kind": "Heading",
+      "level": 2,
+      "template": "Retificações"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "deliberation_items",
+      "template": "{% if agenda_number %}Ponto {{ agenda_number }} — {% endif %}{{ text }}"
+    },
+    { "kind": "NarrativeBody" },
+    {
+      "kind": "Paragraph",
+      "template": "Nada mais havendo a tratar, foi encerrado o presente termo que, depois de lido e aprovado, vai ser assinado."
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "signatories",
+      "role": "{{ capacity | role_label }}",
+      "name": "{{ name }}"
+    }
+  ]
+}
