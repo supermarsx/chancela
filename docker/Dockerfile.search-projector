@@ -13,18 +13,54 @@ WORKDIR /build
 # Postgres through CHANCELA_DB_BACKEND and the normal database environment.
 ARG CARGO_FEATURES="chancela-search-projector/sqlcipher chancela-search-projector/postgres"
 
-# The pinned rust:slim base already provides the C compiler, binutils, and Perl.
-# Vendored OpenSSL/SQLCipher additionally needs Make; the projector graph has no
-# PC/SC dependency and must not carry smart-card headers or runtime libraries.
+# The pinned rust:slim base provides the C compiler and binutils, but for Perl it
+# ships only `perl-base` — a stripped build without FindBin, Pod::Usage,
+# File::Compare, File::Copy or IPC::Cmd, every one of which OpenSSL's Configure
+# uses. Vendored OpenSSL/SQLCipher therefore needs the full `perl` package
+# alongside Make, exactly as docker/Dockerfile.server and docker/Dockerfile.worker
+# already install it.
+#
+# This stage omitted perl and still built, because all four Rust Dockerfiles here
+# shared ONE unnamed `/build/target` cache mount: a server or worker build had
+# already run openssl-sys's build script into it and cargo reused that output
+# rather than re-running it. Giving each image its own target cache (see the
+# mounts below) removed the crutch and the omission surfaced as
+#   openssl-sys@0.9.117: configuring OpenSSL build: 'perl' reported failure
+#   error: failed to run custom build command for `openssl-sys v0.9.117`
+# so this image was never independently buildable — it only ever succeeded when a
+# server or worker build happened to populate the shared directory first.
+#
+# The projector graph still has no PC/SC dependency and must not carry smart-card
+# headers or runtime libraries. Nothing here reaches the distroless runtime stage,
+# which copies only the compiled binary.
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        make \
+        perl make \
     && rm -rf /var/lib/apt/lists/*
 
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/build/target \
+# Both cache mounts are explicitly identified. Unnamed, a cache mount takes its
+# TARGET PATH as its id, so this stage shared one `/usr/local/cargo/registry`
+# and one `/build/target` with docker/Dockerfile.server, Dockerfile.hardened and
+# docker/Dockerfile.worker. `docker compose --profile postgres build` builds this
+# stage alongside the server, and two cargo processes unpacking into one registry
+# collide on `.cargo-ok` (File exists, os error 17).
+#
+# The registry gets sharing=locked because cargo's package cache lock lives at
+# $CARGO_HOME/.package-cache — outside this mount, hence private per container
+# and unable to arbitrate between stages. The target dir keeps sharing=shared
+# because cargo's build directory lock (<target-dir>/.cargo-lock) IS inside the
+# mount and does serialise concurrent users; its id is split per package purely
+# to stop the projector and server builds invalidating each other's artefacts.
+# docker/Dockerfile.server carries the full reasoning.
+#
+# A literal id is enough here: no compose file overrides CARGO_FEATURES for this
+# image, so one image means one feature set. If you ever do override it, give the
+# override its own id as the server Dockerfiles do with CARGO_TARGET_CACHE_ID —
+# otherwise the two feature sets churn one directory between them.
+RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=chancela-cargo-target-search-projector,sharing=shared,target=/build/target \
     cargo build --release --locked -p chancela-search-projector --features "${CARGO_FEATURES}" \
     && cp target/release/chancela-search-projector /chancela-search-projector
 

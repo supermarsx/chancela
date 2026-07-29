@@ -38,6 +38,19 @@ WORKDIR /build
 #   --build-arg CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
 ARG CARGO_FEATURES="chancela-server/sqlcipher"
 
+# Cache key for the /build/target mount below; it selects WHICH warm target
+# directory this build reuses and nothing else. It must be changed whenever
+# CARGO_FEATURES is, because a different feature set produces different
+# artefacts — pointing both builds at one directory makes each rebuild what the
+# other invalidated. Compose sets the two together (docker-compose.hardened.yml
+# `server-postgres`); the default here is the partner of the default
+# SQLCipher-only feature set. It is deliberately a short slug, not
+# ${CARGO_FEATURES}: the feature list contains spaces, and a space would
+# terminate the --mount flag word.
+#
+# Getting this pairing wrong costs rebuild time, never correctness.
+ARG CARGO_TARGET_CACHE_ID="server-sqlcipher"
+
 # Build-only native deps. Pinned apt behaviour: no recommends, lists cleaned in
 # the same layer so nothing leaks into the (discarded) build stage cache.
 # DEBIAN_FRONTEND is set per-invocation rather than as an ENV so it cannot leak
@@ -58,8 +71,47 @@ COPY . .
 # BuildKit cache mounts keep the cargo registry and target dir warm across
 # builds without persisting them into an image layer. --locked forbids any
 # Cargo.lock drift, so the build is reproducible from the committed lockfile.
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/build/target \
+#
+# BOTH MOUNTS CARRY AN EXPLICIT id AND sharing MODE. An unnamed cache mount is
+# identified by its target path, so all four Rust Dockerfiles here (this one,
+# docker/Dockerfile.server, docker/Dockerfile.worker, docker/Dockerfile.search-
+# projector) used to land in ONE `/usr/local/cargo/registry` and ONE
+# `/build/target` cache. `docker compose --profile postgres --profile worker
+# build` builds three of them in parallel, and that is what failed:
+#
+#   error: failed to unpack package `libc v0.2.186`
+#   Caused by: failed to open `.../libc-0.2.186/.cargo-ok`: File exists (os error 17)
+#
+# WHY THE REGISTRY CORRUPTS BUT THE TARGET DIR ONLY CONTENDS: cargo has two
+# cross-process locks, and only one of them lands inside a shared mount.
+#   - The package cache lock is $CARGO_HOME/.package-cache — OUTSIDE this
+#     registry mount, so it is a private file per build container and arbitrates
+#     nothing between stages. Cargo unpacks crates into registry/src during
+#     dependency resolution, before it takes any other lock, so two stages
+#     unpack over each other and race on `.cargo-ok`.
+#   - The build directory lock is <target-dir>/.cargo-lock — INSIDE the target
+#     mount, therefore visible to both containers, which is why sharing the
+#     target dir has only ever cost time, not correctness.
+#
+# So the two mounts are treated differently:
+#   registry  sharing=locked. BuildKit supplies the mutual exclusion cargo's own
+#             lock cannot reach across containers. Every target downloads the
+#             same crates, so one shared registry is worth keeping. The cost is
+#             that BuildKit holds a locked mount for the WHOLE RUN, so sibling
+#             cargo builds serialise — which is already what the shared target
+#             dir did, so this is not a slowdown against the old behaviour.
+#             Swap to sharing=private if you would rather trade one registry
+#             copy per concurrent build for parallel compiles.
+#   target    sharing=shared, keyed per package+feature set via
+#             CARGO_TARGET_CACHE_ID. Concurrent use is already safe (see the
+#             in-mount .cargo-lock above); the id split is about churn — a
+#             worker build and a server build sharing one directory invalidate
+#             each other's artefacts on every alternation. The id intentionally
+#             matches docker/Dockerfile.server's: the hardened and standard
+#             server stages compile the same package with the same features from
+#             the same base, so they SHOULD reuse one warm directory.
+RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=chancela-cargo-target-${CARGO_TARGET_CACHE_ID},sharing=shared,target=/build/target \
     cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
     && cp target/release/chancela-server /chancela-server \
     && mkdir /runtime-libs \
@@ -78,7 +130,16 @@ WORKDIR /app
 # after setup-node. Without this the image installed with a different package
 # manager than the one the policy pins, which is what EBADENGINE was reporting.
 # The version is exact, never a range, so the layer stays reproducible.
-RUN --mount=type=cache,target=/root/.npm \
+#
+# Same treatment as the cargo mounts above, for the same reason: unnamed, this
+# cache is keyed on `/root/.npm` and is therefore shared with the byte-identical
+# web-build stage in docker/Dockerfile.server. npm's cacache is content-addressed
+# and tolerates concurrent readers far better than cargo's registry does, so this
+# is a latent exposure rather than the failure we actually hit — but `npm ci`
+# also rewrites index entries, and there is no reason to leave a second
+# concurrently written cache in the build. sharing=locked is nearly free here
+# because these npm steps are seconds-to-a-minute long, unlike the cargo build.
+RUN --mount=type=cache,id=chancela-npm,sharing=locked,target=/root/.npm \
     npm install --global --no-audit --no-fund npm@12.0.1
 
 # The pinned npm still prints an "update available" nag; it is noise against a
@@ -99,7 +160,7 @@ COPY apps/web/package.json apps/web/
 # which this image's whole reproducibility posture forbids. The lockfile carries
 # every @rolldown/binding-* platform package with correct os/cpu/libc fields, so
 # `npm ci` alone installs the right Linux binding at its pinned version.
-RUN --mount=type=cache,target=/root/.npm \
+RUN --mount=type=cache,id=chancela-npm,sharing=locked,target=/root/.npm \
     npm ci --no-audit --no-fund
 
 # Build the web workspace (@chancela/web) -> apps/web/dist.

@@ -22,8 +22,25 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update \
 
 COPY . .
 
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/build/target \
+# Both cache mounts are explicitly identified. Unnamed, a cache mount takes its
+# TARGET PATH as its id, so this stage shared one `/usr/local/cargo/registry`
+# and one `/build/target` with docker/Dockerfile.server, Dockerfile.hardened and
+# docker/Dockerfile.search-projector. `docker compose --profile postgres
+# --profile worker build` builds three of them at once, and two cargo processes
+# unpacking into one registry collide on `.cargo-ok` (File exists, os error 17).
+#
+# The registry gets sharing=locked because cargo's package cache lock lives at
+# $CARGO_HOME/.package-cache — outside this mount, hence private per container
+# and unable to arbitrate between stages. The target dir keeps sharing=shared
+# because cargo's build directory lock (<target-dir>/.cargo-lock) IS inside the
+# mount and does serialise concurrent users; its id is split per package purely
+# to stop the worker and server builds invalidating each other's artefacts.
+# docker/Dockerfile.server carries the full reasoning.
+#
+# A literal id is enough here: this Dockerfile compiles one package with one
+# feature set (none), so there is no second variant to keep apart.
+RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=chancela-cargo-target-worker,sharing=shared,target=/build/target \
     cargo build --release --locked -p chancela-worker \
     && cp target/release/chancela-worker /chancela-worker
 

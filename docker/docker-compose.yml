@@ -485,6 +485,12 @@ services:
       args:
         # Compile the Postgres backend + optional Redis cache into the binary.
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+        # Keep this in step with CARGO_FEATURES above. It names the BuildKit
+        # target-directory cache this build reuses, so that the Postgres and
+        # SQLite server builds stop overwriting each other's artefacts in one
+        # shared /build/target. It affects rebuild time only — never what ends up
+        # in the image. See docker/Dockerfile.server.
+        CARGO_TARGET_CACHE_ID: "server-sqlcipher-postgres-redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
     # Source-built by default — see the note on `server-sqlite`.
     pull_policy: build

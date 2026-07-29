@@ -56,6 +56,12 @@ services:
       dockerfile: docker/Dockerfile.server
       args:
         CARGO_FEATURES: "chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
+        # Keep this in step with CARGO_FEATURES above; it names the BuildKit
+        # target-directory cache this build reuses and affects rebuild time only.
+        # Deliberately the same value as the base file's `server-postgres`: this
+        # service compiles the same package with the same features, so the two
+        # SHOULD share one warm directory. See docker/Dockerfile.server.
+        CARGO_TARGET_CACHE_ID: "server-sqlcipher-postgres-redis"
     image: ${CHANCELA_POSTGRES_IMAGE:-chancela-server:postgres}
     # Source-built by default; green main pushes also publish immutable GHCR
     # artifacts that a production override may select explicitly.
