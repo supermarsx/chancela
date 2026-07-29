@@ -37,6 +37,7 @@ pub mod authoring;
 pub mod body_render;
 pub mod catalog_metadata_lint;
 pub mod markdown;
+pub mod numerals;
 pub mod thresholds;
 pub use thresholds::{
     LEGAL_THRESHOLDS, LegalThreshold, ThresholdValue, find_threshold, scan_threshold_references,
@@ -754,9 +755,12 @@ fn registry_from(assets: &[(&str, &str)]) -> Result<Registry, RegistryError> {
 ///
 /// minijinja filters registered for authors: `long_date` (`"2026-07-08"` → `"8 de julho de
 /// 2026"`), `channel_label` (`MeetingChannel` name → PT label), `role_label`
-/// ([`chancela_core::SignatoryCapacity`] name → PT role label, for signature blocks), and
+/// ([`chancela_core::SignatoryCapacity`] name → PT role label, for signature blocks),
 /// `quality_label` (the same enum → the qualidade as it reads on an attendance roll: `Member` is
-/// "Sócio", not "Membro"). Built-in filters (`join`, …) are available too.
+/// "Sócio", not "Membro"), `in_words` (a numeral in pt-PT words for the `100 (cem) páginas` form —
+/// cardinal, ordinal, fractional or multiplicative, with gender and number agreement) and `plural`
+/// (picks between two author-supplied noun forms by count). See [`numerals`] for both, and never
+/// apply them to an identifier. Built-in filters (`join`, …) are available too.
 pub fn render(spec: &TemplateSpec, ctx: &Value) -> Result<DocumentModel, RenderError> {
     render_with_body(spec, ctx, &[])
 }
@@ -837,6 +841,14 @@ fn build_env() -> minijinja::Environment<'static> {
     env.add_filter("channel_label", channel_label);
     env.add_filter("role_label", role_label);
     env.add_filter("quality_label", quality_label);
+    // `in_words`: a numeral written out in pt-PT words, for the `100 (cem) páginas` notarial form
+    // — cardinal by default, plus `form="ordinal"|"fractional"|"multiplicative"`, with `gender`
+    // and `number`. Words only: the template supplies the digits, the parentheses and the noun.
+    // `plural` makes that noun agree, from two forms the author writes out. Anything either filter
+    // cannot render exactly is a render error, never a guess. **Never apply them to an
+    // identifier** (NIPC, diploma number, artigo, year). See the `numerals` module.
+    env.add_filter("in_words", numerals::in_words_filter);
+    env.add_filter("plural", numerals::plural_filter);
     // `threshold("<id>")`: renders a legal threshold — the loud `[a definir: …]` placeholder while
     // unresolved (never a number), the resolved value once the lawyer fills it, or a render error
     // on an unknown id (typo-safe). See the `thresholds` module.
@@ -845,7 +857,8 @@ fn build_env() -> minijinja::Environment<'static> {
 }
 
 /// Compile-check a single author template string under the author-facing [`build_env`] (the
-/// `long_date`/`channel_label`/`role_label` filters and the `threshold` function are in scope).
+/// `long_date`/`channel_label`/`role_label`/`in_words`/`plural` filters and the `threshold`
+/// function are in scope).
 ///
 /// This *parses/compiles* the source only — it never evaluates it, so it neither reads a record
 /// context nor resolves any `threshold("<id>")` id (unknown-threshold detection is a separate pass
