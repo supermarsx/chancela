@@ -24,6 +24,97 @@ export const deDE: Catalog = {
   ...dashboardSourceLabelsDeDE,
   ...roleNameLabelsDeDE,
   ...attendeeQualityLabelsEnglish,
+  // --- Serverumgebung: Überschreibungen (t14) -------------------------------------
+  'settings.serverEnv.title': 'Serverumgebung',
+  'settings.serverEnv.intro':
+    'Die Umgebungsvariablen, die dieser Server beim Start liest, mit dem Wert, den der laufende Prozess ermittelt hat. Die nicht geheimen können Sie überschreiben; eine Überschreibung wird in einer Datei gespeichert und wirkt erst beim nächsten Start, nie sofort.',
+  'settings.serverEnv.loading': 'Serverumgebung wird geladen…',
+  'settings.serverEnv.loadError': 'Die Serverumgebung konnte nicht geladen werden.',
+  'settings.serverEnv.empty': 'Es sind keine Variablen vorhanden.',
+  'settings.serverEnv.overridesPath':
+    'Überschreibungen werden in {path} im Datenverzeichnis gespeichert.',
+  'settings.serverEnv.restart.badge': 'Neustart ausstehend',
+  'settings.serverEnv.restart.title': 'Gespeichert, noch nicht wirksam',
+  'settings.serverEnv.restart.body':
+    'Diese Werte werden genau einmal gelesen, beim Start des Prozesses. Die Überschreibungen sind gespeichert, doch der laufende Server verwendet weiterhin das, was er beim Start gelesen hat — starten Sie ihn neu, damit sie wirksam werden.',
+  'settings.serverEnv.restart.rowHint':
+    'Die gespeicherte Überschreibung weicht vom laufenden Wert ab.',
+  'settings.serverEnv.col.name': 'Variable',
+  'settings.serverEnv.col.value': 'Wirksamer Wert',
+  'settings.serverEnv.col.source': 'Herkunft',
+  'settings.serverEnv.col.default': 'Standardwert',
+  'settings.serverEnv.col.override': 'Überschreibung',
+  'settings.serverEnv.source.override': 'Überschreibung',
+  'settings.serverEnv.source.env': 'Umgebung',
+  'settings.serverEnv.source.default': 'Standardwert',
+  'settings.serverEnv.source.override.hint':
+    'Der Wert stammt aus der in diesem Bereich gespeicherten Überschreibung.',
+  'settings.serverEnv.source.env.hint':
+    'Der Wert stammt aus der Umgebung, in der der Dienst gestartet wurde.',
+  'settings.serverEnv.source.default.hint':
+    'Weder Überschreibung noch Umgebungsvariable — es gilt der Standardwert aus dem Code.',
+  'settings.serverEnv.group.logging': 'Protokollierung',
+  'settings.serverEnv.group.network': 'Netzwerk',
+  'settings.serverEnv.group.session': 'Sitzungen',
+  'settings.serverEnv.group.notifications': 'Aktionszentrum',
+  'settings.serverEnv.group.rate_limit': 'Ratenbegrenzung',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Datenbank',
+  'settings.serverEnv.group.credentials': 'Zugangsdaten',
+  'settings.serverEnv.group.cache': 'Cache und Redis',
+  'settings.serverEnv.group.cluster': 'Cluster und Knoten',
+  'settings.serverEnv.group.postgres_tls': 'PostgreSQL-TLS',
+  'settings.serverEnv.group.trust': 'Vertrauen und Validierung',
+  'settings.serverEnv.group.signing': 'Signatur',
+  'settings.serverEnv.group.csc': 'Cloud-Signatur (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Berufliche Attribute (SCAP)',
+  'settings.serverEnv.group.connectors': 'Konnektoren',
+  'settings.serverEnv.group.storage': 'Speicher',
+  'settings.serverEnv.group.paper_book': 'Papierbücher (OCR)',
+  'settings.serverEnv.group.search': 'Suche und Indizierung',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Bleibt das Feld leer, wird die Überschreibung entfernt und wieder der Umgebungswert oder der Standardwert verwendet.',
+  'settings.serverEnv.field.enumHint': 'Wählen Sie einen der zulässigen Werte.',
+  'settings.serverEnv.field.boolTrue': 'Aktiviert',
+  'settings.serverEnv.field.boolFalse': 'Deaktiviert',
+  'settings.serverEnv.secret.note': '(enthält Zugangsdaten — wird hier nie angezeigt)',
+  'settings.serverEnv.secret.configured': 'Konfiguriert',
+  'settings.serverEnv.secret.notConfigured': 'Nicht konfiguriert',
+  'settings.serverEnv.secret.body':
+    'Dies ist ein Geheimnis. Der Bereich zeigt nur, ob es gesetzt ist, nie den Wert. Setzen Sie es dort, wo der Dienst gestartet wird, oder über den eigenen Zugangsdaten-Ablauf.',
+  'settings.serverEnv.boundary.badge': 'Sicherheitsgrenze',
+  'settings.serverEnv.boundary.ackLabel':
+    'Ich habe die Auswirkung dieser Änderung zur Kenntnis genommen',
+  'settings.serverEnv.boundary.ackHint':
+    'Diese Variable legt eine Sicherheitsgrenze fest. Eine Änderung erfordert eine ausdrückliche Bestätigung; ohne sie verweigert der Server das Speichern.',
+  'settings.serverEnv.boundary.warningTitle': 'Änderung einer Sicherheitsgrenze',
+  'settings.serverEnv.boundary.warningBody':
+    'Sie ändern eine Variable, die eine Sicherheitsgrenze steuert. Eine falsche Einstellung kann die Sicherheitslage des Servers schwächen. Bestätigen Sie vor dem Speichern.',
+  'settings.serverEnv.narrowOnly.badge': 'Nur einschränkbar',
+  'settings.serverEnv.narrowOnly.note':
+    'Dies ist eine von der Installation vorgegebene Obergrenze. Eine Überschreibung kann sie nur einschränken, nie erweitern.',
+  'settings.serverEnv.readOnly.badge': 'Nur lesbar',
+  'settings.serverEnv.readOnly.note':
+    'Dies ist eine aus der Prozessumgebung abgeleitete Tatsache und hier nicht änderbar. Ändern Sie sie dort, wo der Dienst gestartet wird.',
+  'settings.serverEnv.typedSlice.note':
+    'Diese Variable wird von einer eigenen Einstellung mit festgelegtem Vorrang verwaltet:',
+  'settings.serverEnv.externalReader.badge': 'Außerhalb dieses Servers zu setzen',
+  'settings.serverEnv.externalReader.note':
+    'Diese Variable wird von einem anderen Prozess gelesen, und dieser lädt diese Überschreibungsdatei nicht. Eine hier gespeicherte Überschreibung würde ihn nie erreichen:',
+  'settings.serverEnv.save': 'Überschreibungen speichern',
+  'settings.serverEnv.saving': 'Wird gespeichert…',
+  'settings.serverEnv.saved':
+    'Überschreibungen gespeichert. Sie gelten ab dem nächsten Serverstart.',
+  'settings.serverEnv.saveError': 'Die Überschreibungen konnten nicht gespeichert werden.',
+  'settings.serverEnv.discard': 'Änderungen verwerfen',
+  'settings.serverEnv.clearOverride': 'Überschreibung entfernen',
+  'settings.serverEnv.ackRequiredError':
+    'Bestätigen Sie vor dem Speichern jede Änderung an einer Sicherheitsgrenze.',
+  'settings.serverEnv.value.unset': 'Nicht gesetzt',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Keine Berechtigung für diese Aktion',
   'perm.denied.title': 'Keine Berechtigung',
@@ -1971,7 +2062,7 @@ export const deDE: Catalog = {
   'settings.api.logging.hint':
     'Diese beiden Felder schreiben in dasselbe Einstellungsdokument wie die übrigen Protokollstufen.',
   'settings.api.env.hint':
-    'Werden beim Serverstart aus der Prozessumgebung gelesen. Sie sind weder hier noch über einen Endpunkt änderbar; eine Änderung erfordert einen Serverneustart.',
+    'Werden beim Serverstart aus der Prozessumgebung gelesen. Sie sind mitsamt dem Wert, den der laufende Prozess ermittelt hat, unter „Serverumgebung“ aufgeführt, wo sich die nicht geheimen überschreiben lassen. Jede Änderung wirkt erst beim nächsten Neustart.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'Der Server spricht einfaches HTTP. TLS wird am vorgelagerten Reverse Proxy terminiert, und der HSTS-Header unten wirkt nur in dieser Konstellation.',
@@ -4877,6 +4968,52 @@ export const deDE: Catalog = {
   'settings.email.stage.data': 'Versand der Nachricht',
   'settings.email.stage.quit': 'Beenden der Sitzung',
 
+  // --- E-Mail (SMTP): das Versandprotokoll (t108) ---
+  'settings.email.deliveries.cardTitle': 'Versandprotokoll',
+  'settings.email.deliveries.lede':
+    'Was aus jeder von der Anwendung versendeten Nachricht geworden ist, die neueste zuerst. Jede Zeile ist ein bereits abgeschlossener Versuch: Es gibt keine Warteschlange und keinen ausstehenden Zustand.',
+  'settings.email.deliveries.caption':
+    'Versandprotokoll der E-Mails mit dem Ergebnis jedes Versuchs',
+  'settings.email.deliveries.col.when': 'Datum',
+  'settings.email.deliveries.col.template': 'Nachricht',
+  'settings.email.deliveries.col.recipient': 'Empfänger',
+  'settings.email.deliveries.col.status': 'Ergebnis',
+  'settings.email.deliveries.col.attempt': 'Versuch',
+  'settings.email.deliveries.col.failure': 'Grund des Fehlschlags',
+  'settings.email.deliveries.col.action': 'Aktionen',
+  'settings.email.deliveries.help.when': 'Zeitpunkt, zu dem dieser Versuch endete.',
+  'settings.email.deliveries.help.template':
+    'Welche Nachricht versendet wurde. Jede Art von Nachricht gehört zu dem Ablauf, der sie ausstellt.',
+  'settings.email.deliveries.help.recipient':
+    'Adresse, an die die Nachricht ging, so wie sie aufgezeichnet wurde.',
+  'settings.email.deliveries.help.status':
+    'Vom Server angenommen oder abgelehnt. Angenommen bestätigt nicht die Zustellung in den Posteingang.',
+  'settings.email.deliveries.help.attempt':
+    'Der wievielte Versuch dies für dieselbe Nachricht ist. Ein erneuter Versand fügt einen Versuch hinzu, statt den vorherigen zu ersetzen.',
+  'settings.email.deliveries.help.failure':
+    'Die Phase, in der die Sitzung stehen blieb, und die Antwort des Servers in seinen eigenen Worten.',
+  'settings.email.deliveries.help.action':
+    'Erneut versendet werden können nur Nachrichten, die sich aus dem Gespeicherten wieder aufbauen lassen.',
+  'settings.email.deliveries.status.sent': 'Angenommen',
+  'settings.email.deliveries.status.failed': 'Abgelehnt',
+  'settings.email.deliveries.retry': 'Erneuter Versand',
+  'settings.email.deliveries.template.welcome': 'Willkommen zum Konto',
+  'settings.email.deliveries.template.pairingCode': 'Kopplungscode für Geräte',
+  'settings.email.deliveries.stage.notConfigured': 'Versand nicht konfiguriert',
+  'settings.email.deliveries.empty': 'Noch keine Sendungen aufgezeichnet',
+  'settings.email.deliveries.emptyBody':
+    'Sobald die Anwendung die erste Nachricht versendet, erscheint das Ergebnis hier. Auf einer Instanz, die keine Datenbankaufzeichnung führt, bleibt diese Liste leer.',
+  'settings.email.deliveries.cappedTitle': 'Es werden nur die neuesten angezeigt',
+  'settings.email.deliveries.cappedBody':
+    'Angezeigt werden die {count} neuesten Versuche. Es gibt ältere Sendungen, die in diese Liste nicht passen.',
+  'settings.email.deliveries.resend': 'Erneut senden',
+  'settings.email.deliveries.notResendable':
+    'Diese Nachricht enthielt einen Einmalcode, der nicht gespeichert wird und sich nicht wieder aufbauen lässt. Das ist keine Berechtigungsbeschränkung: Stellen Sie sie über den Ablauf neu aus, zu dem sie gehört — bei einer Einladung stellen Sie eine neue Einladung aus.',
+  'settings.email.deliveries.resentToast': 'Nachricht erneut gesendet',
+  'settings.email.deliveries.resendFailedTitle': 'Der erneute Versand wurde abgelehnt',
+  'settings.email.deliveries.resendFailedBody':
+    'Der neue Versuch wurde als abgelehnt aufgezeichnet. Die Antwort des Servers steht unten.',
+
   'settings.email.remedy.dns':
     'Der Servername konnte nicht aufgelöst werden. Prüfen Sie die Schreibweise und ob das DNS ihn kennt.',
   'settings.email.remedy.unreachable':
@@ -5091,7 +5228,10 @@ export const deDE: Catalog = {
   'settings.providerCredentials.form.labelPlaceholder': 'Primärschlüssel',
   'settings.providerCredentials.form.enabled': 'Eintrag aktiviert',
   'settings.providerCredentials.form.endpoint': 'Endpunkt (base_url)',
-  'settings.providerCredentials.form.endpointHint': 'Basis-URL-Überschreibung für diesen Anbieter.',
+  'settings.providerCredentials.form.endpointHint':
+    'Überschreibung der Basisadresse; leer gilt der Standard der Umgebung.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Erforderlich. HTTPS-Basisadresse der CSC-v2-API des Anbieters.',
   'settings.providerCredentials.form.pfxWarning.title': 'Privater Schlüssel im Ruhezustand',
   'settings.providerCredentials.form.pfxWarning.body':
     'Das Speichern einer PKCS#12-Datei bedeutet, einen privaten Signaturschlüssel im Ruhezustand aufzubewahren. Bevorzugen Sie vertraulichen Schutz.',
@@ -5132,23 +5272,25 @@ export const deDE: Catalog = {
   'settings.providerCredentials.help.mode':
     'Art des zu konfigurierenden Signaturanbieters. Z. B. CSC/QTSP für Fernsignatur, PKCS#12 für ein lokales Zertifikat.',
   'settings.providerCredentials.help.providerId':
-    'Interne Kennung, die diesen Anbieter von anderen desselben Typs unterscheidet. Z. B. „encosto-qtsp“.',
+    'Interne Kennung, die diesen Anbieter von anderen desselben Typs unterscheidet und unter der die Zugangsdaten beim Signieren gesucht werden; sie muss daher mit der dann verwendeten Kennung übereinstimmen. Für einen CSC-QTSP kleingeschriebene ASCII-Zeichen verwenden; bei PKCS#12 ist es lediglich die Bezeichnung der Identität. Z. B. „encosto-qtsp“.',
   'settings.providerCredentials.help.label':
     'Freier Name, um diesen Eintrag in der Liste zu erkennen. Z. B. „Primärschlüssel“ oder „Ausweichoption“.',
   'settings.providerCredentials.help.enabled':
     'Wenn aktiv, gehört dieser Eintrag zur Ausfallkette; deaktivieren Sie ihn, um ihn ohne Löschen auszuschließen.',
   'settings.providerCredentials.help.endpoint':
-    'Basis-URL der Anbieter-API, die den Standardwert ersetzt. Z. B. https://qtsp.example.com/csc/v1',
+    'Basisadresse des SCAP-Dienstes, die den Standard der gewählten Umgebung ersetzt. Leer lassen, um diesen Standard zu verwenden. Z. B. https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'Basisadresse der CSC-v2-API des QTSP. Sie ist erforderlich: es gibt keinen Standard, und ein Eintrag ohne sie bleibt unvollständig. Sie muss HTTPS sein, außer auf localhost oder 127.0.0.1, solange die Option für die Testumgebung aktiv ist. Z. B. https://qtsp.example.com/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Zertifikatsdatei .pfx/.p12, die den privaten Signaturschlüssel enthält. Z. B. „signatur.pfx“, aus der PKI exportiert.',
   'settings.providerCredentials.help.applicationId':
-    'Von der AMA für Chave Móvel Digital / SCAP vergebene ApplicationId. Z. B. eine GUID wie 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'Von der AMA für Chave Móvel Digital oder SCAP vergebene ApplicationId. Es ist ein undurchsichtiger Wert: verwenden Sie ihn genau so, wie Sie ihn erhalten haben, ohne ein Format anzunehmen.',
   'settings.providerCredentials.help.httpBasicUsername':
     'Benutzername der HTTP-Basic-Authentifizierung, wenn der Anbieter sie vor der API verlangt. Z. B. „chancela-prod“.',
   'settings.providerCredentials.help.httpBasicPassword':
     'Passwort der HTTP-Basic-Authentifizierung, das zum Benutzernamen gehört. Z. B. eine lange geheime Zeichenfolge des Anbieters.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA-Client-Zertifikat im PEM-Format, für gegenseitiges TLS mit SCMD. Z. B. der Block „-----BEGIN CERTIFICATE-----…“.',
+    'Öffentliches AMA-Zertifikat im PEM-Format. Sein RSA-Schlüssel verschlüsselt Mobilnummer, PIN und OTP, bevor sie in der SCMD-Anfrage übertragen werden; in der Produktion ist es erforderlich, und ohne es gehen diese Felder in der Vorproduktion im Klartext hinaus. Z. B. der Block „-----BEGIN CERTIFICATE-----…“.',
   'settings.providerCredentials.help.clientId':
     'Vom QTSP vergebene OAuth2-Client-Kennung. Z. B. „chancela-prod“.',
   'settings.providerCredentials.help.clientSecret':
@@ -5168,7 +5310,7 @@ export const deDE: Catalog = {
   'settings.providerCredentials.help.scope':
     'Beim QTSP angeforderte OAuth2-Scopes, durch Leerzeichen getrennt. Z. B. „service credential“.',
   'settings.providerCredentials.help.sandbox':
-    'Aktiviert den Testmodus des Anbieters, ohne reale Wirkung. Z. B. bei der Integration ein, in der Produktion aus.',
+    'Kennzeichnet diesen Eintrag als auf die Testumgebung des Anbieters zeigend. Ist die Option aktiv, wird eine http://-Adresse auf localhost oder 127.0.0.1 akzeptiert, statt HTTPS zu verlangen, und der Anbieter wird als für die Produktion gesperrt gemeldet. Für sich genommen verhindert sie keine realen Vorgänge: das hängt von der Adresse ab, die Sie eintragen.',
   'settings.providerCredentials.help.environment':
     'SCAP-Dienstumgebung, mit der dieser Eintrag verbunden ist. Z. B. „Vorproduktion“ zum Testen, „Produktion“ für den echten Einsatz.',
   'settings.providerCredentials.help.friendlyName':
@@ -6189,8 +6331,58 @@ export const deDE: Catalog = {
   'settings.providerCredentials.table.state': 'Status',
   'settings.providerCredentials.table.endpoint': 'Adresse',
   'settings.providerCredentials.table.endpointDefault': 'Standardadresse',
+  'settings.providerCredentials.table.endpointRequired': 'Fehlt (erforderlich)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Nicht zutreffend',
   'settings.providerCredentials.table.fields': 'Felder',
   'settings.providerCredentials.table.actions': 'Aktionen',
+  'settings.providerCredentials.table.entry.help':
+    'Die Bezeichnung, die Sie diesen gespeicherten Zugangsdaten gegeben haben, sowie die unveränderliche Eintrags-ID, die der Server vergeben hat.',
+  'settings.providerCredentials.table.priority.help':
+    'Die Reihenfolge, in der Einträge versucht werden. Die kleinste Zahl kommt zuerst, und der nächste Eintrag wird verwendet, wenn ein vorheriger nicht erreichbar ist.',
+  'settings.providerCredentials.table.state.help':
+    'Ob dieser Eintrag an der Ausweichkette teilnimmt. Ein deaktivierter Eintrag bleibt erhalten, wird aber nie verwendet.',
+  'settings.providerCredentials.table.endpoint.help':
+    'Die Anbieteradresse, die dieser Eintrag überschreibt. Nur die Modi CSC und SCAP haben eine; ohne Überschreibung gilt der Standardwert des Modus.',
+  'settings.providerCredentials.table.fields.help':
+    'Welche geheimen Felder dieser Eintrag tatsächlich enthält. Werte werden nie zurückgegeben — nur, ob das jeweilige Feld gesetzt ist.',
+  'settings.providerCredentials.table.actions.help':
+    'Diesen Eintrag umsortieren, bearbeiten, testen oder entfernen. Das Testergebnis nennt genau die Schritte, die ausgeführt wurden.',
+  'settings.providerCredentials.modes.title': 'Anbietermodi',
+  'settings.providerCredentials.modes.lede':
+    'Alle Signaturmodi, die diese Installation unterstützt, wozu jeder dient und was er benötigt, bevor er eingesetzt werden kann. Ein Modus ohne Einträge ist schlicht noch nicht eingerichtet.',
+  'settings.providerCredentials.modes.caption': 'Modi der Signaturanbieter',
+  'settings.providerCredentials.modes.column.mode': 'Modus',
+  'settings.providerCredentials.modes.column.mode.help':
+    'Die Art des Signaturanbieters. Jeder Modus spricht sein eigenes Protokoll und benötigt eigene Zugangsdaten.',
+  'settings.providerCredentials.modes.column.purpose': 'Wozu er dient',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'Was dieser Modus beim Signieren tut und wer den Signaturschlüssel verwahrt.',
+  'settings.providerCredentials.modes.column.setup': 'Wie er eingerichtet wird',
+  'settings.providerCredentials.modes.column.setup.help':
+    'Die Werte, die dieser Modus benötigt, bevor ein Eintrag verwendet werden kann. Geheimnisse lassen sich nur schreiben: Sie setzen sie, Sie lesen sie nie wieder aus.',
+  'settings.providerCredentials.modes.column.entries': 'Einträge',
+  'settings.providerCredentials.modes.column.entries.help':
+    'Wie viele Zugangsdateneinträge derzeit für diesen Modus gespeichert sind. Null bedeutet, dass der Modus nicht eingerichtet ist.',
+  'settings.providerCredentials.modes.column.actions': 'Aktionen',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Öffnet das Eintragsformular bereits auf diesen Modus eingestellt, auch für einen Modus, für den nichts eingerichtet ist.',
+  'settings.providerCredentials.modes.configure': 'Einrichten',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Fernsignatur über den Dienst Chave Móvel Digital der AMA. Die Bürgerin oder der Bürger autorisiert jede Signatur mit der CMD-PIN und einem Einmalcode auf das eigene Gerät; der Signaturschlüssel bleibt beim Dienst.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Fernsignatur bei einem qualifizierten Vertrauensdiensteanbieter über die API des Cloud Signature Consortium. Ein einziger Adapter bedient jeden CSC-konformen Anbieter: der Dokumenten-Hash geht hinaus, die Signatur kommt zurück, der Schlüssel bleibt beim Anbieter.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'Der Dienst der AMA zur Bescheinigung beruflicher Attribute. Er bescheinigt, dass die unterzeichnende Person ein bestimmtes berufliches Attribut besitzt, das dann in die Signatur eingebunden wird; er ist selbst kein Signaturschlüssel.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Signiert mit einem Zertifikat und einem privaten Schlüssel aus einer PKCS#12-Datei auf dieser Installation, ganz ohne entfernten Anbieter. Der private Schlüssel liegt damit hier im Ruhezustand gespeichert.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'Ein einziger Eintrag, ohne Anbieterkennung. Benötigt werden die von der AMA vergebene Anwendungs-ID und die Umgebung (Vorproduktion oder Produktion); die Adresse ist je Umgebung fest und lässt sich nicht überschreiben. In der Produktion sind zusätzlich HTTP-Basic-Zugangsdaten und das Feldverschlüsselungszertifikat der AMA im PEM-Format erforderlich.',
+  'settings.providerCredentials.modes.setup.csc':
+    'Ein Eintrag je Anbieter, jeweils mit eigener Kennung und eigener HTTPS-Basisadresse. Die Dienstautorisierung benötigt die OAuth-Client-ID und das Client-Secret; die Nutzerautorisierung benötigt stattdessen ein bereits erhaltenes Zugriffstoken. Anmeldedaten-ID, Geltungsbereich und das Sandbox-Kennzeichen sind optional, ebenso HTTP-Basic-Zugangsdaten für ein der API vorgelagertes Gateway.',
+  'settings.providerCredentials.modes.setup.scap':
+    'Ein einziger Eintrag, ohne Anbieterkennung. Benötigt werden die Umgebung (Vorproduktion oder Produktion) und, in der Produktion, die von der AMA vergebene Anwendungs-ID samt zugehörigem Geheimnis. Die Basisadresse ist optional: ohne sie wird die Adresse der gewählten Umgebung verwendet. HTTP-Basic-Zugangsdaten sind optional.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'Ein Eintrag je Identität, jeweils mit eigener Bezeichnung. Benötigt werden die Datei .pfx/.p12 und die Passphrase, die sie öffnet. Enthält die Datei mehrere Identitäten, wählen Sie eine über den Anzeigenamen oder über die local key ID in Hexadezimalform. Es gibt keine Adresse einzurichten.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Ohne Speichern verlassen?',
   'unsaved.body':

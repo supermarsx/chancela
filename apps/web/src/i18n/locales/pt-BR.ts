@@ -23,6 +23,93 @@ export const ptBR: Catalog = {
   ...dashboardSourceLabelsPtBR,
   ...roleNameLabelsPtBR,
   ...attendeeQualityLabelsEnglish,
+  // --- Substituições de ambiente do servidor (t14) --------------------------------
+  'settings.serverEnv.title': 'Ambiente do servidor',
+  'settings.serverEnv.intro':
+    'As variáveis de ambiente que este servidor lê na inicialização, com o valor que o processo em execução resolveu. Você pode substituir as não secretas; a substituição é salva em um arquivo e passa a valer na próxima inicialização, nunca imediatamente.',
+  'settings.serverEnv.loading': 'Carregando o ambiente do servidor…',
+  'settings.serverEnv.loadError': 'Não foi possível carregar o ambiente do servidor.',
+  'settings.serverEnv.empty': 'Não há variáveis para exibir.',
+  'settings.serverEnv.overridesPath':
+    'As substituições são salvas em {path}, dentro do diretório de dados.',
+  'settings.serverEnv.restart.badge': 'Reinicialização pendente',
+  'settings.serverEnv.restart.title': 'Salvo, ainda não aplicado',
+  'settings.serverEnv.restart.body':
+    'Estes valores são lidos uma única vez, na inicialização do processo. As substituições estão salvas, mas o servidor em execução continua usando o que leu quando iniciou — reinicie-o para aplicá-las.',
+  'settings.serverEnv.restart.rowHint': 'A substituição salva difere do valor em execução.',
+  'settings.serverEnv.col.name': 'Variável',
+  'settings.serverEnv.col.value': 'Valor efetivo',
+  'settings.serverEnv.col.source': 'Origem',
+  'settings.serverEnv.col.default': 'Padrão',
+  'settings.serverEnv.col.override': 'Substituição',
+  'settings.serverEnv.source.override': 'Substituição',
+  'settings.serverEnv.source.env': 'Ambiente',
+  'settings.serverEnv.source.default': 'Padrão',
+  'settings.serverEnv.source.override.hint': 'O valor vem da substituição salva neste painel.',
+  'settings.serverEnv.source.env.hint': 'O valor vem do ambiente em que o serviço foi iniciado.',
+  'settings.serverEnv.source.default.hint':
+    'Nenhuma substituição nem variável de ambiente — usa o padrão do código.',
+  'settings.serverEnv.group.logging': 'Registros',
+  'settings.serverEnv.group.network': 'Rede',
+  'settings.serverEnv.group.session': 'Sessões',
+  'settings.serverEnv.group.notifications': 'Central de Ações',
+  'settings.serverEnv.group.rate_limit': 'Limitação de taxa',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Banco de dados',
+  'settings.serverEnv.group.credentials': 'Credenciais',
+  'settings.serverEnv.group.cache': 'Cache e Redis',
+  'settings.serverEnv.group.cluster': 'Cluster e nós',
+  'settings.serverEnv.group.postgres_tls': 'TLS do PostgreSQL',
+  'settings.serverEnv.group.trust': 'Confiança e validação',
+  'settings.serverEnv.group.signing': 'Assinatura',
+  'settings.serverEnv.group.csc': 'Assinatura na nuvem (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Atributos profissionais (SCAP)',
+  'settings.serverEnv.group.connectors': 'Conectores',
+  'settings.serverEnv.group.storage': 'Armazenamento',
+  'settings.serverEnv.group.paper_book': 'Livros em papel (OCR)',
+  'settings.serverEnv.group.search': 'Busca e indexação',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Deixar em branco remove a substituição e volta ao valor do ambiente ou ao padrão.',
+  'settings.serverEnv.field.enumHint': 'Escolha um dos valores permitidos.',
+  'settings.serverEnv.field.boolTrue': 'Habilitado',
+  'settings.serverEnv.field.boolFalse': 'Desabilitado',
+  'settings.serverEnv.secret.note': '(contém uma credencial — nunca é exibida aqui)',
+  'settings.serverEnv.secret.configured': 'Configurada',
+  'settings.serverEnv.secret.notConfigured': 'Não configurada',
+  'settings.serverEnv.secret.body':
+    'É um segredo. O painel mostra apenas se ela está definida, nunca o valor. Defina-a onde o serviço é iniciado ou pelo fluxo de credenciais próprio.',
+  'settings.serverEnv.boundary.badge': 'Fronteira de segurança',
+  'settings.serverEnv.boundary.ackLabel': 'Confirmo que entendo o efeito desta alteração',
+  'settings.serverEnv.boundary.ackHint':
+    'Esta variável define uma fronteira de segurança. Alterá-la exige confirmação explícita; sem ela o servidor recusa a gravação.',
+  'settings.serverEnv.boundary.warningTitle': 'Alteração de uma fronteira de segurança',
+  'settings.serverEnv.boundary.warningBody':
+    'Você está alterando uma variável que controla uma fronteira de segurança. Uma configuração incorreta pode enfraquecer a postura de segurança do servidor. Confirme antes de salvar.',
+  'settings.serverEnv.narrowOnly.badge': 'Só pode restringir',
+  'settings.serverEnv.narrowOnly.note':
+    'É um limite máximo imposto pela implantação. A substituição só pode restringi-lo, nunca ampliá-lo.',
+  'settings.serverEnv.readOnly.badge': 'Somente leitura',
+  'settings.serverEnv.readOnly.note':
+    'É um fato derivado do ambiente do processo e não é editável aqui. Altere-o onde o serviço é iniciado.',
+  'settings.serverEnv.typedSlice.note':
+    'Esta variável é gerenciada por uma configuração própria com precedência definida:',
+  'settings.serverEnv.externalReader.badge': 'Definida fora deste servidor',
+  'settings.serverEnv.externalReader.note':
+    'Esta variável é lida por outro processo, que não carrega este arquivo de substituições. Uma substituição salva aqui nunca chegaria até ele:',
+  'settings.serverEnv.save': 'Salvar substituições',
+  'settings.serverEnv.saving': 'Salvando…',
+  'settings.serverEnv.saved':
+    'Substituições salvas. Passam a valer na próxima inicialização do servidor.',
+  'settings.serverEnv.saveError': 'Não foi possível salvar as substituições.',
+  'settings.serverEnv.discard': 'Descartar alterações',
+  'settings.serverEnv.clearOverride': 'Limpar substituição',
+  'settings.serverEnv.ackRequiredError':
+    'Confirme cada alteração a uma fronteira de segurança antes de salvar.',
+  'settings.serverEnv.value.unset': 'Não definida',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sem permissão para esta ação',
   'perm.denied.title': 'Sem permissão',
@@ -1955,7 +2042,7 @@ export const ptBR: Catalog = {
   'settings.api.logging.hint':
     'Estes dois campos escrevem no mesmo documento de configurações que os demais níveis de registro.',
   'settings.api.env.hint':
-    'Resolvidas a partir do ambiente do processo quando o servidor inicia. Não são editáveis aqui nem por nenhum endpoint; alterá-las exige reiniciar o servidor.',
+    'Resolvidas a partir do ambiente do processo quando o servidor inicia. Estão listadas, com o valor que o processo em execução resolveu, em “Ambiente do servidor”, onde as não secretas podem ser substituídas. Qualquer alteração passa a valer na próxima inicialização.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'O servidor fala HTTP simples. O TLS é terminado no proxy reverso à frente dele, e o cabeçalho HSTS abaixo só tem efeito nessa configuração.',
@@ -4824,6 +4911,52 @@ export const ptBR: Catalog = {
   'settings.email.stage.data': 'Envio da mensagem',
   'settings.email.stage.quit': 'Encerramento da sessão',
 
+  // --- Email (SMTP): registro de envios (t108) ---
+  'settings.email.deliveries.cardTitle': 'Registro de envios',
+  'settings.email.deliveries.lede':
+    'O que aconteceu com cada mensagem que o aplicativo enviou, da mais recente para a mais antiga. Cada linha é uma tentativa já concluída: não há fila de espera nem estado pendente.',
+  'settings.email.deliveries.caption':
+    'Registro de envios de e-mail, com o resultado de cada tentativa',
+  'settings.email.deliveries.col.when': 'Data',
+  'settings.email.deliveries.col.template': 'Mensagem',
+  'settings.email.deliveries.col.recipient': 'Destinatário',
+  'settings.email.deliveries.col.status': 'Resultado',
+  'settings.email.deliveries.col.attempt': 'Tentativa',
+  'settings.email.deliveries.col.failure': 'Motivo da falha',
+  'settings.email.deliveries.col.action': 'Ações',
+  'settings.email.deliveries.help.when': 'Momento em que esta tentativa foi concluída.',
+  'settings.email.deliveries.help.template':
+    'Qual mensagem foi enviada. Cada tipo de mensagem pertence ao fluxo que a emite.',
+  'settings.email.deliveries.help.recipient':
+    'Endereço para onde a mensagem seguiu, conforme ficou registrado.',
+  'settings.email.deliveries.help.status':
+    'Aceita pelo servidor, ou recusada. Aceita não confirma a entrega na caixa de entrada.',
+  'settings.email.deliveries.help.attempt':
+    'Qual tentativa é esta para a mesma mensagem. Um reenvio acrescenta uma tentativa em vez de substituir a anterior.',
+  'settings.email.deliveries.help.failure':
+    'A etapa em que a sessão parou e a resposta que o servidor deu, com as palavras dele.',
+  'settings.email.deliveries.help.action':
+    'Só podem ser enviadas novamente as mensagens que é possível reconstruir a partir do que está armazenado.',
+  'settings.email.deliveries.status.sent': 'Aceita',
+  'settings.email.deliveries.status.failed': 'Recusada',
+  'settings.email.deliveries.retry': 'Reenvio',
+  'settings.email.deliveries.template.welcome': 'Boas-vindas à conta',
+  'settings.email.deliveries.template.pairingCode': 'Código de pareamento de dispositivo',
+  'settings.email.deliveries.stage.notConfigured': 'Envio não configurado',
+  'settings.email.deliveries.empty': 'Ainda não há envios registrados',
+  'settings.email.deliveries.emptyBody':
+    'Assim que o aplicativo enviar a primeira mensagem, o resultado aparece aqui. Em uma instância que não guarda registro em banco de dados, esta lista permanece vazia.',
+  'settings.email.deliveries.cappedTitle': 'Mostrando apenas as mais recentes',
+  'settings.email.deliveries.cappedBody':
+    'Estão sendo mostradas as {count} tentativas mais recentes. Existem envios mais antigos que não cabem nesta lista.',
+  'settings.email.deliveries.resend': 'Reenviar',
+  'settings.email.deliveries.notResendable':
+    'Esta mensagem levava um código de uso único, que não fica armazenado e não pode ser reconstruído. Não é uma restrição de permissões: reemita-a pelo fluxo a que ela pertence — no caso de um convite, emita um convite novo.',
+  'settings.email.deliveries.resentToast': 'Mensagem reenviada',
+  'settings.email.deliveries.resendFailedTitle': 'O reenvio foi recusado',
+  'settings.email.deliveries.resendFailedBody':
+    'A nova tentativa ficou registrada como recusada. A resposta do servidor está abaixo.',
+
   'settings.email.remedy.dns':
     'O nome do servidor não foi resolvido. Verifique se está escrito corretamente e se o DNS o conhece.',
   'settings.email.remedy.unreachable':
@@ -5037,7 +5170,9 @@ export const ptBR: Catalog = {
   'settings.providerCredentials.form.enabled': 'Entrada ativa',
   'settings.providerCredentials.form.endpoint': 'Endereço (url_base)',
   'settings.providerCredentials.form.endpointHint':
-    'Substituição do endereço base para este provedor.',
+    'Substituição do endereço base; em branco usa o padrão do ambiente.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Obrigatório. Endereço base HTTPS da API CSC v2 do provedor.',
   'settings.providerCredentials.form.pfxWarning.title': 'Chave privada em repouso',
   'settings.providerCredentials.form.pfxWarning.body':
     'Salvar um arquivo PKCS#12 significa guardar uma chave de assinatura privada em repouso. Prefira uma proteção confidencial.',
@@ -5077,23 +5212,25 @@ export const ptBR: Catalog = {
   'settings.providerCredentials.help.mode':
     'Tipo de provedor de assinatura a configurar. Ex.: CSC/QTSP para assinatura remota, PKCS#12 para um certificado local.',
   'settings.providerCredentials.help.providerId':
-    'Identificador interno que distingue este provedor dos demais do mesmo tipo. Ex.: «encosto-qtsp».',
+    'Identificador interno que distingue este provedor dos demais do mesmo tipo e sob o qual as credenciais são localizadas ao assinar, portanto precisa coincidir com o identificador usado nesse momento. No QTSP (CSC) use minúsculas e caracteres ASCII; no PKCS#12 é apenas o rótulo da identidade. Ex.: «encosto-qtsp».',
   'settings.providerCredentials.help.label':
     'Nome livre para reconhecer esta entrada na lista. Ex.: “Chave primária” ou “Contingência”.',
   'settings.providerCredentials.help.enabled':
     'Quando ativa, esta entrada entra na cadeia de failover; desative para excluí-la sem apagá-la.',
   'settings.providerCredentials.help.endpoint':
-    'URL base da API do provedor, substituindo o valor padrão. Ex.: https://qtsp.exemplo.pt/csc/v1',
+    'Endereço base do serviço SCAP, substituindo o padrão do ambiente escolhido. Deixe em branco para usar esse padrão. Ex.: https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'Endereço base da API CSC v2 do QTSP. É obrigatório: não existe padrão, e uma entrada sem ele fica incompleta. Precisa ser HTTPS, exceto em localhost ou 127.0.0.1 enquanto a opção de ambiente de testes estiver ativa. Ex.: https://qtsp.exemplo.pt/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Arquivo de certificado .pfx/.p12 que contém a chave privada de assinatura. Ex.: «assinatura.pfx» exportado da PKI.',
   'settings.providerCredentials.help.applicationId':
-    'ApplicationId atribuído pela AMA para a Chave Móvel Digital/SCAP. Por exemplo: um GUID como 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'ApplicationId atribuído pela AMA para a Chave Móvel Digital ou o SCAP. É um valor opaco: utilize-o exatamente como foi emitido, sem supor um formato.',
   'settings.providerCredentials.help.httpBasicUsername':
     'Usuário de autenticação HTTP Basic, quando o provedor a exige à frente da API. Ex.: «chancela-prod».',
   'settings.providerCredentials.help.httpBasicPassword':
     'Senha de autenticação HTTP Basic que acompanha o usuário. Ex.: uma cadeia secreta longa fornecida pelo provedor.',
   'settings.providerCredentials.help.amaCertPem':
-    'Certificado de cliente AMA em formato PEM, usado em TLS mútuo com SCMD. Ex.: o bloco «-----BEGIN CERTIFICATE-----…».',
+    'Certificado público da AMA em PEM. Sua chave RSA criptografa o número do celular, o PIN e o OTP antes de seguirem na requisição ao SCMD; é obrigatório em produção e, sem ele, em pré-produção esses campos seguem em texto claro. Ex.: o bloco «-----BEGIN CERTIFICATE-----…».',
   'settings.providerCredentials.help.clientId':
     'Identificador OAuth2 do cliente atribuído pelo QTSP. Ex.: «chancela-prod».',
   'settings.providerCredentials.help.clientSecret':
@@ -5113,7 +5250,7 @@ export const ptBR: Catalog = {
   'settings.providerCredentials.help.scope':
     'Escopos OAuth2 solicitados ao QTSP, separados por espaços. Ex.: «service credential».',
   'settings.providerCredentials.help.sandbox':
-    'Ativa o modo de testes do provedor, sem efeitos reais. Ex.: ligado durante a integração, desligado em produção.',
+    'Marca esta entrada como apontando para o ambiente de testes do provedor. Com a opção ativa passa a ser aceito um endereço http:// em localhost ou 127.0.0.1, em vez de se exigir HTTPS, e o provedor é informado como bloqueado para produção. Por si só não impede operações reais: isso depende do endereço que você informar.',
   'settings.providerCredentials.help.environment':
     'Ambiente do serviço SCAP ao qual esta entrada se conecta. Ex.: «Pré-produção» para testes, «Produção» para uso real.',
   'settings.providerCredentials.help.friendlyName':
@@ -6127,8 +6264,58 @@ export const ptBR: Catalog = {
   'settings.providerCredentials.table.state': 'Situação',
   'settings.providerCredentials.table.endpoint': 'Endereço',
   'settings.providerCredentials.table.endpointDefault': 'Endereço padrão',
+  'settings.providerCredentials.table.endpointRequired': 'Ausente (obrigatório)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Não se aplica',
   'settings.providerCredentials.table.fields': 'Campos',
   'settings.providerCredentials.table.actions': 'Ações',
+  'settings.providerCredentials.table.entry.help':
+    'O rótulo que você deu a esta credencial armazenada e o identificador de entrada, imutável, atribuído pelo servidor.',
+  'settings.providerCredentials.table.priority.help':
+    'A ordem em que as entradas são tentadas. O menor número vem primeiro, e a entrada seguinte é usada quando uma anterior está inacessível.',
+  'settings.providerCredentials.table.state.help':
+    'Se esta entrada participa da cadeia de contingência. Uma entrada desativada é mantida, mas nunca é usada.',
+  'settings.providerCredentials.table.endpoint.help':
+    'O endereço do provedor que esta entrada substitui. Somente os modos CSC e SCAP possuem um; sem substituição vale o padrão do modo.',
+  'settings.providerCredentials.table.fields.help':
+    'Quais campos secretos esta entrada realmente guarda. Os valores nunca são devolvidos — apenas se cada campo está definido.',
+  'settings.providerCredentials.table.actions.help':
+    'Reordenar, editar, testar ou excluir esta entrada. O resultado do teste informa exatamente quais etapas foram executadas.',
+  'settings.providerCredentials.modes.title': 'Modos de provedor',
+  'settings.providerCredentials.modes.lede':
+    'Todos os modos de assinatura suportados por esta instalação, para que serve cada um e do que precisa antes de ser usado. Um modo sem entradas é apenas um modo que ainda não foi configurado.',
+  'settings.providerCredentials.modes.caption': 'Modos de provedor de assinatura',
+  'settings.providerCredentials.modes.column.mode': 'Modo',
+  'settings.providerCredentials.modes.column.mode.help':
+    'O tipo de provedor de assinatura. Cada modo fala seu próprio protocolo e exige credenciais próprias.',
+  'settings.providerCredentials.modes.column.purpose': 'Para que é usado',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'O que este modo faz ao assinar e quem guarda a chave de assinatura.',
+  'settings.providerCredentials.modes.column.setup': 'Como configurar',
+  'settings.providerCredentials.modes.column.setup.help':
+    'Os valores exigidos por este modo antes que uma entrada possa ser usada. Segredos são somente de escrita: você os define e nunca os lê de volta.',
+  'settings.providerCredentials.modes.column.entries': 'Entradas',
+  'settings.providerCredentials.modes.column.entries.help':
+    'Quantas entradas de credencial estão armazenadas agora para este modo. Zero indica que o modo não está configurado.',
+  'settings.providerCredentials.modes.column.actions': 'Ações',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Abre o formulário de entrada já posicionado neste modo, inclusive para um modo sem nada configurado.',
+  'settings.providerCredentials.modes.configure': 'Configurar',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Assinatura remota pelo serviço Chave Móvel Digital da AMA. O cidadão autoriza cada assinatura com o PIN da CMD e um código de uso único enviado ao seu aparelho; a chave de assinatura permanece no serviço.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Assinatura remota em um prestador qualificado de serviços de confiança pela API do Cloud Signature Consortium. Um único adaptador atende qualquer provedor compatível com CSC: sai o resumo criptográfico do documento e volta a assinatura, com a chave sob guarda do provedor.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'Serviço de certificação de atributos profissionais da AMA. Atesta que o signatário possui determinado atributo profissional, que é então vinculado à assinatura; não é, por si só, uma chave de assinatura.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Assina com um certificado e uma chave privada guardados em um arquivo PKCS#12 nesta instalação, sem nenhum provedor remoto. A chave privada fica, portanto, armazenada aqui, em repouso.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'Uma única entrada, sem identificador de provedor. Exige o ID de aplicação emitido pela AMA e o ambiente (pré-produção ou produção); o endereço é fixo por ambiente e não pode ser substituído. Em produção também são exigidas credenciais HTTP Basic e o certificado de cifragem de campos da AMA em PEM.',
+  'settings.providerCredentials.modes.setup.csc':
+    'Uma entrada por provedor, cada uma com seu identificador e seu endereço base HTTPS. A autorização de serviço exige o client ID e o client secret OAuth; a autorização de usuário exige, em vez disso, um token de acesso já obtido. O ID da credencial, o escopo e o indicador de ambiente de testes são opcionais, assim como as credenciais HTTP Basic para um gateway à frente da API.',
+  'settings.providerCredentials.modes.setup.scap':
+    'Uma única entrada, sem identificador de provedor. Exige o ambiente (pré-produção ou produção) e, em produção, o ID de aplicação emitido pela AMA e o respectivo segredo. O endereço base é opcional: sem ele é usado o endereço do ambiente escolhido. As credenciais HTTP Basic são opcionais.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'Uma entrada por identidade, cada uma com seu rótulo. Exige o arquivo .pfx/.p12 e a senha que o abre. Quando o arquivo contém mais de uma identidade, escolha uma pelo nome amigável ou pelo local key ID em hexadecimal. Não há endereço a configurar.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Sair sem salvar?',
   'unsaved.body': 'Esta página tem alterações não salvas. Se sair agora, você vai perdê-las.',

@@ -24,6 +24,92 @@ export const daDK: Catalog = {
   ...dashboardSourceLabelsDaDK,
   ...roleNameLabelsDaDK,
   ...attendeeQualityLabelsEnglish,
+  // --- Tilsidesættelser af servermiljøet (t14) -------------------------------------
+  'settings.serverEnv.title': 'Servermiljø',
+  'settings.serverEnv.intro':
+    'De miljøvariabler, denne server læser ved opstart, med den værdi den kørende proces nåede frem til. Du kan tilsidesætte dem, der ikke er hemmelige; en tilsidesættelse gemmes i en fil og træder i kraft ved næste opstart, aldrig med det samme.',
+  'settings.serverEnv.loading': 'Indlæser servermiljøet…',
+  'settings.serverEnv.loadError': 'Servermiljøet kunne ikke indlæses.',
+  'settings.serverEnv.empty': 'Der er ingen variabler at vise.',
+  'settings.serverEnv.overridesPath': 'Tilsidesættelser gemmes i {path}, under datamappen.',
+  'settings.serverEnv.restart.badge': 'Genstart afventer',
+  'settings.serverEnv.restart.title': 'Gemt, endnu ikke i kraft',
+  'settings.serverEnv.restart.body':
+    'Disse værdier læses kun én gang, når processen starter. Tilsidesættelserne er gemt, men den kørende server bruger stadig det, den læste ved opstart — genstart den for at sætte dem i kraft.',
+  'settings.serverEnv.restart.rowHint': 'Den gemte tilsidesættelse afviger fra den kørende værdi.',
+  'settings.serverEnv.col.name': 'Variabel',
+  'settings.serverEnv.col.value': 'Gældende værdi',
+  'settings.serverEnv.col.source': 'Oprindelse',
+  'settings.serverEnv.col.default': 'Standardværdi',
+  'settings.serverEnv.col.override': 'Tilsidesættelse',
+  'settings.serverEnv.source.override': 'Tilsidesættelse',
+  'settings.serverEnv.source.env': 'Miljø',
+  'settings.serverEnv.source.default': 'Standardværdi',
+  'settings.serverEnv.source.override.hint':
+    'Værdien kommer fra den tilsidesættelse, der er gemt i dette panel.',
+  'settings.serverEnv.source.env.hint': 'Værdien kommer fra det miljø, tjenesten blev startet i.',
+  'settings.serverEnv.source.default.hint':
+    'Hverken tilsidesættelse eller miljøvariabel — standardværdien fra koden gælder.',
+  'settings.serverEnv.group.logging': 'Logning',
+  'settings.serverEnv.group.network': 'Netværk',
+  'settings.serverEnv.group.session': 'Sessioner',
+  'settings.serverEnv.group.notifications': 'Handlingscenter',
+  'settings.serverEnv.group.rate_limit': 'Trafikbegrænsning',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Database',
+  'settings.serverEnv.group.credentials': 'Loginoplysninger',
+  'settings.serverEnv.group.cache': 'Cache og Redis',
+  'settings.serverEnv.group.cluster': 'Klynge og noder',
+  'settings.serverEnv.group.postgres_tls': 'TLS til PostgreSQL',
+  'settings.serverEnv.group.trust': 'Tillid og validering',
+  'settings.serverEnv.group.signing': 'Signering',
+  'settings.serverEnv.group.csc': 'Signering i skyen (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Faglige attributter (SCAP)',
+  'settings.serverEnv.group.connectors': 'Forbindelser',
+  'settings.serverEnv.group.storage': 'Lagring',
+  'settings.serverEnv.group.paper_book': 'Papirbøger (OCR)',
+  'settings.serverEnv.group.search': 'Søgning og indeksering',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Lades feltet tomt, fjernes tilsidesættelsen, og værdien fra miljøet eller standardværdien gælder igen.',
+  'settings.serverEnv.field.enumHint': 'Vælg en af de tilladte værdier.',
+  'settings.serverEnv.field.boolTrue': 'Slået til',
+  'settings.serverEnv.field.boolFalse': 'Slået fra',
+  'settings.serverEnv.secret.note': '(indeholder en loginoplysning — vises aldrig her)',
+  'settings.serverEnv.secret.configured': 'Konfigureret',
+  'settings.serverEnv.secret.notConfigured': 'Ikke konfigureret',
+  'settings.serverEnv.secret.body':
+    'Dette er en hemmelighed. Panelet viser kun, om den er sat, aldrig værdien. Sæt den dér, hvor tjenesten startes, eller gennem dens eget forløb for loginoplysninger.',
+  'settings.serverEnv.boundary.badge': 'Sikkerhedsgrænse',
+  'settings.serverEnv.boundary.ackLabel': 'Jeg har forstået virkningen af denne ændring',
+  'settings.serverEnv.boundary.ackHint':
+    'Denne variabel fastlægger en sikkerhedsgrænse. En ændring kræver udtrykkelig bekræftelse; uden den nægter serveren at gemme.',
+  'settings.serverEnv.boundary.warningTitle': 'Ændring af en sikkerhedsgrænse',
+  'settings.serverEnv.boundary.warningBody':
+    'Du ændrer en variabel, der styrer en sikkerhedsgrænse. En forkert indstilling kan svække serverens sikkerhed. Bekræft, før du gemmer.',
+  'settings.serverEnv.narrowOnly.badge': 'Kan kun indsnævres',
+  'settings.serverEnv.narrowOnly.note':
+    'Dette er et loft, som installationen fastsætter. En tilsidesættelse kan kun indsnævre det, aldrig udvide det.',
+  'settings.serverEnv.readOnly.badge': 'Skrivebeskyttet',
+  'settings.serverEnv.readOnly.note':
+    'Dette er en oplysning, der følger af procesmiljøet, og den kan ikke ændres her. Ret den dér, hvor tjenesten startes.',
+  'settings.serverEnv.typedSlice.note':
+    'Denne variabel styres af en særskilt indstilling med fastlagt forrang:',
+  'settings.serverEnv.externalReader.badge': 'Sættes uden for denne server',
+  'settings.serverEnv.externalReader.note':
+    'Denne variabel læses af en anden proces, og den proces indlæser ikke denne tilsidesættelsesfil. En tilsidesættelse gemt her ville aldrig nå frem til den:',
+  'settings.serverEnv.save': 'Gem tilsidesættelser',
+  'settings.serverEnv.saving': 'Gemmer…',
+  'settings.serverEnv.saved': 'Tilsidesættelser gemt. De gælder fra næste serveropstart.',
+  'settings.serverEnv.saveError': 'Tilsidesættelserne kunne ikke gemmes.',
+  'settings.serverEnv.discard': 'Kassér ændringer',
+  'settings.serverEnv.clearOverride': 'Ryd tilsidesættelsen',
+  'settings.serverEnv.ackRequiredError':
+    'Bekræft hver ændring af en sikkerhedsgrænse, før du gemmer.',
+  'settings.serverEnv.value.unset': 'Ikke sat',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har ikke tilladelse til denne handling',
   'perm.denied.title': 'Ingen tilladelse',
@@ -1952,7 +2038,7 @@ export const daDK: Catalog = {
   'settings.api.logging.hint':
     'Disse to felter skriver til det samme indstillingsdokument som de øvrige logniveauer.',
   'settings.api.env.hint':
-    'Læses fra procesmiljøet, når serveren starter. De kan hverken redigeres her eller via et endpoint; en ændring kræver, at serveren genstartes.',
+    'Læses fra procesmiljøet, når serveren starter. De er opført sammen med den værdi, den kørende proces nåede frem til, under „Servermiljø“, hvor dem, der ikke er hemmelige, kan tilsidesættes. Enhver ændring træder først i kraft ved næste genstart.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'Serveren taler almindelig HTTP. TLS afsluttes i den omvendte proxy foran den, og HSTS-headeren nedenfor virker kun i den opsætning.',
@@ -4816,6 +4902,52 @@ export const daDK: Catalog = {
   'settings.email.stage.data': 'Afsendelse af beskeden',
   'settings.email.stage.quit': 'Lukning af sessionen',
 
+  // --- E-mail (SMTP): afsendelsesregistret (t108) ---
+  'settings.email.deliveries.cardTitle': 'Afsendelsesregister',
+  'settings.email.deliveries.lede':
+    'Hvad der blev af hver besked, programmet har sendt, nyeste først. Hver række er et forsøg, der allerede er afsluttet: der er ingen kø og ingen ventende tilstand.',
+  'settings.email.deliveries.caption':
+    'Afsendelsesregister for e-mails med resultatet af hvert forsøg',
+  'settings.email.deliveries.col.when': 'Dato',
+  'settings.email.deliveries.col.template': 'Besked',
+  'settings.email.deliveries.col.recipient': 'Modtager',
+  'settings.email.deliveries.col.status': 'Resultat',
+  'settings.email.deliveries.col.attempt': 'Forsøg',
+  'settings.email.deliveries.col.failure': 'Årsag til fejlen',
+  'settings.email.deliveries.col.action': 'Handlinger',
+  'settings.email.deliveries.help.when': 'Tidspunktet, hvor dette forsøg sluttede.',
+  'settings.email.deliveries.help.template':
+    'Hvilken besked der blev sendt. Hver type besked hører til det forløb, der udsteder den.',
+  'settings.email.deliveries.help.recipient':
+    'Adressen, beskeden gik til, som den blev registreret.',
+  'settings.email.deliveries.help.status':
+    'Accepteret af serveren eller afvist. Accepteret bekræfter ikke levering i indbakken.',
+  'settings.email.deliveries.help.attempt':
+    'Hvilket forsøg dette er for den samme besked. En gensendelse tilføjer et forsøg i stedet for at erstatte det forrige.',
+  'settings.email.deliveries.help.failure':
+    'Det trin, hvor sessionen stoppede, og det svar serveren gav, med dens egne ord.',
+  'settings.email.deliveries.help.action':
+    'Kun beskeder, der kan genopbygges ud fra det gemte, kan sendes igen.',
+  'settings.email.deliveries.status.sent': 'Accepteret',
+  'settings.email.deliveries.status.failed': 'Afvist',
+  'settings.email.deliveries.retry': 'Gensendt',
+  'settings.email.deliveries.template.welcome': 'Velkommen til kontoen',
+  'settings.email.deliveries.template.pairingCode': 'Parringskode til enhed',
+  'settings.email.deliveries.stage.notConfigured': 'Afsendelse er ikke konfigureret',
+  'settings.email.deliveries.empty': 'Der er endnu ingen registrerede afsendelser',
+  'settings.email.deliveries.emptyBody':
+    'Så snart programmet sender den første besked, vises resultatet her. På en instans, der ikke fører nogen registrering i en database, forbliver denne liste tom.',
+  'settings.email.deliveries.cappedTitle': 'Kun de nyeste vises',
+  'settings.email.deliveries.cappedBody':
+    'De {count} nyeste forsøg vises. Der findes ældre afsendelser, som ikke er med på denne liste.',
+  'settings.email.deliveries.resend': 'Send igen',
+  'settings.email.deliveries.notResendable':
+    'Denne besked bar en engangskode, som ikke gemmes og ikke kan genopbygges. Det er ikke en rettighedsbegrænsning: udsted den igen gennem det forløb, den hører til — ved en invitation udsteder du en ny invitation.',
+  'settings.email.deliveries.resentToast': 'Beskeden er sendt igen',
+  'settings.email.deliveries.resendFailedTitle': 'Gensendelsen blev afvist',
+  'settings.email.deliveries.resendFailedBody':
+    'Det nye forsøg blev registreret som afvist. Serverens svar står nedenfor.',
+
   'settings.email.remedy.dns':
     'Servernavnet kunne ikke slås op. Kontrollér stavningen, og at DNS kender det.',
   'settings.email.remedy.unreachable':
@@ -5028,7 +5160,9 @@ export const daDK: Catalog = {
   'settings.providerCredentials.form.enabled': 'Post aktiveret',
   'settings.providerCredentials.form.endpoint': 'Endepunkt (base_url)',
   'settings.providerCredentials.form.endpointHint':
-    'Tilsidesættelse af basis-URL for denne udbyder.',
+    'Tilsidesættelse af basisadressen; tom bruger miljøets standard.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Påkrævet. HTTPS-basisadresse for udbyderens CSC v2-API.',
   'settings.providerCredentials.form.pfxWarning.title': 'Privat nøgle i hvile',
   'settings.providerCredentials.form.pfxWarning.body':
     'At gemme en PKCS#12-fil betyder at opbevare en privat signeringsnøgle i hvile. Foretræk fortrolig beskyttelse.',
@@ -5068,23 +5202,25 @@ export const daDK: Catalog = {
   'settings.providerCredentials.help.mode':
     'Typen af signaturudbyder, der skal konfigureres. F.eks. CSC/QTSP til fjernsignering, PKCS#12 til et lokalt certifikat.',
   'settings.providerCredentials.help.providerId':
-    'Intern identifikator, der adskiller denne udbyder fra andre af samme type. F.eks. »encosto-qtsp«.',
+    'Intern identifikator, der adskiller denne udbyder fra andre af samme type, og som legitimationsoplysningerne slås op under ved signering; den skal derfor svare til den identifikator, der bruges dér. Brug små ASCII-bogstaver til en CSC-QTSP; ved PKCS#12 er det blot identitetens etiket. F.eks. »encosto-qtsp«.',
   'settings.providerCredentials.help.label':
     'Fri tekst til at genkende denne post på listen. F.eks. »Primær nøgle« eller »Reserve«.',
   'settings.providerCredentials.help.enabled':
     'Når den er aktiv, indgår denne post i failover-kæden; deaktivér den for at udelade den uden at slette den.',
   'settings.providerCredentials.help.endpoint':
-    'Basis-URL for udbyderens API, der tilsidesætter standardværdien. F.eks. https://qtsp.example.com/csc/v1',
+    'Basisadresse for SCAP-tjenesten, der tilsidesætter standarden for det valgte miljø. Lad feltet stå tomt for at bruge den standard. F.eks. https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'Basisadresse for QTSP-ens CSC v2-API. Den er påkrævet: der findes ingen standard, og en post uden den forbliver ufuldstændig. Den skal være HTTPS, undtagen på localhost eller 127.0.0.1 så længe indstillingen for testmiljø er slået til. F.eks. https://qtsp.example.com/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Certifikatfil .pfx/.p12, der indeholder den private signeringsnøgle. F.eks. »signatur.pfx« eksporteret fra PKI.',
   'settings.providerCredentials.help.applicationId':
-    'ApplicationId tildelt af AMA til Chave Móvel Digital / SCAP. F.eks. en GUID som 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'ApplicationId tildelt af AMA til Chave Móvel Digital eller SCAP. Det er en uigennemsigtig værdi: brug den nøjagtigt som du modtog den, uden at forudsætte et format.',
   'settings.providerCredentials.help.httpBasicUsername':
     'Brugernavn til HTTP Basic-godkendelse, når udbyderen kræver det foran API’et. F.eks. »chancela-prod«.',
   'settings.providerCredentials.help.httpBasicPassword':
     'Adgangskode til HTTP Basic-godkendelse, der følger med brugernavnet. F.eks. en lang hemmelig streng fra udbyderen.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA-klientcertifikat i PEM-format, brugt til gensidig TLS med SCMD. F.eks. blokken »-----BEGIN CERTIFICATE-----…«.',
+    'Offentligt AMA-certifikat i PEM-format. Dets RSA-nøgle krypterer mobilnummer, pinkode og engangskode, før de sendes med i SCMD-anmodningen; i produktion er det påkrævet, og uden det sendes felterne i klartekst i præproduktion. F.eks. blokken »-----BEGIN CERTIFICATE-----…«.',
   'settings.providerCredentials.help.clientId':
     'OAuth2-klientidentifikator tildelt af QTSP. F.eks. »chancela-prod«.',
   'settings.providerCredentials.help.clientSecret':
@@ -5104,7 +5240,7 @@ export const daDK: Catalog = {
   'settings.providerCredentials.help.scope':
     'OAuth2-scopes anmodet hos QTSP, adskilt af mellemrum. F.eks. »service credential«.',
   'settings.providerCredentials.help.sandbox':
-    'Aktiverer udbyderens testtilstand uden reelle virkninger. F.eks. slået til under integration, fra i produktion.',
+    'Markerer denne post som pegende på udbyderens testmiljø. Med indstillingen slået til accepteres en http://-adresse på localhost eller 127.0.0.1 i stedet for at kræve HTTPS, og udbyderen meldes som blokeret for produktion. I sig selv forhindrer den ikke reelle handlinger: det afhænger af den adresse, du angiver.',
   'settings.providerCredentials.help.environment':
     'SCAP-tjenestemiljø, som denne post opretter forbindelse til. F.eks. »Præproduktion« til test, »Produktion« til reel brug.',
   'settings.providerCredentials.help.friendlyName':
@@ -6111,8 +6247,58 @@ export const daDK: Catalog = {
   'settings.providerCredentials.table.state': 'Status',
   'settings.providerCredentials.table.endpoint': 'Adresse',
   'settings.providerCredentials.table.endpointDefault': 'Standardadresse',
+  'settings.providerCredentials.table.endpointRequired': 'Mangler (påkrævet)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Ikke relevant',
   'settings.providerCredentials.table.fields': 'Felter',
   'settings.providerCredentials.table.actions': 'Handlinger',
+  'settings.providerCredentials.table.entry.help':
+    'Den etiket, du gav disse gemte legitimationsoplysninger, samt det uforanderlige post-id, som serveren tildelte.',
+  'settings.providerCredentials.table.priority.help':
+    'Den rækkefølge, posterne forsøges i. Det laveste tal kommer først, og den næste post bruges, når en tidligere ikke kan nås.',
+  'settings.providerCredentials.table.state.help':
+    'Om denne post indgår i reservekæden. En deaktiveret post bevares, men bruges aldrig.',
+  'settings.providerCredentials.table.endpoint.help':
+    'Den udbyderadresse, denne post tilsidesætter. Kun tilstandene CSC og SCAP har en; uden tilsidesættelse gælder tilstandens standardværdi.',
+  'settings.providerCredentials.table.fields.help':
+    'Hvilke hemmelige felter denne post reelt indeholder. Værdier returneres aldrig — kun om det enkelte felt er sat.',
+  'settings.providerCredentials.table.actions.help':
+    'Omarranger, rediger, test eller fjern denne post. Testresultatet oplyser præcis, hvilke trin der blev udført.',
+  'settings.providerCredentials.modes.title': 'Udbydertilstande',
+  'settings.providerCredentials.modes.lede':
+    'Alle signeringstilstande, denne installation understøtter, hvad hver enkelt bruges til, og hvad den kræver, før den kan tages i brug. En tilstand uden poster er ganske enkelt endnu ikke opsat.',
+  'settings.providerCredentials.modes.caption': 'Tilstande for signeringsudbydere',
+  'settings.providerCredentials.modes.column.mode': 'Tilstand',
+  'settings.providerCredentials.modes.column.mode.help':
+    'Typen af signeringsudbyder. Hver tilstand taler sin egen protokol og kræver sine egne legitimationsoplysninger.',
+  'settings.providerCredentials.modes.column.purpose': 'Hvad den bruges til',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'Hvad denne tilstand gør, når den signerer, og hvem der opbevarer signeringsnøglen.',
+  'settings.providerCredentials.modes.column.setup': 'Sådan opsættes den',
+  'settings.providerCredentials.modes.column.setup.help':
+    'De værdier, denne tilstand kræver, før en post kan bruges. Hemmeligheder kan kun skrives: du sætter dem og læser dem aldrig igen.',
+  'settings.providerCredentials.modes.column.entries': 'Poster',
+  'settings.providerCredentials.modes.column.entries.help':
+    'Hvor mange legitimationsposter der lige nu er gemt for denne tilstand. Nul betyder, at tilstanden ikke er opsat.',
+  'settings.providerCredentials.modes.column.actions': 'Handlinger',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Åbner postformularen allerede indstillet til denne tilstand, også for en tilstand uden noget opsat.',
+  'settings.providerCredentials.modes.configure': 'Opsæt',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Fjernsignering via AMA-tjenesten Chave Móvel Digital. Borgeren godkender hver signatur med sin CMD-pinkode og en engangskode sendt til sin enhed; signeringsnøglen forbliver hos tjenesten.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Fjernsignering hos en kvalificeret tillidstjenesteudbyder via Cloud Signature Consortium-API’et. Én adapter betjener enhver CSC-kompatibel udbyder: dokumentets hashværdi sendes ud, og signaturen kommer retur, mens nøglen bliver hos udbyderen.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'AMA’s tjeneste til attestering af faglige attributter. Den bekræfter, at underskriveren har en bestemt faglig attribut, som derefter bindes ind i signaturen; den er ikke i sig selv en signeringsnøgle.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Signerer med et certifikat og en privat nøgle, der ligger i en PKCS#12-fil på denne installation, uden nogen fjernudbyder. Den private nøgle er dermed gemt her, i hvile.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'Én enkelt post, uden udbyderidentifikator. Den kræver det program-id, AMA har udstedt, og miljøet (præproduktion eller produktion); adressen ligger fast pr. miljø og kan ikke tilsidesættes. I produktion kræves desuden HTTP Basic-legitimationsoplysninger og AMA’s feltkrypteringscertifikat i PEM.',
+  'settings.providerCredentials.modes.setup.csc':
+    'Én post pr. udbyder, hver med sin egen identifikator og sin egen HTTPS-basisadresse. Tjenestegodkendelse kræver OAuth-klient-id og klienthemmelighed; brugergodkendelse kræver i stedet et allerede udstedt adgangstoken. Legitimations-id, omfang og sandkasseflaget er valgfri, ligesom HTTP Basic-legitimationsoplysninger til en gateway foran API’et.',
+  'settings.providerCredentials.modes.setup.scap':
+    'Én enkelt post, uden udbyderidentifikator. Den kræver miljøet (præproduktion eller produktion) og i produktion tillige det program-id, AMA har udstedt, samt den tilhørende hemmelighed. Basisadressen er valgfri: uden den bruges adressen for det valgte miljø. HTTP Basic-legitimationsoplysninger er valgfri.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'Én post pr. identitet, hver med sin egen etiket. Den kræver filen .pfx/.p12 og den adgangssætning, der åbner den. Rummer filen mere end én identitet, så udpeg en via det beskrivende navn eller via local key ID i hexadecimal form. Der er ingen adresse at opsætte.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Forlad uden at gemme?',
   'unsaved.body': 'Denne side har ikke-gemte ændringer. Hvis du forlader den nu, går de tabt.',

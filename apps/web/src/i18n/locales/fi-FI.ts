@@ -24,6 +24,94 @@ export const fiFI: Catalog = {
   ...dashboardSourceLabelsFiFI,
   ...roleNameLabelsFiFI,
   ...attendeeQualityLabelsEnglish,
+  // --- Palvelinympäristön ohitukset (t14) ------------------------------------------
+  'settings.serverEnv.title': 'Palvelinympäristö',
+  'settings.serverEnv.intro':
+    'Ympäristömuuttujat, jotka tämä palvelin lukee käynnistyessään, ja arvo, johon käynnissä oleva prosessi päätyi. Voit ohittaa ne, jotka eivät ole salaisuuksia; ohitus tallennetaan tiedostoon ja tulee voimaan vasta seuraavassa käynnistyksessä, ei koskaan heti.',
+  'settings.serverEnv.loading': 'Ladataan palvelinympäristöä…',
+  'settings.serverEnv.loadError': 'Palvelinympäristöä ei voitu ladata.',
+  'settings.serverEnv.empty': 'Näytettäviä muuttujia ei ole.',
+  'settings.serverEnv.overridesPath':
+    'Ohitukset tallennetaan sijaintiin {path}, datahakemiston alle.',
+  'settings.serverEnv.restart.badge': 'Uudelleenkäynnistys odottaa',
+  'settings.serverEnv.restart.title': 'Tallennettu, ei vielä voimassa',
+  'settings.serverEnv.restart.body':
+    'Nämä arvot luetaan vain kerran, prosessin käynnistyessä. Ohitukset on tallennettu, mutta käynnissä oleva palvelin käyttää yhä sitä, minkä se luki käynnistyessään — käynnistä se uudelleen, jotta ne tulevat voimaan.',
+  'settings.serverEnv.restart.rowHint': 'Tallennettu ohitus poikkeaa käytössä olevasta arvosta.',
+  'settings.serverEnv.col.name': 'Muuttuja',
+  'settings.serverEnv.col.value': 'Voimassa oleva arvo',
+  'settings.serverEnv.col.source': 'Alkuperä',
+  'settings.serverEnv.col.default': 'Oletusarvo',
+  'settings.serverEnv.col.override': 'Ohitus',
+  'settings.serverEnv.source.override': 'Ohitus',
+  'settings.serverEnv.source.env': 'Ympäristö',
+  'settings.serverEnv.source.default': 'Oletusarvo',
+  'settings.serverEnv.source.override.hint':
+    'Arvo tulee tähän paneeliin tallennetusta ohituksesta.',
+  'settings.serverEnv.source.env.hint': 'Arvo tulee ympäristöstä, jossa palvelu käynnistettiin.',
+  'settings.serverEnv.source.default.hint':
+    'Ei ohitusta eikä ympäristömuuttujaa — käytössä on koodin oletusarvo.',
+  'settings.serverEnv.group.logging': 'Lokitus',
+  'settings.serverEnv.group.network': 'Verkko',
+  'settings.serverEnv.group.session': 'Istunnot',
+  'settings.serverEnv.group.notifications': 'Toimintokeskus',
+  'settings.serverEnv.group.rate_limit': 'Liikenteen rajoitus',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Tietokanta',
+  'settings.serverEnv.group.credentials': 'Tunnistetiedot',
+  'settings.serverEnv.group.cache': 'Välimuisti ja Redis',
+  'settings.serverEnv.group.cluster': 'Klusteri ja solmut',
+  'settings.serverEnv.group.postgres_tls': 'PostgreSQL:n TLS',
+  'settings.serverEnv.group.trust': 'Luottamus ja validointi',
+  'settings.serverEnv.group.signing': 'Allekirjoitus',
+  'settings.serverEnv.group.csc': 'Pilviallekirjoitus (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Ammatilliset määreet (SCAP)',
+  'settings.serverEnv.group.connectors': 'Liittimet',
+  'settings.serverEnv.group.storage': 'Tallennus',
+  'settings.serverEnv.group.paper_book': 'Paperikirjat (OCR)',
+  'settings.serverEnv.group.search': 'Haku ja indeksointi',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Tyhjäksi jättäminen poistaa ohituksen ja palauttaa ympäristön arvon tai oletusarvon.',
+  'settings.serverEnv.field.enumHint': 'Valitse jokin sallituista arvoista.',
+  'settings.serverEnv.field.boolTrue': 'Käytössä',
+  'settings.serverEnv.field.boolFalse': 'Pois käytöstä',
+  'settings.serverEnv.secret.note': '(sisältää tunnistetiedon — sitä ei koskaan näytetä tässä)',
+  'settings.serverEnv.secret.configured': 'Määritetty',
+  'settings.serverEnv.secret.notConfigured': 'Ei määritetty',
+  'settings.serverEnv.secret.body':
+    'Tämä on salaisuus. Paneeli kertoo vain, onko se asetettu, ei koskaan arvoa. Aseta se siellä, missä palvelu käynnistetään, tai sen omassa tunnistetietojen kulussa.',
+  'settings.serverEnv.boundary.badge': 'Turvallisuusraja',
+  'settings.serverEnv.boundary.ackLabel': 'Vahvistan ymmärtäväni tämän muutoksen vaikutuksen',
+  'settings.serverEnv.boundary.ackHint':
+    'Tämä muuttuja määrittää turvallisuusrajan. Sen muuttaminen vaatii nimenomaisen vahvistuksen; ilman sitä palvelin kieltäytyy tallentamasta.',
+  'settings.serverEnv.boundary.warningTitle': 'Turvallisuusrajan muuttaminen',
+  'settings.serverEnv.boundary.warningBody':
+    'Olet muuttamassa muuttujaa, joka ohjaa turvallisuusrajaa. Väärä asetus voi heikentää palvelimen turvallisuutta. Vahvista ennen tallennusta.',
+  'settings.serverEnv.narrowOnly.badge': 'Voi vain kaventaa',
+  'settings.serverEnv.narrowOnly.note':
+    'Tämä on käyttöönoton asettama yläraja. Ohitus voi vain kaventaa sitä, ei koskaan laajentaa.',
+  'settings.serverEnv.readOnly.badge': 'Vain luku',
+  'settings.serverEnv.readOnly.note':
+    'Tämä on prosessin ympäristöstä johdettu tieto, eikä sitä voi muokata tässä. Muuta se siellä, missä palvelu käynnistetään.',
+  'settings.serverEnv.typedSlice.note':
+    'Tätä muuttujaa hallitsee oma asetuksensa, jolla on määritelty etusija:',
+  'settings.serverEnv.externalReader.badge': 'Asetetaan tämän palvelimen ulkopuolella',
+  'settings.serverEnv.externalReader.note':
+    'Tämän muuttujan lukee toinen prosessi, joka ei lataa tätä ohitustiedostoa. Tänne tallennettu ohitus ei koskaan tavoittaisi sitä:',
+  'settings.serverEnv.save': 'Tallenna ohitukset',
+  'settings.serverEnv.saving': 'Tallennetaan…',
+  'settings.serverEnv.saved':
+    'Ohitukset tallennettu. Ne tulevat voimaan palvelimen seuraavassa käynnistyksessä.',
+  'settings.serverEnv.saveError': 'Ohituksia ei voitu tallentaa.',
+  'settings.serverEnv.discard': 'Hylkää muutokset',
+  'settings.serverEnv.clearOverride': 'Poista ohitus',
+  'settings.serverEnv.ackRequiredError':
+    'Vahvista jokainen turvallisuusrajan muutos ennen tallennusta.',
+  'settings.serverEnv.value.unset': 'Ei asetettu',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sinulla ei ole oikeutta tähän toimintoon',
   'perm.denied.title': 'Ei oikeutta',
@@ -1949,7 +2037,7 @@ export const fiFI: Catalog = {
   'settings.api.logging.hint':
     'Nämä kaksi kenttää kirjoittavat samaan asetusdokumenttiin kuin muutkin lokitasot.',
   'settings.api.env.hint':
-    'Luetaan prosessin ympäristöstä, kun palvelin käynnistyy. Niitä ei voi muokata täällä eikä minkään päätepisteen kautta; muutos vaatii palvelimen uudelleenkäynnistyksen.',
+    'Luetaan prosessin ympäristöstä, kun palvelin käynnistyy. Ne on lueteltu kohdassa ”Palvelinympäristö” yhdessä sen arvon kanssa, johon käynnissä oleva prosessi päätyi; siellä voi ohittaa ne, jotka eivät ole salaisuuksia. Jokainen muutos tulee voimaan vasta seuraavassa käynnistyksessä.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'Palvelin puhuu tavallista HTTP:tä. TLS päätetään sen edessä olevassa käänteisvälityspalvelimessa, ja alla oleva HSTS-otsake vaikuttaa vain siinä kokoonpanossa.',
@@ -4831,6 +4919,52 @@ export const fiFI: Catalog = {
   'settings.email.stage.data': 'Viestin lähetys',
   'settings.email.stage.quit': 'Istunnon päättäminen',
 
+  // --- Sähköposti (SMTP): lähetysrekisteri (t108) ---
+  'settings.email.deliveries.cardTitle': 'Lähetysrekisteri',
+  'settings.email.deliveries.lede':
+    'Miten kävi jokaiselle viestille, jonka sovellus on lähettänyt, uusimmasta vanhimpaan. Jokainen rivi on jo päättynyt yritys: jonoa ei ole eikä keskeneräistä tilaa ole.',
+  'settings.email.deliveries.caption':
+    'Sähköpostin lähetysrekisteri, jossa on jokaisen yrityksen lopputulos',
+  'settings.email.deliveries.col.when': 'Päivämäärä',
+  'settings.email.deliveries.col.template': 'Viesti',
+  'settings.email.deliveries.col.recipient': 'Vastaanottaja',
+  'settings.email.deliveries.col.status': 'Lopputulos',
+  'settings.email.deliveries.col.attempt': 'Yritys',
+  'settings.email.deliveries.col.failure': 'Epäonnistumisen syy',
+  'settings.email.deliveries.col.action': 'Toiminnot',
+  'settings.email.deliveries.help.when': 'Hetki, jolloin tämä yritys päättyi.',
+  'settings.email.deliveries.help.template':
+    'Mikä viesti lähetettiin. Jokainen viestityyppi kuuluu siihen kulkuun, joka sen myöntää.',
+  'settings.email.deliveries.help.recipient':
+    'Osoite, johon viesti meni, sellaisena kuin se kirjattiin.',
+  'settings.email.deliveries.help.status':
+    'Palvelimen hyväksymä tai hylkäämä. Hyväksyminen ei vahvista perillemenoa saapuneisiin.',
+  'settings.email.deliveries.help.attempt':
+    'Monesko yritys tämä on samalle viestille. Uudelleenlähetys lisää yrityksen sen sijaan, että korvaisi edellisen.',
+  'settings.email.deliveries.help.failure':
+    'Vaihe, johon istunto pysähtyi, ja vastaus, jonka palvelin antoi omin sanoin.',
+  'settings.email.deliveries.help.action':
+    'Uudelleen voidaan lähettää vain viestit, jotka voidaan koota uudelleen tallennetusta.',
+  'settings.email.deliveries.status.sent': 'Hyväksytty',
+  'settings.email.deliveries.status.failed': 'Hylätty',
+  'settings.email.deliveries.retry': 'Uudelleenlähetys',
+  'settings.email.deliveries.template.welcome': 'Tervetuloa tilille',
+  'settings.email.deliveries.template.pairingCode': 'Laitteen pariliitoskoodi',
+  'settings.email.deliveries.stage.notConfigured': 'Lähetystä ei ole määritetty',
+  'settings.email.deliveries.empty': 'Lähetyksiä ei ole vielä kirjattu',
+  'settings.email.deliveries.emptyBody':
+    'Heti kun sovellus lähettää ensimmäisen viestin, lopputulos näkyy tässä. Instanssissa, joka ei pidä tietokantakirjausta, tämä luettelo pysyy tyhjänä.',
+  'settings.email.deliveries.cappedTitle': 'Näytetään vain uusimmat',
+  'settings.email.deliveries.cappedBody':
+    'Näytetään {count} uusinta yritystä. Vanhempia lähetyksiä on olemassa, eivätkä ne mahdu tähän luetteloon.',
+  'settings.email.deliveries.resend': 'Lähetä uudelleen',
+  'settings.email.deliveries.notResendable':
+    'Tämä viesti sisälsi kertakäyttöisen koodin, jota ei tallenneta eikä voida koota uudelleen. Kyse ei ole käyttöoikeusrajoituksesta: myönnä se uudelleen sen kulun kautta, johon se kuuluu — kutsun tapauksessa myönnä uusi kutsu.',
+  'settings.email.deliveries.resentToast': 'Viesti lähetettiin uudelleen',
+  'settings.email.deliveries.resendFailedTitle': 'Uudelleenlähetys hylättiin',
+  'settings.email.deliveries.resendFailedBody':
+    'Uusi yritys kirjattiin hylätyksi. Palvelimen vastaus on alla.',
+
   'settings.email.remedy.dns':
     'Palvelimen nimeä ei saatu selvitettyä. Tarkista kirjoitusasu ja se, että DNS tuntee sen.',
   'settings.email.remedy.unreachable':
@@ -5043,7 +5177,9 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.form.enabled': 'Merkintä käytössä',
   'settings.providerCredentials.form.endpoint': 'Päätepiste (base_url)',
   'settings.providerCredentials.form.endpointHint':
-    'Perus-URL-osoitteen korvaus tälle palveluntarjoajalle.',
+    'Perusosoitteen korvaus; tyhjänä käytetään ympäristön oletusta.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Pakollinen. Palveluntarjoajan CSC v2 -rajapinnan HTTPS-perusosoite.',
   'settings.providerCredentials.form.pfxWarning.title': 'Yksityinen avain levossa',
   'settings.providerCredentials.form.pfxWarning.body':
     'PKCS#12-tiedoston tallentaminen tarkoittaa yksityisen allekirjoitusavaimen säilyttämistä levossa. Suosi luottamuksellista suojausta.',
@@ -5084,23 +5220,25 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.help.mode':
     'Määritettävän allekirjoituspalvelun tyyppi. Esim. CSC/QTSP etäallekirjoitukseen, PKCS#12 paikalliseen varmenteeseen.',
   'settings.providerCredentials.help.providerId':
-    'Sisäinen tunniste, joka erottaa tämän palveluntarjoajan muista samantyyppisistä. Esim. ”encosto-qtsp”.',
+    'Sisäinen tunniste, joka erottaa tämän palveluntarjoajan muista samantyyppisistä ja jonka alta tunnistetiedot haetaan allekirjoitettaessa, joten sen on vastattava silloin käytettävää tunnistetta. CSC-QTSP:ssä käytä pieniä ASCII-kirjaimia; PKCS#12:ssa se on pelkkä henkilöllisyyden nimi. Esim. ”encosto-qtsp”.',
   'settings.providerCredentials.help.label':
     'Vapaa nimi tämän merkinnän tunnistamiseksi luettelossa. Esim. ”Ensisijainen avain” tai ”Varajärjestely”.',
   'settings.providerCredentials.help.enabled':
     'Kun aktiivinen, tämä merkintä kuuluu vikasietoketjuun; poista käytöstä sulkeaksesi sen pois poistamatta sitä.',
   'settings.providerCredentials.help.endpoint':
-    'Palveluntarjoajan API:n perus-URL, joka korvaa oletusarvon. Esim. https://qtsp.example.com/csc/v1',
+    'SCAP-palvelun perusosoite, joka korvaa valitun ympäristön oletuksen. Jätä tyhjäksi käyttääksesi tuota oletusta. Esim. https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'QTSP:n CSC v2 -rajapinnan perusosoite. Se on pakollinen: oletusta ei ole, ja ilman sitä merkintä jää vaillinaiseksi. Sen on oltava HTTPS, paitsi localhostissa tai osoitteessa 127.0.0.1 niin kauan kuin testiympäristövalinta on käytössä. Esim. https://qtsp.example.com/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Varmennetiedosto .pfx/.p12, joka sisältää yksityisen allekirjoitusavaimen. Esim. ”allekirjoitus.pfx”, viety PKI:stä.',
   'settings.providerCredentials.help.applicationId':
-    'AMA:n Chave Móvel Digital / SCAP -palvelulle myöntämä ApplicationId. Esim. GUID kuten 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'AMA:n Chave Móvel Digital- tai SCAP-palvelulle myöntämä ApplicationId. Se on läpinäkymätön arvo: käytä sitä täsmälleen sellaisena kuin sen sait, olettamatta mitään muotoa.',
   'settings.providerCredentials.help.httpBasicUsername':
     'HTTP Basic -todennuksen käyttäjätunnus, kun palveluntarjoaja vaatii sen API:n edessä. Esim. ”chancela-prod”.',
   'settings.providerCredentials.help.httpBasicPassword':
     'HTTP Basic -todennuksen salasana, joka kuuluu käyttäjätunnukseen. Esim. pitkä salainen merkkijono palveluntarjoajalta.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA:n asiakasvarmenne PEM-muodossa, käytetään keskinäisessä TLS:ssä SCMD:n kanssa. Esim. lohko ”-----BEGIN CERTIFICATE-----…”.',
+    'AMA:n julkinen varmenne PEM-muodossa. Sen RSA-avain salaa matkapuhelinnumeron, PIN-koodin ja kertakoodin ennen kuin ne lähtevät SCMD-pyynnössä; tuotannossa se vaaditaan, ja ilman sitä nämä kentät lähtevät esituotannossa selväkielisinä. Esim. lohko ”-----BEGIN CERTIFICATE-----…”.',
   'settings.providerCredentials.help.clientId':
     'QTSP:n myöntämä OAuth2-asiakastunnus. Esim. ”chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -5120,7 +5258,7 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.help.scope':
     'QTSP:ltä pyydetyt OAuth2-laajuudet välilyönnein eroteltuina. Esim. ”service credential”.',
   'settings.providerCredentials.help.sandbox':
-    'Ottaa käyttöön palveluntarjoajan testitilan ilman todellisia vaikutuksia. Esim. päällä integroinnissa, pois tuotannossa.',
+    'Merkitsee tämän merkinnän osoittamaan palveluntarjoajan testiympäristöön. Valinnan ollessa käytössä hyväksytään http://-osoite localhostissa tai osoitteessa 127.0.0.1 sen sijaan, että vaadittaisiin HTTPS, ja palveluntarjoaja ilmoitetaan tuotannolta estetyksi. Yksinään se ei estä todellisia toimintoja: se riippuu antamastasi osoitteesta.',
   'settings.providerCredentials.help.environment':
     'SCAP-palvelun ympäristö, johon tämä merkintä yhdistää. Esim. ”Esituotanto” testaukseen, ”Tuotanto” todelliseen käyttöön.',
   'settings.providerCredentials.help.friendlyName':
@@ -6124,8 +6262,58 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.table.state': 'Tila',
   'settings.providerCredentials.table.endpoint': 'Osoite',
   'settings.providerCredentials.table.endpointDefault': 'Oletusosoite',
+  'settings.providerCredentials.table.endpointRequired': 'Puuttuu (pakollinen)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Ei sovellu',
   'settings.providerCredentials.table.fields': 'Kentät',
   'settings.providerCredentials.table.actions': 'Toiminnot',
+  'settings.providerCredentials.table.entry.help':
+    'Nimi, jonka annoit näille tallennetuille tunnistetiedoille, sekä palvelimen antama muuttumaton merkinnän tunnus.',
+  'settings.providerCredentials.table.priority.help':
+    'Järjestys, jossa merkintöjä kokeillaan. Pienin numero on ensimmäisenä, ja seuraavaa merkintää käytetään, kun aiempaa ei tavoiteta.',
+  'settings.providerCredentials.table.state.help':
+    'Osallistuuko tämä merkintä varajärjestelyketjuun. Poistettu käytöstä oleva merkintä säilytetään, mutta sitä ei koskaan käytetä.',
+  'settings.providerCredentials.table.endpoint.help':
+    'Palveluntarjoajan osoite, jonka tämä merkintä korvaa. Vain CSC- ja SCAP-tiloilla on sellainen; ilman korvausta käytetään tilan oletusarvoa.',
+  'settings.providerCredentials.table.fields.help':
+    'Mitä salaisia kenttiä tämä merkintä todella sisältää. Arvoja ei koskaan palauteta — vain tieto siitä, onko kukin kenttä asetettu.',
+  'settings.providerCredentials.table.actions.help':
+    'Järjestä uudelleen, muokkaa, testaa tai poista tämä merkintä. Testin tulos kertoo tarkalleen, mitkä vaiheet suoritettiin.',
+  'settings.providerCredentials.modes.title': 'Palveluntarjoajatilat',
+  'settings.providerCredentials.modes.lede':
+    'Kaikki tämän asennuksen tukemat allekirjoitustilat, mihin kutakin käytetään ja mitä se vaatii ennen käyttöönottoa. Tila, jolla ei ole merkintöjä, on yksinkertaisesti vielä määrittämättä.',
+  'settings.providerCredentials.modes.caption': 'Allekirjoituspalveluntarjoajien tilat',
+  'settings.providerCredentials.modes.column.mode': 'Tila',
+  'settings.providerCredentials.modes.column.mode.help':
+    'Allekirjoituspalveluntarjoajan tyyppi. Jokainen tila puhuu omaa protokollaansa ja vaatii omat tunnistetietonsa.',
+  'settings.providerCredentials.modes.column.purpose': 'Mihin sitä käytetään',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'Mitä tämä tila tekee allekirjoittaessaan ja kuka säilyttää allekirjoitusavainta.',
+  'settings.providerCredentials.modes.column.setup': 'Miten se määritetään',
+  'settings.providerCredentials.modes.column.setup.help':
+    'Arvot, joita tämä tila vaatii ennen kuin merkintää voi käyttää. Salaisuudet ovat vain kirjoitettavia: asetat ne etkä lue niitä koskaan takaisin.',
+  'settings.providerCredentials.modes.column.entries': 'Merkinnät',
+  'settings.providerCredentials.modes.column.entries.help':
+    'Kuinka monta tunnusmerkintää tälle tilalle on juuri nyt tallennettu. Nolla tarkoittaa, ettei tilaa ole määritetty.',
+  'settings.providerCredentials.modes.column.actions': 'Toiminnot',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Avaa merkintälomakkeen valmiiksi tähän tilaan asetettuna, myös tilalle, jolle ei ole määritetty mitään.',
+  'settings.providerCredentials.modes.configure': 'Määritä',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Etäallekirjoitus AMA:n Chave Móvel Digital -palvelun kautta. Kansalainen valtuuttaa jokaisen allekirjoituksen CMD-tunnusluvullaan ja omaan laitteeseensa lähetetyllä kertakoodilla; allekirjoitusavain pysyy palvelulla.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Etäallekirjoitus hyväksytyllä luottamuspalvelun tarjoajalla Cloud Signature Consortiumin rajapinnan kautta. Yksi sovitin palvelee jokaista CSC-yhteensopivaa tarjoajaa: asiakirjan tiiviste lähtee ulos ja allekirjoitus palaa, avaimen pysyessä tarjoajalla.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'AMA:n palvelu ammatillisten ominaisuuksien varmentamiseen. Se todistaa, että allekirjoittajalla on tietty ammatillinen ominaisuus, joka sidotaan sitten allekirjoitukseen; se ei itsessään ole allekirjoitusavain.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Allekirjoittaa varmenteella ja yksityisellä avaimella, jotka ovat tämän asennuksen PKCS#12-tiedostossa, ilman etäpalveluntarjoajaa. Yksityinen avain on siten tallennettuna tänne, levossa.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'Yksi ainoa merkintä, ilman palveluntarjoajan tunnistetta. Se vaatii AMA:n myöntämän sovellustunnuksen ja ympäristön (esituotanto tai tuotanto); osoite on ympäristökohtaisesti kiinteä eikä sitä voi korvata. Tuotannossa vaaditaan lisäksi HTTP Basic -tunnistetiedot ja AMA:n kenttäsalausvarmenne PEM-muodossa.',
+  'settings.providerCredentials.modes.setup.csc':
+    'Yksi merkintä palveluntarjoajaa kohti, kullakin oma tunniste ja oma HTTPS-perusosoite. Palveluvaltuutus vaatii OAuth-asiakastunnuksen ja asiakassalaisuuden; käyttäjävaltuutus vaatii sen sijaan aiemmin hankitun käyttöoikeustunnisteen. Tunnistetiedon tunnus, laajuus ja hiekkalaatikkovalinta ovat valinnaisia, samoin HTTP Basic -tunnistetiedot rajapinnan edessä olevalle yhdyskäytävälle.',
+  'settings.providerCredentials.modes.setup.scap':
+    'Yksi ainoa merkintä, ilman palveluntarjoajan tunnistetta. Se vaatii ympäristön (esituotanto tai tuotanto) ja tuotannossa myös AMA:n myöntämän sovellustunnuksen sekä sitä vastaavan salaisuuden. Perusosoite on valinnainen: ilman sitä käytetään valitun ympäristön osoitetta. HTTP Basic -tunnistetiedot ovat valinnaisia.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'Yksi merkintä henkilöllisyyttä kohti, kullakin oma nimi. Se vaatii .pfx/.p12-tiedoston ja salalauseen, joka avaa sen. Jos tiedostossa on useampi kuin yksi henkilöllisyys, osoita yksi kuvaavalla nimellä tai heksadesimaalisella local key ID -arvolla. Osoitetta ei ole määritettävänä.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Poistutaanko tallentamatta?',
   'unsaved.body': 'Tällä sivulla on tallentamattomia muutoksia. Jos poistut nyt, ne menetetään.',

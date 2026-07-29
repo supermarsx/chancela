@@ -28,6 +28,94 @@ export const svFI: Catalog = {
   ...dashboardSourceLabelsSvFI,
   ...roleNameLabelsSvFI,
   ...attendeeQualityLabelsEnglish,
+  // --- Åsidosättningar av servermiljön (t14) ---------------------------------------
+  'settings.serverEnv.title': 'Servermiljö',
+  'settings.serverEnv.intro':
+    'De miljövariabler som den här servern läser vid start, med det värde den körande processen kom fram till. Du kan åsidosätta dem som inte är hemliga; en åsidosättning sparas i en fil och börjar gälla vid nästa start, aldrig omedelbart.',
+  'settings.serverEnv.loading': 'Läser in servermiljön…',
+  'settings.serverEnv.loadError': 'Servermiljön kunde inte läsas in.',
+  'settings.serverEnv.empty': 'Det finns inga variabler att visa.',
+  'settings.serverEnv.overridesPath': 'Åsidosättningar sparas i {path}, under datakatalogen.',
+  'settings.serverEnv.restart.badge': 'Omstart väntar',
+  'settings.serverEnv.restart.title': 'Sparat, ännu inte tillämpat',
+  'settings.serverEnv.restart.body':
+    'De här värdena läses bara en gång, när processen startar. Åsidosättningarna är sparade, men den körande servern använder fortfarande det den läste vid start — starta om den för att tillämpa dem.',
+  'settings.serverEnv.restart.rowHint':
+    'Den sparade åsidosättningen skiljer sig från det körande värdet.',
+  'settings.serverEnv.col.name': 'Variabel',
+  'settings.serverEnv.col.value': 'Gällande värde',
+  'settings.serverEnv.col.source': 'Ursprung',
+  'settings.serverEnv.col.default': 'Standardvärde',
+  'settings.serverEnv.col.override': 'Åsidosättning',
+  'settings.serverEnv.source.override': 'Åsidosättning',
+  'settings.serverEnv.source.env': 'Miljö',
+  'settings.serverEnv.source.default': 'Standardvärde',
+  'settings.serverEnv.source.override.hint':
+    'Värdet kommer från den åsidosättning som sparats i den här panelen.',
+  'settings.serverEnv.source.env.hint': 'Värdet kommer från den miljö där tjänsten startades.',
+  'settings.serverEnv.source.default.hint':
+    'Varken åsidosättning eller miljövariabel — standardvärdet från koden gäller.',
+  'settings.serverEnv.group.logging': 'Loggning',
+  'settings.serverEnv.group.network': 'Nätverk',
+  'settings.serverEnv.group.session': 'Sessioner',
+  'settings.serverEnv.group.notifications': 'Åtgärdscentret',
+  'settings.serverEnv.group.rate_limit': 'Trafikbegränsning',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Databas',
+  'settings.serverEnv.group.credentials': 'Användaruppgifter',
+  'settings.serverEnv.group.cache': 'Cache och Redis',
+  'settings.serverEnv.group.cluster': 'Kluster och noder',
+  'settings.serverEnv.group.postgres_tls': 'TLS för PostgreSQL',
+  'settings.serverEnv.group.trust': 'Tillit och validering',
+  'settings.serverEnv.group.signing': 'Signering',
+  'settings.serverEnv.group.csc': 'Signering i molnet (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Yrkesattribut (SCAP)',
+  'settings.serverEnv.group.connectors': 'Anslutningar',
+  'settings.serverEnv.group.storage': 'Lagring',
+  'settings.serverEnv.group.paper_book': 'Pappersböcker (OCR)',
+  'settings.serverEnv.group.search': 'Sökning och indexering',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Lämnar du fältet tomt tas åsidosättningen bort och värdet från miljön eller standardvärdet gäller igen.',
+  'settings.serverEnv.field.enumHint': 'Välj ett av de tillåtna värdena.',
+  'settings.serverEnv.field.boolTrue': 'Aktiverad',
+  'settings.serverEnv.field.boolFalse': 'Avaktiverad',
+  'settings.serverEnv.secret.note': '(innehåller en användaruppgift — visas aldrig här)',
+  'settings.serverEnv.secret.configured': 'Konfigurerad',
+  'settings.serverEnv.secret.notConfigured': 'Inte konfigurerad',
+  'settings.serverEnv.secret.body':
+    'Detta är en hemlighet. Panelen visar bara om den är satt, aldrig värdet. Sätt den där tjänsten startas eller genom dess eget flöde för användaruppgifter.',
+  'settings.serverEnv.boundary.badge': 'Säkerhetsgräns',
+  'settings.serverEnv.boundary.ackLabel':
+    'Jag bekräftar att jag förstår effekten av den här ändringen',
+  'settings.serverEnv.boundary.ackHint':
+    'Den här variabeln fastställer en säkerhetsgräns. Att ändra den kräver ett uttryckligt medgivande; utan det vägrar servern att spara.',
+  'settings.serverEnv.boundary.warningTitle': 'Ändring av en säkerhetsgräns',
+  'settings.serverEnv.boundary.warningBody':
+    'Du ändrar en variabel som styr en säkerhetsgräns. En felaktig inställning kan försvaga serverns säkerhet. Bekräfta innan du sparar.',
+  'settings.serverEnv.narrowOnly.badge': 'Kan bara begränsas',
+  'settings.serverEnv.narrowOnly.note':
+    'Detta är ett tak som installationen sätter. En åsidosättning kan bara begränsa det, aldrig vidga det.',
+  'settings.serverEnv.readOnly.badge': 'Skrivskyddad',
+  'settings.serverEnv.readOnly.note':
+    'Detta är en uppgift som följer av processens miljö och går inte att ändra här. Ändra den där tjänsten startas.',
+  'settings.serverEnv.typedSlice.note':
+    'Den här variabeln styrs av en egen inställning med fastställd företrädesordning:',
+  'settings.serverEnv.externalReader.badge': 'Sätts utanför den här servern',
+  'settings.serverEnv.externalReader.note':
+    'Den här variabeln läses av en annan process, och den processen läser inte in den här åsidosättningsfilen. En åsidosättning som sparas här skulle aldrig nå fram till den:',
+  'settings.serverEnv.save': 'Spara åsidosättningar',
+  'settings.serverEnv.saving': 'Sparar…',
+  'settings.serverEnv.saved': 'Åsidosättningar sparade. De gäller från serverns nästa start.',
+  'settings.serverEnv.saveError': 'Åsidosättningarna kunde inte sparas.',
+  'settings.serverEnv.discard': 'Förkasta ändringar',
+  'settings.serverEnv.clearOverride': 'Rensa åsidosättningen',
+  'settings.serverEnv.ackRequiredError':
+    'Bekräfta varje ändring av en säkerhetsgräns innan du sparar.',
+  'settings.serverEnv.value.unset': 'Inte satt',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Du har inte behörighet för den här åtgärden',
   'perm.denied.title': 'Ingen behörighet',
@@ -1955,7 +2043,7 @@ export const svFI: Catalog = {
   'settings.api.logging.hint':
     'Dessa två fält skriver till samma inställningsdokument som övriga loggnivåer.',
   'settings.api.env.hint':
-    'Läses från processmiljön när servern startar. De går varken att redigera här eller via något endpoint; en ändring kräver omstart av servern.',
+    'Läses från processmiljön när servern startar. De listas, med det värde den körande processen kom fram till, under ”Servermiljö”, där de som inte är hemliga kan åsidosättas. Varje ändring gäller först vid nästa omstart.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'Servern talar vanlig HTTP. TLS avslutas i den omvända proxyn framför den, och HSTS-huvudet nedan får effekt bara i den uppsättningen.',
@@ -4827,6 +4915,52 @@ export const svFI: Catalog = {
   'settings.email.stage.data': 'Sändning av meddelandet',
   'settings.email.stage.quit': 'Avslut av sessionen',
 
+  // --- E-post (SMTP): utskicksregistret (t108) ---
+  'settings.email.deliveries.cardTitle': 'Utskicksregister',
+  'settings.email.deliveries.lede':
+    'Vad som blev av varje meddelande som programmet har skickat, det senaste först. Varje rad är ett försök som redan är avslutat: det finns ingen kö och inget väntande tillstånd.',
+  'settings.email.deliveries.caption':
+    'Utskicksregister för e-post, med resultatet av varje försök',
+  'settings.email.deliveries.col.when': 'Datum',
+  'settings.email.deliveries.col.template': 'Meddelande',
+  'settings.email.deliveries.col.recipient': 'Mottagare',
+  'settings.email.deliveries.col.status': 'Resultat',
+  'settings.email.deliveries.col.attempt': 'Försök',
+  'settings.email.deliveries.col.failure': 'Orsak till felet',
+  'settings.email.deliveries.col.action': 'Åtgärder',
+  'settings.email.deliveries.help.when': 'Tidpunkten då detta försök avslutades.',
+  'settings.email.deliveries.help.template':
+    'Vilket meddelande som skickades. Varje typ av meddelande hör till det flöde som utfärdar det.',
+  'settings.email.deliveries.help.recipient':
+    'Adressen som meddelandet gick till, så som den registrerades.',
+  'settings.email.deliveries.help.status':
+    'Godtaget av servern, eller avvisat. Godtaget bekräftar inte leverans till inkorgen.',
+  'settings.email.deliveries.help.attempt':
+    'Vilket försök i ordningen detta är för samma meddelande. Ett omsändande lägger till ett försök i stället för att ersätta det föregående.',
+  'settings.email.deliveries.help.failure':
+    'Det steg där sessionen stannade och det svar servern gav, med dess egna ord.',
+  'settings.email.deliveries.help.action':
+    'Bara meddelanden som går att bygga upp igen ur det lagrade kan skickas på nytt.',
+  'settings.email.deliveries.status.sent': 'Godtaget',
+  'settings.email.deliveries.status.failed': 'Avvisat',
+  'settings.email.deliveries.retry': 'Omsänt',
+  'settings.email.deliveries.template.welcome': 'Välkommen till kontot',
+  'settings.email.deliveries.template.pairingCode': 'Parkopplingskod för enhet',
+  'settings.email.deliveries.stage.notConfigured': 'Utskick är inte konfigurerat',
+  'settings.email.deliveries.empty': 'Inga utskick har registrerats ännu',
+  'settings.email.deliveries.emptyBody':
+    'Så snart programmet skickar sitt första meddelande visas resultatet här. På en instans som inte för någon databasregistrering förblir listan tom.',
+  'settings.email.deliveries.cappedTitle': 'Endast de senaste visas',
+  'settings.email.deliveries.cappedBody':
+    'De {count} senaste försöken visas. Det finns äldre utskick som inte ryms i den här listan.',
+  'settings.email.deliveries.resend': 'Skicka på nytt',
+  'settings.email.deliveries.notResendable':
+    'Det här meddelandet bar en engångskod som inte lagras och inte går att bygga upp igen. Det är ingen behörighetsbegränsning: utfärda det på nytt genom det flöde det hör till — vid en inbjudan utfärdar du en ny inbjudan.',
+  'settings.email.deliveries.resentToast': 'Meddelandet har skickats på nytt',
+  'settings.email.deliveries.resendFailedTitle': 'Omsändningen avvisades',
+  'settings.email.deliveries.resendFailedBody':
+    'Det nya försöket registrerades som avvisat. Serverns svar står nedan.',
+
   'settings.email.remedy.dns':
     'Serverns namn kunde inte slås upp. Kontrollera stavningen och att DNS känner till det.',
   'settings.email.remedy.unreachable':
@@ -5040,7 +5174,9 @@ export const svFI: Catalog = {
   'settings.providerCredentials.form.enabled': 'Post aktiverad',
   'settings.providerCredentials.form.endpoint': 'Slutpunkt (base_url)',
   'settings.providerCredentials.form.endpointHint':
-    'Åsidosättning av bas-URL för denna leverantör.',
+    'Åsidosättning av basadressen; tomt ger miljöns standard.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Obligatoriskt. HTTPS-basadress till leverantörens CSC v2-API.',
   'settings.providerCredentials.form.pfxWarning.title': 'Privat nyckel i vila',
   'settings.providerCredentials.form.pfxWarning.body':
     'Att lagra en PKCS#12-fil innebär att förvara en privat signeringsnyckel i vila. Föredra konfidentiellt skydd.',
@@ -5080,23 +5216,25 @@ export const svFI: Catalog = {
   'settings.providerCredentials.help.mode':
     'Typ av signaturleverantör som ska konfigureras. T.ex. CSC/QTSP för fjärrsignering, PKCS#12 för ett lokalt certifikat.',
   'settings.providerCredentials.help.providerId':
-    'Intern identifierare som skiljer den här leverantören från andra av samma typ. T.ex. ”encosto-qtsp”.',
+    'Intern identifierare som skiljer den här leverantören från andra av samma typ och som uppgifterna slås upp under vid signering, så den måste stämma med den identifierare som används då. För en CSC-QTSP, använd små ASCII-bokstäver; för PKCS#12 är det bara identitetens etikett. T.ex. ”encosto-qtsp”.',
   'settings.providerCredentials.help.label':
     'Fritt namn för att känna igen den här posten i listan. T.ex. ”Primär nyckel” eller ”Reserv”.',
   'settings.providerCredentials.help.enabled':
     'När den är aktiv ingår den här posten i failover-kedjan; inaktivera den för att utesluta den utan att radera den.',
   'settings.providerCredentials.help.endpoint':
-    'Bas-URL för leverantörens API som åsidosätter standardvärdet. T.ex. https://qtsp.example.com/csc/v1',
+    'Basadress till SCAP-tjänsten som åsidosätter standarden för den valda miljön. Lämna fältet tomt för att använda den standarden. T.ex. https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'Basadress till QTSP:ns CSC v2-API. Den krävs: det finns ingen standard, och en post utan den förblir ofullständig. Den måste vara HTTPS, utom på localhost eller 127.0.0.1 så länge alternativet för testmiljö är på. T.ex. https://qtsp.example.com/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Certifikatfil .pfx/.p12 som innehåller den privata signeringsnyckeln. T.ex. ”signatur.pfx” exporterad från PKI.',
   'settings.providerCredentials.help.applicationId':
-    'ApplicationId som tilldelats av AMA för Chave Móvel Digital / SCAP. T.ex. ett GUID som 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'ApplicationId som tilldelats av AMA för Chave Móvel Digital eller SCAP. Det är ett ogenomskinligt värde: använd det exakt som du fick det, utan att förutsätta något format.',
   'settings.providerCredentials.help.httpBasicUsername':
     'Användarnamn för HTTP Basic-autentisering, när leverantören kräver det framför API:et. T.ex. ”chancela-prod”.',
   'settings.providerCredentials.help.httpBasicPassword':
     'Lösenord för HTTP Basic-autentisering som hör till användarnamnet. T.ex. en lång hemlig sträng från leverantören.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA-klientcertifikat i PEM-format, används för ömsesidig TLS med SCMD. T.ex. blocket ”-----BEGIN CERTIFICATE-----…”.',
+    'Offentligt AMA-certifikat i PEM-format. Dess RSA-nyckel krypterar mobilnumret, pinkoden och engångskoden innan de skickas med i SCMD-begäran; i produktion krävs det, och utan det går fälten i klartext i förproduktion. T.ex. blocket ”-----BEGIN CERTIFICATE-----…”.',
   'settings.providerCredentials.help.clientId':
     'OAuth2-klientidentifierare som tilldelats av QTSP. T.ex. ”chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -5116,7 +5254,7 @@ export const svFI: Catalog = {
   'settings.providerCredentials.help.scope':
     'OAuth2-omfattningar som begärs av QTSP, åtskilda med blanksteg. T.ex. ”service credential”.',
   'settings.providerCredentials.help.sandbox':
-    'Aktiverar leverantörens testläge, utan verkliga effekter. T.ex. på under integrationen, av i produktion.',
+    'Markerar den här posten som riktad mot leverantörens testmiljö. Med alternativet på godtas en http://-adress på localhost eller 127.0.0.1 i stället för att HTTPS krävs, och leverantören rapporteras som blockerad för produktion. I sig hindrar det inte verkliga åtgärder: det beror på adressen du anger.',
   'settings.providerCredentials.help.environment':
     'SCAP-tjänstmiljö som den här posten ansluter till. T.ex. ”Förproduktion” för test, ”Produktion” för verklig användning.',
   'settings.providerCredentials.help.friendlyName':
@@ -6120,8 +6258,58 @@ export const svFI: Catalog = {
   'settings.providerCredentials.table.state': 'Status',
   'settings.providerCredentials.table.endpoint': 'Adress',
   'settings.providerCredentials.table.endpointDefault': 'Standardadress',
+  'settings.providerCredentials.table.endpointRequired': 'Saknas (obligatorisk)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Ej tillämpligt',
   'settings.providerCredentials.table.fields': 'Fält',
   'settings.providerCredentials.table.actions': 'Åtgärder',
+  'settings.providerCredentials.table.entry.help':
+    'Etiketten du gav dessa sparade uppgifter, samt det oföränderliga post-id som servern tilldelade.',
+  'settings.providerCredentials.table.priority.help':
+    'Ordningen som posterna prövas i. Lägsta numret går först, och nästa post används när en tidigare inte går att nå.',
+  'settings.providerCredentials.table.state.help':
+    'Om posten ingår i reservkedjan. En inaktiverad post behålls men används aldrig.',
+  'settings.providerCredentials.table.endpoint.help':
+    'Leverantörsadressen som posten åsidosätter. Bara lägena CSC och SCAP har en; utan åsidosättande gäller lägets standardvärde.',
+  'settings.providerCredentials.table.fields.help':
+    'Vilka hemliga fält posten faktiskt innehåller. Värden returneras aldrig — bara om respektive fält är ifyllt.',
+  'settings.providerCredentials.table.actions.help':
+    'Ordna om, redigera, testa eller ta bort posten. Testresultatet anger exakt vilka steg som utfördes.',
+  'settings.providerCredentials.modes.title': 'Leverantörslägen',
+  'settings.providerCredentials.modes.lede':
+    'Alla signeringslägen som den här installationen stöder, vad vart och ett används till och vad det kräver innan det kan tas i bruk. Ett läge utan poster är helt enkelt ännu inte konfigurerat.',
+  'settings.providerCredentials.modes.caption': 'Lägen för signeringsleverantörer',
+  'settings.providerCredentials.modes.column.mode': 'Läge',
+  'settings.providerCredentials.modes.column.mode.help':
+    'Typen av signeringsleverantör. Varje läge talar sitt eget protokoll och kräver egna uppgifter.',
+  'settings.providerCredentials.modes.column.purpose': 'Vad det används till',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'Vad läget gör när det signerar och vem som förvarar signeringsnyckeln.',
+  'settings.providerCredentials.modes.column.setup': 'Så konfigureras det',
+  'settings.providerCredentials.modes.column.setup.help':
+    'Värdena som läget kräver innan en post kan användas. Hemligheter går bara att skriva: du anger dem och läser aldrig tillbaka dem.',
+  'settings.providerCredentials.modes.column.entries': 'Poster',
+  'settings.providerCredentials.modes.column.entries.help':
+    'Hur många uppgiftsposter som just nu är sparade för läget. Noll betyder att läget inte är konfigurerat.',
+  'settings.providerCredentials.modes.column.actions': 'Åtgärder',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Öppnar postformuläret redan inställt på det här läget, även för ett läge där inget är konfigurerat.',
+  'settings.providerCredentials.modes.configure': 'Konfigurera',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Fjärrsignering via AMA-tjänsten Chave Móvel Digital. Medborgaren godkänner varje signatur med sin CMD-pinkod och en engångskod som skickas till den egna enheten; signeringsnyckeln stannar hos tjänsten.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Fjärrsignering hos en kvalificerad tillhandahållare av betrodda tjänster via Cloud Signature Consortium-API:et. En enda adapter betjänar varje CSC-kompatibel leverantör: dokumentets hashvärde skickas ut och signaturen kommer tillbaka, medan nyckeln stannar hos leverantören.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'AMA:s tjänst för intygande av yrkesattribut. Den intygar att undertecknaren har ett visst yrkesattribut, som sedan binds in i signaturen; den är inte i sig någon signeringsnyckel.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Signerar med ett certifikat och en privat nyckel som ligger i en PKCS#12-fil på den här installationen, utan någon fjärrleverantör. Den privata nyckeln lagras därmed här, i vila.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'En enda post, utan leverantörsidentifierare. Den kräver det program-id som AMA utfärdat och miljön (förproduktion eller produktion); adressen är fast per miljö och går inte att åsidosätta. I produktion krävs dessutom HTTP Basic-uppgifter och AMA:s certifikat för fältkryptering i PEM-format.',
+  'settings.providerCredentials.modes.setup.csc':
+    'En post per leverantör, var och en med egen identifierare och egen HTTPS-basadress. Tjänstebehörighet kräver OAuth-klient-id och klienthemlighet; användarbehörighet kräver i stället en redan utfärdad åtkomsttoken. Uppgifts-id, omfattning och sandlådeflaggan är valfria, liksom HTTP Basic-uppgifter för en gateway framför API:et.',
+  'settings.providerCredentials.modes.setup.scap':
+    'En enda post, utan leverantörsidentifierare. Den kräver miljön (förproduktion eller produktion) och, i produktion, det program-id som AMA utfärdat samt tillhörande hemlighet. Basadressen är valfri: utan den används adressen för den valda miljön. HTTP Basic-uppgifter är valfria.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'En post per identitet, var och en med egen etikett. Den kräver filen .pfx/.p12 och lösenfrasen som öppnar den. Om filen rymmer fler än en identitet pekar du ut en med det beskrivande namnet eller med local key ID i hexadecimal form. Det finns ingen adress att konfigurera.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Lämna utan att spara?',
   'unsaved.body': 'Den här sidan har osparade ändringar. Om du lämnar den nu går de förlorade.',

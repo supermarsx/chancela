@@ -136,6 +136,10 @@ export const ledgerEventLabelsPtPT = {
     'Plano de resposta a violação de dados atualizado',
   'enum.ledgerEventKind.privacy.dpia.created':
     'Avaliação de impacto sobre a proteção de dados criada',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Modelo de avaliação de impacto sobre a proteção de dados reposto para o predefinido',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Modelo de avaliação de impacto sobre a proteção de dados atualizado',
   'enum.ledgerEventKind.privacy.dpia.updated':
     'Avaliação de impacto sobre a proteção de dados atualizada',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Pedido de titular de dados concluído',
@@ -327,6 +331,10 @@ export const ledgerEventLabelsEnglish: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.created': 'Data breach response plan created',
   'enum.ledgerEventKind.privacy.breach.playbook.updated': 'Data breach response plan updated',
   'enum.ledgerEventKind.privacy.dpia.created': 'Data protection impact assessment created',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Data protection impact assessment model reset to the shipped default',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Data protection impact assessment model updated',
   'enum.ledgerEventKind.privacy.dpia.updated': 'Data protection impact assessment updated',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Data subject request completed',
   'enum.ledgerEventKind.privacy.dsr.request.created': 'Data subject request created',
@@ -516,6 +524,10 @@ export const ledgerEventLabelsPtBR: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated':
     'Plano de resposta a violação de dados atualizado',
   'enum.ledgerEventKind.privacy.dpia.created': 'Relatório de impacto à proteção de dados criado',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Modelo de relatório de impacto à proteção de dados restaurado para o padrão',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Modelo de relatório de impacto à proteção de dados atualizado',
   'enum.ledgerEventKind.privacy.dpia.updated':
     'Relatório de impacto à proteção de dados atualizado',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Solicitação de titular de dados concluída',
@@ -708,6 +720,10 @@ export const ledgerEventLabelsDaDK: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated': 'Beredskabsplan for databrud opdateret',
   'enum.ledgerEventKind.privacy.dpia.created':
     'Konsekvensanalyse vedrørende databeskyttelse oprettet',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Model for konsekvensanalyse vedrørende databeskyttelse nulstillet til den leverede standard',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Model for konsekvensanalyse vedrørende databeskyttelse opdateret',
   'enum.ledgerEventKind.privacy.dpia.updated':
     'Konsekvensanalyse vedrørende databeskyttelse opdateret',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Anmodning fra registreret afsluttet',
@@ -911,6 +927,10 @@ export const ledgerEventLabelsDeDE: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated':
     'Reaktionsplan für Datenschutzverletzungen aktualisiert',
   'enum.ledgerEventKind.privacy.dpia.created': 'Datenschutz-Folgenabschätzung erstellt',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Vorlage für die Datenschutz-Folgenabschätzung auf die ausgelieferte Fassung zurückgesetzt',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Vorlage für die Datenschutz-Folgenabschätzung aktualisiert',
   'enum.ledgerEventKind.privacy.dpia.updated': 'Datenschutz-Folgenabschätzung aktualisiert',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Betroffenenanfrage abgeschlossen',
   'enum.ledgerEventKind.privacy.dsr.request.created': 'Betroffenenanfrage erstellt',
@@ -1114,6 +1134,10 @@ export const ledgerEventLabelsEsES: LedgerEventLabels = {
     'Plan de respuesta a brechas de datos actualizado',
   'enum.ledgerEventKind.privacy.dpia.created':
     'Evaluación de impacto en protección de datos creada',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Modelo de evaluación de impacto en protección de datos restablecido al predeterminado',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Modelo de evaluación de impacto en protección de datos actualizado',
   'enum.ledgerEventKind.privacy.dpia.updated':
     'Evaluación de impacto en protección de datos actualizada',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Solicitud del interesado completada',
@@ -1301,6 +1325,10 @@ export const ledgerEventLabelsFiFI: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated':
     'Tietoturvaloukkausten toimintasuunnitelma päivitetty',
   'enum.ledgerEventKind.privacy.dpia.created': 'Tietosuojaa koskeva vaikutustenarviointi luotu',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Tietosuojaa koskevan vaikutustenarvioinnin malli palautettu toimitettuun oletukseen',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Tietosuojaa koskevan vaikutustenarvioinnin malli päivitetty',
   'enum.ledgerEventKind.privacy.dpia.updated':
     'Tietosuojaa koskeva vaikutustenarviointi päivitetty',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Rekisteröidyn pyyntö käsitelty',
@@ -1503,6 +1531,10 @@ export const ledgerEventLabelsFrFR: LedgerEventLabels = {
     'Plan de réponse aux violations de données mis à jour',
   'enum.ledgerEventKind.privacy.dpia.created':
     "Analyse d'impact relative à la protection des données créée",
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    "Modèle d'analyse d'impact relative à la protection des données réinitialisé à la version fournie",
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    "Modèle d'analyse d'impact relative à la protection des données mis à jour",
   'enum.ledgerEventKind.privacy.dpia.updated':
     "Analyse d'impact relative à la protection des données mise à jour",
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Demande de personne concernée clôturée',
@@ -1707,6 +1739,10 @@ export const ledgerEventLabelsItIT: LedgerEventLabels = {
     'Piano di risposta alle violazioni di dati aggiornato',
   'enum.ledgerEventKind.privacy.dpia.created':
     "Valutazione d'impatto sulla protezione dei dati creata",
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    "Modello di valutazione d'impatto sulla protezione dei dati ripristinato alla versione inclusa",
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    "Modello di valutazione d'impatto sulla protezione dei dati aggiornato",
   'enum.ledgerEventKind.privacy.dpia.updated':
     "Valutazione d'impatto sulla protezione dei dati aggiornata",
   'enum.ledgerEventKind.privacy.dsr.request.completed': "Richiesta dell'interessato completata",
@@ -1900,6 +1936,10 @@ export const ledgerEventLabelsNlNL: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.created': 'Responsplan voor datalekken aangemaakt',
   'enum.ledgerEventKind.privacy.breach.playbook.updated': 'Responsplan voor datalekken bijgewerkt',
   'enum.ledgerEventKind.privacy.dpia.created': 'Gegevensbeschermingseffectbeoordeling aangemaakt',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Model voor gegevensbeschermingseffectbeoordeling hersteld naar de meegeleverde versie',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Model voor gegevensbeschermingseffectbeoordeling bijgewerkt',
   'enum.ledgerEventKind.privacy.dpia.updated': 'Gegevensbeschermingseffectbeoordeling bijgewerkt',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Verzoek van betrokkene afgerond',
   'enum.ledgerEventKind.privacy.dsr.request.created': 'Verzoek van betrokkene aangemaakt',
@@ -2099,6 +2139,10 @@ export const ledgerEventLabelsPlPL: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated':
     'Plan reagowania na naruszenia danych zaktualizowany',
   'enum.ledgerEventKind.privacy.dpia.created': 'Ocena skutków dla ochrony danych utworzona',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Wzór oceny skutków dla ochrony danych przywrócony do wersji dostarczonej',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Wzór oceny skutków dla ochrony danych zaktualizowany',
   'enum.ledgerEventKind.privacy.dpia.updated': 'Ocena skutków dla ochrony danych zaktualizowana',
   'enum.ledgerEventKind.privacy.dsr.request.completed':
     'Żądanie osoby, której dane dotyczą, zakończone',
@@ -2293,6 +2337,10 @@ export const ledgerEventLabelsSvFI: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated':
     'Åtgärdsplan för personuppgiftsincidenter uppdaterad',
   'enum.ledgerEventKind.privacy.dpia.created': 'Konsekvensbedömning avseende dataskydd skapad',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Modell för konsekvensbedömning avseende dataskydd återställd till den levererade versionen',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Modell för konsekvensbedömning avseende dataskydd uppdaterad',
   'enum.ledgerEventKind.privacy.dpia.updated': 'Konsekvensbedömning avseende dataskydd uppdaterad',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Begäran från registrerad slutförd',
   'enum.ledgerEventKind.privacy.dsr.request.created': 'Begäran från registrerad skapad',
@@ -2479,6 +2527,10 @@ export const ledgerEventLabelsSvSE: LedgerEventLabels = {
   'enum.ledgerEventKind.privacy.breach.playbook.updated':
     'Åtgärdsplan för personuppgiftsincidenter uppdaterad',
   'enum.ledgerEventKind.privacy.dpia.created': 'Konsekvensbedömning avseende dataskydd skapad',
+  'enum.ledgerEventKind.privacy.dpia.template.reset':
+    'Modell för konsekvensbedömning avseende dataskydd återställd till den levererade versionen',
+  'enum.ledgerEventKind.privacy.dpia.template.updated':
+    'Modell för konsekvensbedömning avseende dataskydd uppdaterad',
   'enum.ledgerEventKind.privacy.dpia.updated': 'Konsekvensbedömning avseende dataskydd uppdaterad',
   'enum.ledgerEventKind.privacy.dsr.request.completed': 'Begäran från registrerad slutförd',
   'enum.ledgerEventKind.privacy.dsr.request.created': 'Begäran från registrerad skapad',

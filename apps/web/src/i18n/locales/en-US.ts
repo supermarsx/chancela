@@ -28,6 +28,92 @@ export const enUS = {
   ...dashboardSourceLabelsEnglish,
   ...roleNameLabelsEnglish,
   ...attendeeQualityLabelsEnglish,
+  // --- Server environment overrides (t14) -----------------------------------------
+  'settings.serverEnv.title': 'Server environment',
+  'settings.serverEnv.intro':
+    'The environment variables this server reads at startup, with the value the running process resolved. You can override the non-secret ones; an override is saved to a file and takes effect at the next start, never immediately.',
+  'settings.serverEnv.loading': 'Loading the server environment…',
+  'settings.serverEnv.loadError': 'Could not load the server environment.',
+  'settings.serverEnv.empty': 'There are no variables to show.',
+  'settings.serverEnv.overridesPath': 'Overrides are saved in {path}, under the data directory.',
+  'settings.serverEnv.restart.badge': 'Restart pending',
+  'settings.serverEnv.restart.title': 'Saved, not yet applied',
+  'settings.serverEnv.restart.body':
+    'These values are read once, when the process starts. The overrides are stored, but the running server is still using what it read at startup — restart it to apply them.',
+  'settings.serverEnv.restart.rowHint': 'The saved override differs from the running value.',
+  'settings.serverEnv.col.name': 'Variable',
+  'settings.serverEnv.col.value': 'Effective value',
+  'settings.serverEnv.col.source': 'Source',
+  'settings.serverEnv.col.default': 'Default',
+  'settings.serverEnv.col.override': 'Override',
+  'settings.serverEnv.source.override': 'Override',
+  'settings.serverEnv.source.env': 'Environment',
+  'settings.serverEnv.source.default': 'Default',
+  'settings.serverEnv.source.override.hint':
+    'The value comes from the override saved in this panel.',
+  'settings.serverEnv.source.env.hint':
+    'The value comes from the environment where the service was launched.',
+  'settings.serverEnv.source.default.hint':
+    'No override and no environment variable — uses the code default.',
+  'settings.serverEnv.group.logging': 'Logging',
+  'settings.serverEnv.group.network': 'Network',
+  'settings.serverEnv.group.session': 'Sessions',
+  'settings.serverEnv.group.notifications': 'Action Center',
+  'settings.serverEnv.group.rate_limit': 'Rate limiting',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Database',
+  'settings.serverEnv.group.credentials': 'Credentials',
+  'settings.serverEnv.group.cache': 'Cache and Redis',
+  'settings.serverEnv.group.cluster': 'Cluster and nodes',
+  'settings.serverEnv.group.postgres_tls': 'PostgreSQL TLS',
+  'settings.serverEnv.group.trust': 'Trust and validation',
+  'settings.serverEnv.group.signing': 'Signing',
+  'settings.serverEnv.group.csc': 'Cloud signing (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Professional attributes (SCAP)',
+  'settings.serverEnv.group.connectors': 'Connectors',
+  'settings.serverEnv.group.storage': 'Storage',
+  'settings.serverEnv.group.paper_book': 'Paper books (OCR)',
+  'settings.serverEnv.group.search': 'Search and indexing',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Leaving it empty removes the override and reverts to the environment value or the default.',
+  'settings.serverEnv.field.enumHint': 'Choose one of the allowed values.',
+  'settings.serverEnv.field.boolTrue': 'Enabled',
+  'settings.serverEnv.field.boolFalse': 'Disabled',
+  'settings.serverEnv.secret.note': '(contains a credential — never displayed here)',
+  'settings.serverEnv.secret.configured': 'Configured',
+  'settings.serverEnv.secret.notConfigured': 'Not configured',
+  'settings.serverEnv.secret.body':
+    'This is a secret. The panel shows only whether it is set, never the value. Set it where the service is launched or through its own credential flow.',
+  'settings.serverEnv.boundary.badge': 'Security boundary',
+  'settings.serverEnv.boundary.ackLabel': 'I understand the effect of this change',
+  'settings.serverEnv.boundary.ackHint':
+    'This variable defines a security boundary. Changing it requires explicit acknowledgement; without it the server refuses the save.',
+  'settings.serverEnv.boundary.warningTitle': 'Changing a security boundary',
+  'settings.serverEnv.boundary.warningBody':
+    'You are changing a variable that controls a security boundary. A wrong setting can weaken the server’s security posture. Confirm before saving.',
+  'settings.serverEnv.narrowOnly.badge': 'Can only narrow',
+  'settings.serverEnv.narrowOnly.note':
+    'This is a ceiling imposed by the deployment. An override can only narrow it, never widen it.',
+  'settings.serverEnv.readOnly.badge': 'Read-only',
+  'settings.serverEnv.readOnly.note':
+    'This is a fact derived from the process environment and is not editable here. Change it where the service is launched.',
+  'settings.serverEnv.typedSlice.note':
+    'This variable is managed by a dedicated setting with a defined precedence:',
+  'settings.serverEnv.externalReader.badge': 'Set outside this server',
+  'settings.serverEnv.externalReader.note':
+    'Another process reads this variable, and that process does not load this override file. An override saved here would never reach it:',
+  'settings.serverEnv.save': 'Save overrides',
+  'settings.serverEnv.saving': 'Saving…',
+  'settings.serverEnv.saved': 'Overrides saved. They apply at the next server start.',
+  'settings.serverEnv.saveError': 'Could not save the overrides.',
+  'settings.serverEnv.discard': 'Discard changes',
+  'settings.serverEnv.clearOverride': 'Clear override',
+  'settings.serverEnv.ackRequiredError': 'Acknowledge each security-boundary change before saving.',
+  'settings.serverEnv.value.unset': 'Not set',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'You do not have permission for this action',
   'perm.denied.title': 'No permission',
@@ -1948,7 +2034,7 @@ export const enUS = {
   'settings.api.logging.hint':
     'These two fields write to the same settings document as the other log levels.',
   'settings.api.env.hint':
-    'Resolved from the process environment when the server starts. They are not editable here or through any endpoint; changing them requires restarting the server.',
+    'Resolved from the process environment when the server starts. They are listed, with the value the running process resolved, under “Server environment”, where the non-secret ones can be overridden. Any change applies at the next restart.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'The server speaks plain HTTP. TLS is terminated at the reverse proxy in front of it, and the HSTS header below only takes effect in that setup.',
@@ -4792,6 +4878,51 @@ export const enUS = {
   'settings.email.stage.data': 'Message transfer',
   'settings.email.stage.quit': 'Session close',
 
+  // --- Email (SMTP): the delivery record (t108) ---
+  'settings.email.deliveries.cardTitle': 'Delivery record',
+  'settings.email.deliveries.lede':
+    'What became of every message the application sent, most recent first. Each row is an attempt that is already over: there is no queue and no pending state.',
+  'settings.email.deliveries.caption': 'Email delivery record, with the outcome of each attempt',
+  'settings.email.deliveries.col.when': 'Date',
+  'settings.email.deliveries.col.template': 'Message',
+  'settings.email.deliveries.col.recipient': 'Recipient',
+  'settings.email.deliveries.col.status': 'Outcome',
+  'settings.email.deliveries.col.attempt': 'Attempt',
+  'settings.email.deliveries.col.failure': 'Reason for the failure',
+  'settings.email.deliveries.col.action': 'Actions',
+  'settings.email.deliveries.help.when': 'When this attempt finished.',
+  'settings.email.deliveries.help.template':
+    'Which message was sent. Each kind of message belongs to the flow that issues it.',
+  'settings.email.deliveries.help.recipient':
+    'The address the message went to, as it was recorded.',
+  'settings.email.deliveries.help.status':
+    'Accepted by the server, or refused. Accepted does not confirm delivery to the inbox.',
+  'settings.email.deliveries.help.attempt':
+    'Which attempt this is for the same message. A resend adds an attempt instead of replacing the previous one.',
+  'settings.email.deliveries.help.failure':
+    'The stage the session stopped at and the answer the server gave, in its own words.',
+  'settings.email.deliveries.help.action':
+    'Only messages that can be rebuilt from what is stored may be sent again.',
+  'settings.email.deliveries.status.sent': 'Accepted',
+  'settings.email.deliveries.status.failed': 'Refused',
+  'settings.email.deliveries.retry': 'Resent',
+  'settings.email.deliveries.template.welcome': 'Account welcome',
+  'settings.email.deliveries.template.pairingCode': 'Device pairing code',
+  'settings.email.deliveries.stage.notConfigured': 'Sending not configured',
+  'settings.email.deliveries.empty': 'No sends recorded yet',
+  'settings.email.deliveries.emptyBody':
+    'As soon as the application sends its first message, the outcome appears here. On an instance that keeps no database record, this list stays empty.',
+  'settings.email.deliveries.cappedTitle': 'Showing the most recent only',
+  'settings.email.deliveries.cappedBody':
+    'The {count} most recent attempts are shown. Older sends exist that do not fit in this list.',
+  'settings.email.deliveries.resend': 'Send again',
+  'settings.email.deliveries.notResendable':
+    'This message carried a single-use code, which is not stored and cannot be rebuilt. This is not a permissions restriction: re-issue it through the flow it belongs to — for an invitation, issue a new invitation.',
+  'settings.email.deliveries.resentToast': 'Message sent again',
+  'settings.email.deliveries.resendFailedTitle': 'The resend was refused',
+  'settings.email.deliveries.resendFailedBody':
+    'The new attempt was recorded as refused. The server’s answer is below.',
+
   'settings.email.remedy.dns':
     'The server name did not resolve. Check that it is spelled correctly and that DNS knows it.',
   'settings.email.remedy.unreachable':
@@ -5003,7 +5134,10 @@ export const enUS = {
   'settings.providerCredentials.form.labelPlaceholder': 'Primary key',
   'settings.providerCredentials.form.enabled': 'Entry enabled',
   'settings.providerCredentials.form.endpoint': 'Endpoint (base_url)',
-  'settings.providerCredentials.form.endpointHint': 'Base-URL override for this provider.',
+  'settings.providerCredentials.form.endpointHint':
+    'Base-address override; empty uses the default for the environment.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Required. HTTPS base address of the provider CSC v2 API.',
   'settings.providerCredentials.form.pfxWarning.title': 'Private key at rest',
   'settings.providerCredentials.form.pfxWarning.body':
     'Storing a PKCS#12 file means keeping a private signing key at rest. Prefer confidential protection.',
@@ -5043,23 +5177,25 @@ export const enUS = {
   'settings.providerCredentials.help.mode':
     'Which type of signature provider to configure. E.g. CSC/QTSP for remote signing, PKCS#12 for a local certificate.',
   'settings.providerCredentials.help.providerId':
-    'Internal identifier that distinguishes this provider from others of the same type. E.g. “encosto-qtsp”.',
+    'Internal identifier that distinguishes this provider from others of the same type, and the one credentials are looked up under when signing, so it must match the identifier used then. For a CSC QTSP use lower-case ASCII; for PKCS#12 it is simply the identity label. E.g. “encosto-qtsp”.',
   'settings.providerCredentials.help.label':
     'Free-form name to recognize this entry in the list. E.g. “Primary key” or “Fallback”.',
   'settings.providerCredentials.help.enabled':
     'When active, this entry joins the failover chain; disable it to exclude it without deleting it.',
   'settings.providerCredentials.help.endpoint':
-    'Base URL of the provider API, overriding the default. E.g. https://qtsp.example.com/csc/v1',
+    'Base address of the SCAP service, overriding the default for the chosen environment. Leave it empty to use that default. E.g. https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'Base address of the QTSP CSC v2 API. It is required: there is no default, and an entry without one is incomplete. It must be HTTPS, except on localhost or 127.0.0.1 while the test-environment option is on. E.g. https://qtsp.example.com/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Certificate .pfx/.p12 file that contains the private signing key. E.g. “signature.pfx” exported from your PKI.',
   'settings.providerCredentials.help.applicationId':
-    'ApplicationId assigned by AMA for Chave Móvel Digital / SCAP. E.g. a GUID like 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'ApplicationId assigned by AMA for Chave Móvel Digital or SCAP. It is an opaque value: use it exactly as issued, without assuming a format.',
   'settings.providerCredentials.help.httpBasicUsername':
     'HTTP Basic authentication username, when the provider requires it in front of the API. E.g. “chancela-prod”.',
   'settings.providerCredentials.help.httpBasicPassword':
     'HTTP Basic authentication password that goes with the username. E.g. a long secret string provided by the provider.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA client certificate in PEM format, used for mutual TLS with SCMD. E.g. the “-----BEGIN CERTIFICATE-----…” block.',
+    'AMA public certificate in PEM format. Its RSA key encrypts the mobile number, PIN and OTP before they travel in the SCMD request; production requires it, and without it pre-production sends those fields in the clear. E.g. the “-----BEGIN CERTIFICATE-----…” block.',
   'settings.providerCredentials.help.clientId':
     'OAuth2 client identifier assigned by the QTSP. E.g. “chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -5079,7 +5215,7 @@ export const enUS = {
   'settings.providerCredentials.help.scope':
     'OAuth2 scopes requested from the QTSP, space-separated. E.g. “service credential”.',
   'settings.providerCredentials.help.sandbox':
-    'Enables the provider’s test mode, with no real effects. E.g. on during integration, off in production.',
+    'Marks this entry as pointing at the provider test environment. With it on, an http:// address on localhost or 127.0.0.1 is accepted instead of HTTPS being required, and the provider is reported as blocked for production. On its own it does not prevent real operations: that depends on the address you enter.',
   'settings.providerCredentials.help.environment':
     'SCAP service environment this entry connects to. E.g. “Pre-production” for testing, “Production” for real use.',
   'settings.providerCredentials.help.friendlyName':
@@ -6066,8 +6202,58 @@ export const enUS = {
   'settings.providerCredentials.table.state': 'State',
   'settings.providerCredentials.table.endpoint': 'Endpoint',
   'settings.providerCredentials.table.endpointDefault': 'Default endpoint',
+  'settings.providerCredentials.table.endpointRequired': 'Missing (required)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Not applicable',
   'settings.providerCredentials.table.fields': 'Fields',
   'settings.providerCredentials.table.actions': 'Actions',
+  'settings.providerCredentials.table.entry.help':
+    'The label you gave this stored credential, plus the immutable entry id the server assigned to it.',
+  'settings.providerCredentials.table.priority.help':
+    'The order entries are tried in. The lowest number goes first, and the next entry is used when a higher one cannot be reached.',
+  'settings.providerCredentials.table.state.help':
+    'Whether this entry takes part in the failover chain. A disabled entry is kept but never used.',
+  'settings.providerCredentials.table.endpoint.help':
+    'The provider address this entry overrides. Only the CSC and SCAP modes carry one; without an override the default for the mode applies.',
+  'settings.providerCredentials.table.fields.help':
+    'Which secret fields this entry actually holds. Values are never returned — only whether each field is set.',
+  'settings.providerCredentials.table.actions.help':
+    'Reorder, edit, test or remove this entry. The test result states exactly which steps it performed.',
+  'settings.providerCredentials.modes.title': 'Provider modes',
+  'settings.providerCredentials.modes.lede':
+    'Every signing mode this installation supports, what each one is for and what it needs before it can be used. A mode with no entries is simply not configured yet.',
+  'settings.providerCredentials.modes.caption': 'Signing provider modes',
+  'settings.providerCredentials.modes.column.mode': 'Mode',
+  'settings.providerCredentials.modes.column.mode.help':
+    'The kind of signing provider. Each mode speaks its own protocol and needs its own credentials.',
+  'settings.providerCredentials.modes.column.purpose': 'What it is for',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'What this mode does when it signs, and who holds the signing key.',
+  'settings.providerCredentials.modes.column.setup': 'How to configure it',
+  'settings.providerCredentials.modes.column.setup.help':
+    'The values this mode needs before an entry can be used. Secrets can only be written: you set them, you never read them back.',
+  'settings.providerCredentials.modes.column.entries': 'Entries',
+  'settings.providerCredentials.modes.column.entries.help':
+    'How many credential entries are stored for this mode right now. Zero means the mode is not configured.',
+  'settings.providerCredentials.modes.column.actions': 'Actions',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Opens the entry form already switched to this mode, including for a mode with nothing configured yet.',
+  'settings.providerCredentials.modes.configure': 'Configure',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Remote signature through the AMA Chave Móvel Digital service. The citizen authorizes each signature with the CMD PIN and a one-time code sent to their device; the signing key stays with the service.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Remote signature at a qualified trust service provider over the Cloud Signature Consortium API. One adapter serves every CSC-compliant provider: the document hash goes out and the signature comes back, with the key held by the provider.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'The AMA professional-attribute certification service. It certifies that the signer holds a given professional attribute, which is then bound into the signature; it is not a signing key of its own.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Signs with a certificate and private key kept in a PKCS#12 file on this installation, with no remote provider involved. The private key is therefore stored here, at rest.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'A single entry, with no provider identifier. It needs the application id issued by AMA and the environment (pre-production or production); the address is fixed per environment and cannot be overridden. Production also requires HTTP Basic credentials and the AMA field-encryption certificate in PEM.',
+  'settings.providerCredentials.modes.setup.csc':
+    'One entry per provider, each with its own identifier and its own HTTPS base address. Service authorization needs the OAuth client id and client secret; user authorization needs a previously obtained access token instead. Credential id, scope and the sandbox flag are optional, as are HTTP Basic credentials for a gateway in front of the API.',
+  'settings.providerCredentials.modes.setup.scap':
+    'A single entry, with no provider identifier. It needs the environment (pre-production or production) and, in production, the application id issued by AMA and its secret. The base address is optional: without it the address of the chosen environment is used. HTTP Basic credentials are optional.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'One entry per identity, each with its own label. It needs the .pfx/.p12 file and the passphrase that opens it. When the file holds more than one identity, pick one out by friendly name or by local key id in hexadecimal. There is no address to configure.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Leave without saving?',
   'unsaved.body': 'This page has unsaved changes. If you leave now, they will be lost.',

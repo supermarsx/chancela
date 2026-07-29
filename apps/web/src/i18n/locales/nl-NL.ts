@@ -22,6 +22,95 @@ export const nlNL: Catalog = {
   ...dashboardSourceLabelsNlNL,
   ...roleNameLabelsNlNL,
   ...attendeeQualityLabelsEnglish,
+  // --- Overschrijvingen van de serveromgeving (t14) --------------------------------
+  'settings.serverEnv.title': 'Serveromgeving',
+  'settings.serverEnv.intro':
+    'De omgevingsvariabelen die deze server bij het opstarten leest, met de waarde die het draaiende proces heeft bepaald. De niet-geheime kunt u overschrijven; een overschrijving wordt in een bestand bewaard en werkt pas bij de volgende start, nooit meteen.',
+  'settings.serverEnv.loading': 'Serveromgeving wordt geladen…',
+  'settings.serverEnv.loadError': 'De serveromgeving kon niet worden geladen.',
+  'settings.serverEnv.empty': 'Er zijn geen variabelen om te tonen.',
+  'settings.serverEnv.overridesPath':
+    'Overschrijvingen worden bewaard in {path}, onder de gegevensmap.',
+  'settings.serverEnv.restart.badge': 'Herstart nodig',
+  'settings.serverEnv.restart.title': 'Bewaard, nog niet toegepast',
+  'settings.serverEnv.restart.body':
+    'Deze waarden worden één keer gelezen, bij het starten van het proces. De overschrijvingen zijn bewaard, maar de draaiende server gebruikt nog steeds wat hij bij het opstarten las — herstart hem om ze toe te passen.',
+  'settings.serverEnv.restart.rowHint':
+    'De bewaarde overschrijving wijkt af van de draaiende waarde.',
+  'settings.serverEnv.col.name': 'Variabele',
+  'settings.serverEnv.col.value': 'Werkzame waarde',
+  'settings.serverEnv.col.source': 'Herkomst',
+  'settings.serverEnv.col.default': 'Standaardwaarde',
+  'settings.serverEnv.col.override': 'Overschrijving',
+  'settings.serverEnv.source.override': 'Overschrijving',
+  'settings.serverEnv.source.env': 'Omgeving',
+  'settings.serverEnv.source.default': 'Standaardwaarde',
+  'settings.serverEnv.source.override.hint':
+    'De waarde komt uit de overschrijving die in dit paneel is bewaard.',
+  'settings.serverEnv.source.env.hint':
+    'De waarde komt uit de omgeving waarin de dienst is gestart.',
+  'settings.serverEnv.source.default.hint':
+    'Geen overschrijving en geen omgevingsvariabele — de standaardwaarde uit de code geldt.',
+  'settings.serverEnv.group.logging': 'Logboek',
+  'settings.serverEnv.group.network': 'Netwerk',
+  'settings.serverEnv.group.session': 'Sessies',
+  'settings.serverEnv.group.notifications': 'Actiecentrum',
+  'settings.serverEnv.group.rate_limit': 'Verkeersbegrenzing',
+  'settings.serverEnv.group.hsts': 'HSTS',
+  'settings.serverEnv.group.cors': 'CORS',
+  'settings.serverEnv.group.database': 'Databank',
+  'settings.serverEnv.group.credentials': 'Inloggegevens',
+  'settings.serverEnv.group.cache': 'Cache en Redis',
+  'settings.serverEnv.group.cluster': 'Cluster en knooppunten',
+  'settings.serverEnv.group.postgres_tls': 'PostgreSQL-TLS',
+  'settings.serverEnv.group.trust': 'Vertrouwen en validatie',
+  'settings.serverEnv.group.signing': 'Ondertekening',
+  'settings.serverEnv.group.csc': 'Ondertekening in de cloud (CSC)',
+  'settings.serverEnv.group.cmd': 'Chave Móvel Digital',
+  'settings.serverEnv.group.scap': 'Beroepskenmerken (SCAP)',
+  'settings.serverEnv.group.connectors': 'Koppelingen',
+  'settings.serverEnv.group.storage': 'Opslag',
+  'settings.serverEnv.group.paper_book': 'Papieren boeken (OCR)',
+  'settings.serverEnv.group.search': 'Zoeken en indexeren',
+  'settings.serverEnv.group.mcp': 'MCP',
+  'settings.serverEnv.field.hint':
+    'Leeg laten verwijdert de overschrijving en keert terug naar de omgevingswaarde of de standaardwaarde.',
+  'settings.serverEnv.field.enumHint': 'Kies een van de toegestane waarden.',
+  'settings.serverEnv.field.boolTrue': 'Ingeschakeld',
+  'settings.serverEnv.field.boolFalse': 'Uitgeschakeld',
+  'settings.serverEnv.secret.note': '(bevat inloggegevens — worden hier nooit getoond)',
+  'settings.serverEnv.secret.configured': 'Ingesteld',
+  'settings.serverEnv.secret.notConfigured': 'Niet ingesteld',
+  'settings.serverEnv.secret.body':
+    'Dit is een geheim. Het paneel toont alleen of het is ingesteld, nooit de waarde. Stel het in waar de dienst wordt gestart of via de eigen procedure voor inloggegevens.',
+  'settings.serverEnv.boundary.badge': 'Veiligheidsgrens',
+  'settings.serverEnv.boundary.ackLabel': 'Ik begrijp het gevolg van deze wijziging',
+  'settings.serverEnv.boundary.ackHint':
+    'Deze variabele bepaalt een veiligheidsgrens. Wijzigen vraagt om een uitdrukkelijke bevestiging; zonder die weigert de server het bewaren.',
+  'settings.serverEnv.boundary.warningTitle': 'Wijziging van een veiligheidsgrens',
+  'settings.serverEnv.boundary.warningBody':
+    'U wijzigt een variabele die een veiligheidsgrens bestuurt. Een verkeerde instelling kan de veiligheid van de server verzwakken. Bevestig voordat u bewaart.',
+  'settings.serverEnv.narrowOnly.badge': 'Kan alleen beperken',
+  'settings.serverEnv.narrowOnly.note':
+    'Dit is een bovengrens die de installatie oplegt. Een overschrijving kan die alleen beperken, nooit verruimen.',
+  'settings.serverEnv.readOnly.badge': 'Alleen lezen',
+  'settings.serverEnv.readOnly.note':
+    'Dit is een gegeven dat uit de procesomgeving volgt en hier niet te wijzigen is. Wijzig het waar de dienst wordt gestart.',
+  'settings.serverEnv.typedSlice.note':
+    'Deze variabele wordt beheerd door een eigen instelling met een vastgelegde voorrang:',
+  'settings.serverEnv.externalReader.badge': 'Buiten deze server in te stellen',
+  'settings.serverEnv.externalReader.note':
+    'Deze variabele wordt gelezen door een ander proces, en dat proces laadt dit overschrijvingsbestand niet. Een hier bewaarde overschrijving zou het nooit bereiken:',
+  'settings.serverEnv.save': 'Overschrijvingen bewaren',
+  'settings.serverEnv.saving': 'Bezig met bewaren…',
+  'settings.serverEnv.saved': 'Overschrijvingen bewaard. Ze gelden vanaf de volgende serverstart.',
+  'settings.serverEnv.saveError': 'De overschrijvingen konden niet worden bewaard.',
+  'settings.serverEnv.discard': 'Wijzigingen verwerpen',
+  'settings.serverEnv.clearOverride': 'Overschrijving wissen',
+  'settings.serverEnv.ackRequiredError':
+    'Bevestig elke wijziging van een veiligheidsgrens voordat u bewaart.',
+  'settings.serverEnv.value.unset': 'Niet ingesteld',
+  'settings.serverEnv.value.masked': '••••••••',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'U hebt geen toestemming voor deze actie',
   'perm.denied.title': 'Geen toestemming',
@@ -1960,7 +2049,7 @@ export const nlNL: Catalog = {
   'settings.api.logging.hint':
     'Deze twee velden schrijven naar hetzelfde instellingendocument als de overige logniveaus.',
   'settings.api.env.hint':
-    'Worden bij het starten van de server uit de procesomgeving gelezen. Ze zijn hier noch via een endpoint bewerkbaar; wijzigen vereist een herstart van de server.',
+    'Worden bij het starten van de server uit de procesomgeving gelezen. Ze staan, met de waarde die het draaiende proces bepaalde, onder “Serveromgeving”, waar de niet-geheime kunnen worden overschreven. Elke wijziging werkt pas na de volgende herstart.',
   'settings.api.tls.title': 'TLS',
   'settings.api.tls.body':
     'De server spreekt gewone HTTP. TLS wordt beëindigd op de reverse proxy ervoor, en de HSTS-header hieronder werkt alleen in die opzet.',
@@ -4861,6 +4950,52 @@ export const nlNL: Catalog = {
   'settings.email.stage.data': 'Versturen van het bericht',
   'settings.email.stage.quit': 'Afsluiten van de sessie',
 
+  // --- E-mail (SMTP): het verzendregister (t108) ---
+  'settings.email.deliveries.cardTitle': 'Verzendregister',
+  'settings.email.deliveries.lede':
+    'Wat er terechtgekomen is van elk bericht dat de toepassing heeft verstuurd, het recentste eerst. Elke regel is een poging die al afgelopen is: er is geen wachtrij en geen lopende status.',
+  'settings.email.deliveries.caption':
+    'Verzendregister van e-mails, met de uitkomst van elke poging',
+  'settings.email.deliveries.col.when': 'Datum',
+  'settings.email.deliveries.col.template': 'Bericht',
+  'settings.email.deliveries.col.recipient': 'Ontvanger',
+  'settings.email.deliveries.col.status': 'Uitkomst',
+  'settings.email.deliveries.col.attempt': 'Poging',
+  'settings.email.deliveries.col.failure': 'Reden van de mislukking',
+  'settings.email.deliveries.col.action': 'Acties',
+  'settings.email.deliveries.help.when': 'Moment waarop deze poging afliep.',
+  'settings.email.deliveries.help.template':
+    'Welk bericht is verstuurd. Elk soort bericht hoort bij de stroom die het uitgeeft.',
+  'settings.email.deliveries.help.recipient':
+    'Adres waarnaar het bericht ging, zoals het is vastgelegd.',
+  'settings.email.deliveries.help.status':
+    'Door de server aanvaard, of geweigerd. Aanvaard bevestigt niet de bezorging in de inbox.',
+  'settings.email.deliveries.help.attempt':
+    'De hoeveelste poging dit is voor hetzelfde bericht. Opnieuw versturen voegt een poging toe in plaats van de vorige te vervangen.',
+  'settings.email.deliveries.help.failure':
+    'De fase waarin de sessie stilviel en het antwoord dat de server gaf, in zijn eigen woorden.',
+  'settings.email.deliveries.help.action':
+    'Alleen berichten die uit het opgeslagene opnieuw op te bouwen zijn, kunnen opnieuw worden verstuurd.',
+  'settings.email.deliveries.status.sent': 'Aanvaard',
+  'settings.email.deliveries.status.failed': 'Geweigerd',
+  'settings.email.deliveries.retry': 'Opnieuw verstuurd',
+  'settings.email.deliveries.template.welcome': 'Welkom bij het account',
+  'settings.email.deliveries.template.pairingCode': 'Koppelcode voor apparaat',
+  'settings.email.deliveries.stage.notConfigured': 'Verzending niet geconfigureerd',
+  'settings.email.deliveries.empty': 'Nog geen verzendingen vastgelegd',
+  'settings.email.deliveries.emptyBody':
+    'Zodra de toepassing het eerste bericht verstuurt, verschijnt de uitkomst hier. Op een instantie die niets in een database vastlegt, blijft deze lijst leeg.',
+  'settings.email.deliveries.cappedTitle': 'Alleen de recentste worden getoond',
+  'settings.email.deliveries.cappedBody':
+    'De {count} recentste pogingen worden getoond. Er bestaan oudere verzendingen die niet in deze lijst passen.',
+  'settings.email.deliveries.resend': 'Opnieuw versturen',
+  'settings.email.deliveries.notResendable':
+    'Dit bericht droeg een eenmalige code, die niet wordt bewaard en niet opnieuw op te bouwen is. Dit is geen beperking van rechten: geef het opnieuw uit via de stroom waartoe het behoort — bij een uitnodiging geeft u een nieuwe uitnodiging uit.',
+  'settings.email.deliveries.resentToast': 'Bericht opnieuw verstuurd',
+  'settings.email.deliveries.resendFailedTitle': 'Het opnieuw versturen is geweigerd',
+  'settings.email.deliveries.resendFailedBody':
+    'De nieuwe poging is als geweigerd vastgelegd. Het antwoord van de server staat hieronder.',
+
   'settings.email.remedy.dns':
     'De servernaam is niet omgezet. Controleer de spelling en of DNS hem kent.',
   'settings.email.remedy.unreachable':
@@ -5075,7 +5210,9 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.form.enabled': 'Vermelding ingeschakeld',
   'settings.providerCredentials.form.endpoint': 'Eindpunt (base_url)',
   'settings.providerCredentials.form.endpointHint':
-    'Overschrijving van de basis-URL voor deze provider.',
+    'Overschrijving van het basisadres; leeg geldt de standaard van de omgeving.',
+  'settings.providerCredentials.form.endpointHint.csc':
+    'Verplicht. HTTPS-basisadres van de CSC v2-API van de provider.',
   'settings.providerCredentials.form.pfxWarning.title': 'Privésleutel in rust',
   'settings.providerCredentials.form.pfxWarning.body':
     'Een PKCS#12-bestand opslaan betekent dat u een privé-ondertekeningssleutel in rust bewaart. Geef de voorkeur aan vertrouwelijke bescherming.',
@@ -5115,23 +5252,25 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.help.mode':
     'Type ondertekeningsprovider dat u wilt configureren. Bijv. CSC/QTSP voor ondertekening op afstand, PKCS#12 voor een lokaal certificaat.',
   'settings.providerCredentials.help.providerId':
-    'Interne identificatie die deze provider onderscheidt van andere van hetzelfde type. Bijv. „encosto-qtsp”.',
+    'Interne identificatie die deze provider onderscheidt van andere van hetzelfde type, en waaronder de inloggegevens bij het ondertekenen worden opgezocht; die moet dus overeenkomen met de identificatie die dan wordt gebruikt. Gebruik voor een CSC-QTSP kleine letters uit ASCII; bij PKCS#12 is het enkel het label van de identiteit. Bijv. „encosto-qtsp”.',
   'settings.providerCredentials.help.label':
     'Vrije naam om deze vermelding in de lijst te herkennen. Bijv. „Primaire sleutel” of „Uitwijk”.',
   'settings.providerCredentials.help.enabled':
     'Wanneer actief, maakt deze vermelding deel uit van de failover-keten; schakel uit om deze uit te sluiten zonder te verwijderen.',
   'settings.providerCredentials.help.endpoint':
-    'Basis-URL van de provider-API, die de standaardwaarde vervangt. Bijv. https://qtsp.example.com/csc/v1',
+    'Basisadres van de SCAP-dienst, dat de standaard van de gekozen omgeving vervangt. Laat het leeg om die standaard te gebruiken. Bijv. https://preprod.autenticacao.gov.pt/scap',
+  'settings.providerCredentials.help.endpoint.csc':
+    'Basisadres van de CSC v2-API van de QTSP. Het is verplicht: er is geen standaard, en een vermelding zonder dat adres blijft onvolledig. Het moet HTTPS zijn, behalve op localhost of 127.0.0.1 zolang de optie voor de testomgeving aanstaat. Bijv. https://qtsp.example.com/csc/v2/',
   'settings.providerCredentials.help.pfx':
     'Certificaatbestand .pfx/.p12 dat de private ondertekeningssleutel bevat. Bijv. „handtekening.pfx” geëxporteerd uit de PKI.',
   'settings.providerCredentials.help.applicationId':
-    'Door de AMA toegewezen ApplicationId voor Chave Móvel Digital / SCAP. Bijv. een GUID zoals 1a2b3c4d-5e6f-7890-abcd-ef1234567890.',
+    'Door de AMA toegewezen ApplicationId voor Chave Móvel Digital of SCAP. Het is een ondoorzichtige waarde: gebruik die precies zoals u hem hebt ontvangen, zonder een indeling te veronderstellen.',
   'settings.providerCredentials.help.httpBasicUsername':
     'Gebruikersnaam voor HTTP Basic-authenticatie, wanneer de provider deze vóór de API vereist. Bijv. „chancela-prod”.',
   'settings.providerCredentials.help.httpBasicPassword':
     'Wachtwoord voor HTTP Basic-authenticatie dat bij de gebruikersnaam hoort. Bijv. een lange geheime tekenreeks van de provider.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA-clientcertificaat in PEM-formaat, gebruikt voor wederzijdse TLS met SCMD. Bijv. het blok „-----BEGIN CERTIFICATE-----…”.',
+    'Openbaar AMA-certificaat in PEM-formaat. De RSA-sleutel ervan versleutelt het mobiele nummer, de pincode en de OTP voordat ze in het SCMD-verzoek meegaan; in productie is het verplicht, en zonder dat certificaat gaan die velden in voorproductie onversleuteld mee. Bijv. het blok „-----BEGIN CERTIFICATE-----…”.',
   'settings.providerCredentials.help.clientId':
     'Door de QTSP toegewezen OAuth2-client-identificatie. Bijv. „chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -5151,7 +5290,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.help.scope':
     'OAuth2-scopes aangevraagd bij de QTSP, gescheiden door spaties. Bijv. „service credential”.',
   'settings.providerCredentials.help.sandbox':
-    'Schakelt de testmodus van de provider in, zonder echte effecten. Bijv. aan tijdens integratie, uit in productie.',
+    'Markeert deze vermelding als gericht op de testomgeving van de provider. Staat de optie aan, dan wordt een http://-adres op localhost of 127.0.0.1 aanvaard in plaats van dat HTTPS wordt vereist, en wordt de provider gemeld als geblokkeerd voor productie. Op zichzelf verhindert die optie geen echte verrichtingen: dat hangt af van het adres dat u invult.',
   'settings.providerCredentials.help.environment':
     'SCAP-serviceomgeving waarmee deze vermelding verbinding maakt. Bijv. „Preproductie” voor testen, „Productie” voor echt gebruik.',
   'settings.providerCredentials.help.friendlyName':
@@ -6168,8 +6307,58 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.table.state': 'Status',
   'settings.providerCredentials.table.endpoint': 'Adres',
   'settings.providerCredentials.table.endpointDefault': 'Standaardadres',
+  'settings.providerCredentials.table.endpointRequired': 'Ontbreekt (verplicht)',
+  'settings.providerCredentials.table.endpointNotApplicable': 'Niet van toepassing',
   'settings.providerCredentials.table.fields': 'Velden',
   'settings.providerCredentials.table.actions': 'Acties',
+  'settings.providerCredentials.table.entry.help':
+    'Het label dat u aan deze opgeslagen inloggegevens hebt gegeven, plus de onveranderlijke vermeldings-id die de server heeft toegekend.',
+  'settings.providerCredentials.table.priority.help':
+    'De volgorde waarin vermeldingen worden geprobeerd. Het laagste nummer gaat eerst, en de volgende vermelding wordt gebruikt zodra een eerdere onbereikbaar is.',
+  'settings.providerCredentials.table.state.help':
+    'Of deze vermelding deelneemt aan de terugvalketen. Een uitgeschakelde vermelding blijft bewaard, maar wordt nooit gebruikt.',
+  'settings.providerCredentials.table.endpoint.help':
+    'Het provideradres dat deze vermelding overschrijft. Alleen de modi CSC en SCAP hebben er een; zonder overschrijving geldt de standaardwaarde van de modus.',
+  'settings.providerCredentials.table.fields.help':
+    'Welke geheime velden deze vermelding werkelijk bevat. Waarden worden nooit teruggegeven — alleen of elk veld is ingesteld.',
+  'settings.providerCredentials.table.actions.help':
+    'Deze vermelding herschikken, bewerken, testen of verwijderen. Het testresultaat vermeldt precies welke stappen zijn uitgevoerd.',
+  'settings.providerCredentials.modes.title': 'Providermodi',
+  'settings.providerCredentials.modes.lede':
+    'Alle ondertekeningsmodi die deze installatie ondersteunt, waarvoor elke modus dient en wat die nodig heeft voordat hij bruikbaar is. Een modus zonder vermeldingen is eenvoudigweg nog niet ingesteld.',
+  'settings.providerCredentials.modes.caption': 'Modi van ondertekeningsproviders',
+  'settings.providerCredentials.modes.column.mode': 'Modus',
+  'settings.providerCredentials.modes.column.mode.help':
+    'Het soort ondertekeningsprovider. Elke modus spreekt zijn eigen protocol en vereist eigen inloggegevens.',
+  'settings.providerCredentials.modes.column.purpose': 'Waarvoor het dient',
+  'settings.providerCredentials.modes.column.purpose.help':
+    'Wat deze modus doet bij het ondertekenen en wie de ondertekeningssleutel bewaart.',
+  'settings.providerCredentials.modes.column.setup': 'Hoe u het instelt',
+  'settings.providerCredentials.modes.column.setup.help':
+    'De waarden die deze modus nodig heeft voordat een vermelding bruikbaar is. Geheimen zijn alleen schrijfbaar: u stelt ze in en leest ze nooit terug.',
+  'settings.providerCredentials.modes.column.entries': 'Vermeldingen',
+  'settings.providerCredentials.modes.column.entries.help':
+    'Hoeveel inloggegevensvermeldingen er op dit moment voor deze modus zijn opgeslagen. Nul betekent dat de modus niet is ingesteld.',
+  'settings.providerCredentials.modes.column.actions': 'Acties',
+  'settings.providerCredentials.modes.column.actions.help':
+    'Opent het invoerformulier al ingesteld op deze modus, ook voor een modus waarvoor niets is ingesteld.',
+  'settings.providerCredentials.modes.configure': 'Instellen',
+  'settings.providerCredentials.modes.purpose.cmd':
+    'Ondertekening op afstand via de dienst Chave Móvel Digital van de AMA. De burger autoriseert elke handtekening met de CMD-pincode en een eenmalige code naar het eigen toestel; de ondertekeningssleutel blijft bij de dienst.',
+  'settings.providerCredentials.modes.purpose.csc':
+    'Ondertekening op afstand bij een gekwalificeerde vertrouwensdienstverlener via de API van het Cloud Signature Consortium. Eén adapter bedient elke CSC-conforme provider: de documenthash gaat eruit en de handtekening komt terug, waarbij de sleutel bij de provider blijft.',
+  'settings.providerCredentials.modes.purpose.scap':
+    'De dienst van de AMA voor certificering van beroepskenmerken. Die bevestigt dat de ondertekenaar een bepaald beroepskenmerk bezit, dat vervolgens aan de handtekening wordt gebonden; het is zelf geen ondertekeningssleutel.',
+  'settings.providerCredentials.modes.purpose.pkcs12':
+    'Ondertekent met een certificaat en een privésleutel uit een PKCS#12-bestand op deze installatie, zonder enige externe provider. De privésleutel staat daardoor hier opgeslagen, in rust.',
+  'settings.providerCredentials.modes.setup.cmd':
+    'Eén enkele vermelding, zonder provider-identificatie. Vereist de door de AMA uitgegeven toepassings-id en de omgeving (voorproductie of productie); het adres ligt per omgeving vast en kan niet worden overschreven. In productie zijn daarnaast HTTP Basic-inloggegevens en het veldversleutelingscertificaat van de AMA in PEM vereist.',
+  'settings.providerCredentials.modes.setup.csc':
+    'Eén vermelding per provider, elk met een eigen identificatie en een eigen HTTPS-basisadres. Serviceautorisatie vereist de OAuth-client-id en het client secret; gebruikersautorisatie vereist in plaats daarvan een eerder verkregen toegangstoken. Referentie-id, bereik en de sandboxvlag zijn optioneel, net als HTTP Basic-inloggegevens voor een gateway vóór de API.',
+  'settings.providerCredentials.modes.setup.scap':
+    'Eén enkele vermelding, zonder provider-identificatie. Vereist de omgeving (voorproductie of productie) en, in productie, de door de AMA uitgegeven toepassings-id met het bijbehorende geheim. Het basisadres is optioneel: zonder dat adres wordt het adres van de gekozen omgeving gebruikt. HTTP Basic-inloggegevens zijn optioneel.',
+  'settings.providerCredentials.modes.setup.pkcs12':
+    'Eén vermelding per identiteit, elk met een eigen label. Vereist het .pfx/.p12-bestand en de wachtwoordzin die het opent. Bevat het bestand meer dan één identiteit, wijs er dan een aan via de beschrijvende naam of via de local key ID in hexadecimale vorm. Er is geen adres in te stellen.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Weggaan zonder op te slaan?',
   'unsaved.body':
