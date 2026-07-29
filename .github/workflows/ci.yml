@@ -16,20 +16,24 @@ on:
 permissions:
   contents: read
 
-# One run per ref, and a new push cancels the one it supersedes — on main as well
-# as on pull requests. Keying main by commit kept every push's run alive, so a busy
-# day left several full matrices racing for the same runners and the newest commit
-# queued behind results nobody was going to act on.
+# Pull-request runs cancel when superseded. Main pushes are keyed by commit and
+# never cancel, because THIS workflow publishes: `publish-ghcr` runs under
+# `if: github.event_name == 'push' && github.ref == 'refs/heads/main'` with
+# `packages: write` and pushes the server, worker and search-projector images.
+# Cancelling a main run can therefore abort an image publication, which is why
+# `scripts/check-release-trust.mjs` asserts both lines below and fails the
+# metadata and recent-landed jobs if either changes.
 #
-# This does mean an aborted main run leaves no CI verdict for that commit. That is
-# the intended trade: the verdict that matters is the one for the tip, and any
-# commit whose run was cancelled is by definition no longer the tip. Release
-# evidence does not depend on it — release.yml, release-signing.yml and
-# auto-release.yml keep `cancel-in-progress: false` and run off tags, so nothing
-# here can abort a publication midway.
+# Making main cancel superseded runs is a real request and a reasonable one — it
+# would stop several full matrices racing for the same runners. But it is a
+# publication-policy change, not a runner-cost tweak, and the clean way to get it
+# is to move `publish-ghcr` into its own `workflow_run` workflow that keeps
+# `cancel-in-progress: false`, leaving this one free to cancel. Until that is
+# decided, do not relax these two lines to make a red gate green: the guard is the
+# protection, not the obstacle.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
 
 jobs:
   # ---------------------------------------------------------------------------
