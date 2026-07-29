@@ -256,10 +256,8 @@ describe('ProviderCredentialPage', () => {
     fireEvent.change(screen.getByLabelText('ID da credencial'), { target: { value: 'cred-7' } });
     // `sandbox` is the only `kind: 'toggle'` selector, so this click is what proves a toggle reaches
     // `selectors` at all — the guarantee this case holds, alongside the trimming and write-only
-    // assertions. It now submits `'false'` rather than `'true'` because the control renders checked
-    // by default, mirroring the server's `selector_bool(entry, "sandbox", true)`; the click
-    // therefore turns sandbox OFF. That is the more valuable direction to pin: opting OUT of the
-    // permissive default has to be written explicitly, because an omitted key means ON.
+    // assertions. A new entry starts NOT sandboxed (`newEntryOn: false`), so the click turns it ON:
+    // opting IN to the relaxed HTTPS rule, which is the direction that should take a deliberate act.
     fireEvent.click(screen.getByRole('switch', { name: 'Ambiente de testes (sandbox)' }));
     fireEvent.change(screen.getByLabelText('Token de acesso'), { target: { value: 'token-7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
@@ -271,7 +269,7 @@ describe('ProviderCredentialPage', () => {
         label: 'Backup',
         enabled: true,
         endpoint: 'https://csc.example.test/api',
-        selectors: { authorization: 'user', credential_id: 'cred-7', sandbox: 'false' },
+        selectors: { authorization: 'user', credential_id: 'cred-7', sandbox: 'true' },
         set: { access_token: 'token-7' },
       });
     });
@@ -295,12 +293,13 @@ describe('ProviderCredentialPage', () => {
     });
   });
 
-  // Pins the change to the sandbox toggle as DISPLAY-ONLY. Rendering the control checked by
-  // default (to match `selector_bool(entry, "sandbox", true)`) must not make the form start writing
-  // `sandbox` explicitly: an untouched form still sends no key, so the server keeps applying its
-  // own default and no stored entry's validation moves. If this ever submits `sandbox: 'true'`,
-  // the display fix has silently become a behaviour change for every new entry.
-  it('still omits the sandbox selector when the operator never touches the toggle', async () => {
+  // The successor to the case that pinned the opposite guarantee ("still omits the sandbox
+  // selector…"). Omission is precisely what made a new entry sandboxed without anyone choosing it:
+  // the server reads `selector_bool(entry, "sandbox", true)`, so a missing key means ON, and ON
+  // relaxes `CscConfig::validate` to accept `http://localhost` in place of required HTTPS. An
+  // untouched create form must therefore SEND the key, not leave it to the server's default. If
+  // this ever stops finding `sandbox: 'false'` in the body, silent sandboxing is back.
+  it('writes sandbox off explicitly when the operator never touches the toggle', async () => {
     const stub = stubFetch();
     vi.stubGlobal('fetch', stub.fn);
     renderPage('/admin/signing/providers/new?mode=csc');
@@ -309,17 +308,44 @@ describe('ProviderCredentialPage', () => {
       target: { value: 'untouched-provider' },
     });
     fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'secret-1' } });
-    // The toggle reads as on — and is still not submitted, because nothing set it.
+    // The control shows what will actually be applied, and it is off.
     expect(
       (screen.getByRole('switch', { name: 'Ambiente de testes (sandbox)' }) as HTMLInputElement)
         .checked,
-    ).toBe(true);
+    ).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
 
     await waitFor(() => {
       const create = stub.calls.find((call) => call.method === 'POST');
       expect(create).toBeTruthy();
       const selectors = JSON.parse(create?.body ?? '{}').selectors as Record<string, string>;
+      expect(selectors).toEqual({ sandbox: 'false' });
+    });
+  });
+
+  // Seeding a create-time value must not leak into an edit. `update_entry` swaps the whole selector
+  // map for what the form sends, so a form that invented `sandbox` here would rewrite the stored
+  // posture of every legacy entry on any unrelated save — a label change flipping HTTPS
+  // enforcement. Absent stays absent, and the server keeps applying exactly the default it applies
+  // today; the toggle still shows that default honestly (checked) via `defaultOn`.
+  it('leaves an existing entry without a sandbox selector untouched on edit', async () => {
+    const stub = stubFetch({ view: entryView('csc', 'legacy-provider', 'legacy-entry') });
+    vi.stubGlobal('fetch', stub.fn);
+    renderPage('/admin/signing/providers/csc/legacy-provider/legacy-entry/edit');
+
+    await waitFor(() =>
+      expect(
+        (screen.getByRole('switch', { name: 'Ambiente de testes (sandbox)' }) as HTMLInputElement)
+          .checked,
+      ).toBe(true),
+    );
+    fireEvent.change(screen.getByLabelText('Etiqueta'), { target: { value: 'Renomeada' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => {
+      const patch = stub.calls.find((call) => call.method === 'PATCH');
+      expect(patch).toBeTruthy();
+      const selectors = JSON.parse(patch?.body ?? '{}').selectors as Record<string, string>;
       expect(selectors).not.toHaveProperty('sandbox');
       expect(selectors).toEqual({});
     });

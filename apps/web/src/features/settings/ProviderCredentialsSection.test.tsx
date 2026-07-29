@@ -470,25 +470,23 @@ describe('ProviderCredentialsSection', () => {
     );
   });
 
+  const sandboxSwitch = () => {
+    const label = screen
+      .getByText(ptPT['settings.providerCredentials.field.sandbox'])
+      .closest('label') as HTMLElement;
+    return label.querySelector('input[role="switch"]') as HTMLInputElement;
+  };
+
   // The assertion that would have caught the defect: the server reads
   // `selector_bool(&entry, "sandbox", true)`, so an ABSENT selector means ON. The form used to
   // render `checked={value === 'true'}`, showing a security-relevant switch as off while
   // `http://localhost` was being accepted in place of required HTTPS.
+  //
+  // This is about STORED data only. New entries no longer reach the server without the key (see
+  // the create case below), so `existing` is now the only way an absent selector arrives — which
+  // makes the guarantee narrower but no weaker: those entries exist and still read as on.
   it('shows an absent sandbox selector in the state the server actually applies', () => {
     const noop = () => {};
-    const sandboxSwitch = () => {
-      const label = screen
-        .getByText(ptPT['settings.providerCredentials.field.sandbox'])
-        .closest('label') as HTMLElement;
-      return label.querySelector('input[role="switch"]') as HTMLInputElement;
-    };
-
-    // A brand-new entry: the operator has touched nothing, so the selector will be absent.
-    const created = renderWithProviders(
-      <ProviderCredentialEntryForm mode="csc" disabled={false} onDone={noop} onCancel={noop} />,
-    );
-    expect(sandboxSwitch().checked).toBe(true);
-    created.unmount();
 
     // A stored entry that predates the selector, or was created through the API without it.
     const legacy = renderWithProviders(
@@ -516,6 +514,24 @@ describe('ProviderCredentialsSection', () => {
         onCancel={noop}
       />,
     );
+    expect(sandboxSwitch().checked).toBe(false);
+  });
+
+  // The other half of the pair above, and the reason the two questions needed separate fields on
+  // `SelectorFieldSpec`: what an ABSENT stored value means (on) is not what a NEW entry should be
+  // (off). Sandbox relaxes `CscConfig::validate` to accept `http://localhost` in place of required
+  // HTTPS, so an entry only gets that because the operator asked for it — while the toggle stays a
+  // toggle and moves freely in both directions.
+  it('starts a new entry unsandboxed and keeps the toggle switchable both ways', () => {
+    const noop = () => {};
+    renderWithProviders(
+      <ProviderCredentialEntryForm mode="csc" disabled={false} onDone={noop} onCancel={noop} />,
+    );
+
+    expect(sandboxSwitch().checked).toBe(false);
+    fireEvent.click(sandboxSwitch());
+    expect(sandboxSwitch().checked).toBe(true);
+    fireEvent.click(sandboxSwitch());
     expect(sandboxSwitch().checked).toBe(false);
   });
 

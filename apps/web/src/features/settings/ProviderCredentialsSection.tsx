@@ -163,12 +163,26 @@ interface SelectorFieldSpec {
   /**
    * For `kind: 'toggle'` — what the SERVER assumes when the selector is absent.
    *
-   * Not cosmetic. The form only sends selectors it holds a non-empty value for, so an operator who
-   * never touches a toggle creates an entry with that selector missing, and the server then applies
-   * its own default. Rendering such a toggle as off would show the operator the opposite of the
-   * state actually in force. See {@link selectorBool}.
+   * Not cosmetic. An entry created without this selector — through the API, or through this form
+   * before {@link newEntryOn} existed — has the key missing, and the server then applies its own
+   * default. Rendering such a toggle as off would show the operator the opposite of the state
+   * actually in force. See {@link selectorBool}.
    */
   defaultOn?: boolean;
+  /**
+   * For `kind: 'toggle'` — what a NEWLY CREATED entry starts as, written to `selectors`
+   * **explicitly** so the server's absent-key default never decides it.
+   *
+   * A different question from {@link defaultOn}, and deliberately allowed to disagree with it:
+   * `defaultOn` reads existing data ("what is in force for an entry that has no value"), this one
+   * writes new data ("what should an entry the operator just created be"). For `sandbox` they do
+   * disagree — absence means ON at the server, and a new entry must not be sandboxed unless the
+   * operator says so — which is exactly why one field could not serve both.
+   *
+   * Only seeded by {@link emptyForm}, never by the edit path: an entry whose selector is absent
+   * keeps it absent. See {@link initialSelectors}.
+   */
+  newEntryOn?: boolean;
 }
 
 /**
@@ -303,8 +317,14 @@ const SELECTOR_FIELDS: Record<CredentialMode, SelectorFieldSpec[]> = {
       name: 'sandbox',
       labelKey: 'settings.providerCredentials.field.sandbox',
       kind: 'toggle',
-      // `selector_bool(&entry, "sandbox", true)` — absent means ON at the server.
+      // `selector_bool(&entry, "sandbox", true)` — absent means ON at the server, so that is what
+      // a stored entry without the key is showing.
       defaultOn: true,
+      // …but a new entry is not created sandboxed. Sandbox relaxes `CscConfig::validate` to accept
+      // `http://localhost` in place of required HTTPS, and inheriting that silently from an omitted
+      // key is not a choice the operator made. Written explicitly so the server default cannot
+      // apply, and freely switchable back on for a genuine test endpoint.
+      newEntryOn: false,
     },
   ],
   scap: [
@@ -443,6 +463,25 @@ interface EntryFormState {
   pfxName: string;
 }
 
+/**
+ * The selectors a NEW entry starts with — the toggles that declare a {@link
+ * SelectorFieldSpec.newEntryOn}, and nothing else.
+ *
+ * Seeding a value here is what stops the server's absent-key default from deciding a security
+ * posture nobody chose: `buildSelectors` keeps any non-empty value, so `'false'` survives to the
+ * request body and `selector_bool` reads a real answer rather than falling back. Selectors with no
+ * `newEntryOn` stay absent, which is still the right shape for the ones whose "unset" is a genuine
+ * third state (`env`, `authorization`) rather than a boolean.
+ */
+function initialSelectors(mode: CredentialMode): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const spec of SELECTOR_FIELDS[mode]) {
+    if (spec.kind === 'toggle' && spec.newEntryOn !== undefined)
+      out[spec.name] = spec.newEntryOn ? 'true' : 'false';
+  }
+  return out;
+}
+
 function emptyForm(mode: CredentialMode): EntryFormState {
   return {
     mode,
@@ -450,7 +489,7 @@ function emptyForm(mode: CredentialMode): EntryFormState {
     label: '',
     enabled: true,
     endpoint: '',
-    selectors: {},
+    selectors: initialSelectors(mode),
     secrets: {},
     pfxBase64: '',
     pfxName: '',
@@ -487,6 +526,12 @@ export function ProviderCredentialEntryForm({
       base.label = existing.label;
       base.enabled = existing.enabled;
       base.endpoint = existing.endpoint ?? '';
+      // REPLACES the seed from `initialSelectors`, rather than merging over it. An edit must show
+      // and resubmit the entry as stored: `update_entry` swaps the whole selector map for whatever
+      // the form sends, so merging a create-time default in here would silently rewrite a stored
+      // entry's sandbox posture on any unrelated edit — a label change flipping HTTPS enforcement.
+      // An entry whose selector is absent therefore keeps it absent, and the server keeps applying
+      // the same default it applies today.
       base.selectors = { ...existing.selectors };
     }
     if (providerId !== undefined) base.providerId = providerId;
