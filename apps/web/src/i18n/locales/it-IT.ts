@@ -1835,6 +1835,7 @@ export const itIT: Catalog = {
   'users.sessions.col.network': 'Rete',
   'users.sessions.col.lastSeen': 'Ultima attività',
   'users.sessions.col.expires': 'Scade',
+  'users.sessions.col.action': 'Azione',
   'users.sessions.current': 'questa sessione',
   'users.sessions.thisSession': 'Sessione attuale',
   'users.sessions.revoke': 'Termina',

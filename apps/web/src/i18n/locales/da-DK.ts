@@ -1826,6 +1826,7 @@ export const daDK: Catalog = {
   'users.sessions.col.network': 'Netværk',
   'users.sessions.col.lastSeen': 'Sidst aktiv',
   'users.sessions.col.expires': 'Udløber',
+  'users.sessions.col.action': 'Handling',
   'users.sessions.current': 'denne session',
   'users.sessions.thisSession': 'Aktuel session',
   'users.sessions.revoke': 'Afslut',

@@ -1870,6 +1870,7 @@ export const ptPT: Catalog = {
   'users.sessions.col.network': 'Rede',
   'users.sessions.col.lastSeen': 'Última atividade',
   'users.sessions.col.expires': 'Expira',
+  'users.sessions.col.action': 'Ação',
   'users.sessions.current': 'esta sessão',
   'users.sessions.thisSession': 'Sessão atual',
   'users.sessions.revoke': 'Terminar',

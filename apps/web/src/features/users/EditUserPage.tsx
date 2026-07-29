@@ -603,7 +603,7 @@ function SessionsSection() {
                 <th>{t('users.sessions.col.network')}</th>
                 <th>{t('users.sessions.col.lastSeen')}</th>
                 <th>{t('users.sessions.col.expires')}</th>
-                <th>{t('users.table.action')}</th>
+                <th>{t('users.sessions.col.action')}</th>
               </tr>
             }
           >
@@ -631,19 +631,27 @@ function SessionsSection() {
                 <td>
                   <DateTime value={s.expires_at} />
                 </td>
-                <td className="users-actions">
-                  {s.current ? (
-                    <span className="muted">{t('users.sessions.thisSession')}</span>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      icon={<Icon.Trash />}
-                      disabled={busy}
-                      onClick={() => doRevoke(s.session_id)}
-                    >
-                      {t('users.sessions.revoke')}
-                    </Button>
+                {/* One fact, one label: the accent badge in the device column already says this
+                    row is the caller's own session, and that is where an operator identifies a
+                    row (it is also the text a screen reader reads first in the row). Repeating it
+                    here as muted prose put a second name for the same fact inside the column
+                    reserved for controls. There is no control to offer — you leave your own
+                    session by signing out, never by revoking it — and a permanently-disabled
+                    button would be an affordance that can never fire, so the cell is empty. The
+                    shared action-cell classes keep the row's geometry identical either way. */}
+                <td className="table-action-cell">
+                  {s.current ? null : (
+                    <span className="table-actions">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Trash />}
+                        disabled={busy}
+                        onClick={() => doRevoke(s.session_id)}
+                      >
+                        {t('users.sessions.revoke')}
+                      </Button>
+                    </span>
                   )}
                 </td>
               </tr>

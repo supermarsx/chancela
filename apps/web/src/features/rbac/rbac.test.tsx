@@ -425,11 +425,14 @@ describe('RolesSection — editing and deleting a função', () => {
 
     const row = (await screen.findByText('Secretário')).closest('tr')!;
     const cell = within(row).getByRole('button', { name: 'Editar' }).closest('td')!;
-    const actions = cell.querySelector('.rbac-actions')!;
+    const actions = cell.querySelector('.table-actions')!;
     const edit = within(row).getByRole('button', { name: 'Editar' });
     const remove = within(row).getByRole('button', { name: 'Eliminar' });
 
-    expect(cell.classList.contains('rbac-action-cell')).toBe(true);
+    expect(cell.classList.contains('table-action-cell')).toBe(true);
+    // The affordance was renamed from `.rbac-*` when the sessions table adopted it: an
+    // `rbac-`-scoped name is what pushed that table onto flex-ified `.users-actions`.
+    expect(cell.classList.contains('rbac-action-cell')).toBe(false);
     expect(actions.contains(edit)).toBe(true);
     expect(edit.classList.contains('btn--iconOnly')).toBe(true);
     expect(remove.classList.contains('btn--iconOnly')).toBe(true);
@@ -460,7 +463,7 @@ describe('RolesSection — editing and deleting a função', () => {
     await waitFor(() => expect((confirm as HTMLButtonElement).disabled).toBe(true));
     const cancel = screen.getByRole('button', { name: 'Cancelar' });
     expect((cancel as HTMLButtonElement).disabled).toBe(true);
-    expect(confirm.closest('.rbac-actions')).toBe(cancel.closest('.rbac-actions'));
+    expect(confirm.closest('.table-actions')).toBe(cancel.closest('.table-actions'));
 
     finishDelete(new Response(null, { status: 204 }));
     await screen.findByText('Função eliminada');
@@ -729,8 +732,8 @@ describe('RoleAssignmentManager — scoped assignment + last-Owner 409', () => {
 
     const remove = await screen.findByRole('button', { name: 'Remover' });
     const cell = remove.closest('td')!;
-    expect(cell.classList.contains('rbac-action-cell')).toBe(true);
-    expect(remove.closest('.rbac-actions')).toBeTruthy();
+    expect(cell.classList.contains('table-action-cell')).toBe(true);
+    expect(remove.closest('.table-actions')).toBeTruthy();
     expect(remove.classList.contains('btn--iconOnly')).toBe(true);
     vi.unstubAllGlobals();
   });
@@ -819,30 +822,39 @@ describe('RoleAssignmentManager — scoped assignment + last-Owner 409', () => {
   });
 });
 
-describe('RBAC table action layout', () => {
-  it('pins default button height, square icons, wrapping and mobile alignment only in RBAC rows', async () => {
+describe('Shared table action-cell layout', () => {
+  it('pins default button height, square icons, wrapping and mobile alignment in action rows', async () => {
     const css = await themeCss();
-    const start = css.indexOf('/* --- Role catalog + per-user role assignments');
+    const start = css.indexOf('/* --- Shared table action cell');
     const end = css.indexOf(
       '/* --------------------------------------------------------------------------',
       start,
     );
+    expect(start).toBeGreaterThan(-1);
     const rules = css.slice(start, end);
 
     expect(rules).toMatch(
-      /\.rbac-actions\s*\{[^}]*flex-wrap:\s*wrap;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;/s,
+      /\.table-actions\s*\{[^}]*flex-wrap:\s*wrap;[^}]*align-items:\s*center;[^}]*justify-content:\s*flex-end;/s,
     );
-    expect(rules).toMatch(/\.rbac-actions \.btn\s*\{[^}]*min-height:\s*2\.25rem;/s);
+    expect(rules).toMatch(/\.table-actions \.btn\s*\{[^}]*min-height:\s*2\.25rem;/s);
     expect(rules).toMatch(
-      /\.rbac-actions \.btn--iconOnly\s*\{[^}]*width:\s*2\.25rem;[^}]*min-width:\s*2\.25rem;/s,
-    );
-    expect(rules).toMatch(
-      /@media \(max-width: 720px\)[\s\S]*\.rbac-actions\s*\{[^}]*justify-content:\s*flex-start;/,
+      /\.table-actions \.btn--iconOnly\s*\{[^}]*width:\s*2\.25rem;[^}]*min-width:\s*2\.25rem;/s,
     );
     expect(rules).toMatch(
-      /\.rbac-actions \.btn:not\(\.btn--iconOnly\)\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
+      /@media \(max-width: 720px\)[\s\S]*\.table-actions\s*\{[^}]*justify-content:\s*flex-start;/,
     );
+    expect(rules).toMatch(
+      /\.table-actions \.btn:not\(\.btn--iconOnly\)\s*\{[^}]*white-space:\s*normal;[^}]*overflow-wrap:\s*anywhere;/s,
+    );
+    // The flex-ified `<td>` helper never gets button geometry — that is the defect this
+    // affordance exists to avoid, not a second way to spell it.
     expect(rules).not.toMatch(/\.users-actions\s+\.btn/);
+    // The retired feature-scoped names declare nothing anywhere in the stylesheet, so no surface
+    // can reach for them again and silently get no geometry at all. Comments are stripped first:
+    // the section comment names them deliberately, to record what they were renamed from, and a
+    // bare text search cannot tell that prose from a live selector.
+    const declarations = css.replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(declarations).not.toMatch(/\.rbac-action(s|-cell)\b/u);
   });
 });
 

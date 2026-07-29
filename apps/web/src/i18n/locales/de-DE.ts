@@ -1848,6 +1848,7 @@ export const deDE: Catalog = {
   'users.sessions.col.network': 'Netzwerk',
   'users.sessions.col.lastSeen': 'Zuletzt aktiv',
   'users.sessions.col.expires': 'Läuft ab',
+  'users.sessions.col.action': 'Aktion',
   'users.sessions.current': 'diese Sitzung',
   'users.sessions.thisSession': 'Aktuelle Sitzung',
   'users.sessions.revoke': 'Beenden',

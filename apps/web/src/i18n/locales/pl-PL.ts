@@ -1829,6 +1829,7 @@ export const plPL: Catalog = {
   'users.sessions.col.network': 'Sieć',
   'users.sessions.col.lastSeen': 'Ostatnia aktywność',
   'users.sessions.col.expires': 'Wygasa',
+  'users.sessions.col.action': 'Akcja',
   'users.sessions.current': 'ta sesja',
   'users.sessions.thisSession': 'Bieżąca sesja',
   'users.sessions.revoke': 'Zakończ',

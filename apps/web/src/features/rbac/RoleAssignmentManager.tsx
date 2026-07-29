@@ -175,8 +175,8 @@ export function RoleAssignmentManager({ user }: { user: UserView }) {
                 <td>
                   <Badge tone="neutral">{scopeLabel(a.scope)}</Badge>
                 </td>
-                <td className="rbac-action-cell">
-                  <span className="rbac-actions">
+                <td className="table-action-cell">
+                  <span className="table-actions">
                     <GateIconButton
                       perm="role.assign"
                       scope={a.scope}

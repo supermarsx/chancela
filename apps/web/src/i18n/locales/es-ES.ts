@@ -1834,6 +1834,7 @@ export const esES: Catalog = {
   'users.sessions.col.network': 'Red',
   'users.sessions.col.lastSeen': 'Última actividad',
   'users.sessions.col.expires': 'Caduca',
+  'users.sessions.col.action': 'Acción',
   'users.sessions.current': 'esta sesión',
   'users.sessions.thisSession': 'Sesión actual',
   'users.sessions.revoke': 'Cerrar',

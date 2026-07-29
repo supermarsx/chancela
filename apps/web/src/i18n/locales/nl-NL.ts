@@ -1835,6 +1835,7 @@ export const nlNL: Catalog = {
   'users.sessions.col.network': 'Netwerk',
   'users.sessions.col.lastSeen': 'Laatst actief',
   'users.sessions.col.expires': 'Verloopt',
+  'users.sessions.col.action': 'Actie',
   'users.sessions.current': 'deze sessie',
   'users.sessions.thisSession': 'Huidige sessie',
   'users.sessions.revoke': 'Beëindigen',

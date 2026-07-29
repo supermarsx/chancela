@@ -1832,6 +1832,7 @@ export const svFI: Catalog = {
   'users.sessions.col.network': 'Nätverk',
   'users.sessions.col.lastSeen': 'Senast aktiv',
   'users.sessions.col.expires': 'Upphör',
+  'users.sessions.col.action': 'Åtgärd',
   'users.sessions.current': 'denna session',
   'users.sessions.thisSession': 'Aktuell session',
   'users.sessions.revoke': 'Avsluta',

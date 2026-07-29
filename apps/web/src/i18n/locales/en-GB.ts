@@ -1824,6 +1824,7 @@ export const enGB: Catalog = {
   'users.sessions.col.network': 'Network',
   'users.sessions.col.lastSeen': 'Last active',
   'users.sessions.col.expires': 'Expires',
+  'users.sessions.col.action': 'Action',
   'users.sessions.current': 'this session',
   'users.sessions.thisSession': 'Current session',
   'users.sessions.revoke': 'End',

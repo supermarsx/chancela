@@ -1826,6 +1826,7 @@ export const fiFI: Catalog = {
   'users.sessions.col.network': 'Verkko',
   'users.sessions.col.lastSeen': 'Viimeksi aktiivinen',
   'users.sessions.col.expires': 'Vanhenee',
+  'users.sessions.col.action': 'Toiminto',
   'users.sessions.current': 'tämä istunto',
   'users.sessions.thisSession': 'Nykyinen istunto',
   'users.sessions.revoke': 'Päätä',

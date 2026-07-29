@@ -20,6 +20,7 @@ import { NewUserPage } from './NewUserPage';
 import { EditUserPage } from './EditUserPage';
 import { isValidUsername, usernameError } from './username';
 import { formatDateTime, formatTimestamp } from '../../format';
+import { ptPT } from '../../i18n/locales/pt-PT';
 import type { DsrRequestView, DsrRequestType, TwoFactorStatus, UserView } from '../../api/types';
 
 /**
@@ -2133,10 +2134,61 @@ describe('EditUserPage — active sessions', () => {
     expect(await screen.findByText('Chrome on Windows')).toBeTruthy();
     // The current session is badged and offers no per-row revoke (that is what sign-out is for).
     const currentRow = screen.getByText('Chrome on Windows').closest('tr') as HTMLElement;
-    expect(within(currentRow).getByText('Sessão atual')).toBeTruthy();
-    expect(within(currentRow).queryByRole('button', { name: 'Terminar' })).toBeNull();
+    const currentCells = currentRow.querySelectorAll('td');
+
+    // ONE label for one fact. The accent badge sits in the device column — where an operator
+    // identifies a row, and real row text a screen reader reads out with the row — and is the only
+    // place that says "this is your session". The action column carries controls, so it holds
+    // neither a second copy of the label nor a button that could never fire.
+    const badge = currentRow.querySelector('.badge') as HTMLElement;
+    expect(badge.textContent).toBe(ptPT['users.sessions.current']);
+    expect(badge.closest('td')).toBe(currentCells[0]);
+    expect(currentRow.querySelectorAll('.badge')).toHaveLength(1);
+    expect(currentCells[4].textContent).toBe('');
+    expect(
+      within(currentRow).queryByRole('button', { name: ptPT['users.sessions.revoke'] }),
+    ).toBeNull();
+
     // A genuine table with an accessible caption, not a form.
-    expect(screen.getByRole('table', { name: 'Sessões ativas nesta conta' })).toBeTruthy();
+    const table = screen.getByRole('table', { name: ptPT['users.sessions.caption'] });
+    // Five columns, each named by a key this table owns — the action header used to borrow the
+    // roster's `users.table.action`.
+    expect(
+      within(table)
+        .getAllByRole('columnheader')
+        .map((header) => header.textContent),
+    ).toEqual([
+      ptPT['users.sessions.col.device'],
+      ptPT['users.sessions.col.network'],
+      ptPT['users.sessions.col.lastSeen'],
+      ptPT['users.sessions.col.expires'],
+      ptPT['users.sessions.col.action'],
+    ]);
+  });
+
+  it('gives every action cell the shared table action-cell geometry, not the flex `<td>` helper', async () => {
+    // No snapshot coverage exists for presentational CSS, so the class that keeps the two row
+    // shapes (a revoke button, and nothing at all) the same height is asserted directly. The
+    // flex-ified `.users-actions` helper on this `<td>` is what made the column ragged.
+    stub(AMELIA);
+    await screen.findByText('Chrome on Windows');
+
+    const rows = within(screen.getByRole('table', { name: ptPT['users.sessions.caption'] }))
+      .getAllByRole('row')
+      .slice(1);
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      const actionCell = row.querySelectorAll('td')[4];
+      expect(actionCell.classList.contains('table-action-cell')).toBe(true);
+      expect(actionCell.classList.contains('users-actions')).toBe(false);
+    }
+
+    const otherRow = screen.getByText(ptPT['users.sessions.unknownDevice']).closest('tr')!;
+    expect(
+      within(otherRow)
+        .getByRole('button', { name: ptPT['users.sessions.revoke'] })
+        .closest('.table-actions'),
+    ).toBeTruthy();
   });
 
   it('renders a session with no device or IP gracefully', async () => {

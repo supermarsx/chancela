@@ -1846,6 +1846,7 @@ export const frFR: Catalog = {
   'users.sessions.col.network': 'Réseau',
   'users.sessions.col.lastSeen': 'Dernière activité',
   'users.sessions.col.expires': 'Expire',
+  'users.sessions.col.action': 'Action',
   'users.sessions.current': 'cette session',
   'users.sessions.thisSession': 'Session actuelle',
   'users.sessions.revoke': 'Terminer',

@@ -10993,19 +10993,25 @@ input[type='radio']:disabled {
   gap: 0.4rem;
 }
 
-/* --- Role catalog + per-user role assignments ---------------------------------
+/* --- Shared table action cell (role catalog, role assignments, active sessions) ------------
    Keep the table cell a real table cell: `.users-actions` is an older generic helper that
    changes a `<td>` to `display:flex`, which makes row geometry depend on the action currently
-   shown. Role rows can switch from compact icon actions to worded confirmation/pending actions,
-   so their dedicated inner action row gives every shared `.btn` the app's standard 2.25rem
-   control height while icon-only actions remain square. The same geometry therefore survives
-   allowed, gated, native-disabled and mutation-pending states without overriding global button
-   chrome. */
-.rbac-action-cell {
+   shown. Rows can switch from compact icon actions to worded confirmation/pending actions — and
+   a sessions row swaps its button for NO control at all on the caller's own session — so the
+   dedicated inner action row gives every shared `.btn` the app's standard 2.25rem control height
+   while icon-only actions remain square. The same geometry therefore survives allowed, gated,
+   native-disabled, mutation-pending and no-action rows without overriding global button chrome.
+
+   Named for the SHAPE, not the feature. This started life as `.rbac-action-cell`/`.rbac-actions`
+   (t64) and the sessions table reached for flex-ified `.users-actions` instead — the reported
+   jank — because the RBAC-scoped name read as belonging to somebody else. Two class names for one
+   affordance is what caused that, so there is one: any `<td>` whose content is per-row controls
+   uses `.table-action-cell` + `.table-actions`, whatever feature owns the table. */
+.table-action-cell {
   text-align: right;
 }
 
-.rbac-actions {
+.table-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -11014,30 +11020,30 @@ input[type='radio']:disabled {
   min-width: 0;
 }
 
-.rbac-actions .tooltip {
+.table-actions .tooltip {
   flex: 0 0 auto;
 }
 
-.rbac-actions .btn {
+.table-actions .btn {
   min-height: 2.25rem;
   max-width: 100%;
 }
 
-.rbac-actions .btn--iconOnly {
+.table-actions .btn--iconOnly {
   width: 2.25rem;
   min-width: 2.25rem;
 }
 
 @media (max-width: 720px) {
-  .rbac-action-cell {
+  .table-action-cell {
     text-align: left;
   }
 
-  .rbac-actions {
+  .table-actions {
     justify-content: flex-start;
   }
 
-  .rbac-actions .btn:not(.btn--iconOnly) {
+  .table-actions .btn:not(.btn--iconOnly) {
     white-space: normal;
     overflow-wrap: anywhere;
   }
