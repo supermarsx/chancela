@@ -39,3 +39,6 @@ SPEC-COVERAGE.md
 /apps/web/coverage-*
 /Projectschancelatarget-tcmeasure
 /Projectschancelatarget-t14
+/.cargo-target-lanes
+Book.termo_abertura
+/apps/web/target-t91
