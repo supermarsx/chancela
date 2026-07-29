@@ -1022,7 +1022,7 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/privacy/dsr-requests/{id}/complete", RouteClass::Gated), // POST privacy.manage@Global
     ("/v1/privacy/processors", RouteClass::Gated),        // GET/POST privacy.manage@Global
     ("/v1/privacy/processors/{id}", RouteClass::Gated),   // PATCH privacy.manage@Global
-    ("/v1/privacy/dpia-template", RouteClass::Gated),     // GET privacy.manage@Global
+    ("/v1/privacy/dpia-template", RouteClass::Gated),     // GET/PUT/DELETE privacy.manage@Global
     ("/v1/privacy/dpias", RouteClass::Gated),             // GET/POST privacy.manage@Global
     ("/v1/privacy/dpias/{id}", RouteClass::Gated),        // PATCH privacy.manage@Global
     ("/v1/privacy/breach-playbooks", RouteClass::Gated),  // GET/POST privacy.manage@Global

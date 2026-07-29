@@ -1279,10 +1279,16 @@ function assertDpiaTemplate(obj: unknown, label: string): DpiaTemplateView {
       sections: true,
       operator_actions: true,
       no_claims: true,
+      // The template is operator-editable now; `source` is what tells the client whether the body
+      // is the shipped one (stable ids, translated by the catalog) or one written by the operator
+      // (user content, rendered verbatim). `updated_at`/`updated_by` accompany an operator body
+      // only, so they are absent from this shipped fixture.
+      source: true,
     },
     label,
   );
   expect(template.schema, `${label}.schema`).toBe('chancela-privacy-dpia-template/v1');
+  expect(template.source, `${label}.source`).toBe('shipped');
   expect(template.template_id, `${label}.template_id`).toBe('privacy-dpia-guidance/v1');
   expect(template.scope, `${label}.scope`).toBe('local_offline_guidance_only');
   expect(template.local_offline_guidance_only, `${label}.local_offline_guidance_only`).toBe(true);

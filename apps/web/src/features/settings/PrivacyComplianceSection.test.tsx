@@ -19,6 +19,9 @@ import type {
  * what these cases assert is that the right register reached the right panel.
  */
 import { ptPT } from '../../i18n/locales/pt-PT';
+// The editor's chrome lives outside the catalogs (see `dpiaTemplateEditorFallback.ts`); its pt-PT
+// map is the same kind of by-key lookup as `ptPT` above, for the same reason.
+import { dpiaTemplateEditorPtPT } from '../../i18n/dpiaTemplateEditorFallback';
 import { renderWithProviders } from '../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../session/permissions';
 import { PrivacyComplianceSection } from './PrivacyComplianceSection';
@@ -229,6 +232,9 @@ const dpiaTemplate: DpiaTemplateView = {
   language: 'en',
   scope: 'local_offline_guidance_only',
   local_offline_guidance_only: true,
+  // Shipped: the ids below are resolved through the catalog. The operator-authored case
+  // (`source: 'operator'`, rendered verbatim) has its own test at the bottom of this file.
+  source: 'shipped',
   // Real backend section/checklist ids so the client resolves them to translated catalog keys.
   // The English strings here are the wire copy the panel deliberately overrides with pt-PT.
   sections: [
@@ -693,6 +699,96 @@ describe('PrivacyComplianceSection', () => {
     const claimRow = screen.getByText('authority_filing_completed').closest('tr');
     expect(claimRow).toBeTruthy();
     expect(within(claimRow as HTMLElement).getByText('Não alegado')).toBeTruthy();
+  });
+
+  it('offers the model editor at its own address and says which body is being read', () => {
+    hooks.dpiaTemplate.data = dpiaTemplate;
+    renderWithProviders(<PrivacyComplianceSection />);
+    fireEvent.click(screen.getByRole('button', { name: 'Orientação' }));
+
+    // The editor is a page with a real address, not an inline card in this sub-tab.
+    expect(
+      screen
+        .getByRole('link', {
+          name: dpiaTemplateEditorPtPT['settings.privacy.dpiaTemplateEditor.action.edit'],
+        })
+        .getAttribute('href'),
+    ).toBe('/settings/privacy/dpia-template/edit');
+
+    // Provenance is stated: this body is the shipped one, which is why it reads in Portuguese.
+    expect(
+      screen.getByText(dpiaTemplateEditorPtPT['settings.privacy.dpiaTemplateEditor.badge.shipped']),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(dpiaTemplateEditorPtPT['settings.privacy.dpiaTemplateEditor.note.shipped']),
+    ).toBeTruthy();
+
+    // 🔒 And the panel now SAYS why the identifiers below it are in English, rather than leaving a
+    // Portuguese-speaking operator to conclude the surface is half-translated.
+    expect(
+      screen.getByText(
+        dpiaTemplateEditorPtPT['settings.privacy.dpiaTemplateEditor.identifiers.body'],
+      ),
+    ).toBeTruthy();
+  });
+
+  it('renders an operator-authored model verbatim, never through the catalog', () => {
+    // The section id deliberately collides with a shipped one. If the catalog were consulted the
+    // shipped pt-PT string would win and the operator's own words would never appear — their edit
+    // would look like it had done nothing.
+    hooks.dpiaTemplate.data = {
+      ...dpiaTemplate,
+      title: 'Modelo interno',
+      language: 'pt-PT',
+      sections: [
+        {
+          id: 'risk_prompts',
+          title: 'Riscos que a direção quer ver',
+          description: 'Escrito internamente.',
+          prompts: ['Que risco preocupa a direção?'],
+          checklist: [
+            {
+              id: 'risk_review_note',
+              label: 'Nota interna de risco',
+              field_type: 'review_note',
+              required: true,
+            },
+          ],
+        },
+      ],
+      operator_actions: ['Rever antes de qualquer atualização.'],
+      source: 'operator',
+      updated_at: '2026-07-20T09:00:00Z',
+      updated_by: 'amelia.marques',
+    } satisfies DpiaTemplateView;
+
+    renderWithProviders(<PrivacyComplianceSection />);
+    fireEvent.click(screen.getByRole('button', { name: 'Orientação' }));
+
+    expect(screen.getByText('Riscos que a direção quer ver')).toBeTruthy();
+    expect(screen.getByText('Que risco preocupa a direção?')).toBeTruthy();
+    expect(screen.getByText('Rever antes de qualquer atualização.')).toBeTruthy();
+    // The shipped catalog strings for the SAME ids must be nowhere on screen.
+    expect(screen.queryByText('Perguntas de risco')).toBeNull();
+    expect(
+      screen.queryByText('Que impactos nos direitos e liberdades devem ser revistos?'),
+    ).toBeNull();
+
+    // The reader is told this body is not translated, so nobody assumes it appears in 14 languages.
+    expect(
+      screen.getByText(
+        dpiaTemplateEditorPtPT['settings.privacy.dpiaTemplateEditor.badge.operator'],
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(dpiaTemplateEditorPtPT['settings.privacy.dpiaTemplateEditor.note.operator']),
+    ).toBeTruthy();
+
+    // 🔒 An operator body changes nothing about the no-claims flags: still 28, still verbatim,
+    // still `Não alegado`.
+    fireEvent.click(screen.getByText('Flags sem alegação'));
+    expect(screen.getByText('cnpd_filing_completed')).toBeTruthy();
+    expect(screen.getByText('review_note')).toBeTruthy();
   });
 
   it('filters retention policies and performs a non-destructive dry run', async () => {

@@ -181,6 +181,7 @@ export const routeModuleLoaders = {
   notifications: () => import('../features/notifications/NotificationsPage'),
   providerCredential: () => import('../features/settings/ProviderCredentialPage'),
   privacyRegisterRecord: () => import('../features/settings/privacy/RegisterRecordPage'),
+  privacyDpiaTemplate: () => import('../features/settings/privacy/DpiaTemplatePage'),
   privacyBreachPlaybook: () => import('../features/settings/privacy/BreachPlaybookPage'),
   privacyTransferControl: () => import('../features/settings/privacy/TransferControlPage'),
   privacyRetentionPolicy: () => import('../features/settings/privacy/RetentionPolicyPage'),
@@ -402,6 +403,13 @@ export const router = createBrowserRouter([
       {
         path: 'settings/privacy/dpias/:id',
         element: lazyRoute(routeModuleLoaders.privacyRegisterRecord, 'DpiaRecordPage'),
+      },
+      // The DPIA guidance MODEL (not a record): a singleton document, so one address and no `:id`.
+      // Four segments like the record pages, and no `navDepth` for the same reason — leaving the
+      // editor must be a page change so `UnsavedChangesGuard` can challenge a dirty exit.
+      {
+        path: 'settings/privacy/dpia-template/edit',
+        element: lazyRoute(routeModuleLoaders.privacyDpiaTemplate, 'DpiaTemplatePage'),
       },
       {
         path: 'settings/privacy/breach-playbooks/new',

@@ -64,11 +64,12 @@
 //!   request tracking with JSON sidecar durability in data-dir mode and ledger-audited lifecycle
 //!   transitions.
 //! - `GET|POST /v1/privacy/processors`, `PATCH /v1/privacy/processors/{id}`,
-//!   `GET /v1/privacy/dpia-template`,
+//!   `GET|PUT|DELETE /v1/privacy/dpia-template`,
 //!   `GET|POST /v1/privacy/dpias`, `PATCH /v1/privacy/dpias/{id}`,
 //!   `GET|POST /v1/privacy/breach-playbooks`, `PATCH /v1/privacy/breach-playbooks/{id}`,
 //!   `GET|POST /v1/privacy/transfer-controls`, `PATCH /v1/privacy/transfer-controls/{id}` —
-//!   a static local/offline DPIA guidance pack plus bounded privacy control registers with JSON
+//!   a local/offline DPIA guidance pack (the template shipped with the build, or the operator's own
+//!   model; `DELETE` returns to the shipped one) plus bounded privacy control registers, with JSON
 //!   sidecar durability in data-dir mode and ledger-audited create/update transitions.
 //! - `GET|POST /v1/privacy/retention-policies`, `PATCH /v1/privacy/retention-policies/{id}`,
 //!   `POST /v1/privacy/retention-policies/dry-run`,
@@ -659,6 +660,14 @@ pub struct AppState {
     /// DPIA register records. File-backed states load and write these through `privacy-dpias.json`;
     /// create and update transitions are also chained into the ledger.
     pub dpia_records: Arc<RwLock<HashMap<privacy::DpiaRecordId, privacy::DpiaRecord>>>,
+    /// The operator's own DPIA guidance model, or `None` when the template shipped in this build is
+    /// being served. File-backed states load and write this through `privacy-dpia-template.json`;
+    /// each replace and each reset is chained into the ledger.
+    ///
+    /// 🔒 The stored type deliberately has no `no_claims` field: the 28 flags each name a legal
+    /// claim the product does not make, and they are emitted from a compile-time constant, so no
+    /// operator edit — and no hand-edited sidecar — can set one.
+    pub dpia_template_override: Arc<RwLock<Option<privacy::DpiaTemplateOverride>>>,
     /// Breach-response playbook register records. File-backed states load and write these through
     /// `privacy-breach-playbooks.json`; create and update transitions are ledger-audited.
     pub breach_playbooks:
@@ -698,6 +707,8 @@ pub struct AppState {
     pub processor_records_path: Option<Arc<PathBuf>>,
     /// Where `privacy-dpias.json` is persisted, or `None` for in-memory registers.
     pub dpia_records_path: Option<Arc<PathBuf>>,
+    /// Where `privacy-dpia-template.json` is persisted, or `None` for an in-memory override.
+    pub dpia_template_path: Option<Arc<PathBuf>>,
     /// Where `privacy-breach-playbooks.json` is persisted, or `None` for in-memory registers.
     pub breach_playbooks_path: Option<Arc<PathBuf>>,
     /// Where `privacy-transfer-controls.json` is persisted, or `None` for in-memory registers.
@@ -1215,6 +1226,9 @@ impl AppState {
         let dpia_records_path = dir.join(privacy::DPIAS_FILE);
         let loaded_dpia_records =
             privacy::load_dpia_records(&dpia_records_path).unwrap_or_default();
+        let dpia_template_path = dir.join(privacy::DPIA_TEMPLATE_FILE);
+        let loaded_dpia_template_override =
+            privacy::load_dpia_template_override(&dpia_template_path);
         let breach_playbooks_path = dir.join(privacy::BREACH_PLAYBOOKS_FILE);
         let loaded_breach_playbooks =
             privacy::load_breach_playbooks(&breach_playbooks_path).unwrap_or_default();
@@ -1289,6 +1303,8 @@ impl AppState {
             processor_records_path: Some(Arc::new(processor_records_path)),
             dpia_records: Arc::new(RwLock::new(loaded_dpia_records)),
             dpia_records_path: Some(Arc::new(dpia_records_path)),
+            dpia_template_override: Arc::new(RwLock::new(loaded_dpia_template_override)),
+            dpia_template_path: Some(Arc::new(dpia_template_path)),
             breach_playbooks: Arc::new(RwLock::new(loaded_breach_playbooks)),
             breach_playbooks_path: Some(Arc::new(breach_playbooks_path)),
             transfer_controls: Arc::new(RwLock::new(loaded_transfer_controls)),
@@ -3518,7 +3534,12 @@ pub fn router(state: AppState) -> Router {
             "/v1/privacy/processors/{id}",
             patch(privacy::patch_processor_record),
         )
-        .route("/v1/privacy/dpia-template", get(privacy::get_dpia_template))
+        .route(
+            "/v1/privacy/dpia-template",
+            get(privacy::get_dpia_template)
+                .put(privacy::put_dpia_template)
+                .delete(privacy::reset_dpia_template),
+        )
         .route(
             "/v1/privacy/dpias",
             get(privacy::list_dpia_records).post(privacy::create_dpia_record),

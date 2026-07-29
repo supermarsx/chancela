@@ -67,3 +67,20 @@ export function privacyRecordPath(slug: PrivacyRegisterSlug, id: string): string
 export function privacyRegisterListPath(slug: PrivacyRegisterSlug): string {
   return slug === 'retention-policies' ? privacyRetentionListPath() : privacyListPath();
 }
+
+/**
+ * The DPIA guidance MODEL editor: `/settings/privacy/dpia-template/edit`.
+ *
+ * Not a register — a singleton document, so there is no id and no `…/new`. It still earns a page
+ * of its own for the reason the five registers did: it is a multi-section authoring surface, and
+ * an inline card inside a sub-tab has no address, no Back, and no unsaved-changes guard.
+ *
+ * `dpia-template` is the API resource name and the slug is English for the same reason the five
+ * register slugs are (t97b — "a URL slug is an identifier, not copy"). Four segments, so it can
+ * neither shadow nor be shadowed by the `settings/:sec?/:sub?` catch-all, exactly as the record
+ * addresses above; the trailing `edit` is what makes the fourth segment, since a singleton has no
+ * id to supply one.
+ */
+export function privacyDpiaTemplateEditPath(): string {
+  return '/settings/privacy/dpia-template/edit';
+}

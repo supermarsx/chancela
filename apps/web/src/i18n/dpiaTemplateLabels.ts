@@ -22,8 +22,34 @@
  * Prompts and operator actions have no stable id — they are positional — so they map by array index.
  * Adding, removing, or reordering a prompt on the backend is therefore a breaking change the
  * completeness test is designed to catch.
+ *
+ * ## These maps apply to the SHIPPED template only
+ *
+ * The template is operator-editable now (`PUT /v1/privacy/dpia-template`). An operator override
+ * REPLACES the body: their own sections, their own prompts, their own ids, typed in one language.
+ * None of that has a catalog key and none of it was reviewed by a translator, so it renders
+ * VERBATIM — {@link dpiaTemplateUsesCatalog} is the one place that decision is made, and every
+ * caller routes through it. Two failures it exists to prevent:
+ *
+ *  - Resolving an operator id that happens to collide with a shipped one would show a shipped
+ *    Portuguese string where the operator typed something else — their edit would appear to have
+ *    done nothing.
+ *  - Positional prompt/action mapping is only ever applied to the shipped body, whose order is
+ *    fixed by `shipped_dpia_template()` in `chancela-api`. An operator reordering or deleting a
+ *    prompt therefore cannot desynchronise the index maps below, because those maps are not
+ *    consulted for an operator body at all.
  */
+import type { DpiaTemplateSource } from '../api/types';
 import type { MessageKey } from './types';
+
+/**
+ * Whether a template body of this provenance may be resolved through the catalog.
+ *
+ * Only the shipped body may. Anything else is user content and is shown as typed.
+ */
+export function dpiaTemplateUsesCatalog(source: DpiaTemplateSource): boolean {
+  return source === 'shipped';
+}
 
 /** Section `id` → its title catalog key. */
 export const DPIA_SECTION_TITLE_KEYS: Record<string, MessageKey> = {

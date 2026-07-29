@@ -1815,7 +1815,7 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
     (
         "/v1/privacy/dpia-template",
         RouteGuard::NotGuarded(
-            "Read-only: returns data and mutates no state, so there is nothing to confirm.",
+            "GET is read-only. PUT replaces the operator's own guidance model and DELETE returns to the model shipped with the build; both are ledger-audited, neither touches a register record, and no sealed, signed or evidentiary state is altered or removed. The ledger retains the payload of every prior version, so a reset destroys nothing that was recorded.",
         ),
     ),
     (

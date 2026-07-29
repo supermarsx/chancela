@@ -44,6 +44,8 @@ const PROCESSOR_CREATED_KIND: &str = "privacy.processor.created";
 const PROCESSOR_UPDATED_KIND: &str = "privacy.processor.updated";
 const DPIA_CREATED_KIND: &str = "privacy.dpia.created";
 const DPIA_UPDATED_KIND: &str = "privacy.dpia.updated";
+const DPIA_TEMPLATE_UPDATED_KIND: &str = "privacy.dpia.template.updated";
+const DPIA_TEMPLATE_RESET_KIND: &str = "privacy.dpia.template.reset";
 const BREACH_PLAYBOOK_CREATED_KIND: &str = "privacy.breach.playbook.created";
 const BREACH_PLAYBOOK_UPDATED_KIND: &str = "privacy.breach.playbook.updated";
 const TRANSFER_CONTROL_CREATED_KIND: &str = "privacy.transfer.control.created";
@@ -62,6 +64,7 @@ const RETENTION_PRIOR_BOUNDED_GENERIC_NEXT_STEP: &str = "Prior bounded retention
 const RETENTION_DUE_SUPPRESSION_SUMMARY_NOTE: &str = "Due candidates with prior safe bounded archive/no-action evidence are omitted from the active candidate list; execution history remains queryable for review.";
 pub(crate) const PROCESSORS_FILE: &str = "privacy-processors.json";
 pub(crate) const DPIAS_FILE: &str = "privacy-dpias.json";
+pub(crate) const DPIA_TEMPLATE_FILE: &str = "privacy-dpia-template.json";
 pub(crate) const BREACH_PLAYBOOKS_FILE: &str = "privacy-breach-playbooks.json";
 pub(crate) const TRANSFER_CONTROLS_FILE: &str = "privacy-transfer-controls.json";
 pub(crate) const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
@@ -85,6 +88,17 @@ const MAX_PRIVACY_CONTROL_FIELD_CHARS: usize = 128;
 const MAX_PRIVACY_CONTROL_TEXT_CHARS: usize = 4096;
 const MAX_PRIVACY_CONTROL_LIST_ITEMS: usize = 32;
 const MAX_PRIVACY_EVIDENCE_RECEIPTS: usize = 64;
+// Bounds for the operator-authored DPIA template override. The override is one JSON document read
+// into memory on every boot, so its size is bounded at the door rather than trusted; each cap is
+// generous for a real compliance model and refuses a payload that is not one.
+const MAX_DPIA_TEMPLATE_TITLE_CHARS: usize = 200;
+const MAX_DPIA_TEMPLATE_ID_CHARS: usize = 96;
+const MAX_DPIA_TEMPLATE_LANGUAGE_CHARS: usize = 35;
+const MAX_DPIA_TEMPLATE_TEXT_CHARS: usize = 4096;
+const MAX_DPIA_TEMPLATE_SECTIONS: usize = 50;
+const MAX_DPIA_TEMPLATE_PROMPTS_PER_SECTION: usize = 50;
+const MAX_DPIA_TEMPLATE_CHECKLIST_PER_SECTION: usize = 100;
+const MAX_DPIA_TEMPLATE_OPERATOR_ACTIONS: usize = 50;
 pub(crate) const PRIVACY_ADVISORY_REVIEW_INTERVAL_DAYS: i64 = 365;
 const SENSITIVE_EVIDENCE_MARKERS: &[&str] = &[
     "password_hash",
@@ -741,7 +755,7 @@ pub struct DpiaAdvisoryReviewSummary {
     pub compliance_certification_claimed: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DpiaTemplateFieldType {
     Text,
@@ -752,20 +766,57 @@ pub enum DpiaTemplateFieldType {
     ReviewNote,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+impl DpiaTemplateFieldType {
+    /// The six wire identifiers, in declaration order. They are wire names, not copy — the UI shows
+    /// them verbatim in `mono` and never translates them. Exists so the round-trip test below can
+    /// be exhaustive; adding a variant without extending this array fails to compile.
+    #[cfg(test)]
+    pub(crate) const ALL: [Self; 6] = [
+        Self::Text,
+        Self::Textarea,
+        Self::Checklist,
+        Self::Date,
+        Self::EvidenceReference,
+        Self::ReviewNote,
+    ];
+
+    /// Parse an operator-supplied `field_type`. An unrecognized value is REFUSED rather than
+    /// coerced to a default: a silently-substituted field type would change what the model asks a
+    /// reviewer for without saying so.
+    fn parse(raw: &str) -> Result<Self, ApiError> {
+        match normalize_enum(raw).as_str() {
+            "text" => Ok(Self::Text),
+            "textarea" => Ok(Self::Textarea),
+            "checklist" => Ok(Self::Checklist),
+            "date" => Ok(Self::Date),
+            "evidence_reference" => Ok(Self::EvidenceReference),
+            "review_note" => Ok(Self::ReviewNote),
+            _ => Err(ApiError::Unprocessable(
+                "invalid field_type; expected text, textarea, checklist, date, evidence_reference, or review_note"
+                    .to_owned(),
+            )),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DpiaTemplateChecklistItem {
-    pub id: &'static str,
-    pub label: &'static str,
+    pub id: String,
+    pub label: String,
     pub field_type: DpiaTemplateFieldType,
+    #[serde(default)]
     pub required: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DpiaTemplateSection {
-    pub id: &'static str,
-    pub title: &'static str,
-    pub description: &'static str,
-    pub prompts: Vec<&'static str>,
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub prompts: Vec<String>,
+    #[serde(default)]
     pub checklist: Vec<DpiaTemplateChecklistItem>,
 }
 
@@ -801,19 +852,77 @@ pub struct DpiaTemplateNoClaims {
     pub secrets_included: bool,
 }
 
+/// Who authored the template body currently being served.
+///
+/// This is the single fact the client needs in order to decide whether to translate. The SHIPPED
+/// body has stable ids the web catalog carries in fourteen languages; an OPERATOR body is user
+/// content in whatever language it was typed, and is rendered verbatim. Getting this backwards
+/// would either hide an operator's edit behind a catalog string or claim a translation that was
+/// never written.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DpiaTemplateSource {
+    Shipped,
+    Operator,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DpiaTemplateView {
     pub schema: &'static str,
     pub template_id: &'static str,
-    pub title: &'static str,
+    pub title: String,
     pub version: u32,
-    pub language: &'static str,
+    pub language: String,
     pub scope: &'static str,
     pub local_offline_guidance_only: bool,
     pub sections: Vec<DpiaTemplateSection>,
-    pub operator_actions: Vec<&'static str>,
+    pub operator_actions: Vec<String>,
     pub no_claims: DpiaTemplateNoClaims,
+    /// Appended after `no_claims` so the shipped body serializes byte-for-byte as it did before,
+    /// with this one key added at the end.
+    pub source: DpiaTemplateSource,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub updated_by: Option<String>,
 }
+
+/// The persisted operator override of the DPIA guidance template.
+///
+/// 🔒 **There is deliberately no `no_claims` field, and there must never be one.** The 28 no-claim
+/// flags each name a legal claim this product does not make; they are emitted from the compile-time
+/// constant in [`shipped_dpia_template`] and are therefore unrepresentable in stored state. A
+/// hand-edited sidecar, a corrupted file, or a future careless patch cannot make one of them `true`,
+/// because there is nowhere for a `true` to live. The route additionally REFUSES a payload that
+/// tries (see [`put_dpia_template`]) rather than dropping it quietly.
+///
+/// Every field carries `#[serde(default)]` so a document written by an older build still loads
+/// whole. This loader must not skip rows it cannot fully parse: a skipping loader turns any field
+/// added later into silent data loss. `dpia_template_override_loads_an_older_minimal_document` pins
+/// a deliberately old-shaped document against exactly that.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct DpiaTemplateOverride {
+    #[serde(default = "dpia_template_override_schema")]
+    pub schema: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub language: String,
+    #[serde(default)]
+    pub sections: Vec<DpiaTemplateSection>,
+    #[serde(default)]
+    pub operator_actions: Vec<String>,
+    #[serde(default)]
+    pub updated_at: String,
+    #[serde(default)]
+    pub updated_by: String,
+}
+
+fn dpia_template_override_schema() -> String {
+    DPIA_TEMPLATE_OVERRIDE_SCHEMA.to_owned()
+}
+
+pub(crate) const DPIA_TEMPLATE_OVERRIDE_SCHEMA: &str = "chancela-privacy-dpia-template-override/v1";
 
 impl PrivacyRecordStatus {
     fn parse(raw: &str) -> Result<Self, ApiError> {
@@ -1199,36 +1308,55 @@ impl From<&DpiaRecord> for DpiaRecordView {
     }
 }
 
-fn dpia_template_view() -> DpiaTemplateView {
+/// The template shipped in this build — the default served whenever no operator override exists.
+///
+/// It stays in code rather than in data: it is the one body whose stable section, prompt, checklist
+/// and operator-action ids the web catalog carries in fourteen languages, so it must not drift with
+/// whatever is on disk. An operator override REPLACES this body wholesale (see
+/// [`DpiaTemplateOverride`]); absent an override this is served byte-for-byte as before, with
+/// `source: shipped` appended.
+fn shipped_dpia_template() -> DpiaTemplateView {
     use DpiaTemplateFieldType::{Checklist, Date, EvidenceReference, ReviewNote, Text, Textarea};
 
-    let item = |id, label, field_type, required| DpiaTemplateChecklistItem {
-        id,
-        label,
+    let item = |id: &str, label: &str, field_type, required| DpiaTemplateChecklistItem {
+        id: id.to_owned(),
+        label: label.to_owned(),
         field_type,
         required,
     };
+    let section =
+        |id: &str,
+         title: &str,
+         description: &str,
+         prompts: &[&str],
+         checklist: Vec<DpiaTemplateChecklistItem>| DpiaTemplateSection {
+            id: id.to_owned(),
+            title: title.to_owned(),
+            description: description.to_owned(),
+            prompts: prompts.iter().map(|prompt| (*prompt).to_owned()).collect(),
+            checklist,
+        };
 
     DpiaTemplateView {
         schema: "chancela-privacy-dpia-template/v1",
         template_id: "privacy-dpia-guidance/v1",
-        title: "Local DPIA guidance template",
+        title: "Local DPIA guidance template".to_owned(),
         version: 1,
-        language: "en",
+        language: "en".to_owned(),
         scope: "local_offline_guidance_only",
         local_offline_guidance_only: true,
         sections: vec![
-            DpiaTemplateSection {
-                id: "processing_description",
-                title: "Processing description",
-                description: "Capture the proposed processing with placeholders only; do not paste raw register records, subject data, recipients, processor names, or secrets.",
-                prompts: vec![
+            section(
+                "processing_description",
+                "Processing description",
+                "Capture the proposed processing with placeholders only; do not paste raw register records, subject data, recipients, processor names, or secrets.",
+                &[
                     "What processing activity is being assessed?",
                     "What purpose and lawful-basis question should a human reviewer consider?",
                     "Which data-category placeholders are in scope?",
                     "Which system or workflow boundary is in scope?",
                 ],
-                checklist: vec![
+                vec![
                     item("activity_label", "Processing activity label", Text, true),
                     item("purpose_placeholder", "Purpose placeholder", Textarea, true),
                     item(
@@ -1250,18 +1378,18 @@ fn dpia_template_view() -> DpiaTemplateView {
                         false,
                     ),
                 ],
-            },
-            DpiaTemplateSection {
-                id: "necessity_proportionality",
-                title: "Necessity and proportionality prompts",
-                description: "Guide a human review of necessity, minimization, retention, and alternatives without deciding legal sufficiency.",
-                prompts: vec![
+            ),
+            section(
+                "necessity_proportionality",
+                "Necessity and proportionality prompts",
+                "Guide a human review of necessity, minimization, retention, and alternatives without deciding legal sufficiency.",
+                &[
                     "Why is this processing necessary for the stated purpose?",
                     "What lower-impact alternatives should be considered?",
                     "What minimization or retention constraints should be reviewed?",
                     "What transparency or operator-facing notice gaps should be checked?",
                 ],
-                checklist: vec![
+                vec![
                     item(
                         "necessity_rationale",
                         "Necessity rationale prompt",
@@ -1293,18 +1421,18 @@ fn dpia_template_view() -> DpiaTemplateView {
                         false,
                     ),
                 ],
-            },
-            DpiaTemplateSection {
-                id: "risk_prompts",
-                title: "Risk prompts",
-                description: "Collect qualitative risk prompts only; this template does not calculate, rank, or authorize risk.",
-                prompts: vec![
+            ),
+            section(
+                "risk_prompts",
+                "Risk prompts",
+                "Collect qualitative risk prompts only; this template does not calculate, rank, or authorize risk.",
+                &[
                     "What rights-and-freedoms impacts should be reviewed?",
                     "What confidentiality, integrity, availability, or misuse scenarios should be considered?",
                     "What vulnerable-context or scale factors need human attention?",
                     "What unresolved questions require escalation?",
                 ],
-                checklist: vec![
+                vec![
                     item("rights_impacts", "Rights-impact prompts", Checklist, true),
                     item(
                         "misuse_scenarios",
@@ -1331,17 +1459,17 @@ fn dpia_template_view() -> DpiaTemplateView {
                         false,
                     ),
                 ],
-            },
-            DpiaTemplateSection {
-                id: "safeguards",
-                title: "Safeguards",
-                description: "List safeguards and evidence references for later human review; do not treat the list as certification or approval.",
-                prompts: vec![
+            ),
+            section(
+                "safeguards",
+                "Safeguards",
+                "List safeguards and evidence references for later human review; do not treat the list as certification or approval.",
+                &[
                     "Which technical and organizational safeguards should be evidenced?",
                     "Which access-control, logging, retention, and security controls need review?",
                     "Which residual safeguards need owner follow-up?",
                 ],
-                checklist: vec![
+                vec![
                     item(
                         "technical_safeguards",
                         "Technical safeguards",
@@ -1373,18 +1501,18 @@ fn dpia_template_view() -> DpiaTemplateView {
                         false,
                     ),
                 ],
-            },
-            DpiaTemplateSection {
-                id: "consultation_escalation",
-                title: "Consultation and escalation prompts",
-                description: "Record prompts for operator escalation decisions without claiming consultation occurred or authority approval was obtained.",
-                prompts: vec![
+            ),
+            section(
+                "consultation_escalation",
+                "Consultation and escalation prompts",
+                "Record prompts for operator escalation decisions without claiming consultation occurred or authority approval was obtained.",
+                &[
                     "Which internal reviewer roles should inspect this DPIA?",
                     "What consultation or escalation question remains open?",
                     "What blocker prevents treating this as reviewed?",
                     "What next operator action should be recorded outside this template?",
                 ],
-                checklist: vec![
+                vec![
                     item(
                         "reviewer_roles",
                         "Reviewer role placeholders",
@@ -1416,17 +1544,17 @@ fn dpia_template_view() -> DpiaTemplateView {
                         true,
                     ),
                 ],
-            },
-            DpiaTemplateSection {
-                id: "evidence_boundaries",
-                title: "Evidence and no-claim boundaries",
-                description: "Preserve the local/offline boundary and false no-claim flags when this template is exported, copied, or used for operator review.",
-                prompts: vec![
+            ),
+            section(
+                "evidence_boundaries",
+                "Evidence and no-claim boundaries",
+                "Preserve the local/offline boundary and false no-claim flags when this template is exported, copied, or used for operator review.",
+                &[
                     "Which local evidence references support the prompts?",
                     "Which authority, legal, external-validation, scoring, completion, and register-mutation claims remain false?",
                     "What must be reviewed before any separate record is updated?",
                 ],
-                checklist: vec![
+                vec![
                     item(
                         "local_evidence_index",
                         "Local evidence index placeholders",
@@ -1452,14 +1580,17 @@ fn dpia_template_view() -> DpiaTemplateView {
                         false,
                     ),
                 ],
-            },
+            ),
         ],
-        operator_actions: vec![
+        operator_actions: [
             "Fill placeholders locally with human-authored notes outside this template response.",
             "Review necessity, proportionality, risks, safeguards, and escalation questions before any separate DPIA register update.",
             "Keep authority filing, legal acceptance, external validation, automated scoring, completion, certification, and register-mutation claims false unless separately evidenced outside this template.",
             "Do not paste personal data, secrets, raw register contents, processor names, data subjects, or recipients into the template response.",
-        ],
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect(),
         no_claims: DpiaTemplateNoClaims {
             authority_filing_completed: false,
             authority_approval_obtained: false,
@@ -1490,7 +1621,290 @@ fn dpia_template_view() -> DpiaTemplateView {
             personal_data_included: false,
             secrets_included: false,
         },
+        source: DpiaTemplateSource::Shipped,
+        updated_at: None,
+        updated_by: None,
     }
+}
+
+/// The template as served: the shipped body, or the operator override laid over it.
+///
+/// 🔒 `no_claims`, `schema`, `template_id`, `scope`, `local_offline_guidance_only` and `version`
+/// come from [`shipped_dpia_template`] in BOTH branches. The override supplies a body — title,
+/// language, sections, operator actions — and nothing else. That is why an override cannot assert a
+/// claim, cannot re-badge the document as a different instrument, and cannot widen its declared
+/// local/offline scope.
+fn dpia_template_view(over: Option<&DpiaTemplateOverride>) -> DpiaTemplateView {
+    let mut view = shipped_dpia_template();
+    let Some(over) = over else { return view };
+    view.title = over.title.clone();
+    view.language = over.language.clone();
+    view.sections = over.sections.clone();
+    view.operator_actions = over.operator_actions.clone();
+    view.source = DpiaTemplateSource::Operator;
+    view.updated_at = Some(over.updated_at.clone());
+    view.updated_by = Some(over.updated_by.clone());
+    view
+}
+
+/// 🔒 The server-side no-claims gate for `PUT /v1/privacy/dpia-template`.
+///
+/// Every one of the 28 flags names a legal claim this product does not make, and every one is
+/// `false` on the wire. An operator editing the guidance model must not be able to flip one — not
+/// through this route, not through any other. Two independent mechanisms enforce that, and both are
+/// deliberate:
+///
+///  1. [`DpiaTemplateOverride`] has no `no_claims` field at all, so a `true` has nowhere to live
+///     even if this function were deleted. The served value is always the compile-time constant.
+///  2. This function REFUSES a payload that asks for one, with 422, naming the flag. Accepting it
+///     and quietly serving `false` anyway would leave the operator believing a claim was recorded.
+///     Rejecting loudly is the house rule: unrepresentable content errors, it never flattens.
+///
+/// The known-flag set is derived from the shipped struct's own serialization, so it cannot drift
+/// from the struct definition; an unknown flag name is refused too, because a typo silently
+/// accepted reads as a claim that was set.
+fn validate_dpia_template_no_claims(
+    supplied: Option<&HashMap<String, bool>>,
+) -> Result<(), ApiError> {
+    let Some(supplied) = supplied else {
+        return Ok(());
+    };
+    let shipped = serde_json::to_value(shipped_dpia_template().no_claims)?;
+    let known = shipped
+        .as_object()
+        .ok_or_else(|| ApiError::Internal("no_claims is not an object".to_owned()))?;
+    // Sorted so the refusal message is deterministic when a payload sets several at once.
+    let mut names: Vec<&String> = supplied.keys().collect();
+    names.sort();
+    for name in names {
+        if !known.contains_key(name.as_str()) {
+            return Err(ApiError::Unprocessable(format!(
+                "unknown no_claims flag {name}; the DPIA template no-claims flags are fixed and cannot be added to"
+            )));
+        }
+        if supplied[name] {
+            return Err(ApiError::Unprocessable(format!(
+                "no_claims.{name} cannot be set: the DPIA guidance template states no authority filing, legal acceptance, external validation, scoring, completion or certification claim, and editing the template does not change that"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Validate an operator-authored template body into the shape that is persisted.
+///
+/// Structural only. It bounds sizes, requires ids and labels, refuses duplicate ids within their
+/// scope, refuses an unrecognized `field_type`, and refuses text carrying a sensitive-material
+/// marker. It makes NO judgement about whether the resulting model is adequate, complete or
+/// compliant — that is not a judgement this product is in a position to make.
+fn validate_dpia_template_body(
+    req: PutDpiaTemplate,
+    now: &str,
+    actor_name: &str,
+) -> Result<DpiaTemplateOverride, ApiError> {
+    validate_dpia_template_no_claims(req.no_claims.as_ref())?;
+
+    let title = required_bounded_string(req.title, "title", MAX_DPIA_TEMPLATE_TITLE_CHARS)?;
+    let language = validate_dpia_template_language(req.language)?;
+
+    if req.sections.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "at least one section is required".to_owned(),
+        ));
+    }
+    if req.sections.len() > MAX_DPIA_TEMPLATE_SECTIONS {
+        return Err(ApiError::Unprocessable(format!(
+            "at most {MAX_DPIA_TEMPLATE_SECTIONS} sections are accepted"
+        )));
+    }
+    if req.operator_actions.len() > MAX_DPIA_TEMPLATE_OPERATOR_ACTIONS {
+        return Err(ApiError::Unprocessable(format!(
+            "at most {MAX_DPIA_TEMPLATE_OPERATOR_ACTIONS} operator actions are accepted"
+        )));
+    }
+
+    let mut sections: Vec<DpiaTemplateSection> = Vec::with_capacity(req.sections.len());
+    let mut seen_sections: Vec<String> = Vec::new();
+    for input in req.sections {
+        let id = validate_dpia_template_id(input.id, "section id")?;
+        if seen_sections.contains(&id) {
+            return Err(ApiError::Unprocessable(format!(
+                "duplicate section id {id}"
+            )));
+        }
+        seen_sections.push(id.clone());
+
+        let title =
+            required_bounded_string(input.title, "section title", MAX_DPIA_TEMPLATE_TITLE_CHARS)?;
+        let description = clean_optional_bounded(
+            input.description,
+            "section description",
+            MAX_DPIA_TEMPLATE_TEXT_CHARS,
+        )?
+        .unwrap_or_default();
+
+        if input.prompts.len() > MAX_DPIA_TEMPLATE_PROMPTS_PER_SECTION {
+            return Err(ApiError::Unprocessable(format!(
+                "section {id} has more than {MAX_DPIA_TEMPLATE_PROMPTS_PER_SECTION} prompts"
+            )));
+        }
+        let prompts = validate_dpia_template_lines(input.prompts, "prompt")?;
+
+        if input.checklist.len() > MAX_DPIA_TEMPLATE_CHECKLIST_PER_SECTION {
+            return Err(ApiError::Unprocessable(format!(
+                "section {id} has more than {MAX_DPIA_TEMPLATE_CHECKLIST_PER_SECTION} checklist items"
+            )));
+        }
+        let mut checklist: Vec<DpiaTemplateChecklistItem> =
+            Vec::with_capacity(input.checklist.len());
+        let mut seen_items: Vec<String> = Vec::new();
+        for item in input.checklist {
+            let item_id = validate_dpia_template_id(item.id, "checklist item id")?;
+            if seen_items.contains(&item_id) {
+                return Err(ApiError::Unprocessable(format!(
+                    "duplicate checklist item id {item_id} in section {id}"
+                )));
+            }
+            seen_items.push(item_id.clone());
+            let label = required_bounded_string(
+                item.label,
+                "checklist item label",
+                MAX_DPIA_TEMPLATE_TITLE_CHARS,
+            )?;
+            reject_sensitive_evidence_markers(&label, "checklist item label")?;
+            let field_type = item
+                .field_type
+                .as_deref()
+                .ok_or_else(|| ApiError::Unprocessable("field_type is required".to_owned()))
+                .and_then(DpiaTemplateFieldType::parse)?;
+            checklist.push(DpiaTemplateChecklistItem {
+                id: item_id,
+                label,
+                field_type,
+                required: item.required,
+            });
+        }
+
+        reject_sensitive_evidence_markers(&title, "section title")?;
+        sections.push(DpiaTemplateSection {
+            id,
+            title,
+            description,
+            prompts,
+            checklist,
+        });
+    }
+
+    Ok(DpiaTemplateOverride {
+        schema: DPIA_TEMPLATE_OVERRIDE_SCHEMA.to_owned(),
+        title,
+        language,
+        sections,
+        operator_actions: validate_dpia_template_lines(req.operator_actions, "operator action")?,
+        updated_at: now.to_owned(),
+        updated_by: actor_name.to_owned(),
+    })
+}
+
+/// Ids are wire identifiers, not copy: they address a section or a checklist item and travel with
+/// it, so reordering or removing an item cannot make the client resolve the wrong one.
+fn validate_dpia_template_id(raw: Option<String>, field: &str) -> Result<String, ApiError> {
+    let value = required_bounded_string(raw, field, MAX_DPIA_TEMPLATE_ID_CHARS)?;
+    if !value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} may contain only letters, digits, '_', '-' and '.'"
+        )));
+    }
+    Ok(value)
+}
+
+/// The language the operator states they authored in. Free-form on purpose — the operator knows
+/// what they typed — but shaped like a language tag and bounded, so it cannot carry prose.
+fn validate_dpia_template_language(raw: Option<String>) -> Result<String, ApiError> {
+    let value = required_bounded_string(raw, "language", MAX_DPIA_TEMPLATE_LANGUAGE_CHARS)?;
+    if !value.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(ApiError::Unprocessable(
+            "language must be a language tag such as pt-PT".to_owned(),
+        ));
+    }
+    Ok(value)
+}
+
+/// Trim, drop blank entries, bound each line, and refuse sensitive-material markers.
+///
+/// Order is preserved and duplicates are kept: two prompts may legitimately read alike in different
+/// sections, and silently collapsing them would edit the operator's model without saying so.
+fn validate_dpia_template_lines(raw: Vec<String>, field: &str) -> Result<Vec<String>, ApiError> {
+    let mut out = Vec::with_capacity(raw.len());
+    for line in raw {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if line.chars().count() > MAX_DPIA_TEMPLATE_TEXT_CHARS {
+            return Err(ApiError::Unprocessable(format!(
+                "each {field} must be at most {MAX_DPIA_TEMPLATE_TEXT_CHARS} characters"
+            )));
+        }
+        reject_sensitive_evidence_markers(line, field)?;
+        out.push(line.to_owned());
+    }
+    Ok(out)
+}
+
+pub(crate) fn load_dpia_template_override(path: &FsPath) -> Option<DpiaTemplateOverride> {
+    let bytes = std::fs::read(path).ok()?;
+    match serde_json::from_slice::<DpiaTemplateOverride>(&bytes) {
+        Ok(document) => Some(document),
+        Err(e) => {
+            eprintln!(
+                "warning: {} is not a valid DPIA template override ({e}); serving the shipped template",
+                path.display()
+            );
+            None
+        }
+    }
+}
+
+/// Write the override, or remove the file when the operator resets to the shipped template.
+pub(crate) fn write_dpia_template_override_atomic(
+    path: &FsPath,
+    document: Option<&DpiaTemplateOverride>,
+) -> std::io::Result<()> {
+    let Some(document) = document else {
+        return match std::fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(e),
+        };
+    };
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_vec_pretty(document).map_err(std::io::Error::other)?;
+    let tmp = tmp_path(path, DPIA_TEMPLATE_FILE);
+    std::fs::write(&tmp, &json)?;
+    match std::fs::rename(&tmp, path) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp);
+            Err(e)
+        }
+    }
+}
+
+async fn persist_dpia_template_override(state: &AppState) -> Result<(), ApiError> {
+    if let Some(path) = &state.dpia_template_path {
+        let document = state.dpia_template_override.read().await;
+        write_dpia_template_override_atomic(path, document.as_ref())
+            .map_err(|e| ApiError::Internal(format!("failed to persist the DPIA template: {e}")))?;
+    }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -1671,6 +2085,57 @@ pub struct PatchDpiaRecord {
     pub status: Option<String>,
     #[serde(default)]
     pub evidence_receipt: Option<DpiaEvidenceReceiptInput>,
+}
+
+/// `PUT /v1/privacy/dpia-template` body — the operator's own DPIA guidance model.
+///
+/// Only a BODY is accepted. `schema`, `template_id`, `scope`, `version` and
+/// `local_offline_guidance_only` are absent by design: they identify the document slot and are
+/// emitted from the shipped constant, so a caller round-tripping a `GET` response has those fields
+/// ignored rather than honoured.
+///
+/// 🔒 `no_claims` is accepted ONLY so that a caller round-tripping a `GET` response is told plainly
+/// what happened to it. Every entry must be a known flag whose value is `false`; anything else is
+/// refused with 422 (see [`validate_dpia_template_no_claims`]). It is never stored, and the served
+/// value always comes from the compile-time constant.
+#[derive(Deserialize)]
+pub struct PutDpiaTemplate {
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub language: Option<String>,
+    #[serde(default)]
+    pub sections: Vec<DpiaTemplateSectionInput>,
+    #[serde(default)]
+    pub operator_actions: Vec<String>,
+    #[serde(default)]
+    pub no_claims: Option<HashMap<String, bool>>,
+}
+
+#[derive(Deserialize)]
+pub struct DpiaTemplateSectionInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default)]
+    pub prompts: Vec<String>,
+    #[serde(default)]
+    pub checklist: Vec<DpiaTemplateChecklistItemInput>,
+}
+
+#[derive(Deserialize)]
+pub struct DpiaTemplateChecklistItemInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub label: Option<String>,
+    #[serde(default)]
+    pub field_type: Option<String>,
+    #[serde(default)]
+    pub required: bool,
 }
 
 #[derive(Deserialize)]
@@ -3660,13 +4125,96 @@ pub async fn list_dpia_records(
     Ok(Json(list.into_iter().map(DpiaRecordView::from).collect()))
 }
 
-/// `GET /v1/privacy/dpia-template` — static local/offline DPIA guidance pack.
+/// `GET /v1/privacy/dpia-template` — the local/offline DPIA guidance pack.
+///
+/// Serves the operator override when one exists, otherwise the template shipped in this build.
+/// `source` on the response says which, because that is what decides whether the client resolves
+/// the body through its translation catalog or renders it verbatim.
 pub async fn get_dpia_template(
     State(state): State<AppState>,
     actor: CurrentActor,
 ) -> Result<Json<DpiaTemplateView>, ApiError> {
     require_privacy_manage(&state, &actor).await?;
-    Ok(Json(dpia_template_view()))
+    let over = state.dpia_template_override.read().await;
+    Ok(Json(dpia_template_view(over.as_ref())))
+}
+
+/// `PUT /v1/privacy/dpia-template` — replace the DPIA guidance model with an operator-authored one.
+///
+/// `privacy.manage@Global`, matching `POST /v1/privacy/dpias` and `PATCH /v1/privacy/dpias/{id}`:
+/// the model an operator fills in and the records they fill in with it are the same
+/// responsibility, so they carry the same gate.
+///
+/// 🔒 See [`validate_dpia_template_no_claims`] for the no-claims invariant this route enforces.
+pub async fn put_dpia_template(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<PutDpiaTemplate>,
+) -> Result<Json<DpiaTemplateView>, ApiError> {
+    require_privacy_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+    let document = validate_dpia_template_body(req, &now_rfc3339(), &actor_name)?;
+
+    let view = {
+        let mut current = state.dpia_template_override.write().await;
+        *current = Some(document);
+        dpia_template_view(current.as_ref())
+    };
+    persist_dpia_template_override(&state).await?;
+    record_privacy_event(
+        &state,
+        "privacy:dpia-template",
+        DPIA_TEMPLATE_UPDATED_KIND,
+        "DPIA guidance template updated",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
+}
+
+/// `DELETE /v1/privacy/dpia-template` — discard the operator override and serve the shipped
+/// template again.
+///
+/// The way back for an operator who has edited the model into a corner. The discarded body is not
+/// lost silently: the ledger holds the payload of every `privacy.dpia.template.updated` event, and
+/// this reset appends its own event naming the actor.
+pub async fn reset_dpia_template(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+) -> Result<Json<DpiaTemplateView>, ApiError> {
+    require_privacy_manage(&state, &actor).await?;
+    let actor_name = actor.resolve("api");
+
+    let view = {
+        let mut current = state.dpia_template_override.write().await;
+        if current.is_none() {
+            // Already the shipped template. Report it rather than appending an event for a
+            // change that did not happen.
+            return Err(ApiError::Unprocessable(
+                "the DPIA guidance template is already the one shipped with this build".to_owned(),
+            ));
+        }
+        *current = None;
+        dpia_template_view(None)
+    };
+    persist_dpia_template_override(&state).await?;
+    record_privacy_event(
+        &state,
+        "privacy:dpia-template",
+        DPIA_TEMPLATE_RESET_KIND,
+        "DPIA guidance template reset to the shipped default",
+        &actor_name,
+        &view,
+        &attestor,
+    )
+    .await?;
+
+    Ok(Json(view))
 }
 
 /// `PATCH /v1/privacy/dpias/{id}` — update a DPIA register record.
@@ -9093,5 +9641,305 @@ mod searchable_privacy_persistence_tests {
             Err(error) => panic!("expected duplicate-id I/O refusal, got {error}"),
             Ok(_) => panic!("duplicate privacy records were partially loaded"),
         }
+    }
+}
+
+/// The DPIA guidance template moved from a compile-time constant to persisted, operator-editable
+/// data. These tests pin what that move must not change.
+#[cfg(test)]
+mod dpia_template_tests {
+    use super::*;
+
+    struct TestDir(PathBuf);
+
+    impl TestDir {
+        fn new() -> Self {
+            let path =
+                std::env::temp_dir().join(format!("chancela-dpia-template-{}", Uuid::new_v4()));
+            std::fs::create_dir_all(&path).expect("create DPIA template test directory");
+            Self(path)
+        }
+
+        fn file(&self) -> PathBuf {
+            self.0.join(DPIA_TEMPLATE_FILE)
+        }
+    }
+
+    impl Drop for TestDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn body(title: &str) -> PutDpiaTemplate {
+        PutDpiaTemplate {
+            title: Some(title.to_owned()),
+            language: Some("pt-PT".to_owned()),
+            sections: vec![DpiaTemplateSectionInput {
+                id: Some("sec_local".to_owned()),
+                title: Some("Descrição do tratamento".to_owned()),
+                description: Some("Apenas marcadores.".to_owned()),
+                prompts: vec!["Que tratamento está a ser avaliado?".to_owned()],
+                checklist: vec![DpiaTemplateChecklistItemInput {
+                    id: Some("item_local".to_owned()),
+                    label: Some("Designação do tratamento".to_owned()),
+                    field_type: Some("text".to_owned()),
+                    required: true,
+                }],
+            }],
+            operator_actions: vec!["Rever antes de atualizar qualquer registo.".to_owned()],
+            no_claims: None,
+        }
+    }
+
+    /// The absent-override branch must be indistinguishable from the pre-change response, except
+    /// for the `source` discriminator appended at the end.
+    ///
+    /// Pinned against `contracts/privacy.dpia-template.json` — the fixture the e2e contract suite
+    /// asserts against real wire bytes, and the one `dpiaTemplateLabels.test.ts` drives its
+    /// completeness off. Compiled in with `include_str!`, so the fixture cannot silently drift from
+    /// the code that emits it: editing either alone fails here.
+    #[test]
+    fn absent_override_serves_the_shipped_template_byte_for_byte() {
+        let served = serde_json::to_value(dpia_template_view(None)).expect("serve shipped");
+        let shipped = serde_json::to_value(shipped_dpia_template()).expect("shipped");
+        assert_eq!(served, shipped);
+        assert_eq!(served["source"], serde_json::json!("shipped"));
+        assert!(served.get("updated_at").is_none());
+        assert!(served.get("updated_by").is_none());
+
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../contracts/privacy.dpia-template.json"
+        ))
+        .expect("contract fixture parses");
+        assert_eq!(
+            served, fixture,
+            "the shipped template must stay identical to the contract fixture"
+        );
+
+        // And the body an override could replace is exactly the shipped one, minus nothing: the
+        // fixture carries every editable field, so a new one added to the view without a fixture
+        // entry fails the equality above rather than shipping unrecorded.
+        for key in ["title", "language", "sections", "operator_actions"] {
+            assert!(fixture.get(key).is_some(), "fixture is missing {key}");
+        }
+    }
+
+    #[test]
+    fn an_override_replaces_the_body_and_is_marked_operator_authored() {
+        let document =
+            validate_dpia_template_body(body("Modelo local"), "2026-07-29T10:00:00Z", "amelia")
+                .expect("valid body");
+        let view = dpia_template_view(Some(&document));
+
+        assert_eq!(view.title, "Modelo local");
+        assert_eq!(view.language, "pt-PT");
+        assert_eq!(view.sections.len(), 1);
+        assert_eq!(view.sections[0].id, "sec_local");
+        assert_eq!(view.source, DpiaTemplateSource::Operator);
+        assert_eq!(view.updated_by.as_deref(), Some("amelia"));
+
+        // The slot identity and the local/offline scope are NOT operator-editable.
+        let shipped = shipped_dpia_template();
+        assert_eq!(view.schema, shipped.schema);
+        assert_eq!(view.template_id, shipped.template_id);
+        assert_eq!(view.scope, shipped.scope);
+        assert_eq!(view.version, shipped.version);
+        assert!(view.local_offline_guidance_only);
+        assert_eq!(view.no_claims, shipped.no_claims);
+    }
+
+    /// 🔒 The invariant this whole surface is built around.
+    #[test]
+    fn an_override_cannot_set_a_no_claims_flag() {
+        for flag in [
+            "cnpd_filing_completed",
+            "dpia_completed",
+            "secrets_included",
+        ] {
+            let mut req = body("Modelo local");
+            req.no_claims = Some(HashMap::from([(flag.to_owned(), true)]));
+            let error = validate_dpia_template_body(req, "2026-07-29T10:00:00Z", "amelia")
+                .expect_err("a no_claims flag set to true must be refused");
+            match error {
+                ApiError::Unprocessable(message) => {
+                    assert!(
+                        message.contains(flag),
+                        "refusal must name the flag: {message}"
+                    );
+                }
+                other => panic!("expected 422 for {flag}, got {other:?}"),
+            }
+        }
+    }
+
+    /// Echoing the `GET` response back is legitimate; inventing a flag name is not.
+    #[test]
+    fn a_no_claims_echo_is_accepted_and_an_invented_flag_is_refused() {
+        let shipped = serde_json::to_value(shipped_dpia_template().no_claims).expect("no_claims");
+        let echo: HashMap<String, bool> = shipped
+            .as_object()
+            .expect("object")
+            .iter()
+            .map(|(key, value)| (key.clone(), value.as_bool().expect("bool")))
+            .collect();
+        assert_eq!(echo.len(), 28);
+
+        let mut req = body("Modelo local");
+        req.no_claims = Some(echo);
+        let document = validate_dpia_template_body(req, "2026-07-29T10:00:00Z", "amelia")
+            .expect("an all-false echo round-trips");
+        // Accepted, and still not stored: the served value comes from the shipped constant.
+        assert_eq!(
+            dpia_template_view(Some(&document)).no_claims,
+            shipped_dpia_template().no_claims
+        );
+
+        let mut req = body("Modelo local");
+        req.no_claims = Some(HashMap::from([("invented_claim".to_owned(), false)]));
+        assert!(matches!(
+            validate_dpia_template_body(req, "2026-07-29T10:00:00Z", "amelia"),
+            Err(ApiError::Unprocessable(_))
+        ));
+    }
+
+    #[test]
+    fn the_body_validator_refuses_structural_nonsense() {
+        let cases: Vec<(&str, PutDpiaTemplate)> = vec![
+            ("no sections", {
+                let mut req = body("Modelo local");
+                req.sections = Vec::new();
+                req
+            }),
+            ("blank title", {
+                let mut req = body("Modelo local");
+                req.title = Some("   ".to_owned());
+                req
+            }),
+            ("prose in language", {
+                let mut req = body("Modelo local");
+                req.language = Some("português de Portugal".to_owned());
+                req
+            }),
+            ("unknown field_type", {
+                let mut req = body("Modelo local");
+                req.sections[0].checklist[0].field_type = Some("freeform".to_owned());
+                req
+            }),
+            ("id with a path separator", {
+                let mut req = body("Modelo local");
+                req.sections[0].id = Some("sec/local".to_owned());
+                req
+            }),
+            ("duplicate section id", {
+                let mut req = body("Modelo local");
+                let clone = DpiaTemplateSectionInput {
+                    id: Some("sec_local".to_owned()),
+                    title: Some("Outra".to_owned()),
+                    description: None,
+                    prompts: Vec::new(),
+                    checklist: Vec::new(),
+                };
+                req.sections.push(clone);
+                req
+            }),
+            ("sensitive marker in a prompt", {
+                let mut req = body("Modelo local");
+                req.sections[0].prompts = vec!["Cole aqui o password_hash".to_owned()];
+                req
+            }),
+        ];
+        for (label, req) in cases {
+            assert!(
+                matches!(
+                    validate_dpia_template_body(req, "2026-07-29T10:00:00Z", "amelia"),
+                    Err(ApiError::Unprocessable(_))
+                ),
+                "{label} must be refused"
+            );
+        }
+    }
+
+    #[test]
+    fn every_field_type_round_trips_through_the_wire_identifier() {
+        for field_type in DpiaTemplateFieldType::ALL {
+            let wire = serde_json::to_value(field_type).expect("serialize field_type");
+            let identifier = wire.as_str().expect("field_type is a string");
+            assert_eq!(
+                DpiaTemplateFieldType::parse(identifier).expect("parse own wire identifier"),
+                field_type
+            );
+        }
+    }
+
+    /// The override file is a single document, so a loader that gives up on a field it does not
+    /// recognize turns any field added later into silent data loss. This pins a deliberately
+    /// OLD-shaped document — only the two fields the first version could not omit — and requires it
+    /// to load whole.
+    #[test]
+    fn dpia_template_override_loads_an_older_minimal_document() {
+        let dir = TestDir::new();
+        let path = dir.file();
+        std::fs::write(
+            &path,
+            r#"{
+  "title": "Modelo antigo",
+  "sections": [
+    { "id": "sec_old", "title": "Secção antiga" }
+  ]
+}"#
+            .as_bytes(),
+        )
+        .expect("write old-shaped override");
+
+        let loaded = load_dpia_template_override(&path).expect("an old document still loads");
+        assert_eq!(loaded.title, "Modelo antigo");
+        assert_eq!(loaded.sections.len(), 1);
+        assert_eq!(loaded.sections[0].id, "sec_old");
+        // Fields the old document never wrote take their defaults rather than failing the load.
+        assert_eq!(loaded.schema, DPIA_TEMPLATE_OVERRIDE_SCHEMA);
+        assert!(loaded.sections[0].description.is_empty());
+        assert!(loaded.sections[0].prompts.is_empty());
+        assert!(loaded.sections[0].checklist.is_empty());
+        assert!(loaded.operator_actions.is_empty());
+
+        // And it serves: an old document is a real override, not a half-read one.
+        let view = dpia_template_view(Some(&loaded));
+        assert_eq!(view.source, DpiaTemplateSource::Operator);
+        assert_eq!(view.sections[0].id, "sec_old");
+    }
+
+    #[test]
+    fn writing_and_resetting_the_override_round_trips_on_disk() {
+        let dir = TestDir::new();
+        let path = dir.file();
+
+        let document =
+            validate_dpia_template_body(body("Modelo local"), "2026-07-29T10:00:00Z", "amelia")
+                .expect("valid body");
+        write_dpia_template_override_atomic(&path, Some(&document)).expect("write override");
+        assert_eq!(
+            load_dpia_template_override(&path).expect("reload"),
+            document
+        );
+
+        write_dpia_template_override_atomic(&path, None).expect("reset removes the override");
+        assert!(!path.exists());
+        assert!(load_dpia_template_override(&path).is_none());
+        // Resetting twice is not an I/O error.
+        write_dpia_template_override_atomic(&path, None).expect("reset is idempotent on disk");
+    }
+
+    #[test]
+    fn an_unreadable_override_falls_back_to_the_shipped_template() {
+        let dir = TestDir::new();
+        let path = dir.file();
+        std::fs::write(&path, b"{ not json").expect("write corrupt override");
+        assert!(load_dpia_template_override(&path).is_none());
+        assert_eq!(
+            dpia_template_view(None).source,
+            DpiaTemplateSource::Shipped,
+            "a corrupt override must never leave the served template unattributed"
+        );
     }
 }

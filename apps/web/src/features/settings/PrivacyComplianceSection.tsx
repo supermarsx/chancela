@@ -77,7 +77,9 @@ import {
   dpiaSectionDescKey,
   dpiaSectionPromptKey,
   dpiaSectionTitleKey,
+  dpiaTemplateUsesCatalog,
 } from '../../i18n/dpiaTemplateLabels';
+import { useDpiaTemplateEditorT } from '../../i18n/dpiaTemplateEditorFallback';
 import { usePrivacyLegalHoldT } from '../../i18n/privacyLegalHoldFallback';
 import { useRetentionNextStep } from '../../i18n/retentionNextStepFallback';
 import {
@@ -94,7 +96,11 @@ import {
   type RegisterKind,
   type RegisterRecord,
 } from './privacy/privacyFormState';
-import { privacyRecordNewPath, privacyRecordPath } from './privacy/privacyRoutes';
+import {
+  privacyDpiaTemplateEditPath,
+  privacyRecordNewPath,
+  privacyRecordPath,
+} from './privacy/privacyRoutes';
 import {
   AdvisoryReviewBadge,
   advisoryReviewLabel,
@@ -659,9 +665,15 @@ function DpiaTemplateGuidancePanel({
   error: unknown;
 }) {
   const t = useT();
+  const et = useDpiaTemplateEditorT();
   const noClaims = template
     ? (Object.entries(template.no_claims) as [keyof DpiaTemplateNoClaims, false][])
     : [];
+  // The template is operator-editable now, and the SAME body may be either the one shipped with
+  // this build (stable ids, translated by the catalog into every shipped language) or one written
+  // here (user content, shown exactly as typed, in no other language). `dpiaTemplateUsesCatalog`
+  // is the single place that distinction is made — see `dpiaTemplateLabels.ts`.
+  const translate = template ? dpiaTemplateUsesCatalog(template.source) : true;
 
   return (
     <Card
@@ -671,9 +683,30 @@ function DpiaTemplateGuidancePanel({
           <FieldHelp text={t('settings.privacy.help.guidance')} />
         </span>
       }
+      actions={
+        <ButtonLink to={privacyDpiaTemplateEditPath()} variant="secondary" icon={<Icon.Pencil />}>
+          {et('settings.privacy.dpiaTemplateEditor.action.edit')}
+        </ButtonLink>
+      }
     >
       <div className="stack">
         <p className="field__hint">{t('settings.privacy.guidance.lede')}</p>
+        {template ? (
+          <>
+            <p className="row-wrap">
+              <Badge tone={translate ? 'neutral' : 'accent'} wrap>
+                {translate
+                  ? et('settings.privacy.dpiaTemplateEditor.badge.shipped')
+                  : et('settings.privacy.dpiaTemplateEditor.badge.operator')}
+              </Badge>
+            </p>
+            <p className="field__hint">
+              {translate
+                ? et('settings.privacy.dpiaTemplateEditor.note.shipped')
+                : et('settings.privacy.dpiaTemplateEditor.note.operator')}
+            </p>
+          </>
+        ) : null}
         {loading ? (
           <SkeletonTable cols={3} />
         ) : error ? (
@@ -711,12 +744,16 @@ function DpiaTemplateGuidancePanel({
               }
             >
               {template.sections.map((section) => {
-                // The template's wire copy is English; the client resolves each stable id to a
-                // translated catalog key. An unknown id (a backend section added later) yields
-                // `undefined`, so we fall back to the raw English rather than render blank —
-                // `dpiaTemplateLabels.test.ts` fails loudly if that fallback ever fires in prod.
-                const titleKey = dpiaSectionTitleKey(section.id);
-                const descKey = dpiaSectionDescKey(section.id);
+                // The SHIPPED template's wire copy is English; the client resolves each stable id
+                // to a translated catalog key. An unknown id (a backend section added later)
+                // yields `undefined`, so we fall back to the raw English rather than render blank
+                // — `dpiaTemplateLabels.test.ts` fails loudly if that fallback ever fires in prod.
+                //
+                // An OPERATOR body skips the catalog entirely (`translate` is false): its ids were
+                // typed here, have no catalog keys, and one that happened to collide with a
+                // shipped id would otherwise show a shipped string in place of what was written.
+                const titleKey = translate ? dpiaSectionTitleKey(section.id) : undefined;
+                const descKey = translate ? dpiaSectionDescKey(section.id) : undefined;
                 return (
                   <tr key={section.id}>
                     <td>
@@ -727,7 +764,13 @@ function DpiaTemplateGuidancePanel({
                     <td>
                       <ul>
                         {section.prompts.map((prompt, index) => {
-                          const promptKey = dpiaSectionPromptKey(section.id, index);
+                          // Positional, and deliberately consulted for the shipped body ONLY: its
+                          // prompt order is fixed by `shipped_dpia_template()` in `chancela-api`,
+                          // so an operator reordering or deleting a prompt cannot desynchronise
+                          // the index map — that map is never reached for an operator body.
+                          const promptKey = translate
+                            ? dpiaSectionPromptKey(section.id, index)
+                            : undefined;
                           return (
                             <li key={`${section.id}-${index}`}>
                               {promptKey ? t(promptKey) : prompt}
@@ -739,9 +782,10 @@ function DpiaTemplateGuidancePanel({
                     <td>
                       <ul>
                         {section.checklist.map((item) => {
-                          // Only the label is translated. `field_type` is a wire identifier shown
-                          // in `mono` and stays verbatim (like the no_claims flags below).
-                          const labelKey = dpiaChecklistLabelKey(item.id);
+                          // Only the label is translated, and only for the shipped body.
+                          // `field_type` is a wire identifier shown in `mono` and stays verbatim
+                          // (like the no_claims flags below), in every language.
+                          const labelKey = translate ? dpiaChecklistLabelKey(item.id) : undefined;
                           return (
                             <li key={item.id}>
                               {labelKey ? t(labelKey) : item.label} ·{' '}
@@ -802,13 +846,27 @@ function DpiaTemplateGuidancePanel({
               <strong>{t('settings.privacy.guidance.operatorActions')}</strong>
               <ul>
                 {template.operator_actions.map((action, index) => {
-                  const actionKey = dpiaOperatorActionKey(index);
+                  // Positional, shipped body only — same reason as the prompts above.
+                  const actionKey = translate ? dpiaOperatorActionKey(index) : undefined;
                   return (
                     <li key={`operator-action-${index}`}>{actionKey ? t(actionKey) : action}</li>
                   );
                 })}
               </ul>
             </div>
+
+            {/*
+              The honest answer to "why is this in English?", now stated where the identifiers are
+              read rather than left to be inferred. Each no-claim flag names a legal claim this
+              product does not make; rendering one in Portuguese would be writing that claim in
+              Portuguese, which is exactly the copy this boundary must not invent.
+            */}
+            <InlineWarning
+              tone="info"
+              title={et('settings.privacy.dpiaTemplateEditor.identifiers.title')}
+            >
+              {et('settings.privacy.dpiaTemplateEditor.identifiers.body')}
+            </InlineWarning>
           </>
         )}
       </div>

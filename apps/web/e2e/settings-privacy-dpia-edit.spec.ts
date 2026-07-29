@@ -1,6 +1,6 @@
 /**
  * Route-stubbed browser proof for the Settings > Privacidade DPIA surface (t15, rewritten by t55).
- * Three things are asserted end-to-end:
+ * Four things are asserted end-to-end:
  *
  *   1. A DPIA record edits on its OWN PAGE, at its own address. t15 put this editor in a
  *      `role="dialog"` modal; t55 replaced that with `/settings/privacy/dpias/{id}`, because a
@@ -14,6 +14,10 @@
  *      each stable section/checklist/prompt/operator-action id to the pt-PT catalog key, so the
  *      reader sees Portuguese. The `field_type` wire identifier and the no_claims flags stay
  *      verbatim.
+ *   4. The guidance MODEL itself edits on its own page too. The panel states whose body it is
+ *      showing (shipped or written here), explains why the identifiers are English rather than
+ *      leaving that to be inferred, and links to `/settings/privacy/dpia-template/edit` — where a
+ *      shipped body seeds from the pt-PT catalog, so the operator edits what they were reading.
  */
 import { expect, test, type Locator, type Page, type Route } from './fixtures';
 import {
@@ -148,6 +152,26 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   // The no_claims flag identifiers stay verbatim behind their disclosure.
   await guidancePanel.getByText('Flags sem alegação').click();
   await expect(guidancePanel.getByText('cnpd_filing_completed')).toBeVisible();
+
+  // --- 4. The model itself is editable, on its own address ------------------------------------
+  // The panel says which body is being read (shipped here, so it reads in Portuguese) and offers
+  // the editor as a real link rather than an inline card inside the sub-tab.
+  await expect(guidancePanel.getByText('Incluído nesta versão')).toBeVisible();
+  await expect(guidancePanel.getByRole('link', { name: 'Editar o modelo' })).toHaveAttribute(
+    'href',
+    '/settings/privacy/dpia-template/edit',
+  );
+  // 🔒 And it now SAYS why the identifiers above are English, instead of leaving a Portuguese
+  // operator to conclude the surface is half-translated. Each names a legal claim the product does
+  // not make; translating one would be writing it.
+  await expect(guidancePanel.getByText('Porque é que alguns nomes ficam em inglês')).toBeVisible();
+
+  await page.goto('/settings/privacy/dpia-template/edit');
+  await expect(page.getByRole('heading', { level: 1, name: 'Modelo de AIPD' })).toBeVisible();
+  // The shipped body seeds TRANSLATED: the operator edits the words they were just reading, not
+  // the backend's English wire copy.
+  await expect(page.getByLabel('Título da secção')).toHaveValue('Perguntas de risco');
+  await expect(page.getByLabel('Identificador da secção')).toHaveValue('risk_prompts');
 
   // Render verification, not just assertion: a missing i18n key or an unguarded read throws at
   // render time and shows up here even when every locator above still matched.
@@ -517,5 +541,8 @@ function dpiaTemplateFixture(): DpiaTemplateView {
       personal_data_included: false,
       secrets_included: false,
     },
+    // Shipped: the panel resolves the stable ids through the pt-PT catalog. An operator-authored
+    // body (`source: 'operator'`) would render verbatim instead, which is what §4 above asserts.
+    source: 'shipped',
   };
 }

@@ -293,5 +293,6 @@
     "recipients_included": false,
     "personal_data_included": false,
     "secrets_included": false
-  }
+  },
+  "source": "shipped"
 }

@@ -102,6 +102,18 @@ fn patch_json(uri: &str, body: Value) -> Request<Body> {
     body_json("PATCH", uri, body)
 }
 
+fn put_json(uri: &str, body: Value) -> Request<Body> {
+    body_json("PUT", uri, body)
+}
+
+fn delete(uri: &str) -> Request<Body> {
+    Request::builder()
+        .method("DELETE")
+        .uri(uri)
+        .body(Body::empty())
+        .expect("request builds")
+}
+
 fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
     req.headers_mut().insert(
         "x-chancela-session",
@@ -2312,6 +2324,252 @@ async fn dpia_template_is_static_guidance_only_with_no_echo_or_claims() {
         StatusCode::OK,
         "DPIA template exposes no successful mutation route"
     );
+}
+
+/// A minimal operator-authored model, written in the operator's own language.
+fn dpia_template_payload(title: &str) -> Value {
+    json!({
+        "title": title,
+        "language": "pt-PT",
+        "sections": [
+            {
+                "id": "tratamento",
+                "title": "Descrição do tratamento",
+                "description": "Apenas marcadores; nunca dados pessoais.",
+                "prompts": ["Que tratamento está a ser avaliado?"],
+                "checklist": [
+                    {
+                        "id": "designacao",
+                        "label": "Designação do tratamento",
+                        "field_type": "text",
+                        "required": true
+                    }
+                ]
+            }
+        ],
+        "operator_actions": ["Rever antes de atualizar qualquer registo."]
+    })
+}
+
+#[tokio::test]
+async fn dpia_template_override_replaces_persists_audits_and_resets() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+
+    // Before any edit the shipped template is served, and it says so.
+    let (status, shipped) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/dpia-template"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "shipped fetch: {shipped}");
+    assert_eq!(shipped["source"], json!("shipped"));
+    assert_eq!(shipped["language"], json!("en"));
+    assert!(shipped.get("updated_by").is_none());
+
+    let (status, saved) = send(
+        state.clone(),
+        with_session(
+            put_json(
+                "/v1/privacy/dpia-template",
+                dpia_template_payload("Modelo local de AIPD"),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "template save: {saved}");
+    assert_eq!(saved["source"], json!("operator"));
+    assert_eq!(saved["title"], json!("Modelo local de AIPD"));
+    assert_eq!(saved["language"], json!("pt-PT"));
+    assert_eq!(saved["sections"].as_array().expect("sections").len(), 1);
+    assert_eq!(saved["sections"][0]["id"], json!("tratamento"));
+    assert!(saved["updated_by"].is_string());
+    // The slot identity, the local/offline scope and every no-claim flag are untouched by the edit.
+    assert_eq!(saved["template_id"], json!("privacy-dpia-guidance/v1"));
+    assert_eq!(saved["scope"], json!("local_offline_guidance_only"));
+    assert_eq!(saved["local_offline_guidance_only"], json!(true));
+    for (flag, value) in saved["no_claims"].as_object().expect("no_claims") {
+        assert_eq!(value, &json!(false), "{flag} must stay false after an edit");
+    }
+
+    let (status, events) = send(
+        state.clone(),
+        with_session(get("/v1/ledger/events?limit=1000"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger after save: {events}");
+    let updated_events: Vec<&Value> = events
+        .as_array()
+        .expect("ledger events")
+        .iter()
+        .filter(|e| {
+            e["kind"] == "privacy.dpia.template.updated"
+                && e["scope"] == json!("privacy:dpia-template")
+        })
+        .collect();
+    assert_eq!(updated_events.len(), 1, "one audit event per save");
+
+    // The override survives a restart from the same data directory.
+    let restarted = AppState::with_data_dir(tmp.dir.clone());
+    let restarted_token = open_session(&restarted, _owner).await;
+    let (status, after_restart) = send(
+        restarted.clone(),
+        with_session(get("/v1/privacy/dpia-template"), &restarted_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "post-restart fetch: {after_restart}"
+    );
+    assert_eq!(after_restart["source"], json!("operator"));
+    assert_eq!(after_restart["title"], json!("Modelo local de AIPD"));
+    assert_eq!(after_restart["sections"][0]["id"], json!("tratamento"));
+
+    // Reset returns the shipped template, byte-for-byte what a fresh install serves.
+    let (status, reset) = send(
+        restarted.clone(),
+        with_session(delete("/v1/privacy/dpia-template"), &restarted_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "template reset: {reset}");
+    assert_eq!(reset["source"], json!("shipped"));
+    assert_eq!(
+        reset, shipped,
+        "reset restores the shipped template exactly"
+    );
+
+    let (status, events) = send(
+        restarted.clone(),
+        with_session(get("/v1/ledger/events?limit=1000"), &restarted_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger after reset: {events}");
+    assert_eq!(
+        events
+            .as_array()
+            .expect("ledger events")
+            .iter()
+            .filter(|e| e["kind"] == "privacy.dpia.template.reset")
+            .count(),
+        1,
+        "the reset is audited too"
+    );
+
+    // Resetting an already-shipped template reports that rather than appending a second event.
+    let status = send_status(
+        restarted,
+        with_session(delete("/v1/privacy/dpia-template"), &restarted_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// 🔒 The invariant: no operator edit may set a `no_claims` flag, and the refusal is loud.
+#[tokio::test]
+async fn dpia_template_refuses_a_payload_that_sets_a_no_claims_flag() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+
+    let (status, before_events) = send(
+        state.clone(),
+        with_session(get("/v1/ledger/events?limit=1000"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger before: {before_events}");
+    let before = before_events.as_array().expect("ledger events").len();
+
+    for flag in [
+        "cnpd_filing_completed",
+        "legal_review_accepted",
+        "dpia_completion_certified",
+        "compliance_certification_completed",
+    ] {
+        let mut payload = dpia_template_payload("Modelo local de AIPD");
+        payload["no_claims"] = json!({ flag: true });
+        let (status, refusal) = send(
+            state.clone(),
+            with_session(put_json("/v1/privacy/dpia-template", payload), &owner_token),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{flag} must be refused, not coerced: {refusal}"
+        );
+        assert!(
+            refusal.to_string().contains(flag),
+            "the refusal must name {flag}: {refusal}"
+        );
+    }
+
+    // An invented flag name is refused too — a typo accepted silently reads as a claim that was set.
+    let mut payload = dpia_template_payload("Modelo local de AIPD");
+    payload["no_claims"] = json!({ "authority_approval_obtained_by_us": true });
+    let status = send_status(
+        state.clone(),
+        with_session(put_json("/v1/privacy/dpia-template", payload), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+
+    // Nothing was written and nothing was audited: the template is still the shipped one.
+    let (status, template) = send(
+        state.clone(),
+        with_session(get("/v1/privacy/dpia-template"), &owner_token),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "template after refusals: {template}"
+    );
+    assert_eq!(template["source"], json!("shipped"));
+    for (flag, value) in template["no_claims"].as_object().expect("no_claims") {
+        assert_eq!(value, &json!(false), "{flag} stays false");
+    }
+
+    let (status, after_events) = send(
+        state,
+        with_session(get("/v1/ledger/events?limit=1000"), &owner_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "ledger after: {after_events}");
+    assert_eq!(
+        after_events.as_array().expect("ledger events").len(),
+        before,
+        "a refused template edit appends no audit event"
+    );
+}
+
+#[tokio::test]
+async fn dpia_template_writes_require_the_same_permission_as_the_dpia_register() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, _owner_token) = bootstrap_owner(&state).await;
+    // `ledger.read` only: a signed-in principal who may not manage the privacy registers.
+    let (_reader, reader_token) =
+        add_user_with_permissions(&state, 0xd91a, "template.reader", &[Permission::LedgerRead])
+            .await;
+
+    for request in [
+        get("/v1/privacy/dpia-template"),
+        put_json(
+            "/v1/privacy/dpia-template",
+            dpia_template_payload("Modelo local de AIPD"),
+        ),
+        delete("/v1/privacy/dpia-template"),
+    ] {
+        let status = send_status(state.clone(), with_session(request, &reader_token)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "the template gate matches the DPIA register's privacy.manage gate"
+        );
+    }
 }
 
 #[tokio::test]
