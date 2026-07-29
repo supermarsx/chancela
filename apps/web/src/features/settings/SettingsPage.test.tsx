@@ -6904,6 +6904,9 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       // Ambiente do servidor (t14) — the editable env-override superset. Its label is an ordinary
       // catalog key now that `settings.serverEnv.*` is folded into all fourteen locales.
       'Ambiente do servidor',
+      // Diagnóstico — the read-only aggregate of the panes above, with its copy/print/.txt export.
+      // It sits after them because it consumes them; it configures nothing of its own.
+      'Diagnóstico',
       // Integrations (t36) — folded in from the retired `/operations` tab.
       'Grupos e bibliotecas',
       'Conectores e trabalhos',

@@ -131,6 +131,13 @@ export const ADMIN_CONFIGURATION_AREAS = [
     permissions: SETTINGS_PERMISSIONS,
   },
   {
+    id: 'diagnostics',
+    path: '/admin/diagnostics',
+    title: { source: 'catalog', key: 'settings.diagnostics.title' },
+    keywords: 'admin.finder.keywords.diagnostics',
+    permissions: SETTINGS_PERMISSIONS,
+  },
+  {
     id: 'groups',
     path: '/admin/groups',
     title: { source: 'catalog', key: 'operations.tabs.groups' },

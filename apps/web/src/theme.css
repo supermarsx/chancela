@@ -8223,8 +8223,10 @@ a.btn--primary {
    * the document print (`body.printing-doc`, features/documents) reveals
    * `.doc-preview`, which lives INSIDE `#root`, and `display: none` on the ancestor
    * beat it — that print emitted a blank sheet. The validation-report print (t68)
-   * would have hit exactly the same wall. Both opt out here. */
-  body:not(.printing-doc):not(.printing-validation) #root {
+   * would have hit exactly the same wall. Both opt out here — and so does the
+   * diagnostics report (`body.printing-diagnostics`, features/settings), whose
+   * `.diagnostics-report` subtree lives inside `#root` for the same reason. */
+  body:not(.printing-doc):not(.printing-validation):not(.printing-diagnostics) #root {
     display: none !important;
   }
 

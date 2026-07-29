@@ -65,6 +65,8 @@ export const adminPtPT = {
   'admin.finder.keywords.email': 'email correio SMTP mensagens notificações remetente teste',
   'admin.finder.keywords.env':
     'ambiente variáveis servidor arranque substituições configuração avançada',
+  'admin.finder.keywords.diagnostics':
+    'diagnóstico estado sistema relatório apoio suporte copiar imprimir txt exportar versão saúde',
   'admin.finder.keywords.groups':
     'grupos bibliotecas organizações entidades minutas modelos partilhados',
   'admin.finder.keywords.connectors':
@@ -115,6 +117,8 @@ export const adminEnglish = {
   'admin.finder.keywords.email': 'email mail SMTP messages notifications sender test',
   'admin.finder.keywords.env':
     'environment variables server startup overrides advanced configuration',
+  'admin.finder.keywords.diagnostics':
+    'diagnostics system status report support ticket copy print txt export version health',
   'admin.finder.keywords.groups': 'groups libraries tenants entities templates shared models',
   'admin.finder.keywords.connectors':
     'connectors integrations jobs synchronisation destinations exports external backups',

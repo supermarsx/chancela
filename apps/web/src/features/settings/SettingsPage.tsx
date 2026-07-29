@@ -130,6 +130,7 @@ import { ApiServerSection } from './ApiServerSection';
 import { ServerEnvSection } from './ServerEnvSection';
 import { CacheSection } from './CacheSection';
 import { DatabaseSection } from './DatabaseSection';
+import { DiagnosticsSection } from './DiagnosticsSection';
 import { McpSection } from './McpSection';
 import { EntityKindsSection } from './EntityKindsSection';
 import { MCP_TAB_PATH, PlatformOperationsSection } from './PlatformOperationsSection';
@@ -795,6 +796,9 @@ const SETTINGS_SUBSECTIONS = {
     'mcp',
     'email',
     'env',
+    // Diagnóstico: the assembled read-only report over the panes above. STANDALONE — it owns the
+    // dozen queries it reads and gates itself on `settings.read`, and it writes nothing at all.
+    'diagnostics',
     'api-keys',
     // Integrations (t36): the three areas the retired standalone `/operations` tab held —
     // Grupos / Conectores / Repositórios ZK — folded in as subtabs of the Administração surface.
@@ -885,6 +889,11 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // ones; it sits last because it is the advanced, comprehensive surface rather than a curated
     // one.
     { id: 'env', label: 'settings.serverEnv.title', icon: <Icon.Sliders /> },
+    // Diagnóstico — the read-only aggregate of every operations pane above, with copy / print /
+    // .txt export for a support request. It sits after Ambiente do servidor because it is a
+    // consumer of these panes rather than a peer of them: it probes nothing new and configures
+    // nothing, so it belongs at the end of the configuration run rather than among it.
+    { id: 'diagnostics', label: 'settings.diagnostics.title', icon: <Icon.Wrench /> },
     // Integrations (t36) — Grupos / Conectores / Repositórios ZK. These were the standalone
     // `/operations` tab's three views; folding them in here is what makes them "part of the admin
     // subtabs". They sit last, after the platform/data/env panes, and reuse the existing
@@ -1011,6 +1020,10 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
   // not the settings working copy, so it carries no whole-document savebar and is not inerted by
   // the page's `settings.manage` fieldset — the pane gates its own editors on `settings.manage`.
   'operations:env',
+  // Diagnóstico owns the dozen read-only queries it aggregates and writes nothing, so it must not
+  // be wrapped in the page's `settings.manage` fieldset — a reader holding only `settings.read` has
+  // to be able to reach the copy/print/download controls, which are the whole point of the pane.
+  'operations:diagnostics',
   // Integrations (t36). Grupos / Conectores / Repositórios ZK own their own data (the entities
   // directory + the connector/ZK endpoints) and their own gating (each area component keeps its
   // `perm="…"` disable-with-tooltip checks), so — like the other standalone subtabs — the page's
@@ -3294,6 +3307,13 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   of the read-only environment panes above; every value is resolved once at startup,
                   so an override is stored and takes effect on the next restart, never live. */}
               {sub === 'env' ? <ServerEnvSection /> : null}
+
+              {/* Diagnóstico — the assembled report. STANDALONE and strictly read-only: it calls
+                  no mutation and adds no endpoint, reading only routes that already exist and
+                  already carry their own gates. It gates itself on `settings.read`, the same
+                  permission `GET /v1/platform/env` requires, so it can never be a weaker door onto
+                  the data the panes above show. */}
+              {sub === 'diagnostics' ? <DiagnosticsSection /> : null}
 
               {/* Chaves API — the API tab's second pane since t82b, but STILL its own
                   address and still in STANDALONE_SUBSECTIONS, which is what keeps its

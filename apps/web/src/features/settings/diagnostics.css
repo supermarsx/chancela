@@ -1,0 +1,144 @@
+/* =============================================================================
+ * Administração › Diagnóstico — layout for the report tables, and the print sheet.
+ *
+ * The screen rules are deliberately thin: the pane is `Card` + `Table` like every
+ * other settings surface, and the only thing it needs is a narrower first column
+ * (field ids are long, values are short) and monospaced identifiers that stay on
+ * one line where they fit.
+ *
+ * The PRINT rules are the substance. Chancela already ships two subtree prints —
+ * `body.printing-doc` (a generated document) and `body.printing-validation` (a
+ * signature report) — and both work the same way: hide the running application,
+ * re-reveal one subtree, strip its chrome. This follows that idiom exactly rather
+ * than inventing a third mechanism, and it opts out of the global
+ * `body:not(.printing-doc):not(.printing-validation) #root { display: none }` rule
+ * in `theme.css` for the same reason those two do: the report lives INSIDE #root,
+ * so hiding the root would print a blank sheet.
+ *
+ * That opt-out is an edit in theme.css, not here — see the `:not(.printing-diagnostics)`
+ * term added to that selector.
+ * ========================================================================== */
+
+.diagnostics-table th[scope='row'] {
+  width: 42%;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.diagnostics-table td {
+  word-break: break-word;
+}
+
+.diagnostics-card {
+  /* Section cards stack with the page rhythm; nothing bespoke. */
+  margin: 0;
+}
+
+@media print {
+  body.printing-diagnostics {
+    /* Hide the whole running app without naming its chrome's classes, then
+       re-reveal only the report. Nav, sub-nav, titlebar, the action buttons and
+       the leather background all go with it — a printed diagnostics sheet on a
+       dark ground would empty a cartridge for nothing. */
+    visibility: hidden;
+    background: #fff;
+  }
+
+  body.printing-diagnostics .diagnostics-report,
+  body.printing-diagnostics .diagnostics-report * {
+    visibility: visible;
+  }
+
+  body.printing-diagnostics .diagnostics-report {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    background: #fff;
+    color: #000;
+    font-size: 8.5pt;
+  }
+
+  /* Panels print as plain blocks: no card surface, no shadow, no rounded edge —
+     none of which survives a monochrome printer as anything but grey. */
+  body.printing-diagnostics .diagnostics-report .panel {
+    margin: 0 0 8pt;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    break-inside: auto;
+  }
+
+  body.printing-diagnostics .diagnostics-report .panel__head {
+    padding: 0 0 2pt;
+    border: 0;
+    background: transparent;
+    border-bottom: 0.5pt solid #000;
+  }
+
+  body.printing-diagnostics .diagnostics-report .panel__title {
+    font-size: 10pt;
+    font-weight: 700;
+  }
+
+  body.printing-diagnostics .diagnostics-report .panel__body {
+    padding: 0;
+  }
+
+  /* A tinted pill is the first thing a monochrome printer discards, and the label
+     inside it already carries the whole meaning (Sim / Não / Não verificado /
+     Erro). Print the words, drop the tint — nothing is left depending on colour. */
+  body.printing-diagnostics .diagnostics-report .badge {
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: #000;
+    font-weight: 600;
+  }
+
+  /* Tables print as full-width rules, and must not scroll: `.table-wrap` is a
+     horizontal scroller on screen, which on paper would clip the value column. */
+  body.printing-diagnostics .diagnostics-report .table-wrap {
+    overflow: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  body.printing-diagnostics .diagnostics-report table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  body.printing-diagnostics .diagnostics-report th,
+  body.printing-diagnostics .diagnostics-report td {
+    padding: 1pt 4pt 1pt 0;
+    border: 0;
+    border-bottom: 0.25pt solid #999;
+    background: transparent;
+    color: #000;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  /* A row split across a page break loses its field id, which is the only thing
+     that identifies it. */
+  body.printing-diagnostics .diagnostics-report tr {
+    break-inside: avoid;
+  }
+
+  body.printing-diagnostics .diagnostics-report .mono {
+    font-family: 'Courier New', monospace;
+    font-size: 8pt;
+  }
+
+  /* Dead chrome on paper: the export buttons and the intro card's controls. */
+  body.printing-diagnostics .diagnostics-report button,
+  body.printing-diagnostics .diagnostics-report .panel__actions button {
+    display: none !important;
+  }
+}

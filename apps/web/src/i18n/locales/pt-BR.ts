@@ -110,6 +110,45 @@ export const ptBR: Catalog = {
     'Confirme cada alteração a uma fronteira de segurança antes de salvar.',
   'settings.serverEnv.value.unset': 'Não definida',
   'settings.serverEnv.value.masked': '••••••••',
+  // --- Administration > Diagnostics: the assembled report + its copy/print/txt export ------
+  'settings.diagnostics.title': 'Diagnóstico',
+  'settings.diagnostics.intro':
+    'Tudo o que esta instância já informa sobre si mesma, reunido em uma única tela para ser copiado, impresso ou salvo em um chamado de suporte. Nada aqui é uma verificação nova: cada campo vem de um painel que você pode abrir separadamente.',
+  'settings.diagnostics.privacyNote':
+    'A exportação nunca leva um valor secreto, um endereço de e-mail, o nome de uma conta ou o título de um documento. As variáveis que guardam uma credencial aparecem apenas como configurada ou não configurada.',
+  'settings.diagnostics.unknownNote':
+    'Um campo que não foi lido diz isso. Nenhum estado é presumido: se uma origem não respondeu, ou se o seu papel não pode lê-la, tanto a linha quanto a exportação dizem isso em vez de mostrar um resultado.',
+  'settings.diagnostics.tableCaption': 'Diagnóstico: {section}',
+  'settings.diagnostics.column.field': 'Campo',
+  'settings.diagnostics.column.value': 'Valor',
+  'settings.diagnostics.copy': 'Copiar',
+  'settings.diagnostics.copied': 'Relatório copiado para a área de transferência.',
+  'settings.diagnostics.copyFailed':
+    'A área de transferência não está disponível nesta janela, então nada foi copiado. Selecione as tabelas e copie-as, ou baixe o arquivo.',
+  'settings.diagnostics.download': 'Baixar .txt',
+  'settings.diagnostics.downloaded': 'Relatório salvo: {filename}',
+  'settings.diagnostics.downloadFailed':
+    'Não foi possível gravar o arquivo. Tente copiar o relatório.',
+  'settings.diagnostics.printFailed':
+    'Esta janela não consegue abrir a caixa de diálogo de impressão.',
+  'settings.diagnostics.actionFailed': 'O relatório não foi exportado',
+  'settings.diagnostics.source.ok': 'Lido',
+  'settings.diagnostics.source.loading': 'Lendo…',
+  'settings.diagnostics.source.notChecked': 'Não verificado ({reason})',
+  'settings.diagnostics.source.forbidden': 'Sem permissão para o seu papel',
+  'settings.diagnostics.value.unknown': 'Não verificado',
+  'settings.diagnostics.value.error': 'Erro ({code})',
+  'settings.diagnostics.section.report': 'Este relatório',
+  'settings.diagnostics.section.health': 'Servidor e versão',
+  'settings.diagnostics.section.services': 'Serviços da plataforma',
+  'settings.diagnostics.section.env': 'Ambiente do servidor',
+  'settings.diagnostics.section.storage': 'Armazenamento e banco de dados',
+  'settings.diagnostics.section.ledger': 'Integridade da cadeia',
+  'settings.diagnostics.section.search': 'Índice de busca',
+  'settings.diagnostics.section.trust': 'Lista de confiança',
+  'settings.diagnostics.section.email': 'E-mail de saída',
+  'settings.diagnostics.section.credentials': 'Credenciais de assinatura',
+  'settings.diagnostics.section.notCovered': 'Deliberadamente não incluído',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Sem permissão para esta ação',
   'perm.denied.title': 'Sem permissão',

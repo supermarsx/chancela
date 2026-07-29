@@ -113,6 +113,45 @@ export const frFR: Catalog = {
     'Confirmez chaque modification d’une frontière de sécurité avant d’enregistrer.',
   'settings.serverEnv.value.unset': 'Non définie',
   'settings.serverEnv.value.masked': '••••••••',
+  // --- Administration > Diagnostics: the assembled report + its copy/print/txt export ------
+  'settings.diagnostics.title': 'Diagnostic',
+  'settings.diagnostics.intro':
+    'Tout ce que cette instance rapporte déjà sur elle-même, rassemblé sur un seul écran afin de pouvoir être copié, imprimé ou enregistré pour une demande d’assistance. Rien ici n’est un nouveau test : chaque champ provient d’un panneau que vous pouvez ouvrir séparément.',
+  'settings.diagnostics.privacyNote':
+    'L’export ne contient jamais de valeur secrète, d’adresse électronique, de nom de compte ni de titre de document. Les variables qui portent un identifiant de connexion apparaissent uniquement comme configurée ou non configurée.',
+  'settings.diagnostics.unknownNote':
+    'Un champ qui n’a pas été lu le dit. Aucun état n’est supposé ici : si une source n’a pas répondu, ou si votre rôle n’a pas le droit de la lire, la ligne et l’export l’indiquent au lieu d’afficher un résultat.',
+  'settings.diagnostics.tableCaption': 'Diagnostic : {section}',
+  'settings.diagnostics.column.field': 'Champ',
+  'settings.diagnostics.column.value': 'Valeur',
+  'settings.diagnostics.copy': 'Copier',
+  'settings.diagnostics.copied': 'Rapport copié dans le presse-papiers.',
+  'settings.diagnostics.copyFailed':
+    'Le presse-papiers n’est pas disponible dans cette fenêtre, rien n’a donc été copié. Sélectionnez les tableaux et copiez-les, ou téléchargez le fichier.',
+  'settings.diagnostics.download': 'Télécharger le .txt',
+  'settings.diagnostics.downloaded': 'Rapport enregistré : {filename}',
+  'settings.diagnostics.downloadFailed':
+    'Le fichier n’a pas pu être écrit. Essayez plutôt de copier le rapport.',
+  'settings.diagnostics.printFailed':
+    'Cette fenêtre ne peut pas ouvrir de boîte de dialogue d’impression.',
+  'settings.diagnostics.actionFailed': 'Le rapport n’a pas été exporté',
+  'settings.diagnostics.source.ok': 'Lu',
+  'settings.diagnostics.source.loading': 'Lecture…',
+  'settings.diagnostics.source.notChecked': 'Non vérifié ({reason})',
+  'settings.diagnostics.source.forbidden': 'Non autorisé pour votre rôle',
+  'settings.diagnostics.value.unknown': 'Non vérifié',
+  'settings.diagnostics.value.error': 'Erreur ({code})',
+  'settings.diagnostics.section.report': 'Ce rapport',
+  'settings.diagnostics.section.health': 'Serveur et version',
+  'settings.diagnostics.section.services': 'Services de la plateforme',
+  'settings.diagnostics.section.env': 'Environnement du serveur',
+  'settings.diagnostics.section.storage': 'Stockage et base de données',
+  'settings.diagnostics.section.ledger': 'Intégrité de la chaîne',
+  'settings.diagnostics.section.search': 'Index de recherche',
+  'settings.diagnostics.section.trust': 'Liste de confiance',
+  'settings.diagnostics.section.email': 'Courrier sortant',
+  'settings.diagnostics.section.credentials': 'Identifiants de signature',
+  'settings.diagnostics.section.notCovered': 'Délibérément non inclus',
   // --- Permissions / RBAC gating (t64) ------------------------------------------
   'perm.denied.action': 'Vous n’avez pas la permission pour cette action',
   'perm.denied.title': 'Aucune permission',
