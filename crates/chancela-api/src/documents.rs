@@ -15241,6 +15241,68 @@ mod tests {
         }
     }
 
+    /// The same two guarantees, held against the prose transporte (`/v2`): every family renders its
+    /// signature lines, and a recorded predecessor is named in the instrument. The predecessor moved
+    /// out of a `Livro anterior` row into a sentence, so this asserts it reaches the *document* —
+    /// the honest form of the original check, which was only ever about the fact not vanishing.
+    ///
+    /// The absent-predecessor half matters just as much: a book with no predecessor must state
+    /// nothing rather than print an empty clause or the literal English `none`, which is the defect
+    /// the row-based version was written to catch.
+    #[test]
+    fn every_prose_transporte_names_a_recorded_predecessor_and_stays_silent_without_one() {
+        use chancela_core::act::SignatorySlot;
+
+        for (kind, template_id) in [
+            (EntityKind::SociedadePorQuotas, "csc-termo-transporte/v2"),
+            (EntityKind::Associacao, "assoc-termo-transporte/v2"),
+            (EntityKind::Condominio, "condominio-termo-transporte/v2"),
+            (EntityKind::Cooperativa, "cooperativa-termo-transporte/v2"),
+            (EntityKind::Fundacao, "fundacao-termo-transporte/v2"),
+        ] {
+            let entity = entity_of(kind);
+            let predecessor = Book::new(entity.id, BookKind::AssembleiaGeral);
+            let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
+            let mut act = Act::draft(book.id, "Termo de transporte", MeetingChannel::Physical);
+            act.signatories = vec![SignatorySlot {
+                name: "Amélia Marques".to_string(),
+                email: None,
+                capacity: SignatoryCapacity::Chair,
+                signed: false,
+                permilage: None,
+            }];
+            let spec = registry()
+                .get(template_id)
+                .unwrap_or_else(|| panic!("{template_id} resolves"));
+
+            // No predecessor: silence, never an empty clause or a `none`.
+            book.predecessor = None;
+            let ctx = act_render_ctx(&act, &book, &entity).expect("ctx builds");
+            let doc = chancela_templates::render(spec, &ctx).expect("renders");
+            let text = document_text(&doc);
+            assert!(
+                !text.contains("provém de") && !text.contains("none"),
+                "{template_id}: a book with no predecessor must name none: {text}"
+            );
+
+            // With a predecessor: it reaches the instrument for every family, not just the CSC one.
+            book.predecessor = Some(predecessor.id);
+            let ctx = act_render_ctx(&act, &book, &entity).expect("ctx builds");
+            let doc = chancela_templates::render(spec, &ctx).expect("renders");
+            let text = document_text(&doc);
+            assert!(
+                text.contains(&predecessor.id.to_string()),
+                "{template_id}: the recorded predecessor must reach the document: {text}"
+            );
+            assert!(
+                doc.blocks
+                    .iter()
+                    .any(|b| matches!(b, chancela_core::Block::SignatureBlock { .. })),
+                "{template_id}: the signature lines must still render"
+            );
+        }
+    }
+
     // --- deterministic default mapping + override ----------------------------------------------
 
     #[test]
