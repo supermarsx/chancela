@@ -24,6 +24,7 @@ function tierA(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
     narrow_only: false,
     acknowledgement_required: false,
     excluded_typed_slice: null,
+    external_reader: null,
     source: 'override',
     configured: true,
     effective_value: 'info',
@@ -47,6 +48,7 @@ function tierC(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
     narrow_only: false,
     acknowledgement_required: true,
     excluded_typed_slice: null,
+    external_reader: null,
     source: 'env',
     configured: true,
     effective_value: 'true',
@@ -70,6 +72,7 @@ function tierB(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
     narrow_only: false,
     acknowledgement_required: false,
     excluded_typed_slice: null,
+    external_reader: null,
     source: 'env',
     configured: true,
     effective_value: null,
@@ -93,6 +96,7 @@ function ceiling(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
     narrow_only: true,
     acknowledgement_required: true,
     excluded_typed_slice: 'connectors.allowed_hosts — env is the deployment egress ceiling',
+    external_reader: null,
     source: 'env',
     configured: true,
     effective_value: 'registo.example.pt',
@@ -104,9 +108,57 @@ function ceiling(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
   };
 }
 
+/** A var a *different* process reads: visible, read-only, and told where it must be set instead. */
+function external(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
+  return {
+    name: 'CHANCELA_MCP_TRANSPORT',
+    group: 'mcp',
+    tier: 'D',
+    editable: false,
+    secret: false,
+    boundary: false,
+    narrow_only: false,
+    acknowledgement_required: false,
+    excluded_typed_slice: null,
+    external_reader: 'read by the separate `chancela-mcp` server process, not by this one',
+    source: 'default',
+    configured: false,
+    effective_value: null,
+    override_value: null,
+    default_value: 'stdio',
+    restart_pending: false,
+    validator: { kind: 'enum', allowed: ['stdio', 'http-sse'] },
+    ...overrides,
+  };
+}
+
+/** A Tier A search row — the projector applies the override file, so this one really is editable. */
+function search(overrides: Partial<ServerEnvVarView> = {}): ServerEnvVarView {
+  return {
+    name: 'CHANCELA_SEARCH_RUNTIME',
+    group: 'search',
+    tier: 'A',
+    editable: true,
+    secret: false,
+    boundary: false,
+    narrow_only: false,
+    acknowledgement_required: false,
+    excluded_typed_slice: null,
+    external_reader: null,
+    source: 'default',
+    configured: false,
+    effective_value: null,
+    override_value: null,
+    default_value: 'embedded',
+    restart_pending: false,
+    validator: { kind: 'enum', allowed: ['embedded', 'query-only'] },
+    ...overrides,
+  };
+}
+
 function response(overrides: Partial<ServerEnvResponse> = {}): ServerEnvResponse {
   return {
-    vars: [tierA(), tierC(), tierB(), ceiling()],
+    vars: [tierA(), tierC(), tierB(), ceiling(), external(), search()],
     restart_pending: true,
     overrides_path: '/var/lib/chancela/env-overrides.json',
     generated_at: '2026-07-22T10:15:00Z',
@@ -190,6 +242,29 @@ describe('ServerEnvSection', () => {
     expect(within(ceilRow).getByText('Apenas leitura')).toBeTruthy();
     expect(within(ceilRow).getByText('Só pode restringir')).toBeTruthy();
     expect(within(ceilRow).getByText(/env is the deployment egress ceiling/)).toBeTruthy();
+  });
+
+  it('renders a var another process reads as a read-only fact carrying that reason', async () => {
+    vi.stubGlobal('fetch', stubFetch().fn);
+    renderWithProviders(<ServerEnvSection />);
+
+    await screen.findByLabelText('CHANCELA_LOG');
+    // No editor: an override stored here would never reach the process that reads it.
+    expect(screen.queryByLabelText('CHANCELA_MCP_TRANSPORT')).toBeNull();
+    const mcpRow = row('CHANCELA_MCP_TRANSPORT');
+    // The reason the server sent is surfaced verbatim, so the operator learns where to set it.
+    expect(within(mcpRow).getByText(/chancela-mcp/)).toBeTruthy();
+    // ... and its code default is still a visible fact.
+    expect(within(mcpRow).getByText('stdio')).toBeTruthy();
+  });
+
+  it('renders the search runtime as an editable enum with the server-declared options', async () => {
+    vi.stubGlobal('fetch', stubFetch().fn);
+    renderWithProviders(<ServerEnvSection />);
+
+    const select = (await screen.findByLabelText('CHANCELA_SEARCH_RUNTIME')) as HTMLSelectElement;
+    // The wire enum values are machine identifiers and stay verbatim, plus the "no override" entry.
+    expect([...select.options].map((o) => o.value)).toEqual(['', 'embedded', 'query-only']);
   });
 
   it('gates a Tier C boundary change behind acknowledgement, then PUTs the complete map', async () => {

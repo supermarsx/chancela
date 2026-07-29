@@ -2,15 +2,12 @@ import { useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useT, type MessageKey } from '../../i18n';
 import { type AdminCopyKey, useAdminT } from '../../i18n/adminFallback';
-import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
 import { Icon } from '../../ui';
 import { usePermissions } from '../session/permissions';
 import './AdminConfigurationFinder.css';
 
 export type AdminConfigurationTitle =
-  | { source: 'catalog'; key: MessageKey }
-  | { source: 'admin'; key: AdminCopyKey }
-  | { source: 'serverEnv'; key: ServerEnvCopyKey };
+  { source: 'catalog'; key: MessageKey } | { source: 'admin'; key: AdminCopyKey };
 
 export type AdminConfigurationKeywordKey = Extract<AdminCopyKey, `admin.finder.keywords.${string}`>;
 
@@ -129,7 +126,7 @@ export const ADMIN_CONFIGURATION_AREAS = [
   {
     id: 'env',
     path: '/admin/env',
-    title: { source: 'serverEnv', key: 'settings.serverEnv.title' },
+    title: { source: 'catalog', key: 'settings.serverEnv.title' },
     keywords: 'admin.finder.keywords.env',
     permissions: SETTINGS_PERMISSIONS,
   },
@@ -251,7 +248,6 @@ export function AdminConfigurationFinder({
 }: AdminConfigurationFinderProps) {
   const t = useT();
   const at = useAdminT();
-  const st = useServerEnvT();
   const { canAny } = usePermissions();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -263,7 +259,6 @@ export function AdminConfigurationFinder({
 
   const resolveTitle = (title: AdminConfigurationTitle): string => {
     if (title.source === 'admin') return at(title.key);
-    if (title.source === 'serverEnv') return st(title.key);
     return t(title.key);
   };
   const entries = buildAdminConfigurationSearchEntries(areas, resolveTitle, at, canAny);

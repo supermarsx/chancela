@@ -12,6 +12,8 @@ import {
   type PlatformLogsResponse,
   type PlatformServiceStatus,
   type PlatformServiceAction,
+  type ServerEnvResponse,
+  type ServerEnvVarView,
   type Settings,
   type UserView,
 } from '../src/api/types';
@@ -59,9 +61,13 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   // divergence test against `platform_ops.rs`.
   await expect(apiRow).toContainText(platformServicePtPT.capabilityLimitation['api.restart']);
 
-  // The launch-time security posture is surfaced read-only alongside it.
-  await expect(page.getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeVisible();
-  await expect(page.getByText('CHANCELA_RATE_LIMIT_PER_SECOND')).toBeVisible();
+  // The launch-time security posture used to be transcribed into this pane as a hard-coded table
+  // of ten variable names and their defaults — a second copy of the server's own registry, which
+  // could only drift away from it. It now lives in one place, "Ambiente do servidor", rendered from
+  // `GET /v1/platform/env` with the value the running process actually resolved. What this pane
+  // must still guarantee is the *route* to it; the vars themselves are asserted where they render,
+  // in the test below.
+  await expect(page.getByRole('link', { name: 'Ambiente do servidor' })).toBeVisible();
 
   // The API keys pane is the sibling of this one, at its own unchanged address.
   const apiPanes = page.getByRole('group', { name: 'Áreas da API' });
@@ -108,6 +114,52 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   });
   expect(controlRequests).toEqual([{ serviceId: 'mcp_stdio', action: 'start' }]);
 });
+
+/**
+ * The guarantee the API pane used to carry: an operator can see the launch-time security posture —
+ * the CORS allow-list, the rate limiter, HSTS, the session cap. It now holds one level deeper, in
+ * "Ambiente do servidor", and holds *harder*: the pane shows the value the running process actually
+ * resolved and where it came from, not a default transcribed by hand into the web build.
+ */
+test('the server-environment pane surfaces the launch-time security posture with its live values', async ({
+  page,
+}) => {
+  await routePlatformOperationsFixtures(page, [], []);
+
+  await page.goto('/admin');
+  await expect(page.getByRole('heading', { name: 'Administração', exact: true })).toBeVisible();
+
+  const operations = page.getByRole('group', { name: 'Áreas de administração' });
+  await operations.getByRole('button', { name: 'Ambiente do servidor' }).click();
+
+  // Every var the old hard-coded table named is still visible to the operator.
+  await expect(page.getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeVisible();
+  await expect(page.getByText('CHANCELA_RATE_LIMIT_PER_SECOND')).toBeVisible();
+  await expect(page.getByText('CHANCELA_HSTS_MAX_AGE')).toBeVisible();
+  await expect(page.getByText('CHANCELA_SESSION_MAX_LIFETIME')).toBeVisible();
+
+  // ... with what the process resolved, which the transcribed table could never show.
+  const corsRow = envRow(page, 'CHANCELA_CORS_ALLOWED_ORIGINS');
+  await expect(corsRow).toContainText('app.example.pt');
+  // CORS is a Tier C boundary, so the pane must say so rather than present it as a plain setting.
+  await expect(corsRow).toContainText('Fronteira de segurança');
+
+  // A Tier B secret is never echoed — only whether it is configured.
+  const secretRow = envRow(page, 'CHANCELA_DB_KEY');
+  await expect(secretRow).toContainText('Configurada');
+  await expect(page.getByText(/e2e-never-echoed/)).toHaveCount(0);
+
+  // A var only the separate MCP process reads is shown, but never as an editor whose edit would
+  // silently do nothing: the row states which process reads it.
+  const mcpRow = envRow(page, 'CHANCELA_MCP_TRANSPORT');
+  await expect(mcpRow).toContainText('chancela-mcp');
+  await expect(mcpRow.getByRole('combobox')).toHaveCount(0);
+});
+
+/** The `.field` row whose label is the variable name. */
+function envRow(page: Page, name: string) {
+  return page.locator('.field').filter({ has: page.getByText(name, { exact: true }) });
+}
 
 async function routePlatformOperationsFixtures(
   page: Page,
@@ -180,6 +232,10 @@ async function routePlatformOperationsFixtures(
     }
     if (method === 'GET' && pathname === '/v1/platform/logs') {
       await fulfillJson(route, platformLogsFixture());
+      return;
+    }
+    if (method === 'GET' && pathname === '/v1/platform/env') {
+      await fulfillJson(route, serverEnvFixture());
       return;
     }
 
@@ -266,6 +322,93 @@ function sessionFixture() {
     permissions: ['ledger.read', 'settings.manage', 'settings.read', 'user.manage'].map(
       permissionGrant,
     ),
+  };
+}
+
+/**
+ * `GET /v1/platform/env` — the rows the retired hard-coded table used to transcribe, plus one Tier B
+ * secret and one var only the separate MCP process reads, so the fixture exercises all three
+ * treatments the pane must keep apart. The secret carries a value the server would never send; if it
+ * ever reaches the page the masking assertion catches it.
+ */
+function serverEnvFixture(): ServerEnvResponse {
+  const row = (over: Partial<ServerEnvVarView> & Pick<ServerEnvVarView, 'name' | 'group'>) => ({
+    tier: 'A' as const,
+    editable: true,
+    secret: false,
+    boundary: false,
+    narrow_only: false,
+    acknowledgement_required: false,
+    excluded_typed_slice: null,
+    external_reader: null,
+    source: 'env' as const,
+    configured: true,
+    effective_value: null,
+    override_value: null,
+    default_value: null,
+    restart_pending: false,
+    validator: { kind: 'free_text' as const, allowed: null },
+    ...over,
+  });
+
+  return {
+    vars: [
+      row({
+        name: 'CHANCELA_CORS_ALLOWED_ORIGINS',
+        group: 'cors',
+        tier: 'C',
+        boundary: true,
+        acknowledgement_required: true,
+        effective_value: 'app.example.pt',
+        validator: { kind: 'host_list', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_RATE_LIMIT_PER_SECOND',
+        group: 'rate_limit',
+        effective_value: '50',
+        default_value: '50',
+        validator: { kind: 'unsigned', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_HSTS_MAX_AGE',
+        group: 'hsts',
+        effective_value: '63072000',
+        default_value: '63072000',
+        validator: { kind: 'unsigned', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_SESSION_MAX_LIFETIME',
+        group: 'session',
+        effective_value: '604800',
+        default_value: '604800',
+        validator: { kind: 'unsigned', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_DB_KEY',
+        group: 'database',
+        tier: 'B',
+        editable: false,
+        secret: true,
+        // A real server never sends this; the pane must not render it even when one does.
+        effective_value: 'e2e-never-echoed',
+      }),
+      row({
+        name: 'CHANCELA_MCP_TRANSPORT',
+        group: 'mcp',
+        tier: 'D',
+        editable: false,
+        source: 'default',
+        configured: false,
+        default_value: 'stdio',
+        external_reader:
+          'read by the separate `chancela-mcp` server process, not by this one — set it in the ' +
+          'environment that launches the MCP server',
+        validator: { kind: 'enum', allowed: ['stdio', 'http-sse'] },
+      }),
+    ],
+    restart_pending: false,
+    overrides_path: '/var/lib/chancela/env-overrides.json',
+    generated_at: '2026-07-13T09:00:00.000Z',
   };
 }
 

@@ -92,7 +92,6 @@ import { BUILD_COMMIT } from './buildProvenance';
 import { BuildProvenanceRows } from './BuildProvenanceRows';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
-import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
 import { usePlatformLogLimitations } from '../../i18n/platformLogLimitationsFallback';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnToggleGrid } from '../tableColumns/ColumnToggleGrid';
@@ -814,30 +813,18 @@ type SettingsSubsection =
   | (typeof SETTINGS_SUBSECTIONS)['signing'][number]
   | (typeof SETTINGS_SUBSECTIONS)['users'][number];
 
-/** A sub-tab label is normally a frozen catalog key. "Ambiente do servidor" (t14) is the one
- *  exception: its whole copy lives in `i18n/serverEnvFallback` (the shared catalogs were locked when
- *  it landed), so it names a key in that module instead, resolved with `st(...)` at render — the same
- *  split the pane itself uses. Exactly one of `label`/`serverEnvLabel` is present. */
+/** A sub-tab label is a frozen catalog key, or an `adminFallback` key for the admin-only strip. */
 type SettingsSubsectionNav =
   | {
       id: SettingsSubsection;
       label: MessageKey;
       icon: ReactNode;
-      serverEnvLabel?: never;
       adminLabel?: never;
     }
   | {
       id: SettingsSubsection;
       label?: never;
       icon: ReactNode;
-      serverEnvLabel: ServerEnvCopyKey;
-      adminLabel?: never;
-    }
-  | {
-      id: SettingsSubsection;
-      label?: never;
-      icon: ReactNode;
-      serverEnvLabel?: never;
       adminLabel: AdminCopyKey;
     };
 
@@ -896,9 +883,8 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
     // Ambiente do servidor (t14) — the editable superset of the read-only environment panes above
     // (API, Base de dados, Redis). It lists every var the server declares and overrides the safe
     // ones; it sits last because it is the advanced, comprehensive surface rather than a curated
-    // one. Its label is the one sub-tab whose copy lives in the serverEnvFallback module, not the
-    // catalog, so it is resolved with `st(...)` in the strip below.
-    { id: 'env', serverEnvLabel: 'settings.serverEnv.title', icon: <Icon.Sliders /> },
+    // one.
+    { id: 'env', label: 'settings.serverEnv.title', icon: <Icon.Sliders /> },
     // Integrations (t36) — Grupos / Conectores / Repositórios ZK. These were the standalone
     // `/operations` tab's three views; folding them in here is what makes them "part of the admin
     // subtabs". They sit last, after the platform/data/env panes, and reuse the existing
@@ -1479,9 +1465,6 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const t = useT();
   const rt = useReminderSettingsT();
   const ccBridgeT = useCitizenCardBridgeT();
-  // The "Ambiente do servidor" sub-tab label is the one strip entry whose copy lives in the
-  // serverEnvFallback module rather than the frozen catalog (t14) — resolved here for the strip.
-  const st = useServerEnvT();
   // "Administração" copy (title + nav) lives in its own owned fallback module (t36), same split.
   const at = useAdminT();
   const templatePreviewT = useTemplatePreviewSamplesT();
@@ -2030,11 +2013,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
               (candidate.id !== 'template-preview' || canTemplatePreviewSamples),
           ).map((s) => ({
             id: s.id,
-            label: s.adminLabel
-              ? at(s.adminLabel)
-              : s.serverEnvLabel
-                ? st(s.serverEnvLabel)
-                : t(s.label),
+            label: s.adminLabel ? at(s.adminLabel) : t(s.label),
             icon: s.icon,
           }))}
           // `api-keys` is a pane of the API tab, so the API button is the one that reads as
@@ -2047,11 +2026,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
         <SubNav
           items={subNav.map((s) => ({
             id: s.id,
-            label: s.adminLabel
-              ? at(s.adminLabel)
-              : s.serverEnvLabel
-                ? st(s.serverEnvLabel)
-                : t(s.label),
+            label: s.adminLabel ? at(s.adminLabel) : t(s.label),
             icon: s.icon,
           }))}
           active={sub === 'api-keys' ? 'api' : sub}

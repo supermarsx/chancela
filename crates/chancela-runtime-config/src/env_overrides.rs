@@ -33,6 +33,15 @@
 //! [`EnvVarSpec::excluded_typed_slice`], so we never create two competing precedence rules for one
 //! variable. They still appear in the view as read-only cross-links.
 //!
+//! # Vars a *different* process reads
+//! A few declared vars are read by a sibling binary rather than by `chancela-server`. Whether they can
+//! be overridable here is decided by one question — does that binary apply this file at startup?
+//! `chancela-search-projector` does ([`apply_from_data_dir`] is the first thing its `main` calls), so
+//! its vars are ordinary Tier A rows. The standalone `chancela-mcp` stdio binary does not, so its vars
+//! carry [`EnvVarSpec::external_reader`] and are shown read-only with the reason (see
+//! [`EXTERNAL_MCP`]). **An editable box whose edit does nothing is worse than no box at all**, so the
+//! registry never grants an editor it cannot honour.
+//!
 //! # Ownership (t14 executors)
 //! * **e1 (this module, contract):** the registry data model, the var catalog, the wire types
 //!   ([`ServerEnvVarView`] / [`ServerEnvResponse`] / [`ServerEnvUpdateRequest`]), and `load`/`save`
@@ -109,6 +118,7 @@ pub enum EnvVarGroup {
     Connectors,
     Storage,
     PaperBook,
+    Search,
     Mcp,
 }
 
@@ -268,6 +278,12 @@ pub struct EnvVarSpec {
     /// `Some(reason)` when the var already owns a typed `Settings` slice: it is excluded from the
     /// generic override store (no double precedence) and shown read-only with a cross-link.
     pub excluded_typed_slice: Option<&'static str>,
+    /// `Some(reason)` when the var is read by a **different process** that does not load
+    /// `env-overrides.json` — today, the standalone `chancela-mcp` stdio binary. The row exists so an
+    /// operator can *see* the variable and be told plainly where it has to be set, but it is never
+    /// editable here: an override this process wrote would be stamped into this process's environment
+    /// and the reader would never see it. An editable box whose edit does nothing is worse than no box.
+    pub external_reader: Option<&'static str>,
     /// The code default (`None` when there is none / it is derived at runtime). Never carries a secret.
     pub default_value: Option<&'static str>,
     /// How a proposed override is validated.
@@ -276,9 +292,12 @@ pub struct EnvVarSpec {
 
 impl EnvVarSpec {
     /// Whether the panel presents an editor for this var. Tier A and Tier C are editable (C behind the
-    /// acknowledgement gate); Tier B/D and any typed-slice-excluded var are not.
+    /// acknowledgement gate); Tier B/D, any typed-slice-excluded var, and any var read only by an
+    /// external process are not.
     pub fn is_editable(&self) -> bool {
-        self.excluded_typed_slice.is_none() && matches!(self.tier, EnvVarTier::A | EnvVarTier::C)
+        self.excluded_typed_slice.is_none()
+            && self.external_reader.is_none()
+            && matches!(self.tier, EnvVarTier::A | EnvVarTier::C)
     }
 
     /// The wire descriptor of this var's validator (kind + enum options).
@@ -307,6 +326,35 @@ pub fn registry() -> &'static [EnvVarSpec] {
 use EnvVarGroup as G;
 use EnvVarTier as T;
 use EnvVarValidator as V;
+
+/// The [`EnvVarSpec::external_reader`] reason for the MCP family.
+///
+/// **The ruling, and the evidence behind it.** `CHANCELA_MCP_TRANSPORT` / `BASE_URL` / `BASE_PATH` /
+/// `API_KEY` / `BIND` / `ENABLED_TOOLS` and `CHANCELA_AI_ENABLED` are read by
+/// `McpConfig::from_env` in the `chancela-mcp` crate, whose only consumer is the standalone
+/// `chancela-mcp` binary (`chancela-mcp/src/bin/chancela-mcp.rs`). That binary's `main` does not —
+/// and should not — call [`apply_from_data_dir`]:
+///
+/// 1. **It cannot reach this code cheaply.** `chancela-mcp` depends on `serde`, `serde_json`,
+///    `thiserror`, `time` and a blocking `reqwest`; it is deliberately a synchronous stdio loop with
+///    no async runtime and no store. `apply_from_data_dir` lives here, in `chancela-runtime-config`,
+///    which pulls in `chancela-store` (and thus the SQLite/SQLCipher/Postgres drivers) plus
+///    `chancela-search` and `chancela-action-center`. Wiring it in would multiply that binary's
+///    dependency surface for the sake of one JSON read — not the small change `chancela-server`'s
+///    one-liner is.
+/// 2. **It would only work sometimes, which is worse.** The MCP server is launched by an AI client
+///    (Claude Desktop / Claude Code) from a command-plus-environment entry, frequently on a
+///    different machine from the API it talks to — that is exactly what `CHANCELA_MCP_BASE_URL`
+///    exists for. `CHANCELA_DATA_DIR` need not be set in that launcher's environment, and when it is
+///    not there is no `env-overrides.json` to read. An override box that takes effect only when the
+///    operator happens to have launched the MCP server beside the server is a box that silently does
+///    nothing, which is the failure this whole registry exists to avoid.
+///
+/// So these rows are **facts with a pointer**, not editors: the operator sees the variable, its code
+/// default, and this sentence telling them where it has to be set.
+const EXTERNAL_MCP: &str = "read by the separate `chancela-mcp` server process, not by this \
+     one — set it in the environment that launches the MCP server (for example the MCP client's \
+     server entry), not here";
 
 /// The authoritative catalog. Source-of-truth is plan t14 Appendix A (audited `file:line`, default,
 /// startup/runtime, secret, boundary). Dynamic per-provider *families* (CSC secrets, connector secret
@@ -482,8 +530,88 @@ pub const REGISTRY: &[EnvVarSpec] = &[
     secret("CHANCELA_CMD_HTTP_BASIC_USERNAME", G::Cmd),
     secret("CHANCELA_CMD_HTTP_BASIC_PASSWORD", G::Cmd),
     spec_a("CHANCELA_CMD_AMA_CERT_PEM", G::Cmd, None, V::Path),
-    // ---- MCP probe (derived) ------------------------------------------------------------------
+    // ---- MCP (read by the separate `chancela-mcp` stdio binary) -------------------------------
+    // `CHANCELA_MCP_ENABLED` is read by *this* process too (`platform_ops` probes it to report the
+    // service), so it stays a plain derived fact. Everything else in the family is read only by
+    // `chancela-mcp`'s `McpConfig::from_env` (`chancela-mcp/src/config.rs:132-184`), a binary that
+    // does not depend on this crate and never loads `env-overrides.json` — see `EXTERNAL_MCP`.
     derived("CHANCELA_MCP_ENABLED", G::Mcp, Some("false")),
+    external(
+        "CHANCELA_AI_ENABLED",
+        G::Mcp,
+        Some("false"),
+        V::Bool,
+        EXTERNAL_MCP,
+    ),
+    external(
+        "CHANCELA_MCP_TRANSPORT",
+        G::Mcp,
+        Some("stdio"),
+        V::Enum(&["stdio", "http-sse"]),
+        EXTERNAL_MCP,
+    ),
+    external(
+        "CHANCELA_MCP_BASE_URL",
+        G::Mcp,
+        Some("http://127.0.0.1:8080"),
+        V::HttpUrl,
+        EXTERNAL_MCP,
+    ),
+    external(
+        "CHANCELA_MCP_BASE_PATH",
+        G::Mcp,
+        Some("/api/v1"),
+        V::FreeText,
+        EXTERNAL_MCP,
+    ),
+    external(
+        "CHANCELA_MCP_ENABLED_TOOLS",
+        G::Mcp,
+        Some("all"),
+        V::FreeText,
+        EXTERNAL_MCP,
+    ),
+    external(
+        "CHANCELA_MCP_BIND",
+        G::Mcp,
+        None,
+        V::SocketAddr,
+        EXTERNAL_MCP,
+    ),
+    external_secret("CHANCELA_MCP_API_KEY", G::Mcp, EXTERNAL_MCP),
+    // ---- Search runtime / external projector --------------------------------------------------
+    // Read by this process (`chancela-api/src/search.rs`) and by `chancela-search-projector`, whose
+    // `main` already calls `apply_from_data_dir` before it opens the store — so an override written
+    // here reaches both processes at their next start.
+    spec_a(
+        "CHANCELA_SEARCH_RUNTIME",
+        G::Search,
+        Some("embedded"),
+        V::Enum(&["embedded", "query-only"]),
+    ),
+    spec_a(
+        "CHANCELA_SEARCH_RUNTIME_DIR",
+        G::Search,
+        Some("chancela-runtime"),
+        V::Path,
+    ),
+    spec_a(
+        "CHANCELA_SEARCH_HEARTBEAT_SECONDS",
+        G::Search,
+        Some("10"),
+        V::Unsigned,
+    ),
+    spec_a(
+        "CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS",
+        G::Search,
+        Some("600"),
+        V::Unsigned,
+    ),
+    spec_a("CHANCELA_SEARCH_INSTANCE_ID", G::Search, None, V::FreeText),
+    // The projector's own database role. A DSN and a path to a file holding a DSN are both secrets:
+    // Tier B, never written to the override file, never echoed on the wire.
+    secret("CHANCELA_SEARCH_DATABASE_URL", G::Search),
+    secret("CHANCELA_SEARCH_DATABASE_URL_FILE", G::Search),
     // ---- Cluster identity (derived) -----------------------------------------------------------
     derived("CHANCELA_NODE_ROLE", G::Cluster, None),
     derived("CHANCELA_NODE_ADDRESS", G::Cluster, None),
@@ -569,6 +697,7 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         excluded_typed_slice: Some(
             "connectors.allowed_hosts — env is the deployment egress ceiling; the panel may only narrow it",
         ),
+        external_reader: None,
         default_value: None,
         validator: V::HostList,
     },
@@ -599,6 +728,7 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         excluded_typed_slice: Some(
             "data_management.zk_shared_object_root — already a typed settings slice; env takes precedence",
         ),
+        external_reader: None,
         default_value: None,
         validator: V::Path,
     },
@@ -636,6 +766,7 @@ const fn spec_a(
         narrow_only: false,
         acknowledgement_required: false,
         excluded_typed_slice: None,
+        external_reader: None,
         default_value,
         validator,
     }
@@ -657,6 +788,7 @@ const fn boundary(
         narrow_only: false,
         acknowledgement_required: true,
         excluded_typed_slice: None,
+        external_reader: None,
         default_value,
         validator,
     }
@@ -673,6 +805,7 @@ const fn secret(name: &'static str, group: EnvVarGroup) -> EnvVarSpec {
         narrow_only: false,
         acknowledgement_required: false,
         excluded_typed_slice: None,
+        external_reader: None,
         default_value: None,
         validator: V::FreeText,
     }
@@ -693,7 +826,56 @@ const fn derived(
         narrow_only: false,
         acknowledgement_required: false,
         excluded_typed_slice: None,
+        external_reader: None,
         default_value,
+        validator: V::FreeText,
+    }
+}
+
+/// Read-only because a **different process** reads it and that process does not load
+/// `env-overrides.json`. Tier D: the row is a fact plus a pointer at where the var must actually be
+/// set. `reason` is operator-facing and is carried through to the panel verbatim.
+const fn external(
+    name: &'static str,
+    group: EnvVarGroup,
+    default_value: Option<&'static str>,
+    validator: EnvVarValidator,
+    reason: &'static str,
+) -> EnvVarSpec {
+    EnvVarSpec {
+        name,
+        group,
+        tier: T::D,
+        secret: false,
+        boundary: false,
+        narrow_only: false,
+        acknowledgement_required: false,
+        excluded_typed_slice: None,
+        external_reader: Some(reason),
+        default_value,
+        validator,
+    }
+}
+
+/// A secret read by an external process: Tier B (never echoed, only a `configured` flag) *and*
+/// carrying the external-reader reason, so the panel does not imply this process's `configured`
+/// state is the reader's.
+const fn external_secret(
+    name: &'static str,
+    group: EnvVarGroup,
+    reason: &'static str,
+) -> EnvVarSpec {
+    EnvVarSpec {
+        name,
+        group,
+        tier: T::B,
+        secret: true,
+        boundary: false,
+        narrow_only: false,
+        acknowledgement_required: false,
+        excluded_typed_slice: None,
+        external_reader: Some(reason),
+        default_value: None,
         validator: V::FreeText,
     }
 }
@@ -729,6 +911,9 @@ pub struct ServerEnvVarView {
     pub acknowledgement_required: bool,
     /// `Some(reason)` → managed by a typed settings slice; shown read-only with a cross-link.
     pub excluded_typed_slice: Option<String>,
+    /// `Some(reason)` → read by a different process that does not load the override file; shown
+    /// read-only with the reason, because an override written here would never reach the reader.
+    pub external_reader: Option<String>,
     /// Which layer supplied the resolved value.
     pub source: EnvVarSource,
     /// Whether the live process currently has a value for this var (the only signal for secrets).
@@ -833,6 +1018,9 @@ fn should_apply(name: &str, value: &str) -> Result<&'static str, String> {
         return Err(format!(
             "`{name}` is managed by a typed settings slice ({reason})"
         ));
+    }
+    if let Some(reason) = spec.external_reader {
+        return Err(format!("`{name}` is {reason}"));
     }
     if !spec.is_editable() {
         return Err(format!(
@@ -965,7 +1153,96 @@ mod tests {
                     spec.name
                 );
             }
+            // A var only another process reads is never editable through this store — the override
+            // would be stamped into *this* process's environment and the reader would never see it.
+            if spec.external_reader.is_some() {
+                assert!(
+                    !spec.is_editable(),
+                    "{} is read by another process and must not be editable",
+                    spec.name
+                );
+            }
         }
+    }
+
+    #[test]
+    fn search_rows_are_registered_with_the_projector_in_mind() {
+        // The projector applies this file at startup (`chancela-search-projector/src/main.rs`), so
+        // its non-secret vars are ordinary editable rows.
+        for (name, default) in [
+            ("CHANCELA_SEARCH_RUNTIME", Some("embedded")),
+            ("CHANCELA_SEARCH_RUNTIME_DIR", Some("chancela-runtime")),
+            ("CHANCELA_SEARCH_HEARTBEAT_SECONDS", Some("10")),
+            ("CHANCELA_SEARCH_HEALTH_MAX_AGE_SECONDS", Some("600")),
+            ("CHANCELA_SEARCH_INSTANCE_ID", None),
+        ] {
+            let spec = find(name).unwrap_or_else(|| panic!("{name} registered"));
+            assert_eq!(spec.group, G::Search, "{name} group");
+            assert_eq!(spec.tier, T::A, "{name} tier");
+            assert!(!spec.secret, "{name} is not a secret");
+            assert!(spec.is_editable(), "{name} is editable");
+            assert_eq!(spec.default_value, default, "{name} default");
+        }
+        // The runtime selector only accepts the two modes `SearchRuntimeMode::from_env` implements.
+        assert_eq!(
+            find("CHANCELA_SEARCH_RUNTIME").unwrap().validator.allowed(),
+            Some(&["embedded", "query-only"][..])
+        );
+    }
+
+    #[test]
+    fn projector_database_urls_are_secrets() {
+        // A DSN carries a password; a path to a file holding a DSN points straight at one. Both are
+        // Tier B: never editable, never defaulted on the wire, never applied from the override file.
+        for name in [
+            "CHANCELA_SEARCH_DATABASE_URL",
+            "CHANCELA_SEARCH_DATABASE_URL_FILE",
+        ] {
+            let spec = find(name).unwrap_or_else(|| panic!("{name} registered"));
+            assert_eq!(spec.tier, T::B, "{name} tier");
+            assert!(spec.secret, "{name} is a secret");
+            assert!(!spec.is_editable(), "{name} is not editable");
+            assert!(spec.default_value.is_none(), "{name} carries no default");
+            assert!(
+                should_apply(name, "postgres://user:pw@db/chancela").is_err(),
+                "{name} must never be stamped from the override file"
+            );
+        }
+    }
+
+    #[test]
+    fn mcp_family_is_visible_but_not_falsely_editable() {
+        // The ruling: `chancela-mcp` is a separate binary that never loads `env-overrides.json`, so
+        // these are read-only rows carrying the reason — never editors whose edit does nothing.
+        for name in [
+            "CHANCELA_AI_ENABLED",
+            "CHANCELA_MCP_TRANSPORT",
+            "CHANCELA_MCP_BASE_URL",
+            "CHANCELA_MCP_BASE_PATH",
+            "CHANCELA_MCP_ENABLED_TOOLS",
+            "CHANCELA_MCP_BIND",
+            "CHANCELA_MCP_API_KEY",
+        ] {
+            let spec = find(name).unwrap_or_else(|| panic!("{name} registered"));
+            assert_eq!(spec.group, G::Mcp, "{name} group");
+            assert!(!spec.is_editable(), "{name} must not be editable");
+            let reason = spec
+                .external_reader
+                .unwrap_or_else(|| panic!("{name} states why it is read-only"));
+            assert!(
+                reason.contains("chancela-mcp"),
+                "{name} names the reading process: {reason}"
+            );
+            assert!(
+                should_apply(name, "whatever").is_err(),
+                "{name} must never be stamped from the override file"
+            );
+        }
+        // The API key is additionally a secret, so nothing ever echoes or persists a value for it.
+        let api_key = find("CHANCELA_MCP_API_KEY").expect("api key registered");
+        assert_eq!(api_key.tier, T::B);
+        assert!(api_key.secret);
+        assert!(api_key.default_value.is_none());
     }
 
     #[test]

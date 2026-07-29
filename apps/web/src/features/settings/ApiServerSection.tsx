@@ -27,7 +27,6 @@
 import { usePlatformServices } from '../../api/hooks';
 import type { PlatformLogLevel, PlatformSettings } from '../../api/types';
 import { useT } from '../../i18n';
-import type { MessageKey } from '../../i18n';
 import {
   ButtonLink,
   Card,
@@ -36,7 +35,6 @@ import {
   InlineWarning,
   Skeleton,
   SkeletonRegion,
-  Table,
   useToast,
 } from '../../ui';
 import {
@@ -53,42 +51,24 @@ import {
 } from './PlatformLoggingTable';
 
 /**
- * The launch-time environment surface, transcribed from `chancela-server/src/main.rs`,
- * `chancela-api/src/cors.rs` and the wp25-sec block in `chancela-api/src/lib.rs`. READ-ONLY: these
- * are resolved once when the process starts and no endpoint can write them, so they are shown as a
- * table of facts rather than dressed up as editable settings.
+ * The launch-time environment surface. This pane used to carry its own hard-coded table of ten
+ * variable names and their defaults, transcribed by hand from `chancela-server/src/main.rs`,
+ * `chancela-api/src/cors.rs` and the wp25-sec block in `chancela-api/src/lib.rs`, above a header
+ * comment asserting that "no endpoint can write them".
  *
- * Defaults are the ones the running server actually uses — note `CHANCELA_RATE_LIMIT_ENABLED`
- * defaults ON for the server binary even though the embeddable `RateLimitConfig::default()` is off.
+ * **Both halves of that were wrong once t14 shipped.** `PUT /v1/platform/env` writes the non-secret
+ * ones, and the transcribed table was a second copy of the server's own registry that could only
+ * drift away from it — a defaulted value here that no longer matched the binary would be an
+ * operator reading a plausible lie. There is now exactly one source of truth, the registry the
+ * server serves from `GET /v1/platform/env`, so this pane stops transcribing and points at the
+ * pane that renders it live.
+ *
+ * The rows are surfaced by group under the "Ambiente do servidor" sub-tab: `network` holds
+ * `CHANCELA_ADDR`, `cors` the allowed origins, `rate_limit` the limiter, `hsts` the transport
+ * policy, `session` the lifetime cap — each with the value the running process actually resolved,
+ * where it came from, and an editor where the tier allows one.
  */
-const API_ENV_ROWS: readonly { name: string; meaning: MessageKey; fallback: string }[] = [
-  { name: 'CHANCELA_ADDR', meaning: 'settings.api.env.addr', fallback: '127.0.0.1:8080' },
-  { name: 'CHANCELA_CORS_ALLOWED_ORIGINS', meaning: 'settings.api.env.cors', fallback: '—' },
-  { name: 'CHANCELA_RATE_LIMIT_ENABLED', meaning: 'settings.api.env.rateLimit', fallback: 'true' },
-  {
-    name: 'CHANCELA_RATE_LIMIT_PER_SECOND',
-    meaning: 'settings.api.env.ratePerSecond',
-    fallback: '50',
-  },
-  { name: 'CHANCELA_RATE_LIMIT_BURST', meaning: 'settings.api.env.rateBurst', fallback: '100' },
-  {
-    name: 'CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR',
-    meaning: 'settings.api.env.trustForwarded',
-    fallback: 'false',
-  },
-  { name: 'CHANCELA_HSTS_MAX_AGE', meaning: 'settings.api.env.hstsMaxAge', fallback: '63072000' },
-  {
-    name: 'CHANCELA_HSTS_INCLUDE_SUBDOMAINS',
-    meaning: 'settings.api.env.hstsSubdomains',
-    fallback: 'true',
-  },
-  { name: 'CHANCELA_HSTS_PRELOAD', meaning: 'settings.api.env.hstsPreload', fallback: 'false' },
-  {
-    name: 'CHANCELA_SESSION_MAX_LIFETIME',
-    meaning: 'settings.api.env.sessionLifetime',
-    fallback: '604800',
-  },
-];
+const SERVER_ENV_TAB_PATH = '/settings/operations/env';
 
 export function ApiServerSection({
   value,
@@ -179,24 +159,11 @@ export function ApiServerSection({
         <InlineWarning tone="info" title={t('settings.api.tls.title')}>
           {t('settings.api.tls.body')}
         </InlineWarning>
-        <Table
-          caption={t('settings.env.title')}
-          head={
-            <tr>
-              <th scope="col">{t('settings.env.col.variable')}</th>
-              <th scope="col">{t('settings.env.col.meaning')}</th>
-              <th scope="col">{t('settings.env.col.default')}</th>
-            </tr>
-          }
-        >
-          {API_ENV_ROWS.map((row) => (
-            <tr key={row.name}>
-              <td className="mono">{row.name}</td>
-              <td>{t(row.meaning)}</td>
-              <td className="mono">{row.fallback}</td>
-            </tr>
-          ))}
-        </Table>
+        <div className="row-wrap">
+          <ButtonLink to={SERVER_ENV_TAB_PATH} icon={<Icon.Sliders />}>
+            {t('settings.serverEnv.title')}
+          </ButtonLink>
+        </div>
       </Card>
 
       {/* Cross-references, not relocations. Each of these governs something wider than the API

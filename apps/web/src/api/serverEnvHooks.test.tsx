@@ -4,8 +4,9 @@
  * Covers the two hooks (`useServerEnv` query, `useUpdateServerEnv` mutation) and the read/write
  * client functions they call, plus the restart-to-apply cache behaviour: the PUT seeds the cache from
  * the fresh response (so `restart_pending` is reflected without a refetch) and a `422` leaves the
- * cache untouched. Also checks the locale split of `serverEnvFallback` — pt-PT source, English
- * fallback for every other locale — the pattern the catalog spread would otherwise provide.
+ * cache untouched. Also guards the pane's copy contract: `settings.serverEnv.*` now lives in the
+ * shared catalogs (the two-locale `serverEnvFallback` hatch is gone), so every shipped locale must
+ * carry the whole key set and none may fall back to the English strings.
  */
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +16,10 @@ import { api, ApiError } from './client';
 import type { ServerEnvResponse } from './types';
 import { keys, useServerEnv, useUpdateServerEnv } from './hooks';
 import { i18nStore } from '../i18n/store';
-import { serverEnvEnglish, serverEnvPtPT, useServerEnvT } from '../i18n/serverEnvFallback';
+import { enUS } from '../i18n/locales/en-US';
+import { ptPT } from '../i18n/locales/pt-PT';
+import { LOCALE_LOADERS, SHIPPED_LOCALES } from '../i18n/registry';
+import type { Catalog, MessageKey } from '../i18n/types';
 
 afterEach(() => {
   cleanup();
@@ -45,6 +49,7 @@ const RESPONSE: ServerEnvResponse = {
       narrow_only: false,
       acknowledgement_required: false,
       excluded_typed_slice: null,
+      external_reader: null,
       source: 'override',
       configured: true,
       effective_value: 'info',
@@ -116,27 +121,55 @@ describe('server-env client + hooks', () => {
   });
 });
 
-describe('server-env pane i18n resolver', () => {
-  it('keeps the pt-PT source and English fallback in lockstep on keys', () => {
-    expect(Object.keys(serverEnvEnglish).sort()).toEqual(Object.keys(serverEnvPtPT).sort());
+const SERVER_ENV_PREFIX = 'settings.serverEnv.';
+
+function serverEnvKeys(catalog: Record<string, string>): string[] {
+  return Object.keys(catalog)
+    .filter((key) => key.startsWith(SERVER_ENV_PREFIX))
+    .sort();
+}
+
+describe('server-env pane copy', () => {
+  const sourceKeys = serverEnvKeys(enUS);
+
+  it('declares a non-trivial key set in the source catalog', () => {
+    expect(sourceKeys.length).toBeGreaterThan(60);
   });
 
-  it('serves pt-PT source copy and the English fallback for every other locale', () => {
-    i18nStore.setActiveLocale('pt-PT');
-    const pt = renderHook(() => useServerEnvT());
-    expect(pt.result.current('settings.serverEnv.title')).toBe('Ambiente do servidor');
-    cleanup();
+  it('carries the identical key set in every shipped locale', async () => {
+    for (const locale of SHIPPED_LOCALES) {
+      const catalog: Catalog =
+        locale === 'en-US' ? enUS : locale === 'pt-PT' ? ptPT : await LOCALE_LOADERS[locale]!();
+      expect(serverEnvKeys(catalog), `${locale} key set`).toEqual(sourceKeys);
+    }
+  }, 15_000);
 
-    i18nStore.setActiveLocale('en-US');
-    const en = renderHook(() => useServerEnvT());
-    expect(en.result.current('settings.serverEnv.title')).toBe('Server environment');
-  });
+  it('never falls back to the English strings in a non-English locale', async () => {
+    // The bug this replaced: the pane resolved pt-PT or English and nothing else, so eleven
+    // locales rendered it in English. Assert the *variance*, never a specific translated string.
+    const probes = [
+      'settings.serverEnv.title',
+      'settings.serverEnv.intro',
+      'settings.serverEnv.restart.title',
+      'settings.serverEnv.readOnly.badge',
+      'settings.serverEnv.externalReader.note',
+      'settings.serverEnv.group.search',
+    ] as const satisfies readonly MessageKey[];
 
-  it('interpolates placeholders like the catalog does', () => {
-    i18nStore.setActiveLocale('en-US');
-    const { result } = renderHook(() => useServerEnvT());
-    expect(result.current('settings.serverEnv.overridesPath', { path: '/data/env.json' })).toBe(
-      'Overrides are saved in /data/env.json, under the data directory.',
-    );
-  });
+    for (const locale of SHIPPED_LOCALES) {
+      if (locale === 'en-US' || locale === 'en-GB') continue;
+      const catalog: Catalog = locale === 'pt-PT' ? ptPT : await LOCALE_LOADERS[locale]!();
+      for (const key of probes) {
+        expect(catalog[key], `${locale} ${key} is untranslated English`).not.toBe(enUS[key]);
+      }
+    }
+  }, 15_000);
+
+  it('keeps the {path} placeholder in every locale', async () => {
+    for (const locale of SHIPPED_LOCALES) {
+      const catalog: Catalog =
+        locale === 'en-US' ? enUS : locale === 'pt-PT' ? ptPT : await LOCALE_LOADERS[locale]!();
+      expect(catalog['settings.serverEnv.overridesPath'], `${locale}`).toContain('{path}');
+    }
+  }, 15_000);
 });

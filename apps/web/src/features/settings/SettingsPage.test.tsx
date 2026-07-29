@@ -38,6 +38,8 @@ import {
   type RetentionCandidateResolutionRecord,
   type RetentionDisposalAction,
   type RetentionDueCandidatesReport,
+  type ServerEnvResponse,
+  type ServerEnvVarView,
   type UserPreferences,
 } from '../../api/types';
 import { collectionPageFixture, renderWithProviders } from '../../test/utils';
@@ -181,6 +183,7 @@ const DPIA_TEMPLATE: DpiaTemplateView = {
   language: 'en',
   scope: 'local_offline_guidance_only',
   local_offline_guidance_only: true,
+  source: 'shipped',
   sections: [
     {
       id: 'processing_description',
@@ -1079,6 +1082,95 @@ function platformMessage(serviceId: 'api' | 'mcp_stdio', action: string) {
  * can assert what the PUT sent. The PUT echoes the posted document (schema stamped),
  * mirroring the real server.
  */
+/**
+ * `GET /v1/platform/env` for the "Ambiente do servidor" sub-tab. Deliberately mirrors the Playwright
+ * fixture in `e2e/platform-operations.spec.ts` row for row: that spec used to assert these variable
+ * names on the API pane, and this is the jsdom half of the same guarantee, so the two cannot drift
+ * apart silently. `CHANCELA_DB_KEY` carries a value the real server never sends — if the pane ever
+ * renders a secret, the masking assertion catches it here rather than in a browser run.
+ */
+function serverEnvResponseFixture(): ServerEnvResponse {
+  const row = (
+    over: Partial<ServerEnvVarView> & Pick<ServerEnvVarView, 'name' | 'group'>,
+  ): ServerEnvVarView => ({
+    tier: 'A',
+    editable: true,
+    secret: false,
+    boundary: false,
+    narrow_only: false,
+    acknowledgement_required: false,
+    excluded_typed_slice: null,
+    external_reader: null,
+    source: 'env',
+    configured: true,
+    effective_value: null,
+    override_value: null,
+    default_value: null,
+    restart_pending: false,
+    validator: { kind: 'free_text', allowed: null },
+    ...over,
+  });
+
+  return {
+    vars: [
+      row({
+        name: 'CHANCELA_CORS_ALLOWED_ORIGINS',
+        group: 'cors',
+        tier: 'C',
+        boundary: true,
+        acknowledgement_required: true,
+        effective_value: 'app.example.pt',
+        validator: { kind: 'host_list', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_RATE_LIMIT_PER_SECOND',
+        group: 'rate_limit',
+        effective_value: '50',
+        default_value: '50',
+        validator: { kind: 'unsigned', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_HSTS_MAX_AGE',
+        group: 'hsts',
+        effective_value: '63072000',
+        default_value: '63072000',
+        validator: { kind: 'unsigned', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_SESSION_MAX_LIFETIME',
+        group: 'session',
+        effective_value: '604800',
+        default_value: '604800',
+        validator: { kind: 'unsigned', allowed: null },
+      }),
+      row({
+        name: 'CHANCELA_DB_KEY',
+        group: 'database',
+        tier: 'B',
+        editable: false,
+        secret: true,
+        effective_value: 'e2e-never-echoed',
+      }),
+      row({
+        name: 'CHANCELA_MCP_TRANSPORT',
+        group: 'mcp',
+        tier: 'D',
+        editable: false,
+        source: 'default',
+        configured: false,
+        default_value: 'stdio',
+        external_reader:
+          'read by the separate `chancela-mcp` server process, not by this one — set it in the ' +
+          'environment that launches the MCP server',
+        validator: { kind: 'enum', allowed: ['stdio', 'http-sse'] },
+      }),
+    ],
+    restart_pending: false,
+    overrides_path: '/var/lib/chancela/env-overrides.json',
+    generated_at: '2026-07-13T09:00:00.000Z',
+  };
+}
+
 function settingsFetch(
   initialSettings: unknown = DEFAULT_SETTINGS,
   options: {
@@ -1142,6 +1234,12 @@ function settingsFetch(
       return Promise.resolve(jsonResponse(preferences));
     }
 
+    // Ahead of `/v1/platform/services`, whose `includes` test would not match this path, but kept
+    // adjacent so the platform routes read together. The registry rows the retired ApiServerSection
+    // table used to transcribe, plus a secret and a var only the MCP process reads.
+    if (url.includes('/v1/platform/env')) {
+      return Promise.resolve(jsonResponse(serverEnvResponseFixture()));
+    }
     if (url.includes('/v1/platform/services')) {
       if (method === 'POST') {
         const match = url.match(/\/v1\/platform\/services\/([^/]+)\/actions\/([^/?]+)/);
@@ -1212,6 +1310,11 @@ function settingsFetch(
       return Promise.resolve(
         jsonResponse(platformServicesResponse(materializeSettings(storedSettings))),
       );
+    }
+    // Ahead of the `/v1/settings` catch-all below, which would otherwise answer the delivery
+    // record with the settings DOCUMENT — an object where the email tab expects a list (t108).
+    if (url.includes('/v1/settings/email/deliveries')) {
+      return Promise.resolve(jsonResponse([]));
     }
     if (url.includes('/v1/settings')) {
       if (method === 'PUT') {
@@ -3454,23 +3557,67 @@ describe('SettingsPage', () => {
     expect((screen.getByLabelText('API') as HTMLSelectElement).value).toBe('info');
     expect((screen.getByLabelText('Servidor API') as HTMLSelectElement).value).toBe('');
 
-    // The launch-time security posture, read-only — surfaced in the product for the first time.
-    expect(screen.getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeTruthy();
+    // The launch-time security posture. This pane used to transcribe ten variable names and their
+    // defaults into a local table — a second copy of the server's registry, which could only drift.
+    // It now cross-links to "Ambiente do servidor", where the same rows are rendered from
+    // `GET /v1/platform/env` with the value the running process actually resolved. Assert the
+    // single source of truth: the link is here, the transcribed table is not.
+    const envCard = screen.getByRole('link', { name: 'Ambiente do servidor' });
+    expect(envCard.getAttribute('href')).toBe('/settings/operations/env');
+    expect(screen.queryByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeNull();
+    expect(screen.queryByText('CHANCELA_RATE_LIMIT_PER_SECOND')).toBeNull();
+    expect(screen.queryByText('CHANCELA_HSTS_MAX_AGE')).toBeNull();
+    expect(screen.queryByText('CHANCELA_SESSION_MAX_LIFETIME')).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Configuração de arranque (ambiente)' })).toBeNull();
+
+    // The connector allow-list is OUTBOUND connector egress, not the API's inbound surface — and
+    // it is far likelier to look at home here, beside CORS and the rate limiter, than it was on
+    // the MCP tab. So the same absence assertion applies: no editor for it anywhere on this tab.
+    expect(screen.queryByLabelText(/Anfitriões permitidos/)).toBeNull();
+    expect(screen.queryByRole('textbox', { name: /Anfitriões permitidos/ })).toBeNull();
+    expect(screen.queryByText('CHANCELA_CONNECTOR_ALLOWED_HOSTS')).toBeNull();
+    // It is named on the tab in exactly one place: the cross-reference that says it is NOT this.
+    expect(screen.getByText(/não a superfície de entrada da API/)).toBeTruthy();
+  });
+
+  it('surfaces the launch-time security posture on the env sub-tab, with live values and masking', async () => {
+    // The jsdom half of the guarantee `e2e/platform-operations.spec.ts` used to hold on the API
+    // pane: the operator can still see the CORS allow-list and the rest of the launch-time posture.
+    // It moved one level deeper and got stronger — the value the running process resolved, not a
+    // default transcribed into the web build. Same fixture rows as the Playwright spec.
+    const { fn } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/env']);
+
+    // Every var the retired hard-coded table named is visible here.
+    expect(await screen.findByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeTruthy();
     expect(screen.getByText('CHANCELA_RATE_LIMIT_PER_SECOND')).toBeTruthy();
     expect(screen.getByText('CHANCELA_HSTS_MAX_AGE')).toBeTruthy();
     expect(screen.getByText('CHANCELA_SESSION_MAX_LIFETIME')).toBeTruthy();
 
-    // The connector allow-list is OUTBOUND connector egress, not the API's inbound surface — and
-    // it is far likelier to look at home here, beside CORS and the rate limiter, than it was on
-    // the MCP tab. So the same absence assertion applies, harder: no editor, and the env var is
-    // NOT a row of the API's launch-configuration table, which would present it as API config.
-    expect(screen.queryByLabelText(/Anfitriões permitidos/)).toBeNull();
-    expect(screen.queryByRole('textbox', { name: /Anfitriões permitidos/ })).toBeNull();
-    const envTable = screen.getByRole('table', { name: 'Configuração de arranque (ambiente)' });
-    expect(within(envTable).getByText('CHANCELA_CORS_ALLOWED_ORIGINS')).toBeTruthy();
-    expect(within(envTable).queryByText('CHANCELA_CONNECTOR_ALLOWED_HOSTS')).toBeNull();
-    // It is named on the tab in exactly one place: the cross-reference that says it is NOT this.
-    expect(screen.getByText(/não a superfície de entrada da API/)).toBeTruthy();
+    // The row carries what the process actually resolved, and says CORS is a security boundary
+    // rather than presenting it as a plain setting.
+    const corsRow = screen
+      .getByText('CHANCELA_CORS_ALLOWED_ORIGINS', { selector: 'label' })
+      .closest('.field') as HTMLElement;
+    expect(within(corsRow).getByText('app.example.pt')).toBeTruthy();
+    expect(within(corsRow).getByText('Fronteira de segurança')).toBeTruthy();
+
+    // A Tier B secret shows only that it is configured — never a value, even one the server sent.
+    const secretRow = screen
+      .getByText('CHANCELA_DB_KEY', { selector: 'label' })
+      .closest('.field') as HTMLElement;
+    expect(within(secretRow).getByText('Configurada')).toBeTruthy();
+    expect(document.body.textContent ?? '').not.toContain('e2e-never-echoed');
+
+    // A var only the separate MCP process reads is shown, but never as an editor whose edit would
+    // silently do nothing: no control, and the row names the process that reads it.
+    expect(screen.queryByLabelText('CHANCELA_MCP_TRANSPORT')).toBeNull();
+    const mcpRow = screen
+      .getByText('CHANCELA_MCP_TRANSPORT', { selector: 'label' })
+      .closest('.field') as HTMLElement;
+    expect(within(mcpRow).getByText(/chancela-mcp/)).toBeTruthy();
   });
 
   it('keeps the API keys pane on its own address, gate and disclosure inside the API tab', async () => {
@@ -6754,8 +6901,8 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       'Chaves e reposição',
       'IA e MCP',
       'Email',
-      // Ambiente do servidor (t14) — the editable env-override superset. Its label resolves through
-      // the serverEnvFallback module, not the frozen catalog.
+      // Ambiente do servidor (t14) — the editable env-override superset. Its label is an ordinary
+      // catalog key now that `settings.serverEnv.*` is folded into all fourteen locales.
       'Ambiente do servidor',
       // Integrations (t36) — folded in from the retired `/operations` tab.
       'Grupos e bibliotecas',

@@ -25,15 +25,16 @@
  * `restart_pending` raises a banner; a row whose stored override differs from the running value
  * carries its own badge. Nothing here ever implies a live change.
  *
- * **Copy lives in `i18n/serverEnvFallback`, not the shared catalog** (t14-e5): the pane reads every
- * string through {@link useServerEnvT} (`st(...)`), the same way it would read `t(...)`, so none of
- * these keys touch the locked locale catalogs. RBAC mirrors the rest of Settings: the editors are
- * gated on `settings.manage`; a reader without it sees the same facts, read-only.
+ * **Copy lives in the shared catalogs** under `settings.serverEnv.*`, translated in all fourteen
+ * locales. (It briefly lived in a two-locale `serverEnvFallback` module while the catalogs were
+ * under a write lock; that module is gone and the pane reads `t(...)` like everything else.) RBAC
+ * mirrors the rest of Settings: the editors are gated on `settings.manage`; a reader without it sees
+ * the same facts, read-only.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useServerEnv, useUpdateServerEnv } from '../../api/hooks';
 import { SERVER_ENV_GROUPS, type ServerEnvVarGroup, type ServerEnvVarView } from '../../api/types';
-import { type ServerEnvCopyKey, useServerEnvT } from '../../i18n/serverEnvFallback';
+import { useT, type MessageKey } from '../../i18n';
 import { useCan } from '../session/permissions';
 import {
   Badge,
@@ -65,13 +66,14 @@ function draftValue(draft: OverrideDraft, name: string): string {
   return draft[name] ?? '';
 }
 
-/** The group label key — the registry's group ids are exactly the fallback module's group keys. */
-function groupKey(group: ServerEnvVarGroup): ServerEnvCopyKey {
-  return `settings.serverEnv.group.${group}` as ServerEnvCopyKey;
+/** The group label key — the registry's group ids are exactly the catalog's `group.*` key suffixes,
+ *  so a group the server adds without a matching catalog key is a compile-time miss, not a blank. */
+function groupKey(group: ServerEnvVarGroup): MessageKey {
+  return `settings.serverEnv.group.${group}` as MessageKey;
 }
 
 export function ServerEnvSection() {
-  const st = useServerEnvT();
+  const t = useT();
   const toast = useToast();
   const can = useCan();
   const canManage = can('settings.manage');
@@ -123,20 +125,20 @@ export function ServerEnvSection() {
     }
     update.mutate(
       { overrides, acknowledge: dirtyBoundary.map((v) => v.name) },
-      { onSuccess: () => toast.success(st('settings.serverEnv.saved')) },
+      { onSuccess: () => toast.success(t('settings.serverEnv.saved')) },
     );
   };
 
   if (query.isLoading) {
     return (
-      <Card title={st('settings.serverEnv.title')}>
-        <p className="muted">{st('settings.serverEnv.loading')}</p>
+      <Card title={t('settings.serverEnv.title')}>
+        <p className="muted">{t('settings.serverEnv.loading')}</p>
       </Card>
     );
   }
   if (query.error) {
     return (
-      <Card title={st('settings.serverEnv.title')}>
+      <Card title={t('settings.serverEnv.title')}>
         <ErrorNote error={query.error} />
       </Card>
     );
@@ -147,25 +149,23 @@ export function ServerEnvSection() {
 
   return (
     <div className="stack">
-      <Card title={st('settings.serverEnv.title')}>
+      <Card title={t('settings.serverEnv.title')}>
         <div className="form settings-rows">
-          <p className="field__hint">{st('settings.serverEnv.intro')}</p>
+          <p className="field__hint">{t('settings.serverEnv.intro')}</p>
           <p className="field__hint">
-            {st('settings.serverEnv.overridesPath', { path: data.overrides_path })}
+            {t('settings.serverEnv.overridesPath', { path: data.overrides_path })}
           </p>
           {data.restart_pending ? (
-            <InlineWarning tone="info" title={st('settings.serverEnv.restart.title')}>
-              {st('settings.serverEnv.restart.body')}
+            <InlineWarning tone="info" title={t('settings.serverEnv.restart.title')}>
+              {t('settings.serverEnv.restart.body')}
             </InlineWarning>
           ) : null}
-          {data.vars.length === 0 ? (
-            <p className="muted">{st('settings.serverEnv.empty')}</p>
-          ) : null}
+          {data.vars.length === 0 ? <p className="muted">{t('settings.serverEnv.empty')}</p> : null}
         </div>
       </Card>
 
       {groups.map((group) => (
-        <Card key={group} title={st(groupKey(group))}>
+        <Card key={group} title={t(groupKey(group))}>
           <div className="form settings-rows">
             {data.vars
               .filter((v) => v.group === group)
@@ -177,7 +177,7 @@ export function ServerEnvSection() {
                   dirty={isDirty(v)}
                   acknowledged={acks[v.name] ?? false}
                   canManage={canManage}
-                  st={st}
+                  t={t}
                   onChange={(value) => setOverride(v.name, value)}
                   onAck={(checked) => setAcks((prev) => ({ ...prev, [v.name]: checked }))}
                 />
@@ -187,12 +187,12 @@ export function ServerEnvSection() {
       ))}
 
       {canManage ? (
-        <Card title={st('settings.serverEnv.save')}>
+        <Card title={t('settings.serverEnv.save')}>
           <div className="form settings-rows">
             {update.error ? <ErrorNote error={update.error} /> : null}
             {unacknowledged.length > 0 ? (
-              <InlineWarning tone="warn" title={st('settings.serverEnv.boundary.warningTitle')}>
-                {st('settings.serverEnv.ackRequiredError')}
+              <InlineWarning tone="warn" title={t('settings.serverEnv.boundary.warningTitle')}>
+                {t('settings.serverEnv.ackRequiredError')}
               </InlineWarning>
             ) : null}
             <div className="row-wrap">
@@ -201,14 +201,14 @@ export function ServerEnvSection() {
                 onClick={save}
                 disabled={!anyDirty || unacknowledged.length > 0 || update.isPending}
               >
-                {update.isPending ? st('settings.serverEnv.saving') : st('settings.serverEnv.save')}
+                {update.isPending ? t('settings.serverEnv.saving') : t('settings.serverEnv.save')}
               </Button>
               <Button
                 variant="secondary"
                 onClick={discard}
                 disabled={!anyDirty || update.isPending}
               >
-                {st('settings.serverEnv.discard')}
+                {t('settings.serverEnv.discard')}
               </Button>
             </div>
           </div>
@@ -226,7 +226,7 @@ function EnvRow({
   dirty,
   acknowledged,
   canManage,
-  st,
+  t,
   onChange,
   onAck,
 }: {
@@ -235,7 +235,7 @@ function EnvRow({
   dirty: boolean;
   acknowledged: boolean;
   canManage: boolean;
-  st: ReturnType<typeof useServerEnvT>;
+  t: ReturnType<typeof useT>;
   onChange: (value: string) => void;
   onAck: (checked: boolean) => void;
 }) {
@@ -245,15 +245,15 @@ function EnvRow({
 
   const badges = (
     <span className="row-wrap">
-      {v.boundary ? <Badge tone="warn">{st('settings.serverEnv.boundary.badge')}</Badge> : null}
-      {v.narrow_only ? (
-        <Badge tone="warn">{st('settings.serverEnv.narrowOnly.badge')}</Badge>
-      ) : null}
-      {!v.editable && !v.secret ? (
-        <Badge tone="neutral">{st('settings.serverEnv.readOnly.badge')}</Badge>
+      {v.boundary ? <Badge tone="warn">{t('settings.serverEnv.boundary.badge')}</Badge> : null}
+      {v.narrow_only ? <Badge tone="warn">{t('settings.serverEnv.narrowOnly.badge')}</Badge> : null}
+      {v.external_reader !== null ? (
+        <Badge tone="neutral">{t('settings.serverEnv.externalReader.badge')}</Badge>
+      ) : !v.editable && !v.secret ? (
+        <Badge tone="neutral">{t('settings.serverEnv.readOnly.badge')}</Badge>
       ) : null}
       {v.restart_pending ? (
-        <Badge tone="info">{st('settings.serverEnv.restart.badge')}</Badge>
+        <Badge tone="info">{t('settings.serverEnv.restart.badge')}</Badge>
       ) : null}
     </span>
   );
@@ -268,7 +268,7 @@ function EnvRow({
       </span>
 
       {v.secret ? (
-        <SecretState v={v} st={st} />
+        <SecretState v={v} t={t} />
       ) : v.editable ? (
         <EnvEditor
           v={v}
@@ -277,7 +277,7 @@ function EnvRow({
           hintId={hintId}
           disabled={!canManage}
           onChange={onChange}
-          st={st}
+          t={t}
         />
       ) : null}
 
@@ -286,45 +286,51 @@ function EnvRow({
           read-only row it is the value itself. */}
       {!v.secret ? (
         <p className="field__hint" id={hintId}>
-          {st('settings.serverEnv.col.value')}:{' '}
-          <span className="mono">{v.effective_value ?? st('settings.serverEnv.value.unset')}</span>
+          {t('settings.serverEnv.col.value')}:{' '}
+          <span className="mono">{v.effective_value ?? t('settings.serverEnv.value.unset')}</span>
           {' · '}
-          {st('settings.serverEnv.col.source')}: <SourceBadge v={v} st={st} />
+          {t('settings.serverEnv.col.source')}: <SourceBadge v={v} t={t} />
           {v.default_value !== null ? (
             <>
               {' · '}
-              {st('settings.serverEnv.col.default')}:{' '}
-              <span className="mono">{v.default_value}</span>
+              {t('settings.serverEnv.col.default')}: <span className="mono">{v.default_value}</span>
             </>
           ) : null}
         </p>
       ) : null}
 
-      {v.editable ? <p className="field__hint">{st('settings.serverEnv.field.hint')}</p> : null}
+      {v.editable ? <p className="field__hint">{t('settings.serverEnv.field.hint')}</p> : null}
 
       {/* Tier C: the acknowledgement gate + the boundary warning, shown once the row is changed. */}
       {v.editable && v.boundary && dirty ? (
         <>
-          <InlineWarning tone="warn" title={st('settings.serverEnv.boundary.warningTitle')}>
-            {st('settings.serverEnv.boundary.warningBody')}
+          <InlineWarning tone="warn" title={t('settings.serverEnv.boundary.warningTitle')}>
+            {t('settings.serverEnv.boundary.warningBody')}
           </InlineWarning>
           <Toggle
             id={ackId}
             checked={acknowledged}
             disabled={!canManage}
             onChange={onAck}
-            label={st('settings.serverEnv.boundary.ackLabel')}
+            label={t('settings.serverEnv.boundary.ackLabel')}
           />
         </>
       ) : null}
 
-      {/* Why a read-only var cannot be edited here: derived fact, or a dedicated typed setting. */}
-      {!v.editable && !v.secret ? (
+      {/* Why a read-only var cannot be edited here: a different process reads it (and never sees
+          this override file), a dedicated typed setting owns it, or it is a derived fact. The
+          external-reader note also applies to secrets, whose `configured` flag describes THIS
+          process — so without it a masked "not configured" would read as a claim about the reader. */}
+      {v.external_reader !== null ? (
+        <p className="field__hint">
+          {`${t('settings.serverEnv.externalReader.note')} ${v.external_reader}`}
+        </p>
+      ) : !v.editable && !v.secret ? (
         <p className="field__hint">
           {v.excluded_typed_slice !== null
-            ? `${st('settings.serverEnv.typedSlice.note')} ${v.excluded_typed_slice}`
-            : st('settings.serverEnv.readOnly.note')}
-          {v.narrow_only ? ` ${st('settings.serverEnv.narrowOnly.note')}` : ''}
+            ? `${t('settings.serverEnv.typedSlice.note')} ${v.excluded_typed_slice}`
+            : t('settings.serverEnv.readOnly.note')}
+          {v.narrow_only ? ` ${t('settings.serverEnv.narrowOnly.note')}` : ''}
         </p>
       ) : null}
     </div>
@@ -340,7 +346,7 @@ function EnvEditor({
   hintId,
   disabled,
   onChange,
-  st,
+  t,
 }: {
   v: ServerEnvVarView;
   value: string;
@@ -348,10 +354,10 @@ function EnvEditor({
   hintId: string;
   disabled: boolean;
   onChange: (value: string) => void;
-  st: ReturnType<typeof useServerEnvT>;
+  t: ReturnType<typeof useT>;
 }) {
   const kind = v.validator.kind;
-  const unset = st('settings.serverEnv.value.unset');
+  const unset = t('settings.serverEnv.value.unset');
 
   if (kind === 'bool') {
     return (
@@ -363,8 +369,8 @@ function EnvEditor({
         onChange={(e) => onChange(e.target.value)}
         options={[
           { value: '', label: unset },
-          { value: 'true', label: st('settings.serverEnv.field.boolTrue') },
-          { value: 'false', label: st('settings.serverEnv.field.boolFalse') },
+          { value: 'true', label: t('settings.serverEnv.field.boolTrue') },
+          { value: 'false', label: t('settings.serverEnv.field.boolFalse') },
         ]}
       />
     );
@@ -399,25 +405,25 @@ function EnvEditor({
 }
 
 /** Tier B: never a value, only whether the secret is configured. */
-function SecretState({ v, st }: { v: ServerEnvVarView; st: ReturnType<typeof useServerEnvT> }) {
+function SecretState({ v, t }: { v: ServerEnvVarView; t: ReturnType<typeof useT> }) {
   return (
     <div className="stack--tight">
       <span className="row-wrap">
         <Badge tone={v.configured ? 'ok' : 'neutral'}>
           {v.configured
-            ? st('settings.serverEnv.secret.configured')
-            : st('settings.serverEnv.secret.notConfigured')}
+            ? t('settings.serverEnv.secret.configured')
+            : t('settings.serverEnv.secret.notConfigured')}
         </Badge>
-        <span className="field__hint">{st('settings.serverEnv.secret.note')}</span>
+        <span className="field__hint">{t('settings.serverEnv.secret.note')}</span>
       </span>
-      <p className="field__hint">{st('settings.serverEnv.secret.body')}</p>
+      <p className="field__hint">{t('settings.serverEnv.secret.body')}</p>
     </div>
   );
 }
 
 /** The source of the value the live process resolved. */
-function SourceBadge({ v, st }: { v: ServerEnvVarView; st: ReturnType<typeof useServerEnvT> }) {
+function SourceBadge({ v, t }: { v: ServerEnvVarView; t: ReturnType<typeof useT> }) {
   const tone = v.source === 'override' ? 'accent' : 'neutral';
-  const key = `settings.serverEnv.source.${v.source}` as ServerEnvCopyKey;
-  return <Badge tone={tone}>{st(key)}</Badge>;
+  const key = `settings.serverEnv.source.${v.source}` as MessageKey;
+  return <Badge tone={tone}>{t(key)}</Badge>;
 }

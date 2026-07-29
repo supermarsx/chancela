@@ -170,6 +170,14 @@ fn classify_writable(name: &str) -> Result<&'static EnvVarSpec, ApiError> {
             "`{name}` is managed by a typed settings slice and cannot be overridden here: {reason}"
         )));
     }
+    // A var only a *different* process reads: this process would happily store the override and stamp
+    // it into its own environment at the next start, and the actual reader would never see it. Refuse
+    // rather than accept a write that cannot do what the operator asked.
+    if let Some(reason) = spec.external_reader {
+        return Err(ApiError::Unprocessable(format!(
+            "`{name}` is {reason}, so an override stored here would never reach it"
+        )));
+    }
     if !spec.is_editable() {
         return Err(ApiError::Unprocessable(format!(
             "`{name}` is a derived / read-only value and cannot be overridden"
@@ -372,6 +380,7 @@ fn build_view(spec: &EnvVarSpec, overrides: &EnvOverrides) -> ServerEnvVarView {
         narrow_only: spec.narrow_only,
         acknowledgement_required: spec.acknowledgement_required,
         excluded_typed_slice: spec.excluded_typed_slice.map(str::to_owned),
+        external_reader: spec.external_reader.map(str::to_owned),
         source,
         configured,
         effective_value,
@@ -436,6 +445,7 @@ fn masked_secret_row(name: String, group: env_overrides::EnvVarGroup) -> ServerE
         narrow_only: false,
         acknowledgement_required: false,
         excluded_typed_slice: None,
+        external_reader: None,
         source: if configured {
             EnvVarSource::Env
         } else {
@@ -870,6 +880,175 @@ mod tests {
             !payload.contains('1') && !payload.contains('2'),
             "no values in the payload: {payload}"
         );
+    }
+
+    // --- Search + MCP rows (t14 gap closure) -----------------------------------------------------
+
+    #[tokio::test]
+    async fn get_exposes_the_search_runtime_row_as_editable_with_its_modes() {
+        let state = AppState::default();
+        let token = seed_token(&state, READER_ROLE_ID).await;
+        let (status, body) = send(state, get_req("/v1/platform/env"), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        let runtime = var(&body, "CHANCELA_SEARCH_RUNTIME");
+        assert_eq!(runtime["tier"], "A");
+        assert_eq!(runtime["editable"], true);
+        assert_eq!(runtime["group"], "search");
+        assert_eq!(runtime["default_value"], "embedded");
+        assert_eq!(runtime["validator"]["kind"], "enum");
+        assert_eq!(
+            runtime["validator"]["allowed"],
+            json!(["embedded", "query-only"])
+        );
+    }
+
+    #[tokio::test]
+    async fn get_masks_the_projector_database_urls_and_the_mcp_key() {
+        let state = AppState::default();
+        let token = seed_token(&state, READER_ROLE_ID).await;
+        let (status, body) = send(state, get_req("/v1/platform/env"), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        for name in [
+            "CHANCELA_SEARCH_DATABASE_URL",
+            "CHANCELA_SEARCH_DATABASE_URL_FILE",
+            "CHANCELA_MCP_API_KEY",
+        ] {
+            let row = var(&body, name);
+            assert_eq!(row["tier"], "B", "{name} tier");
+            assert_eq!(row["secret"], true, "{name} secret");
+            assert_eq!(row["editable"], false, "{name} editable");
+            assert!(row["effective_value"].is_null(), "{name} echoes a value");
+            assert!(row["override_value"].is_null(), "{name} echoes an override");
+            assert!(row["default_value"].is_null(), "{name} echoes a default");
+        }
+    }
+
+    #[tokio::test]
+    async fn get_shows_the_mcp_family_read_only_with_the_reason() {
+        let state = AppState::default();
+        let token = seed_token(&state, READER_ROLE_ID).await;
+        let (status, body) = send(state, get_req("/v1/platform/env"), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+
+        // The operator sees the variable and is told where it actually has to be set — the row is a
+        // fact with a pointer, never an editor whose edit would silently do nothing.
+        let transport = var(&body, "CHANCELA_MCP_TRANSPORT");
+        assert_eq!(transport["editable"], false);
+        assert_eq!(transport["default_value"], "stdio");
+        let reason = transport["external_reader"]
+            .as_str()
+            .expect("the row states which process reads it");
+        assert!(reason.contains("chancela-mcp"), "reason: {reason}");
+    }
+
+    #[tokio::test]
+    async fn put_rejects_the_projector_dsn_and_persists_nothing() {
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.dir.clone());
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let body = json!({
+            "overrides": { "CHANCELA_SEARCH_DATABASE_URL": "postgres://user:pw@db/chancela" },
+            "acknowledge": [],
+        });
+        let (status, err) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let msg = err["error"]
+            .as_str()
+            .or_else(|| err["message"].as_str())
+            .unwrap_or_default();
+        assert!(msg.contains("secret"), "refusal must say why: {err}");
+
+        // The DSN reached neither the override file nor the response.
+        let stored = env_overrides::load(&temp.dir).expect("load");
+        assert!(stored.overrides.is_empty(), "a secret must not persist");
+        let raw =
+            std::fs::read_to_string(env_overrides::overrides_path(&temp.dir)).unwrap_or_default();
+        assert!(
+            !raw.contains("user:pw"),
+            "the DSN must not be on disk: {raw}"
+        );
+        assert!(!err.to_string().contains("user:pw"), "no echo: {err}");
+    }
+
+    #[tokio::test]
+    async fn put_rejects_an_mcp_var_because_another_process_reads_it() {
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.dir.clone());
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let body = json!({
+            "overrides": { "CHANCELA_MCP_BASE_URL": "http://10.0.0.9:8080" },
+            "acknowledge": [],
+        });
+        let (status, err) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+        let msg = err["error"]
+            .as_str()
+            .or_else(|| err["message"].as_str())
+            .unwrap_or_default();
+        assert!(
+            msg.contains("chancela-mcp"),
+            "refusal must name the reading process: {err}"
+        );
+        let stored = env_overrides::load(&temp.dir).expect("load");
+        assert!(stored.overrides.is_empty());
+    }
+
+    #[tokio::test]
+    async fn put_accepts_a_search_runtime_override() {
+        let temp = TempDir::new();
+        let state = AppState::with_data_dir(temp.dir.clone());
+        let token = seed_token(&state, OWNER_ROLE_ID).await;
+        let body = json!({
+            "overrides": { "CHANCELA_SEARCH_RUNTIME": "query-only" },
+            "acknowledge": [],
+        });
+        let (status, view) = send(state, put_req("/v1/platform/env", body), Some(&token)).await;
+        assert_eq!(status, StatusCode::OK, "Tier A search row saves: {view}");
+        let stored = env_overrides::load(&temp.dir).expect("load");
+        assert_eq!(
+            stored.overrides.get("CHANCELA_SEARCH_RUNTIME"),
+            Some(&"query-only".to_owned())
+        );
+    }
+
+    #[test]
+    fn classify_writable_refuses_the_new_secret_and_external_rows() {
+        assert!(classify_writable("CHANCELA_SEARCH_RUNTIME").is_ok());
+        for name in [
+            "CHANCELA_SEARCH_DATABASE_URL",
+            "CHANCELA_SEARCH_DATABASE_URL_FILE",
+            "CHANCELA_MCP_API_KEY",
+            "CHANCELA_MCP_TRANSPORT",
+            "CHANCELA_MCP_BIND",
+            "CHANCELA_AI_ENABLED",
+        ] {
+            assert!(
+                matches!(classify_writable(name), Err(ApiError::Unprocessable(_))),
+                "{name} must not be writable"
+            );
+        }
+    }
+
+    #[test]
+    fn build_view_masks_a_projector_dsn_even_if_the_file_holds_one() {
+        // Same defence in depth as `CHANCELA_DB_KEY`: a hand-edited override file carrying the
+        // projector's DSN is masked by the spec's secret flag, not by what the map happens to hold.
+        let overrides = EnvOverrides {
+            overrides: BTreeMap::from([(
+                "CHANCELA_SEARCH_DATABASE_URL".to_owned(),
+                "postgres://user:pw@db/chancela".to_owned(),
+            )]),
+        };
+        let spec = env_overrides::find("CHANCELA_SEARCH_DATABASE_URL").expect("secret spec");
+        let view = build_view(spec, &overrides);
+        assert!(view.secret);
+        assert!(view.effective_value.is_none());
+        assert!(view.override_value.is_none());
+        assert!(view.default_value.is_none());
+        let serialized = serde_json::to_string(&view).expect("serializes");
+        assert!(!serialized.contains("user:pw"), "no echo: {serialized}");
     }
 
     #[test]

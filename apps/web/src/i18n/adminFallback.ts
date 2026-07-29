@@ -3,7 +3,7 @@
  * the integrations subtabs (Grupos / Conectores / Repositórios ZK).
  *
  * **Why this module is self-contained, not spread into the 14 locale catalogs.** It follows the
- * exact precedent of {@link ./serverEnvFallback} and {@link ./operationsFallback}: the shared
+ * exact precedent of {@link ./operationsFallback}: the shared
  * catalogs move under a single-writer serial lock during the batch, so t36 owns its two keys end
  * to end and exposes its own locale-aware resolver ({@link useAdminT}) rather than adding the usual
  * per-locale import + spread wiring. Consumers read this copy exactly as they would through `useT`,
