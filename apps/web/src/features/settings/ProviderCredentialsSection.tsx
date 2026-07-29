@@ -55,6 +55,7 @@ import {
   Badge,
   Button,
   Card,
+  ColumnHead,
   EmptyState,
   ErrorNote,
   Field,
@@ -89,6 +90,63 @@ const ENDPOINT_MODES: readonly CredentialMode[] = ['csc', 'scap'];
 /** Modes that require a real (non-empty) provider id; the rest are single-instance. */
 const MULTI_INSTANCE_MODES: readonly CredentialMode[] = ['csc', 'pkcs12'];
 
+/**
+ * The six columns of a provider group's entry table, each paired with the sentence that says what
+ * the column *means operationally* (t101's `ColumnHead` contract). They are declared here rather
+ * than inline so the header row and any future consumer cannot drift apart, and so the count is
+ * one thing to keep in step with the `SkeletonTable cols` below.
+ */
+const ENTRY_COLUMNS: readonly { labelKey: MessageKey; helpKey: MessageKey }[] = [
+  {
+    labelKey: 'settings.providerCredentials.table.entry',
+    helpKey: 'settings.providerCredentials.table.entry.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.table.priority',
+    helpKey: 'settings.providerCredentials.table.priority.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.table.state',
+    helpKey: 'settings.providerCredentials.table.state.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.table.endpoint',
+    helpKey: 'settings.providerCredentials.table.endpoint.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.table.fields',
+    helpKey: 'settings.providerCredentials.table.fields.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.table.actions',
+    helpKey: 'settings.providerCredentials.table.actions.help',
+  },
+];
+
+/** The five columns of the modes overview table (see {@link ProviderModesCard}). */
+const MODE_COLUMNS: readonly { labelKey: MessageKey; helpKey: MessageKey }[] = [
+  {
+    labelKey: 'settings.providerCredentials.modes.column.mode',
+    helpKey: 'settings.providerCredentials.modes.column.mode.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.modes.column.purpose',
+    helpKey: 'settings.providerCredentials.modes.column.purpose.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.modes.column.setup',
+    helpKey: 'settings.providerCredentials.modes.column.setup.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.modes.column.entries',
+    helpKey: 'settings.providerCredentials.modes.column.entries.help',
+  },
+  {
+    labelKey: 'settings.providerCredentials.modes.column.actions',
+    helpKey: 'settings.providerCredentials.modes.column.actions.help',
+  },
+];
+
 interface SecretFieldSpec {
   name: string;
   labelKey: MessageKey;
@@ -102,7 +160,55 @@ interface SelectorFieldSpec {
   name: string;
   labelKey: MessageKey;
   kind: SelectorKind;
+  /**
+   * For `kind: 'toggle'` — what the SERVER assumes when the selector is absent.
+   *
+   * Not cosmetic. The form only sends selectors it holds a non-empty value for, so an operator who
+   * never touches a toggle creates an entry with that selector missing, and the server then applies
+   * its own default. Rendering such a toggle as off would show the operator the opposite of the
+   * state actually in force. See {@link selectorBool}.
+   */
+  defaultOn?: boolean;
 }
+
+/**
+ * Mirror of the server's `selector_bool` (`provider_credentials_write.rs`): it accepts several
+ * spellings on each side and treats anything else — **including an absent selector** — as the
+ * field's default. Reproduced rather than simplified to `value === 'true'` because both halves
+ * matter: an API-created entry may legitimately carry `on`/`1`, and absence is not falsehood.
+ */
+function selectorBool(value: string | undefined, defaultOn: boolean): boolean {
+  switch (value?.trim()) {
+    case 'true':
+    case '1':
+    case 'yes':
+    case 'on':
+      return true;
+    case 'false':
+    case '0':
+    case 'no':
+    case 'off':
+      return false;
+    default:
+      return defaultOn;
+  }
+}
+
+/**
+ * What an EMPTY endpoint cell means, per mode — they genuinely disagree, and one label for all four
+ * reassures the operator in the one case that is actually broken.
+ *
+ * - `cmd` — the SCMD endpoint is a compiled-in constant per environment (`CmdEnv::endpoint`).
+ * - `csc` — there is no default: `probe_csc` fails the entry `configuration_incomplete` without one.
+ * - `scap` — falls back to `ScapEnvironment::default_base_url` for the selected environment.
+ * - `pkcs12` — a local keystore has no address at all, so there is no default to fall back to.
+ */
+const EMPTY_ENDPOINT_KEYS: Record<CredentialMode, MessageKey> = {
+  cmd: 'settings.providerCredentials.table.endpointDefault',
+  csc: 'settings.providerCredentials.table.endpointRequired',
+  scap: 'settings.providerCredentials.table.endpointDefault',
+  pkcs12: 'settings.providerCredentials.table.endpointNotApplicable',
+};
 
 /** Per-mode encrypted (write-only) secret fields. `pfx_der` is handled separately (file → base64). */
 const SECRET_FIELDS: Record<CredentialMode, SecretFieldSpec[]> = {
@@ -193,7 +299,13 @@ const SELECTOR_FIELDS: Record<CredentialMode, SelectorFieldSpec[]> = {
       kind: 'text',
     },
     { name: 'scope', labelKey: 'settings.providerCredentials.field.scope', kind: 'text' },
-    { name: 'sandbox', labelKey: 'settings.providerCredentials.field.sandbox', kind: 'toggle' },
+    {
+      name: 'sandbox',
+      labelKey: 'settings.providerCredentials.field.sandbox',
+      kind: 'toggle',
+      // `selector_bool(&entry, "sandbox", true)` — absent means ON at the server.
+      defaultOn: true,
+    },
   ],
   scap: [
     {
@@ -556,11 +668,25 @@ export function ProviderCredentialEntryForm({
         />
 
         {ENDPOINT_MODES.includes(effectiveMode) ? (
+          // The two endpoint-bearing modes disagree about what this field IS, so they cannot share
+          // one sentence. SCAP defaults the address per environment and this overrides it
+          // (`AmaScapConfig` falls back to `ScapEnvironment::default_base_url`). CSC has no default
+          // at all: `probe_csc` fails the entry `configuration_incomplete` without one, and
+          // `CscConfig::validate` additionally requires https unless the sandbox flag is on and the
+          // host is localhost. Calling it an "override" is true for SCAP and false for CSC.
           <Field
             label={t('settings.providerCredentials.form.endpoint')}
             htmlFor={`${idBase}-endpoint`}
-            hint={t('settings.providerCredentials.form.endpointHint')}
-            help={providerCredentialsFieldHelp.endpoint}
+            hint={
+              effectiveMode === 'csc'
+                ? t('settings.providerCredentials.form.endpointHint.csc')
+                : t('settings.providerCredentials.form.endpointHint')
+            }
+            help={
+              effectiveMode === 'csc'
+                ? providerCredentialsFieldHelp.endpointCsc
+                : providerCredentialsFieldHelp.endpoint
+            }
           >
             <Input
               id={`${idBase}-endpoint`}
@@ -591,7 +717,7 @@ export function ProviderCredentialEntryForm({
                     ) : null}
                   </>
                 }
-                checked={value === 'true'}
+                checked={selectorBool(form.selectors[spec.name], spec.defaultOn ?? false)}
                 onChange={(on) => setSelector(spec.name, on ? 'true' : 'false')}
               />
             );
@@ -946,7 +1072,7 @@ function EntryRow({
             {entry.endpoint}
           </TooltipText>
         ) : (
-          <span className="muted">{t('settings.providerCredentials.table.endpointDefault')}</span>
+          <span className="muted">{t(EMPTY_ENDPOINT_KEYS[group.mode])}</span>
         )}
       </td>
       {/* Configured vs not-configured is the whole point of this column: the server sends a
@@ -1094,12 +1220,13 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
           caption={t('settings.providerCredentials.table.caption', { provider: title })}
           head={
             <tr>
-              <th>{t('settings.providerCredentials.table.entry')}</th>
-              <th>{t('settings.providerCredentials.table.priority')}</th>
-              <th>{t('settings.providerCredentials.table.state')}</th>
-              <th>{t('settings.providerCredentials.table.endpoint')}</th>
-              <th>{t('settings.providerCredentials.table.fields')}</th>
-              <th>{t('settings.providerCredentials.table.actions')}</th>
+              {ENTRY_COLUMNS.map((column) => (
+                <ColumnHead
+                  key={column.labelKey}
+                  label={t(column.labelKey)}
+                  help={t(column.helpKey)}
+                />
+              ))}
             </tr>
           }
         >
@@ -1117,6 +1244,110 @@ function ProviderGroupCard({ group }: { group: ProviderCredentialGroupView }) {
           ))}
         </Table>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The modes overview (t105) — one row per credential mode, **including modes with nothing
+ * configured**, which is the whole point of it.
+ *
+ * ## The gap it closes
+ *
+ * Everything above this card is driven by `data.providers`, so a mode the operator has never
+ * touched renders *nothing at all*: there is no card, no header, no hint that `scap` exists. The
+ * only way in was the top-level "new entry" form's mode dropdown, which an operator has to already
+ * know to open. This table is built from {@link MODES} instead of from the response, so all four
+ * modes are always listed and each has its own way in — `providerCredentialCreatePath(mode)` opens
+ * the entry form already switched to that mode.
+ *
+ * ## Why the copy is deliberately narrow
+ *
+ * The "what it is for" / "how to configure" sentences describe real qualified-signature
+ * infrastructure, so every claim in them is taken from the implementation rather than from what a
+ * mode's name suggests: the per-mode required fields from {@link SECRET_FIELDS} and the api's
+ * `assemble_*` / `validate_*` gates, the single-vs-multi instance split from
+ * {@link MULTI_INSTANCE_MODES}, and whether an address is configurable at all from
+ * {@link ENDPOINT_MODES}. Where the code does not settle a question the copy stays silent — an
+ * under-claim is recoverable, a confident invention on this surface is not.
+ */
+function ProviderModesCard({
+  providers,
+  storable,
+}: {
+  providers: readonly ProviderCredentialGroupView[];
+  storable: boolean;
+}) {
+  const t = useT();
+  const navigate = useNavigate();
+
+  // Entries per mode, summed across every provider group of that mode. Seeded with all four modes
+  // at zero so an unconfigured mode reports 0 rather than falling out of the table.
+  const counts = useMemo(() => {
+    const out: Record<CredentialMode, number> = { cmd: 0, csc: 0, scap: 0, pkcs12: 0 };
+    for (const group of providers) {
+      if (group.mode in out) out[group.mode] += group.entries.length;
+    }
+    return out;
+  }, [providers]);
+
+  return (
+    <Card title={t('settings.providerCredentials.modes.title')}>
+      <p className="field__hint">{t('settings.providerCredentials.modes.lede')}</p>
+      <Table
+        caption={t('settings.providerCredentials.modes.caption')}
+        head={
+          <tr>
+            {MODE_COLUMNS.map((column) => (
+              <ColumnHead
+                key={column.labelKey}
+                label={t(column.labelKey)}
+                help={t(column.helpKey)}
+              />
+            ))}
+          </tr>
+        }
+      >
+        {MODES.map((mode) => {
+          const label = modeLabel(t, mode);
+          const count = counts[mode];
+          return (
+            // `role="group"` + the mode as the row's accessible name mirrors `EntryRow`: it is what
+            // disambiguates four identically-labelled action buttons for a screen reader.
+            <tr key={mode} data-mode={mode} role="group" aria-label={label}>
+              <td data-label={t('settings.providerCredentials.modes.column.mode')}>
+                <p className="card__label">{label}</p>
+              </td>
+              <td data-label={t('settings.providerCredentials.modes.column.purpose')}>
+                {t(`settings.providerCredentials.modes.purpose.${mode}` as MessageKey)}
+              </td>
+              <td data-label={t('settings.providerCredentials.modes.column.setup')}>
+                {t(`settings.providerCredentials.modes.setup.${mode}` as MessageKey)}
+              </td>
+              {/* Zero is informative, not empty: it is how an operator sees that a mode exists and
+                  is not configured. It stays a bare numeral so no locale has to inflect a noun
+                  around it. */}
+              <td data-label={t('settings.providerCredentials.modes.column.entries')}>
+                <Badge tone={count > 0 ? 'ok' : 'neutral'}>{count}</Badge>
+              </td>
+              <td data-label={t('settings.providerCredentials.modes.column.actions')}>
+                <GateButton
+                  perm="signing.configure"
+                  type="button"
+                  variant="secondary"
+                  icon={<Icon.Cog />}
+                  // Same posture as the top-level create control: with no storable secret backend
+                  // the form could only end in a server refusal, and the banner carries the reason.
+                  disabled={!storable}
+                  onClick={() => navigate(providerCredentialCreatePath(mode))}
+                >
+                  {t('settings.providerCredentials.modes.configure')}
+                </GateButton>
+              </td>
+            </tr>
+          );
+        })}
+      </Table>
     </Card>
   );
 }
@@ -1195,6 +1426,8 @@ export function ProviderCredentialsSection() {
       {providers.map((group) => (
         <ProviderGroupCard key={`${group.mode}:${group.provider_id}`} group={group} />
       ))}
+
+      <ProviderModesCard providers={providers} storable={storable} />
     </div>
   );
 }

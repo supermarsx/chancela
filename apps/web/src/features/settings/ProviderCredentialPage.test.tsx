@@ -254,6 +254,12 @@ describe('ProviderCredentialPage', () => {
     });
     fireEvent.change(screen.getByLabelText('Autorização'), { target: { value: 'user' } });
     fireEvent.change(screen.getByLabelText('ID da credencial'), { target: { value: 'cred-7' } });
+    // `sandbox` is the only `kind: 'toggle'` selector, so this click is what proves a toggle reaches
+    // `selectors` at all — the guarantee this case holds, alongside the trimming and write-only
+    // assertions. It now submits `'false'` rather than `'true'` because the control renders checked
+    // by default, mirroring the server's `selector_bool(entry, "sandbox", true)`; the click
+    // therefore turns sandbox OFF. That is the more valuable direction to pin: opting OUT of the
+    // permissive default has to be written explicitly, because an omitted key means ON.
     fireEvent.click(screen.getByRole('switch', { name: 'Ambiente de testes (sandbox)' }));
     fireEvent.change(screen.getByLabelText('Token de acesso'), { target: { value: 'token-7' } });
     fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
@@ -265,7 +271,7 @@ describe('ProviderCredentialPage', () => {
         label: 'Backup',
         enabled: true,
         endpoint: 'https://csc.example.test/api',
-        selectors: { authorization: 'user', credential_id: 'cred-7', sandbox: 'true' },
+        selectors: { authorization: 'user', credential_id: 'cred-7', sandbox: 'false' },
         set: { access_token: 'token-7' },
       });
     });
@@ -286,6 +292,36 @@ describe('ProviderCredentialPage', () => {
         selectors: { environment: 'preprod' },
         set: { application_id: 'scap-app', secret: 'scap-secret' },
       });
+    });
+  });
+
+  // Pins the change to the sandbox toggle as DISPLAY-ONLY. Rendering the control checked by
+  // default (to match `selector_bool(entry, "sandbox", true)`) must not make the form start writing
+  // `sandbox` explicitly: an untouched form still sends no key, so the server keeps applying its
+  // own default and no stored entry's validation moves. If this ever submits `sandbox: 'true'`,
+  // the display fix has silently become a behaviour change for every new entry.
+  it('still omits the sandbox selector when the operator never touches the toggle', async () => {
+    const stub = stubFetch();
+    vi.stubGlobal('fetch', stub.fn);
+    renderPage('/admin/signing/providers/new?mode=csc');
+
+    fireEvent.change(await screen.findByLabelText('Identificador do fornecedor'), {
+      target: { value: 'untouched-provider' },
+    });
+    fireEvent.change(screen.getByLabelText('Client secret'), { target: { value: 'secret-1' } });
+    // The toggle reads as on — and is still not submitted, because nothing set it.
+    expect(
+      (screen.getByRole('switch', { name: 'Ambiente de testes (sandbox)' }) as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar' }));
+
+    await waitFor(() => {
+      const create = stub.calls.find((call) => call.method === 'POST');
+      expect(create).toBeTruthy();
+      const selectors = JSON.parse(create?.body ?? '{}').selectors as Record<string, string>;
+      expect(selectors).not.toHaveProperty('sandbox');
+      expect(selectors).toEqual({});
     });
   });
 

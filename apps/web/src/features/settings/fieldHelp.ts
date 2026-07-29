@@ -28,8 +28,13 @@ export const providerCredentialsFieldHelp = {
   get enabled() {
     return t('settings.providerCredentials.help.enabled');
   },
+  /** SCAP only — an optional override of the environment's default base address. */
   get endpoint() {
     return t('settings.providerCredentials.help.endpoint');
+  },
+  /** CSC only — a mandatory base address; the mode has no default to override. */
+  get endpointCsc() {
+    return t('settings.providerCredentials.help.endpoint.csc');
   },
   get pfx() {
     return t('settings.providerCredentials.help.pfx');

@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
-import { ProviderCredentialsSection } from './ProviderCredentialsSection';
+import {
+  ProviderCredentialEntryForm,
+  ProviderCredentialsSection,
+} from './ProviderCredentialsSection';
+import { ptPT } from '../../i18n/locales/pt-PT';
 import type { ProviderCredentialProbeResponse, ProviderCredentialsListView } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { permissionsValue, StaticPermissionsProvider } from '../session/permissions';
@@ -345,6 +349,219 @@ describe('ProviderCredentialsSection', () => {
     renderSection();
     expect(await screen.findByText('Não é possível guardar credenciais')).toBeTruthy();
     expect(screen.queryByText('Ofuscação — defesa em profundidade')).toBeNull();
+  });
+
+  // The modes overview (t105). Every assertion below is on a mode token, a role, a path or a
+  // structural attribute — never on rendered copy, which is translated into fourteen locales.
+  it('lists every provider mode in the overview, with an honest entry count including zero', async () => {
+    vi.stubGlobal('fetch', stubFetch().fn);
+    const { container } = renderSection();
+    await screen.findByText('Primária');
+
+    const rows = [...container.querySelectorAll('tr[data-mode]')];
+    expect(rows.map((row) => row.getAttribute('data-mode'))).toEqual([
+      'cmd',
+      'csc',
+      'scap',
+      'pkcs12',
+    ]);
+    // The fixture configures two `csc` entries and nothing else, so the other three modes are
+    // present at zero — which is the whole reason the table is built from the mode list rather
+    // than from the response.
+    expect(
+      Object.fromEntries(
+        rows.map((row) => [
+          row.getAttribute('data-mode'),
+          row.querySelector('.badge')?.textContent,
+        ]),
+      ),
+    ).toEqual({ cmd: '0', csc: '2', scap: '0', pkcs12: '0' });
+  });
+
+  it('routes each overview action to that mode create page, unconfigured modes included', async () => {
+    vi.stubGlobal('fetch', stubFetch().fn);
+    const first = renderSection();
+    await screen.findByText('Primária');
+
+    // `scap` has no group card at all, so before this row there was no way to reach its form.
+    const scapRow = first.container.querySelector('tr[data-mode="scap"]') as HTMLElement;
+    fireEvent.click(within(scapRow).getByRole('button'));
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/admin/signing/providers/new?mode=scap',
+    );
+    first.unmount();
+
+    const second = renderSection();
+    await screen.findByText('Primária');
+    const cmdRow = second.container.querySelector('tr[data-mode="cmd"]') as HTMLElement;
+    fireEvent.click(within(cmdRow).getByRole('button'));
+    expect(screen.getByTestId('location').textContent).toBe(
+      '/admin/signing/providers/new?mode=cmd',
+    );
+  });
+
+  it('explains every column of both tables through a keyboard-reachable help control', async () => {
+    vi.stubGlobal('fetch', stubFetch().fn);
+    const { container } = renderSection();
+    await screen.findByText('Primária');
+
+    // Group cards render before the modes card, so the entry grid is first.
+    const [entryTable, modesTable] = [...container.querySelectorAll('table')];
+    expect(entryTable.querySelectorAll('thead th')).toHaveLength(6);
+    expect(modesTable.querySelectorAll('thead th')).toHaveLength(5);
+    // The hidden caption is what names each grid to assistive tech; adding help must not cost it.
+    expect(entryTable.querySelector('caption.sr-only')).toBeTruthy();
+    expect(modesTable.querySelector('caption.sr-only')).toBeTruthy();
+
+    for (const th of [
+      ...entryTable.querySelectorAll('thead th'),
+      ...modesTable.querySelectorAll('thead th'),
+    ]) {
+      // A real <button> — so the explanation is a tab stop, not a hover-only decoration.
+      const trigger = th.querySelector('button.field-help') as HTMLButtonElement | null;
+      expect(trigger).toBeTruthy();
+      expect(trigger?.disabled).toBe(false);
+      // The sentence rides `aria-describedby`, and the bubble it points at is always mounted.
+      const bubbleId = trigger?.getAttribute('aria-describedby') ?? '';
+      expect(document.getElementById(bubbleId)?.textContent).toBeTruthy();
+      // The `<th>` keeps its own accessible name, so the help button is not recited per cell.
+      expect(th.getAttribute('aria-label')).toBeTruthy();
+    }
+
+    // Keyboard focus alone opens the bubble (no pointer involved).
+    const probe = entryTable.querySelector('thead th button.field-help') as HTMLButtonElement;
+    const bubble = document.getElementById(probe.getAttribute('aria-describedby') ?? '');
+    expect(bubble?.className).not.toContain('is-open');
+    fireEvent.focus(probe);
+    expect(bubble?.className).toContain('is-open');
+    fireEvent.blur(probe);
+    expect(bubble?.className).not.toContain('is-open');
+  });
+
+  // CSC has no default base address (`probe_csc` fails the entry `configuration_incomplete`
+  // without one) while SCAP defaults it per environment, so one shared sentence would be false for
+  // whichever mode it was not written for. Asserted through the catalog key, never a copy literal,
+  // so the check survives a re-translation.
+  it('gives the endpoint field the help and hint its mode actually warrants', () => {
+    const noop = () => {};
+    const csc = renderWithProviders(
+      <ProviderCredentialEntryForm mode="csc" disabled={false} onDone={noop} onCancel={noop} />,
+    );
+    expect(document.body.textContent).toContain(
+      ptPT['settings.providerCredentials.form.endpointHint.csc'],
+    );
+    expect(document.body.textContent).toContain(
+      ptPT['settings.providerCredentials.help.endpoint.csc'],
+    );
+    expect(document.body.textContent).not.toContain(
+      ptPT['settings.providerCredentials.form.endpointHint'],
+    );
+    csc.unmount();
+
+    // No handle needed: the shared `afterEach` cleanup unmounts this one.
+    renderWithProviders(
+      <ProviderCredentialEntryForm mode="scap" disabled={false} onDone={noop} onCancel={noop} />,
+    );
+    expect(document.body.textContent).toContain(
+      ptPT['settings.providerCredentials.form.endpointHint'],
+    );
+    expect(document.body.textContent).not.toContain(
+      ptPT['settings.providerCredentials.form.endpointHint.csc'],
+    );
+  });
+
+  // The assertion that would have caught the defect: the server reads
+  // `selector_bool(&entry, "sandbox", true)`, so an ABSENT selector means ON. The form used to
+  // render `checked={value === 'true'}`, showing a security-relevant switch as off while
+  // `http://localhost` was being accepted in place of required HTTPS.
+  it('shows an absent sandbox selector in the state the server actually applies', () => {
+    const noop = () => {};
+    const sandboxSwitch = () => {
+      const label = screen
+        .getByText(ptPT['settings.providerCredentials.field.sandbox'])
+        .closest('label') as HTMLElement;
+      return label.querySelector('input[role="switch"]') as HTMLInputElement;
+    };
+
+    // A brand-new entry: the operator has touched nothing, so the selector will be absent.
+    const created = renderWithProviders(
+      <ProviderCredentialEntryForm mode="csc" disabled={false} onDone={noop} onCancel={noop} />,
+    );
+    expect(sandboxSwitch().checked).toBe(true);
+    created.unmount();
+
+    // A stored entry that predates the selector, or was created through the API without it.
+    const legacy = renderWithProviders(
+      <ProviderCredentialEntryForm
+        mode="csc"
+        providerId="encosto qtsp"
+        existing={list.providers[0].entries[1]}
+        disabled={false}
+        onDone={noop}
+        onCancel={noop}
+      />,
+    );
+    expect(list.providers[0].entries[1].selectors.sandbox).toBeUndefined();
+    expect(sandboxSwitch().checked).toBe(true);
+    legacy.unmount();
+
+    // An explicit `false` still reads as off — the default must not swallow a real value.
+    renderWithProviders(
+      <ProviderCredentialEntryForm
+        mode="csc"
+        providerId="encosto qtsp"
+        existing={{ ...list.providers[0].entries[1], selectors: { sandbox: 'false' } }}
+        disabled={false}
+        onDone={noop}
+        onCancel={noop}
+      />,
+    );
+    expect(sandboxSwitch().checked).toBe(false);
+  });
+
+  it('says what an empty endpoint means for the mode, instead of claiming a default', async () => {
+    // `csc` has no default to fall back on, so the row must not read like the other modes.
+    vi.stubGlobal('fetch', stubFetch().fn);
+    const csc = renderSection();
+    const secondary = (await screen.findByText('Secundária')).closest('tr') as HTMLElement;
+    expect(secondary.textContent).toContain(
+      ptPT['settings.providerCredentials.table.endpointRequired'],
+    );
+    expect(secondary.textContent).not.toContain(
+      ptPT['settings.providerCredentials.table.endpointDefault'],
+    );
+    csc.unmount();
+
+    // A local keystore has no address at all — neither a default nor a missing one.
+    vi.stubGlobal(
+      'fetch',
+      stubFetch({
+        ...list,
+        providers: [
+          {
+            mode: 'pkcs12',
+            provider_id: 'local',
+            entries: [
+              {
+                entry_id: 'entry-p12',
+                label: 'Chave local',
+                priority: 0,
+                enabled: true,
+                selectors: {},
+                fields: [],
+                created_at: '2026-07-01T10:00:00Z',
+                updated_at: '2026-07-01T10:00:00Z',
+              },
+            ],
+          },
+        ],
+      }).fn,
+    );
+    renderSection();
+    const p12 = (await screen.findByText('Chave local')).closest('tr') as HTMLElement;
+    expect(p12.textContent).toContain(
+      ptPT['settings.providerCredentials.table.endpointNotApplicable'],
+    );
   });
 
   it('reports reorder failures and preserves the requested permutation', async () => {
