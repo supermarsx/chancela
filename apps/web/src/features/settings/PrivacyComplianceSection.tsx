@@ -1376,14 +1376,16 @@ function RegisterPanel({
                       <br />
                       <span className="muted">{record.updated_by}</span>
                     </td>
-                    <td className="users-actions">
-                      <ButtonLink
-                        to={privacyRecordPath(slug, record.id)}
-                        variant="ghost"
-                        icon={<Icon.Pencil />}
-                      >
-                        {t('settings.privacy.action.edit')}
-                      </ButtonLink>
+                    <td className="table-action-cell">
+                      <span className="table-actions">
+                        <ButtonLink
+                          to={privacyRecordPath(slug, record.id)}
+                          variant="ghost"
+                          icon={<Icon.Pencil />}
+                        >
+                          {t('settings.privacy.action.edit')}
+                        </ButtonLink>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -1598,14 +1600,16 @@ function BreachPlaybookPanel({
                         <AdvisoryReviewBadge review={record.advisory_review} />
                       </div>
                     </td>
-                    <td className="users-actions">
-                      <ButtonLink
-                        to={privacyRecordPath('breach-playbooks', record.id)}
-                        variant="ghost"
-                        icon={<Icon.Pencil />}
-                      >
-                        {t('settings.privacy.action.edit')}
-                      </ButtonLink>
+                    <td className="table-action-cell">
+                      <span className="table-actions">
+                        <ButtonLink
+                          to={privacyRecordPath('breach-playbooks', record.id)}
+                          variant="ghost"
+                          icon={<Icon.Pencil />}
+                        >
+                          {t('settings.privacy.action.edit')}
+                        </ButtonLink>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -1832,14 +1836,16 @@ function TransferControlPanel({
                         <AdvisoryReviewBadge review={record.advisory_review} />
                       </div>
                     </td>
-                    <td className="users-actions">
-                      <ButtonLink
-                        to={privacyRecordPath('transfer-controls', record.id)}
-                        variant="ghost"
-                        icon={<Icon.Pencil />}
-                      >
-                        {t('settings.privacy.action.edit')}
-                      </ButtonLink>
+                    <td className="table-action-cell">
+                      <span className="table-actions">
+                        <ButtonLink
+                          to={privacyRecordPath('transfer-controls', record.id)}
+                          variant="ghost"
+                          icon={<Icon.Pencil />}
+                        >
+                          {t('settings.privacy.action.edit')}
+                        </ButtonLink>
+                      </span>
                     </td>
                   </tr>
                 );
@@ -2686,48 +2692,61 @@ function RetentionExecutionReviewQueue({
                     </span>
                   </div>
                 </td>
-                <td className="users-actions">
-                  {record.decision_state === 'review_closed' ? (
-                    <div className="stack--tight">
-                      <span>
-                        {t('settings.privacy.execution.reviewRecorded')}
-                        {record.review_closed_by
-                          ? ` ${t('settings.privacy.execution.byActor', {
-                              actor: record.review_closed_by,
-                            })}`
-                          : ''}
-                        {record.review_closed_at
-                          ? ` ${t('settings.privacy.execution.onDate', {
-                              date: formatDateTime(record.review_closed_at),
-                            })}`
-                          : ''}
-                        .
-                      </span>
-                      {record.review_closure_note ? (
-                        <span className="muted">{record.review_closure_note}</span>
-                      ) : null}
-                      {(record.review_closure_evidence ?? []).map((evidence) => (
-                        <span
-                          key={`${record.id}-closure-${evidence.label}-${evidence.value}`}
-                          className="muted"
-                        >
-                          {evidence.label}: {evidence.value}
+                {/* The one cell in this migration that takes `.table-actions` WITHOUT
+                    `.table-action-cell`, and the omission is deliberate rather than an oversight.
+                    Its closed state is not a control at all — it is the record of the review, a
+                    paragraph that wraps to four lines at this table's column width — and
+                    `.table-action-cell`'s only declaration is `text-align: right`, which inherits
+                    straight into that paragraph. Measured at 1280px: every line's left edge went
+                    ragged (indented 65.89 / 11.69 / 20.14 / 86.55px) while the right edge locked
+                    to 9.59px. Leaving the cell class off keeps the prose exactly as it renders
+                    today and still fixes the defect this lane is about, because the defect was the
+                    `<td>` being `display: flex`, not its text alignment. No rule was added, so
+                    nothing here can shadow a future shared one. */}
+                <td>
+                  <span className="table-actions">
+                    {record.decision_state === 'review_closed' ? (
+                      <div className="stack--tight">
+                        <span>
+                          {t('settings.privacy.execution.reviewRecorded')}
+                          {record.review_closed_by
+                            ? ` ${t('settings.privacy.execution.byActor', {
+                                actor: record.review_closed_by,
+                              })}`
+                            : ''}
+                          {record.review_closed_at
+                            ? ` ${t('settings.privacy.execution.onDate', {
+                                date: formatDateTime(record.review_closed_at),
+                              })}`
+                            : ''}
+                          .
                         </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      icon={<Icon.Check />}
-                      disabled={closeReview.isPending}
-                      onClick={() => void closeOperationalReview(record)}
-                    >
-                      {closingId === record.id
-                        ? t('settings.privacy.execution.recordingReview')
-                        : t('settings.privacy.execution.recordReview')}
-                    </Button>
-                  )}
+                        {record.review_closure_note ? (
+                          <span className="muted">{record.review_closure_note}</span>
+                        ) : null}
+                        {(record.review_closure_evidence ?? []).map((evidence) => (
+                          <span
+                            key={`${record.id}-closure-${evidence.label}-${evidence.value}`}
+                            className="muted"
+                          >
+                            {evidence.label}: {evidence.value}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        icon={<Icon.Check />}
+                        disabled={closeReview.isPending}
+                        onClick={() => void closeOperationalReview(record)}
+                      >
+                        {closingId === record.id
+                          ? t('settings.privacy.execution.recordingReview')
+                          : t('settings.privacy.execution.recordReview')}
+                      </Button>
+                    )}
+                  </span>
                 </td>
               </tr>
             ))}
@@ -2966,14 +2985,16 @@ function RetentionPolicyPanel({
                     </span>
                   </td>
                   <td>{t('settings.privacy.retention.execution.false')}</td>
-                  <td className="users-actions">
-                    <ButtonLink
-                      to={privacyRecordPath('retention-policies', record.id)}
-                      variant="ghost"
-                      icon={<Icon.Pencil />}
-                    >
-                      {t('settings.privacy.action.edit')}
-                    </ButtonLink>
+                  <td className="table-action-cell">
+                    <span className="table-actions">
+                      <ButtonLink
+                        to={privacyRecordPath('retention-policies', record.id)}
+                        variant="ghost"
+                        icon={<Icon.Pencil />}
+                      >
+                        {t('settings.privacy.action.edit')}
+                      </ButtonLink>
+                    </span>
                   </td>
                 </tr>
               ))}

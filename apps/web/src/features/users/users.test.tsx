@@ -2191,6 +2191,55 @@ describe('EditUserPage — active sessions', () => {
     ).toBeTruthy();
   });
 
+  // An address read out of `X-Forwarded-For` is client-controllable — the server believes it only
+  // because the deployment declared a trusted proxy. This column is where an operator decides
+  // whether to terminate a session, so an asserted address must not be presented with the same
+  // authority as one the server observed on its own socket.
+  it('marks an address the proxy asserted, and leaves an observed one unmarked', async () => {
+    stub(AMELIA, {
+      '/v1/sessions': () =>
+        jsonResponse({
+          sessions: [
+            { ...SESSIONS.sessions[0], ip: '203.0.113.0', ip_asserted: true },
+            { ...SESSIONS.sessions[1], ip: '198.51.100.0', ip_asserted: false },
+          ],
+        }),
+    });
+    await screen.findByText('Chrome on Windows');
+
+    const rows = within(screen.getByRole('table', { name: ptPT['users.sessions.caption'] }))
+      .getAllByRole('row')
+      .slice(1);
+    const networkCellOf = (row: HTMLElement) => row.querySelectorAll('td')[1];
+
+    // The asserted row carries the marker in its network cell, and the address is still shown.
+    const asserted = networkCellOf(rows[0]);
+    expect(asserted.querySelector('code')?.textContent).toBe('203.0.113.0');
+    expect(asserted.querySelector('.badge')?.textContent).toBe(
+      ptPT['users.sessions.networkReported'],
+    );
+    // A real space separates the two, so they do not read fused: CSS margins are invisible to
+    // `textContent`, to find-in-page, and to a screen reader.
+    expect(asserted.textContent).toContain(`203.0.113.0 ${ptPT['users.sessions.networkReported']}`);
+
+    // The observed row is bare: no marker, so "unmarked" keeps meaning "the server saw this".
+    const observed = networkCellOf(rows[1]);
+    expect(observed.querySelector('code')?.textContent).toBe('198.51.100.0');
+    expect(observed.querySelector('.badge')).toBeNull();
+
+    // The footnote explains the distinction the badge only names.
+    expect(screen.getByText(ptPT['users.sessions.networkReportedHint'])).toBeTruthy();
+  });
+
+  it('shows no forwarded-address footnote when every address was observed', async () => {
+    // A deployment with no proxy in front draws no such distinction, so it is never told about one.
+    stub(AMELIA);
+    await screen.findByText('Chrome on Windows');
+
+    expect(screen.queryByText(ptPT['users.sessions.networkReportedHint'])).toBeNull();
+    expect(screen.queryByText(ptPT['users.sessions.networkReported'])).toBeNull();
+  });
+
   it('renders a session with no device or IP gracefully', async () => {
     stub(AMELIA);
     // The old session omits device + ip; the panel shows the "unknown" fallbacks, not blanks.

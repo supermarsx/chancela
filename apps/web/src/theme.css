@@ -61,6 +61,24 @@
      nothing does arithmetic with the inline one. */
   --control-padding-block: 0.55rem;
 
+  /* A placeholder's ink. Named because it is an ACCESSIBILITY decision rather than a colour
+     preference: left to the user agent, `.control::placeholder` rendered `rgb(117, 117, 117)`
+     in both themes — measured in Chromium against the real sheet at 4.16:1 on the light field
+     fill and 3.53:1 on the dark one, both under the 4.5:1 that WCAG 1.4.3 asks of text. The
+     `::placeholder` rule beside `.control` is the only consumer; this is where the decision is.
+
+     The value is NOT a new colour. It is `--text-muted` — the app's existing "secondary text"
+     decision, already the ink of `.field__label` and `.field__hint`, which is exactly the
+     register a placeholder speaks in. That is also why this token needs no per-theme copy and
+     deliberately has none: `--text-muted` is redefined by the dark media query and by both
+     `[data-theme]` blocks, and `var()` resolves on the element, so one declaration here tracks
+     all four. A second copy in a theme block would be a second decision. Measured after the
+     change: 6.83:1 light, 7.86:1 dark, against 14.7:1 for entered text in both — clear of the
+     minimum, and still visibly lighter than a filled value, which is the other half of the job.
+     A placeholder darkened until it reads as entered text trades an accessibility defect for a
+     usability one. */
+  --field-placeholder: var(--text-muted);
+
   /* Motion — ONE language for every content swap, so a route change, a sub-tab change and
      a panel swap read as the same gesture instead of three invented durations.
      Two roles, deliberately:
@@ -825,6 +843,69 @@ a:focus-visible {
   margin: 0;
 }
 
+/* Consecutive hints are one explanation; a hint under a control is a caption. Two different
+   relationships, and the sheet used to express only the second — which is why the diagnostics
+   card's three sentences and the language card's four notes rendered at 0px apart, borders of
+   text touching (measured; the tree walk finds 23 adjacent hint pairs).
+
+   The mechanism, and it is a tie rather than a design: `.field__hint { margin: 0 }` above is
+   (0,1,0), and so is every container rhythm — `.stack--tight > * + *`, `.form > * + *`. They
+   tie, and the zero is declared LATER in this file than `.stack`/`.stack--tight`/`.form`, so it
+   wins on source order alone. Two in-repo comments read that outcome as intent (see the
+   `.book-export-table` note further down, since corrected); it never was.
+
+   Distinguishing the two relationships is the whole fix, and the subject is what does it. The
+   PREDECESSOR sits in `:where()` and contributes nothing, so this stays (0,1,0) — the same
+   weight as the zero it overrides and as every container band. That is deliberate three times
+   over:
+
+     - it beats `.field__hint`'s own `margin: 0` on source order, being declared right below it,
+       which is the defect fixed;
+     - it leaves the caption case completely untouched — a hint after a `Toggle` or a control
+       matches nothing here, so `ff0a5f6c`'s preservation-package row keeps its deliberate
+       tightness under its switch, and no `:where()` pin was needed to get there;
+     - it still LOSES to any container that declares a hint rhythm further down the sheet.
+       `.settings-rows > * + *` (0.9rem plus its hairline) is the one that does, on five settings
+       surfaces, and it keeps it — verified by measurement, not by reading.
+
+   0.5rem is not a new step. It is `:where(.inline-warning__body) > * + *` (2a538e87), the value
+   this sheet already gives consecutive explanatory paragraphs inside a primitive — the identical
+   relationship, one primitive over. `.field__error` joins on both sides because a byte-count
+   line switches between the two classes as it crosses its limit, and a gap that vanishes when
+   text turns red is the same defect wearing the error's class. */
+:where(.field__hint, .field__error) + .field__hint,
+:where(.field__hint, .field__error) + .field__error {
+  margin-top: 0.5rem;
+}
+
+/* …except on a gap container, where a margin ADDS to the container's own `gap` instead of
+   competing with it in the cascade. That is the dialog-body mechanism this sheet already carries
+   a reset for (docs/ui-spacing.md), and it bit the rule above the moment it was measured: a
+   dialog's hint run went 13.59px → 21.59px. The dialog reset cannot stop it — the reset is
+   (0,0,0) on purpose and the rule above is (0,1,0) — so the neutraliser has to be stated here,
+   at the same weight and below it.
+
+   Two containers, and they were found rather than guessed. `.modal__body` is the app's one
+   general-purpose gap container for arbitrary card-like children. **`.field` is the one the tree
+   walk turned up and a by-hand sweep would have missed**: `ServerEnvSection` renders a value-
+   context hint and an editing hint as adjacent children of a `Field`, so on every editable
+   environment row the run sits inside `.field`'s 0.35rem `gap` and would have gone 5.59px →
+   13.59px. That is the `.chronology-analytics` lesson repeating — the population has to come from
+   what the markup does. The remaining gap containers the sheet neutralises for the boxed
+   primitives hold a banner or a table, not prose, and hold no hint run; rather than pre-empt them
+   with a second copy of a frozen list that could drift from the first,
+   `hintRhythmGuards.test.ts` walks the tree and fails if a run ever lands in one.
+
+   `0`, where the boxed primitives' neutraliser had to say `revert`, and the difference is the
+   subject. That one neutralises arbitrary elements whose UA `margin-block: 1em` was theirs to
+   keep. Here the subject is always a `.field__hint`/`.field__error`, whose own rule zeroes that
+   margin deliberately — `revert` would hand a `<p>` back 16px and make the double-gap worse.
+   This restores exactly what the hint had before the rule above. */
+:where(.field, .modal__body) > :where(.field__hint, .field__error) + .field__hint,
+:where(.field, .modal__body) > :where(.field__hint, .field__error) + .field__error {
+  margin-top: 0;
+}
+
 /* FieldHelp (t60) — a quiet borderless glyph after a field label, revealing a plain-
    language explanation in the shared gilt tooltip. The label + glyph sit on one row. */
 .field__labelrow {
@@ -891,6 +972,28 @@ a:focus-visible {
   border: 1px solid var(--field-border);
   border-radius: var(--radius);
   padding: var(--control-padding-block) 0.7rem;
+}
+
+/* Placeholder ink, beside the control it dresses — a `.control`-wide accessibility decision, not
+   a per-surface one. Every placeholder in the app is on a `.control`: swept from the component
+   tree, 132 elements carry a `placeholder`, 129 through the shared `Input`/`TextArea` and 3 as
+   hand-written `<input class="control">`, and none outside. So this one rule is the whole
+   population, and `placeholderContrastGuards.test.ts` fails if a 133rd arrives elsewhere.
+
+   Left alone, the user agent drew them at `rgb(117, 117, 117)` in BOTH themes — 4.16:1 on the
+   light field fill and 3.53:1 on the dark one, measured in Chromium against this sheet, against
+   the 4.5:1 WCAG 1.4.3 asks of text. `--field-placeholder` carries the fix (see `:root`).
+
+   `opacity: 1` is load-bearing, not tidying. A ratio is only the ratio that renders if nothing
+   below the author layer mutes it, and a placeholder's opacity is exactly what user agents have
+   historically differed on — this app ships to Gecko and WebKit as well as Chromium through
+   Tauri, so pinning it here is what makes the measured figure the figure on every engine.
+
+   Deliberately NOT `:where()`. Zero specificity is right for a rhythm a caller may want to
+   override; a contrast floor is not that. At (0,1,1) a surface has to mean it. */
+.control::placeholder {
+  color: var(--field-placeholder);
+  opacity: 1;
 }
 
 .control:focus-visible {
@@ -3091,11 +3194,6 @@ a.btn.btn--iconOnly {
   text-align: right;
 }
 
-.entities-table__actions {
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-}
-
 .books-filters {
   min-width: 0;
   max-width: 100%;
@@ -3424,13 +3522,24 @@ a.btn.btn--iconOnly {
 }
 
 /* The preservation-package row's action cell packs a `Toggle`, its `.field__hint`, and a
-   `GateButton` into one `.stack--tight` — `.field__hint` sets `margin: 0` by design (t100's
-   note at the `.settings-notes` rule below: it is built to sit tight under the control it
-   explains), so the only gap above the button is `.stack--tight`'s own 0.75rem, and that read
-   as the hint running straight into the button. Per t89-margins (who owns `.stack--tight` and
-   `.field__hint` and confirmed neither should change): scoped here, and on the BUTTON side —
+   `GateButton` into one `.stack--tight` — `.field__hint` sets `margin: 0`, so the only gap above
+   the button is `.stack--tight`'s own 0.75rem, and that read as the hint running straight into
+   the button. Per t89-margins (who owns `.stack--tight` and `.field__hint` and confirmed neither
+   should change): scoped here, and on the BUTTON side —
    `.field__hint { margin: 0 }` stays load-bearing for the tight-hint-under-control case
-   everywhere else this table doesn't touch. `* + .btn` (not `.field__hint + .btn`) so it also
+   everywhere else this table doesn't touch.
+
+   CORRECTION (t101). The earlier version of this note said the hint sits tight under its control
+   "by design", citing t100's note at a `.settings-notes` rule that Pass 2 has since retired.
+   Neither half survives measurement. The zero is a (0,1,0) TIE against `.stack--tight > * + *`
+   won on source order, not an expressed intent — which is why the same zero also crushed
+   consecutive hints to 0px on two other screens, where nobody wanted it. The tight caption under
+   a control is worth keeping and is now kept explicitly: the hint-run rule beside `.field__hint`
+   spaces a hint that follows ANOTHER hint and matches nothing that follows a `Toggle`, so this
+   row is untouched by it — measured identical before and after. This patch is NOT superseded:
+   it spaces the BUTTON, which is a third relationship again.
+
+   `* + .btn` (not `.field__hint + .btn`) so it also
    covers the legal-hold-on case, where a `Field` (the reason input) sits between the hint and
    the button — either way, the button is the one thing that should visually separate itself as
    the row's primary action. Deliberately does NOT match a `.btn` with no preceding sibling, so
@@ -11213,27 +11322,31 @@ input[type='radio']:disabled {
   cursor: default;
 }
 
-/* --- Users page: per-row access + audit manager (t44) --------------------- */
-.users-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-/* --- Shared table action cell (role catalog, role assignments, active sessions) ------------
-   Keep the table cell a real table cell: `.users-actions` is an older generic helper that
-   changes a `<td>` to `display:flex`, which makes row geometry depend on the action currently
-   shown. Rows can switch from compact icon actions to worded confirmation/pending actions — and
-   a sessions row swaps its button for NO control at all on the caller's own session — so the
-   dedicated inner action row gives every shared `.btn` the app's standard 2.25rem control height
-   while icon-only actions remain square. The same geometry therefore survives allowed, gated,
-   native-disabled, mutation-pending and no-action rows without overriding global button chrome.
+/* --- Shared table action cell — the ONE per-row control affordance ------------------------
+   Keep the table cell a real table cell. The helper this replaced set `display: flex` on the
+   `<td>` itself, which makes row geometry depend on the action a row happens to render. Rows can
+   switch from compact icon actions to worded confirmation/pending actions — and a sessions row
+   swaps its button for NO control at all on the caller's own session — so the dedicated inner
+   action row gives every shared `.btn` the app's standard 2.25rem control height while icon-only
+   actions remain square. The same geometry therefore survives allowed, gated, native-disabled,
+   mutation-pending and no-action rows without overriding global button chrome.
 
    Named for the SHAPE, not the feature. This started life as `.rbac-action-cell`/`.rbac-actions`
-   (t64) and the sessions table reached for flex-ified `.users-actions` instead — the reported
-   jank — because the RBAC-scoped name read as belonging to somebody else. Two class names for one
-   affordance is what caused that, so there is one: any `<td>` whose content is per-row controls
-   uses `.table-action-cell` + `.table-actions`, whatever feature owns the table. */
+   (t64), and every other table reached for the flex-ified users-page helper instead — the
+   reported jank — because the RBAC-scoped name read as belonging to somebody else. TWO CLASS
+   NAMES FOR ONE AFFORDANCE IS WHAT CAUSED THAT, so there is one: any `<td>` whose content is
+   per-row controls uses `.table-action-cell` + `.table-actions`, whatever feature owns the table.
+
+   Both retired names are now deleted rather than deprecated, and `tableActionCellGuards.test.ts`
+   fails if either is redeclared or reappears in a component: while a second helper exists it can
+   be reached for again, and a per-surface helper always outranks the shared one exactly where
+   somebody already complained. Measured when the last seven tables were migrated: an inner action
+   row's right edge sat at up to three different distances from the cell edge WITHIN one table
+   (534/225/380px on the signing-invites table alone) and collapsed to a single 9.59px everywhere.
+   `.entities-table__actions` went with them: it declared no `display` of its own, so it was a
+   modifier of whichever flex helper it was paired with, and both of its declarations measured
+   either inert (`flex-wrap: nowrap`, which lost the source-order tie at equal specificity) or
+   already declared here (`justify-content: flex-end`). */
 .table-action-cell {
   text-align: right;
 }

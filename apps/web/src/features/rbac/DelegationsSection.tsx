@@ -452,42 +452,48 @@ function DelegationRow({ d, now }: { d: DelegationView; now: number }) {
           <span className="muted">{t('rbac.deleg.noExpiry')}</span>
         )}
       </td>
-      <td className="users-actions">
-        {d.revoked ? (
-          <span className="muted">—</span>
-        ) : (
-          <>
-            {/* Suspend/resume is the reversible pause; revoke is terminal. Both take the same
-                authority, so they are gated identically. */}
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={busy || !mayManage}
-              onClick={() => doSetSuspended(!d.suspended)}
-            >
-              {t(d.suspended ? 'rbac.deleg.resume' : 'rbac.deleg.suspend')}
-            </Button>
-            {isGrantor ? (
-              // The grantor may always revoke their own grant (server allows the grantor bypass).
-              <IconButton
-                icon={<Icon.Trash />}
-                label={t('rbac.deleg.revoke')}
-                disabled={busy}
-                onClick={doRevoke}
-              />
-            ) : (
-              // Otherwise it needs `delegation.revoke` at the delegation's scope.
-              <GateIconButton
-                perm="delegation.revoke"
-                scope={d.scope}
-                icon={<Icon.Trash />}
-                label={t('rbac.deleg.revoke')}
-                disabled={busy || !can('delegation.revoke', d.scope)}
-                onClick={doRevoke}
-              />
-            )}
-          </>
-        )}
+      {/* The MIXED row: a worded button beside an icon-only one. That pairing is exactly what the
+          shared inner row exists to keep square — the worded control takes the 2.25rem control
+          height and the icon one a 2.25rem square, so this cell and the em-dash cell above it are
+          the same shape. */}
+      <td className="table-action-cell">
+        <span className="table-actions">
+          {d.revoked ? (
+            <span className="muted">—</span>
+          ) : (
+            <>
+              {/* Suspend/resume is the reversible pause; revoke is terminal. Both take the same
+                  authority, so they are gated identically. */}
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={busy || !mayManage}
+                onClick={() => doSetSuspended(!d.suspended)}
+              >
+                {t(d.suspended ? 'rbac.deleg.resume' : 'rbac.deleg.suspend')}
+              </Button>
+              {isGrantor ? (
+                // The grantor may always revoke their own grant (server allows the grantor bypass).
+                <IconButton
+                  icon={<Icon.Trash />}
+                  label={t('rbac.deleg.revoke')}
+                  disabled={busy}
+                  onClick={doRevoke}
+                />
+              ) : (
+                // Otherwise it needs `delegation.revoke` at the delegation's scope.
+                <GateIconButton
+                  perm="delegation.revoke"
+                  scope={d.scope}
+                  icon={<Icon.Trash />}
+                  label={t('rbac.deleg.revoke')}
+                  disabled={busy || !can('delegation.revoke', d.scope)}
+                  onClick={doRevoke}
+                />
+              )}
+            </>
+          )}
+        </span>
       </td>
     </tr>
   );

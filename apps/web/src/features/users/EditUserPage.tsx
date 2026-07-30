@@ -595,68 +595,95 @@ function SessionsSection() {
         ) : list.length === 0 ? (
           <EmptyState title={t('users.sessions.empty')} />
         ) : (
-          <Table
-            caption={t('users.sessions.caption')}
-            head={
-              <tr>
-                <th>{t('users.sessions.col.device')}</th>
-                <th>{t('users.sessions.col.network')}</th>
-                <th>{t('users.sessions.col.lastSeen')}</th>
-                <th>{t('users.sessions.col.expires')}</th>
-                <th>{t('users.sessions.col.action')}</th>
-              </tr>
-            }
-          >
-            {list.map((s) => (
-              <tr key={s.session_id}>
-                <td>
-                  {s.device ?? <span className="muted">{t('users.sessions.unknownDevice')}</span>}
-                  {s.current ? (
-                    <>
-                      {' '}
-                      <Badge tone="accent">{t('users.sessions.current')}</Badge>
-                    </>
-                  ) : null}
-                </td>
-                <td>
-                  {s.ip ? (
-                    <code className="mono">{s.ip}</code>
-                  ) : (
-                    <span className="muted">{t('users.sessions.unknownNetwork')}</span>
-                  )}
-                </td>
-                <td>
-                  <DateTime value={s.last_seen_at} />
-                </td>
-                <td>
-                  <DateTime value={s.expires_at} />
-                </td>
-                {/* One fact, one label: the accent badge in the device column already says this
-                    row is the caller's own session, and that is where an operator identifies a
-                    row (it is also the text a screen reader reads first in the row). Repeating it
-                    here as muted prose put a second name for the same fact inside the column
-                    reserved for controls. There is no control to offer — you leave your own
-                    session by signing out, never by revoking it — and a permanently-disabled
-                    button would be an affordance that can never fire, so the cell is empty. The
-                    shared action-cell classes keep the row's geometry identical either way. */}
-                <td className="table-action-cell">
-                  {s.current ? null : (
-                    <span className="table-actions">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        icon={<Icon.Trash />}
-                        disabled={busy}
-                        onClick={() => doRevoke(s.session_id)}
-                      >
-                        {t('users.sessions.revoke')}
-                      </Button>
-                    </span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </Table>
+          <>
+            <Table
+              caption={t('users.sessions.caption')}
+              head={
+                <tr>
+                  <th>{t('users.sessions.col.device')}</th>
+                  <th>{t('users.sessions.col.network')}</th>
+                  <th>{t('users.sessions.col.lastSeen')}</th>
+                  <th>{t('users.sessions.col.expires')}</th>
+                  <th>{t('users.sessions.col.action')}</th>
+                </tr>
+              }
+            >
+              {list.map((s) => (
+                <tr key={s.session_id}>
+                  <td>
+                    {s.device ?? <span className="muted">{t('users.sessions.unknownDevice')}</span>}
+                    {s.current ? (
+                      <>
+                        {' '}
+                        <Badge tone="accent">{t('users.sessions.current')}</Badge>
+                      </>
+                    ) : null}
+                  </td>
+                  {/* An address the server read out of a proxy forwarding header is not an address
+                      the server observed: the header is client-controllable, and it is believed
+                      only because the deployment declared a trusted proxy in front. This column is
+                      what an operator uses to decide "do I recognise this — should I terminate
+                      it?", so a told-to-us value is marked as such rather than presented as a
+                      witnessed fact. The explicit space keeps a real character between the address
+                      and the badge: the badge's own margin is invisible to `textContent` and to
+                      find-in-page, so without it the two read fused to a screen reader. */}
+                  <td>
+                    {s.ip ? (
+                      <>
+                        <code className="mono">{s.ip}</code>
+                        {s.ip_asserted ? (
+                          <>
+                            {' '}
+                            <Badge tone="neutral" wrap>
+                              {t('users.sessions.networkReported')}
+                            </Badge>
+                          </>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="muted">{t('users.sessions.unknownNetwork')}</span>
+                    )}
+                  </td>
+                  <td>
+                    <DateTime value={s.last_seen_at} />
+                  </td>
+                  <td>
+                    <DateTime value={s.expires_at} />
+                  </td>
+                  {/* One fact, one label: the accent badge in the device column already says this
+                      row is the caller's own session, and that is where an operator identifies a
+                      row (it is also the text a screen reader reads first in the row). Repeating it
+                      here as muted prose put a second name for the same fact inside the column
+                      reserved for controls. There is no control to offer — you leave your own
+                      session by signing out, never by revoking it — and a permanently-disabled
+                      button would be an affordance that can never fire, so the cell is empty. The
+                      shared action-cell classes keep the row's geometry identical either way. */}
+                  <td className="table-action-cell">
+                    {s.current ? null : (
+                      <span className="table-actions">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          icon={<Icon.Trash />}
+                          disabled={busy}
+                          onClick={() => doRevoke(s.session_id)}
+                        >
+                          {t('users.sessions.revoke')}
+                        </Button>
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </Table>
+            {/* The badge above is a two-word tag; on its own it does not tell an operator what to
+                make of the row. The footnote appears only when some row actually carries an
+                asserted address, so a deployment with no proxy in front never sees an explanation
+                for a distinction its list does not draw. */}
+            {list.some((s) => s.ip && s.ip_asserted) ? (
+              <p className="field__hint">{t('users.sessions.networkReportedHint')}</p>
+            ) : null}
+          </>
         )}
       </div>
     </Card>
@@ -788,11 +815,12 @@ function SecuritySection({ user }: { user: UserView }) {
  *
  * ## What was actually wrong (t103), diagnosed before restyling
  *
- * The card was a bare `<div className="users-actions">` holding a `Badge` and an icon-only
- * `IconButton`. Four separate defects, only the first of which is cosmetic:
+ * The card was a bare `<div>` on the roster's old per-row action helper, holding a `Badge` and an
+ * icon-only `IconButton`. Four separate defects, only the first of which is cosmetic:
  *
- * 1. **It borrowed the roster's table-cell affordance.** `.users-actions` is the flex row that
- *    lays out per-row icon buttons inside `<td>`s. Dropped into a form page it produced a card
+ * 1. **It borrowed the roster's table-cell affordance.** That helper was the flex row that laid
+ *    out per-row icon buttons inside `<td>`s (it is gone now — every table takes
+ *    `.table-action-cell` + `.table-actions`). Dropped into a form page it produced a card
  *    with no label, no row grid and no alignment with the `settings-rows` cards above and below
  *    it — the visible "jank". An icon-only control is right in a table, where there are N rows
  *    and a tooltip carries the name; it is wrong as the sole control on a dedicated screen.
@@ -1024,21 +1052,26 @@ function PrivacyDsrManager({ user }: { user: UserView }) {
                 <td>
                   <DateTime value={request.completed_at} evidentiary />
                 </td>
-                <td className="users-actions">
-                  {request.status === 'pending' ? (
-                    <GateButton
-                      perm="user.manage"
-                      variant="secondary"
-                      icon={<Icon.Check />}
-                      disabled={busy}
-                      onClick={() => complete(request.id)}
-                    >
-                      {' '}
-                      {translateNow('uiLiteral.editUserPage.marcarConcluido')}{' '}
-                    </GateButton>
-                  ) : (
-                    <span className="muted">{request.completed_by ?? '—'}</span>
-                  )}
+                {/* Same affordance as the sessions table two cards up: a worded button in one
+                    state and a name (or an em dash) in the other, and the row is the same shape
+                    either way. */}
+                <td className="table-action-cell">
+                  <span className="table-actions">
+                    {request.status === 'pending' ? (
+                      <GateButton
+                        perm="user.manage"
+                        variant="secondary"
+                        icon={<Icon.Check />}
+                        disabled={busy}
+                        onClick={() => complete(request.id)}
+                      >
+                        {' '}
+                        {translateNow('uiLiteral.editUserPage.marcarConcluido')}{' '}
+                      </GateButton>
+                    ) : (
+                      <span className="muted">{request.completed_by ?? '—'}</span>
+                    )}
+                  </span>
                 </td>
               </tr>
             ))}

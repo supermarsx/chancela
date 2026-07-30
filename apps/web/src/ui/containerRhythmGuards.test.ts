@@ -780,12 +780,23 @@ async function readStylesheets(): Promise<Record<string, string>> {
 }
 
 let THEME = '';
+/**
+ * The sheet with its comments removed, for the source-ORDER assertions below.
+ *
+ * They work by `indexOf`ing a rule's literal selector, and this sheet documents its rules by
+ * quoting their selectors in prose — so against the raw text they can find a comment instead of
+ * the rule and compare the wrong two positions. Not hypothetical: t101 added a note quoting
+ * `:where(.modal__body) > * {` above the rule it was explaining and turned two of these red
+ * without touching a declaration. Offsets shift, but only relative order is ever asserted.
+ */
+let THEME_RULES_ONLY = '';
 let RULES: CssRule[] = [];
 let STYLESHEETS: Record<string, string> = {};
 let ALL_RULES: CssRule[] = [];
 
 beforeAll(async () => {
   THEME = await readTheme();
+  THEME_RULES_ONLY = THEME.replace(/\/\*[\s\S]*?\*\//gu, '');
   RULES = parseRules(THEME);
   STYLESHEETS = await readStylesheets();
   ALL_RULES = Object.values(STYLESHEETS).flatMap((css) => parseRules(css));
@@ -892,8 +903,8 @@ describe('container vertical rhythm — structural guards', () => {
     // Both are (0,0,0), so this is decided by source order alone and by nothing else. If the
     // banner rule ever moves below this one, `InlineWarning`s in dialogs silently regain 1rem
     // on top of the gap. Measured: 29.59px before the reset, 13.59px after.
-    const banner = THEME.indexOf(':where(.inline-warning) {');
-    const reset = THEME.indexOf(':where(.modal__body) > * {');
+    const banner = THEME_RULES_ONLY.indexOf(':where(.inline-warning) {');
+    const reset = THEME_RULES_ONLY.indexOf(':where(.modal__body) > * {');
     expect(banner).toBeGreaterThan(-1);
     expect(reset).toBeGreaterThan(-1);
     expect(reset).toBeGreaterThan(banner);
@@ -1022,13 +1033,15 @@ describe('container vertical rhythm — structural guards', () => {
   it('orders both primitive rules above the modal reset, which has to outrank them', () => {
     // Every one of these is (0,0,0), so source order alone decides. If either primitive rule ever
     // moves below the modal reset, dialogs silently regain a margin on top of their `gap`.
-    const reset = THEME.indexOf(':where(.modal__body) > * {');
-    expect(THEME.indexOf(':where(.table-wrap) {')).toBeGreaterThan(-1);
-    expect(THEME.indexOf(':where(.table-wrap) {')).toBeLessThan(reset);
-    expect(THEME.indexOf(':where(.inline-warning, .table-wrap) + * {')).toBeLessThan(reset);
+    const reset = THEME_RULES_ONLY.indexOf(':where(.modal__body) > * {');
+    expect(THEME_RULES_ONLY.indexOf(':where(.table-wrap) {')).toBeGreaterThan(-1);
+    expect(THEME_RULES_ONLY.indexOf(':where(.table-wrap) {')).toBeLessThan(reset);
+    expect(THEME_RULES_ONLY.indexOf(':where(.inline-warning, .table-wrap) + * {')).toBeLessThan(
+      reset,
+    );
     // …and the neutraliser must sit below the rule it neutralises, for the same reason.
-    expect(THEME.indexOf('margin-top: revert;')).toBeGreaterThan(
-      THEME.indexOf(':where(.inline-warning, .table-wrap) + * {'),
+    expect(THEME_RULES_ONLY.indexOf('margin-top: revert;')).toBeGreaterThan(
+      THEME_RULES_ONLY.indexOf(':where(.inline-warning, .table-wrap) + * {'),
     );
   });
 
@@ -1259,6 +1272,29 @@ describe('container vertical rhythm — the guards go red without the fix', () =
     });
     expect(stacked.bodies).toBe(1);
     expect(stacked.withExtraRhythm).toEqual(['../features/x/Dlg.tsx: .stack--tight']);
+  });
+
+  it('reads source ORDER off the rules, not off prose that quotes a selector', () => {
+    // The failure this prevents, reproduced: a comment placed ABOVE the modal reset that quotes
+    // its selector makes a raw `indexOf` report a position earlier than the banner primitive, so
+    // the ordering assertion goes red with the sheet completely unchanged. t101 hit exactly this.
+    const banner = ':where(.inline-warning) { margin-top: 1rem; }';
+    const reset = ':where(.modal__body) > * { margin-block: 0; }';
+    const prose = '/* `:where(.modal__body) > * {` is (0,0,0) and cannot outrank a class. */';
+    const sheet = `${prose}\n${banner}\n${reset}\n`;
+    // Raw text: fooled — the comment comes first, so the reset looks like it precedes the banner.
+    expect(sheet.indexOf(':where(.modal__body) > * {')).toBeLessThan(
+      sheet.indexOf(':where(.inline-warning) {'),
+    );
+    // Comments stripped: the two rules compare in their real order.
+    const stripped = sheet.replace(/\/\*[\s\S]*?\*\//gu, '');
+    expect(stripped.indexOf(':where(.modal__body) > * {')).toBeGreaterThan(
+      stripped.indexOf(':where(.inline-warning) {'),
+    );
+    // And the stripped copy the assertions actually use still contains both rules.
+    expect(THEME_RULES_ONLY).toContain(':where(.modal__body) > * {');
+    expect(THEME_RULES_ONLY).toContain(':where(.inline-warning) {');
+    expect(THEME_RULES_ONLY.length).toBeGreaterThan(THEME.length / 3);
   });
 
   it('reports the primitives’ outer rhythm being deleted', () => {

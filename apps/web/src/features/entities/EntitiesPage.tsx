@@ -885,7 +885,14 @@ function EntityColumnCell({
     case 'Actions':
       return (
         <EntityTableCell column={column} actions>
-          <span className="users-actions entities-table__actions">
+          {/* The `<td>` already carries the entities column system (`--ec-actions` width, its own
+              `text-align: right`), so only the inner action row changes hands. The paired
+              `.entities-table__actions` went with the old helper rather than surviving it: it
+              declared no `display`, so it only ever modified whichever flex helper it sat beside,
+              and measured at the real 6.5rem column its `flex-wrap: nowrap` lost the source-order
+              tie (computed `wrap` either way) while its `justify-content: flex-end` is what the
+              shared row already declares. */}
+          <span className="table-actions">
             <EntityArchiveAction entity={entity} />
             <IconButton icon={<Icon.ArrowRight />} label={openLabel} onClick={onOpen} />
           </span>

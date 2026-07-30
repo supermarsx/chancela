@@ -115,7 +115,14 @@ export function LanguagePreferenceSection() {
           are spaced off the control above them. t100 gave `.settings-notes` its own `margin-top`
           because `.panel__body` spaced nothing; the card body now owns that gap for every card
           (`:where(.panel__body, .card) > * + *`, at the same 1rem), so the class stays only as a
-          name for the group. */}
+          name for the group.
+
+          CORRECTION (t101): `.stack--tight` here never spaced the four notes from EACH OTHER,
+          which is what t100 believed when it added the class. `.field__hint { margin: 0 }` and
+          `.stack--tight > * + *` are both (0,1,0) and the hint's zero is declared later in
+          theme.css, so it won — these four rendered touching, at 0px, until the hint-run rule
+          beside `.field__hint` gave a hint following another hint its own 0.5rem. The class is
+          left in place because it still spaces any non-hint child this group grows. */}
       <div className="settings-notes stack--tight">
         {/* Only meaningful while `auto` is the stored choice: it states what the standing
             instruction currently produces WITHOUT the select pretending that is the stored value. */}

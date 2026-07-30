@@ -7,8 +7,9 @@
 > everything or anything that comes next and before": both primitives now own their outer edge —
 > see the "Tables and banners" section under [What was fixed](#what-was-fixed). (Not an anchor
 > link: that heading's em dash slugifies differently under mkdocs and GitHub, and
-> `mkdocs build --strict` fails on the mismatch.) What remains open is
-> **Pass 3**, listed under
+> `mkdocs build --strict` fails on the mismatch.) **Pass 6** then landed the two items this
+> document had been holding for the product owner — the `.field__hint` conflict (Pass 3, item 1)
+> and placeholder contrast. What remains open is the rest of **Pass 3**, listed under
 > [What is decided](#what-is-decided-and-what-is-still-open).
 >
 > Component and rule counts below were measured against the tree at **`7e09cf83`** by parsing the
@@ -386,6 +387,106 @@ button aligns with the grid's right edge and whose own prose is shrink-to-fit at
 **No change to `WIDE_SUBSECTIONS` was needed**, which was the point — removing an entry would have
 restored the sideways-scrolling table, and the list lives in a file another lane is restructuring.
 
+### Consecutive hints, and placeholder contrast (Pass 6)
+
+The two items this document had been holding for the product owner. They landed together because
+they are the same kind of decision — a shared primitive whose default was wrong everywhere — and
+they were both **measured in Chromium against the real sheet, in both colour schemes**, before and
+after.
+
+**The hint run.** `.field__hint { margin: 0 }` is (0,1,0); so is `.stack--tight > * + *`,
+`.stack > * + *` and `.form > * + *`; and the hint's zero is declared **later in the sheet** than
+all three, so it won on source order and consecutive hints rendered at **0px**. The tree walk finds
+**23 adjacent hint pairs** — one of them `Field`'s own hint/error, which are mutually exclusive and
+can never both render, and which the walk deliberately does not try to prove away.
+
+The deferral was right: pinning the zero to `:where()` would have loosened `ff0a5f6c`'s
+preservation-package row, whose tightness under its `Toggle` is deliberate. **The fix distinguishes
+the two relationships instead of arbitrating between them** — a hint following another hint is one
+explanation; a hint following the control it describes is a caption:
+
+```css
+:where(.field__hint, .field__error) + .field__hint,
+:where(.field__hint, .field__error) + .field__error { margin-top: 0.5rem; }
+```
+
+**The predecessor is in `:where()` and the subject is not, and that is the whole design.** It pins
+the rule at **(0,1,0)** — the same weight as the zero it overrides and as every container band — so
+three things are true at once, each of them measured rather than reasoned:
+
+- it beats `.field__hint`'s own zero **on source order**, being declared directly beneath it;
+- it matches nothing that follows a control, so the caption case is untouched *by construction*
+  rather than by exception. The preservation-package row measures **0px before and after**;
+- it still **loses** to a container that declares a hint rhythm further down the sheet.
+  `.settings-rows > * + *` (0.9rem plus its hairline) is the one that does, on five settings
+  surfaces, and keeps it: **14.39px before and after**.
+
+`0.5rem` is not a ninth value. It is `:where(.inline-warning__body) > * + *` (`2a538e87`) — what
+this sheet already gives consecutive explanatory paragraphs inside a primitive, one primitive over.
+`.field__error` joins on both sides because the markdown editor's byte-count line switches between
+the two classes as it crosses its limit, and a gap that vanishes when text turns red is the same
+defect wearing the error's class.
+
+| context | before | after |
+|---|---|---|
+| diagnostics intro, three hints in `.stack--tight` | **0** | 8 |
+| language card, four notes in `.settings-notes.stack--tight` | **0** | 8 |
+| markdown editor, hint→hint and hint→**error** | **0** | 8 |
+| preservation package, two hints in a `<td>` | **0** | 8 |
+| signing OTP, two hints direct in `.form` | **0** | 8 |
+| a card, a `.stack.stack--tight`, a citizen-card cell | **0** | 8 |
+
+Unchanged, each one deliberately and each one measured: the preservation row's Toggle→hint (0px)
+and its hint→button (20px, `ff0a5f6c`'s patch, which is a third relationship again and is kept);
+`.field`'s control→hint and control→error (5.59px); `.settings-rows`' hint run (14.39px) and its
+Toggle→hint caption (4.8px); `.signing-evidence .field__hint` (11.19px, a hint after a `<dl>`);
+`.stack--tight`'s hint→banner (12px); `.stack`'s plain paragraphs (24px); a card's hint→actions row
+(16px); every dialog (13.59px); the field table's control→hint (4.8px). **Nothing was retired.**
+Every existing patch in this family is a different relationship from a hint run.
+
+**Gap containers, a third time, and the walk found one nobody had.** On a `gap` container a margin
+*adds* instead of competing, and `:where(.modal__body) > *` is (0,0,0) so it cannot outrank a
+(0,1,0) rule: a dialog's hint run measured **13.59px → 21.59px**. The tree walk then turned up
+**`.field`** — `ServerEnvSection` renders a value-context hint and an editing hint as adjacent
+children of a `Field`, so every editable environment row would have gone **5.59px → 13.59px**. A
+by-hand sweep would have missed it, which is the `.chronology-analytics` lesson repeating. One
+neutraliser covers both, at `margin-top: 0` rather than Pass 4's `revert` — the subject here is
+always a hint, whose own rule zeroes the UA's `margin-block: 1em` on purpose, so `revert` would
+hand a `<p>` back 16px and make the double-gap worse.
+
+**Placeholder contrast.** Nothing in this app declared a `::placeholder` colour, so every
+placeholder was drawn by the user agent: `rgb(117, 117, 117)` in **both** themes, measured at
+**4.16:1** on the light field fill and **3.53:1** on the dark one, against WCAG 1.4.3's 4.5:1 for
+text. Identical on inputs and textareas, because it was never per-surface — swept from the tree,
+**132 elements carry a `placeholder`, 129 through the shared `Input`/`TextArea` and 3 as
+hand-written `<input class="control">`, and none outside**, so one rule beside the primitive is the
+whole population.
+
+```css
+:root { --field-placeholder: var(--text-muted); }
+.control::placeholder { color: var(--field-placeholder); opacity: 1; }
+```
+
+**The value is not a new colour.** It is `--text-muted`, the app's existing secondary-text
+decision, already the ink of `.field__label` and `.field__hint` — the register a placeholder speaks
+in. That is also why the token needs no per-theme copy and deliberately has none: `--text-muted` is
+redefined by the dark media query *and* by both `[data-theme]` blocks, and `var()` resolves on the
+element, so one declaration covers all four paths. All four were measured.
+
+| | light | dark |
+|---|---|---|
+| placeholder, before | **4.16:1** | **3.53:1** |
+| placeholder, after | **6.83:1** | **7.86:1** |
+| entered text (unchanged) | 14.7:1 | 14.7:1 |
+| placeholder vs entered text | 2.15:1 | 1.87:1 |
+
+The last row is the other half of the job. A placeholder darkened until it reads as a filled value
+trades an accessibility defect for a usability one, so the guard asserts both ends: at least 4.5:1
+against the field, and a floor on how far the two inks are from *each other*. `opacity: 1` is
+load-bearing rather than tidying — a measured ratio is only the ratio that renders if nothing below
+the author layer mutes it, and this app ships to Gecko and WebKit through Tauri as well as to the
+Chromium it was measured in.
+
 ## Options considered for the remaining defect
 
 **A — keep patching per surface.** What the codebase has done four times. Each patch buys exactly
@@ -438,21 +539,22 @@ more gap containers were measured double-spacing the same way (49 / 47.5 / 43.39
 
 ## Pass 3 — the remaining work, in priority order
 
-1. **`.field__hint` in a rhythm owner.** The (0,1,0) tie above. The obvious fix is pinning
-   `.field__hint`'s zero margin to `:where()` so any explicit rhythm owner outranks it, which
-   repairs the diagnostics intro and the settings notes at a stroke. **It has a named conflict**:
-   it would also loosen `ff0a5f6c`'s preservation-package row, whose tightness under its `Toggle`
-   is deliberate. That trade is the decision; it is not a drive-by. There is already a third patch
-   in this family — `.signing-evidence .field__hint { margin-top: 0.7rem }`.
+1. ~~**`.field__hint` in a rhythm owner.**~~ **Closed by Pass 6.** The named conflict turned out to
+   be a false choice: pinning the zero to `:where()` was never the only fix, and it was the trade
+   that made this a decision rather than a patch. A hint following another hint and a hint
+   following the control it describes are **two different relationships**, and a rule whose
+   predecessor sits in `:where()` and whose subject does not addresses the first without touching
+   the second. `.signing-evidence .field__hint` and `ff0a5f6c`'s row are both kept, unchanged and
+   measured. See "Consecutive hints, and placeholder contrast (Pass 6)" above.
 2. **The bespoke `> * + *` re-inventions**, swept onto the shared rhythm.
 3. **A spacing-token scale**, only if it is ever wanted on its own merits — see Option C.
 
-Both of these, plus the placeholder-contrast issue, are restated as decisions in
+Items 2 and 3 are restated as decisions in
 [What is decided](#what-is-decided-and-what-is-still-open); that list is the canonical one.
 
 ## The guards
 
-Two structural test files, both AST/source-level:
+Six structural test files, all AST/source-level:
 
 - `apps/web/src/ui/bannerMarginGuards.test.ts` — fails on **any** margin rule that reaches
   `.inline-warning*` through a page or surface class, including inside a media query. Zero-specificity
@@ -485,6 +587,33 @@ Two structural test files, both AST/source-level:
   entire purpose is to avoid the regression. The sweep reads **every** stylesheet through
   `node:fs`, not `import.meta.glob(…, '?raw')` — measured, that returns the paths but empty strings
   for CSS, so the inventory would have frozen something the walk could not see.
+  **Pass 6 hardened its two source-ORDER assertions**: they `indexOf` a rule's literal selector,
+  and this sheet documents its rules by quoting their selectors in prose, so against the raw text
+  they could find a *comment* and compare the wrong two positions. A note added above the modal
+  reset turned both red without a declaration changing. They now read a comment-stripped copy.
+- `apps/web/src/ui/hintRhythmGuards.test.ts` — the hint run (Pass 6). That the rule exists at the
+  frozen 0.5rem step; that its **predecessor is `:where()` and its subject is not**, which is what
+  holds it at (0,1,0); that the predecessor list is exactly the hint family, so it can never widen
+  into the `:where()` pin this was deferred for; **both source orderings**, since at (0,1,0) they
+  are the entire cascade argument — below `.field__hint`'s zero, above `.settings-rows > * + *`;
+  the gap-container neutraliser, its `0`-not-`revert` value and its position; and the inventory of
+  rules that give a hint a block margin, frozen at the four that are different relationships. The
+  population is walked from the component tree behind a bound of 13 runs and 6 holder classes —
+  which is how `.field` was found. Two things it had to learn by going red: a selector that heads
+  a **list** is followed by `,` and never by ` {`, so an `indexOf` on ` {` silently returns -1 and
+  compares against a rule it could not find; and the hint run's own selector is a literal
+  substring of the neutraliser's, so the search must be anchored to the start of a line or it
+  reports the wrong rule's position.
+- `apps/web/src/ui/placeholderContrastGuards.test.ts` — placeholder contrast (Pass 6). That
+  `--field-placeholder` is declared **once** and stays anchored to `--text-muted` (a re-typed
+  literal fails, because it computes identically in light today and stops tracking dark tomorrow);
+  that `.control::placeholder` consumes it and pins `opacity: 1`; that the inventory of other
+  placeholder colour rules across **every** stylesheet is frozen at empty; that every
+  placeholder-bearing element in the tree is a `.control`, behind a bound of 100; and **the ratio
+  itself**, computed from the sheet's own token values in both themes — ≥ 4.5:1 against the field
+  fill, *and* a floor on the distance from the entered-text ink, so "just darken it" fails too.
+  The user agent's own `rgb(117, 117, 117)` is run back through the same arithmetic as the
+  red-proof.
 - `apps/web/src/ui/textareaControlGuards.test.ts` — the multi-line control: that `TextArea` merges
   a caller's `className` rather than replacing it, its `rows` default and caller override, the
   height floor's exact form and its zero specificity, the padding token and its consumers, the mono
@@ -588,16 +717,35 @@ mis-parses. If you revise these numbers, do it the same way, and state which com
 - **`.diagnostics-card { margin: 0 }` had the same shape** and was measured at zero gap with
   borders touching. Its children are likewise grandchildren; the container now uses `stack` and
   the blocking rule is gone.
-- Two in-repo comments (t100's and ff0a5f6c's) assert that `.field__hint` carries spacing between
-  siblings. It does not — `.field__hint { margin: 0 }` ties `.stack--tight > * + *` at (0,1,0)
-  and wins on source order, so consecutive hints render at 0px. Both comments are wrong.
+- Two in-repo comments (t100's and ff0a5f6c's) asserted that `.field__hint` carries spacing
+  between siblings. It did not — `.field__hint { margin: 0 }` ties `.stack--tight > * + *` at
+  (0,1,0) and wins on source order, so consecutive hints rendered at 0px. **Both are now
+  corrected in place** (Pass 6): t100's, in `LanguagePreferenceSection.tsx`, records that
+  `.stack--tight` never spaced the four notes from each other and names what does now;
+  ff0a5f6c's, beside `.book-export-table .stack--tight > * + .btn` in `theme.css`, records that
+  the tightness under a control was a specificity tie won on source order rather than an
+  expressed intent, and drops its cross-reference to a `.settings-notes` rule Pass 2 retired.
+
+- **Pass 6 landed — consecutive hints are spaced, and the caption case was not traded for it.**
+  `:where(.field__hint, .field__error) + .field__hint` at (0,1,0), directly beneath the zero it
+  overrides. The named conflict was resolved by **distinguishing the two relationships**, not by
+  arbitrating between them: the rule matches nothing that follows a control, so `ff0a5f6c`'s
+  preservation-package row measures 0px before and after and **nothing was retired**. Nine
+  measured surfaces go 0px → 8px; `.settings-rows` keeps its 0.9rem band because the rule sits
+  *above* it in the sheet, and both orderings are pinned by a test.
+- **`.field` was found by the walk, not by hand.** `ServerEnvSection` puts a hint run inside a
+  `Field`, a 0.35rem `gap` container where a margin adds — 5.59px → 13.59px without the
+  neutraliser. `.modal__body` is the other one (13.59px → 21.59px). The neutraliser says `0`, not
+  Pass 4's `revert`, because its subject is always a hint whose UA margin is zeroed on purpose.
+- **Pass 6 landed — placeholders clear WCAG AA in both themes.** Left to the user agent they were
+  `rgb(117, 117, 117)` in both, measured **4.16:1 light / 3.53:1 dark**. One token
+  (`--field-placeholder: var(--text-muted)`, declared once and resolving per theme) and one rule
+  beside `.control` take them to **6.83:1 / 7.86:1**, against 14.7:1 for entered text — and the
+  guard asserts the *distance* between the two inks as well as the floor, because a placeholder
+  darkened until it reads as a filled value is a usability defect bought with an accessibility fix.
+  All 132 placeholder-bearing elements in the tree are `.control`s, so one rule is the population.
 
 **Awaiting the product owner:**
 
-- **Pass 3 — `.field__hint`, with a named conflict.** Pinning it to `:where()` would fix the
-  0px-between-hints defect above, but would also loosen ff0a5f6c's preservation-package row,
-  whose tightness under its Toggle is deliberate. A third patch already exists in that family
-  (`.signing-evidence .field__hint`). Needs a decision, not a patch.
-- **Placeholder contrast.** `.control::placeholder` measures `rgb(117,117,117)` — roughly 4.1:1
-  in light and 3.3:1 in dark, under the 4.5:1 minimum. Identical on inputs and textareas, so it
-  is a `.control`-wide accessibility decision rather than a per-surface defect.
+- Nothing. Pass 3's remaining items are engineering decisions rather than product ones: the
+  bespoke `> * + *` re-inventions (item 2), and the spacing-token scale (item 3, already declined).

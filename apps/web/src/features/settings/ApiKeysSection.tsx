@@ -492,55 +492,57 @@ function ApiKeyRow({
       </td>
       <td>{statusBadge}</td>
       <td>{rateLimitText(t, keyView.rate_limit)}</td>
-      <td className="users-actions">
-        {keyView.revoked ? (
-          <span className="muted">—</span>
-        ) : confirming ? (
-          <span className="row-wrap">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={revoke.isPending}
-              onClick={() => setConfirming(false)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <GateButton
-              perm="user.manage"
-              variant="primary"
-              icon={<Icon.Trash />}
-              disabled={revoke.isPending}
-              onClick={doRevoke}
-            >
-              {revoke.isPending
-                ? t('settings.apiKeys.revoking')
-                : t('settings.apiKeys.revokeConfirm')}
-            </GateButton>
-          </span>
-        ) : (
-          <span className="row-wrap">
-            <GateButton
-              perm="user.manage"
-              type="button"
-              variant="ghost"
-              icon={<Icon.Refresh />}
-              disabled={rotate.isPending || revoke.isPending}
-              onClick={doRotate}
-            >
-              {rotate.isPending ? t('settings.apiKeys.rotating') : t('settings.apiKeys.rotate')}
-            </GateButton>
-            <GateButton
-              perm="user.manage"
-              type="button"
-              variant="ghost"
-              icon={<Icon.Trash />}
-              disabled={revoke.isPending || rotate.isPending}
-              onClick={() => setConfirming(true)}
-            >
-              {t('settings.apiKeys.revoke')}
-            </GateButton>
-          </span>
-        )}
+      <td className="table-action-cell">
+        <span className="table-actions">
+          {keyView.revoked ? (
+            <span className="muted">—</span>
+          ) : confirming ? (
+            <span className="row-wrap">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={revoke.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <GateButton
+                perm="user.manage"
+                variant="primary"
+                icon={<Icon.Trash />}
+                disabled={revoke.isPending}
+                onClick={doRevoke}
+              >
+                {revoke.isPending
+                  ? t('settings.apiKeys.revoking')
+                  : t('settings.apiKeys.revokeConfirm')}
+              </GateButton>
+            </span>
+          ) : (
+            <span className="row-wrap">
+              <GateButton
+                perm="user.manage"
+                type="button"
+                variant="ghost"
+                icon={<Icon.Refresh />}
+                disabled={rotate.isPending || revoke.isPending}
+                onClick={doRotate}
+              >
+                {rotate.isPending ? t('settings.apiKeys.rotating') : t('settings.apiKeys.rotate')}
+              </GateButton>
+              <GateButton
+                perm="user.manage"
+                type="button"
+                variant="ghost"
+                icon={<Icon.Trash />}
+                disabled={revoke.isPending || rotate.isPending}
+                onClick={() => setConfirming(true)}
+              >
+                {t('settings.apiKeys.revoke')}
+              </GateButton>
+            </span>
+          )}
+        </span>
       </td>
     </tr>
   );

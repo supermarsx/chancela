@@ -301,40 +301,46 @@ function DeviceRow({ device }: { device: PairingDeviceView }) {
           <Badge tone="ok">{t('pairing.status.active')}</Badge>
         )}
       </td>
-      <td className="users-actions">
-        {device.revoked ? (
-          <span className="muted">—</span>
-        ) : confirming ? (
-          <span className="row-wrap">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={revoke.isPending}
-              onClick={() => setConfirming(false)}
-            >
-              {t('common.cancel')}
-            </Button>
+      {/* Three states in one column — em dash, a two-button confirm pair, and a single worded
+          button — so the cell stays a real `<td>` and the controls live in the shared inner row.
+          The nested `.row-wrap` is kept: it groups the confirm pair at the app's inline-row step,
+          which is a different relationship from the action row's own gap. */}
+      <td className="table-action-cell">
+        <span className="table-actions">
+          {device.revoked ? (
+            <span className="muted">—</span>
+          ) : confirming ? (
+            <span className="row-wrap">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={revoke.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <GateButton
+                perm="user.manage"
+                variant="primary"
+                icon={<Icon.Trash />}
+                disabled={revoke.isPending}
+                onClick={doRevoke}
+              >
+                {revoke.isPending ? t('pairing.revoking') : t('pairing.revoke.confirm')}
+              </GateButton>
+            </span>
+          ) : (
             <GateButton
               perm="user.manage"
-              variant="primary"
+              type="button"
+              variant="ghost"
               icon={<Icon.Trash />}
-              disabled={revoke.isPending}
-              onClick={doRevoke}
+              onClick={() => setConfirming(true)}
             >
-              {revoke.isPending ? t('pairing.revoking') : t('pairing.revoke.confirm')}
+              {t('pairing.revoke')}
             </GateButton>
-          </span>
-        ) : (
-          <GateButton
-            perm="user.manage"
-            type="button"
-            variant="ghost"
-            icon={<Icon.Trash />}
-            onClick={() => setConfirming(true)}
-          >
-            {t('pairing.revoke')}
-          </GateButton>
-        )}
+          )}
+        </span>
       </td>
     </tr>
   );
