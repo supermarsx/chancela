@@ -55,6 +55,31 @@
   background: color-mix(in srgb, var(--bg) 78%, transparent);
 }
 
+.document-layout-editor__furniture-text {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+/* The echo carries its own separator: a screen reader and find-in-page see only characters, so a
+   gap between the label and the value would read the two fused together. */
+.document-layout-editor__furniture-echo {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font: 0.76rem/1.4 var(--font-sans);
+}
+
+.document-layout-editor__furniture-echo-value {
+  color: var(--fg);
+  font-family: var(--font-mono, monospace);
+}
+
+.document-layout-editor__tokens code {
+  white-space: nowrap;
+}
+
 .document-layout-editor__actions {
   display: flex;
   justify-content: flex-end;

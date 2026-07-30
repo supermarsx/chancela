@@ -1,28 +1,58 @@
 import type {
   DocumentFontFamily,
+  DocumentFurnitureAlignment,
   DocumentLayoutOverrides,
   DocumentLayoutPolicy,
   DocumentOrientation,
   DocumentPageSize,
+  DocumentSideTextEdge,
 } from '../../api/types';
+import { PRODUCT_DOCUMENT_FURNITURE } from '../../api/types';
 import { useT, type MessageKey, type TFunction } from '../../i18n';
-import { Button, Field, Input, Select } from '../../ui';
+import { Button, ColumnHead, Field, InlineWarning, Input, Select, Table, Toggle } from '../../ui';
+import {
+  FURNITURE_PLACEHOLDERS,
+  MAX_FURNITURE_TEXT_CHARS,
+  parseFurnitureTemplate,
+  previewFurnitureTemplate,
+  type FurniturePlaceholder,
+  type FurnitureTemplateError,
+} from './furnitureTemplate';
 import './documentLayoutEditor.css';
 
-type LayoutSection = 'page' | 'typography' | 'regions';
-type LayoutValue = string | number;
+type LayoutSection = 'page' | 'typography' | 'regions' | 'furniture';
+type LayoutValue = string | number | boolean;
 type LayoutPath = readonly string[];
 
 interface LayoutLeaf {
   key: string;
   section: LayoutSection;
   label: MessageKey;
+  /** Path into the concrete {@link DocumentLayoutPolicy}. */
   path: LayoutPath;
-  kind: 'select' | 'number';
+  /**
+   * Path into a {@link DocumentLayoutOverrides} layer, when it differs from `path`.
+   *
+   * It differs for every furniture leaf and nowhere else: the concrete policy nests
+   * (`furniture.header.enabled`) and the override layer is flat (`furniture.header_enabled`),
+   * because the server's provenance map keys one entry per authored leaf. Reading an override
+   * with `path` silently finds nothing, which would make a stored furniture override invisible in
+   * the pane while the server kept applying it — so every override read and write goes through
+   * {@link overridePathOf}, never `leaf.path`.
+   */
+  overridePath?: LayoutPath;
+  kind: 'select' | 'number' | 'toggle' | 'text';
   options?: { value: string; label: MessageKey }[];
   min?: number;
   max?: number;
   unit?: string;
+  /** Furniture templates only: the control offers the token reference and the sample echo. */
+  furnitureText?: boolean;
+}
+
+/** Where this leaf lives in an override layer. See {@link LayoutLeaf.overridePath}. */
+function overridePathOf(leaf: LayoutLeaf): LayoutPath {
+  return leaf.overridePath ?? leaf.path;
 }
 
 const PAGE_SIZE_OPTIONS: { value: DocumentPageSize; label: MessageKey }[] = [
@@ -41,6 +71,29 @@ const FONT_OPTIONS: { value: DocumentFontFamily; label: MessageKey }[] = [
   { value: 'NotoSerif', label: 'documentLayout.option.font.NotoSerif' },
   { value: 'NotoSans', label: 'documentLayout.option.font.NotoSans' },
 ];
+
+const ALIGNMENT_OPTIONS: { value: DocumentFurnitureAlignment; label: MessageKey }[] = [
+  { value: 'Left', label: 'documentLayout.option.alignment.Left' },
+  { value: 'Center', label: 'documentLayout.option.alignment.Center' },
+  { value: 'Right', label: 'documentLayout.option.alignment.Right' },
+];
+
+const EDGE_OPTIONS: { value: DocumentSideTextEdge; label: MessageKey }[] = [
+  { value: 'Left', label: 'documentLayout.option.edge.Left' },
+  { value: 'Right', label: 'documentLayout.option.edge.Right' },
+];
+
+/** What each token stands for, for the reference table under the furniture controls. */
+const PLACEHOLDER_MEANING: Record<FurniturePlaceholder, MessageKey> = {
+  page: 'documentLayout.furniture.token.page',
+  page_count: 'documentLayout.furniture.token.pageCount',
+  page_capacity: 'documentLayout.furniture.token.pageCapacity',
+  entity_name: 'documentLayout.furniture.token.entityName',
+  entity_nipc: 'documentLayout.furniture.token.entityNipc',
+  title: 'documentLayout.furniture.token.title',
+  subject: 'documentLayout.furniture.token.subject',
+  date: 'documentLayout.furniture.token.date',
+};
 
 const LEAVES: LayoutLeaf[] = [
   {
@@ -203,7 +256,103 @@ const LEAVES: LayoutLeaf[] = [
     max: 30,
     unit: 'mm',
   },
+  {
+    key: 'furniture-header-enabled',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureHeaderEnabled',
+    path: ['furniture', 'header', 'enabled'],
+    overridePath: ['furniture', 'header_enabled'],
+    kind: 'toggle',
+  },
+  {
+    key: 'furniture-header-text',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureHeaderText',
+    path: ['furniture', 'header', 'text'],
+    overridePath: ['furniture', 'header_text'],
+    kind: 'text',
+    furnitureText: true,
+  },
+  {
+    key: 'furniture-header-alignment',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureHeaderAlignment',
+    path: ['furniture', 'header', 'alignment'],
+    overridePath: ['furniture', 'header_alignment'],
+    kind: 'select',
+    options: ALIGNMENT_OPTIONS,
+  },
+  {
+    key: 'furniture-header-rule',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureHeaderRule',
+    path: ['furniture', 'header', 'rule'],
+    overridePath: ['furniture', 'header_rule'],
+    kind: 'toggle',
+  },
+  {
+    key: 'furniture-footer-enabled',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureFooterEnabled',
+    path: ['furniture', 'footer', 'enabled'],
+    overridePath: ['furniture', 'footer_enabled'],
+    kind: 'toggle',
+  },
+  {
+    key: 'furniture-footer-text',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureFooterText',
+    path: ['furniture', 'footer', 'text'],
+    overridePath: ['furniture', 'footer_text'],
+    kind: 'text',
+    furnitureText: true,
+  },
+  {
+    key: 'furniture-footer-alignment',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureFooterAlignment',
+    path: ['furniture', 'footer', 'alignment'],
+    overridePath: ['furniture', 'footer_alignment'],
+    kind: 'select',
+    options: ALIGNMENT_OPTIONS,
+  },
+  {
+    key: 'furniture-footer-rule',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureFooterRule',
+    path: ['furniture', 'footer', 'rule'],
+    overridePath: ['furniture', 'footer_rule'],
+    kind: 'toggle',
+  },
+  {
+    key: 'furniture-side-text-enabled',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureSideTextEnabled',
+    path: ['furniture', 'side_text', 'enabled'],
+    overridePath: ['furniture', 'side_text_enabled'],
+    kind: 'toggle',
+  },
+  {
+    key: 'furniture-side-text',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureSideText',
+    path: ['furniture', 'side_text', 'text'],
+    overridePath: ['furniture', 'side_text'],
+    kind: 'text',
+    furnitureText: true,
+  },
+  {
+    key: 'furniture-side-text-edge',
+    section: 'furniture',
+    label: 'documentLayout.field.furnitureSideTextEdge',
+    path: ['furniture', 'side_text', 'edge'],
+    overridePath: ['furniture', 'side_text_edge'],
+    kind: 'select',
+    options: EDGE_OPTIONS,
+  },
 ];
+
+const SECTIONS = ['page', 'typography', 'regions', 'furniture'] as const;
 
 const SECTION_COPY: Record<LayoutSection, { title: MessageKey; description: MessageKey }> = {
   page: {
@@ -218,6 +367,10 @@ const SECTION_COPY: Record<LayoutSection, { title: MessageKey; description: Mess
     title: 'documentLayout.section.regions.title',
     description: 'documentLayout.section.regions.description',
   },
+  furniture: {
+    title: 'documentLayout.section.furniture.title',
+    description: 'documentLayout.section.furniture.description',
+  },
 };
 
 function valueAt(value: unknown, path: LayoutPath): LayoutValue | undefined {
@@ -226,7 +379,22 @@ function valueAt(value: unknown, path: LayoutPath): LayoutValue | undefined {
     if (!current || typeof current !== 'object') return undefined;
     current = (current as Record<string, unknown>)[key];
   }
-  return typeof current === 'string' || typeof current === 'number' ? current : undefined;
+  return typeof current === 'string' || typeof current === 'number' || typeof current === 'boolean'
+    ? current
+    : undefined;
+}
+
+/**
+ * Fill in the concrete furniture default when the wire omitted it.
+ *
+ * The server drops `furniture` from a policy that is still all-disabled, so an untouched
+ * instance, entity or book arrives here without the key. Without this the furniture leaves would
+ * read `undefined` and the pane would render nothing at all for them — the feature would look
+ * absent rather than off.
+ */
+export function withFurnitureDefaults(policy: DocumentLayoutPolicy): DocumentLayoutPolicy {
+  if (policy.furniture) return policy;
+  return { ...policy, furniture: structuredClone(PRODUCT_DOCUMENT_FURNITURE) };
 }
 
 /**
@@ -239,10 +407,13 @@ export function applyDocumentLayoutOverrides(
   inherited: DocumentLayoutPolicy,
   overrides: DocumentLayoutOverrides | null | undefined,
 ): DocumentLayoutPolicy {
-  let resolved = JSON.parse(JSON.stringify(inherited)) as DocumentLayoutPolicy;
+  let resolved = withFurnitureDefaults(
+    JSON.parse(JSON.stringify(inherited)) as DocumentLayoutPolicy,
+  );
   if (!overrides) return resolved;
   for (const leaf of LEAVES) {
-    const override = valueAt(overrides, leaf.path);
+    // Read flat, write nested: an override layer and a concrete policy do not share a shape.
+    const override = valueAt(overrides, overridePathOf(leaf));
     if (override !== undefined) resolved = updateAt(resolved, leaf.path, override);
   }
   return resolved;
@@ -295,9 +466,105 @@ function numberValue(raw: string, leaf: LayoutLeaf): number {
 }
 
 function formatValue(value: LayoutValue, leaf: LayoutLeaf, t: TFunction): string {
+  if (typeof value === 'boolean') {
+    return t(value ? 'documentLayout.value.on' : 'documentLayout.value.off');
+  }
   const option = leaf.options?.find((item) => item.value === value);
   if (option) return t(option.label);
+  if (leaf.kind === 'text' && String(value).trim() === '') return t('documentLayout.value.empty');
   return `${value}${leaf.unit ? ` ${leaf.unit}` : ''}`;
+}
+
+/** The translated reason a furniture template is not authorable, or `undefined` when it is. */
+function furnitureTextError(value: LayoutValue, t: TFunction): string | undefined {
+  const parsed = parseFurnitureTemplate(String(value));
+  if (parsed.ok) return undefined;
+  return furnitureErrorMessage(parsed.error, t);
+}
+
+function furnitureErrorMessage(error: FurnitureTemplateError, t: TFunction): string {
+  switch (error.code) {
+    case 'too_long':
+      return t('documentLayout.furniture.error.tooLong', {
+        maximum: error.maximum,
+        actual: error.actual,
+      });
+    case 'line_break':
+      return t('documentLayout.furniture.error.lineBreak');
+    case 'unclosed_placeholder':
+      return t('documentLayout.furniture.error.unclosed');
+    case 'unknown_placeholder':
+      return t('documentLayout.furniture.error.unknownToken', { token: error.name });
+  }
+}
+
+/**
+ * What a furniture template will print, resolved against the sample document.
+ *
+ * Kept beside the input rather than behind a preview button: the whole risk of a merge-tag field
+ * is writing one that reads correctly and prints something else, and this is the cheapest place
+ * to answer that. It is a text echo, not a rendering — the real page is the template PDF preview.
+ *
+ * Silent while the template is unauthorable: the surrounding `Field` already renders that as its
+ * error, and two elements saying the same thing would be read out twice.
+ */
+function FurnitureTextEcho({ leafKey, value }: { leafKey: string; value: string }) {
+  const t = useT();
+  if (furnitureTextError(value, t)) return null;
+  const trimmed = value.trim();
+  const resolved = trimmed === '' ? null : previewFurnitureTemplate(value);
+  return (
+    <p className="document-layout-editor__furniture-echo" data-furniture-echo={leafKey}>
+      <span className="document-layout-editor__furniture-echo-label">
+        {t(
+          trimmed === ''
+            ? 'documentLayout.furniture.echo.empty'
+            : 'documentLayout.furniture.echo.label',
+        )}
+      </span>{' '}
+      {resolved === null ? null : (
+        <span className="document-layout-editor__furniture-echo-value">{resolved}</span>
+      )}
+    </p>
+  );
+}
+
+/**
+ * The closed token vocabulary, spelled out.
+ *
+ * An operator should not have to read the crate to find out that `{{ page_capacity }}` exists and
+ * `{{ pagina }}` does not. The server rejects an unknown token rather than printing nothing for
+ * it, so the complete list IS the contract — there is no wider syntax to discover.
+ */
+function FurnitureTokenReference() {
+  const t = useT();
+  return (
+    <Table
+      className="document-layout-editor__tokens"
+      caption={t('documentLayout.furniture.tokens.caption')}
+      head={
+        <tr>
+          <ColumnHead
+            label={t('documentLayout.furniture.tokens.column.token')}
+            help={t('documentLayout.furniture.tokens.column.tokenHelp')}
+          />
+          <ColumnHead
+            label={t('documentLayout.furniture.tokens.column.meaning')}
+            help={t('documentLayout.furniture.tokens.column.meaningHelp')}
+          />
+        </tr>
+      }
+    >
+      {FURNITURE_PLACEHOLDERS.map((placeholder) => (
+        <tr key={placeholder}>
+          <td>
+            <code>{`{{ ${placeholder} }}`}</code>
+          </td>
+          <td>{t(PLACEHOLDER_MEANING[placeholder])}</td>
+        </tr>
+      ))}
+    </Table>
+  );
 }
 
 function LeafControl({
@@ -326,6 +593,34 @@ function LeafControl({
         }))}
         onChange={(event) => onChange(event.target.value)}
       />
+    );
+  }
+  if (leaf.kind === 'toggle') {
+    return (
+      <Toggle
+        id={id}
+        checked={value === true}
+        disabled={disabled}
+        label={t(value === true ? 'documentLayout.value.on' : 'documentLayout.value.off')}
+        onChange={(checked) => onChange(checked)}
+      />
+    );
+  }
+  if (leaf.kind === 'text') {
+    return (
+      <div className="document-layout-editor__furniture-text">
+        <Input
+          id={id}
+          type="text"
+          value={String(value)}
+          disabled={disabled}
+          // The server counts Unicode scalar values; the attribute counts UTF-16 code units, so it
+          // is a courtesy stop only. `parseFurnitureTemplate` is what actually holds the bound.
+          maxLength={MAX_FURNITURE_TEXT_CHARS}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {leaf.furnitureText ? <FurnitureTextEcho leafKey={leaf.key} value={String(value)} /> : null}
+      </div>
     );
   }
   return (
@@ -359,7 +654,21 @@ function LayoutSectionPanel({
         <h4>{t(copy.title)}</h4>
         <p className="field__hint">{t(copy.description)}</p>
       </header>
+      {section === 'furniture' ? (
+        <InlineWarning tone="info" title={t('documentLayout.furniture.notice.title')}>
+          <p>{t('documentLayout.furniture.notice.forward')}</p>
+          <p>{t('documentLayout.furniture.notice.pinned')}</p>
+        </InlineWarning>
+      ) : null}
       {children}
+      {section === 'furniture' ? (
+        <>
+          <p className="field__hint">{t('documentLayout.furniture.tokens.intro')}</p>
+          <FurnitureTokenReference />
+          <p className="field__hint">{t('documentLayout.furniture.tokens.absentFact')}</p>
+          <p className="field__hint">{t('documentLayout.furniture.preview.pointer')}</p>
+        </>
+      ) : null}
     </section>
   );
 }
@@ -378,23 +687,31 @@ export function DocumentLayoutDefaultsEditor({
   idPrefix?: string;
 }) {
   const t = useT();
+  // A policy whose furniture the wire omitted is a policy with furniture OFF, not one without the
+  // controls. Hydrating here also means the first edit emits a complete, concrete object upward.
+  const policy = withFurnitureDefaults(value);
   return (
     <div className="stack document-layout-editor" data-document-layout-mode="defaults">
-      {(['page', 'typography', 'regions'] as const).map((section) => (
+      {SECTIONS.map((section) => (
         <LayoutSectionPanel key={section} section={section}>
           <div className="form settings-rows">
             {LEAVES.filter((leaf) => leaf.section === section).map((leaf) => {
-              const current = valueAt(value, leaf.path);
+              const current = valueAt(policy, leaf.path);
               if (current === undefined) return null;
               const id = `${idPrefix}-${leaf.key}`;
               return (
-                <Field key={leaf.key} label={t(leaf.label)} htmlFor={id}>
+                <Field
+                  key={leaf.key}
+                  label={t(leaf.label)}
+                  htmlFor={id}
+                  error={leaf.furnitureText ? furnitureTextError(current, t) : undefined}
+                >
                   <LeafControl
                     leaf={leaf}
                     value={current}
                     id={id}
                     disabled={disabled}
-                    onChange={(next) => onChange(updateAt(value, leaf.path, next))}
+                    onChange={(next) => onChange(updateAt(policy, leaf.path, next))}
                   />
                 </Field>
               );
@@ -431,6 +748,7 @@ export function DocumentLayoutOverridesEditor({
   idPrefix?: string;
 }) {
   const t = useT();
+  const baseline = withFurnitureDefaults(inherited);
   return (
     <div className="stack document-layout-editor" data-document-layout-mode="inherit">
       <div className="document-layout-editor__inheritance">
@@ -439,13 +757,14 @@ export function DocumentLayoutOverridesEditor({
         <span>{inheritanceLabel}</span>
       </div>
 
-      {(['page', 'typography', 'regions'] as const).map((section) => (
+      {SECTIONS.map((section) => (
         <LayoutSectionPanel key={section} section={section}>
           <div className="form field-table">
             {LEAVES.filter((leaf) => leaf.section === section).map((leaf) => {
-              const inheritedValue = valueAt(inherited, leaf.path);
+              const inheritedValue = valueAt(baseline, leaf.path);
               if (inheritedValue === undefined) return null;
-              const overrideValue = valueAt(value, leaf.path);
+              const overridePath = overridePathOf(leaf);
+              const overrideValue = valueAt(value, overridePath);
               const isOverride = overrideValue !== undefined;
               const id = `${idPrefix}-${leaf.key}`;
               const modeId = `${id}-mode`;
@@ -454,6 +773,11 @@ export function DocumentLayoutOverridesEditor({
                   key={leaf.key}
                   label={t(leaf.label)}
                   htmlFor={isOverride ? id : modeId}
+                  error={
+                    isOverride && leaf.furnitureText
+                      ? furnitureTextError(overrideValue, t)
+                      : undefined
+                  }
                   hint={
                     isOverride
                       ? t('documentLayout.hint.override', { source: inheritanceLabel })
@@ -477,12 +801,12 @@ export function DocumentLayoutOverridesEditor({
                       ]}
                       onChange={(event) => {
                         if (event.target.value === 'inherit') {
-                          onChange(removeAt(value, leaf.path));
+                          onChange(removeAt(value, overridePath));
                         } else {
                           onChange(
                             updateAt(
                               value ?? {},
-                              leaf.path,
+                              overridePath,
                               inheritedValue,
                             ) as DocumentLayoutOverrides,
                           );
@@ -497,7 +821,7 @@ export function DocumentLayoutOverridesEditor({
                         disabled={disabled}
                         onChange={(next) =>
                           onChange(
-                            updateAt(value ?? {}, leaf.path, next) as DocumentLayoutOverrides,
+                            updateAt(value ?? {}, overridePath, next) as DocumentLayoutOverrides,
                           )
                         }
                       />

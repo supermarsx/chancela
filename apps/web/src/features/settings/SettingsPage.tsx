@@ -56,6 +56,7 @@ import {
   NUMBERING_SCHEMES,
   PLATFORM_EMITTED_LOG_LEVELS,
   PLATFORM_SERVICE_IDS,
+  PRODUCT_DOCUMENT_FURNITURE,
   REGISTERED_ENTITY_COLUMNS,
   SIGNATURE_FAMILIES,
   THEME_MODES,
@@ -446,6 +447,24 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
         regions: {
           ...DEFAULT_SETTINGS.documents.layout_defaults.regions,
           ...(settings.documents.layout_defaults?.regions ?? {}),
+        },
+        // Page furniture is the one layout branch the server OMITS from the wire while it is at
+        // its all-disabled default — that omission is what keeps a policy predating furniture and
+        // one declining it byte-identical, and so keeps a signed document's layout digest stable.
+        // Merged per piece: a policy that enables only the footer arrives carrying only `footer`.
+        furniture: {
+          header: {
+            ...PRODUCT_DOCUMENT_FURNITURE.header,
+            ...(settings.documents.layout_defaults?.furniture?.header ?? {}),
+          },
+          footer: {
+            ...PRODUCT_DOCUMENT_FURNITURE.footer,
+            ...(settings.documents.layout_defaults?.furniture?.footer ?? {}),
+          },
+          side_text: {
+            ...PRODUCT_DOCUMENT_FURNITURE.side_text,
+            ...(settings.documents.layout_defaults?.furniture?.side_text ?? {}),
+          },
         },
       },
       template_preview_samples: hydrateTemplatePreviewSamples(
@@ -2069,7 +2088,14 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     } else if (resetDefaultsTarget === 'tsa') {
       setSigning('tsa_url', DEFAULT_SETTINGS.signing.tsa_url ?? '');
     } else if (resetDefaultsTarget === 'document-layout') {
-      setDocuments('layout_defaults', structuredClone(DEFAULT_SETTINGS.documents.layout_defaults));
+      // `furniture` must be spelled out, not left to `DEFAULT_SETTINGS` (which mirrors the wire
+      // and therefore omits it). The server treats an omitted `furniture` key as "this client
+      // does not know about furniture" and CARRIES THE STORED VALUE FORWARD, so a reset that
+      // dropped the key would silently leave a running header switched on.
+      setDocuments('layout_defaults', {
+        ...structuredClone(DEFAULT_SETTINGS.documents.layout_defaults),
+        furniture: structuredClone(PRODUCT_DOCUMENT_FURNITURE),
+      });
     }
     await Promise.resolve();
   }

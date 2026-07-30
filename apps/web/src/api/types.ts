@@ -403,11 +403,51 @@ export interface DocumentRegions {
   footer_gap_mm: number;
 }
 
+/** Horizontal placement of a header or footer furniture line within the text column. */
+export type DocumentFurnitureAlignment = 'Left' | 'Center' | 'Right';
+/** Which side margin carries the vertical marginal text. */
+export type DocumentSideTextEdge = 'Left' | 'Right';
+
+export interface DocumentHeaderFurniture {
+  enabled: boolean;
+  text: string;
+  alignment: DocumentFurnitureAlignment;
+  rule: boolean;
+}
+
+export interface DocumentFooterFurniture {
+  enabled: boolean;
+  text: string;
+  alignment: DocumentFurnitureAlignment;
+  rule: boolean;
+}
+
+export interface DocumentSideTextFurniture {
+  enabled: boolean;
+  text: string;
+  edge: DocumentSideTextEdge;
+}
+
+/**
+ * Repeated page apparatus: running header, running footer, and vertical marginal text.
+ *
+ * Every piece is disabled by default, and the server OMITS the whole object from the wire while
+ * it stays at that default — so a policy authored before furniture existed and one that declines
+ * it are the same bytes, which is what keeps an already-signed document's layout digest stable.
+ * That is why the field is optional here: absent means "no furniture", never "unknown".
+ */
+export interface DocumentPageFurniture {
+  header: DocumentHeaderFurniture;
+  footer: DocumentFooterFurniture;
+  side_text: DocumentSideTextFurniture;
+}
+
 /** Fully concrete renderer input. Only instance settings store this shape directly. */
 export interface DocumentLayoutPolicy {
   page: DocumentPageLayout;
   typography: DocumentTypography;
   regions: DocumentRegions;
+  furniture?: DocumentPageFurniture;
 }
 
 export interface DocumentPageMarginsOverrides {
@@ -441,6 +481,29 @@ export interface DocumentRegionsOverrides {
 }
 
 /**
+ * Optional page-furniture leaves. Missing means inherited.
+ *
+ * FLAT, unlike the concrete {@link DocumentPageFurniture} it overrides — `header_enabled` here
+ * against `header.enabled` there. That is the server's shape, not a transcription slip: the
+ * provenance map keys on one leaf per authored value, so a book that moves only the footer text
+ * must not be recorded as having supplied the header's alignment. Anything mapping between the
+ * two shapes has to carry both paths.
+ */
+export interface DocumentPageFurnitureOverrides {
+  header_enabled?: boolean;
+  header_text?: string;
+  header_alignment?: DocumentFurnitureAlignment;
+  header_rule?: boolean;
+  footer_enabled?: boolean;
+  footer_text?: string;
+  footer_alignment?: DocumentFurnitureAlignment;
+  footer_rule?: boolean;
+  side_text_enabled?: boolean;
+  side_text?: string;
+  side_text_edge?: DocumentSideTextEdge;
+}
+
+/**
  * Per-leaf inheriting layer. Missing leaves mean “inherit”; an empty object is equivalent to no
  * override and should normally be omitted from writes.
  */
@@ -448,6 +511,7 @@ export interface DocumentLayoutOverrides {
   page?: DocumentPageLayoutOverrides;
   typography?: DocumentTypographyOverrides;
   regions?: DocumentRegionsOverrides;
+  furniture?: DocumentPageFurnitureOverrides;
 }
 
 export interface EntityBookStateCounts {
@@ -4922,6 +4986,16 @@ export interface SessionInfo {
   session_id: string;
   device?: string;
   ip?: string;
+  /**
+   * Whether `ip` was **asserted** by a trusted reverse proxy's forwarding header rather than
+   * **observed** as the server's own TCP peer. Forwarding headers are client-controllable, and the
+   * server believes them only because the deployment declared a trusted proxy in front
+   * (`CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR`). The panel marks an asserted address so an operator
+   * deciding "do I recognise this session?" is not shown a value the server never witnessed as
+   * though it had. Always present on the wire; absent only on a response from an older server, and
+   * `undefined` reads as unmarked.
+   */
+  ip_asserted?: boolean;
   issued_at: string;
   last_seen_at: string;
   expires_at: string;
@@ -9181,6 +9255,25 @@ export interface Settings {
    */
   entities?: EntitiesSettings;
 }
+
+/**
+ * The concrete all-disabled page-furniture default.
+ *
+ * Deliberately NOT folded into `DEFAULT_SETTINGS.documents.layout_defaults` below: the server
+ * omits `furniture` from the wire while it is at this value, and `DEFAULT_SETTINGS` mirrors the
+ * wire shape byte-for-byte (see `contracts/settings.json`, which carries no `furniture` key).
+ * Editors that need a concrete policy hydrate from here instead, so the optimistic default and
+ * the first GET agree.
+ *
+ * `rule: true` under `enabled: false` is not a contradiction: the hairline is what an author gets
+ * the moment they turn the piece on, and validating and storing it while the piece is off is what
+ * lets `enabled` be flipped without any other value changing underneath.
+ */
+export const PRODUCT_DOCUMENT_FURNITURE: DocumentPageFurniture = {
+  header: { enabled: false, text: '', alignment: 'Center', rule: true },
+  footer: { enabled: false, text: '', alignment: 'Center', rule: true },
+  side_text: { enabled: false, text: '', edge: 'Left' },
+};
 
 /** The server's default document (contract §2.8) — used as the pre-load fallback so
  *  the UI and the live appearance layer have a complete shape before the first GET

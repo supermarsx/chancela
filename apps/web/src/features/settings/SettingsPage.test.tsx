@@ -32,6 +32,7 @@ import { platformLogLimitationsPtPT } from '../../i18n/platformLogLimitationsFal
 import { ptPT } from '../../i18n/locales/pt-PT';
 import {
   DEFAULT_SETTINGS,
+  PRODUCT_DOCUMENT_FURNITURE,
   RETENTION_DISPOSAL_ACTIONS,
   type DpiaTemplateView,
   type PrivacyAdvisoryReviewStatus,
@@ -2741,6 +2742,28 @@ describe('SettingsPage', () => {
     expect(body.documents.locale).toBe('en-GB');
     expect(body.documents.numbering_scheme_default).toBe('LooseLeaf');
     expect(body.documents.layout_defaults.page.orientation).toBe('Landscape');
+  });
+
+  it('sends page furniture explicitly, so the server never carries a stale value forward', async () => {
+    // The server OMITS `furniture` from a policy still at its all-disabled default, and treats an
+    // omitted key on the way back in as "this client predates furniture" — carrying the STORED
+    // value forward. A furniture-aware client must therefore always spell the object out, or an
+    // operator could never turn a running header back off from this pane.
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage />, ['/settings/documents']);
+
+    fireEvent.change(await screen.findByLabelText('Orientação'), {
+      target: { value: 'Landscape' },
+    });
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    const body = JSON.parse(
+      calls.filter((call) => call.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(body.documents.layout_defaults.furniture).toEqual(PRODUCT_DOCUMENT_FURNITURE);
   });
 
   it('resets document layout defaults through the shared confirmation modal', async () => {
