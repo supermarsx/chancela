@@ -222,9 +222,12 @@ async fn run() {
         );
     }
 
-    // wp25-sec: serve with per-connection info so the per-IP rate limiter can read the real TCP
-    // peer address (`ConnectInfo<SocketAddr>`). When the deployment sits behind a trusted reverse
-    // proxy, set CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR=1 to key off X-Forwarded-For / X-Real-IP.
+    // wp25-sec: serve with per-connection info so the app can read the real TCP peer address
+    // (`ConnectInfo<SocketAddr>`) — the one address a client cannot choose. It is what both the
+    // per-IP rate limiter and the recorded session origin use by default. When the deployment sits
+    // behind a trusted reverse proxy, set CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR=1 to resolve the
+    // client from X-Real-IP / X-Forwarded-For instead; see `chancela_api::resolve_client_address`
+    // for the chain-position rule and why that flag is a security boundary.
     axum::serve(
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),

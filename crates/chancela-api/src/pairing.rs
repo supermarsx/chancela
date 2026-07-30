@@ -460,10 +460,11 @@ async fn prepare_emailed_code(
 
     // **The credential-less operator, re-derived now that a mailed code exists.**
     //
-    // `require_step_up` deliberately passes on the session alone for an operator holding neither a
-    // password nor a recovery phrase (the t69 lockout fix): a valid self session is the strongest
-    // proof they can give, so demanding more would lock them out of their own instance. The mint
-    // inherits that exemption on purpose — one step-up path, not two.
+    // `require_step_up` deliberately passes on the session alone for an operator holding **no
+    // credential of any kind** (the t69 lockout fix): a valid self session is the strongest proof
+    // they can give, so demanding more would lock them out of their own instance. The mint inherits
+    // that exemption on purpose — one step-up path, not two, and the same predicate resolves it, so
+    // a credential kind added later narrows both together.
     //
     // While the exchange only accepted a password or a TOTP code, the exemption was contained: an
     // attacker at an unattended signed-in browser could mint a code such an operator could never
@@ -481,8 +482,7 @@ async fn prepare_emailed_code(
     // because then the mailbox is not a second factor at all: it is the only one, reachable from
     // the same chair. An operator in this state can still pair with a TOTP code, and the honest
     // fix is for them to set a credential — which the message says.
-    if crate::data::step_up_is_vacuous(user.password_hash.as_deref(), user.recovery_hash.as_deref())
-    {
+    if crate::credentials::step_up_is_vacuous(&crate::credentials::HeldCredentials::held_by(user)) {
         return Err(ApiError::Unprocessable(
             "a sua conta não tem palavra-passe nem frase de recuperação, por isso o código \
              enviado por email seria a única prova exigida para emparelhar. Defina uma \

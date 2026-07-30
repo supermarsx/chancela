@@ -508,6 +508,7 @@ impl SessionStore for SharedSessionBackend {
                     last_seen_unix: put.issued_at_unix,
                     device: put.device.clone(),
                     ip: put.ip.clone(),
+                    ip_asserted: put.ip_asserted,
                 },
             )
             .collect();

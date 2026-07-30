@@ -41,6 +41,9 @@ use crate::collection_page::{
     CollectionPage, CollectionPageQuery, CursorPosition, apply_keyset, fold_search,
     query_fingerprint,
 };
+use crate::credentials::{
+    AttestationKeyState, CredentialKind, HeldCredentials, ensure_removal_leaves_account_usable,
+};
 use crate::error::ApiError;
 use crate::session::{Backoff, backoff_secs};
 use crate::settings::Locale;
@@ -1691,6 +1694,26 @@ pub async fn set_secret(
         ),
     };
 
+    // **Account-lifecycle invariant.** A recovery-authorized reset *consumes* the phrase, so this
+    // operation removes a credential and has to answer for the state it leaves behind. It passes
+    // today — a password is being established in the same breath, so the account keeps a way to
+    // start a session, and what it loses is not one — and it is enforced here anyway because the
+    // post-state is what the rule is about, not the operation's name.
+    let before = HeldCredentials::held_by(&snapshot);
+    let mut after = before.clone().with(CredentialKind::Password);
+    if matches!(proof, Some(ProofKind::Recovery)) {
+        after = after.without(CredentialKind::RecoveryPhrase);
+    }
+    // The recovery arm retires the key (it cannot re-wrap it without the old password), so there is
+    // nothing left for the key-custody clause to protect; every other arm keeps whatever was there,
+    // re-wrapped forward under the new password.
+    let attestation_key_after = if drop_key {
+        AttestationKeyState::Absent
+    } else {
+        AttestationKeyState::held_by(&snapshot)
+    };
+    ensure_removal_leaves_account_usable(&before, &after, attestation_key_after)?;
+
     let user = {
         let mut users = state.users.write().await;
         let user = users.get_mut(&uid).ok_or(ApiError::NotFound)?;
@@ -1740,6 +1763,19 @@ pub async fn set_secret(
 /// removal follows the same proof/RBAC rule as [`set_secret`]. Authorized requests return `409`
 /// without clearing `password_hash` or the attestation key, so this path cannot create live
 /// no-password users.
+///
+/// **If password removal is ever reinstated** — which is what a passkey makes reasonable to ask for
+/// — it must go through [`ensure_removal_leaves_account_usable`] with
+/// `after = HeldCredentials::held_by(target).without(CredentialKind::Password)` and
+/// `AttestationKeyState::held_by(target)`, exactly as [`set_secret`] and [`remove_attestation_key`]
+/// already do for the recovery phrase. The blanket `409` below is *stricter* than that guard, never
+/// weaker, so removing it without adding the guard would be the widening.
+///
+/// Note what the guard's third clause means for this endpoint specifically: **the password wrap is
+/// what keeps the attestation key openable**, and a passkey's PRF wrap never substitutes for it (an
+/// OS update changed PRF output on shipping devices and orphaned PRF-wrapped data). So a reinstated
+/// removal is refused outright for any account holding an attestation key, whatever else it holds —
+/// "passwordless" means the user stops *typing* the password, not that the wrap goes away.
 pub async fn remove_secret(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
@@ -1905,6 +1941,17 @@ pub async fn remove_attestation_key(
         SecretAuthz::CrossUser(_) => {}
     }
     let consume_recovery = matches!(decision, SecretAuthz::CrossUser(ProofKind::Recovery));
+
+    // **Account-lifecycle invariant** — same reason as in `set_secret`: a recovery-authorized
+    // removal consumes the phrase, and consuming a credential is a removal. The attestation key
+    // itself is not a credential (it signs; it does not authenticate), so it is not in the set —
+    // and this handler retires it, so the post-state has none and the key-custody clause has
+    // nothing to protect.
+    if consume_recovery {
+        let before = HeldCredentials::held_by(snapshot.as_ref().ok_or(ApiError::NotFound)?);
+        let after = before.clone().without(CredentialKind::RecoveryPhrase);
+        ensure_removal_leaves_account_usable(&before, &after, AttestationKeyState::Absent)?;
+    }
 
     let user = {
         let mut users = state.users.write().await;

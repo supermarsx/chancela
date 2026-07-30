@@ -122,6 +122,10 @@ pub struct SessionPut {
     pub issued_at_unix: i64,
     pub device: Option<String>,
     pub ip: Option<String>,
+    /// Whether `ip` was asserted by a trusted proxy's forwarding header rather than observed as the
+    /// minting node's TCP peer. Travels with the address so a session listed from another node in
+    /// the cluster is marked the same way as on the node that minted it.
+    pub ip_asserted: bool,
 }
 
 impl SessionPut {
@@ -134,6 +138,7 @@ impl SessionPut {
             issued_at_unix,
             device: None,
             ip: None,
+            ip_asserted: false,
         }
     }
 }
@@ -148,6 +153,8 @@ pub struct SharedSessionInfo {
     pub last_seen_unix: i64,
     pub device: Option<String>,
     pub ip: Option<String>,
+    /// See [`SessionPut::ip_asserted`].
+    pub ip_asserted: bool,
 }
 
 /// The outcome of [`SessionStore::list_for_user`].
@@ -691,6 +698,12 @@ mod redis_backed {
         device: Option<String>,
         #[serde(default)]
         ip: Option<String>,
+        /// Defaulted, so a value written by a node that predates the provenance flag deserialises
+        /// and reads as "observed" — which is what such a node recorded, since it only ever stored
+        /// a forwarded address when the deployment already trusted the proxy. Marking those as
+        /// asserted retroactively is not possible from the stored value alone.
+        #[serde(default)]
+        ip_asserted: bool,
     }
 
     /// The per-user index of session digests, so a self-scoped list can enumerate without a keyspace
@@ -724,6 +737,7 @@ mod redis_backed {
                 last_seen_unix: put.issued_at_unix,
                 device: put.device,
                 ip: put.ip,
+                ip_asserted: put.ip_asserted,
             })
             .unwrap_or_default();
             let digest = crate::session::session_token_digest(token);
@@ -862,6 +876,7 @@ mod redis_backed {
                             last_seen_unix: v.last_seen_unix.max(v.issued_at_unix),
                             device: v.device,
                             ip: v.ip,
+                            ip_asserted: v.ip_asserted,
                         });
                     }
                     // Missing (expired/revoked) or stale-epoch ⇒ prune the index member.
@@ -1154,6 +1169,7 @@ mod tests {
                     last_seen_unix: put.issued_at_unix,
                     device: put.device.clone(),
                     ip: put.ip.clone(),
+                    ip_asserted: put.ip_asserted,
                 })
                 .collect();
             SessionListResult::Sessions(sessions)

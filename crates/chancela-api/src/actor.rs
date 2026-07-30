@@ -611,8 +611,7 @@ mod clock_tests {
                 &token,
                 Uuid::new_v4(),
                 uid.0,
-                None,
-                None,
+                crate::session::SessionOrigin::default(),
                 t0(),
                 t0() + Duration::seconds(SESSION_TTL_SECS),
             )
@@ -708,8 +707,7 @@ mod clock_tests {
                 &idle_token,
                 Uuid::new_v4(),
                 uid.0,
-                None,
-                None,
+                crate::session::SessionOrigin::default(),
                 t0(),
                 t0() + Duration::seconds(SESSION_TTL_SECS),
             )
@@ -738,8 +736,7 @@ mod clock_tests {
                 &token,
                 Uuid::new_v4(),
                 uid.0,
-                None,
-                None,
+                crate::session::SessionOrigin::default(),
                 t0(),
                 t0() + Duration::seconds(SESSION_TTL_SECS),
             )

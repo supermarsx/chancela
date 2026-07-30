@@ -174,6 +174,48 @@ async fn a_trusted_forwarded_ip_is_stored_truncated() {
     assert_eq!(status, StatusCode::OK, "{body}");
     // The full host is never stored — only its /24 network.
     assert_eq!(body["sessions"][0]["ip"], "198.51.100.0");
+    // ...and the list says the address was *asserted* by a proxy header, not observed by this
+    // process, so the UI can avoid presenting a client-supplied value as a witnessed fact.
+    assert_eq!(body["sessions"][0]["ip_asserted"], true);
+}
+
+/// The chain-position ruling, end to end on the wire: a client that prepends its own entry to
+/// `X-Forwarded-For` cannot choose the address recorded against its session. The proxy appends what
+/// it observed, and that right-most entry is what is stored.
+#[tokio::test]
+async fn a_client_prepended_forwarded_entry_cannot_choose_the_stored_address() {
+    let temp = TempDir::new();
+    let mut state = AppState::with_data_dir(&temp.0);
+    state.rate_limit.trust_forwarded_for = true;
+    let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
+
+    // "203.0.113.9" is the caller's own claim; "198.51.100.37" is what the trusted proxy appended.
+    let token = sign_in(&state, uid, None, Some("203.0.113.9, 198.51.100.37")).await;
+    let (status, body) = send(state.clone(), with_session(get("/v1/sessions"), &token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["sessions"][0]["ip"], "198.51.100.0");
+    assert_ne!(
+        body["sessions"][0]["ip"], "203.0.113.0",
+        "the client's prepended entry must never become the stored address"
+    );
+}
+
+/// With no trusted proxy declared, the forwarding headers are inert: the session records whatever
+/// the socket said (nothing at all in an in-process test), never the client's claim.
+#[tokio::test]
+async fn an_untrusted_forwarded_header_is_not_stored() {
+    let temp = TempDir::new();
+    let state = AppState::with_data_dir(&temp.0);
+    let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
+
+    let token = sign_in(&state, uid, None, Some("203.0.113.9")).await;
+    let (status, body) = send(state.clone(), with_session(get("/v1/sessions"), &token)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert!(
+        body["sessions"][0].get("ip").is_none(),
+        "an untrusted forwarded header must not become a stored address: {body}"
+    );
+    assert_eq!(body["sessions"][0]["ip_asserted"], false);
 }
 
 #[tokio::test]

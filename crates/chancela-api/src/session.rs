@@ -111,6 +111,12 @@ pub(crate) struct DurableSessionRecord {
     /// `None` for a v1 record or when no IP could be resolved.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) ip: Option<String>,
+    /// Whether `ip` was **asserted** by a trusted proxy's forwarding header rather than observed as
+    /// this process's TCP peer (see [`crate::AddressSource`]). Defaults to `false`, and is omitted
+    /// from the file when false, so a record written by a deployment with no trusted proxy is
+    /// byte-identical to what the previous version wrote and needs no schema bump.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub(crate) ip_asserted: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -167,14 +173,15 @@ impl DurableSessionRegistry {
         self.0.path.is_some()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    /// Takes the whole [`SessionOrigin`] rather than its fields one by one: the address and the
+    /// provenance flag are a single fact, and passing them separately is how a caller ends up
+    /// storing an asserted address without the mark that says so.
     pub(crate) async fn insert(
         &self,
         token: &str,
         session_id: Uuid,
         user_id: Uuid,
-        device: Option<String>,
-        ip: Option<String>,
+        origin: SessionOrigin,
         issued_at: OffsetDateTime,
         expires_at: OffsetDateTime,
     ) -> Result<(), ApiError> {
@@ -186,8 +193,9 @@ impl DurableSessionRegistry {
             issued_at_unix: issued_at.unix_timestamp(),
             last_seen_unix: issued_at.unix_timestamp(),
             expires_at_unix: expires_at.unix_timestamp(),
-            device,
-            ip,
+            device: origin.device,
+            ip: origin.ip,
+            ip_asserted: origin.ip_asserted,
         };
         let mut records = self.0.records.write().await;
         let mut next = records.clone();
@@ -1162,6 +1170,11 @@ pub struct SessionInfoView {
     pub device: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ip: Option<String>,
+    /// Whether `ip` was asserted by a proxy header rather than observed as the server's TCP peer.
+    /// The UI marks an asserted address so an operator deciding "do I recognise this?" is not shown
+    /// a client-supplied value as something the server witnessed. Always present on the wire (never
+    /// skipped): a missing flag would read as "observed", which is the claim that must be earned.
+    pub ip_asserted: bool,
     #[serde(with = "time::serde::rfc3339")]
     pub issued_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
@@ -1192,6 +1205,7 @@ struct ListedSession {
     expires_at_unix: i64,
     device: Option<String>,
     ip: Option<String>,
+    ip_asserted: bool,
 }
 
 fn unix_to_rfc3339(unix: i64) -> OffsetDateTime {
@@ -1252,6 +1266,7 @@ async fn listed_sessions_for(
                 expires_at_unix: s.last_seen_unix + crate::actor::SESSION_TTL_SECS,
                 device: s.device,
                 ip: s.ip,
+                ip_asserted: s.ip_asserted,
             })
             .collect()),
         cluster_shared_state::SessionListResult::Unavailable => Err(ApiError::Unavailable(
@@ -1271,6 +1286,7 @@ async fn listed_sessions_for(
                 expires_at_unix: r.expires_at_unix,
                 device: r.device,
                 ip: r.ip,
+                ip_asserted: r.ip_asserted,
             })
             .collect()),
     }
@@ -1297,6 +1313,7 @@ pub async fn list_sessions(
             session_id: s.session_id.to_string(),
             device: s.device,
             ip: s.ip,
+            ip_asserted: s.ip_asserted,
             issued_at: unix_to_rfc3339(s.issued_at_unix),
             last_seen_at: unix_to_rfc3339(s.last_seen_unix.max(s.issued_at_unix)),
             expires_at: unix_to_rfc3339(s.expires_at_unix),
@@ -1414,15 +1431,7 @@ pub(crate) async fn mint_session(
     if state.durable_sessions.is_durable() {
         state
             .durable_sessions
-            .insert(
-                &token,
-                session_id,
-                uid.0,
-                origin.device.clone(),
-                origin.ip.clone(),
-                now,
-                expires_at,
-            )
+            .insert(&token, session_id, uid.0, origin.clone(), now, expires_at)
             .await?;
     }
     // Redis is the authority in HA. Do not return a node-local token if the shared write could not
@@ -1435,6 +1444,7 @@ pub(crate) async fn mint_session(
             issued_at_unix: now.unix_timestamp(),
             device: origin.device,
             ip: origin.ip,
+            ip_asserted: origin.ip_asserted,
         },
         std::time::Duration::from_secs(SESSION_TTL_SECS.max(0) as u64),
     ) {
@@ -1471,6 +1481,11 @@ pub(crate) async fn mint_session(
 pub struct SessionOrigin {
     pub device: Option<String>,
     pub ip: Option<String>,
+    /// Whether `ip` came from a trusted proxy's forwarding header (**asserted**) rather than from
+    /// this process's TCP peer (**observed**) — see [`crate::AddressSource`]. Defaults to `false`,
+    /// which is the honest value for the identity-only origins (pairing, tests) that carry no
+    /// address at all.
+    pub ip_asserted: bool,
 }
 
 async fn upgrade_password_hash_after_signin(
@@ -1739,8 +1754,7 @@ mod durable_tests {
                 token,
                 Uuid::new_v4(),
                 uid,
-                None,
-                None,
+                SessionOrigin::default(),
                 issued_at,
                 issued_at + Duration::hours(1),
             )
@@ -1796,8 +1810,7 @@ mod durable_tests {
                 "new-token",
                 Uuid::new_v4(),
                 uid,
-                None,
-                None,
+                SessionOrigin::default(),
                 issued_at,
                 issued_at + Duration::hours(1),
             )
