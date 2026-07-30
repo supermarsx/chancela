@@ -137,6 +137,7 @@ const amaCertInspection: AmaCertificateInspectResponse = {
   rsa_public_key: true,
   key_bits: 2048,
   within_validity: true,
+  sha256_fingerprint: '9f2c4a6e0b1d83577e4c1a90de2f6b3418c705d9a2e64bf07c31d85a49e0b2c6',
   subject: 'CN=CMD Field Encryption,O=AMA,C=PT',
   issuer: 'CN=CMD Field Encryption,O=AMA,C=PT',
   not_before: '2026-07-06T18:43:30Z',
@@ -265,9 +266,12 @@ describe('ProviderCredentialPage', () => {
       const create = stub.calls.find(
         (call) => call.method === 'POST' && call.url.endsWith('/cmd/_/entries'),
       );
+      // `env` is written explicitly, and written as `preprod`. It is the only place the CMD
+      // environment can be expressed now that the settings card carries no default, so a new entry
+      // must not leave the server to infer one — and must not start in production.
       expect(JSON.parse(create?.body ?? '{}')).toEqual({
         enabled: true,
-        selectors: {},
+        selectors: { env: 'preprod' },
         set: { application_id: 'cmd-app-id' },
       });
       expect(screen.getByTestId('location').textContent).toBe('/admin/signing/providers');
@@ -650,14 +654,34 @@ describe('ProviderCredentialPage', () => {
     // `_` is the empty-provider sentinel `providerCredentialEditPath` mints; CMD has no provider id.
     renderPage('/admin/signing/providers/cmd/_/cmd-entry-1/edit');
 
-    expect(
-      await screen.findByRole('button', {
-        name: copy['providerCredentials.cmdTest.button'],
-      }),
-    ).toBeTruthy();
+    expect(await screen.findByTestId('cmd-test-signature-open')).toBeTruthy();
     // The section names the connection to the probe rather than sitting there unexplained.
     expect(screen.getByText(copy['providerCredentials.cmdTest.sectionIntro'])).toBeTruthy();
     expect(screen.getByText(copy['providerCredentials.cmdTest.sectionWhatItDoes'])).toBeTruthy();
+  });
+
+  /**
+   * The one control on this surface that is deliberately NOT icon-only.
+   *
+   * Alone under its heading, and a completed run costs a real qualified electronic signature — so
+   * the consequence has to be legible from the button itself, not only from the paragraph above
+   * it. The assertions are on the accessible name (read out of the catalog, never a pasted
+   * sentence) and on the rendered structure, so they survive a re-translation.
+   */
+  it('labels the end-to-end test rather than leaving the gravest action as a bare glyph', async () => {
+    vi.stubGlobal('fetch', stubFetch({ view: cmdEntryView }).fn);
+    renderPage('/admin/signing/providers/cmd/_/cmd-entry-1/edit');
+
+    const button = await screen.findByTestId('cmd-test-signature-open');
+    const label = ptPT['settings.providerCredentials.cmdTest.runEndToEnd'];
+    // The label is VISIBLE text, not only an `aria-label`: an icon-only control would carry the
+    // name without rendering it.
+    expect(button.textContent).toContain(label);
+    expect(button.getAttribute('aria-label')).toBeNull();
+    expect(button.className).not.toContain('btn--iconOnly');
+    // The glyph stays alongside it, which is this app's primary-button idiom.
+    expect(button.querySelector('.btn__icon')).toBeTruthy();
+    expect(screen.getByRole('button', { name: label })).toBe(button);
   });
 
   it('does not offer the end-to-end CMD test on a non-CMD credential page', async () => {
@@ -665,9 +689,7 @@ describe('ProviderCredentialPage', () => {
     renderPage('/admin/signing/providers/csc/encosto%20qtsp/entry-a/edit');
 
     expect(await screen.findByRole('button', { name: 'Testar' })).toBeTruthy();
-    expect(
-      screen.queryByRole('button', { name: copy['providerCredentials.cmdTest.button'] }),
-    ).toBeNull();
+    expect(screen.queryByTestId('cmd-test-signature-open')).toBeNull();
   });
 
   /**
@@ -819,6 +841,85 @@ describe('ProviderCredentialPage', () => {
       // de` / `Válido até` are date LABELS, so the guard looks for the verdict words only.
       expect(panel.textContent).not.toMatch(/\bcertificado v[áa]lido\b/i);
       expect(panel.textContent).not.toMatch(/\bconfi[áa]vel\b/i);
+    });
+
+    /**
+     * The fingerprint is the only checkable thing on the panel, and it must not read as a verdict.
+     *
+     * Subject, issuer and dates all come out of the candidate itself and would look identical on a
+     * substituted certificate; the SHA-256 of the DER is what an operator can hold against what AMA
+     * issued them. So it is shown, it is shown verbatim, and the sentence beside it says who has to
+     * do the comparing — because the server did not.
+     */
+    it('shows the DER fingerprint verbatim and says the comparison is the operator’s to make', async () => {
+      const { field } = await openCmdCreatePage();
+      fireEvent.change(field, { target: { value: PEM } });
+      fireEvent.click(screen.getByTestId('ama-cert-inspect'));
+
+      const panel = await screen.findByTestId('ama-cert-inspect-result');
+      const fingerprint = within(panel).getByTestId('ama-cert-fingerprint');
+      expect(fingerprint.textContent).toBe(amaCertInspection.sha256_fingerprint);
+      expect(
+        within(panel).getByText(
+          ptPT['settings.providerCredentials.field.amaCertPem.inspect.fingerprint'],
+        ),
+      ).toBeTruthy();
+      expect(
+        within(panel).getByText(
+          ptPT['settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint'],
+        ),
+      ).toBeTruthy();
+    });
+
+    /**
+     * A refusal must name the defect, in the operator's language, not read as "invalid".
+     *
+     * The server normalises first and only then refuses, so anything that reaches this path is a
+     * real difference that would have changed the decoded certificate. Each one carries its own
+     * code; this proves the client has a translated sentence for them rather than falling back to
+     * the server's English.
+     */
+    it.each([
+      ['ama_cert_wrong_pem_label', { label: 'PRIVATE KEY' }],
+      ['ama_cert_multiple_blocks', { count: '2' }],
+      ['ama_cert_illegal_character', { character: 'U+201C', offset: '95' }],
+      ['ama_cert_armour_missing', {}],
+    ] as const)('names a %s refusal in the operator’s language', async (code, params) => {
+      const refused: AmaCertificateInspectResponse = {
+        parsed: false,
+        rsa_public_key: false,
+        chain_validated: false,
+        trusted_list_checked: false,
+        issuer_authenticated: false,
+        legal_validity_claimed: false,
+        checks: [
+          {
+            name: 'certificate_parsed',
+            status: 'failed',
+            detail: 'server English that must not reach the screen',
+            detail_code: code,
+            detail_params: params as Record<string, string>,
+          },
+        ],
+      };
+      vi.stubGlobal('fetch', stubFetch({ inspectBody: refused }).fn);
+      renderPage('/admin/signing/providers/new?mode=cmd');
+      const field = (await screen.findByLabelText(
+        ptPT['settings.providerCredentials.field.amaCertPem'],
+      )) as HTMLTextAreaElement;
+      fireEvent.change(field, { target: { value: PEM } });
+      fireEvent.click(screen.getByTestId('ama-cert-inspect'));
+
+      const panel = await screen.findByTestId('ama-cert-inspect-result');
+      expect(panel.textContent).not.toContain('server English that must not reach the screen');
+      // The machine parameters reach the operator verbatim — they are what a person greps for.
+      for (const value of Object.values(params)) {
+        expect(panel.querySelector('[data-check="certificate_parsed"]')?.textContent).toContain(
+          value,
+        );
+      }
+      // Nothing was fingerprinted, so nothing pretends to identify a certificate.
+      expect(within(panel).queryByTestId('ama-cert-fingerprint')).toBeNull();
     });
 
     it('renders an expired certificate as a failed check, keeping the parse result honest', async () => {

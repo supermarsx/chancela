@@ -17,7 +17,13 @@
  *  - **all 14 locales** must carry every key, not just the en-US source the compiler checks.
  */
 import { describe, expect, it } from 'vitest';
-import { PROBE_DETAIL_KEYS, probeDetailKey, resolveProbeDetail } from './providerProbeDiagnostics';
+import {
+  PROBE_CHECK_NAME_KEYS,
+  PROBE_DETAIL_KEYS,
+  probeDetailKey,
+  resolveProbeCheckName,
+  resolveProbeDetail,
+} from './providerProbeDiagnostics';
 import { ptPT } from './locales/pt-PT';
 import { daDK } from './locales/da-DK';
 import { deDE } from './locales/de-DE';
@@ -52,6 +58,7 @@ const ALL_CATALOGS: Record<string, Record<string, string>> = {
 };
 
 const PREFIX = 'settings.providerCredentials.probe.detail.';
+const NAME_PREFIX = 'settings.providerCredentials.probe.checkName.';
 
 /**
  * The detail codes the Rust side can emit, read out of its own closed list.
@@ -85,6 +92,109 @@ async function emittedDetailCodes(): Promise<{ declared: Set<string>; listed: Se
 
   return { declared: new Set(declarations.values()), listed };
 }
+
+/**
+ * The check NAMES the Rust side can emit, read out of the same file, the same two ways.
+ *
+ * This half of the guard was missing, which is why `trusted_list_anchors` and
+ * `stored_credential_fields` shipped as literal row labels in fourteen locales while every
+ * sentence beside them was translated. Widened here rather than split into a second test file, so
+ * there is one place that answers "does the client cover what the server emits?".
+ *
+ * The declaration shape differs from the codes' — `pub const NAME: CheckName = CheckName("value");`
+ * — because the Rust side made check names a newtype so the compiler enumerates their call sites.
+ */
+async function emittedCheckNames(): Promise<{ declared: Set<string>; listed: Set<string> }> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  const source = readFileSync('../../crates/chancela-api/src/provider_probe_codes.rs', 'utf8');
+
+  const declarations = new Map<string, string>();
+  for (const match of source.matchAll(
+    /pub const ([A-Z0-9_]+): CheckName =\s*CheckName\("([a-z0-9_]+)"\);/g,
+  )) {
+    declarations.set(match[1], match[2]);
+  }
+
+  const listBody =
+    /ALL_PROBE_CHECK_NAMES: &\[CheckName\] = &\[([\s\S]*?)\];/.exec(source)?.[1] ?? '';
+  const listed = new Set<string>();
+  for (const match of listBody.matchAll(/^\s{4}([A-Z0-9_]+),$/gm)) {
+    const value = declarations.get(match[1]);
+    if (value) listed.add(value);
+  }
+
+  return { declared: new Set(declarations.values()), listed };
+}
+
+describe('provider probe diagnostics cover every CHECK NAME the server can emit', () => {
+  it('extracts a non-vacuous check-name list from the Rust source', async () => {
+    const { declared, listed } = await emittedCheckNames();
+    expect(declared.size, 'the CheckName constant scan matched nothing').toBeGreaterThan(0);
+    expect(listed.size, 'the ALL_PROBE_CHECK_NAMES scan matched nothing').toBeGreaterThan(0);
+    expect(listed.size).toBeGreaterThanOrEqual(30);
+  });
+
+  it('lists every declared check name (none declared but left out of the closed list)', async () => {
+    const { declared, listed } = await emittedCheckNames();
+    expect([...declared].filter((name) => !listed.has(name)).sort()).toEqual([]);
+  });
+
+  it('maps every emitted check name to a catalog key', async () => {
+    const { listed } = await emittedCheckNames();
+    const unmapped = [...listed].filter((name) => PROBE_CHECK_NAME_KEYS[name] === undefined);
+    expect(
+      unmapped.sort(),
+      'a check name the backend can emit has no label, so the row would render as a raw identifier',
+    ).toEqual([]);
+  });
+
+  it('has no stale check-name entries beyond what the backend emits', async () => {
+    const { listed } = await emittedCheckNames();
+    const stale = Object.keys(PROBE_CHECK_NAME_KEYS).filter((name) => !listed.has(name));
+    expect(stale.sort(), 'the map claims check names the server no longer emits').toEqual([]);
+  });
+
+  it('carries every check-name label in all 14 locales, non-empty', () => {
+    const keys = Object.values(PROBE_CHECK_NAME_KEYS);
+    expect(keys.length).toBeGreaterThanOrEqual(30);
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      const missing = keys.filter((key) => !catalog[key]?.trim());
+      expect(missing.sort(), `${locale} is missing check-name labels`).toEqual([]);
+    }
+  });
+
+  it('has no orphan catalog key under the check-name prefix', () => {
+    const mapped = new Set<string>(Object.values(PROBE_CHECK_NAME_KEYS));
+    const orphans = Object.keys(enUS).filter(
+      (key) => key.startsWith(NAME_PREFIX) && !mapped.has(key),
+    );
+    expect(orphans.sort()).toEqual([]);
+  });
+
+  it('keeps a label free of the placeholders a row label has no values for', () => {
+    // A row label interpolates nothing — the params belong to the sentence beside it. A stray
+    // `{…}` here would render a literal brace with no chance of ever being filled.
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      for (const key of Object.values(PROBE_CHECK_NAME_KEYS)) {
+        expect(catalog[key], `${locale} · ${key}`).not.toMatch(/\{\w+\}/);
+      }
+    }
+  });
+
+  it('falls back to the raw identifier, marked, for a name this build does not know', () => {
+    const resolved = resolveProbeCheckName({ name: 'a_name_from_the_future' }, () => 'unused');
+    expect(resolved).toEqual({ text: 'a_name_from_the_future', untranslated: true });
+  });
+
+  it('translates a name it does know, without marking it', () => {
+    const resolved = resolveProbeCheckName({ name: 'trusted_list_anchors' }, (key) => `t:${key}`);
+    expect(resolved.untranslated).toBe(false);
+    expect(resolved.text).toBe(`t:${NAME_PREFIX}trusted_list_anchors`);
+  });
+});
 
 describe('provider probe diagnostics cover every code the server can emit', () => {
   it('extracts a non-vacuous code list from the Rust source', async () => {

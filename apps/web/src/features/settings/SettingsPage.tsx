@@ -2878,35 +2878,31 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
 
               {/* Chave Móvel Digital. The AMA secret material is supplied via environment
                   variables, never the settings document, so it stays a read-only fact below.
-                  The ENVIRONMENT is different (t113): it is a real decision an operator makes,
-                  and leaving it as a `<dd>` meant the only two places it could be expressed —
-                  this and the per-entry selector — were both inert from the UI. It is now the
-                  editable DEFAULT for a credential entry that declares no environment of its
-                  own; an entry that declares one overrides it, and the hint says so. */}
+
+                  There is deliberately NO environment control here. An earlier pass made
+                  `settings.signing.cmd.env` an editable default for an entry that declares none,
+                  which was a defensible reading at the time and turned out to be the wrong shape:
+                  it left prod/preprod expressible in two places, and a deployment could hold a
+                  preprod credential and a production credential side by side, which a single
+                  deployment-wide switch cannot describe at all. **The credential entry's own `env`
+                  selector is the single source of truth**, and the CMD entry form now always writes
+                  it, so the settings fallback is unreachable for any entry-based credential.
+
+                  The settings field itself still exists in the document. It is the only
+                  environment source left for the env-var-configured route
+                  (`signature.rs::cmd_config_from_env`), which has no entry and therefore no
+                  selector; `CHANCELA_CMD_ENV` is excluded from the override registry and does not
+                  decide it. That fallback is documented in `resolve_cmd_env` rather than surfaced
+                  here, because a control on this card would be a second way to say the same thing
+                  for everybody who does have entries — which is exactly what was removed.
+
+                  If you are about to add an environment row back: the rule is that every
+                  environment affordance on screen either decides the outcome or does not exist.
+                  A read-only row here would imply this card decides, and it does not. */}
               {sub === 'cmd' ? (
                 <Card title={t('settings.signing.cmd.title')}>
                   <div className="form settings-rows">
                     <p className="field__hint">{t('settings.signing.cmd.intro')}</p>
-                    <Field
-                      label={t('settings.signing.cmd.env')}
-                      htmlFor="set-cmd-env"
-                      hint={t('settings.signing.cmd.envHint')}
-                    >
-                      <Select
-                        id="set-cmd-env"
-                        value={draft.signing.cmd.env}
-                        onChange={(e) =>
-                          setSigning('cmd', {
-                            ...draft.signing.cmd,
-                            env: e.target.value as 'preprod' | 'prod',
-                          })
-                        }
-                        options={[
-                          { value: 'preprod', label: t('settings.signing.cmd.envPreprod') },
-                          { value: 'prod', label: t('settings.signing.cmd.envProd') },
-                        ]}
-                      />
-                    </Field>
                     <dl className="deflist">
                       <div>
                         <dt>{t('settings.signing.cmd.applicationId')}</dt>

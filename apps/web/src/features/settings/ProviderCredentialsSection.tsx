@@ -55,7 +55,7 @@ import { useActiveLocale, useT, type TFunction } from '../../i18n';
 import { formatDateTime } from '../../format';
 import type { MessageKey } from '../../i18n';
 import { useProviderCredentialsT } from '../../i18n/providerCredentialsFallback';
-import { resolveProbeDetail } from '../../i18n/providerProbeDiagnostics';
+import { resolveProbeCheckName, resolveProbeDetail } from '../../i18n/providerProbeDiagnostics';
 import { allowNextNavigation, useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import {
   Badge,
@@ -199,6 +199,21 @@ interface SelectorFieldSpec {
    * keeps it absent. See {@link initialSelectors}.
    */
   newEntryOn?: boolean;
+  /**
+   * For a `kind: 'env'` selector that is REQUIRED — the value the server resolves an absent
+   * selector to, and the value a new entry is created with.
+   *
+   * One field rather than the `defaultOn`/`newEntryOn` pair, because for the selector that has it
+   * the two answers are the same, and that identity is the whole point: writing the value an
+   * absent selector already resolves to cannot change what any stored credential does, which is
+   * what makes it safe to write it unconditionally and thereby retire the fallback.
+   *
+   * Declaring this also removes the "not set" option from the control. That third state used to
+   * mean "take the deployment default", and there is no longer a deployment default anybody can
+   * see or change from the UI — so offering it would be offering a choice whose outcome is
+   * invisible. See {@link SELECTOR_FIELDS}.`cmd`.
+   */
+  requiredDefault?: string;
 }
 
 /**
@@ -316,7 +331,26 @@ const SECRET_FIELDS: Record<CredentialMode, SecretFieldSpec[]> = {
 
 /** Per-mode NON-secret selectors, persisted plainly and returned in responses. */
 const SELECTOR_FIELDS: Record<CredentialMode, SelectorFieldSpec[]> = {
-  cmd: [{ name: 'env', labelKey: 'settings.providerCredentials.field.env', kind: 'env' }],
+  // CMD's environment is decided HERE and nowhere else. The settings card used to carry a
+  // deployment-wide default for an entry that declared none; that is gone, because prod/preprod
+  // expressible in two places is one place too many and a single switch cannot describe an
+  // installation holding a preprod and a production credential side by side.
+  //
+  // `requiredDefault: 'preprod'` is what makes the removal safe rather than merely tidy. Before
+  // this, an entry with no `env` selector resolved through `settings.signing.cmd.env`, which ships
+  // as `preprod` and had no editor at all until very recently — so `preprod` is what such an entry
+  // resolves to today, in every deployment that did not reach past the UI to change it. Writing it
+  // explicitly therefore changes no credential's behaviour, and it moves nothing to production:
+  // promotion stays an act the operator performs on this control, which is the only place it can
+  // now be performed.
+  cmd: [
+    {
+      name: 'env',
+      labelKey: 'settings.providerCredentials.field.env',
+      kind: 'env',
+      requiredDefault: 'preprod',
+    },
+  ],
   csc: [
     {
       name: 'authorization',
@@ -481,19 +515,47 @@ interface EntryFormState {
 
 /**
  * The selectors a NEW entry starts with — the toggles that declare a {@link
- * SelectorFieldSpec.newEntryOn}, and nothing else.
+ * SelectorFieldSpec.newEntryOn} and the selectors that declare a {@link
+ * SelectorFieldSpec.requiredDefault}.
  *
  * Seeding a value here is what stops the server's absent-key default from deciding a security
  * posture nobody chose: `buildSelectors` keeps any non-empty value, so `'false'` survives to the
- * request body and `selector_bool` reads a real answer rather than falling back. Selectors with no
- * `newEntryOn` stay absent, which is still the right shape for the ones whose "unset" is a genuine
- * third state (`env`, `authorization`) rather than a boolean.
+ * request body and `selector_bool` reads a real answer rather than falling back. Selectors with
+ * neither stay absent, which is still the right shape for the ones whose "unset" is a genuine third
+ * state (`authorization`, SCAP's `environment`) rather than a boolean.
  */
 function initialSelectors(mode: CredentialMode): Record<string, string> {
   const out: Record<string, string> = {};
   for (const spec of SELECTOR_FIELDS[mode]) {
     if (spec.kind === 'toggle' && spec.newEntryOn !== undefined)
       out[spec.name] = spec.newEntryOn ? 'true' : 'false';
+    if (spec.requiredDefault !== undefined) out[spec.name] = spec.requiredDefault;
+  }
+  return out;
+}
+
+/**
+ * Fill in the {@link SelectorFieldSpec.requiredDefault} of any selector an EXISTING entry does not
+ * carry, so the form shows — and resubmits — the value already in force.
+ *
+ * This is the one deliberate exception to the rule stated where the edit form loads its state (an
+ * entry's absent selector stays absent). It is allowed here, and only here, because
+ * `requiredDefault` is defined as *the value the server already resolves an absent selector to*:
+ * putting it in the form displays what is in force rather than a create-time preference, and
+ * resubmitting it writes the same outcome the entry already had. That is what lets the deployment
+ * fallback be retired without any stored credential changing environment.
+ *
+ * It never applies to `newEntryOn`, which genuinely is a create-time preference and would rewrite a
+ * stored posture on an unrelated edit.
+ */
+function withRequiredSelectorDefaults(
+  mode: CredentialMode,
+  selectors: Record<string, string>,
+): Record<string, string> {
+  const out = { ...selectors };
+  for (const spec of SELECTOR_FIELDS[mode]) {
+    if (spec.requiredDefault === undefined) continue;
+    if (!out[spec.name]?.trim()) out[spec.name] = spec.requiredDefault;
   }
   return out;
 }
@@ -548,7 +610,12 @@ export function ProviderCredentialEntryForm({
       // entry's sandbox posture on any unrelated edit — a label change flipping HTTPS enforcement.
       // An entry whose selector is absent therefore keeps it absent, and the server keeps applying
       // the same default it applies today.
-      base.selectors = { ...existing.selectors };
+      //
+      // `withRequiredSelectorDefaults` is the single, narrow exception, and it does not break that
+      // rule so much as satisfy it by another route: a `requiredDefault` IS the value the server
+      // applies today, so filling it in shows and resubmits the same outcome the entry already has.
+      // See its doc comment for why that distinction is load-bearing.
+      base.selectors = withRequiredSelectorDefaults(mode, existing.selectors);
     }
     if (providerId !== undefined) base.providerId = providerId;
     baselineRef.current = base;
@@ -574,7 +641,13 @@ export function ProviderCredentialEntryForm({
     const set: Record<string, string> = {};
     for (const spec of SECRET_FIELDS[effectiveMode]) {
       const value = form.secrets[spec.name];
-      if (value && value.length > 0) set[spec.name] = value;
+      if (!value || value.length === 0) continue;
+      // The AMA certificate is the one field here that cannot legitimately be whitespace, and the
+      // server now refuses a candidate that is nothing but whitespace. Treating it as untouched
+      // keeps a stray newline in the textarea from blocking a metadata-only edit; a password of
+      // all spaces is a different matter and is still submitted verbatim.
+      if (spec.name === AMA_CERT_PEM_FIELD && value.trim().length === 0) continue;
+      set[spec.name] = value;
     }
     if (effectiveMode === 'pkcs12' && form.pfxBase64) set.pfx_der = form.pfxBase64;
     return set;
@@ -787,7 +860,13 @@ export function ProviderCredentialEntryForm({
             const options =
               spec.kind === 'env'
                 ? [
-                    { value: '', label: t('settings.providerCredentials.field.env.unset') },
+                    // "Not set" means "fall back to the deployment default". CMD no longer has one
+                    // an operator can see or change, so for CMD the option is not offered: a
+                    // choice whose outcome is invisible is worse than no choice. SCAP keeps it —
+                    // its absent selector is a genuine third state with its own documented default.
+                    ...(spec.requiredDefault === undefined
+                      ? [{ value: '', label: t('settings.providerCredentials.field.env.unset') }]
+                      : []),
                     {
                       value: 'preprod',
                       label: t('settings.providerCredentials.field.env.preprod'),
@@ -988,6 +1067,26 @@ function AmaCertInspectPanel({ report }: { report: AmaCertificateInspectResponse
           </li>
         ))}
       </ul>
+      {/* The fingerprint leads, and sits outside the subject/issuer grid on purpose. It is the one
+          value on this panel an operator can CHECK — everything below it is copied out of the
+          certificate itself and would read the same on a substituted one. The sentence under it
+          says who has to do the comparing, because the server does not and must not look like it
+          did. */}
+      {report.sha256_fingerprint ? (
+        <div className="stack stack--tight">
+          <dl className="detail-grid">
+            <div>
+              <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.fingerprint')}</dt>
+              <dd className="mono" data-testid="ama-cert-fingerprint">
+                {report.sha256_fingerprint}
+              </dd>
+            </div>
+          </dl>
+          <p className="field__hint">
+            {t('settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint')}
+          </p>
+        </div>
+      ) : null}
       {report.parsed ? (
         <dl className="detail-grid">
           <div>
@@ -1291,6 +1390,41 @@ function ProbeDetailText({ check }: { check: ProviderCredentialProbeCheck }) {
 }
 
 /**
+ * One check's ROW LABEL, in the operator's language.
+ *
+ * This is the half the first pass at these diagnostics missed. The label rendered as the server's
+ * raw `name` — `trusted_list_anchors`, `stored_credential_fields` — in `mono`, directly above a
+ * fully translated sentence, in every locale. The `mono` made it look deliberate, which is exactly
+ * what made it survive: this codebase does render some identifiers verbatim on purpose, and an
+ * accidentally-untranslated one dressed the same way is indistinguishable from those.
+ *
+ * So a known name is ordinary prose in the page language, with no `mono`. A name this build does
+ * not know keeps the identifier, keeps the `mono` — because at that point it genuinely IS a raw
+ * identifier — and gets the same `In English` badge and `lang="en"` the unknown-code path uses.
+ * The marking is the point: a silent fallback would make the next backend-added name invisible.
+ */
+function ProbeCheckLabel({ check }: { check: ProviderCredentialProbeCheck }) {
+  const t = useT();
+  const label = resolveProbeCheckName(check, t);
+  if (!label.untranslated) return <strong>{label.text}</strong>;
+  return (
+    <>
+      <strong className="mono" lang="en">
+        {label.text}
+      </strong>{' '}
+      <Badge tone="neutral">
+        <TooltipText
+          label={t('settings.providerCredentials.probe.untranslatedHint')}
+          onlyWhenClipped={false}
+        >
+          {t('settings.providerCredentials.probe.untranslatedBadge')}
+        </TooltipText>
+      </Badge>
+    </>
+  );
+}
+
+/**
  * The per-check log and the honest legal-status grid. Rendered inside
  * {@link ProviderCredentialProbeModal}; kept a separate component so the panel and the dialog
  * chrome stay independently readable.
@@ -1348,8 +1482,7 @@ export function ProviderCredentialProbeResult({
             >
               {pt(`providerCredentials.probe.check.${probeCheck.status}`)}
             </Badge>{' '}
-            <strong className="mono">{probeCheck.name}</strong> —{' '}
-            <ProbeDetailText check={probeCheck} />
+            <ProbeCheckLabel check={probeCheck} /> — <ProbeDetailText check={probeCheck} />
           </li>
         ))}
       </ul>

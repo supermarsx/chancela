@@ -215,7 +215,14 @@ export function ProviderCredentialPage() {
           <div className="stack stack--tight">
             <p className="field__hint">{pt('providerCredentials.cmdTest.sectionIntro')}</p>
             <p className="field__hint">{pt('providerCredentials.cmdTest.sectionWhatItDoes')}</p>
-            <CmdTestSignatureAction entry={existing} canPerform={canPerform} />
+            {/* Labelled, not icon-only: this control is alone under its heading, and a completed
+                run costs a real qualified signature. See CmdTestSignatureAction for the full
+                reasoning — it is the deliberate exception to the icon-only row treatment. */}
+            <CmdTestSignatureAction
+              entry={existing}
+              canPerform={canPerform}
+              presentation="labelled"
+            />
           </div>
         </Card>
       ) : null}

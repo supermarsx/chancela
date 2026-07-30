@@ -632,6 +632,17 @@ function CmdTestSignatureFlowModal({
 }
 
 /**
+ * How the launcher presents itself, which depends entirely on where it is placed.
+ *
+ * - `'icon'` — inside the credential table, alongside move/edit/probe/remove. Labels there would
+ *   crowd a cell that already holds four other controls, and the accessible name carries the whole
+ *   sentence instead.
+ * - `'labelled'` — under the *Teste de ponta a ponta em produção* heading, where this is the only
+ *   control on screen. See {@link CmdTestSignatureAction} for why that one is the exception.
+ */
+export type CmdTestSignaturePresentation = 'icon' | 'labelled';
+
+/**
  * The launcher, and the owner of a run's state.
  *
  * State lives here rather than in the dialog so that closing the dialog is not the same as
@@ -639,14 +650,33 @@ function CmdTestSignatureFlowModal({
  * test owns a retained signed PDF. The row therefore carries one control whose label says where
  * the run stands, and reopening resumes it at the step it is actually on — instead of the
  * previous arrangement, which grew a pending block and the whole result panel inside a table cell.
+ *
+ * # Why this control is the exception to icon-only
+ *
+ * Everything else on this surface was made icon-only (t112) because it sits in a dense row where
+ * five labels would not fit and the glyphs are unambiguous. This one is placed twice, and the two
+ * placements are not the same control in the same context:
+ *
+ * - In the table it is one of five, and it keeps the pen nib.
+ * - Under the end-to-end section heading it stands **alone**, and it is the most consequential
+ *   control anywhere in the settings: a completed run costs one real qualified electronic
+ *   signature against AMA's production service, billed and legally effective. There is no crowding
+ *   argument there, and a bare pen nib made the page's gravest action its least legible one — the
+ *   glyph cannot say "a real qualified signature" and nothing but the surrounding paragraph did.
+ *
+ * So `'labelled'` states the consequence in the button itself. An operator should not have to have
+ * read the paragraph above to know what they are about to start.
  */
 export function CmdTestSignatureAction({
   entry,
   canPerform,
+  presentation = 'icon',
 }: {
   entry: ProviderCredentialEntryView;
   canPerform: boolean;
+  presentation?: CmdTestSignaturePresentation;
 }) {
+  const t = useT();
   const pt = useProviderCredentialsT();
 
   const [open, setOpen] = useState(false);
@@ -656,32 +686,60 @@ export function CmdTestSignatureAction({
 
   const disabled = !canPerform || !entry.enabled;
   const validated = result ? selfValidationOk(result.self_validation) : true;
+  const labelled = presentation === 'labelled';
 
   /**
-   * The control is icon-only (t112), so its accessible NAME has to carry everything the label
-   * used to: which action this is, and where the run stands. It is the tooltip text too, so a
-   * sighted operator reads the same sentence on hover or on keyboard focus — the pen nib is not
-   * expected to convey "a real qualified signature" on its own, and no other action in this row
-   * uses that glyph.
+   * What the control is called, in whichever state the run is in.
+   *
+   * In the icon presentation this is also the accessible NAME and the tooltip, so it has to carry
+   * everything a label would: which action this is, and where the run stands.
+   *
+   * The idle label differs between the two presentations, and only the idle one does. Alone under
+   * its heading the button says what it will do and what it costs; in the table it keeps the
+   * shorter row wording, because the accessible name of an icon competes with four siblings and
+   * the section paragraph is not there to lean on either way. The pending and completed states are
+   * already full sentences and read correctly in both places.
    */
   const actionLabel = !canPerform
-    ? pt('providerCredentials.cmdTest.permission')
+    ? labelled
+      ? t('settings.providerCredentials.cmdTest.runEndToEnd')
+      : pt('providerCredentials.cmdTest.permission')
     : result
       ? pt('providerCredentials.cmdTest.viewResult')
       : session
         ? pt('providerCredentials.cmdTest.confirmButton')
-        : pt('providerCredentials.cmdTest.button');
+        : labelled
+          ? t('settings.providerCredentials.cmdTest.runEndToEnd')
+          : pt('providerCredentials.cmdTest.button');
 
   return (
     <div className="stack stack--tight">
       <span className="row-wrap">
-        <IconButton
-          icon={<Icon.PenNib />}
-          label={actionLabel}
-          disabled={disabled}
-          data-testid="cmd-test-signature-open"
-          onClick={() => setOpen(true)}
-        />
+        {labelled ? (
+          // The icon stays: a primary button with a leading glyph is this app's idiom (the form's
+          // own submit, `provider.addEntry`), and the pen nib is the mark this action already owns.
+          <Button
+            type="button"
+            variant="primary"
+            icon={<Icon.PenNib />}
+            disabled={disabled}
+            // An inert button must still say why. `!entry.enabled` is visible on the row itself;
+            // the missing permission is not, so it is named here rather than swallowed.
+            title={!canPerform ? pt('providerCredentials.cmdTest.permission') : undefined}
+            data-testid="cmd-test-signature-open"
+            onClick={() => setOpen(true)}
+          >
+            {actionLabel}
+          </Button>
+        ) : (
+          <IconButton
+            icon={<Icon.PenNib />}
+            label={actionLabel}
+            disabled={disabled}
+            data-testid="cmd-test-signature-open"
+            onClick={() => setOpen(true)}
+          />
+        )}
         {session ? <Badge tone="warn">{pt('providerCredentials.cmdTest.pending')}</Badge> : null}
         {/* A test whose signature the application could NOT verify does not get to look like a
             clean pass from the table either. */}

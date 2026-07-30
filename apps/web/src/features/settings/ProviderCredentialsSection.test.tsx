@@ -227,11 +227,26 @@ describe('ProviderCredentialsSection', () => {
     expect(info.textContent).toContain('2');
     expect(info.textContent).not.toContain('CSC returned a parseable');
 
-    // An unknown code keeps the server's English, marked and tagged `lang="en"`.
-    const unknown = dialog.querySelector('[data-check="invented_check"]') as HTMLElement;
-    expect(unknown.querySelector('[lang="en"]')?.textContent).toBe(
-      'A sentence only a newer server knows.',
+    // …and so does the check's NAME, which is the half that shipped raw: the row used to read
+    // `credentials_info` in mono, in every locale, above a fully translated sentence.
+    expect(info.textContent).toContain(
+      ptPT['settings.providerCredentials.probe.checkName.credentials_info'],
     );
+    expect(info.textContent).not.toContain('credentials_info');
+    expect(info.querySelector('.mono')).toBeNull();
+    // The identifier itself is NOT lost — it is still the wire value and still the hook a test or
+    // a support conversation uses. It just stopped being the label.
+    expect(info.getAttribute('data-check')).toBe('credentials_info');
+
+    // An unknown code keeps the server's English, and an unknown NAME keeps the raw identifier.
+    // Both are marked and tagged `lang="en"`; neither is blanked, and neither passes itself off as
+    // localized copy.
+    const unknown = dialog.querySelector('[data-check="invented_check"]') as HTMLElement;
+    const english = [...unknown.querySelectorAll('[lang="en"]')].map((node) => node.textContent);
+    expect(english).toEqual(['invented_check', 'A sentence only a newer server knows.']);
+    // An unrecognised name keeps `mono`, because at that point it really is a raw identifier —
+    // which is what tells it apart from the identifiers this app renders verbatim on purpose.
+    expect(unknown.querySelector('.mono')?.textContent).toBe('invented_check');
   });
 
   it('confirms a PKCS#12 list probe and sends nothing on cancel', async () => {
@@ -571,6 +586,82 @@ describe('ProviderCredentialsSection', () => {
     expect(sandboxSwitch().checked).toBe(true);
     fireEvent.click(sandboxSwitch());
     expect(sandboxSwitch().checked).toBe(false);
+  });
+
+  const cmdEnvSelect = () =>
+    screen
+      .getByLabelText(ptPT['settings.providerCredentials.field.env'], { exact: false })
+      .closest('select') ??
+    (screen.getByLabelText(ptPT['settings.providerCredentials.field.env'], {
+      exact: false,
+    }) as HTMLSelectElement);
+
+  /**
+   * CMD's environment is decided on the entry and nowhere else, so the entry must always carry it.
+   *
+   * The settings card used to hold a deployment-wide default for an entry that declared none. That
+   * is gone, which means "not set" no longer resolves to anything an operator can see — so the
+   * option is not offered, and the control always holds a real answer.
+   */
+  it('always gives a CMD entry a real environment, and offers no “not set”', () => {
+    const noop = () => {};
+    const created = renderWithProviders(
+      <ProviderCredentialEntryForm mode="cmd" disabled={false} onDone={noop} onCancel={noop} />,
+    );
+
+    const select = cmdEnvSelect() as HTMLSelectElement;
+    // Ships pointing AWAY from production. Promotion is an act, never an inherited default.
+    expect(select.value).toBe('preprod');
+    expect([...select.options].map((option) => option.value)).toEqual(['preprod', 'prod']);
+    created.unmount();
+
+    // A stored entry that predates the selector shows what the server resolves it to today, so
+    // resubmitting it writes the same outcome rather than moving the credential.
+    renderWithProviders(
+      <ProviderCredentialEntryForm
+        mode="cmd"
+        providerId=""
+        existing={{
+          entry_id: 'cmd-legacy',
+          label: 'CMD',
+          priority: 0,
+          enabled: true,
+          selectors: {},
+          fields: [],
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        }}
+        disabled={false}
+        onDone={noop}
+        onCancel={noop}
+      />,
+    );
+    expect((cmdEnvSelect() as HTMLSelectElement).value).toBe('preprod');
+  });
+
+  /** An entry that already declares an environment keeps it — the default must swallow nothing. */
+  it('keeps a CMD entry that already selects production on production', () => {
+    const noop = () => {};
+    renderWithProviders(
+      <ProviderCredentialEntryForm
+        mode="cmd"
+        providerId=""
+        existing={{
+          entry_id: 'cmd-prod',
+          label: 'CMD produção',
+          priority: 0,
+          enabled: true,
+          selectors: { env: 'prod' },
+          fields: [],
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+        }}
+        disabled={false}
+        onDone={noop}
+        onCancel={noop}
+      />,
+    );
+    expect((cmdEnvSelect() as HTMLSelectElement).value).toBe('prod');
   });
 
   it('says what an empty endpoint means for the mode, instead of claiming a default', async () => {

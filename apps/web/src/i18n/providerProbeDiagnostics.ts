@@ -48,6 +48,68 @@ import type { MessageKey, TParams } from './types';
 /** The catalog-key prefix every diagnostic sentence lives under. */
 const PREFIX = 'settings.providerCredentials.probe.detail.';
 
+/** The catalog-key prefix every check's ROW LABEL lives under. */
+const NAME_PREFIX = 'settings.providerCredentials.probe.checkName.';
+
+/**
+ * Every check name a probe or an inspection can emit, mapped to its row label.
+ *
+ * # Why this exists separately from {@link PROBE_DETAIL_KEYS}
+ *
+ * A check carries two pieces of text: the sentence (`detail`, keyed by `detail_code`) and the
+ * thing naming it (`name`). The first round of this work translated the sentence and left the name
+ * rendering raw, so the probe panel showed `trusted_list_anchors` and `stored_credential_fields`
+ * as literal text in every locale, Portuguese included, immediately above a fully translated
+ * sentence. Same mechanism, same file, second dimension — not a parallel system.
+ *
+ * # Why these ARE translated, unlike the other verbatim identifiers
+ *
+ * This codebase deliberately renders some identifiers untranslated — the DPIA `no_claims` flags,
+ * the `CHANCELA_*` variable names, the `detail_params` values — because an operator types them
+ * into a form, greps them in a log, or matches them against a specification, and a translation
+ * would misrepresent what they are.
+ *
+ * A check name is none of those. It is a row label in a diagnostic table, read once by a human
+ * deciding what is broken. Nothing asks anybody to type it. And the identifier itself does not
+ * disappear: the API response, the `data-check` attribute and the audit payload all still carry
+ * the snake_case `name` untouched, so every place an operator could legitimately need it verbatim
+ * is unaffected. Only the label moves.
+ *
+ * Ordered as `ALL_PROBE_CHECK_NAMES` in `provider_probe_codes.rs`, so the two read side by side.
+ */
+export const PROBE_CHECK_NAME_KEYS: Record<string, MessageKey> = {
+  entry_enabled: `${NAME_PREFIX}entry_enabled`,
+  mode_supported: `${NAME_PREFIX}mode_supported`,
+  outbound_client: `${NAME_PREFIX}outbound_client`,
+  configured_environment: `${NAME_PREFIX}configured_environment`,
+  stored_credential_fields: `${NAME_PREFIX}stored_credential_fields`,
+  ama_certificate_parseable: `${NAME_PREFIX}ama_certificate_parseable`,
+  http_basic_configured: `${NAME_PREFIX}http_basic_configured`,
+  http_transport_ready: `${NAME_PREFIX}http_transport_ready`,
+  endpoint_matches_environment: `${NAME_PREFIX}endpoint_matches_environment`,
+  endpoint_reachable: `${NAME_PREFIX}endpoint_reachable`,
+  live_provider_operation: `${NAME_PREFIX}live_provider_operation`,
+  trusted_list_anchors: `${NAME_PREFIX}trusted_list_anchors`,
+  endpoint_safe: `${NAME_PREFIX}endpoint_safe`,
+  endpoint_https: `${NAME_PREFIX}endpoint_https`,
+  authorization_configuration: `${NAME_PREFIX}authorization_configuration`,
+  provider_configuration: `${NAME_PREFIX}provider_configuration`,
+  authentication: `${NAME_PREFIX}authentication`,
+  credentials_list: `${NAME_PREFIX}credentials_list`,
+  credential_selection: `${NAME_PREFIX}credential_selection`,
+  credentials_info: `${NAME_PREFIX}credentials_info`,
+  environment_configuration: `${NAME_PREFIX}environment_configuration`,
+  providers_list: `${NAME_PREFIX}providers_list`,
+  pkcs12_loaded: `${NAME_PREFIX}pkcs12_loaded`,
+  challenge_signed: `${NAME_PREFIX}challenge_signed`,
+  challenge_verified: `${NAME_PREFIX}challenge_verified`,
+  certificate_parsed: `${NAME_PREFIX}certificate_parsed`,
+  certificate_normalised: `${NAME_PREFIX}certificate_normalised`,
+  rsa_public_key: `${NAME_PREFIX}rsa_public_key`,
+  validity_window: `${NAME_PREFIX}validity_window`,
+  trust_established: `${NAME_PREFIX}trust_established`,
+};
+
 /**
  * Every detail code the probe can emit, mapped to its translated sentence.
  *
@@ -147,6 +209,19 @@ export const PROBE_DETAIL_KEYS: Record<string, MessageKey> = {
   // is emitted on every successful parse and says exactly that.
   ama_cert_parsed: `${PREFIX}ama_cert_parsed`,
   ama_cert_unparseable: `${PREFIX}ama_cert_unparseable`,
+  // The named refusals. A pasted certificate is normalised first (line endings, a BOM, trailing
+  // spaces — everything base64 ignores by specification), and each of these is a difference that
+  // survived that and would have changed the decoded bytes. `{character}` arrives as `U+XXXX`
+  // notation rather than the character itself, so a hostile candidate cannot inject a control code
+  // or a bidirectional override into a rendered sentence.
+  ama_cert_empty: `${PREFIX}ama_cert_empty`,
+  ama_cert_armour_missing: `${PREFIX}ama_cert_armour_missing`,
+  ama_cert_end_armour_missing: `${PREFIX}ama_cert_end_armour_missing`,
+  ama_cert_wrong_pem_label: `${PREFIX}ama_cert_wrong_pem_label`,
+  ama_cert_multiple_blocks: `${PREFIX}ama_cert_multiple_blocks`,
+  ama_cert_illegal_character: `${PREFIX}ama_cert_illegal_character`,
+  ama_cert_base64_invalid: `${PREFIX}ama_cert_base64_invalid`,
+  ama_cert_normalised: `${PREFIX}ama_cert_normalised`,
   ama_cert_rsa_key_present: `${PREFIX}ama_cert_rsa_key_present`,
   ama_cert_rsa_key_absent: `${PREFIX}ama_cert_rsa_key_absent`,
   ama_cert_within_validity: `${PREFIX}ama_cert_within_validity`,
@@ -193,4 +268,21 @@ export function resolveProbeDetail(
   const key = probeDetailKey(check.detail_code);
   if (!key) return { text: check.detail, untranslated: true };
   return { text: t(key, check.detail_params), untranslated: false };
+}
+
+/**
+ * Resolve one check's ROW LABEL into the operator's language.
+ *
+ * Same policy as {@link resolveProbeDetail}, and deliberately the same shape: a name this build
+ * does not know yields the raw identifier with `untranslated: true`, so the caller marks it rather
+ * than passing a snake_case token off as a label. Never blank — a diagnostic row with no name is
+ * worse than one with an ugly name.
+ */
+export function resolveProbeCheckName(
+  check: Pick<ProviderCredentialProbeCheck, 'name'>,
+  t: (key: MessageKey, params?: TParams) => string,
+): ResolvedProbeDetail {
+  const key = check.name ? PROBE_CHECK_NAME_KEYS[check.name] : undefined;
+  if (!key) return { text: check.name, untranslated: true };
+  return { text: t(key), untranslated: false };
 }

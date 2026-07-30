@@ -4627,6 +4627,16 @@ export interface AmaCertificateInspectResponse {
   key_bits?: number;
   /** `false` for expired or not-yet-valid; absent when the dates could not be read. */
   within_validity?: boolean;
+  /**
+   * SHA-256 of the certificate's DER, 64 lowercase hex characters. Absent when nothing parsed.
+   *
+   * The only value here that can establish *which* certificate this is: subject, issuer and dates
+   * are copied out of a document that would read the same on a substituted certificate, whereas
+   * this is checkable against what AMA issued. It is over the DER, so re-wrapping or re-pasting the
+   * PEM cannot move it. Comparing it is still the operator's act — the server makes no trust
+   * decision from it.
+   */
+  sha256_fingerprint?: string;
   subject?: string;
   issuer?: string;
   not_before?: string;
