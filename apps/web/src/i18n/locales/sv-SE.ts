@@ -2318,6 +2318,45 @@ export const svSE: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Fel i följd',
   'settings.registryAutoUpdate.yes': 'Ja',
   'settings.registryAutoUpdate.no': 'Nej',
+  'settings.registryAutoUpdate.col.field': 'Fält',
+  'settings.registryAutoUpdate.col.value': 'Värde',
+  'settings.registryAutoUpdate.plan.caption': 'Plan för automatisk uppdatering',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Varje rad namnger ett villkor i den plan servern har beräknat. Värdena är skrivskyddade; det är inställningarna ovan som ändrar dem.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'Värdet så som det var när planen togs fram, inte i realtid. Att uppdatera planen räknar om det.',
+  'settings.registryAutoUpdate.skipped.caption': 'Enheter som lämnats utanför planen, per orsak',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Orsak',
+  'settings.registryAutoUpdate.skipped.col.count': 'Enheter',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'Regeln som höll en enhet utanför den här planen. Varje enhet räknas bara en gång, vid den första orsak som gäller för den.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Hur många enheter denna orsak uteslöt ur den nyss framtagna planen. Det är ingen löpande summa.',
+  'settings.registryAutoUpdate.attempt.caption': 'Resultat av det begärda försöket',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Varje rad beskriver den notering servern har sparat för försöket du nyss begärde.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'Värdet servern returnerade. Ett godkänt försök skrivs till ledgern, även när det slutar i manuell granskning.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Huvudbrytare. Så länge den är av förfaller ingenting: alla sparade intyg räknas som överhoppade eftersom de är avstängda.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Intervallet, i timmar, för den frekvens som lämnas till serverns arbetare. Mellan 1 och 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'Timmen på dygnet i UTC, inte i den lokala tidszonen. Mellan 0 och 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Dagen i den veckovisa frekvensen, tillsammans med UTC-timmen bredvid.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Ett intyg vars senaste förfrågan har denna ålder eller mer räknas som inaktuellt och kommer med i planen. Mellan 1 och 8760 timmar.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'Väntetiden efter det första misslyckade försöket. Varje ytterligare misslyckande fördubblar den, upp till den längsta väntetiden.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Taket som den fördubblade väntetiden aldrig passerar. Det får inte vara lägre än den kortaste väntetiden.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Det största antal enheter en plan får lista. Enheter över gränsen försvinner inte — de räknas som överhoppade för överskridande. Mellan 1 och 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Gäller enheter som ännu inte har ett eget beslut registrerat. Ett beslut per enhet går alltid före det här värdet.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Begränsar behörigheten till de valda enhetstyperna. Med alla valda är typen inte längre ett kriterium.',
   'settings.privacy.tab': 'Integritet',
   'settings.privacy.title': 'Integritet och efterlevnad',
   'settings.privacy.notice.title': 'Granskningsbara poster',

@@ -2313,6 +2313,45 @@ export const daDK: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Fortløbende fejl',
   'settings.registryAutoUpdate.yes': 'Ja',
   'settings.registryAutoUpdate.no': 'Nej',
+  'settings.registryAutoUpdate.col.field': 'Felt',
+  'settings.registryAutoUpdate.col.value': 'Værdi',
+  'settings.registryAutoUpdate.plan.caption': 'Plan for automatisk opdatering',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Hver række navngiver én betingelse i den plan, serveren har beregnet. Værdierne er skrivebeskyttede; det er indstillingerne ovenfor, der ændrer dem.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'Værdien som den var, da planen blev dannet, ikke i realtid. En opdatering af planen beregner den på ny.',
+  'settings.registryAutoUpdate.skipped.caption': 'Enheder udeladt af planen, efter årsag',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Årsag',
+  'settings.registryAutoUpdate.skipped.col.count': 'Enheder',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'Reglen, der holdt en enhed uden for denne plan. Hver enhed tælles kun én gang, ved den første årsag, der gælder for den.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Hvor mange enheder denne årsag udelukkede fra den netop dannede plan. Det er ikke en løbende sum.',
+  'settings.registryAutoUpdate.attempt.caption': 'Resultat af det anmodede forsøg',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Hver række beskriver den registrering, serveren har gemt for det forsøg, du netop har anmodet om.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'Værdien, serveren returnerede. Et accepteret forsøg skrives til ledgeren, også når det ender i manuel gennemgang.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Hovedafbryder. Så længe den er slået fra, forfalder intet: alle gemte attester tælles som sprunget over, fordi de er deaktiveret.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Intervallet i timer for den kadence, der gives til serverens arbejder. Mellem 1 og 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'Klokkeslættet i UTC, ikke i den lokale tidszone. Mellem 0 og 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Dagen i den ugentlige kadence, sammen med UTC-timen ved siden af.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'En attest, hvis seneste opslag har denne alder eller mere, regnes som forældet og kommer med i planen. Mellem 1 og 8760 timer.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'Ventetiden efter det første mislykkede forsøg. Hver yderligere fejl fordobler den, op til den maksimale ventetid.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Loftet, som den fordoblede ventetid aldrig passerer. Det må ikke være lavere end den mindste ventetid.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Det største antal enheder, én plan må oplistes med. Enheder ud over grænsen forsvinder ikke — de tælles som sprunget over for overskridelse. Mellem 1 og 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Gælder enheder, der endnu ikke har en egen beslutning registreret. En beslutning pr. enhed går altid forud for denne værdi.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Begrænser egnetheden til de valgte enhedstyper. Når alle er valgt, er typen ikke længere et kriterium.',
   'settings.privacy.tab': 'Privatliv',
   'settings.privacy.title': 'Databeskyttelse og overholdelse',
   'settings.privacy.notice.title': 'Reviderbare poster',

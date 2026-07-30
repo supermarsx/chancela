@@ -2319,6 +2319,45 @@ export const ptBR: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Falhas consecutivas',
   'settings.registryAutoUpdate.yes': 'Sim',
   'settings.registryAutoUpdate.no': 'Não',
+  'settings.registryAutoUpdate.col.field': 'Campo',
+  'settings.registryAutoUpdate.col.value': 'Valor',
+  'settings.registryAutoUpdate.plan.caption': 'Plano de atualização automática',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Cada linha nomeia uma condição do plano que o servidor calculou. São valores somente de leitura; o que os altera são as configurações acima.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'O valor tal como estava quando o plano foi gerado, e não em tempo real. Atualizar o plano o recalcula.',
+  'settings.registryAutoUpdate.skipped.caption': 'Entidades deixadas de fora do plano, por motivo',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Motivo',
+  'settings.registryAutoUpdate.skipped.col.count': 'Entidades',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'A regra que manteve uma entidade fora deste plano. Cada entidade é contada uma única vez, no primeiro motivo que se aplica a ela.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Quantas entidades este motivo excluiu do plano recém-gerado. Não é um total acumulado.',
+  'settings.registryAutoUpdate.attempt.caption': 'Resultado da tentativa solicitada',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Cada linha descreve o registro que o servidor guardou para a tentativa que você acabou de solicitar.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'O valor devolvido pelo servidor. Uma tentativa aceita fica gravada no ledger mesmo quando termina em revisão manual.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Chave geral. Enquanto estiver desligada, nada fica pendente: todas as certidões armazenadas são contadas como ignoradas por estarem desativadas.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Intervalo, em horas, da periodicidade entregue ao processo do servidor. Entre 1 e 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'A hora do dia em UTC, e não no fuso horário local. Entre 0 e 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'O dia da periodicidade semanal, combinado com a hora UTC ao lado.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Uma certidão cuja última consulta tenha esta idade ou mais conta como desatualizada e entra no plano. Entre 1 e 8760 horas.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'A espera imposta depois da primeira tentativa que falha. Cada falha seguinte a duplica, até o recuo máximo.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'O teto que a duplicação do recuo nunca ultrapassa. Não pode ser inferior ao recuo mínimo.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'O número máximo de entidades que um plano pode listar. As entidades acima do limite não somem — são contadas como ignoradas por excedê-lo. Entre 1 e 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Aplica-se às entidades que ainda não tenham uma decisão própria registrada. Uma decisão por entidade sempre prevalece sobre este valor.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Restringe a elegibilidade aos tipos de entidade selecionados. Com todos selecionados, o tipo deixa de ser um critério.',
   'settings.privacy.tab': 'Privacidade',
   'settings.privacy.title': 'Privacidade e conformidade',
   'settings.privacy.notice.title': 'Registros auditáveis',

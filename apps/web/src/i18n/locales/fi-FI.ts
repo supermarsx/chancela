@@ -2313,6 +2313,46 @@ export const fiFI: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Peräkkäiset epäonnistumiset',
   'settings.registryAutoUpdate.yes': 'Kyllä',
   'settings.registryAutoUpdate.no': 'Ei',
+  'settings.registryAutoUpdate.col.field': 'Kenttä',
+  'settings.registryAutoUpdate.col.value': 'Arvo',
+  'settings.registryAutoUpdate.plan.caption': 'Automaattipäivityksen suunnitelma',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Kukin rivi nimeää yhden ehdon palvelimen laskemasta suunnitelmasta. Arvot ovat vain luettavia; niitä muutetaan yllä olevilla asetuksilla.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'Arvo sellaisena kuin se oli suunnitelmaa laadittaessa, ei reaaliajassa. Suunnitelman päivittäminen laskee sen uudelleen.',
+  'settings.registryAutoUpdate.skipped.caption':
+    'Suunnitelman ulkopuolelle jätetyt yhteisöt syittäin',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Syy',
+  'settings.registryAutoUpdate.skipped.col.count': 'Yhteisöt',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'Sääntö, joka jätti yhteisön tämän suunnitelman ulkopuolelle. Kukin yhteisö lasketaan vain kerran, ensimmäisen siihen sopivan syyn kohdalla.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Kuinka monta yhteisöä tämä syy sulki juuri laaditusta suunnitelmasta. Tämä ei ole juokseva summa.',
+  'settings.registryAutoUpdate.attempt.caption': 'Pyydetyn yrityksen tulos',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Kukin rivi kuvaa merkinnän, jonka palvelin tallensi juuri pyytämällesi yritykselle.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'Palvelimen palauttama arvo. Hyväksytty yritys kirjataan ledgeriin myös silloin, kun se päättyy manuaaliseen tarkistukseen.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Pääkytkin. Niin kauan kuin se on pois päältä, mikään ei eräänny: kaikki tallennetut todistukset lasketaan ohitetuiksi, koska ne on poistettu käytöstä.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Palvelimen työlle annetun aikataulun väli tunteina. Väliltä 1–720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'Vuorokaudenaika UTC-ajassa, ei paikallisessa aikavyöhykkeessä. Väliltä 0–23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Viikoittaisen aikataulun päivä yhdessä viereisen UTC-tunnin kanssa.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Todistus, jonka viimeisin haku on tämän ikäinen tai vanhempi, katsotaan vanhentuneeksi ja otetaan suunnitelmaan. Väliltä 1–8760 tuntia.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'Ensimmäisen epäonnistuneen yrityksen jälkeen määrätty odotus. Jokainen seuraava epäonnistuminen kaksinkertaistaa sen enimmäisodotukseen asti.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Katto, jota kaksinkertaistuva odotus ei koskaan ylitä. Se ei voi olla vähimmäisodotusta pienempi.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Suurin yhteisömäärä, jonka yksi suunnitelma saa luetella. Rajan ylittävät yhteisöt eivät katoa — ne lasketaan ohitetuiksi ylityksen vuoksi. Väliltä 1–100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Koskee yhteisöjä, joilla ei ole vielä omaa kirjattua päätöstä. Yhteisökohtainen päätös menee aina tämän arvon edelle.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Rajaa kelpoisuuden valittuihin yhteisötyyppeihin. Kun kaikki on valittu, tyyppi ei enää ole peruste.',
   'settings.privacy.tab': 'Tietosuoja',
   'settings.privacy.title': 'Tietosuoja ja vaatimustenmukaisuus',
   'settings.privacy.notice.title': 'Auditoitavat tietueet',

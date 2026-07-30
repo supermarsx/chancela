@@ -2317,6 +2317,45 @@ export const plPL: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Kolejne niepowodzenia',
   'settings.registryAutoUpdate.yes': 'Tak',
   'settings.registryAutoUpdate.no': 'Nie',
+  'settings.registryAutoUpdate.col.field': 'Pole',
+  'settings.registryAutoUpdate.col.value': 'Wartość',
+  'settings.registryAutoUpdate.plan.caption': 'Plan automatycznej aktualizacji',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Każdy wiersz nazywa jeden warunek planu obliczonego przez serwer. Wartości są tylko do odczytu; zmieniają je ustawienia powyżej.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'Wartość z chwili wygenerowania planu, a nie w czasie rzeczywistym. Odświeżenie planu przelicza ją na nowo.',
+  'settings.registryAutoUpdate.skipped.caption': 'Podmioty pominięte w planie, według powodu',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Powód',
+  'settings.registryAutoUpdate.skipped.col.count': 'Podmioty',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'Reguła, która zatrzymała podmiot poza tym planem. Każdy podmiot liczony jest tylko raz, przy pierwszym powodzie, który go dotyczy.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Ile podmiotów ten powód wykluczył z właśnie wygenerowanego planu. To nie jest suma narastająca.',
+  'settings.registryAutoUpdate.attempt.caption': 'Wynik żądanej próby',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Każdy wiersz opisuje zapis, który serwer zachował dla właśnie zażądanej próby.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'Wartość zwrócona przez serwer. Przyjęta próba jest zapisywana w ledgerze, nawet gdy kończy się przeglądem ręcznym.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Wyłącznik główny. Dopóki jest wyłączony, nic nie jest wymagalne: wszystkie zapisane odpisy liczone są jako pominięte z powodu wyłączenia.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Odstęp w godzinach dla częstotliwości przekazywanej procesowi serwera. Od 1 do 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'Godzina doby w UTC, a nie w lokalnej strefie czasowej. Od 0 do 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Dzień częstotliwości tygodniowej, w połączeniu z sąsiednią godziną UTC.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Odpis, którego ostatnie pobranie ma taki wiek lub starszy, uznaje się za nieaktualny i trafia do planu. Od 1 do 8760 godzin.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'Odczekiwanie narzucone po pierwszej nieudanej próbie. Każde kolejne niepowodzenie je podwaja, aż do odczekiwania maksymalnego.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Pułap, którego podwajane odczekiwanie nigdy nie przekracza. Nie może być niższy niż odczekiwanie minimalne.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Największa liczba podmiotów, jaką jeden plan może wymienić. Podmioty powyżej limitu nie znikają — liczone są jako pominięte z powodu jego przekroczenia. Od 1 do 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Dotyczy podmiotów, dla których nie zapisano jeszcze własnej decyzji. Decyzja dla konkretnego podmiotu zawsze ma pierwszeństwo przed tą wartością.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Ogranicza kwalifikowalność do wybranych typów podmiotu. Gdy zaznaczone są wszystkie, typ przestaje być kryterium.',
   'settings.privacy.tab': 'Prywatność',
   'settings.privacy.title': 'Prywatność i zgodność',
   'settings.privacy.notice.title': 'Rekordy audytowalne',

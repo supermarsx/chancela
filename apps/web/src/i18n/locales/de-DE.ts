@@ -2342,6 +2342,45 @@ export const deDE: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Aufeinanderfolgende Fehler',
   'settings.registryAutoUpdate.yes': 'Ja',
   'settings.registryAutoUpdate.no': 'Nein',
+  'settings.registryAutoUpdate.col.field': 'Feld',
+  'settings.registryAutoUpdate.col.value': 'Wert',
+  'settings.registryAutoUpdate.plan.caption': 'Plan der automatischen Aktualisierung',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Jede Zeile benennt eine Bedingung des vom Server berechneten Plans. Diese Werte sind schreibgeschützt; geändert werden sie über die Einstellungen oben.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'Der Wert zum Zeitpunkt der Planerstellung, nicht in Echtzeit. Beim Aktualisieren des Plans wird er neu berechnet.',
+  'settings.registryAutoUpdate.skipped.caption': 'Aus dem Plan ausgelassene Einheiten, nach Grund',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Grund',
+  'settings.registryAutoUpdate.skipped.col.count': 'Einheiten',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'Die Regel, die eine Einheit aus diesem Plan herausgehalten hat. Jede Einheit wird nur einmal gezählt, beim ersten zutreffenden Grund.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Wie viele Einheiten dieser Grund aus dem soeben erstellten Plan ausgeschlossen hat. Es ist keine laufende Summe.',
+  'settings.registryAutoUpdate.attempt.caption': 'Ergebnis des angeforderten Versuchs',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Jede Zeile beschreibt den Eintrag, den der Server für den soeben angeforderten Versuch gespeichert hat.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'Der vom Server zurückgegebene Wert. Ein angenommener Versuch wird in das Ledger geschrieben, auch wenn er in einer manuellen Prüfung endet.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Hauptschalter. Solange er aus ist, steht nichts an: Alle gespeicherten Bescheinigungen zählen als übersprungen, weil deaktiviert.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Das Intervall in Stunden des Takts, der an den Server-Worker übergeben wird. Zwischen 1 und 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'Die Tageszeit in UTC, nicht in der lokalen Zeitzone. Zwischen 0 und 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Der Tag des wöchentlichen Takts, zusammen mit der UTC-Stunde daneben.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Eine Bescheinigung, deren letzte Abfrage dieses Alter oder mehr erreicht, gilt als veraltet und kommt in den Plan. Zwischen 1 und 8760 Stunden.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'Die Wartezeit nach dem ersten fehlgeschlagenen Versuch. Jeder weitere Fehlschlag verdoppelt sie, bis zur maximalen Wartezeit.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Die Obergrenze, die die sich verdoppelnde Wartezeit nie überschreitet. Sie darf nicht kleiner sein als die minimale Wartezeit.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Die größte Anzahl an Einheiten, die ein Plan auflisten darf. Einheiten über der Grenze entfallen nicht — sie zählen als wegen Überschreitung übersprungen. Zwischen 1 und 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Gilt für Einheiten, für die noch keine eigene Entscheidung hinterlegt ist. Eine Entscheidung je Einheit hat immer Vorrang vor diesem Wert.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Beschränkt die Eignung auf die ausgewählten Einheitentypen. Sind alle ausgewählt, ist der Typ kein Kriterium mehr.',
   'settings.privacy.tab': 'Datenschutz',
   'settings.privacy.title': 'Datenschutz und Konformität',
   'settings.privacy.notice.title': 'Prüfbare Einträge',

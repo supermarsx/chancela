@@ -2337,6 +2337,45 @@ export const frFR: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Échecs consécutifs',
   'settings.registryAutoUpdate.yes': 'Oui',
   'settings.registryAutoUpdate.no': 'Non',
+  'settings.registryAutoUpdate.col.field': 'Champ',
+  'settings.registryAutoUpdate.col.value': 'Valeur',
+  'settings.registryAutoUpdate.plan.caption': 'Plan de mise à jour automatique',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Chaque ligne nomme une condition du plan calculé par le serveur. Ces valeurs sont en lecture seule ; ce sont les réglages ci-dessus qui les modifient.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'La valeur telle qu’elle était au moment où le plan a été généré, et non en temps réel. Actualiser le plan la recalcule.',
+  'settings.registryAutoUpdate.skipped.caption': 'Entités écartées du plan, par motif',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Motif',
+  'settings.registryAutoUpdate.skipped.col.count': 'Entités',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'La règle qui a écarté une entité de ce plan. Chaque entité n’est comptée qu’une fois, au premier motif qui lui est applicable.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Combien d’entités ce motif a écartées du plan qui vient d’être généré. Ce n’est pas un cumul.',
+  'settings.registryAutoUpdate.attempt.caption': 'Résultat de la tentative demandée',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Chaque ligne décrit l’enregistrement que le serveur a conservé pour la tentative que vous venez de demander.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'La valeur renvoyée par le serveur. Une tentative acceptée est écrite dans le ledger, même lorsqu’elle se termine en revue manuelle.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Interrupteur général. Tant qu’il est désactivé, rien n’est dû : tous les certificats stockés sont comptés comme écartés parce que désactivés.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Intervalle, en heures, de la cadence transmise au worker du serveur. Entre 1 et 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'L’heure de la journée en UTC, et non dans le fuseau horaire local. Entre 0 et 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Le jour de la cadence hebdomadaire, combiné à l’heure UTC voisine.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Un certificat dont la dernière consultation a cet âge ou plus est considéré comme obsolète et entre dans le plan. Entre 1 et 8760 heures.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'L’attente imposée après la première tentative échouée. Chaque échec suivant la double, jusqu’à l’attente maximale.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Le plafond que le doublement de l’attente ne dépasse jamais. Il ne peut pas être inférieur à l’attente minimale.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Le nombre maximal d’entités qu’un plan peut lister. Les entités au-delà de la limite ne disparaissent pas : elles sont comptées comme écartées pour dépassement. Entre 1 et 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'S’applique aux entités qui n’ont pas encore de décision propre enregistrée. Une décision par entité prime toujours sur cette valeur.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Restreint l’éligibilité aux types d’entité sélectionnés. Lorsque tous sont sélectionnés, le type cesse d’être un critère.',
   'settings.privacy.tab': 'Confidentialité',
   'settings.privacy.title': 'Confidentialité et conformité',
   'settings.privacy.notice.title': 'Enregistrements auditables',

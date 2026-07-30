@@ -2327,6 +2327,45 @@ export const itIT: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Errori consecutivi',
   'settings.registryAutoUpdate.yes': 'Sì',
   'settings.registryAutoUpdate.no': 'No',
+  'settings.registryAutoUpdate.col.field': 'Campo',
+  'settings.registryAutoUpdate.col.value': 'Valore',
+  'settings.registryAutoUpdate.plan.caption': 'Piano di aggiornamento automatico',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Ogni riga indica una condizione del piano calcolato dal server. Sono valori di sola lettura; a cambiarli sono le impostazioni qui sopra.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'Il valore com’era quando il piano è stato generato, non in tempo reale. Aggiornare il piano lo ricalcola.',
+  'settings.registryAutoUpdate.skipped.caption': 'Enti esclusi dal piano, per motivo',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Motivo',
+  'settings.registryAutoUpdate.skipped.col.count': 'Enti',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'La regola che ha tenuto un ente fuori da questo piano. Ogni ente è contato una sola volta, nel primo motivo che gli si applica.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Quanti enti questo motivo ha escluso dal piano appena generato. Non è un totale progressivo.',
+  'settings.registryAutoUpdate.attempt.caption': 'Esito del tentativo richiesto',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Ogni riga descrive la registrazione che il server ha conservato per il tentativo appena richiesto.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'Il valore restituito dal server. Un tentativo accettato viene scritto nel ledger anche quando si conclude con una revisione manuale.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Interruttore generale. Finché è spento non c’è nulla in scadenza: tutti i certificati archiviati sono contati come saltati perché disattivati.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'L’intervallo, in ore, della cadenza consegnata al worker del server. Tra 1 e 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'L’ora del giorno in UTC, non nel fuso orario locale. Tra 0 e 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'Il giorno della cadenza settimanale, insieme all’ora UTC accanto.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Un certificato la cui ultima consultazione ha questa età o più è considerato non aggiornato ed entra nel piano. Tra 1 e 8760 ore.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'L’attesa imposta dopo il primo tentativo fallito. Ogni fallimento successivo la raddoppia, fino all’attesa massima.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Il tetto che il raddoppio dell’attesa non supera mai. Non può essere inferiore all’attesa minima.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Il numero massimo di enti che un piano può elencare. Gli enti oltre il limite non spariscono: sono contati come saltati per superamento. Tra 1 e 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Si applica agli enti che non hanno ancora una decisione propria registrata. Una decisione per ente prevale sempre su questo valore.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Limita l’idoneità ai tipi di ente selezionati. Con tutti selezionati, il tipo smette di essere un criterio.',
   'settings.privacy.tab': 'Privacy',
   'settings.privacy.title': 'Privacy e conformità',
   'settings.privacy.notice.title': 'Registrazioni verificabili',

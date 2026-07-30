@@ -2308,6 +2308,45 @@ export const enUS = {
   'settings.registryAutoUpdate.attempt.failures': 'Consecutive failures',
   'settings.registryAutoUpdate.yes': 'Yes',
   'settings.registryAutoUpdate.no': 'No',
+  'settings.registryAutoUpdate.col.field': 'Field',
+  'settings.registryAutoUpdate.col.value': 'Value',
+  'settings.registryAutoUpdate.plan.caption': 'Automatic update plan',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Each row names one condition of the plan the server computed. These values are read-only; the settings above are what change them.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'The value as it stood when the plan was generated, not in real time. Refreshing the plan recalculates it.',
+  'settings.registryAutoUpdate.skipped.caption': 'Entities left out of the plan, by reason',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Reason',
+  'settings.registryAutoUpdate.skipped.col.count': 'Entities',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'The rule that kept an entity out of this plan. Each entity is counted once, under the first reason that applies to it.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'How many entities this reason excluded from the plan just generated. It is not a running total.',
+  'settings.registryAutoUpdate.attempt.caption': 'Result of the requested attempt',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Each row describes the record the server stored for the attempt you just requested.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'The value the server returned. An accepted attempt is written to the ledger even when it ends in manual review.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Master switch. While it is off nothing is due: every stored certificate is counted as skipped for being disabled.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'The interval, in hours, of the schedule handed to the server worker. Between 1 and 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'The hour of day in UTC, not in the local time zone. Between 0 and 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'The day of the weekly schedule, combined with the UTC hour beside it.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'A certificate whose last lookup is this old or older counts as stale and enters the plan. Between 1 and 8760 hours.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'The wait imposed after the first failed attempt. Each further failure doubles it, up to the maximum backoff.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'The ceiling that the doubling backoff never passes. It cannot be lower than the minimum backoff.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'The largest number of entities one plan may list. Entities beyond the cap are not dropped — they are counted as skipped for exceeding it. Between 1 and 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Applies to entities that have no decision of their own recorded yet. A per-entity decision always takes precedence over this.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Restricts eligibility to the selected entity types. With all of them selected, type stops being a criterion.',
   'settings.privacy.tab': 'Privacy',
   'settings.privacy.title': 'Privacy and compliance',
   'settings.privacy.notice.title': 'Auditable records',

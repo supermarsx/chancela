@@ -2327,6 +2327,46 @@ export const nlNL: Catalog = {
   'settings.registryAutoUpdate.attempt.failures': 'Opeenvolgende fouten',
   'settings.registryAutoUpdate.yes': 'Ja',
   'settings.registryAutoUpdate.no': 'Nee',
+  'settings.registryAutoUpdate.col.field': 'Veld',
+  'settings.registryAutoUpdate.col.value': 'Waarde',
+  'settings.registryAutoUpdate.plan.caption': 'Plan voor automatische bijwerking',
+  'settings.registryAutoUpdate.plan.col.fieldHelp':
+    'Elke rij benoemt één voorwaarde van het plan dat de server heeft berekend. Deze waarden zijn alleen-lezen; ze worden gewijzigd via de instellingen hierboven.',
+  'settings.registryAutoUpdate.plan.col.valueHelp':
+    'De waarde zoals die was toen het plan werd opgesteld, niet in realtime. Het plan vernieuwen berekent haar opnieuw.',
+  'settings.registryAutoUpdate.skipped.caption':
+    'Entiteiten die buiten het plan zijn gelaten, per reden',
+  'settings.registryAutoUpdate.skipped.col.reason': 'Reden',
+  'settings.registryAutoUpdate.skipped.col.count': 'Entiteiten',
+  'settings.registryAutoUpdate.skipped.col.reasonHelp':
+    'De regel die een entiteit buiten dit plan heeft gehouden. Elke entiteit wordt één keer geteld, bij de eerste reden die op haar van toepassing is.',
+  'settings.registryAutoUpdate.skipped.col.countHelp':
+    'Hoeveel entiteiten deze reden heeft uitgesloten van het zojuist opgestelde plan. Het is geen doorlopend totaal.',
+  'settings.registryAutoUpdate.attempt.caption': 'Resultaat van de aangevraagde poging',
+  'settings.registryAutoUpdate.attempt.col.fieldHelp':
+    'Elke rij beschrijft de registratie die de server heeft bewaard voor de poging die u zojuist hebt aangevraagd.',
+  'settings.registryAutoUpdate.attempt.col.valueHelp':
+    'De waarde die de server heeft teruggegeven. Een geaccepteerde poging wordt naar het ledger geschreven, ook wanneer zij eindigt in handmatige beoordeling.',
+  'settings.registryAutoUpdate.enabled.help':
+    'Hoofdschakelaar. Zolang deze uit staat is er niets openstaand: alle opgeslagen uittreksels tellen als overgeslagen omdat ze uitgeschakeld zijn.',
+  'settings.registryAutoUpdate.cadence.hoursHelp':
+    'Het interval, in uren, van de frequentie die aan de serverworker wordt meegegeven. Tussen 1 en 720.',
+  'settings.registryAutoUpdate.cadence.hourUtcHelp':
+    'Het uur van de dag in UTC, niet in de lokale tijdzone. Tussen 0 en 23.',
+  'settings.registryAutoUpdate.cadence.weekdayHelp':
+    'De dag van de wekelijkse frequentie, samen met het UTC-uur ernaast.',
+  'settings.registryAutoUpdate.staleThreshold.help':
+    'Een uittreksel waarvan de laatste raadpleging deze ouderdom of meer heeft, geldt als verouderd en komt in het plan. Tussen 1 en 8760 uur.',
+  'settings.registryAutoUpdate.minBackoff.help':
+    'De wachttijd na de eerste mislukte poging. Elke volgende mislukking verdubbelt haar, tot de maximale wachttijd.',
+  'settings.registryAutoUpdate.maxBackoff.help':
+    'Het plafond dat de verdubbelende wachttijd nooit passeert. Het mag niet lager zijn dan de minimale wachttijd.',
+  'settings.registryAutoUpdate.maxAttempts.help':
+    'Het grootste aantal entiteiten dat één plan mag opsommen. Entiteiten boven de limiet vervallen niet — ze tellen als overgeslagen wegens overschrijding. Tussen 1 en 100.',
+  'settings.registryAutoUpdate.entityDefaults.help':
+    'Geldt voor entiteiten waarvoor nog geen eigen beslissing is vastgelegd. Een beslissing per entiteit gaat altijd voor op deze waarde.',
+  'settings.registryAutoUpdate.entityDefaults.profilesHelp':
+    'Beperkt de geschiktheid tot de geselecteerde entiteitstypen. Met alle typen geselecteerd is het type geen criterium meer.',
   'settings.privacy.tab': 'Privacy',
   'settings.privacy.title': 'Privacy en naleving',
   'settings.privacy.notice.title': 'Controleerbare records',
