@@ -88,6 +88,28 @@
   cursor: pointer;
 }
 
+/* Title over the reason it matched. The shared `.menu-item` row metric is untouched: the row
+   still starts at its unified min-height and only grows when a result has something to explain. */
+.admin-config-finder__result-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.admin-config-finder__result-why {
+  display: flex;
+  flex-direction: column;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.admin-config-finder__result-reason {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .admin-config-finder__result[aria-selected='true'],
 .admin-config-finder__result:hover {
   color: var(--accent);

@@ -1,249 +1,71 @@
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+/**
+ * "Encontrar uma configuração" — the admin surface's full-text configuration search.
+ *
+ * The corpus, the key→destination mapping, the value allow-list and the matcher all live in
+ * {@link ./adminConfigurationIndex}, which is pure and has no React state so any wider search
+ * surface can reuse the same permission-aware index. This file is the control: input, listbox,
+ * keyboard model, and the rendering of WHY each result matched.
+ *
+ * **Data.** Two caches the admin surface already holds are read for current values: the settings
+ * document (loaded once at app start and shared) and the server-env registry. Neither is fetched
+ * per keystroke — the index is built once per locale/permission/data generation and the query
+ * only filters it. The env query is declared inline rather than through `useServerEnv()` so it can
+ * be gated on the settings permissions: a principal who reaches this control through
+ * `signing.configure` alone would otherwise fire a request the server is bound to refuse. It
+ * shares the pane's query key, so visiting the Ambiente pane afterwards costs nothing.
+ */
+import { useId, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useT, type MessageKey } from '../../i18n';
-import { type AdminCopyKey, useAdminT } from '../../i18n/adminFallback';
+import { useQuery } from '@tanstack/react-query';
+import { i18nStore, useActiveLocale, useT, type MessageKey } from '../../i18n';
+import { useAdminT } from '../../i18n/adminFallback';
+import { api } from '../../api/client';
+import { keys, useSettings } from '../../api/hooks';
 import { Icon } from '../../ui';
 import { usePermissions } from '../session/permissions';
+import {
+  ADMIN_CONFIGURATION_AREAS,
+  adminConfigurationCopyResolvers,
+  buildAdminConfigurationSearchEntries,
+  matchAdminConfigurationEntries,
+  serverEnvValueEntries,
+  settingsValueEntries,
+  type AdminConfigurationAreaDefinition,
+  type AdminConfigurationMatch,
+  type AdminConfigurationMatchKind,
+  type AdminConfigurationTitle,
+} from './adminConfigurationIndex';
 import './AdminConfigurationFinder.css';
 
-export type AdminConfigurationTitle =
-  { source: 'catalog'; key: MessageKey } | { source: 'admin'; key: AdminCopyKey };
-
-export type AdminConfigurationKeywordKey = Extract<AdminCopyKey, `admin.finder.keywords.${string}`>;
-
-/**
- * One searchable admin destination. This deliberately contains no rendered React state, so the
- * forthcoming full-search service can reuse and extend the same permission-aware index rather
- * than maintaining a second list of admin routes.
- */
-export interface AdminConfigurationAreaDefinition {
-  id: string;
-  path: string;
-  title: AdminConfigurationTitle;
-  keywords: AdminConfigurationKeywordKey;
-  permissions: readonly string[];
-}
-
-const SETTINGS_PERMISSIONS = ['settings.read', 'settings.manage'] as const;
+export {
+  ADMIN_CONFIGURATION_AREAS,
+  buildAdminConfigurationSearchEntries,
+  matchAdminConfigurationEntries,
+  normalizeAdminConfigurationSearch,
+  type AdminConfigurationAreaDefinition,
+  type AdminConfigurationKeywordKey,
+  type AdminConfigurationSearchEntry,
+  type AdminConfigurationTitle,
+} from './adminConfigurationIndex';
 
 /**
- * Canonical admin configuration index. Keep additions here declarative: the finder, tests and any
- * wider search surface can consume the same definitions and automatically inherit route,
- * localisation and permission filtering.
+ * What a hit landed on, named for the operator. A value hit and a label hit are different claims
+ * about why a destination is being suggested, and a result that does not explain itself is worse
+ * than no result on a configuration screen. A `title` hit needs no name: the title IS the row.
  */
-export const ADMIN_CONFIGURATION_AREAS = [
-  {
-    id: 'services',
-    path: '/admin',
-    title: { source: 'catalog', key: 'settings.platform.tab.services' },
-    keywords: 'admin.finder.keywords.services',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'logs',
-    path: '/admin/logs',
-    title: { source: 'catalog', key: 'settings.platform.tab.logs' },
-    keywords: 'admin.finder.keywords.logs',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'search',
-    path: '/admin/search',
-    title: { source: 'admin', key: 'admin.search.title' },
-    keywords: 'admin.finder.keywords.search',
-    permissions: ['search.manage'],
-  },
-  {
-    id: 'template-preview',
-    path: '/admin/template-preview',
-    title: { source: 'admin', key: 'admin.templatePreview.title' },
-    keywords: 'admin.finder.keywords.templatePreview',
-    permissions: ['settings.read'],
-  },
-  {
-    id: 'api',
-    path: '/admin/api',
-    title: { source: 'catalog', key: 'settings.subnav.api' },
-    keywords: 'admin.finder.keywords.api',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'api-keys',
-    path: '/admin/api-keys',
-    title: { source: 'catalog', key: 'settings.apiKeys.cardTitle' },
-    keywords: 'admin.finder.keywords.apiKeys',
-    permissions: ['user.manage'],
-  },
-  {
-    id: 'database',
-    path: '/admin/database',
-    title: { source: 'catalog', key: 'settings.database.cardTitle' },
-    keywords: 'admin.finder.keywords.database',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'cache',
-    path: '/admin/cache',
-    title: { source: 'catalog', key: 'settings.cache.cardTitle' },
-    keywords: 'admin.finder.keywords.cache',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'storage',
-    path: '/admin/storage',
-    title: { source: 'catalog', key: 'data.status.tab.storage' },
-    keywords: 'admin.finder.keywords.storage',
-    permissions: ['data.manage', ...SETTINGS_PERMISSIONS],
-  },
-  {
-    id: 'backups',
-    path: '/admin/backups',
-    title: { source: 'catalog', key: 'data.status.tab.backup' },
-    keywords: 'admin.finder.keywords.backups',
-    permissions: ['backup.manage', ...SETTINGS_PERMISSIONS],
-  },
-  {
-    id: 'keys',
-    path: '/admin/keys',
-    title: { source: 'catalog', key: 'data.status.tab.keys' },
-    keywords: 'admin.finder.keywords.keys',
-    permissions: ['data.manage', ...SETTINGS_PERMISSIONS],
-  },
-  {
-    id: 'mcp',
-    path: '/admin/mcp',
-    title: { source: 'catalog', key: 'settings.subnav.mcp' },
-    keywords: 'admin.finder.keywords.mcp',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'email',
-    path: '/admin/email',
-    title: { source: 'catalog', key: 'settings.email.cardTitle' },
-    keywords: 'admin.finder.keywords.email',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'env',
-    path: '/admin/env',
-    title: { source: 'catalog', key: 'settings.serverEnv.title' },
-    keywords: 'admin.finder.keywords.env',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'diagnostics',
-    path: '/admin/diagnostics',
-    title: { source: 'catalog', key: 'settings.diagnostics.title' },
-    keywords: 'admin.finder.keywords.diagnostics',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'groups',
-    path: '/admin/groups',
-    title: { source: 'catalog', key: 'operations.tabs.groups' },
-    keywords: 'admin.finder.keywords.groups',
-    permissions: ['entity.create', 'entity.update', 'template.manage'],
-  },
-  {
-    id: 'connectors',
-    path: '/admin/connectors',
-    title: { source: 'catalog', key: 'operations.tabs.connectors' },
-    keywords: 'admin.finder.keywords.connectors',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'repositories',
-    path: '/admin/repositories',
-    title: { source: 'catalog', key: 'operations.tabs.repositories' },
-    keywords: 'admin.finder.keywords.repositories',
-    permissions: SETTINGS_PERMISSIONS,
-  },
-  {
-    id: 'providers',
-    path: '/admin/signing',
-    title: { source: 'catalog', key: 'settings.providerCredentials.cardTitle' },
-    keywords: 'admin.finder.keywords.providers',
-    permissions: ['signing.configure'],
-  },
-  {
-    id: 'policy',
-    path: '/admin/signing/policy',
-    title: { source: 'catalog', key: 'settings.signing.policy.cardTitle' },
-    keywords: 'admin.finder.keywords.policy',
-    permissions: ['signing.configure'],
-  },
-  {
-    id: 'tsl',
-    path: '/admin/signing/tsl',
-    title: { source: 'catalog', key: 'settings.signing.tslSources.title' },
-    keywords: 'admin.finder.keywords.tsl',
-    permissions: ['signing.configure'],
-  },
-  {
-    id: 'tsa',
-    path: '/admin/signing/tsa',
-    title: { source: 'catalog', key: 'settings.signing.tsaProviders.title' },
-    keywords: 'admin.finder.keywords.tsa',
-    permissions: ['signing.configure'],
-  },
-  {
-    id: 'trust-services',
-    path: '/admin/signing/trust-services',
-    title: { source: 'catalog', key: 'settings.signing.providers.title' },
-    keywords: 'admin.finder.keywords.trustServices',
-    permissions: ['signing.configure'],
-  },
-  {
-    id: 'cmd',
-    path: '/admin/signing/cmd',
-    title: { source: 'catalog', key: 'settings.signing.cmd.title' },
-    keywords: 'admin.finder.keywords.cmd',
-    permissions: ['signing.configure'],
-  },
-] as const satisfies readonly AdminConfigurationAreaDefinition[];
+const MATCH_KIND_LABELS = {
+  keywords: 'settings.finder.match.keywords',
+  label: 'settings.finder.match.label',
+  value: 'settings.finder.match.value',
+} as const satisfies Record<Exclude<AdminConfigurationMatchKind, 'title'>, MessageKey>;
 
-export interface AdminConfigurationSearchEntry extends AdminConfigurationAreaDefinition {
-  titleText: string;
-  searchText: string;
-}
+/** A hint or tooltip can be a paragraph; a menu row is one line. */
+const REASON_MAX_CHARS = 96;
 
-export function normalizeAdminConfigurationSearch(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLocaleLowerCase()
-    .trim();
-}
-
-/** Resolve and permission-filter definitions before any query matching, preventing hidden areas
- * from leaking through result counts, labels, keywords or timing-dependent intermediate state. */
-export function buildAdminConfigurationSearchEntries(
-  definitions: readonly AdminConfigurationAreaDefinition[],
-  resolveTitle: (title: AdminConfigurationTitle) => string,
-  resolveKeywords: (key: AdminConfigurationKeywordKey) => string,
-  canAny: (permission: string) => boolean,
-): AdminConfigurationSearchEntry[] {
-  return definitions
-    .filter((area) => area.permissions.some((permission) => canAny(permission)))
-    .map((area) => {
-      const titleText = resolveTitle(area.title);
-      return {
-        ...area,
-        titleText,
-        searchText: normalizeAdminConfigurationSearch(
-          `${titleText} ${resolveKeywords(area.keywords)} ${area.id} ${area.path}`,
-        ),
-      };
-    });
-}
-
-export function filterAdminConfigurationSearchEntries(
-  entries: readonly AdminConfigurationSearchEntry[],
-  query: string,
-): AdminConfigurationSearchEntry[] {
-  const tokens = normalizeAdminConfigurationSearch(query).split(/\s+/).filter(Boolean);
-  if (tokens.length === 0) return [];
-  return entries.filter((entry) => tokens.every((token) => entry.searchText.includes(token)));
+function shorten(value: string): string {
+  return value.length <= REASON_MAX_CHARS
+    ? value
+    : `${value.slice(0, REASON_MAX_CHARS).trimEnd()}…`;
 }
 
 interface AdminConfigurationFinderProps {
@@ -255,6 +77,14 @@ export function AdminConfigurationFinder({
 }: AdminConfigurationFinderProps) {
   const t = useT();
   const at = useAdminT();
+  const locale = useActiveLocale();
+  // Bumps on a locale flip AND on a late async catalog landing, so the memoised index is rebuilt
+  // when the corpus it was resolved from actually changes.
+  const catalogVersion = useSyncExternalStore(
+    i18nStore.subscribe,
+    i18nStore.getVersion,
+    i18nStore.getVersion,
+  );
   const { canAny } = usePermissions();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -264,16 +94,37 @@ export function AdminConfigurationFinder({
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const resolveTitle = (title: AdminConfigurationTitle): string => {
-    if (title.source === 'admin') return at(title.key);
-    return t(title.key);
-  };
-  const entries = buildAdminConfigurationSearchEntries(areas, resolveTitle, at, canAny);
-  const matches = filterAdminConfigurationSearchEntries(entries, query);
+  const canReadSettings = canAny('settings.read') || canAny('settings.manage');
+  const settings = useSettings(canReadSettings).data;
+  const serverEnv = useQuery({
+    queryKey: keys.serverEnv,
+    queryFn: () => api.getServerEnv(),
+    staleTime: 15_000,
+    retry: false,
+    enabled: canReadSettings,
+  }).data;
+
+  const entries = useMemo(() => {
+    const copy = adminConfigurationCopyResolvers(locale, (key) => i18nStore.message(locale, key));
+    return buildAdminConfigurationSearchEntries({
+      areas,
+      resolveTitle: (title: AdminConfigurationTitle) =>
+        title.source === 'admin' ? at(title.key) : i18nStore.message(locale, title.key),
+      resolveKeywords: at,
+      canAny,
+      copy,
+      values: [...settingsValueEntries(settings, copy), ...serverEnvValueEntries(serverEnv)],
+    });
+    // `catalogVersion` is a dependency of `i18nStore.message`, which is not itself reactive.
+  }, [areas, at, canAny, locale, catalogVersion, settings, serverEnv]);
+
+  const matches = matchAdminConfigurationEntries(entries, query);
   const expanded = isOpen && query.trim().length > 0;
   const selectedIndex = matches.length > 0 ? Math.min(activeIndex, matches.length - 1) : -1;
   const activeId =
-    expanded && selectedIndex >= 0 ? `${resultsId}-option-${matches[selectedIndex].id}` : undefined;
+    expanded && selectedIndex >= 0
+      ? `${resultsId}-option-${matches[selectedIndex].entry.id}`
+      : undefined;
 
   const clear = () => {
     setQuery('');
@@ -281,9 +132,9 @@ export function AdminConfigurationFinder({
     setActiveIndex(0);
   };
 
-  const openArea = (area: AdminConfigurationSearchEntry) => {
+  const openArea = (match: AdminConfigurationMatch) => {
     clear();
-    void navigate(area.path);
+    void navigate(match.entry.path);
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -381,23 +232,47 @@ export function AdminConfigurationFinder({
       {expanded ? (
         matches.length > 0 ? (
           <div className="admin-config-finder__results" id={resultsId} role="listbox">
-            {matches.map((area, index) => {
+            {matches.map((match, index) => {
               const selected = index === selectedIndex;
+              const optionId = `${resultsId}-option-${match.entry.id}`;
+              const reasonsId = `${optionId}-why`;
               return (
                 <button
                   className="menu-item admin-config-finder__result"
-                  id={`${resultsId}-option-${area.id}`}
-                  key={area.id}
+                  id={optionId}
+                  key={match.entry.id}
                   type="button"
                   role="option"
                   tabIndex={-1}
-                  aria-label={at('admin.finder.open', { title: area.titleText })}
+                  aria-label={at('admin.finder.open', { title: match.entry.titleText })}
                   aria-selected={selected}
+                  aria-describedby={match.reasons.length > 0 ? reasonsId : undefined}
+                  data-match-kinds={match.kinds.join(' ')}
                   onMouseDown={(event) => event.preventDefault()}
                   onMouseEnter={() => setActiveIndex(index)}
-                  onClick={() => openArea(area)}
+                  onClick={() => openArea(match)}
                 >
-                  <span>{area.titleText}</span>
+                  <span className="admin-config-finder__result-text">
+                    <span>{match.entry.titleText}</span>
+                    {match.reasons.length > 0 ? (
+                      <span className="admin-config-finder__result-why" id={reasonsId}>
+                        {match.reasons.map((reason) => (
+                          <span
+                            className="admin-config-finder__result-reason"
+                            key={`${reason.kind} ${reason.text}`}
+                            data-match-kind={reason.kind}
+                          >
+                            {/* The separator is a real character, not a CSS gap: a screen reader
+                                and find-in-page both read the row's text content, and adjacent
+                                spans with no character between them read fused. */}
+                            {t(MATCH_KIND_LABELS[reason.kind])}
+                            {' · '}
+                            {shorten(reason.text)}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </span>
                   <Icon.ArrowRight />
                 </button>
               );
