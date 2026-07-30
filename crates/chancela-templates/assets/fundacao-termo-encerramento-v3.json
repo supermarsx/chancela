@@ -1,0 +1,43 @@
+{
+  "id": "fundacao-termo-encerramento/v3",
+  "family": "Foundation",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "fundacao-cc/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Termo de encerramento do livro de atas"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Aos {{ closing_date | long_date }}, procede-se ao encerramento do presente livro de atas da fundação {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}{% if book.kind %}, respeitante ao órgão {{ book.kind }}{% endif %}{% if reason == 'BookFull' %}, por se encontrar o livro esgotado{% elif reason == 'EntityDissolved' %}, por extinção da entidade{% elif reason == 'MigrationToSuccessor' %}, por migração para livro sucessor{% elif reason.Other is defined %}, pelo motivo seguinte: {{ reason.Other.note }}{% elif reason %}, pelo motivo seguinte: {{ reason }}{% endif %}."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if ata_count == 1 %}O livro contém {{ ata_count }} ({{ ata_count | in_words(gender='f') }}) ata, nos termos da Lei-Quadro das Fundações e dos artigos 185.º e seguintes do Código Civil.{% elif ata_count is defined %}O livro contém {{ ata_count }} ({{ ata_count | in_words(gender='f') }}) atas, nos termos da Lei-Quadro das Fundações e dos artigos 185.º e seguintes do Código Civil.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "body",
+      "template": "{% if heading %}{{ heading }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role | role_label }}",
+      "name": "{{ name }}"
+    }
+  ],
+  "default_body": [
+    {
+      "text": "Nada mais havendo a lavrar no presente livro, dá-se o mesmo por encerrado. Lavra-se o presente termo de encerramento, que vai assinado por quem nele intervém."
+    }
+  ]
+}

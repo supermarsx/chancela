@@ -1,0 +1,43 @@
+{
+  "id": "condominio-termo-encerramento/v3",
+  "family": "Condominium",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "QualifiedOrHandwritten",
+  "rule_pack_id": "condominio-dl268/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Termo de encerramento do livro de atas"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Aos {{ closing_date | long_date }}, procede-se ao encerramento do presente livro de atas da assembleia de condóminos do condomínio {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}{% if book.kind %}, respeitante ao órgão {{ book.kind }}{% endif %}{% if reason == 'BookFull' %}, por se encontrar o livro esgotado{% elif reason == 'EntityDissolved' %}, por extinção do condomínio{% elif reason == 'MigrationToSuccessor' %}, por migração para livro sucessor{% elif reason.Other is defined %}, pelo motivo seguinte: {{ reason.Other.note }}{% elif reason %}, pelo motivo seguinte: {{ reason }}{% endif %}."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if ata_count == 1 %}O livro contém {{ ata_count }} ({{ ata_count | in_words(gender='f') }}) ata, lavrada e numerada sequencialmente, ficando integralmente selado nesta escrituração digital.{% elif ata_count is defined %}O livro contém {{ ata_count }} ({{ ata_count | in_words(gender='f') }}) atas, lavradas e numeradas sequencialmente, ficando integralmente selado nesta escrituração digital.{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "body",
+      "template": "{% if heading %}{{ heading }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role | role_label }}",
+      "name": "{{ name }}"
+    }
+  ],
+  "default_body": [
+    {
+      "text": "Nada mais havendo a lavrar no presente livro, dá-se o mesmo por encerrado. Lavra-se o presente termo de encerramento, que vai assinado por quem nele intervém."
+    }
+  ]
+}

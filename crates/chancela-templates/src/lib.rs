@@ -1677,6 +1677,11 @@ mod tests {
             "condominio-termo-encerramento/v2",
             "cooperativa-termo-encerramento/v2",
             "fundacao-termo-encerramento/v2",
+            "csc-termo-encerramento/v3",
+            "assoc-termo-encerramento/v3",
+            "condominio-termo-encerramento/v3",
+            "cooperativa-termo-encerramento/v3",
+            "fundacao-termo-encerramento/v3",
         ] {
             let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
             let body = spec.default_body();
@@ -1788,6 +1793,159 @@ mod tests {
             );
             assert_eq!(render(spec, &ctx).expect("renders"), empty_body);
         }
+    }
+
+    /// The versions that render a termo instrument's own fillable clauses — abertura `/v4` and
+    /// encerramento `/v3`, the spine every new termo now pins.
+    ///
+    /// Every earlier version is deliberately absent: they carry no clause block at all, which is
+    /// what lets an instrument frozen against one re-render to the bytes its signatories signed
+    /// even though the context now carries the clauses.
+    const CLAUSE_BODY_TERMOS: &[&str] = &[
+        "csc-termo-abertura/v4",
+        "assoc-termo-abertura/v4",
+        "condominio-termo-abertura/v4",
+        "cooperativa-termo-abertura/v4",
+        "fundacao-termo-abertura/v4",
+        "csc-termo-encerramento/v3",
+        "assoc-termo-encerramento/v3",
+        "condominio-termo-encerramento/v3",
+        "cooperativa-termo-encerramento/v3",
+        "fundacao-termo-encerramento/v3",
+    ];
+
+    /// The defect these versions exist to fix: an operator's clause text must reach the rendered
+    /// instrument. Asserted on the clause *text* reaching a paragraph of its own, and on the
+    /// headed clause carrying its heading, not on the surrounding prose.
+    #[test]
+    fn every_clause_body_termo_renders_the_instrument_clauses() {
+        let reg = load_registry().expect("registry loads");
+        let mut ctx = termo_clause_probe_ctx();
+        ctx["body"] = json!([
+            { "heading": "Primeira", "text": "O livro é escriturado por meios digitais." },
+            { "text": "Cláusula sem título." }
+        ]);
+
+        for id in CLAUSE_BODY_TERMOS {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} render failed: {e:?}"));
+            let paragraphs: Vec<String> = doc
+                .blocks
+                .iter()
+                .filter_map(|b| match b {
+                    Block::Paragraph { runs } => {
+                        Some(runs.iter().map(|r| r.text.as_str()).collect::<String>())
+                    }
+                    _ => None,
+                })
+                .collect();
+            assert!(
+                paragraphs
+                    .iter()
+                    .any(|p| p == "Primeira — O livro é escriturado por meios digitais."),
+                "{id}: the headed clause must render with its heading, got {paragraphs:?}"
+            );
+            assert!(
+                paragraphs.iter().any(|p| p == "Cláusula sem título."),
+                "{id}: an untitled clause must render its text alone, got {paragraphs:?}"
+            );
+        }
+    }
+
+    /// The acceptance bar for the mint: with no clauses in the context the block emits nothing, so
+    /// the model is exactly what the same template without the block produces. A termo that
+    /// declares no fillable text — the one-shot and legacy shapes — is unaffected by the mint.
+    #[test]
+    fn a_clause_body_termo_with_no_clauses_renders_as_if_the_block_were_absent() {
+        let reg = load_registry().expect("registry loads");
+        let mut ctx = termo_clause_probe_ctx();
+        ctx["body"] = json!([]);
+
+        for id in CLAUSE_BODY_TERMOS {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            let mut blockless = spec.clone();
+            blockless.blocks.retain(|b| {
+                !matches!(
+                    b,
+                    BlockSpec::Paragraph {
+                        items: Some(path),
+                        ..
+                    } if path == "body"
+                )
+            });
+            assert_eq!(
+                blockless.blocks.len() + 1,
+                spec.blocks.len(),
+                "{id} must place exactly one clause-body block"
+            );
+
+            let with_empty = render(spec, &ctx)
+                .unwrap_or_else(|e| panic!("{id} empty-clause render failed: {e:?}"));
+            let baseline = render(&blockless, &ctx)
+                .unwrap_or_else(|e| panic!("{id} block-less render failed: {e:?}"));
+            assert_eq!(
+                with_empty, baseline,
+                "{id}: the clause block must be inert when the instrument declares no clauses"
+            );
+
+            // And a context that never heard of the key renders the same, which is what a legacy
+            // caller predating the binding produces.
+            let mut unbound = ctx.clone();
+            unbound
+                .as_object_mut()
+                .expect("object")
+                .remove("body")
+                .expect("the probe binds it");
+            assert_eq!(
+                render(spec, &unbound).expect("renders"),
+                baseline,
+                "{id}: an unbound clause list renders as no clauses"
+            );
+        }
+    }
+
+    /// A clause is operator input rendered as a **value**. Text carrying minijinja syntax must
+    /// reach the instrument literally — compiling it would let whoever holds termo edit rights
+    /// execute template source, which `Permission::TemplateManage` exists to gate.
+    #[test]
+    fn a_clause_carrying_template_syntax_renders_literally() {
+        let reg = load_registry().expect("registry loads");
+        let mut ctx = termo_clause_probe_ctx();
+        ctx["body"] = json!([{ "text": "Literal {{ entity.name }} e {% if 1 %}x{% endif %}." }]);
+
+        for id in CLAUSE_BODY_TERMOS {
+            let spec = reg.get(id).unwrap_or_else(|| panic!("missing {id}"));
+            let doc = render(spec, &ctx).unwrap_or_else(|e| panic!("{id} render failed: {e:?}"));
+            assert!(
+                doc_text(&doc).contains("Literal {{ entity.name }} e {% if 1 %}x{% endif %}."),
+                "{id}: clause text must never be compiled as template source"
+            );
+        }
+    }
+
+    /// A context shaped like `chancela-api`'s termo contexts, carrying every key the abertura and
+    /// encerramento blocks read so one fixture serves both instruments.
+    fn termo_clause_probe_ctx() -> Value {
+        json!({
+            "title": "Termo do livro de atas",
+            "created_at": "2026-07-08T10:30:00Z",
+            "entity": {
+                "name": "Encosto Estratégico Lda",
+                "nipc": "515202030",
+                "seat": "Rua das Amoreiras, n.º 12, 1250-020 Lisboa"
+            },
+            "book": { "kind": "Assembleia geral" },
+            "purpose": "livro de atas da assembleia geral",
+            "numbering_scheme": "Sequential",
+            "numbering_label": "Numeração sequencial",
+            "opening_date": "2026-01-02",
+            "closing_date": "2026-12-31",
+            "page_capacity": 100,
+            "ata_count": 12,
+            "reason": "BookFull",
+            "required_signatories": [ { "role": "Presidente da Mesa", "name": "" } ],
+            "body": []
+        })
     }
 
     /// A render context shaped like `chancela-api`'s `encerramento_ctx`: the reserved envelope keys
@@ -2853,7 +3011,7 @@ mod tests {
     /// present-but-empty so every template's loops resolve to nothing while its root prose — where
     /// the `threshold()` recitals live — still renders. Fictional entity/people only.
     fn coverage_ctx() -> Value {
-        json!({
+        let mut ctx = json!({
             "title": "Documento — Encosto Estratégico Lda",
             "subject": "Assunto do documento",
             "created_at": "2026-07-08T10:30:00Z",
@@ -2936,7 +3094,23 @@ mod tests {
             "signatories": [],
             "required_signatories": [],
             "attachments": []
-        })
+        });
+        // A termo instrument's fillable clauses (`chancela-api`'s `termo_ctx`/`encerramento_ctx`
+        // bind this key). Non-empty and carrying a headed clause so the catalog-wide sweep actually
+        // exercises the clause-body block rather than iterating over nothing — an absent binding
+        // would leave that block silently emitting no paragraphs and the sweep would pass while
+        // testing it not at all.
+        //
+        // Inserted rather than written into the literal above: `json!` is already at the macro
+        // recursion limit for this fixture, and one more nested key overflows it.
+        ctx.as_object_mut().expect("object").insert(
+            "body".to_owned(),
+            json!([
+                { "heading": "Primeira", "text": "Cláusula com título." },
+                { "text": "Cláusula sem título." }
+            ]),
+        );
+        ctx
     }
 
     /// Flatten every rendered block into one string for cheap catalog-wide text assertions.
@@ -3736,25 +3910,27 @@ mod tests {
         // Every termo ships in more than one version, and every superseded version stays in the
         // catalog on purpose: a document already generated from it names it and must keep
         // resolving. Per family that is four termo de abertura/encerramento/retificação/transporte
-        // stems carrying nine specs in total — abertura `/v1` (as shipped), `/v2` (page-count row)
-        // and `/v3` (prose identification), plus `/v1` and `/v2` of each of the other three.
+        // stems carrying eleven specs in total — abertura `/v1` (as shipped), `/v2` (page-count
+        // row), `/v3` (prose identification) and `/v4` (renders the instrument's clause body),
+        // encerramento `/v1`, `/v2` and `/v3` (clause body), plus `/v1` and `/v2` of retificação
+        // and transporte.
         assert_eq!(
             reg.specs().len(),
-            129,
-            "expected the full authored catalog (~129 templates)"
+            139,
+            "expected the full authored catalog (~139 templates)"
         );
         let per_family = |f: EntityFamily| reg.specs().iter().filter(|s| s.family == f).count();
-        assert_eq!(per_family(EntityFamily::CommercialCompany), 49, "csc count");
+        assert_eq!(per_family(EntityFamily::CommercialCompany), 51, "csc count");
         assert_eq!(
             per_family(EntityFamily::Condominium),
-            19,
+            21,
             "condominio count"
         );
-        assert_eq!(per_family(EntityFamily::Association), 23, "assoc count");
-        assert_eq!(per_family(EntityFamily::Foundation), 19, "fundacao count");
+        assert_eq!(per_family(EntityFamily::Association), 25, "assoc count");
+        assert_eq!(per_family(EntityFamily::Foundation), 21, "fundacao count");
         assert_eq!(
             per_family(EntityFamily::Cooperative),
-            19,
+            21,
             "cooperativa count"
         );
 

@@ -141,6 +141,7 @@ mod cluster_chaos_tests;
 mod cmd_test_signature;
 #[allow(dead_code)]
 mod credential_resolve;
+mod credentials;
 mod dashboard;
 mod data;
 mod data_status;
@@ -4207,30 +4208,80 @@ fn rate_limit_exempt(path: &str) -> bool {
     )
 }
 
-/// Resolve the client IP for rate limiting. When `trust_forwarded_for` is set (deployment behind a
-/// trusted reverse proxy), prefer `X-Real-IP` then the left-most `X-Forwarded-For` entry; otherwise
-/// use the TCP peer address ([`ConnectInfo`], populated by the server's
-/// `into_make_service_with_connect_info`). Falls back to the unspecified address (one shared bucket)
-/// when no source is available — e.g. in-process tests without connect info.
+/// Where a resolved client address came from. The distinction is a security fact, not a detail: an
+/// **observed** address is the TCP peer this process itself accepted, which a client cannot choose;
+/// an **asserted** address was read out of a proxy forwarding header, which *any* client can send
+/// and which is believed only because the deployment declared a trusted proxy in front
+/// (`CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR`, a Tier-C security boundary). Carrying the provenance
+/// alongside the address is what stops a header-supplied value being shown to an operator as a fact
+/// the server witnessed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AddressSource {
+    /// The TCP peer address; not client-controllable.
+    Observed,
+    /// A trusted proxy's forwarding header; client-supplied, believed by deployment policy.
+    Asserted,
+}
+
+/// A resolved client address together with its provenance. `ip` is `None` when neither a trusted
+/// header nor a peer address was available — an in-process test without `ConnectInfo`, say.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ClientAddress {
+    pub(crate) ip: Option<IpAddr>,
+    pub(crate) source: AddressSource,
+}
+
+/// **The** client-address resolution for the whole process. The rate limiter and the active-sign-ins
+/// list both go through here, so there is exactly one answer to "what is this client's address" and
+/// exactly one place the `X-Forwarded-For` trust boundary is decided. A second parser would let the
+/// same flag come to mean two different things.
+///
+/// When `trust_forwarded_for` is set the forwarding headers win (see [`forwarded_client_ip`]);
+/// otherwise, and whenever those headers yield nothing usable, the TCP peer is used. With the flag
+/// off the headers are never read at all, so a deployment with no proxy behaves exactly as before.
+pub(crate) fn resolve_client_address(
+    headers: &axum::http::HeaderMap,
+    peer: Option<SocketAddr>,
+    trust_forwarded_for: bool,
+) -> ClientAddress {
+    if trust_forwarded_for && let Some(ip) = forwarded_client_ip(headers) {
+        return ClientAddress {
+            ip: Some(ip),
+            source: AddressSource::Asserted,
+        };
+    }
+    ClientAddress {
+        ip: peer.map(|addr| addr.ip()),
+        source: AddressSource::Observed,
+    }
+}
+
+/// Resolve the client IP for rate limiting, via [`resolve_client_address`]. Falls back to the
+/// unspecified address (one shared bucket) when no source is available — e.g. in-process tests
+/// without connect info. The bucket is keyed by address only; provenance does not change who is
+/// limited, it only matters for what is *recorded and shown*.
 fn rate_limit_client_ip(
     request: &axum::http::Request<axum::body::Body>,
     trust_forwarded_for: bool,
 ) -> IpAddr {
-    if trust_forwarded_for && let Some(ip) = forwarded_client_ip(request.headers()) {
-        return ip;
-    }
-    request
+    let peer = request
         .extensions()
         .get::<ConnectInfo<SocketAddr>>()
-        .map(|ci| ci.0.ip())
+        .map(|ci| ci.0);
+    resolve_client_address(request.headers(), peer, trust_forwarded_for)
+        .ip
         .unwrap_or(IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED))
 }
 
 /// The best-effort origin metadata for a session being minted (t95 session backend): a device label
-/// from the `User-Agent` and a **truncated** client IP. Reuses the rate limiter's IP resolution (the
-/// TCP peer, or a trusted forwarded header) so the session list and the rate limiter agree on what a
-/// client's address is. `connect` is the peer address when the server populated `ConnectInfo`
-/// (absent in in-process tests); the IP is truncated to a network before it is ever stored.
+/// from the `User-Agent`, a **truncated** client IP, and whether that IP was observed or asserted.
+/// Goes through [`resolve_client_address`], the one client-address resolution in the process, so the
+/// session list and the rate limiter can never disagree about what a client's address is. `connect`
+/// is the peer address when the server populated `ConnectInfo` (absent in in-process tests); the IP
+/// is truncated to a network before it is ever stored.
+///
+/// `ip_asserted` is only ever true alongside an actual address, so the stored pair cannot say
+/// "asserted, but nothing was asserted".
 pub(crate) fn session_origin(
     state: &AppState,
     headers: &axum::http::HeaderMap,
@@ -4241,31 +4292,69 @@ pub(crate) fn session_origin(
             .get(axum::http::header::USER_AGENT)
             .and_then(|v| v.to_str().ok()),
     );
-    let ip = if state.rate_limit.trust_forwarded_for
-        && let Some(ip) = forwarded_client_ip(headers)
-    {
-        Some(ip)
-    } else {
-        connect.map(|addr| addr.ip())
-    };
+    let address = resolve_client_address(headers, connect, state.rate_limit.trust_forwarded_for);
     session::SessionOrigin {
         device,
-        ip: session_metadata::truncate_ip(ip),
+        ip: session_metadata::truncate_ip(address.ip),
+        ip_asserted: address.ip.is_some() && address.source == AddressSource::Asserted,
     }
 }
 
-/// Extract a client IP from the proxy forwarding headers (`X-Real-IP`, then the left-most
-/// `X-Forwarded-For` entry). Only consulted when the proxy is explicitly trusted.
+/// Extract a client IP from the proxy forwarding headers. **Only ever consulted when the deployment
+/// has declared the proxy trusted** — every value here is client-supplied otherwise.
+///
+/// `X-Real-IP` first: a proxy *sets* it (nginx's `proxy_set_header X-Real-IP $remote_addr`),
+/// overwriting whatever the client sent, so it is single-valued and has no chain position to get
+/// wrong.
+///
+/// Otherwise the **right-most** `X-Forwarded-For` entry. Each hop *appends* the peer it accepted, so
+/// the header reads `<whatever the client sent>, …, <what our own proxy observed>`. Taking the
+/// left-most entry — as this did before — hands the choice to the caller: a client that sends
+/// `X-Forwarded-For: 203.0.113.9` against a proxy configured with `$proxy_add_x_forwarded_for` gets
+/// exactly that value recorded against its session. The right-most entry is the address the trusted
+/// proxy itself observed, which is the real client for the single-proxy deployment this flag
+/// describes. Behind additional hops it degrades to an inner proxy's address: uninformative, but
+/// never attacker-chosen, which is the correct direction to fail. A deployment with more trusted
+/// hops would need to say how many, and no such setting exists — deliberately, since inventing one
+/// here would be a second trust policy for the same header.
+///
+/// A right-most entry that does not parse means the header is not shaped the way a trusted proxy
+/// writes it, so the whole header is discarded and the caller falls back to the TCP peer. It
+/// deliberately does **not** scan leftwards for the first parseable entry: that walks straight into
+/// the client-supplied part of the list, which is the attack this function exists to avoid.
 fn forwarded_client_ip(headers: &axum::http::HeaderMap) -> Option<IpAddr> {
     if let Some(real) = headers.get("x-real-ip").and_then(|v| v.to_str().ok())
-        && let Ok(ip) = real.trim().parse::<IpAddr>()
+        && let Some(ip) = parse_forwarded_node(real)
     {
         return Some(ip);
     }
     let forwarded = headers
         .get("x-forwarded-for")
         .and_then(|v| v.to_str().ok())?;
-    forwarded.split(',').next()?.trim().parse::<IpAddr>().ok()
+    parse_forwarded_node(forwarded.rsplit(',').next()?)
+}
+
+/// Parse one forwarding-header entry into an address. Accepts the forms a proxy actually writes — a
+/// bare IP, a bracketed IPv6, and either with a `:port` suffix — and rejects everything else, so an
+/// RFC 7239 obfuscated identifier (`_hidden`), the legacy literal `unknown`, or junk degrades to
+/// "no usable address" rather than to some bogus value.
+fn parse_forwarded_node(node: &str) -> Option<IpAddr> {
+    let node = node.trim().trim_matches('"').trim();
+    if let Ok(ip) = node.parse::<IpAddr>() {
+        return Some(ip);
+    }
+    // `[2001:db8::1]` / `[2001:db8::1]:4711`
+    if let Some(rest) = node.strip_prefix('[') {
+        return rest.split_once(']')?.0.parse::<IpAddr>().ok();
+    }
+    // `198.51.100.7:4711`. Restricted to IPv4 so an unbracketed IPv6 — which would already have
+    // parsed above if it were well-formed — is never chopped at its first colon.
+    if let Some((host, port)) = node.split_once(':')
+        && !port.contains(':')
+    {
+        return host.parse::<std::net::Ipv4Addr>().map(IpAddr::V4).ok();
+    }
+    None
 }
 
 /// Per-client-IP HTTP rate-limit middleware (wp25-sec). Exempts the health/readiness/metrics probes;
@@ -12052,6 +12141,215 @@ mod tests {
                 .expect("router responds");
             assert_eq!(response.status(), StatusCode::OK);
         }
+    }
+
+    // =============================================================================================
+    // Client-address resolution: the `X-Forwarded-For` trust boundary.
+    //
+    // These pin the security decision, not the plumbing. The forwarding headers are readable by
+    // anyone, so the only thing making them believable is the deployment's explicit statement that a
+    // trusted proxy sits in front (`CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR`). Every case below is
+    // stated in terms of that flag.
+    // =============================================================================================
+
+    /// A peer address for the tests: the socket the server actually accepted.
+    fn peer(ip: &str) -> Option<SocketAddr> {
+        Some(SocketAddr::new(ip.parse().expect("an address"), 44_301))
+    }
+
+    fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
+        let mut headers = HeaderMap::new();
+        for (name, value) in pairs {
+            headers.insert(
+                axum::http::HeaderName::from_bytes(name.as_bytes()).expect("a header name"),
+                value.parse().expect("a header value"),
+            );
+        }
+        headers
+    }
+
+    /// With the flag OFF the forwarding headers are not read at all — a deployment with no proxy
+    /// behaves exactly as it did before this existed.
+    #[test]
+    fn without_a_trusted_proxy_the_socket_peer_is_recorded() {
+        let resolved = resolve_client_address(
+            &headers_of(&[("x-forwarded-for", "203.0.113.9")]),
+            peer("198.51.100.4"),
+            false,
+        );
+        assert_eq!(resolved.ip, peer("198.51.100.4").map(|a| a.ip()));
+        assert_eq!(resolved.source, AddressSource::Observed);
+    }
+
+    /// The forgery case, stated directly: a client that sets the header itself, against a deployment
+    /// that has NOT declared a trusted proxy, must not get to name its own address.
+    #[test]
+    fn a_forged_header_is_ignored_without_a_trusted_proxy() {
+        let forged = headers_of(&[
+            ("x-forwarded-for", "203.0.113.9"),
+            ("x-real-ip", "203.0.113.9"),
+        ]);
+        let resolved = resolve_client_address(&forged, peer("198.51.100.4"), false);
+        assert_eq!(resolved.ip, peer("198.51.100.4").map(|a| a.ip()));
+        assert_eq!(resolved.source, AddressSource::Observed);
+    }
+
+    /// With the flag ON the forwarded address wins over the peer, and is marked as asserted.
+    #[test]
+    fn with_a_trusted_proxy_the_forwarded_address_is_recorded_and_marked_asserted() {
+        let resolved = resolve_client_address(
+            &headers_of(&[("x-forwarded-for", "203.0.113.9")]),
+            peer("10.0.0.7"),
+            true,
+        );
+        assert_eq!(resolved.ip, Some("203.0.113.9".parse::<IpAddr>().unwrap()));
+        assert_eq!(resolved.source, AddressSource::Asserted);
+    }
+
+    /// THE CHAIN-POSITION RULING. A proxy using `$proxy_add_x_forwarded_for` appends the peer it
+    /// observed to whatever the client already sent, so the list is `<client's own claim>, <real>`.
+    /// The right-most entry is the one our trusted proxy vouched for; the left-most is the attack.
+    #[test]
+    fn the_rightmost_forwarded_entry_wins_so_a_prepended_claim_cannot_forge_the_address() {
+        let resolved = resolve_client_address(
+            // "203.0.113.9" is what the caller put in the header before the proxy ever saw it.
+            &headers_of(&[("x-forwarded-for", "203.0.113.9, 198.51.100.23")]),
+            peer("10.0.0.7"),
+            true,
+        );
+        assert_eq!(
+            resolved.ip,
+            Some("198.51.100.23".parse::<IpAddr>().unwrap()),
+            "the address the trusted proxy observed, not the one the client asked us to believe"
+        );
+        assert_eq!(resolved.source, AddressSource::Asserted);
+    }
+
+    /// A malformed or unusable header degrades to the socket peer — never to an empty value, and
+    /// never by scanning leftwards into the client-supplied part of the chain.
+    #[test]
+    fn an_unusable_forwarded_header_degrades_to_the_socket_peer() {
+        for header in [
+            "",
+            "   ",
+            ",",
+            "unknown",
+            "_hidden",
+            "not-an-address",
+            // The right-most entry is junk: the header is not shaped the way a trusted proxy writes
+            // it, so the parseable left-most entry must NOT be reached for.
+            "203.0.113.9, unknown",
+        ] {
+            let resolved = resolve_client_address(
+                &headers_of(&[("x-forwarded-for", header)]),
+                peer("198.51.100.4"),
+                true,
+            );
+            assert_eq!(
+                resolved.ip,
+                peer("198.51.100.4").map(|a| a.ip()),
+                "header {header:?} must fall back to the peer"
+            );
+            assert_eq!(
+                resolved.source,
+                AddressSource::Observed,
+                "header {header:?}"
+            );
+        }
+    }
+
+    /// An absent header with the flag on is simply the peer, still marked observed.
+    #[test]
+    fn an_absent_forwarded_header_degrades_to_the_socket_peer() {
+        let resolved = resolve_client_address(&HeaderMap::new(), peer("198.51.100.4"), true);
+        assert_eq!(resolved.ip, peer("198.51.100.4").map(|a| a.ip()));
+        assert_eq!(resolved.source, AddressSource::Observed);
+    }
+
+    /// `X-Real-IP` is single-valued and set (not appended) by the proxy, so it is preferred and has
+    /// no chain position to get wrong.
+    #[test]
+    fn x_real_ip_is_preferred_over_the_forwarded_chain() {
+        let resolved = resolve_client_address(
+            &headers_of(&[
+                ("x-real-ip", "198.51.100.23"),
+                ("x-forwarded-for", "203.0.113.9, 192.0.2.5"),
+            ]),
+            peer("10.0.0.7"),
+            true,
+        );
+        assert_eq!(
+            resolved.ip,
+            Some("198.51.100.23".parse::<IpAddr>().unwrap())
+        );
+    }
+
+    /// The entry shapes a proxy may actually write, and the ones that must be refused.
+    #[test]
+    fn forwarded_entries_parse_the_shapes_a_proxy_writes() {
+        for (node, expected) in [
+            ("198.51.100.23", Some("198.51.100.23")),
+            ("  198.51.100.23  ", Some("198.51.100.23")),
+            ("198.51.100.23:44301", Some("198.51.100.23")),
+            ("2001:db8::1", Some("2001:db8::1")),
+            ("[2001:db8::1]", Some("2001:db8::1")),
+            ("[2001:db8::1]:44301", Some("2001:db8::1")),
+            ("\"[2001:db8::1]:44301\"", Some("2001:db8::1")),
+            // RFC 7239 obfuscated identifiers, the legacy literal, and junk are not addresses.
+            ("_hidden", None),
+            ("unknown", None),
+            ("example.org", None),
+            ("", None),
+        ] {
+            assert_eq!(
+                parse_forwarded_node(node),
+                expected.map(|e| e.parse::<IpAddr>().expect("an address")),
+                "node {node:?}"
+            );
+        }
+    }
+
+    /// `Forwarded` (RFC 7239) is deliberately NOT part of the trusted surface: no proxy in the
+    /// documented deployments sets it, and parsing a header nothing writes would only widen what an
+    /// attacker can try. It must be inert even with the flag on.
+    #[test]
+    fn the_rfc7239_forwarded_header_is_not_trusted() {
+        let resolved = resolve_client_address(
+            &headers_of(&[("forwarded", "for=203.0.113.9;proto=https")]),
+            peer("198.51.100.4"),
+            true,
+        );
+        assert_eq!(resolved.ip, peer("198.51.100.4").map(|a| a.ip()));
+        assert_eq!(resolved.source, AddressSource::Observed);
+    }
+
+    /// The stored session origin: still truncated to a network (the privacy decision in
+    /// `session_metadata` is untouched), and marked asserted only when it really was.
+    #[tokio::test]
+    async fn session_origin_truncates_and_marks_an_asserted_address() {
+        let trusting = AppState {
+            rate_limit: RateLimitConfig {
+                trust_forwarded_for: true,
+                ..RateLimitConfig::default()
+            },
+            ..AppState::default()
+        };
+        let headers = headers_of(&[("x-forwarded-for", "203.0.113.9, 198.51.100.23")]);
+
+        let origin = session_origin(&trusting, &headers, peer("10.0.0.7"));
+        assert_eq!(origin.ip.as_deref(), Some("198.51.100.0"));
+        assert!(origin.ip_asserted);
+
+        // The same request against a deployment with no declared proxy: the peer, unmarked.
+        let plain = AppState::default();
+        let origin = session_origin(&plain, &headers, peer("198.51.100.4"));
+        assert_eq!(origin.ip.as_deref(), Some("198.51.100.0"));
+        assert!(!origin.ip_asserted);
+
+        // No address at all is never "asserted" — the flag cannot stand alone.
+        let origin = session_origin(&trusting, &HeaderMap::new(), None);
+        assert_eq!(origin.ip, None);
+        assert!(!origin.ip_asserted);
     }
 
     #[tokio::test]

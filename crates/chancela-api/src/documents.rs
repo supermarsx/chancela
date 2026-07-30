@@ -27,7 +27,7 @@ use axum::response::{IntoResponse, Response};
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
 use chancela_core::book::BookId;
-use chancela_core::termo::{TermoClause, TermoInstrument, TermoKind};
+use chancela_core::termo::{ClauseOrigin, TermoClause, TermoInstrument, TermoKind};
 use chancela_core::{
     Act, ActBody, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel,
     DocumentFontFamily, DocumentFooterFurniture, DocumentFurnitureAlignment,
@@ -314,23 +314,24 @@ fn spine_template_id(family: EntityFamily, stage: LifecycleStage) -> Option<&'st
         (Association, Ata) => "assoc-ata-ga/v1",
         (Foundation, Ata) => "fundacao-ata-ca/v1",
         (Cooperative, Ata) => "cooperativa-ata-ag/v1",
-        // Termo de abertura — one per family. `/v3` identifies the entity in notarial prose and
-        // states the declared page count in a sentence; `/v2` (labelled rows, page-count row) and
-        // `/v1` stay in the catalog, byte-identical, because documents already generated from them
-        // name them and must keep resolving. Only what a NEW termo renders moves.
-        (CommercialCompany, TermoAbertura) => "csc-termo-abertura/v3",
-        (Condominium, TermoAbertura) => "condominio-termo-abertura/v3",
-        (Association, TermoAbertura) => "assoc-termo-abertura/v3",
-        (Foundation, TermoAbertura) => "fundacao-termo-abertura/v3",
-        (Cooperative, TermoAbertura) => "cooperativa-termo-abertura/v3",
-        // Termo de encerramento — each family's closing instrument, `/v2` being the prose shape.
-        // CSC also carries a `-transporte` variant (successor-book carry-over) reachable on demand;
-        // the encerramento is the spine that book-close auto-generates.
-        (CommercialCompany, TermoEncerramento) => "csc-termo-encerramento/v2",
-        (Condominium, TermoEncerramento) => "condominio-termo-encerramento/v2",
-        (Association, TermoEncerramento) => "assoc-termo-encerramento/v2",
-        (Foundation, TermoEncerramento) => "fundacao-termo-encerramento/v2",
-        (Cooperative, TermoEncerramento) => "cooperativa-termo-encerramento/v2",
+        // Termo de abertura — one per family. `/v4` renders the instrument's own fillable clauses
+        // (the operator's body, which no earlier version placed anywhere and which therefore never
+        // reached a PDF); `/v3` (prose identification), `/v2` (labelled rows) and `/v1` stay in the
+        // catalog, byte-identical, because documents already generated from them name them and must
+        // keep resolving. Only what a NEW termo renders moves.
+        (CommercialCompany, TermoAbertura) => "csc-termo-abertura/v4",
+        (Condominium, TermoAbertura) => "condominio-termo-abertura/v4",
+        (Association, TermoAbertura) => "assoc-termo-abertura/v4",
+        (Foundation, TermoAbertura) => "fundacao-termo-abertura/v4",
+        (Cooperative, TermoAbertura) => "cooperativa-termo-abertura/v4",
+        // Termo de encerramento — each family's closing instrument, `/v3` being the clause-body
+        // shape over `/v2`'s prose. CSC also carries a `-transporte` variant (successor-book
+        // carry-over) reachable on demand; the encerramento is the spine book-close auto-generates.
+        (CommercialCompany, TermoEncerramento) => "csc-termo-encerramento/v3",
+        (Condominium, TermoEncerramento) => "condominio-termo-encerramento/v3",
+        (Association, TermoEncerramento) => "assoc-termo-encerramento/v3",
+        (Foundation, TermoEncerramento) => "fundacao-termo-encerramento/v3",
+        (Cooperative, TermoEncerramento) => "cooperativa-termo-encerramento/v3",
         _ => return None,
     })
 }
@@ -889,11 +890,41 @@ fn signature_slots(
         .collect()
 }
 
+/// The instrument's fillable clauses (F8), reshaped into the `body` binding a template's
+/// clause-body block (`Paragraph { items: "body" }`) iterates — one paragraph per clause.
+///
+/// **The clause text is a value, never template source.** It rides the context and is emitted
+/// through `{{ text }}`, so a clause containing `{{ … }}` or `{% … %}` renders literally; nothing
+/// on this path compiles operator input. That matters because clause text is authored by anyone
+/// with termo edit rights, while authoring a *template* is gated on `Permission::TemplateManage`.
+///
+/// `heading` is inserted only when the clause carries one, so `{% if heading %}` is false rather
+/// than true-with-an-empty-string for a headless clause — otherwise the run-in dash would print
+/// with nothing before it.
+///
+/// A template that places no clause-body block never reads this key, which is precisely why adding
+/// it moves no bytes: every version shipped before the clause-body mint renders exactly as it did.
+fn clause_rows(body: &[chancela_core::book::TermoClauseRecord]) -> Value {
+    Value::Array(
+        body.iter()
+            .map(|clause| match clause.heading.as_deref() {
+                Some(heading) if !heading.trim().is_empty() => {
+                    json!({ "heading": heading, "text": clause.text })
+                }
+                _ => json!({ "text": clause.text }),
+            })
+            .collect(),
+    )
+}
+
 /// Build the render context for a termo de abertura (book-opening instrument). The termo carries
 /// its own entity snapshot; `book.kind` names the organ. `required_signatories` are reshaped by
 /// [`signature_slots`] into `{role, name}` slots so the `SignatureBlock` template binds the
 /// qualidade and the signatory's name as separate lines. `created_at` derives from the opening date
 /// (deterministic, no clock).
+///
+/// ⚠️ Same warning as [`encerramento_ctx`]: the abertura snapshot is frozen at `advance` and signed,
+/// and the open path re-renders it. Any change here moves those bytes.
 fn termo_ctx(termo: &TermoDeAbertura, book: &Book) -> Value {
     let signatories = signature_slots(
         &termo.required_signatory_records,
@@ -913,6 +944,7 @@ fn termo_ctx(termo: &TermoDeAbertura, book: &Book) -> Value {
         "numbering_label": numbering_label(termo.numbering_scheme),
         "opening_date": format_date(termo.opening_date),
         "required_signatories": signatories,
+        "body": clause_rows(&termo.body),
     });
     // The declared page count (F3), as a bare number for a labelled row — never built into a
     // sentence, because "100 páginas" and "1 página" do not inflect the same way.
@@ -1335,6 +1367,73 @@ pub(crate) fn abertura_template_id(family: EntityFamily) -> Option<&'static str>
     spine_template_id(family, LifecycleStage::TermoAbertura)
 }
 
+/// Refuse to freeze a draft that still carries **unedited** seed clauses the template it is about
+/// to be pinned to does not contain.
+///
+/// ## The drift this closes
+///
+/// [`seed_draft_abertura`] / [`seed_draft_encerramento`] copy their clause text from the *current
+/// spine's* `default_body` and deliberately leave `template_id` unset; the pin happens later, at
+/// `advance`. A draft seeded before a template repoint and advanced after it therefore pins the new
+/// version while its editor text came from the old one — the operator reviews one version's clause
+/// text and freezes another's. Now that the clauses actually render (the clause-body mint), stale
+/// seed text can restate, or contradict, prose the new version already carries.
+///
+/// ## Why this, and not pinning at seed
+///
+/// Pinning at seed was the obvious alternative and is wrong twice over. `template_id` is the
+/// instrument's *frozen* template — the resolution [`spec_for_frozen_instrument`] treats as "the
+/// bytes the signatories signed", and the reason [`TermoInstrument::withdraw_to_draft`] clears it on
+/// the way back to `Draft`. A `Some` on a Draft would make that field mean two different things, and
+/// a withdraw would re-pin from the spine anyway, so the hole would simply move. And a draft pinned
+/// at seed would never see a repoint: a book drafted a year ago would open on a retired template
+/// with nothing said, which is the opposite of what publishing a new version is for.
+///
+/// So the pin stays at `advance` and the drift is reported instead — loudly, before any signature
+/// binds it, naming the clauses.
+///
+/// ## What it is quiet about
+///
+/// Only [`ClauseOrigin::TemplateDefault`] clauses — text the operator never touched — are checked.
+/// An edited or operator-written clause is the operator's own text, not a stale template default,
+/// and it is theirs to freeze. That is also the remedy: reviewing and saving the body through the
+/// existing editor re-authors every clause, which clears this.
+///
+/// A `template_id` the catalogue does not carry yields `Ok`: there is nothing to compare against,
+/// and the loud failure for an unresolvable pin belongs to [`spec_for_frozen_instrument`], which
+/// runs moments later on the same id.
+pub(crate) fn ensure_seed_matches_pinned_template(
+    termo: &TermoInstrument,
+    template_id: &str,
+) -> Result<(), ApiError> {
+    let Some(spec) = registry().get(template_id) else {
+        return Ok(());
+    };
+    let seeded: std::collections::HashSet<(Option<&str>, &str)> = spec
+        .default_body()
+        .iter()
+        .map(|clause| (clause.heading.as_deref(), clause.text.as_str()))
+        .collect();
+    let stale: Vec<String> = termo
+        .body
+        .iter()
+        .enumerate()
+        .filter(|(_, clause)| clause.origin == ClauseOrigin::TemplateDefault)
+        .filter(|(_, clause)| !seeded.contains(&(clause.heading.as_deref(), clause.text.as_str())))
+        .map(|(index, _)| (index + 1).to_string())
+        .collect();
+    if stale.is_empty() {
+        return Ok(());
+    }
+    Err(ApiError::Unprocessable(format!(
+        "clause(s) {} of this draft were seeded from a different version of the family's termo \
+         template and are not part of {template_id}, which this termo would be frozen against; \
+         review the body and save it before freezing",
+        stale.join(", ")
+    ))
+    .with_code("termo_seed_template_drift"))
+}
+
 /// The title a fresh termo de encerramento draft carries, matching the one-shot render's heading
 /// ([`encerramento_ctx`]) so the two paths produce the same document heading.
 pub(crate) const TERMO_ENCERRAMENTO_TITLE: &str = "Termo de encerramento do livro de atas";
@@ -1402,6 +1501,7 @@ fn encerramento_ctx(termo: &TermoDeEncerramento, book: &Book, entity: &Entity) -
         "reason": serde_json::to_value(&termo.reason).unwrap_or(Value::Null),
         "closing_date": format_date(termo.closing_date),
         "required_signatories": signatories,
+        "body": clause_rows(&termo.body),
     })
 }
 
@@ -10494,12 +10594,20 @@ mod spec_binding_tests {
                 "6d3dded913cb5fe00279185c8d07b2f3665c7173e2d58b857cb0c0873bad9f6d",
             ),
             (
+                "assoc-termo-abertura/v4",
+                "2f1cce4130fa3db996141a839b0c8d673dc02b35cea436a37af458ae818f48dd",
+            ),
+            (
                 "assoc-termo-encerramento/v1",
                 "15e20a35c7cf4c2eaf54015b3a5f5aba3a1cf96a4edc3aa9f5eb31905186e487",
             ),
             (
                 "assoc-termo-encerramento/v2",
                 "3b7dea223fd38b4c413fa17b52ef143abcc6a0db36f4a28506cbcf1fddeae768",
+            ),
+            (
+                "assoc-termo-encerramento/v3",
+                "ace5014551c70898c1a6e76cb27777b72e16e765bc74118efe185f0e92043630",
             ),
             (
                 "assoc-termo-retificacao/v1",
@@ -10570,12 +10678,20 @@ mod spec_binding_tests {
                 "d249c2e3e420a0429c7679e0f0dd69496cce10f0438bd041af23d55df2761cc3",
             ),
             (
+                "condominio-termo-abertura/v4",
+                "97667cefab8019a2ec66f7657af5cc22faf16ffda90ff548c4bb8f38a0ae0ccc",
+            ),
+            (
                 "condominio-termo-encerramento/v1",
                 "b8a9c0277368fae50cf89d7faea2f7bb12b193b9a3de812b601723d099e2d6f3",
             ),
             (
                 "condominio-termo-encerramento/v2",
                 "7c47c2f941314b2d8adfd3ee4ecff03977a6bcbb56579649e469082f5c9ac25f",
+            ),
+            (
+                "condominio-termo-encerramento/v3",
+                "fbfc8ab0ec48dc880a2847301f9fdbabee5cb6d7c13d9da16cb7ce50043c74ab",
             ),
             (
                 "condominio-termo-retificacao/v1",
@@ -10646,12 +10762,20 @@ mod spec_binding_tests {
                 "56fe9743061339f1133ddf92ae433b56dca2845e6417ef42a98137aea838ae84",
             ),
             (
+                "cooperativa-termo-abertura/v4",
+                "290713d24532c6b2ffeb0bf5388a4b443e6e3f6edad99d05c802e5560967fe5e",
+            ),
+            (
                 "cooperativa-termo-encerramento/v1",
                 "b0644ef5aa8e6b3c6401440a624e4cd587a7b55b68bac9ff971f0c60f5d8fff0",
             ),
             (
                 "cooperativa-termo-encerramento/v2",
                 "71592e752ca62e9019fcdf43da0fbc980709595150a01d0b27e715bf3ded7730",
+            ),
+            (
+                "cooperativa-termo-encerramento/v3",
+                "0d0157db9e01062e92ac4ef22a2807eb6510afe396d312c4bb13870dc961962f",
             ),
             (
                 "cooperativa-termo-retificacao/v1",
@@ -10842,12 +10966,20 @@ mod spec_binding_tests {
                 "6cc38d92b1d2a71367e6aa7f3404de72b0dae4fecc2823e8c596b842a3d04225",
             ),
             (
+                "csc-termo-abertura/v4",
+                "4becfa251f1e1b3dcf56965804da6a3236512e41ffd45e8a45867c876f5ba374",
+            ),
+            (
                 "csc-termo-encerramento/v1",
                 "bac01ebf10ebbfccacc166db6673f18a9b0215b485b0b908590df707a67172c5",
             ),
             (
                 "csc-termo-encerramento/v2",
                 "6dde7af7ee8fc2323fd37aaac01b8fe688a069836587babf1edbcc2b3c98df22",
+            ),
+            (
+                "csc-termo-encerramento/v3",
+                "bec05d866f78572df5ccb95bcc73093b0c04548c25a684f6c6ac35afce8c45dc",
             ),
             (
                 "csc-termo-retificacao/v1",
@@ -10918,12 +11050,20 @@ mod spec_binding_tests {
                 "f0298db1f38f2d5acfdc54fe0abec77dc6eb6aee5a48f1c2ef648aa3b65fddc1",
             ),
             (
+                "fundacao-termo-abertura/v4",
+                "ad445f075cdc49aa89d60c082d810f69175f9fd6efca3f6800a6cf3b5269215e",
+            ),
+            (
                 "fundacao-termo-encerramento/v1",
                 "0e586fee39dceef8251048da74a6783fca3b7387219e6adffa77b9daf55bdc3f",
             ),
             (
                 "fundacao-termo-encerramento/v2",
                 "cbb2cf3135d2e2524d8478cfbb0f45152d0c94e6ed47b74a4af889da801e8044",
+            ),
+            (
+                "fundacao-termo-encerramento/v3",
+                "dc17f55b8f4939211e975c82a81fbc58e2dfaa5a5b24b3c21a8360e859c31d71",
             ),
             (
                 "fundacao-termo-retificacao/v1",
@@ -11340,7 +11480,7 @@ mod tests {
                 EntityFamily::CommercialCompany,
                 LifecycleStage::TermoEncerramento
             ),
-            Some("csc-termo-encerramento/v2"),
+            Some("csc-termo-encerramento/v3"),
             "the spine must have moved for this test to mean anything"
         );
 
@@ -11511,7 +11651,7 @@ mod tests {
                 EntityFamily::CommercialCompany,
                 LifecycleStage::TermoAbertura
             ),
-            Some("csc-termo-abertura/v3"),
+            Some("csc-termo-abertura/v4"),
             "the spine must have moved for this test to mean anything"
         );
 
@@ -11535,8 +11675,13 @@ mod tests {
     /// (`the_prose_termo_states_the_declared_page_count_in_a_sentence` and its siblings) reach their
     /// templates by literal id; this is the assertion that makes them cover the **live** path, by
     /// pinning that those literals are what a seal / open / close now actually renders.
+    ///
+    /// The spine is the clause-body mint — abertura `/v4`, encerramento `/v3` — because those are
+    /// the only versions that render the instrument's own fillable clauses at all. Every earlier
+    /// version stays in the catalogue and stays reachable by pin; none of them may become the spine
+    /// again, or a freshly-opened book would once more drop the operator's body on the floor.
     #[test]
-    fn the_termo_spine_points_at_the_prose_versions() {
+    fn the_termo_spine_points_at_the_clause_body_versions() {
         for family in [
             EntityFamily::CommercialCompany,
             EntityFamily::Condominium,
@@ -11547,22 +11692,359 @@ mod tests {
             let abertura = spine_template_id(family, LifecycleStage::TermoAbertura)
                 .expect("every family binds an abertura spine");
             assert!(
-                abertura.ends_with("/v3"),
-                "{family:?} abertura spine is {abertura}, not the prose version"
+                abertura.ends_with("/v4"),
+                "{family:?} abertura spine is {abertura}, not the clause-body version"
             );
             let encerramento = spine_template_id(family, LifecycleStage::TermoEncerramento)
                 .expect("every family binds an encerramento spine");
             assert!(
-                encerramento.ends_with("/v2"),
-                "{family:?} encerramento spine is {encerramento}, not the prose version"
+                encerramento.ends_with("/v3"),
+                "{family:?} encerramento spine is {encerramento}, not the clause-body version"
             );
-            // Both must actually be in the catalogue, or auto-generation silently produces nothing.
-            assert!(registry().get(abertura).is_some(), "{abertura} is shipped");
-            assert!(
-                registry().get(encerramento).is_some(),
-                "{encerramento} is shipped"
+            // The spine must be able to carry the body, or the defect returns silently.
+            for id in [abertura, encerramento] {
+                let spec = registry().get(id).expect("the spine is shipped");
+                assert!(
+                    spec.blocks.iter().any(|block| matches!(
+                        block,
+                        chancela_templates::BlockSpec::Paragraph { items: Some(path), .. }
+                            if path == "body"
+                    )),
+                    "{id} places no clause-body block, so an operator's termo body would not render"
+                );
+            }
+        }
+    }
+
+    // --- the operator's termo body reaches the instrument (the clause-body mint) -----------------
+    //
+    // The defect: `termo_ctx` carried no `body` binding and no shipped termo template placed a
+    // clause-body block, so whatever an operator wrote in a termo's body editor was digested into
+    // the sealed payload and never appeared in any PDF, on any version. These are the red-proofs —
+    // both fail against the pre-mint code, the first on the missing paragraph and the second on
+    // two identical digests.
+
+    /// A `Draft` abertura seeded from the spine, given the fields a freeze requires and one
+    /// operator-written clause.
+    fn drafted_abertura(
+        entity: &Entity,
+        book: &Book,
+        clauses: Vec<TermoClause>,
+    ) -> TermoInstrument {
+        let mut termo = seed_draft_abertura(book.id, entity.family, OffsetDateTime::now_utc());
+        termo.fields.instrument_date = Some(date!(2026 - 01 - 15));
+        termo.fields.purpose = Some("livro de atas da assembleia geral".to_owned());
+        termo.body = clauses;
+        termo
+    }
+
+    /// Render an abertura instrument the way [`generate_for_termo`] does — projection, context,
+    /// pinned spec — so the assertion covers the live path rather than a hand-built context.
+    fn rendered_abertura(termo: &TermoInstrument, book: &Book, entity: &Entity) -> DocumentModel {
+        let projected = termo
+            .project_abertura(
+                entity.name.clone(),
+                entity.nipc.to_string(),
+                entity.seat.clone(),
+                NumberingScheme::Sequential,
+            )
+            .expect("the draft projects");
+        let spec = spec_for_frozen_instrument(
+            termo.template_id.as_deref(),
+            entity.family,
+            LifecycleStage::TermoAbertura,
+        )
+        .expect("spec resolves")
+        .expect("an abertura template");
+        chancela_templates::render_with_body(spec, &termo_ctx(&projected, book), &[])
+            .expect("the termo renders")
+    }
+
+    /// **Defect red-proof.** Clause text an operator wrote must appear in the rendered termo de
+    /// abertura. Asserted on the clause text reaching a paragraph of its own, and on the headed
+    /// clause carrying its heading — not on the surrounding prose, which is the template's.
+    #[test]
+    fn an_operators_abertura_clauses_reach_the_rendered_termo() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = drafted_abertura(
+            &entity,
+            &book,
+            vec![
+                TermoClause::user_added(
+                    Some("Primeira".to_owned()),
+                    "O livro é escriturado exclusivamente por meios digitais.",
+                ),
+                TermoClause::user_added(None, "Cláusula sem título."),
+            ],
+        );
+
+        let text = document_text(&rendered_abertura(&termo, &book, &entity));
+        assert!(
+            text.contains("Primeira — O livro é escriturado exclusivamente por meios digitais."),
+            "the headed clause must reach the instrument: {text}"
+        );
+        assert!(
+            text.contains("Cláusula sem título."),
+            "an untitled clause must reach the instrument on its own: {text}"
+        );
+    }
+
+    /// The same for the closing instrument, through its own projection and context.
+    #[test]
+    fn an_operators_encerramento_clauses_reach_the_rendered_termo() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = seed_draft_encerramento(book.id, entity.family, OffsetDateTime::now_utc());
+        termo.fields.instrument_date = Some(date!(2026 - 12 - 31));
+        termo.fields.closing_reason = Some(ClosingReason::BookFull);
+        termo.body = vec![TermoClause::user_added(
+            Some("Única".to_owned()),
+            "Encerra-se o livro por deliberação da gerência.",
+        )];
+
+        let projected = termo
+            .project_encerramento(7, Some(42))
+            .expect("the draft projects");
+        let spec = spec_for_frozen_instrument(
+            termo.template_id.as_deref(),
+            entity.family,
+            LifecycleStage::TermoEncerramento,
+        )
+        .expect("spec resolves")
+        .expect("an encerramento template");
+        let model = chancela_templates::render_with_body(
+            spec,
+            &encerramento_ctx(&projected, &book, &entity),
+            &[],
+        )
+        .expect("the termo renders");
+
+        assert!(
+            document_text(&model)
+                .contains("Única — Encerra-se o livro por deliberação da gerência."),
+            "the operator's closing clause must reach the instrument: {}",
+            document_text(&model)
+        );
+    }
+
+    /// **Defect red-proof, at the PDF.** The clause text must reach the *bytes the signatories
+    /// sign*, not merely the model: two instruments differing only in their body must produce
+    /// different snapshots. Before the mint both rendered identically, which is the whole defect.
+    #[test]
+    fn the_abertura_snapshot_bytes_change_when_the_operator_edits_the_body() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let snapshot_of = |clause: &str| {
+            let termo = drafted_abertura(
+                &entity,
+                &book,
+                vec![TermoClause::user_added(None, clause.to_owned())],
+            );
+            generate_termo_snapshot(
+                &termo,
+                &book,
+                &entity,
+                NumberingScheme::Sequential,
+                &DocumentLayoutPolicy::default(),
+            )
+            .expect("the snapshot renders")
+            .expect("an abertura template")
+            .stored
+            .pdf_digest
+        };
+
+        assert_ne!(
+            snapshot_of("O livro é escriturado por meios digitais."),
+            snapshot_of("O livro é escriturado em suporte de papel."),
+            "an edit to the termo body must change the bytes the signatories sign"
+        );
+    }
+
+    /// **The acceptance bar for the mint.** An instrument frozen against a version that shipped
+    /// before the clause-body block re-renders to exactly the bytes it always did, whether or not it
+    /// carries a body. This is what keeps every signed-but-unopened abertura and every
+    /// signed-but-unclosed encerramento renderable: the new `body` binding is simply a key those
+    /// templates do not read.
+    ///
+    /// The encerramento side is the one with teeth — `close_from_termo` re-renders and refuses on a
+    /// digest mismatch — so both are held here.
+    #[test]
+    fn a_termo_pinned_before_the_mint_renders_identically_with_or_without_a_body() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+
+        for pinned in [
+            "csc-termo-abertura/v1",
+            "csc-termo-abertura/v2",
+            "csc-termo-abertura/v3",
+        ] {
+            let mut bodyless = drafted_abertura(&entity, &book, Vec::new());
+            bodyless.template_id = Some(pinned.to_owned());
+            let mut with_body = bodyless.clone();
+            with_body.body = vec![TermoClause::user_added(
+                Some("Primeira".to_owned()),
+                "Texto que esta versão não sabe onde colocar.",
+            )];
+
+            assert_eq!(
+                rendered_abertura(&bodyless, &book, &entity),
+                rendered_abertura(&with_body, &book, &entity),
+                "{pinned} must render exactly as it always did"
             );
         }
+
+        for pinned in ["csc-termo-encerramento/v1", "csc-termo-encerramento/v2"] {
+            let mut bodyless =
+                seed_draft_encerramento(book.id, entity.family, OffsetDateTime::now_utc());
+            bodyless.fields.instrument_date = Some(date!(2026 - 12 - 31));
+            bodyless.fields.closing_reason = Some(ClosingReason::BookFull);
+            bodyless.body = Vec::new();
+            bodyless.template_id = Some(pinned.to_owned());
+            let mut with_body = bodyless.clone();
+            with_body.body = vec![TermoClause::user_added(
+                None,
+                "Texto que esta versão não sabe onde colocar.",
+            )];
+
+            let render = |termo: &TermoInstrument| {
+                generate_encerramento_snapshot_with_layout(
+                    termo,
+                    &book,
+                    &entity,
+                    7,
+                    Some(42),
+                    &DocumentLayoutPolicy::default(),
+                )
+                .expect("the snapshot renders")
+                .expect("an encerramento template")
+                .stored
+                .pdf_digest
+            };
+            assert_eq!(
+                render(&bodyless),
+                render(&with_body),
+                "{pinned} must re-render to the bytes its signatories signed"
+            );
+        }
+    }
+
+    // --- seed/pin drift ---------------------------------------------------------------------
+    //
+    // The seeds copy the *current spine's* clause text and leave `template_id` unset; the pin
+    // happens at advance. A draft seeded before a repoint and advanced after it would freeze one
+    // version's clause text against another version's template. The decision is to report that at
+    // the pin rather than to pin at seed — see `ensure_seed_matches_pinned_template`.
+
+    /// The seeds of the version this book was drafted under, as `TemplateDefault` clauses: exactly
+    /// the shape `seed_draft_abertura` produced before the spine moved.
+    fn seeded_from(template_id: &str) -> Vec<TermoClause> {
+        registry()
+            .get(template_id)
+            .expect("a shipped template")
+            .default_body()
+            .iter()
+            .map(|clause| TermoClause::from_template(clause.heading.clone(), clause.text.clone()))
+            .collect()
+    }
+
+    /// A draft seeded under the previous version and frozen after the repoint is **refused**, and
+    /// the refusal names the clause and the template it would have been frozen against.
+    #[test]
+    fn a_draft_carrying_an_earlier_versions_seed_is_refused_at_the_pin() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = drafted_abertura(&entity, &book, seeded_from("csc-termo-abertura/v3"));
+
+        let error =
+            ensure_seed_matches_pinned_template(&termo, "csc-termo-abertura/v4").expect_err(
+                "freezing a previous version's clause text against the new template must be refused",
+            );
+        assert_eq!(
+            error.code(),
+            "termo_seed_template_drift",
+            "the refusal must carry its own code, or the UI can only show a generic failure"
+        );
+        let ApiError::Unprocessable(message) = error.as_uncoded() else {
+            panic!("a reviewable draft is unprocessable, not a conflict: {error:?}");
+        };
+        assert!(
+            message.contains("csc-termo-abertura/v4"),
+            "the refusal must name the template being pinned: {message}"
+        );
+        assert!(
+            message.contains('1') && message.contains('2'),
+            "the refusal must name the stale clauses: {message}"
+        );
+    }
+
+    /// The same draft freezes cleanly against the version it was actually seeded from — the check
+    /// is about the seed and the pin disagreeing, not about the version number.
+    #[test]
+    fn a_draft_freezes_cleanly_against_the_version_that_seeded_it() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = drafted_abertura(&entity, &book, seeded_from("csc-termo-abertura/v3"));
+
+        assert!(
+            ensure_seed_matches_pinned_template(&termo, "csc-termo-abertura/v3").is_ok(),
+            "a draft seeded from the template it is pinned to has not drifted"
+        );
+    }
+
+    /// A freshly-seeded draft freezes against the spine, which is the ordinary path: `seed_draft_*`
+    /// and `advance_*` read the same table, so nothing is reported unless the table moved between.
+    #[test]
+    fn a_freshly_seeded_draft_freezes_against_the_spine() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = seed_draft_abertura(book.id, entity.family, OffsetDateTime::now_utc());
+        let pinned =
+            abertura_template_id(entity.family).expect("the family binds an abertura spine");
+
+        assert!(
+            !termo.body.is_empty(),
+            "the seed must be non-empty or this proves nothing"
+        );
+        assert!(
+            ensure_seed_matches_pinned_template(&termo, pinned).is_ok(),
+            "a draft seeded now must freeze against the spine it was seeded from"
+        );
+    }
+
+    /// Text the operator adopted is theirs, not a stale template default, so it is not reported —
+    /// which is also the remedy: reviewing and saving the body through the editor re-authors every
+    /// clause. Held explicitly because a check that fired on operator text would make the refusal
+    /// unclearable.
+    #[test]
+    fn clause_text_the_operator_authored_is_never_reported_as_drift() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let adopted: Vec<TermoClause> = seeded_from("csc-termo-abertura/v3")
+            .into_iter()
+            .map(|clause| TermoClause::user_added(clause.heading, clause.text))
+            .collect();
+        let termo = drafted_abertura(&entity, &book, adopted);
+
+        assert!(
+            ensure_seed_matches_pinned_template(&termo, "csc-termo-abertura/v4").is_ok(),
+            "an operator's own clause text is not a stale template default"
+        );
+    }
+
+    /// A pin the catalogue cannot resolve yields no drift verdict at all. The loud failure for an
+    /// unresolvable pin is `spec_for_frozen_instrument`'s, moments later on the same id; inventing a
+    /// second one here would report the wrong fault.
+    #[test]
+    fn an_unresolvable_pin_is_not_reported_as_drift() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let termo = drafted_abertura(&entity, &book, seeded_from("csc-termo-abertura/v3"));
+
+        assert!(
+            ensure_seed_matches_pinned_template(&termo, "csc-termo-abertura/v99").is_ok(),
+            "an unknown template id is not this check's fault to report"
+        );
     }
 
     #[tokio::test]

@@ -452,6 +452,10 @@ pub async fn advance_abertura(
     }
     let template_id =
         crate::documents::abertura_template_id(family).unwrap_or("csc-termo-abertura/v1");
+    // Before the pin binds: a draft seeded under an earlier version of this template still carries
+    // that version's clause text, and freezing here would pin the current one. Reported rather than
+    // silently pinned — see `ensure_seed_matches_pinned_template`.
+    crate::documents::ensure_seed_matches_pinned_template(&termo, template_id)?;
     termo
         .advance_to_signing(template_id, OffsetDateTime::now_utc())
         .map_err(map_termo_error)?;
@@ -1375,6 +1379,8 @@ pub async fn advance_encerramento(
     }
     let template_id = crate::documents::encerramento_template_id(entity.family)
         .unwrap_or("csc-termo-encerramento/v1");
+    // Same seed/pin drift guard as the abertura advance, and for the same reason.
+    crate::documents::ensure_seed_matches_pinned_template(&termo, template_id)?;
     termo
         .advance_to_signing(template_id, OffsetDateTime::now_utc())
         .map_err(map_termo_error)?;

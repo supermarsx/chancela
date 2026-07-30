@@ -967,6 +967,30 @@ pub(crate) fn template_preview_sample_context(
         serialized(&samples.telematic_evidence),
     );
 
+    // A termo's fillable clauses. Unlike every other key here this one is NOT a settings sample:
+    // the clauses a template preview should show are that template's own seed, so it comes from the
+    // spec. Without it a template placing a clause-body block would preview with no clause section
+    // at all and say nothing about it — the same silent omission the clause-body mint exists to fix.
+    insert(
+        &mut context,
+        "body",
+        Value::Array(
+            spec.default_body()
+                .iter()
+                .map(|clause| {
+                    let mut row = Map::new();
+                    if let Some(heading) =
+                        clause.heading.as_deref().filter(|h| !h.trim().is_empty())
+                    {
+                        insert_string(&mut row, "heading", heading);
+                    }
+                    insert_string(&mut row, "text", &clause.text);
+                    Value::Object(row)
+                })
+                .collect(),
+        ),
+    );
+
     let law_references = spec
         .law_references
         .iter()

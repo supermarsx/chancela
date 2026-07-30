@@ -1,0 +1,43 @@
+{
+  "id": "cooperativa-termo-encerramento/v3",
+  "family": "Cooperative",
+  "stage": "TermoEncerramento",
+  "channels": [],
+  "signature_policy": "ManualAttested",
+  "rule_pack_id": "cooperativa-ccoop/v1",
+  "locale": "pt-PT",
+  "blocks": [
+    {
+      "kind": "Heading",
+      "level": 1,
+      "template": "Termo de encerramento do livro de atas"
+    },
+    {
+      "kind": "Paragraph",
+      "template": "Aos {{ closing_date | long_date }}, procede-se ao encerramento do presente livro de atas da cooperativa {{ entity.name }}{% if entity.nipc %}, pessoa coletiva n.º {{ entity.nipc }}{% endif %}{% if book.kind %}, respeitante ao órgão {{ book.kind }}{% endif %}{% if reason == 'BookFull' %}, por se encontrar o livro esgotado{% elif reason == 'EntityDissolved' %}, por extinção da cooperativa{% elif reason == 'MigrationToSuccessor' %}, por migração para livro sucessor{% elif reason.Other is defined %}, pelo motivo seguinte: {{ reason.Other.note }}{% elif reason %}, pelo motivo seguinte: {{ reason }}{% endif %}."
+    },
+    {
+      "kind": "Paragraph",
+      "template": "{% if ata_count == 1 %}O livro contém {{ ata_count }} ({{ ata_count | in_words(gender='f') }}) ata, lavrada e selada na cadeia de registo desta escrituração digital, nos termos do Código Cooperativo (Lei n.º 119/2015).{% elif ata_count is defined %}O livro contém {{ ata_count }} ({{ ata_count | in_words(gender='f') }}) atas, lavradas e seladas na cadeia de registo desta escrituração digital, nos termos do Código Cooperativo (Lei n.º 119/2015).{% endif %}"
+    },
+    {
+      "kind": "Paragraph",
+      "items": "body",
+      "template": "{% if heading %}{{ heading }} — {% endif %}{{ text }}"
+    },
+    {
+      "kind": "Rule"
+    },
+    {
+      "kind": "SignatureBlock",
+      "source": "required_signatories",
+      "role": "{{ role | role_label }}",
+      "name": "{{ name }}"
+    }
+  ],
+  "default_body": [
+    {
+      "text": "Nada mais havendo a lavrar no presente livro, dá-se o mesmo por encerrado. Lavra-se o presente termo de encerramento, que vai assinado por quem nele intervém."
+    }
+  ]
+}
