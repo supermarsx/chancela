@@ -138,6 +138,10 @@ pub const CHECK_CHALLENGE_SIGNED: CheckName = CheckName("challenge_signed");
 pub const CHECK_CHALLENGE_VERIFIED: CheckName = CheckName("challenge_verified");
 /// Whether a candidate AMA certificate parsed as X.509.
 pub const CHECK_CERTIFICATE_PARSED: CheckName = CheckName("certificate_parsed");
+/// Whether a candidate bare AMA public key parsed as a `SubjectPublicKeyInfo`.
+pub const CHECK_PUBLIC_KEY_PARSED: CheckName = CheckName("public_key_parsed");
+/// What a bare public key does NOT carry: a subject, an issuer and a validity window.
+pub const CHECK_CERTIFICATE_FIELDS: CheckName = CheckName("certificate_fields");
 /// Whether characters the base64 body does not use were ignored on the way in.
 pub const CHECK_CERTIFICATE_NORMALISED: CheckName = CheckName("certificate_normalised");
 /// Whether the candidate certificate carries an RSA public key.
@@ -180,6 +184,8 @@ pub const ALL_PROBE_CHECK_NAMES: &[CheckName] = &[
     CHECK_CHALLENGE_SIGNED,
     CHECK_CHALLENGE_VERIFIED,
     CHECK_CERTIFICATE_PARSED,
+    CHECK_PUBLIC_KEY_PARSED,
+    CHECK_CERTIFICATE_FIELDS,
     CHECK_CERTIFICATE_NORMALISED,
     CHECK_RSA_PUBLIC_KEY,
     CHECK_VALIDITY_WINDOW,
@@ -359,25 +365,49 @@ pub const PKCS12_CHALLENGE_VERIFIED: &str = "pkcs12_challenge_verified";
 /// The challenge signature did NOT verify against the selected certificate.
 pub const PKCS12_CHALLENGE_NOT_VERIFIED: &str = "pkcs12_challenge_not_verified";
 
-// --- AMA field-encryption certificate inspection (t112) --------------------------------------------
+// --- AMA field-encryption key inspection (t112) ----------------------------------------------------
 //
-// These describe a CANDIDATE certificate an operator is about to paste into `ama_cert_pem`, and
+// These describe the CANDIDATE key material an operator is about to paste into `ama_cert_pem`, and
 // they are deliberately narrower than they could be. The inspection builds no chain, consults no
-// trust anchor and fetches no Trusted List, so it can say what the certificate *is* and never that
-// it is the right one. `AMA_CERT_TRUST_NOT_ESTABLISHED` is emitted on every successful parse and
-// says exactly that; there is no code here that means "valid", because nothing here establishes it.
+// trust anchor and fetches no Trusted List, so it can say what the input *is* and never that it is
+// the right one. `AMA_CERT_TRUST_NOT_ESTABLISHED` is emitted on every successful parse and says
+// exactly that; there is no code here that means "valid", because nothing here establishes it.
+//
+// Two armours are accepted and they establish DIFFERENT amounts. A certificate names a subject, an
+// issuer and a validity window; a bare `PUBLIC KEY` block names none of them, because it has none.
+// The `ama_key_*` codes below exist so that absence is reported as *this input carries no
+// certificate* rather than as a field that could not be read — two different facts, and an operator
+// deciding whether they were sent the right artefact has to be able to tell them apart.
 
 /// The text parses as an X.509 certificate.
 pub const AMA_CERT_PARSED: &str = "ama_cert_parsed";
 /// The text is not a PEM-encoded X.509 certificate. Params: `detail` (the parser's own message).
 pub const AMA_CERT_UNPARSEABLE: &str = "ama_cert_unparseable";
+/// The text parses as a bare `SubjectPublicKeyInfo` — a public key with no certificate around it.
+pub const AMA_KEY_PUBLIC_KEY_PARSED: &str = "ama_key_public_key_parsed";
+/// A `PUBLIC KEY` block whose decoded bytes are not a `SubjectPublicKeyInfo`. Params: `detail`.
+pub const AMA_KEY_NOT_A_PUBLIC_KEY: &str = "ama_key_not_a_public_key";
+/// An `RSA PUBLIC KEY` block: PKCS#1, one conversion short of the `SubjectPublicKeyInfo` this
+/// field takes. Refused by its own name so the operator is told the difference rather than that
+/// their key is malformed.
+pub const AMA_KEY_PKCS1_NOT_SPKI: &str = "ama_key_pkcs1_not_spki";
+/// The subject, issuer and validity window are absent because the input carries no certificate —
+/// not because they could not be read.
+pub const AMA_KEY_CERTIFICATE_FIELDS_ABSENT: &str = "ama_key_certificate_fields_absent";
+/// A PRIVATE key was pasted into a field for public material. Params: `label`.
+///
+/// Separate from `AMA_CERT_WRONG_PEM_LABEL` because it is not the wrong *object*, it is secret
+/// material that has already left the operator's machine — the inspection and the credential write
+/// both transmit it. A refusal that filed this as a label mistake would let a real exposure read as
+/// a typo, and the generic refusal correspondingly stops mentioning private keys at all.
+pub const AMA_KEY_PRIVATE_KEY: &str = "ama_key_private_key";
 
 // The refusals below are the *named* halves of what used to be one `AMA_CERT_UNPARSEABLE`. A
 // pasted certificate is normalised first — line endings, a BOM, trailing spaces and other
 // characters that base64 ignores by specification — and only then read. Everything that survives
 // that is a real difference between what the operator has and what they meant to have, so each
 // one gets its own sentence saying which. None of them is repaired: see
-// `chancela_cmd::normalize_certificate_pem` for why guessing here would fabricate key material.
+// `chancela_cmd::normalize_ama_key_pem` for why guessing here would fabricate key material.
 
 /// Nothing but whitespace was supplied.
 pub const AMA_CERT_EMPTY: &str = "ama_cert_empty";
@@ -387,7 +417,9 @@ pub const AMA_CERT_ARMOUR_MISSING: &str = "ama_cert_armour_missing";
 pub const AMA_CERT_END_ARMOUR_MISSING: &str = "ama_cert_end_armour_missing";
 /// The block is PEM with a different label — a private key, most consequentially. Params: `label`.
 pub const AMA_CERT_WRONG_PEM_LABEL: &str = "ama_cert_wrong_pem_label";
-/// More than one PEM block was pasted; none was chosen for the operator. Params: `count`.
+/// More than one PEM block was pasted; none was chosen for the operator. Params: `count`,
+/// `labels` (the distinct labels found, comma-separated — "a certificate and a private key" calls
+/// for a different action than "a chain", and only the labels tell them apart).
 pub const AMA_CERT_MULTIPLE_BLOCKS: &str = "ama_cert_multiple_blocks";
 /// A character in the body that is neither base64 nor ignorable whitespace, so removing it would
 /// change the decoded bytes. Params: `character` (`U+XXXX` notation), `offset` (byte offset).
@@ -495,6 +527,11 @@ pub const ALL_PROBE_DETAIL_CODES: &[&str] = &[
     PKCS12_CHALLENGE_NOT_VERIFIED,
     AMA_CERT_PARSED,
     AMA_CERT_UNPARSEABLE,
+    AMA_KEY_PUBLIC_KEY_PARSED,
+    AMA_KEY_NOT_A_PUBLIC_KEY,
+    AMA_KEY_PKCS1_NOT_SPKI,
+    AMA_KEY_CERTIFICATE_FIELDS_ABSENT,
+    AMA_KEY_PRIVATE_KEY,
     AMA_CERT_EMPTY,
     AMA_CERT_ARMOUR_MISSING,
     AMA_CERT_END_ARMOUR_MISSING,
@@ -567,7 +604,7 @@ mod tests {
         // Same non-vacuity floor the detail codes carry, and for the same reason: the web guard
         // reads this list, and a halved list would make it pass while proving nothing.
         assert!(
-            ALL_PROBE_CHECK_NAMES.len() >= 30,
+            ALL_PROBE_CHECK_NAMES.len() >= 32,
             "the check-name list shrank to {}; a name that leaves this list stops being \
              translatable and renders as a raw identifier again",
             ALL_PROBE_CHECK_NAMES.len()
@@ -579,7 +616,7 @@ mod tests {
         // Non-vacuity: the web guard drives off this list, and an empty or halved list would make
         // that guard pass while proving nothing.
         assert!(
-            ALL_PROBE_DETAIL_CODES.len() >= 83,
+            ALL_PROBE_DETAIL_CODES.len() >= 88,
             "the detail-code list shrank to {}; deleting a code strands an older client's \
              translation, and the vocabulary is append-only",
             ALL_PROBE_DETAIL_CODES.len()

@@ -30,7 +30,9 @@ pub mod mock;
 pub mod soap;
 pub mod transport;
 
-pub use certificate_pem::{CertificatePemError, NormalizedCertificate, normalize_certificate_pem};
+pub use certificate_pem::{
+    AmaKeyPemKind, CertificatePemError, NormalizedAmaKeyPem, normalize_ama_key_pem,
+};
 pub use config::{CmdBasicAuth, CmdConfig, CmdEnv, PREPROD_ENDPOINT, PROD_ENDPOINT};
 pub use error::CmdError;
 pub use field_encryption::FieldEncryptor;

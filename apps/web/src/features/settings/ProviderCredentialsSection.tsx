@@ -1010,8 +1010,16 @@ export function ProviderCredentialEntryForm({
 /** The credential field this section gives its own control to. */
 const AMA_CERT_PEM_FIELD = 'ama_cert_pem';
 
-/** Extensions offered by both the browser `accept` and the Tauri dialog filter. */
-const CERT_FILE_EXTENSIONS = ['pem', 'crt', 'cer'];
+/**
+ * Extensions offered by both the browser `accept` and the Tauri dialog filter.
+ *
+ * `.pub` is here because the field takes a bare `PUBLIC KEY` block as well as a certificate, and a
+ * picker that hides the file an operator was actually sent is the same dead end in a different
+ * place. Notably absent is `.key`, which conventionally names a PRIVATE key: offering it would
+ * invite the one paste this field must never accept. The filter is a convenience either way — the
+ * server reads the content and refuses anything that is not one of the two accepted armours.
+ */
+const CERT_FILE_EXTENSIONS = ['pem', 'crt', 'cer', 'pub'];
 
 /**
  * The client-side ceiling, in bytes, on a file loaded into the field.
@@ -1030,12 +1038,28 @@ interface FieldNotice {
 }
 
 /**
- * What the server established about a candidate certificate, and the four things it did not.
+ * What the server established about candidate key material, and the four things it did not.
  *
  * The negatives are a grid of explicit "No" values rather than an omitted disclaimer — the same
  * construction the probe panel uses, and for the same reason. There is deliberately no "valid"
  * badge anywhere in here: parsing, carrying an RSA key and being in date are the three things the
- * server actually checked, and none of them establishes that this is AMA's certificate.
+ * server actually checked, and none of them establishes that this is AMA's key.
+ *
+ * # Two armours, and why the panel must not blur them
+ *
+ * The field takes a `CERTIFICATE` block or the bare `PUBLIC KEY` inside one. The two carry the same
+ * key and a different amount of surrounding fact, so this panel states which arrived, and for a
+ * public key it renders the *absence* of subject, issuer and dates as a finding rather than as four
+ * empty rows. Blank rows on what an operator believes is a certificate read as a damaged file.
+ *
+ * # Two fingerprints, and why both are labelled
+ *
+ * The SHA-256 of a certificate's DER and the SHA-256 of the public key inside it are different
+ * numbers for the same key. The public-key one is shown for both armours — it is the material
+ * actually used to encrypt, and the only value that matches across the two input forms. The
+ * certificate one is shown as well when there is a certificate, because that is the number
+ * `openssl x509 -fingerprint -sha256` prints. Neither is ever shown unlabelled: an operator
+ * comparing against a published value has to know which they are looking at.
  */
 function AmaCertInspectPanel({ report }: { report: AmaCertificateInspectResponse }) {
   const t = useT();
@@ -1043,6 +1067,7 @@ function AmaCertInspectPanel({ report }: { report: AmaCertificateInspectResponse
   const locale = useActiveLocale();
   const no = pt('providerCredentials.probe.no');
   const formatMoment = (value: string | undefined) => (value ? formatDateTime(value, locale) : '—');
+  const isCertificate = report.input_kind === 'certificate';
 
   return (
     <section className="stack stack--tight" data-testid="ama-cert-inspect-result">
@@ -1067,27 +1092,62 @@ function AmaCertInspectPanel({ report }: { report: AmaCertificateInspectResponse
           </li>
         ))}
       </ul>
-      {/* The fingerprint leads, and sits outside the subject/issuer grid on purpose. It is the one
-          value on this panel an operator can CHECK — everything below it is copied out of the
-          certificate itself and would read the same on a substituted one. The sentence under it
-          says who has to do the comparing, because the server does not and must not look like it
-          did. */}
-      {report.sha256_fingerprint ? (
+      {/* Which artefact this is, stated before anything is said about it. Everything below reads
+          differently depending on the answer, and an operator who pasted the wrong one of the two
+          finds out here rather than from a row that is mysteriously empty. */}
+      {report.input_kind ? (
+        <dl className="detail-grid">
+          <div>
+            <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.inputKind')}</dt>
+            <dd data-testid="ama-cert-input-kind">
+              {t(
+                isCertificate
+                  ? 'settings.providerCredentials.field.amaCertPem.inspect.inputKind.certificate'
+                  : 'settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey',
+              )}
+            </dd>
+          </div>
+        </dl>
+      ) : null}
+      {/* The fingerprints lead, and sit outside the subject/issuer grid on purpose. They are the
+          only values on this panel an operator can CHECK — everything below is copied out of the
+          input itself and would read the same on a substituted one. Each is labelled with what it
+          covers, because the two are different numbers for the same key and comparing the wrong one
+          against a published value fails for no reason. The sentence beneath says who has to do the
+          comparing, because the server does not and must not look like it did. */}
+      {report.public_key_sha256_fingerprint ? (
         <div className="stack stack--tight">
           <dl className="detail-grid">
             <div>
-              <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.fingerprint')}</dt>
-              <dd className="mono" data-testid="ama-cert-fingerprint">
-                {report.sha256_fingerprint}
+              <dt>
+                {t('settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint')}
+              </dt>
+              <dd className="mono" data-testid="ama-cert-public-key-fingerprint">
+                {report.public_key_sha256_fingerprint}
               </dd>
             </div>
+            {report.certificate_sha256_fingerprint ? (
+              <div>
+                <dt>
+                  {t(
+                    'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint',
+                  )}
+                </dt>
+                <dd className="mono" data-testid="ama-cert-certificate-fingerprint">
+                  {report.certificate_sha256_fingerprint}
+                </dd>
+              </div>
+            ) : null}
           </dl>
           <p className="field__hint">
             {t('settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint')}
           </p>
         </div>
       ) : null}
-      {report.parsed ? (
+      {/* Subject, issuer and dates exist only inside a certificate. For a bare public key the grid
+          is not rendered at all, and the `certificate_fields` finding above says why — an empty
+          grid would claim those fields were there and could not be read. */}
+      {report.parsed && isCertificate ? (
         <dl className="detail-grid">
           <div>
             <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.subject')}</dt>
@@ -1135,19 +1195,24 @@ function AmaCertInspectPanel({ report }: { report: AmaCertificateInspectResponse
 /**
  * The `ama_cert_pem` control (t112): paste, load from a file, or inspect what you pasted.
  *
+ * Takes either armour AMA's field-encryption key arrives in — a `CERTIFICATE` block or the bare
+ * `PUBLIC KEY` inside one. The stored field name is unchanged and still says `cert`: it is a stored
+ * credential key and a documented environment variable, and renaming it would break every existing
+ * installation to fix a word. The label, the hint and the help text say what is actually accepted.
+ *
  * # Why this field is not the generic secret `<Input type="password">`
  *
- * It is the only entry in `SECRET_FIELDS` that is **not a secret**. An X.509 certificate is public
- * key material; it rides the encrypted credential store because everything in that store does, not
- * because its contents need hiding. Masking it made the one field an operator most needs to *look
- * at* — to check they pasted the right certificate, and the whole point of the inspect action —
- * unreadable, and PEM is multi-line, which a single-line masked input mangles. So it is a visible
- * `<TextArea>`. The write-only posture is unchanged: the value still only ever travels inwards, the
- * API still never returns it, and it is still cleared from component state on submit.
+ * It is the only entry in `SECRET_FIELDS` that is **not a secret**. A certificate and a public key
+ * are both public material; they ride the encrypted credential store because everything in that
+ * store does, not because their contents need hiding. Masking it made the one field an operator most
+ * needs to *look at* — to check they pasted the right thing, and the whole point of the inspect
+ * action — unreadable, and PEM is multi-line, which a single-line masked input mangles. So it is a
+ * visible `<TextArea>`. The write-only posture is unchanged: the value still only ever travels
+ * inwards, the API still never returns it, and it is still cleared from component state on submit.
  *
  * # Content, never a path
  *
- * Everything here produces the certificate's TEXT. `ama_cert_pem` stores the certificate itself;
+ * Everything here produces the key material's TEXT. `ama_cert_pem` stores that text itself;
  * `CHANCELA_CMD_AMA_CERT_PEM` is the environment route and names a *file* for the server to read.
  * The hint says so, and {@link ../../desktop/openTextFile} does not return a path at all, so the
  * confusion is hard to write by accident.

@@ -134,10 +134,13 @@ interface Call {
  */
 const amaCertInspection: AmaCertificateInspectResponse = {
   parsed: true,
+  input_kind: 'certificate',
   rsa_public_key: true,
   key_bits: 2048,
   within_validity: true,
-  sha256_fingerprint: '9f2c4a6e0b1d83577e4c1a90de2f6b3418c705d9a2e64bf07c31d85a49e0b2c6',
+  public_key_sha256_fingerprint: '1a7b3c5d9e0f24681357bd02468ace13579bdf02468ace13579bdf02468ace13',
+  certificate_sha256_fingerprint:
+    '9f2c4a6e0b1d83577e4c1a90de2f6b3418c705d9a2e64bf07c31d85a49e0b2c6',
   subject: 'CN=CMD Field Encryption,O=AMA,C=PT',
   issuer: 'CN=CMD Field Encryption,O=AMA,C=PT',
   not_before: '2026-07-06T18:43:30Z',
@@ -156,7 +159,7 @@ const amaCertInspection: AmaCertificateInspectResponse = {
     {
       name: 'rsa_public_key',
       status: 'passed',
-      detail: 'The certificate carries an RSA public key of 2048 bits.',
+      detail: 'This input carries an RSA public key of 2048 bits.',
       detail_code: 'ama_cert_rsa_key_present',
       detail_params: { bits: '2048' },
     },
@@ -169,7 +172,54 @@ const amaCertInspection: AmaCertificateInspectResponse = {
     {
       name: 'trust_established',
       status: 'skipped',
-      detail: "Whether this is genuinely AMA's certificate was not determined.",
+      detail: "Whether this key is genuinely AMA's was not determined.",
+      detail_code: 'ama_cert_trust_not_established',
+    },
+  ],
+};
+
+/**
+ * The same key, supplied as a bare `PUBLIC KEY` block.
+ *
+ * The public-key fingerprint is deliberately the SAME value as above — that is the property that
+ * makes it the one an operator can compare — while the certificate fingerprint, the subject, the
+ * issuer and the dates are simply not there. The `certificate_fields` finding is what turns those
+ * absences into a statement instead of four empty rows.
+ */
+const amaPublicKeyInspection: AmaCertificateInspectResponse = {
+  parsed: true,
+  input_kind: 'public_key',
+  rsa_public_key: true,
+  key_bits: 2048,
+  public_key_sha256_fingerprint: amaCertInspection.public_key_sha256_fingerprint,
+  chain_validated: false,
+  trusted_list_checked: false,
+  issuer_authenticated: false,
+  legal_validity_claimed: false,
+  checks: [
+    {
+      name: 'public_key_parsed',
+      status: 'passed',
+      detail: 'The text parses as a bare public key (a SubjectPublicKeyInfo).',
+      detail_code: 'ama_key_public_key_parsed',
+    },
+    {
+      name: 'rsa_public_key',
+      status: 'passed',
+      detail: 'This input carries an RSA public key of 2048 bits.',
+      detail_code: 'ama_cert_rsa_key_present',
+      detail_params: { bits: '2048' },
+    },
+    {
+      name: 'certificate_fields',
+      status: 'skipped',
+      detail: 'This input is a public key on its own, so it has no subject, issuer or validity.',
+      detail_code: 'ama_key_certificate_fields_absent',
+    },
+    {
+      name: 'trust_established',
+      status: 'skipped',
+      detail: "Whether this key is genuinely AMA's was not determined.",
       detail_code: 'ama_cert_trust_not_established',
     },
   ],
@@ -701,6 +751,8 @@ describe('ProviderCredentialPage', () => {
    */
   describe('the AMA certificate field', () => {
     const PEM = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+    /** The other armour this field accepts: the key on its own, with no certificate around it. */
+    const PUBLIC_KEY_PEM = '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----\n';
 
     /** A `File` whose `text()` and `size` are controlled, without needing a real Blob polyfill. */
     function certFile(name: string, text: string, size = text.length): File {
@@ -844,31 +896,84 @@ describe('ProviderCredentialPage', () => {
     });
 
     /**
-     * The fingerprint is the only checkable thing on the panel, and it must not read as a verdict.
+     * The fingerprints are the only checkable things on the panel, and they must not read as a
+     * verdict — nor as each other.
      *
      * Subject, issuer and dates all come out of the candidate itself and would look identical on a
-     * substituted certificate; the SHA-256 of the DER is what an operator can hold against what AMA
-     * issued them. So it is shown, it is shown verbatim, and the sentence beside it says who has to
-     * do the comparing — because the server did not.
+     * substituted certificate. The two SHA-256 values are what an operator can hold against what AMA
+     * published, and they are different numbers over different bytes: the public-key one covers the
+     * key, the certificate one covers the whole certificate. Both are shown verbatim, each under a
+     * label that says which, and the sentence beside them says who has to do the comparing —
+     * because the server did not.
      */
-    it('shows the DER fingerprint verbatim and says the comparison is the operator’s to make', async () => {
+    it('shows both fingerprints, each labelled, and leaves the comparison to the operator', async () => {
       const { field } = await openCmdCreatePage();
       fireEvent.change(field, { target: { value: PEM } });
       fireEvent.click(screen.getByTestId('ama-cert-inspect'));
 
       const panel = await screen.findByTestId('ama-cert-inspect-result');
-      const fingerprint = within(panel).getByTestId('ama-cert-fingerprint');
-      expect(fingerprint.textContent).toBe(amaCertInspection.sha256_fingerprint);
+      expect(within(panel).getByTestId('ama-cert-public-key-fingerprint').textContent).toBe(
+        amaCertInspection.public_key_sha256_fingerprint,
+      );
+      expect(within(panel).getByTestId('ama-cert-certificate-fingerprint').textContent).toBe(
+        amaCertInspection.certificate_sha256_fingerprint,
+      );
+      // Distinct values under distinct labels: showing one of them unlabelled would send an
+      // operator comparing the wrong number against what AMA published.
+      expect(amaCertInspection.public_key_sha256_fingerprint).not.toBe(
+        amaCertInspection.certificate_sha256_fingerprint,
+      );
+      for (const key of [
+        'settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint',
+        'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint',
+        'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint',
+      ] as const) {
+        expect(within(panel).getByText(ptPT[key])).toBeTruthy();
+      }
+    });
+
+    /**
+     * A bare public key: the same key, and four facts that are absent rather than unreadable.
+     *
+     * The panel must not render an empty subject/issuer/validity grid here. Blank rows on what an
+     * operator believes is a certificate read as a damaged file, which is a different fault with a
+     * different remedy — so the grid is gone and a translated finding says why.
+     */
+    it('reports a bare public key as such, with no empty certificate rows', async () => {
+      const stub = stubFetch({ inspectBody: amaPublicKeyInspection });
+      vi.stubGlobal('fetch', stub.fn);
+      renderPage('/admin/signing/providers/new?mode=cmd');
+      const field = (await screen.findByLabelText(
+        ptPT['settings.providerCredentials.field.amaCertPem'],
+      )) as HTMLTextAreaElement;
+      fireEvent.change(field, { target: { value: PUBLIC_KEY_PEM } });
+      fireEvent.click(screen.getByTestId('ama-cert-inspect'));
+
+      const panel = await screen.findByTestId('ama-cert-inspect-result');
+      // Which artefact arrived is stated, in the operator's language.
+      expect(within(panel).getByTestId('ama-cert-input-kind').textContent).toBe(
+        ptPT['settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey'],
+      );
+      // The absence is a sentence, not four blanks.
       expect(
         within(panel).getByText(
-          ptPT['settings.providerCredentials.field.amaCertPem.inspect.fingerprint'],
+          ptPT['settings.providerCredentials.probe.detail.ama_key_certificate_fields_absent'],
         ),
       ).toBeTruthy();
-      expect(
-        within(panel).getByText(
-          ptPT['settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint'],
-        ),
-      ).toBeTruthy();
+      for (const key of [
+        'settings.providerCredentials.field.amaCertPem.inspect.subject',
+        'settings.providerCredentials.field.amaCertPem.inspect.issuer',
+        'settings.providerCredentials.field.amaCertPem.inspect.notBefore',
+        'settings.providerCredentials.field.amaCertPem.inspect.notAfter',
+      ] as const) {
+        expect(within(panel).queryByText(ptPT[key])).toBeNull();
+      }
+      // The key fingerprint is still there — it is the value that survives the change of artefact —
+      // and the certificate one is not, because there is no certificate to fingerprint.
+      expect(within(panel).getByTestId('ama-cert-public-key-fingerprint').textContent).toBe(
+        amaCertInspection.public_key_sha256_fingerprint,
+      );
+      expect(within(panel).queryByTestId('ama-cert-certificate-fingerprint')).toBeNull();
     });
 
     /**

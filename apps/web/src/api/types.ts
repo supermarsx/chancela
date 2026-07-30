@@ -4621,22 +4621,42 @@ export interface InspectAmaCertificateBody {
  * `i18n/providerProbeDiagnostics.ts` localizes both.
  */
 export interface AmaCertificateInspectResponse {
+  /** Whether the text decoded into usable key material. `input_kind` says which kind. */
   parsed: boolean;
+  /**
+   * Which armour was supplied. Absent when nothing parsed.
+   *
+   * A machine discriminant, never rendered raw. It is what lets the panel say "this input carries
+   * no certificate" instead of leaving four blank rows, which an operator reads as "the certificate
+   * is damaged" — a different fault with a different remedy.
+   */
+  input_kind?: 'certificate' | 'public_key';
   /** Whether the SIGNING path's own parser could build a field encryptor from it. */
   rsa_public_key: boolean;
   key_bits?: number;
-  /** `false` for expired or not-yet-valid; absent when the dates could not be read. */
+  /**
+   * `false` for expired or not-yet-valid; absent when the dates could not be read, and absent for a
+   * bare public key, which has no validity window at all. `input_kind` settles which.
+   */
   within_validity?: boolean;
   /**
-   * SHA-256 of the certificate's DER, 64 lowercase hex characters. Absent when nothing parsed.
+   * SHA-256 of the **SubjectPublicKeyInfo**, 64 lowercase hex characters. Present for both armours.
    *
-   * The only value here that can establish *which* certificate this is: subject, issuer and dates
-   * are copied out of a document that would read the same on a substituted certificate, whereas
-   * this is checkable against what AMA issued. It is over the DER, so re-wrapping or re-pasting the
-   * PEM cannot move it. Comparing it is still the operator's act — the server makes no trust
-   * decision from it.
+   * The value that survives a change of artefact: a certificate and the bare public key taken out
+   * of it fingerprint identically here, because it covers the key rather than the document around
+   * it. Subject, issuer and dates would all read the same on a substituted certificate; this is
+   * checkable against what AMA published. Comparing it is still the operator's act — the server
+   * makes no trust decision from it.
    */
-  sha256_fingerprint?: string;
+  public_key_sha256_fingerprint?: string;
+  /**
+   * SHA-256 of the **certificate's** DER; absent when a bare public key was supplied.
+   *
+   * A different number from the one above for the same key — this is what
+   * `openssl x509 -fingerprint -sha256` prints. The two are labelled separately on screen precisely
+   * so an operator comparing against a published value knows which one they are holding.
+   */
+  certificate_sha256_fingerprint?: string;
   subject?: string;
   issuer?: string;
   not_before?: string;

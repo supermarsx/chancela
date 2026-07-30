@@ -104,6 +104,8 @@ export const PROBE_CHECK_NAME_KEYS: Record<string, MessageKey> = {
   challenge_signed: `${NAME_PREFIX}challenge_signed`,
   challenge_verified: `${NAME_PREFIX}challenge_verified`,
   certificate_parsed: `${NAME_PREFIX}certificate_parsed`,
+  public_key_parsed: `${NAME_PREFIX}public_key_parsed`,
+  certificate_fields: `${NAME_PREFIX}certificate_fields`,
   certificate_normalised: `${NAME_PREFIX}certificate_normalised`,
   rsa_public_key: `${NAME_PREFIX}rsa_public_key`,
   validity_window: `${NAME_PREFIX}validity_window`,
@@ -203,12 +205,27 @@ export const PROBE_DETAIL_KEYS: Record<string, MessageKey> = {
   pkcs12_challenge_verified: `${PREFIX}pkcs12_challenge_verified`,
   pkcs12_challenge_not_verified: `${PREFIX}pkcs12_challenge_not_verified`,
 
-  // --- AMA field-encryption certificate inspection ---
+  // --- AMA field-encryption key inspection ---
   // Deliberately narrow. There is no code here meaning "valid" or "trusted", because the server
   // builds no certification path and consults no trust anchor; `ama_cert_trust_not_established`
   // is emitted on every successful parse and says exactly that.
+  //
+  // Two armours are accepted — a `CERTIFICATE` block and a bare `PUBLIC KEY` block — and they
+  // establish different amounts. The `ama_key_*` codes carry that difference: a public key has no
+  // subject, issuer or validity window, and `ama_key_certificate_fields_absent` says those are
+  // ABSENT rather than unreadable. Two different facts, and an operator has to be able to tell them
+  // apart.
   ama_cert_parsed: `${PREFIX}ama_cert_parsed`,
   ama_cert_unparseable: `${PREFIX}ama_cert_unparseable`,
+  ama_key_public_key_parsed: `${PREFIX}ama_key_public_key_parsed`,
+  ama_key_not_a_public_key: `${PREFIX}ama_key_not_a_public_key`,
+  ama_key_pkcs1_not_spki: `${PREFIX}ama_key_pkcs1_not_spki`,
+  ama_key_certificate_fields_absent: `${PREFIX}ama_key_certificate_fields_absent`,
+  // A PRIVATE key pasted into a field for public material. Its own code, and its own sentence,
+  // because the text has already reached the server by the time it is read — filing that as a
+  // label mistake would let a real exposure pass for a typo. Correspondingly,
+  // `ama_cert_wrong_pem_label` no longer mentions private keys at all.
+  ama_key_private_key: `${PREFIX}ama_key_private_key`,
   // The named refusals. A pasted certificate is normalised first (line endings, a BOM, trailing
   // spaces — everything base64 ignores by specification), and each of these is a difference that
   // survived that and would have changed the decoded bytes. `{character}` arrives as `U+XXXX`

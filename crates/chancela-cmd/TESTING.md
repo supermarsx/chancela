@@ -50,8 +50,11 @@ Prerequisites (see `tests/network.rs`):
   `CHANCELA_CMD_HTTP_BASIC_PASSWORD=<AMA-issued BasicAuth password>` — optional where AMA
   permits unauthenticated preprod calls; required for PROD real HTTP transport.
 - `CHANCELA_CMD_TEST_PHONE=+351 XXXXXXXXX` — a phone registered for CMD in preprod.
-- `CHANCELA_CMD_AMA_CERT_PEM=<path>` (optional preprod; **required for PROD**) — AMA's
-  field-encryption certificate PEM.
+- `CHANCELA_CMD_AMA_CERT_PEM=<path>` (optional preprod; **required for PROD**) — a file holding
+  AMA's field-encryption key, as either a `-----BEGIN CERTIFICATE-----` block or the bare
+  `-----BEGIN PUBLIC KEY-----` block inside it. Only the RSA key is used, so the two are
+  interchangeable; the variable keeps its `_CERT_` name because renaming a documented deployment
+  variable would break existing installations.
 
 A full `CCMovelSign` → `ValidateOtp` cannot be fully automated: `ValidateOtp` needs the OTP a
 human receives on the registered device. The provided network test exercises `GetCertificate`
@@ -65,12 +68,14 @@ only.
 | `CHANCELA_CMD_APPLICATION_ID` | opaque AMA ApplicationId (base64'd on the wire) | required |
 | `CHANCELA_CMD_HTTP_BASIC_USERNAME` | AMA-issued HTTP BasicAuth username for real transport | none (required for PROD) |
 | `CHANCELA_CMD_HTTP_BASIC_PASSWORD` | AMA-issued HTTP BasicAuth password for real transport | none (required for PROD) |
-| `CHANCELA_CMD_AMA_CERT_PEM` | path to AMA field-encryption cert PEM | none (cleartext preprod) |
+| `CHANCELA_CMD_AMA_CERT_PEM` | path to AMA field-encryption key PEM (`CERTIFICATE` or `PUBLIC KEY`) | none (cleartext preprod) |
 
 ## Field encryption (PROD) — status & caveat
 
 The newer SCMD spec requires the mobile number, PIN, and OTP to be RSA-encrypted with AMA's
-public certificate before being placed in the request. This is implemented as
+public key before being placed in the request. That key is accepted either inside a certificate
+or on its own as a `PUBLIC KEY` block — only the key is used, and the two forms provably build the
+same encryptor. This is implemented as
 `FieldEncryptor::AmaRsa` (RSA PKCS#1 v1.5 + base64), config-gated: **preprod runs cleartext**,
 **PROD requires** `CHANCELA_CMD_AMA_CERT_PEM`, `CHANCELA_CMD_HTTP_BASIC_USERNAME`, and
 `CHANCELA_CMD_HTTP_BASIC_PASSWORD` for real HTTP transport (a PROD transport config without

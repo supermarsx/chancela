@@ -183,7 +183,7 @@ impl CmdConfig {
     /// field encryption (spec 04 §1.3 / risk #6).
     pub fn field_encryptor(&self) -> Result<FieldEncryptor, CmdError> {
         match (&self.ama_cert_pem, self.env) {
-            (Some(pem), _) => FieldEncryptor::from_ama_cert_pem(pem),
+            (Some(pem), _) => FieldEncryptor::from_ama_key_pem(pem),
             (None, CmdEnv::Preprod) => Ok(FieldEncryptor::Cleartext),
             (None, CmdEnv::Prod) => Err(CmdError::Config(
                 "PROD requires CHANCELA_CMD_AMA_CERT_PEM (field encryption is mandatory)"

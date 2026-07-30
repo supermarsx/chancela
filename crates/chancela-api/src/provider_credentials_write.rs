@@ -697,12 +697,13 @@ const AMA_CERT_PEM_MAX_BYTES: usize = 64 * 1024;
 const AMA_CERT_NAME_MAX_CHARS: usize = 256;
 
 /// `POST /v1/signature/provider-credentials/cmd/ama-certificate/inspect` — say what can be
-/// established about a candidate AMA field-encryption certificate, and nothing more.
+/// established about candidate AMA field-encryption key material, and nothing more.
 #[derive(Debug, Deserialize)]
 pub struct InspectAmaCertificateRequest {
-    /// The candidate PEM, as pasted or read from a file. Content, never a path — `ama_cert_pem`
-    /// stores the certificate itself, unlike the `CHANCELA_CMD_AMA_CERT_PEM` environment route,
-    /// which names a file for the server to read.
+    /// The candidate PEM, as pasted or read from a file — a `CERTIFICATE` block or a bare
+    /// `PUBLIC KEY` block. Content, never a path: `ama_cert_pem` stores the key material itself,
+    /// unlike the `CHANCELA_CMD_AMA_CERT_PEM` environment route, which names a file for the server
+    /// to read.
     pub pem: String,
 }
 
@@ -715,9 +716,18 @@ pub struct InspectAmaCertificateRequest {
 /// on every response and there is no code path that sets them otherwise.
 #[derive(Debug, Serialize)]
 pub struct AmaCertificateInspectResponse {
-    /// Whether the text decoded as an X.509 certificate at all.
+    /// Whether the text decoded into usable key material — an X.509 certificate, or the bare
+    /// `SubjectPublicKeyInfo` a `PUBLIC KEY` block carries. Read together with
+    /// [`input_kind`](Self::input_kind), which says *which*.
     pub parsed: bool,
-    /// Whether [`chancela_cmd::FieldEncryptor::from_ama_cert_pem`] — the **signing path's own**
+    /// Which armour was supplied: `"certificate"` or `"public_key"`. `None` when nothing parsed.
+    ///
+    /// A machine discriminant, never a sentence. It is what lets a client say "this input carries no
+    /// certificate" instead of leaving four blank rows that read as "the certificate could not be
+    /// read" — a different, and much more alarming, fact.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input_kind: Option<&'static str>,
+    /// Whether [`chancela_cmd::FieldEncryptor::from_ama_key_pem`] — the **signing path's own**
     /// parser — could build a field encryptor from it. This is the check that predicts a real
     /// production signature, which is why it goes through that function rather than a local
     /// reimplementation that could drift from it.
@@ -726,22 +736,34 @@ pub struct AmaCertificateInspectResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_bits: Option<u32>,
     /// `Some(false)` for an expired or not-yet-valid certificate; `None` when the dates could not
-    /// be read. Never conflated with the other checks: a certificate can be perfectly well-formed
-    /// and out of date.
+    /// be read **or when the input carries no certificate at all**. Never conflated with the other
+    /// checks: a certificate can be perfectly well-formed and out of date, and a public key has no
+    /// window to be in or out of. Which of those `None` means is settled by
+    /// [`input_kind`](Self::input_kind) and stated in the checks.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub within_validity: Option<bool>,
-    /// SHA-256 of the certificate's DER, as 64 lowercase hex characters.
+    /// SHA-256 of the **`SubjectPublicKeyInfo`**, as 64 lowercase hex characters. Present for both
+    /// armours.
     ///
-    /// The one value on this response that can establish *which* certificate this is. Everything
-    /// else the inspection reports — that it parses, that it carries an RSA key, its subject and
-    /// its dates — is copied out of a document the operator was handed and would read exactly the
-    /// same on a substituted certificate. The fingerprint is checkable against what AMA issued, and
-    /// it is over the DER precisely so that re-wrapping or re-pasting the PEM cannot move it.
+    /// This is the fingerprint of the material actually used to encrypt, and it is the one value
+    /// that is **identical for a certificate and for the bare public key taken out of it** — so it
+    /// answers "is this the same key?" whichever artefact the operator was handed. Everything else
+    /// the inspection reports — that it parses, that it carries an RSA key, its subject and its
+    /// dates — is copied out of a document that would read exactly the same on a substituted one.
     ///
-    /// It still is not a trust decision, and nothing here makes one: comparing it is the operator's
+    /// It is over the DER precisely so that re-wrapping or re-pasting the PEM cannot move it. It
+    /// still is not a trust decision, and nothing here makes one: comparing it is the operator's
     /// act, not the server's.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub sha256_fingerprint: Option<String>,
+    pub public_key_sha256_fingerprint: Option<String>,
+    /// SHA-256 of the **certificate's** DER; absent when a bare public key was supplied.
+    ///
+    /// A *different number from the one above for the same key*, and the two must never be shown
+    /// interchangeably. This is what `openssl x509 -fingerprint -sha256` prints and what a
+    /// certificate-issuing authority publishes; it exists only when there is a certificate to
+    /// compute it over.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate_sha256_fingerprint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -771,10 +793,13 @@ pub struct AmaCertificateInspectResponse {
 ///
 /// # What it establishes, and what it refuses to say
 ///
-/// It reports that the text parses as X.509, that it carries an RSA public key (the thing
-/// [`chancela_cmd::FieldEncryptor`] actually requires, so a certificate without one *will* fail a
-/// production signature), the subject, the issuer, the validity window, and whether now is inside
-/// it. That is the whole list.
+/// It reports which of the two accepted armours arrived, that the text parses, and that it carries
+/// an RSA public key (the thing [`chancela_cmd::FieldEncryptor`] actually requires, so an input
+/// without one *will* fail a production signature). For a **certificate** it also reports the
+/// subject, the issuer, the validity window and whether now is inside it. For a bare **public key**
+/// it reports that those do not exist here, because a public key has no subject, no issuer and no
+/// dates — stated as a finding rather than left as four blank rows an operator would read as a
+/// failure to parse. That is the whole list.
 ///
 /// It does **not** say the certificate is valid, and there is deliberately no code in the
 /// vocabulary that means that. Establishing that this is genuinely AMA's certificate needs a
@@ -825,10 +850,12 @@ pub async fn inspect_ama_certificate(
 fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
     let mut response = AmaCertificateInspectResponse {
         parsed: false,
+        input_kind: None,
         rsa_public_key: false,
         key_bits: None,
         within_validity: None,
-        sha256_fingerprint: None,
+        public_key_sha256_fingerprint: None,
+        certificate_sha256_fingerprint: None,
         subject: None,
         issuer: None,
         not_before: None,
@@ -842,14 +869,16 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
 
     // Normalise, then verify, then refuse — in that order, and with no repair step between the
     // second and the third. What is normalised is only what base64 ignores by specification, so the
-    // certificate this reports on is byte-for-byte the certificate the operator pasted.
-    let normalized = match chancela_cmd::normalize_certificate_pem(pem) {
+    // key material this reports on is byte-for-byte what the operator pasted.
+    let normalized = match chancela_cmd::normalize_ama_key_pem(pem) {
         Ok(normalized) => normalized,
         Err(e) => {
             response.checks.push(certificate_refusal_check(&e));
             return response;
         }
     };
+    let kind = normalized.kind();
+    response.input_kind = Some(kind.as_str());
     if normalized.removed_characters() > 0 {
         let removed = normalized.removed_characters();
         response.checks.push(
@@ -859,49 +888,72 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
                 true,
                 format!(
                     "{removed} character(s) the base64 body does not use — whitespace, control or \
-                     zero-width characters — were ignored. The decoded certificate is unchanged."
+                     zero-width characters — were ignored. The decoded bytes are unchanged."
                 ),
             )
             .with_params([("removed", removed.to_string())]),
         );
     }
-    response.sha256_fingerprint = Some(normalized.sha256_fingerprint());
+    // The public-key fingerprint rides EVERY successful parse, and is the same number for a
+    // certificate and for the bare key inside it. The certificate fingerprint is additional, and
+    // exists only when there is a certificate — never synthesised so the two rows stay symmetrical.
+    response.public_key_sha256_fingerprint = Some(normalized.public_key_sha256_fingerprint());
+    response.certificate_sha256_fingerprint = normalized.certificate_sha256_fingerprint();
 
     // From here on the canonical text is what is read, so the inspector and the credential store
     // are demonstrably looking at the same bytes.
     let pem = normalized.pem();
-    let certificate = match Certificate::from_pem(pem.as_bytes()) {
-        Ok(certificate) => certificate,
-        Err(e) => {
-            response.checks.push(
-                check(
-                    codes::CHECK_CERTIFICATE_PARSED,
-                    codes::AMA_CERT_UNPARSEABLE,
-                    false,
-                    format!("The text is not a PEM-encoded X.509 certificate: {e}"),
-                )
-                .with_params([("detail", e.to_string())]),
-            );
-            return response;
+    let certificate = match kind {
+        chancela_cmd::AmaKeyPemKind::Certificate => {
+            let certificate = match Certificate::from_pem(pem.as_bytes()) {
+                Ok(certificate) => certificate,
+                Err(e) => {
+                    response.checks.push(
+                        check(
+                            codes::CHECK_CERTIFICATE_PARSED,
+                            codes::AMA_CERT_UNPARSEABLE,
+                            false,
+                            format!("The text is not a PEM-encoded X.509 certificate: {e}"),
+                        )
+                        .with_params([("detail", e.to_string())]),
+                    );
+                    return response;
+                }
+            };
+            response.parsed = true;
+            response.checks.push(check(
+                codes::CHECK_CERTIFICATE_PARSED,
+                codes::AMA_CERT_PARSED,
+                true,
+                "The text parses as an X.509 certificate.",
+            ));
+            response.subject = Some(truncate_name(
+                &certificate.tbs_certificate.subject.to_string(),
+            ));
+            response.issuer = Some(truncate_name(
+                &certificate.tbs_certificate.issuer.to_string(),
+            ));
+            Some(certificate)
+        }
+        chancela_cmd::AmaKeyPemKind::PublicKey => {
+            // The normaliser already decoded this as a SubjectPublicKeyInfo — it is the same check,
+            // and repeating it here would be a second parser that could drift from the first.
+            response.parsed = true;
+            response.checks.push(check(
+                codes::CHECK_PUBLIC_KEY_PARSED,
+                codes::AMA_KEY_PUBLIC_KEY_PARSED,
+                true,
+                "The text parses as a bare public key (a SubjectPublicKeyInfo). It carries no \
+                 certificate.",
+            ));
+            None
         }
     };
-    response.parsed = true;
-    response.checks.push(check(
-        codes::CHECK_CERTIFICATE_PARSED,
-        codes::AMA_CERT_PARSED,
-        true,
-        "The text parses as an X.509 certificate.",
-    ));
-    response.subject = Some(truncate_name(
-        &certificate.tbs_certificate.subject.to_string(),
-    ));
-    response.issuer = Some(truncate_name(
-        &certificate.tbs_certificate.issuer.to_string(),
-    ));
 
     // Through the SIGNING path's own constructor, so what this reports is what a production
-    // signature would actually be able to do with the certificate.
-    match chancela_cmd::FieldEncryptor::from_ama_cert_pem(pem) {
+    // signature would actually be able to do with this input. Identical for both armours, because
+    // the constructor consumes only the public key either of them carries.
+    match chancela_cmd::FieldEncryptor::from_ama_key_pem(pem) {
         Ok(encryptor) => {
             let bits = rsa_modulus_bits(&encryptor);
             response.rsa_public_key = true;
@@ -912,8 +964,8 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
                     codes::AMA_CERT_RSA_KEY_PRESENT,
                     true,
                     format!(
-                        "The certificate carries an RSA public key of {} bits; a field encryptor \
-                         was built from it.",
+                        "This input carries an RSA public key of {} bits; a field encryptor was \
+                         built from it.",
                         bits.unwrap_or_default()
                     ),
                 )
@@ -928,8 +980,8 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
                     codes::AMA_CERT_RSA_KEY_ABSENT,
                     false,
                     format!(
-                        "No RSA public key could be taken from this certificate, so no field \
-                         encryptor can be built from it: {detail}"
+                        "No RSA public key could be taken from this input, so no field encryptor \
+                         can be built from it: {detail}"
                     ),
                 )
                 .with_params([("detail", detail)]),
@@ -937,45 +989,65 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
         }
     }
 
-    let not_before = rfc3339_from_x509_time(&certificate.tbs_certificate.validity.not_before);
-    let not_after = rfc3339_from_x509_time(&certificate.tbs_certificate.validity.not_after);
-    response.not_before = not_before.clone().map(|(text, _)| text);
-    response.not_after = not_after.clone().map(|(text, _)| text);
-    match (not_before, not_after) {
-        (Some((_, from)), Some((_, until))) => {
-            let now = OffsetDateTime::now_utc();
-            if now < from {
-                response.within_validity = Some(false);
-                response.checks.push(check(
+    match certificate {
+        Some(certificate) => {
+            let not_before =
+                rfc3339_from_x509_time(&certificate.tbs_certificate.validity.not_before);
+            let not_after = rfc3339_from_x509_time(&certificate.tbs_certificate.validity.not_after);
+            response.not_before = not_before.clone().map(|(text, _)| text);
+            response.not_after = not_after.clone().map(|(text, _)| text);
+            match (not_before, not_after) {
+                (Some((_, from)), Some((_, until))) => {
+                    let now = OffsetDateTime::now_utc();
+                    if now < from {
+                        response.within_validity = Some(false);
+                        response.checks.push(check(
+                            codes::CHECK_VALIDITY_WINDOW,
+                            codes::AMA_CERT_NOT_YET_VALID,
+                            false,
+                            "The certificate's validity window has not started yet.",
+                        ));
+                    } else if now > until {
+                        response.within_validity = Some(false);
+                        response.checks.push(check(
+                            codes::CHECK_VALIDITY_WINDOW,
+                            codes::AMA_CERT_EXPIRED,
+                            false,
+                            "The certificate has expired: its validity window has already ended.",
+                        ));
+                    } else {
+                        response.within_validity = Some(true);
+                        response.checks.push(check(
+                            codes::CHECK_VALIDITY_WINDOW,
+                            codes::AMA_CERT_WITHIN_VALIDITY,
+                            true,
+                            "The current server time falls inside the certificate's validity \
+                             window.",
+                        ));
+                    }
+                }
+                // Unreadable dates are their own honest outcome, never silently treated as in-date.
+                _ => response.checks.push(skipped(
                     codes::CHECK_VALIDITY_WINDOW,
-                    codes::AMA_CERT_NOT_YET_VALID,
-                    false,
-                    "The certificate's validity window has not started yet.",
-                ));
-            } else if now > until {
-                response.within_validity = Some(false);
-                response.checks.push(check(
-                    codes::CHECK_VALIDITY_WINDOW,
-                    codes::AMA_CERT_EXPIRED,
-                    false,
-                    "The certificate has expired: its validity window has already ended.",
-                ));
-            } else {
-                response.within_validity = Some(true);
-                response.checks.push(check(
-                    codes::CHECK_VALIDITY_WINDOW,
-                    codes::AMA_CERT_WITHIN_VALIDITY,
-                    true,
-                    "The current server time falls inside the certificate's validity window.",
-                ));
+                    codes::AMA_CERT_VALIDITY_UNREADABLE,
+                    "The certificate's validity dates could not be read as timestamps, so the \
+                     window was not judged.",
+                )),
             }
         }
-        // Unreadable dates are their own honest outcome, never silently treated as in-date.
-        _ => response.checks.push(skipped(
-            codes::CHECK_VALIDITY_WINDOW,
-            codes::AMA_CERT_VALIDITY_UNREADABLE,
-            "The certificate's validity dates could not be read as timestamps, so the window was \
-             not judged.",
+        // The distinction this whole check exists to draw: ABSENT, not unreadable.
+        //
+        // A bare public key has no subject, no issuer and no dates — there is nothing there to fail
+        // to read. Leaving the four rows blank would say the opposite, and an operator seeing an
+        // empty subject on what they believe is a certificate would reasonably conclude the file was
+        // damaged. No `validity_window` verdict is emitted either: a window that does not exist
+        // cannot be "not judged".
+        None => response.checks.push(skipped(
+            codes::CHECK_CERTIFICATE_FIELDS,
+            codes::AMA_KEY_CERTIFICATE_FIELDS_ABSENT,
+            "This input is a public key on its own, so it has no subject, no issuer and no \
+             validity window: those belong to a certificate, and none was supplied. They are \
+             absent, not unreadable.",
         )),
     }
 
@@ -985,13 +1057,18 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
     response.checks.push(skipped(
         codes::CHECK_TRUST_ESTABLISHED,
         codes::AMA_CERT_TRUST_NOT_ESTABLISHED,
-        "Whether this is genuinely AMA's certificate was not determined: no certification path was \
-         built, no trust anchor was consulted and no Trusted List was fetched.",
+        "Whether this key is genuinely AMA's was not determined: no certification path was built, \
+         no trust anchor was consulted and no Trusted List was fetched.",
     ));
     response
 }
 
-/// One refusal from the PEM normaliser, as the `certificate_parsed` check that failed.
+/// One refusal from the PEM normaliser, as the parse check that failed.
+///
+/// The row it lands on follows what the operator's armour said they were holding: a `PUBLIC KEY`
+/// block that did not decode fails `public_key_parsed`, and everything else — including a label this
+/// field does not take — fails `certificate_parsed`. Reporting a broken public key as a broken
+/// certificate would send an operator looking for a file they never had.
 ///
 /// Every variant gets its own code and its own parameters, because the whole reason this exists is
 /// that "invalid certificate" told an operator holding two kilobytes of base64 nothing they could
@@ -1008,11 +1085,42 @@ fn certificate_refusal_check(error: &chancela_cmd::CertificatePemError) -> Provi
     match error {
         E::Empty => check(NAME, codes::AMA_CERT_EMPTY, false, detail),
         E::ArmourMissing => check(NAME, codes::AMA_CERT_ARMOUR_MISSING, false, detail),
-        E::EndArmourMissing => check(NAME, codes::AMA_CERT_END_ARMOUR_MISSING, false, detail),
+        // The label rides along so the sentence names the END line the operator is actually missing
+        // — with two accepted armours, naming the wrong one would send them to fix a line they do
+        // not have.
+        E::EndArmourMissing { label } => {
+            check(NAME, codes::AMA_CERT_END_ARMOUR_MISSING, false, detail)
+                .with_params([("label", truncate_name(label))])
+        }
         E::WrongLabel { label } => check(NAME, codes::AMA_CERT_WRONG_PEM_LABEL, false, detail)
             .with_params([("label", truncate_name(label))]),
-        E::MultipleBlocks { count } => check(NAME, codes::AMA_CERT_MULTIPLE_BLOCKS, false, detail)
-            .with_params([("count", count.to_string())]),
+        // Secret material in a field for public material. Its own code, so the sentence an operator
+        // reads is the loud one and not the label-mistake one.
+        E::PrivateKey { label } => check(NAME, codes::AMA_KEY_PRIVATE_KEY, false, detail)
+            .with_params([("label", truncate_name(label))]),
+        // PKCS#1: the right key in the wrong container, and told apart from every other wrong label
+        // precisely because the operator can fix it with one command instead of hunting a new file.
+        E::Pkcs1PublicKey => check(NAME, codes::AMA_KEY_PKCS1_NOT_SPKI, false, detail),
+        // The one refusal that belongs on the public-key row: they pasted a PUBLIC KEY block, and it
+        // is that block — not a certificate — that failed to decode.
+        E::NotAPublicKey { detail: reason } => {
+            let reason = reason.clone();
+            check(
+                codes::CHECK_PUBLIC_KEY_PARSED,
+                codes::AMA_KEY_NOT_A_PUBLIC_KEY,
+                false,
+                detail,
+            )
+            .with_params([("detail", reason)])
+        }
+        E::MultipleBlocks { count, labels } => {
+            check(NAME, codes::AMA_CERT_MULTIPLE_BLOCKS, false, detail).with_params([
+                ("count", count.to_string()),
+                // Already deduped and capped upstream; truncated again here because every label is
+                // attacker-supplied text on its way into a rendered sentence.
+                ("labels", truncate_name(&labels.join(", "))),
+            ])
+        }
         E::IllegalCharacter { character, offset } => {
             check(NAME, codes::AMA_CERT_ILLEGAL_CHARACTER, false, detail).with_params([
                 ("character", character.clone()),
@@ -1418,19 +1526,21 @@ fn probe_cmd(
     ));
 
     // Field encryption. `cmd_config_from_entry` already refuses a config whose encryptor cannot be
-    // built, so reaching here means the AMA certificate parsed; report which mode that implies.
+    // built, so reaching here means the AMA key material parsed; report which mode that implies.
+    // Deliberately armour-neutral: the stored value may be a certificate or the bare public key, and
+    // the encryptor is the same either way.
     checks.push(match (&cfg.ama_cert_pem, is_prod) {
         (Some(_), _) => check(
             codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_PARSED,
             true,
-            "The stored AMA field-encryption certificate parsed and the field encryptor was built.",
+            "The stored AMA field-encryption key parsed and the field encryptor was built.",
         ),
         (None, false) => check(
             codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_ABSENT_PREPROD,
             true,
-            "No AMA field-encryption certificate is stored; preprod accepts cleartext fields.",
+            "No AMA field-encryption key is stored; preprod accepts cleartext fields.",
         ),
         // Unreachable: prod without a certificate fails assembly above. Kept as a fail-closed arm
         // rather than an `unreachable!()` so a future change in the assembler degrades honestly.
@@ -1438,9 +1548,7 @@ fn probe_cmd(
             codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_REQUIRED_PROD,
             false,
-            format!(
-                "Production requires the AMA field-encryption certificate ({FIELD_AMA_CERT_PEM})."
-            ),
+            format!("Production requires the AMA field-encryption key ({FIELD_AMA_CERT_PEM})."),
         )
         .with_params([("field", FIELD_AMA_CERT_PEM.to_owned())]),
     });
@@ -2841,44 +2949,50 @@ fn build_set(
     Ok(pairs)
 }
 
-/// Normalise a submitted AMA certificate into its canonical form, or refuse the write.
+/// Normalise submitted AMA key material into its canonical form, or refuse the write.
+///
+/// Accepts either armour the key arrives in — a `CERTIFICATE` block or a bare `PUBLIC KEY` block —
+/// and stores it under the label it came with. The armour is deliberately NOT rewritten: re-emitting
+/// a certificate as a public key would silently discard the subject, issuer and validity window the
+/// operator can still inspect, and would make a stored record stop matching the artefact they were
+/// sent.
 ///
 /// # Why the STORED value is the normalised one
 ///
 /// This field is not read back by anybody: the API never returns it, and its only consumer is
-/// [`chancela_cmd::FieldEncryptor::from_ama_cert_pem`] on the way to encrypting a citizen's phone
+/// [`chancela_cmd::FieldEncryptor::from_ama_key_pem`] on the way to encrypting a citizen's phone
 /// number, PIN and OTP. Keeping the operator's bytes verbatim would therefore preserve nothing
 /// anybody can see, while leaving a value that has to be re-normalised — identically — by every
 /// future reader. Storing the canonical form means there is exactly one representation of a given
-/// certificate on disk, a re-save cannot produce a different record for the same certificate, and
-/// what reaches the signing path is already something a strict reader accepts.
+/// input on disk, a re-save cannot produce a different record for the same input, and what reaches
+/// the signing path is already something a strict reader accepts.
 ///
 /// The transformation is safe to make silently *only* because of what it is: the canonical PEM is a
-/// function of the decoded DER and nothing else, so it cannot differ from the submission except in
-/// layout. Anything that would have changed those bytes is refused here instead — which is why this
-/// returns an error rather than a best effort.
+/// function of the decoded DER and its label and nothing else, so it cannot differ from the
+/// submission except in layout. Anything that would have changed those bytes is refused here
+/// instead — which is why this returns an error rather than a best effort.
 ///
-/// # Why an unusable certificate is refused at the door
+/// # Why unusable key material is refused at the door
 ///
-/// Storing one that cannot build a field encryptor would turn a mistake an operator can see and fix
-/// on this screen into a production CMD signature that fails at the moment a citizen is holding
-/// their phone waiting for an OTP. Expiry is deliberately NOT refused: an expired certificate is
-/// well-formed, is a fact the inspection reports plainly, and an operator loading next year's
-/// certificate before its window opens has a legitimate reason to save it.
+/// Storing something that cannot build a field encryptor would turn a mistake an operator can see
+/// and fix on this screen into a production CMD signature that fails at the moment a citizen is
+/// holding their phone waiting for an OTP. Expiry is deliberately NOT refused: an expired
+/// certificate is well-formed, is a fact the inspection reports plainly, and an operator loading
+/// next year's certificate before its window opens has a legitimate reason to save it.
 fn canonical_ama_cert_pem(value: Zeroizing<String>) -> Result<Zeroizing<String>, ApiError> {
     if value.len() > AMA_CERT_PEM_MAX_BYTES {
         return Err(ApiError::Unprocessable(format!(
-            "the AMA certificate exceeds the {AMA_CERT_PEM_MAX_BYTES}-byte limit"
+            "the AMA key material exceeds the {AMA_CERT_PEM_MAX_BYTES}-byte limit"
         ))
         .with_code("ama_cert_pem_too_large"));
     }
-    let normalized = chancela_cmd::normalize_certificate_pem(&value).map_err(|e| {
+    let normalized = chancela_cmd::normalize_ama_key_pem(&value).map_err(|e| {
         ApiError::Unprocessable(format!("{FIELD_AMA_CERT_PEM} is not usable: {e}"))
             .with_code("ama_cert_pem_invalid")
     })?;
-    // The signing path's own constructor, not a local reimplementation, so a certificate accepted
-    // here is one a production signature can actually encrypt with.
-    chancela_cmd::FieldEncryptor::from_ama_cert_pem(normalized.pem()).map_err(|e| {
+    // The signing path's own constructor, not a local reimplementation, so anything accepted here is
+    // something a production signature can actually encrypt with.
+    chancela_cmd::FieldEncryptor::from_ama_key_pem(normalized.pem()).map_err(|e| {
         ApiError::Unprocessable(format!("{FIELD_AMA_CERT_PEM} is not usable: {e}"))
             .with_code("ama_cert_pem_invalid")
     })?;
@@ -4190,11 +4304,40 @@ mod tests {
             .detail_code
     }
 
+    /// The `PUBLIC KEY` twin of a certificate fixture: the same key, in the other accepted armour.
+    ///
+    /// Derived with `x509_cert`'s reader and `der`'s encoder rather than with the normaliser under
+    /// test, so a bug that produced the wrong SPKI could not hide by producing it consistently on
+    /// both sides. This is exactly what an operator is handed when AMA sends the key and not the
+    /// certificate, and it is what makes the EC case testable in both forms without a second fixture
+    /// file to keep in step.
+    fn public_key_pem_of(certificate_pem: &str) -> String {
+        use base64::Engine as _;
+        use der::DecodePem;
+        use der::Encode;
+
+        let spki = Certificate::from_pem(certificate_pem.as_bytes())
+            .expect("the fixture is a certificate")
+            .tbs_certificate
+            .subject_public_key_info
+            .to_der()
+            .expect("its spki re-encodes");
+        let body = base64::engine::general_purpose::STANDARD.encode(spki);
+        let mut out = String::from("-----BEGIN PUBLIC KEY-----\n");
+        for chunk in body.as_bytes().chunks(64) {
+            out.push_str(std::str::from_utf8(chunk).unwrap());
+            out.push('\n');
+        }
+        out.push_str("-----END PUBLIC KEY-----\n");
+        out
+    }
+
     #[test]
     fn a_usable_ama_certificate_reports_what_it_established_and_claims_nothing_more() {
         let report = inspect_ama_certificate_pem(RSA_CERT_PEM);
 
         assert!(report.parsed);
+        assert_eq!(report.input_kind, Some("certificate"));
         assert!(report.rsa_public_key);
         assert_eq!(report.key_bits, Some(2048));
         assert_eq!(report.within_validity, Some(true));
@@ -4270,6 +4413,11 @@ mod tests {
             ),
             (
                 "-----BEGIN PRIVATE KEY-----\nMAoCAQE=\n-----END PRIVATE KEY-----\n",
+                codes::AMA_KEY_PRIVATE_KEY,
+            ),
+            // Neither armour, and not a secret: the plain refusal, not the private-key one.
+            (
+                "-----BEGIN DH PARAMETERS-----\nMAoCAQE=\n-----END DH PARAMETERS-----\n",
                 codes::AMA_CERT_WRONG_PEM_LABEL,
             ),
             (
@@ -4301,8 +4449,16 @@ mod tests {
                 "{candidate:?}"
             );
             // Nothing is claimed about a candidate that was refused.
+            assert!(report.input_kind.is_none(), "{candidate:?}");
             assert!(report.within_validity.is_none());
-            assert!(report.sha256_fingerprint.is_none(), "{candidate:?}");
+            assert!(
+                report.public_key_sha256_fingerprint.is_none(),
+                "{candidate:?}"
+            );
+            assert!(
+                report.certificate_sha256_fingerprint.is_none(),
+                "{candidate:?}"
+            );
             assert!(
                 !report
                     .checks
@@ -4313,31 +4469,202 @@ mod tests {
         }
     }
 
+    /// A bare `PUBLIC KEY` block is accepted, and reports exactly what a public key can support.
+    ///
+    /// The four certificate facts are ABSENT and said to be absent — the distinction this whole
+    /// branch exists for. Four blank rows would read as "the certificate is damaged", which is a
+    /// different fault with a different remedy.
+    #[test]
+    fn a_bare_public_key_is_accepted_and_says_what_it_cannot_carry() {
+        let report = inspect_ama_certificate_pem(&public_key_pem_of(RSA_CERT_PEM));
+
+        assert!(report.parsed);
+        assert_eq!(report.input_kind, Some("public_key"));
+        assert!(report.rsa_public_key);
+        assert_eq!(report.key_bits, Some(2048));
+        assert_eq!(
+            code_of(&report, "public_key_parsed"),
+            codes::AMA_KEY_PUBLIC_KEY_PARSED
+        );
+        assert_eq!(
+            code_of(&report, "rsa_public_key"),
+            codes::AMA_CERT_RSA_KEY_PRESENT
+        );
+
+        // No certificate: the four fields are absent, and there is a check that SAYS they are.
+        assert!(report.subject.is_none());
+        assert!(report.issuer.is_none());
+        assert!(report.not_before.is_none());
+        assert!(report.not_after.is_none());
+        assert!(report.within_validity.is_none());
+        let absent = report
+            .checks
+            .iter()
+            .find(|check| check.name == "certificate_fields")
+            .expect("the absence is stated, not left to be inferred from four blanks");
+        assert_eq!(absent.detail_code, codes::AMA_KEY_CERTIFICATE_FIELDS_ABSENT);
+        // `skipped`, never `failed`: nothing went wrong, there is simply nothing there.
+        assert_eq!(absent.status, "skipped");
+
+        // And no validity verdict is invented for a window that does not exist — not even the
+        // "unreadable" one, which would claim dates were present and unparseable.
+        assert!(
+            !report
+                .checks
+                .iter()
+                .any(|check| check.name == "validity_window"),
+            "a public key has no validity window to judge"
+        );
+        // Nor is the certificate row claimed for something that is not a certificate.
+        assert!(
+            !report
+                .checks
+                .iter()
+                .any(|check| check.name == "certificate_parsed"),
+        );
+        // The standing boundary still rides along: accepting a second armour widens nothing about
+        // what the server is willing to claim.
+        assert!(
+            report
+                .checks
+                .iter()
+                .any(|check| check.detail_code == codes::AMA_CERT_TRUST_NOT_ESTABLISHED)
+        );
+        assert!(!report.chain_validated);
+        assert!(!report.trusted_list_checked);
+        assert!(!report.issuer_authenticated);
+        assert!(!report.legal_validity_claimed);
+    }
+
+    /// The two armours of one key agree about the key, and disagree only about the certificate.
+    ///
+    /// The public-key fingerprint is the value that survives the change of artefact, which is why it
+    /// is the one an operator compares. The certificate fingerprint is a different number over
+    /// different bytes, and exists only on one side — the panel must never let them be confused.
+    #[test]
+    fn both_armours_of_one_key_report_the_same_key_and_different_fingerprints() {
+        let from_certificate = inspect_ama_certificate_pem(RSA_CERT_PEM);
+        let from_public_key = inspect_ama_certificate_pem(&public_key_pem_of(RSA_CERT_PEM));
+
+        assert_eq!(
+            from_certificate.public_key_sha256_fingerprint,
+            from_public_key.public_key_sha256_fingerprint,
+            "the SPKI fingerprint must not depend on which artefact the operator was handed"
+        );
+        assert_eq!(from_certificate.key_bits, from_public_key.key_bits);
+        assert_eq!(
+            from_certificate.rsa_public_key,
+            from_public_key.rsa_public_key
+        );
+
+        let spki = from_certificate
+            .public_key_sha256_fingerprint
+            .clone()
+            .expect("a parsed input is fingerprinted");
+        assert_eq!(spki.len(), 64);
+        assert!(spki.chars().all(|c| c.is_ascii_hexdigit()));
+
+        // The certificate fingerprint is present on exactly one side, and is a DIFFERENT value.
+        let certificate = from_certificate
+            .certificate_sha256_fingerprint
+            .clone()
+            .expect("a certificate is fingerprinted over its own DER too");
+        assert_eq!(certificate.len(), 64);
+        assert_ne!(
+            certificate, spki,
+            "the two fingerprints of one certificate must differ, or labelling them separately \
+             would be theatre"
+        );
+        assert!(from_public_key.certificate_sha256_fingerprint.is_none());
+    }
+
+    /// A PKCS#1 `RSA PUBLIC KEY` is refused with its own code, not as generic malformed input.
+    #[test]
+    fn a_pkcs1_public_key_is_refused_with_its_own_code() {
+        let report = inspect_ama_certificate_pem(
+            "-----BEGIN RSA PUBLIC KEY-----\nMAoCAQE=\n-----END RSA PUBLIC KEY-----\n",
+        );
+        assert!(!report.parsed);
+        assert!(report.input_kind.is_none());
+        assert_eq!(
+            code_of(&report, "certificate_parsed"),
+            codes::AMA_KEY_PKCS1_NOT_SPKI
+        );
+    }
+
+    /// A `PUBLIC KEY` block that does not decode fails the PUBLIC-KEY row, not the certificate row.
+    #[test]
+    fn a_broken_public_key_is_not_reported_as_a_broken_certificate() {
+        let report = inspect_ama_certificate_pem(
+            "-----BEGIN PUBLIC KEY-----\nZm9v\n-----END PUBLIC KEY-----\n",
+        );
+        assert!(!report.parsed);
+        assert!(report.input_kind.is_none());
+        assert_eq!(
+            code_of(&report, "public_key_parsed"),
+            codes::AMA_KEY_NOT_A_PUBLIC_KEY
+        );
+        assert!(
+            !report
+                .checks
+                .iter()
+                .any(|check| check.name == "certificate_parsed"),
+            "the operator pasted no certificate; do not tell them one is broken"
+        );
+    }
+
+    /// The missing `END` line names the armour the operator actually opened.
+    #[test]
+    fn the_missing_end_armour_names_the_label_that_was_opened() {
+        for (candidate, label) in [
+            ("-----BEGIN CERTIFICATE-----\nZm9v\n", "CERTIFICATE"),
+            ("-----BEGIN PUBLIC KEY-----\nZm9v\n", "PUBLIC KEY"),
+        ] {
+            let report = inspect_ama_certificate_pem(candidate);
+            let refusal = report
+                .checks
+                .iter()
+                .find(|check| check.detail_code == codes::AMA_CERT_END_ARMOUR_MISSING)
+                .unwrap_or_else(|| panic!("{candidate:?} must report the missing END line"));
+            assert_eq!(
+                refusal.detail_params.get("label").map(String::as_str),
+                Some(label),
+                "{candidate:?}"
+            );
+        }
+    }
+
     /// What gets STORED is the canonical form, so `FieldEncryptor` never has to re-normalise.
     #[test]
     fn the_credential_write_stores_one_canonical_representation_of_a_certificate() {
-        let expected = chancela_cmd::normalize_certificate_pem(RSA_CERT_PEM)
-            .unwrap()
-            .pem()
-            .to_owned();
+        for clean in [RSA_CERT_PEM.to_owned(), public_key_pem_of(RSA_CERT_PEM)] {
+            let expected = chancela_cmd::normalize_ama_key_pem(&clean)
+                .unwrap()
+                .pem()
+                .to_owned();
 
-        for candidate in [
-            RSA_CERT_PEM.to_owned(),
-            format!("\u{FEFF}{}", RSA_CERT_PEM.replace('\n', "\r\n")),
-            RSA_CERT_PEM
-                .lines()
-                .map(|line| format!("{line}   \n"))
-                .collect::<String>(),
-        ] {
-            let set = BTreeMap::from([(
-                FIELD_AMA_CERT_PEM.to_owned(),
-                SecretField(Zeroizing::new(candidate.clone())),
-            )]);
-            let pairs =
-                build_set(CredentialMode::Cmd, set).expect("a usable certificate is stored");
-            assert_eq!(pairs.len(), 1);
-            assert_eq!(pairs[0].0, FIELD_AMA_CERT_PEM);
-            assert_eq!(pairs[0].1.as_str(), expected);
+            for candidate in [
+                clean.clone(),
+                format!("\u{FEFF}{}", clean.replace('\n', "\r\n")),
+                clean
+                    .lines()
+                    .map(|line| format!("{line}   \n"))
+                    .collect::<String>(),
+            ] {
+                let set = BTreeMap::from([(
+                    FIELD_AMA_CERT_PEM.to_owned(),
+                    SecretField(Zeroizing::new(candidate.clone())),
+                )]);
+                let pairs =
+                    build_set(CredentialMode::Cmd, set).expect("usable key material is stored");
+                assert_eq!(pairs.len(), 1);
+                assert_eq!(pairs[0].0, FIELD_AMA_CERT_PEM);
+                assert_eq!(pairs[0].1.as_str(), expected);
+            }
+
+            // The armour is preserved, never rewritten: storing a certificate as a public key would
+            // silently discard the subject, issuer and dates the operator can still inspect.
+            assert!(expected.starts_with(&clean[..clean.find('\n').unwrap()]));
         }
     }
 
@@ -4355,6 +4682,14 @@ mod tests {
             ("nothing here", "armour"),
             // Parses perfectly, carries a P-256 key, and cannot encrypt a PIN.
             (EC_CERT_PEM, "RSA"),
+            // The PUBLIC KEY twin of that certificate: same key, same refusal, other armour. A
+            // widened door must not become a way in for material that cannot encrypt.
+            (&public_key_pem_of(EC_CERT_PEM), "RSA"),
+            // PKCS#1 is refused, and the refusal teaches the conversion instead of saying "broken".
+            (
+                "-----BEGIN RSA PUBLIC KEY-----\nMAoCAQE=\n-----END RSA PUBLIC KEY-----\n",
+                "SubjectPublicKeyInfo",
+            ),
         ] {
             let set = BTreeMap::from([(
                 FIELD_AMA_CERT_PEM.to_owned(),
@@ -4377,7 +4712,8 @@ mod tests {
         assert!(build_set(CredentialMode::Cmd, set).is_ok());
     }
 
-    /// Two certificates, or a certificate and its key: refused, never silently reduced to one.
+    /// Two certificates, or a certificate and its key: refused, never silently reduced to one —
+    /// and the refusal says WHAT was pasted, not merely how many blocks.
     #[test]
     fn a_bundle_is_refused_rather_than_resolved_to_its_first_block() {
         let report = inspect_ama_certificate_pem(&format!("{RSA_CERT_PEM}{EC_CERT_PEM}"));
@@ -4386,6 +4722,56 @@ mod tests {
             code_of(&report, "certificate_parsed"),
             codes::AMA_CERT_MULTIPLE_BLOCKS
         );
+
+        // The case the label list exists for: a paste that carried a secret the operator did not
+        // mean to include. "2 PEM blocks" would have them delete one at random.
+        let with_a_private_key = inspect_ama_certificate_pem(&format!(
+            "{RSA_CERT_PEM}-----BEGIN PRIVATE KEY-----\nMAoCAQE=\n-----END PRIVATE KEY-----\n"
+        ));
+        let refusal = with_a_private_key
+            .checks
+            .iter()
+            .find(|check| check.detail_code == codes::AMA_CERT_MULTIPLE_BLOCKS)
+            .expect("a two-block paste is refused as such");
+        assert_eq!(
+            refusal.detail_params.get("labels").map(String::as_str),
+            Some("CERTIFICATE, PRIVATE KEY")
+        );
+        assert_eq!(
+            refusal.detail_params.get("count").map(String::as_str),
+            Some("2")
+        );
+    }
+
+    /// A private key pasted here is named as one, loudly, and not filed as a label mistake.
+    #[test]
+    fn a_private_key_is_reported_under_its_own_code_in_every_armour() {
+        for label in [
+            "PRIVATE KEY",
+            "RSA PRIVATE KEY",
+            "EC PRIVATE KEY",
+            "ENCRYPTED PRIVATE KEY",
+        ] {
+            let report = inspect_ama_certificate_pem(&format!(
+                "-----BEGIN {label}-----\nMAoCAQE=\n-----END {label}-----\n"
+            ));
+            assert!(!report.parsed, "{label}");
+            assert_eq!(
+                code_of(&report, "certificate_parsed"),
+                codes::AMA_KEY_PRIVATE_KEY,
+                "{label}"
+            );
+            let refusal = report
+                .checks
+                .iter()
+                .find(|check| check.detail_code == codes::AMA_KEY_PRIVATE_KEY)
+                .expect("reported");
+            assert_eq!(
+                refusal.detail_params.get("label").map(String::as_str),
+                Some(label),
+                "the operator is told which private-key armour they pasted"
+            );
+        }
     }
 
     /// The proof the normalisation is a normalisation: every filthy paste of one certificate
@@ -4397,7 +4783,7 @@ mod tests {
     fn a_filthy_paste_inspects_identically_to_the_clean_certificate() {
         let clean = inspect_ama_certificate_pem(RSA_CERT_PEM);
         let fingerprint = clean
-            .sha256_fingerprint
+            .public_key_sha256_fingerprint
             .clone()
             .expect("a parsed certificate is fingerprinted");
         assert_eq!(fingerprint.len(), 64);
@@ -4441,8 +4827,12 @@ mod tests {
             assert!(report.parsed, "{name}");
             assert!(report.rsa_public_key, "{name}");
             assert_eq!(
-                report.sha256_fingerprint.as_deref(),
+                report.public_key_sha256_fingerprint.as_deref(),
                 Some(fingerprint.as_str()),
+                "{name}"
+            );
+            assert_eq!(
+                report.certificate_sha256_fingerprint, clean.certificate_sha256_fingerprint,
                 "{name}"
             );
             assert_eq!(report.subject, clean.subject, "{name}");
