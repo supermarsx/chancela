@@ -18,6 +18,13 @@ test('operator can reach every operations area and manage a real tenant group', 
   await page.getByRole('link', { name: 'Administração' }).click();
   await expect(page).toHaveURL(/\/admin/u);
   await expect(page.getByRole('heading', { name: 'Administração', exact: true })).toBeVisible();
+  // t120: the three integrations areas no longer share one strip — Grupos e bibliotecas is under
+  // Conteúdo, Conectores under Integrações and Repositórios ZK under Dados — so each is reached
+  // through its group. Every address below is unchanged.
+  await page
+    .getByRole('group', { name: 'Secções de administração' })
+    .getByRole('button', { name: 'Conteúdo', exact: true })
+    .click();
   await page
     .getByRole('group', { name: 'Áreas de administração' })
     .getByRole('button', { name: 'Grupos e bibliotecas', exact: true })
@@ -44,11 +51,19 @@ test('operator can reach every operations area and manage a real tenant group', 
     page.getByRole('heading', { name: 'Bibliotecas de minutas partilhadas' }),
   ).toBeVisible();
 
+  await page
+    .getByRole('group', { name: 'Secções de administração' })
+    .getByRole('button', { name: 'Integrações', exact: true })
+    .click();
   await page.getByRole('button', { name: 'Conectores e trabalhos' }).click();
   await expect(page).toHaveURL(/\/admin\/connectors/u);
   await expect(page.getByText('Apenas referências de credenciais')).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Trabalhos duráveis' })).toBeVisible();
 
+  await page
+    .getByRole('group', { name: 'Secções de administração' })
+    .getByRole('button', { name: 'Dados', exact: true })
+    .click();
   await page.getByRole('button', { name: 'Repositórios ZK' }).click();
   await expect(page).toHaveURL(/\/admin\/repositories/u);
   await expect(page.getByText('Zero knowledge é uma opção explícita')).toBeVisible();

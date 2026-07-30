@@ -14,6 +14,12 @@
  * active section is deep-linkable (`/settings/data`); the working copy spans all of
  * them, so the
  * save flow stays a single whole-document PUT (global draft) reachable from every section.
+ *
+ * The same component powers the Administração surface at `/admin` (`surface="admin"`), which since
+ * t120 navigates in TWO levels: a group strip (Plataforma · Dados · Integrações · Conteúdo ·
+ * Assinaturas, see {@link ADMIN_GROUPS}) over the panes of the active group alone. Grouping is
+ * presentation: every pane keeps the exact address it had, and no pane changed section, so no
+ * pane's permission gating moved with it.
  */
 import {
   lazy,
@@ -929,23 +935,141 @@ const SUBSECTION_NAV: Partial<Record<SettingsSection, SettingsSubsectionNav[]>> 
 };
 
 /**
- * The Administração surface's single FLAT subtab strip (t60, Option B). The admin section level was
- * dissolved: instead of an Operações | Assinaturas section strip sitting over a per-section
- * sub-strip, `/admin` now shows ONE strip that lists every admin area — the fourteen operations
- * panes, then the six signing cards. The two clusters' ids are globally unique (no operations sub is
- * named like a signing one), so the flat concatenation needs no de-duplication; `selectAdminSub`
- * routes each id back to its correct base (`/admin` vs `/admin/signing`) regardless of which cluster
- * is currently mounted. Every entry keeps the same shape it has under SUBSECTION_NAV (including the
- * one `serverEnvLabel` entry, Ambiente do servidor), so the strip renders it identically.
+ * Every admin area's nav ENTRY (label + icon), in one list (t60, Option B). This was the whole of
+ * the Administração strip until t120: one flat run of every operations pane then every signing
+ * card. It is no longer rendered as a strip — {@link ADMIN_GROUPS} below slices it per group — but
+ * it stays the single source of an area's label and glyph, so a group lists ids and never restates
+ * copy. The two clusters' ids are globally unique (no operations sub is named like a signing one),
+ * so the flat concatenation needs no de-duplication, and `selectAdminSub` still routes each id back
+ * to its correct base (`/admin` vs `/admin/signing`) regardless of which cluster is mounted. Every
+ * entry keeps the shape it has under SUBSECTION_NAV, so both strips render it identically.
  */
 const ADMIN_SUBSECTION_NAV: SettingsSubsectionNav[] = [
   ...(SUBSECTION_NAV.operations ?? []),
   ...(SUBSECTION_NAV.signing ?? []),
 ];
 
-/** Each strip gets its own aria-label, so the two levels are told apart by AT. Deliberately NOT
+const ADMIN_SUBSECTION_NAV_BY_ID = new Map<string, SettingsSubsectionNav>(
+  ADMIN_SUBSECTION_NAV.map((entry) => [entry.id, entry]),
+);
+
+/**
+ * The Administração surface's PRIMARY level (t120). The flat strip above had grown to twenty-three
+ * buttons — every operations pane and every signing card on one line — which is not a navigation
+ * but a list. These five groups sit ABOVE it: the group strip picks a subject, and the strip below
+ * it shows only that subject's panes.
+ *
+ * ## The rule that decides membership, and it is not the label
+ *
+ * A group's `section` is the ONE `SettingsSection` every member belongs to, and no group may
+ * straddle two. `section` is not decoration: it picks the render arm, it picks the edit verb
+ * (`signing` → `signing.configure`, everything else → `settings.manage`), and — through
+ * `isStandalone(section, sub)` — it decides whether the panel is inerted by the page's disabled
+ * fieldset. Moving a sub across that boundary would silently re-gate it, which is the exact
+ * inherited-gate failure the STANDALONE_SECTIONS note below is about. Keeping every group inside
+ * one section is what makes this restructure provably gate-neutral: each `section:sub` pair is
+ * unchanged, so every `STANDALONE_SUBSECTIONS` and `WIDE_SUBSECTIONS` lookup answers exactly what
+ * it answered before. It is asserted by test, not left to this comment.
+ *
+ * ## Why the placements are what they are
+ *
+ * - **Plataforma** — the running process and how you observe it: the service list, the log levels
+ *   and tail, the search index worker (its operator verbs are pause/resume/rebuild, the same shape
+ *   as the service controls), the env-override registry, and the diagnostics report that assembles
+ *   all of them.
+ * - **Dados** — what this instance stores and what happens to it: object storage and the ZK object
+ *   root, backups and recovery drills, data-key rotation and the reset operations, the ZK
+ *   repositories those keys and that root govern, and last the two read-only launch-time facts
+ *   about the durable store and the cache. Armazenamento leads deliberately: `/admin/data` was
+ *   already a resolvable address (`RETIRED_SUBSECTIONS`, from the t105/t28 split) that landed on
+ *   Armazenamento, and a group whose default pane is its own historical destination keeps that
+ *   bookmark landing exactly where it landed.
+ * - **Integrações** — every surface over which another system talks to this one or this one talks
+ *   out: the API server and its keys, the MCP/AI server, the outbound connectors, and the SMTP
+ *   relay. `api-keys` is listed for ADDRESSING only — it has no button of its own (see API_PANES),
+ *   so it never appears in the strip, and it is not first, so it is never a group default.
+ * - **Conteúdo** — the two panes that govern document content rather than infrastructure: company
+ *   groups with their shared template libraries, and the sample data every template preview renders
+ *   with. It is the smallest group and the least self-evident; see the note in the report.
+ * - **Assinaturas** — the signing-configuration cluster, unchanged and whole. It is the one group
+ *   that already had its own address space (`/admin/signing/:detail`), so it needed no move at all.
+ */
+type AdminGroupId = 'platform' | 'data' | 'integrations' | 'content' | 'signing';
+
+interface AdminGroupDefinition {
+  id: AdminGroupId;
+  /** The single section every member belongs to — see the note above. */
+  section: SettingsSection;
+  label: MessageKey;
+  icon: ReactNode;
+  /** Addressable member ids in strip order. `subs[0]` is the group's default pane. */
+  subs: readonly SettingsSubsection[];
+}
+
+export const ADMIN_GROUPS: readonly AdminGroupDefinition[] = [
+  {
+    id: 'platform',
+    section: 'operations',
+    label: 'settings.adminGroup.platform',
+    icon: <Icon.Power />,
+    subs: ['services', 'logs', 'search', 'env', 'diagnostics'],
+  },
+  {
+    id: 'data',
+    section: 'operations',
+    label: 'settings.adminGroup.data',
+    icon: <Icon.Archive />,
+    subs: ['storage', 'backups', 'keys', 'repositories', 'database', 'cache'],
+  },
+  {
+    id: 'integrations',
+    section: 'operations',
+    label: 'settings.adminGroup.integrations',
+    icon: <Icon.Shuffle />,
+    subs: ['api', 'api-keys', 'mcp', 'connectors', 'email'],
+  },
+  {
+    id: 'content',
+    section: 'operations',
+    label: 'settings.adminGroup.content',
+    icon: <Icon.FileText />,
+    subs: ['groups', 'template-preview'],
+  },
+  {
+    id: 'signing',
+    section: 'signing',
+    label: 'settings.adminGroup.signing',
+    icon: <Icon.PenNib />,
+    subs: ['providers', 'policy', 'tsl', 'tsa', 'trust-services', 'cmd'],
+  },
+];
+
+const ADMIN_GROUP_BY_ID = new Map<string, AdminGroupDefinition>(
+  ADMIN_GROUPS.map((group) => [group.id, group]),
+);
+
+/** Every admin sub belongs to exactly one group (asserted by test), so this is total over the
+ *  admin subsections — including `api-keys`, which has no button but must still resolve. */
+const ADMIN_GROUP_BY_SUB = new Map<string, AdminGroupDefinition>(
+  ADMIN_GROUPS.flatMap((group) => group.subs.map((sub) => [sub as string, group] as const)),
+);
+
+const isAdminGroupId = (value: string | undefined): value is AdminGroupId =>
+  value !== undefined && ADMIN_GROUP_BY_ID.has(value);
+
+/** The buttons of one group's strip: its members, in its order, minus the ones that carry no
+ *  button of their own (`api-keys`, a pane of the API tab). */
+const adminGroupNav = (group: AdminGroupDefinition): SettingsSubsectionNav[] =>
+  group.subs.flatMap((id) => {
+    const entry = ADMIN_SUBSECTION_NAV_BY_ID.get(id);
+    return entry ? [entry] : [];
+  });
+
+/** Each strip gets its own aria-label, so the levels are told apart by AT. Deliberately NOT
  *  the wording of `settings.platform.subnav.aria`, which labels the THIRD-level strip inside
- *  Plataforma — two identically-named landmarks on one page is a real defect. */
+ *  Plataforma — two identically-named landmarks on one page is a real defect. The admin surface
+ *  now carries three: `settings.adminGroup.aria` (the group strip), `admin.subnav.aria` (the
+ *  panes of the active group) and `settings.api.subnav.aria` (the API tab's two panes). */
 const SUBSECTION_ARIA: Partial<Record<SettingsSection, MessageKey>> = {
   operations: 'settings.subnav.operations.aria',
   signing: 'settings.subnav.signing.aria',
@@ -1037,7 +1161,10 @@ const STANDALONE_SUBSECTIONS: readonly string[] = [
   'signing:providers',
 ];
 
-const isStandalone = (section: SettingsSection, sub: SettingsSubsection | undefined): boolean =>
+export const isStandalone = (
+  section: SettingsSection,
+  sub: SettingsSubsection | undefined,
+): boolean =>
   STANDALONE_SECTIONS.includes(section) ||
   (sub !== undefined && STANDALONE_SUBSECTIONS.includes(`${section}:${sub}`));
 
@@ -1526,10 +1653,17 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // retired alias (`/settings/email`, `/settings/data`, `/settings/signing-providers`, …) can still
   // resolve INTO operations or signing — the forward guard below then sends it on to `/admin/*`.
   const retired = isAdmin || secSegment === undefined ? undefined : RETIRED_SECTIONS[secSegment];
+  // t120 — the admin surface's first segment may name a GROUP (`/admin/data`, `/admin/signing`)
+  // as well as a pane (`/admin/storage`). No group id collides with a pane id, so the two shapes
+  // are disjoint and every pre-t120 address keeps its exact meaning: `signing` was already read
+  // here as a section segment and is now read as the group of the same name, with the same members
+  // and the same `/admin/signing/:detail` second level.
+  const adminGroupSegment = isAdmin && isAdminGroupId(secSegment) ? secSegment : undefined;
+  const addressedAdminGroup = adminGroupSegment
+    ? ADMIN_GROUP_BY_ID.get(adminGroupSegment)
+    : undefined;
   const section: SettingsSection = isAdmin
-    ? secSegment === 'signing'
-      ? 'signing'
-      : 'operations'
+    ? (addressedAdminGroup?.section ?? 'operations')
     : (retired?.section ?? rawSection);
   // The second level, for the two sections that have one. Like the section, the first sub-tab is
   // the default and carries no segment; an unknown one falls back to it rather than blanking the
@@ -1540,9 +1674,14 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // A PUSH, so the browser Back button walks back through the sub-tabs the operator opened
   // (the t34/t62 rule: navigation the user performed must be undoable).
   const { section: subSegment, select: selectRawSub } = useSectionNav<string>({
-    // On the admin surface the signing section adds a path level (`/admin/signing/:detail`), so its
-    // sub is read one segment deeper than the operations section (`/admin/:sub`). t50.
-    base: isAdmin ? (section === 'signing' ? '/admin/signing' : '/admin') : `/settings/${section}`,
+    // A group-shaped admin address adds a path level (`/admin/signing/:detail`,
+    // `/admin/data/:detail`), so its sub is read one segment deeper than the pane-shaped one
+    // (`/admin/:sub`). t50 introduced this for signing; t120 generalises it to every group.
+    base: isAdmin
+      ? adminGroupSegment
+        ? `/admin/${adminGroupSegment}`
+        : '/admin'
+      : `/settings/${section}`,
     parse: (raw) => raw ?? '',
     fallback: '',
   });
@@ -1553,15 +1692,31 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     section === 'operations' || section === 'signing' || section === 'users'
       ? SETTINGS_SUBSECTIONS[section]
       : undefined;
+  // Search and Amostras de pré-visualização are the ONLY two panes a principal can be missing, so
+  // they are the only two a fallback has to reason about — and the reason no group may lead with
+  // either (a group default has to be a pane its opener can actually be shown).
+  const subPermitted = (candidate: string): boolean =>
+    (candidate !== 'search' || canSearchManage) &&
+    (candidate !== 'template-preview' || canTemplatePreviewSamples);
   const sub: SettingsSubsection | undefined = subNav
     ? (retired?.sub ??
       RETIRED_SUBSECTIONS[section]?.[subSegment] ??
-      (validSubs?.includes(subSegment) &&
-      (subSegment !== 'search' || canSearchManage) &&
-      (subSegment !== 'template-preview' || canTemplatePreviewSamples)
-        ? (subSegment as SettingsSubsection)
-        : subNav[0].id))
+      // A group-shaped address resolves within its OWN members and falls back to the group's
+      // default pane — never to the section's first pane, which would drop an operator into
+      // another group entirely. A pane-shaped address is unchanged (t120).
+      (addressedAdminGroup
+        ? (addressedAdminGroup.subs as readonly string[]).includes(subSegment) &&
+          subPermitted(subSegment)
+          ? (subSegment as SettingsSubsection)
+          : addressedAdminGroup.subs[0]
+        : validSubs?.includes(subSegment) && subPermitted(subSegment)
+          ? (subSegment as SettingsSubsection)
+          : subNav[0].id))
     : undefined;
+  // The group whose strip is showing: always derived from the RESOLVED pane, so the two strips can
+  // never disagree about where the operator is (a retired sub alias resolves across, and the group
+  // follows it).
+  const activeAdminGroup = isAdmin && sub ? ADMIN_GROUP_BY_SUB.get(sub) : undefined;
   // Scoped to the ROSTER sub-tab, not to the whole Utilizadores section (t106). `?user=` is the
   // roster's own legacy state and redirects out to the edit screen; left section-wide it would
   // fire on `/settings/users/roles?user=u1` too, throwing an operator off the Funções panel.
@@ -1592,10 +1747,25 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     const first = isSigning ? 'providers' : 'services';
     navigate(next === first ? base : `${base}/${next}`);
   };
+  // Picking a GROUP opens that group's default pane, at that pane's OWN canonical address (t120).
+  // The group segment is an inbound alias only — `/admin/data` resolves, but selecting Dados writes
+  // `/admin/storage` — so every pane keeps exactly one canonical address and no existing link,
+  // bookmark or spec had to move. A PUSH, like every other tab click on this page.
+  const selectAdminGroup = (next: AdminGroupId) => {
+    const group = ADMIN_GROUP_BY_ID.get(next);
+    if (group) selectAdminSub(group.subs[0]);
+  };
   // The fragment of the current location, carried through the `?user=` → edit-screen redirect.
   // `search` is preserved verbatim by the retired-alias → /admin forwarding below, so the provider
   // `?configure=` deep link survives a `/settings/signing-providers?configure=…` bookmark (t50).
-  const directAdminSearchPath = isAdmin && pathname.replace(/\/+$/, '') === '/admin/search';
+  // Both spellings of the search pane's address: the canonical `/admin/search` and the
+  // group-shaped `/admin/platform/search` that t120 also resolves. A `search.manage`-only
+  // principal must be spared the broad settings document at EITHER, or the one operator this
+  // suppression exists for gets a 403 for typing the longer form.
+  const directAdminSearchPath =
+    isAdmin &&
+    (pathname.replace(/\/+$/, '') === '/admin/search' ||
+      pathname.replace(/\/+$/, '') === '/admin/platform/search');
   // The direct search route is known before the session/permission query resolves. Suppress the
   // broad document immediately from pathname alone, then keep it suppressed only for an authorized
   // search manager. A denied principal may load the ordinary fallback pane after readiness.
@@ -2012,29 +2182,48 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           the fieldset, and a reader without the section's edit verb must still be able to move
           between sub-tabs — including to the standalone ones that are not locked at all.
 
-          On the Administração surface (t60, Option B) this is the ONE flat strip that dissolved the
-          admin section level: it lists every admin area across both clusters (operations panes +
-          signing cards), and `selectAdminSub` routes each id to its correct base. On the
-          Configurações surface it is the per-section second-level strip for the one section that has
-          one there (Utilizadores) — Operações and Assinaturas forward to `/admin` before this
-          renders, so their sub-navs are only ever reached through the admin branch above. */}
-      {isAdmin && sub ? (
-        <SubNav
-          items={ADMIN_SUBSECTION_NAV.filter(
-            (candidate) =>
-              (candidate.id !== 'search' || canSearchManage) &&
-              (candidate.id !== 'template-preview' || canTemplatePreviewSamples),
-          ).map((s) => ({
-            id: s.id,
-            label: s.adminLabel ? at(s.adminLabel) : t(s.label),
-            icon: s.icon,
-          }))}
-          // `api-keys` is a pane of the API tab, so the API button is the one that reads as
-          // active while it is open — otherwise the strip would show nothing selected.
-          active={sub === 'api-keys' ? 'api' : sub}
-          onSelect={selectAdminSub}
-          ariaLabel={at('admin.subnav.aria')}
-        />
+          On the Administração surface (t120) this is TWO strips: the group strip that picks a
+          subject, and below it the panes of that group alone. Both sit outside the fieldset for the
+          reason above. They are separate landmarks with separate names — `settings.adminGroup.aria`
+          and `admin.subnav.aria` — because two identically-named landmarks on one page is a real
+          defect, and there is now a third on the API tab below. On the Configurações surface this is
+          the per-section second-level strip for the one section that has one there (Utilizadores) —
+          Operações and Assinaturas forward to `/admin` before this renders, so their sub-navs are
+          only ever reached through the admin branch above. */}
+      {isAdmin && sub && activeAdminGroup ? (
+        <>
+          {/* The primary level. Never permission-filtered: no group can empty out, because the only
+              two panes that can be absent for a principal (Pesquisa, Amostras de pré-visualização)
+              each sit in a group with other members — asserted by test. */}
+          <SubNav
+            items={ADMIN_GROUPS.map((group) => ({
+              id: group.id,
+              label: t(group.label),
+              icon: group.icon,
+            }))}
+            active={activeAdminGroup.id}
+            onSelect={selectAdminGroup}
+            ariaLabel={t('settings.adminGroup.aria')}
+          />
+          <SubNav
+            items={adminGroupNav(activeAdminGroup)
+              .filter(
+                (candidate) =>
+                  (candidate.id !== 'search' || canSearchManage) &&
+                  (candidate.id !== 'template-preview' || canTemplatePreviewSamples),
+              )
+              .map((s) => ({
+                id: s.id,
+                label: s.adminLabel ? at(s.adminLabel) : t(s.label),
+                icon: s.icon,
+              }))}
+            // `api-keys` is a pane of the API tab, so the API button is the one that reads as
+            // active while it is open — otherwise the strip would show nothing selected.
+            active={sub === 'api-keys' ? 'api' : sub}
+            onSelect={selectAdminSub}
+            ariaLabel={at('admin.subnav.aria')}
+          />
+        </>
       ) : !isAdmin && subNav && sub ? (
         <SubNav
           items={subNav.map((s) => ({

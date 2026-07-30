@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation, useNavigationType } from 'react-router-dom';
-import { SettingsPage } from './SettingsPage';
+import { ADMIN_GROUPS, isStandalone, SettingsPage } from './SettingsPage';
+import { ADMIN_CONFIGURATION_AREAS } from '../admin/AdminConfigurationFinder';
 import { MCP_TAB_PATH } from './PlatformOperationsSection';
 /**
  * The platform service-control sentences are server-authored English resolved to pt-PT by
@@ -3163,7 +3164,10 @@ describe('SettingsPage', () => {
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin/template-preview']);
 
     fireEvent.change(await screen.findByLabelText('Título'), { target: { value: '   ' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Email' }));
+    // Email is a pane of another group since t120, so leaving Amostras now means picking the group
+    // first. The point of the test is unchanged: an edit made on a LATER pane stays pending.
+    fireEvent.click(screen.getByRole('button', { name: 'Integrações' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Email' }));
 
     expect(await screen.findByText('Gravação automática em pausa')).toBeTruthy();
     const repair = screen.getByRole('link', { name: 'Corrigir amostras' });
@@ -4191,10 +4195,19 @@ describe('SettingsPage', () => {
     // point of this assertion is that they still write the SAME field of the SAME working copy:
     // one PUT carries an edit made on Registos and an edit made on MCP.
     expect(screen.queryByLabelText('MCP stdio')).toBeNull();
+    // Registos (Plataforma) and IA e MCP (Integrações) are in different groups since t120, so the
+    // walk is group-then-pane. The assertion below is the one that matters and is unchanged: one
+    // PUT still carries both edits, because the working copy spans every group.
     fireEvent.click(
-      within(screen.getByRole('group', { name: 'Áreas de administração' })).getByRole('button', {
-        name: 'IA e MCP',
+      within(screen.getByRole('group', { name: 'Secções de administração' })).getByRole('button', {
+        name: 'Integrações',
       }),
+    );
+    fireEvent.click(
+      within(await screen.findByRole('group', { name: 'Áreas de administração' })).getByRole(
+        'button',
+        { name: 'IA e MCP' },
+      ),
     );
     const mcpOverride = (await screen.findByLabelText('MCP stdio')) as HTMLSelectElement;
     fireEvent.change(mcpOverride, { target: { value: 'trace' } });
@@ -6865,66 +6878,136 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
 
   /** The parent strip and the child strip are two separate `role="group"` landmarks. */
   const childStrip = (name: string) => within(screen.getByRole('group', { name }));
+  /** t120's primary level: the group strip that sits above the pane strip. */
+  const groupStrip = () => within(screen.getByRole('group', { name: 'Secções de administração' }));
   const labels = (scope: ReturnType<typeof within>): (string | undefined)[] =>
     scope
       .getAllByRole('button')
       .map((b: HTMLElement) => b.textContent?.replace(/\s+/gu, ' ').trim());
 
-  it('lists every operations pane and every signing card in ONE flat Administração strip', async () => {
+  it('shows a five-group primary strip over the panes of the active group alone (t120)', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
-    // t60 (Option B): the admin section level (Operações | Assinaturas) is dissolved into ONE flat
-    // subtab strip. There is NO section strip on /admin — the strip below lists every admin area
-    // across both clusters, the sixteen operations panes then the six signing cards.
+    // t120: the flat twenty-three-button strip t60 built is now the SECOND level. The primary strip
+    // picks a subject; the strip below it carries only that subject's panes.
     renderWithProviders(<SettingsPage surface="admin" />, ['/admin']);
 
-    const admin = within(await screen.findByRole('group', { name: 'Áreas de administração' }));
-    // No section strip survives: the two-level structure collapsed to one, and no Configurações
-    // section strip leaks onto /admin either.
+    const groups = within(await screen.findByRole('group', { name: 'Secções de administração' }));
+    const panes = within(screen.getByRole('group', { name: 'Áreas de administração' }));
+    // Still no Configurações section strip on /admin, and the dissolved admin SECTION level (t60)
+    // has not come back: "Operações" is not a button anywhere.
     expect(screen.queryByRole('group', { name: 'Secções de configuração' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Operações' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Assinaturas' })).toBeNull();
 
-    // The sixteen settings-ops panes (platform → search → stores → env override → integrations), then folded
-    // in after them the six signing cards — one flat strip, in cluster order.
-    expect(labels(admin)).toEqual([
-      // Operations cluster (t36) — reached off `/admin/:sub`.
+    expect(labels(groups)).toEqual([
+      'Plataforma',
+      'Dados',
+      'Integrações',
+      'Conteúdo',
+      'Assinaturas',
+    ]);
+    // Only Plataforma's panes are on the second strip — the whole point of the change.
+    expect(labels(panes)).toEqual([
       'Serviços',
       'Registos',
       'Pesquisa',
-      'Amostras de pré-visualização',
-      'API',
-      'Base de dados',
-      'Redis e estado partilhado',
-      'Armazenamento',
-      'Cópias e recuperação',
-      'Chaves e reposição',
-      'IA e MCP',
-      'Email',
-      // Ambiente do servidor (t14) — the editable env-override superset. Its label is an ordinary
-      // catalog key now that `settings.serverEnv.*` is folded into all fourteen locales.
       'Ambiente do servidor',
-      // Diagnóstico — the read-only aggregate of the panes above, with its copy/print/.txt export.
-      // It sits after them because it consumes them; it configures nothing of its own.
       'Diagnóstico',
-      // Integrations (t36) — folded in from the retired `/operations` tab.
-      'Grupos e bibliotecas',
-      'Conectores e trabalhos',
-      'Repositórios ZK',
-      // Signing cluster (t50) — reached off `/admin/signing/:detail`, now part of the same strip.
-      'Fornecedores de assinatura',
-      'Política de assinatura',
-      'Fontes TSL',
-      'Prestadores TSA',
-      'Modos de prestador configurados',
-      'Chave Móvel Digital (CMD)',
     ]);
+    expect(panes.queryByRole('button', { name: 'Email' })).toBeNull();
+    expect(panes.queryByRole('button', { name: 'Fornecedores de assinatura' })).toBeNull();
 
     // Serviços is the default and carries no `sub` segment; the surface is titled "Administração".
     expect(await screen.findByRole('heading', { name: 'Administração' })).toBeTruthy();
-    expect(admin.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
+    expect(groups.getByRole('button', { name: 'Plataforma' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
+    expect(panes.getByRole('button', { name: 'Serviços' }).getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
+  it('names all three admin strips distinctly (t120)', async () => {
+    // Three landmarks now stack on one page — group, panes, and the API tab's own two panes. Two
+    // identically-named landmarks is a real defect, so this asserts the names are pairwise distinct
+    // AND that each is present exactly once.
+    vi.stubGlobal('fetch', apiKeysFetch().fn);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/api-keys']);
+    await screen.findByRole('group', { name: 'Áreas de administração' });
+
+    const names = screen
+      .getAllByRole('group')
+      .map((strip: HTMLElement) => strip.getAttribute('aria-label'))
+      .filter((name): name is string => name !== null);
+    expect(names).toEqual(['Secções de administração', 'Áreas de administração', 'Áreas da API']);
+    expect(new Set(names).size).toBe(names.length);
+  });
+
+  it('reaches every admin pane from its own group default, and files each in exactly one group', () => {
+    // The reachability contract, asserted on ids and paths rather than on translated prose.
+    // ADMIN_CONFIGURATION_AREAS is the finder's independent index of every admin destination, so
+    // equality with it is what catches a pane that was added to one list and forgotten in the other.
+    const filed = ADMIN_GROUPS.flatMap((group) => group.subs);
+    expect(new Set(filed).size, 'a pane is filed in two groups').toBe(filed.length);
+    expect([...filed].sort()).toEqual([...ADMIN_CONFIGURATION_AREAS.map((area) => area.id)].sort());
+
+    // A group's default is `subs[0]`, and it may never be one of the two panes a principal can be
+    // missing — landing on a group must never land on a pane you are about to be bounced out of.
+    for (const group of ADMIN_GROUPS) {
+      expect(['search', 'template-preview'], group.id).not.toContain(group.subs[0]);
+      // …and no group can empty out under permission filtering, for the same reason.
+      expect(
+        group.subs.filter((sub) => sub !== 'search' && sub !== 'template-preview').length,
+        group.id,
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  it('moves no pane across the section boundary, so no gate narrowed (t120)', () => {
+    // THE assertion with teeth. `section` decides the edit verb (`signing.configure` vs
+    // `settings.manage`) and, through `isStandalone`, whether the page's disabled fieldset inerts
+    // the pane. A regrouping that moved a pane between sections would silently re-gate it. This
+    // pins the section and the standalone-ness of every admin pane to what they were before t120,
+    // so any such move fails here rather than in production.
+    const FROZEN: readonly [sub: string, section: 'operations' | 'signing', standalone: boolean][] =
+      [
+        ['services', 'operations', false],
+        ['logs', 'operations', false],
+        ['search', 'operations', true],
+        ['env', 'operations', true],
+        ['diagnostics', 'operations', true],
+        ['storage', 'operations', true],
+        ['backups', 'operations', true],
+        ['keys', 'operations', true],
+        ['repositories', 'operations', true],
+        ['database', 'operations', false],
+        ['cache', 'operations', false],
+        ['api', 'operations', false],
+        ['api-keys', 'operations', true],
+        ['mcp', 'operations', false],
+        ['connectors', 'operations', true],
+        ['email', 'operations', false],
+        ['groups', 'operations', true],
+        ['template-preview', 'operations', false],
+        ['providers', 'signing', true],
+        ['policy', 'signing', false],
+        ['tsl', 'signing', false],
+        ['tsa', 'signing', false],
+        ['trust-services', 'signing', false],
+        ['cmd', 'signing', false],
+      ];
+    const grouped = new Map(
+      ADMIN_GROUPS.flatMap((group) =>
+        group.subs.map((sub) => [sub as string, group.section] as const),
+      ),
+    );
+    expect(grouped.size).toBe(FROZEN.length);
+    for (const [sub, section, standalone] of FROZEN) {
+      expect(grouped.get(sub), `${sub} changed section`).toBe(section);
+      expect(isStandalone(section as never, sub as never), `${sub} changed standalone-ness`).toBe(
+        standalone,
+      );
+    }
   });
 
   it('dispatches an integrations subtab to AdminIntegrationsPanel on the admin surface', async () => {
@@ -7298,11 +7381,10 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
         .getAttribute('aria-pressed'),
     ).toBe('true');
 
-    // t60: the flat strip crosses clusters directly. Clicking an operations subtab (Serviços) while
-    // a signing pane is open must route to the operations base — the bare `/admin` (Serviços is the
-    // operations default, so it carries no segment) — never `/admin/naoexiste` and never
-    // `/admin/signing/services`.
-    fireEvent.click((await loaded()).getByRole('button', { name: 'Serviços' }));
+    // Crossing clusters is now a group click (t120): picking Plataforma while a signing pane is
+    // open must route to the operations base — the bare `/admin`, since Serviços is the group's
+    // default and carries no segment — never `/admin/naoexiste` and never `/admin/signing/services`.
+    fireEvent.click(groupStrip().getByRole('button', { name: 'Plataforma' }));
     expect(path()).toBe('/admin');
     // Landed on the operations default with Serviços active — the same one flat strip, re-marked.
     expect(
@@ -7310,9 +7392,10 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     ).toBe('true');
   });
 
-  it('routes each flat subtab to its own cluster base regardless of the current cluster (t60)', async () => {
-    // Option B's one real logic change: `selectAdminSub` sends every id to the RIGHT base whichever
-    // cluster is currently mounted. Both directions are asserted on the same flat strip.
+  it('routes each subtab to its own cluster base regardless of the current cluster (t60/t120)', async () => {
+    // Option B's one real logic change survives the t120 regrouping: `selectAdminSub` still sends
+    // every id to the RIGHT base whichever cluster is mounted, and every pane keeps the address it
+    // had before the groups existed — a group is picked by the strip, never written into the path.
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);
     renderWithProviders(
@@ -7322,13 +7405,17 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       </>,
       ['/admin/logs'],
     );
-    // Operations → signing: a signing tab while an operations pane is open lands under `/admin/signing`.
+    // Operations → signing: picking Assinaturas opens its default under `/admin/signing`, and a
+    // card inside it keeps its own `/admin/signing/:detail` address.
     (await loaded()).getByRole('button', { name: 'Registos' });
+    fireEvent.click(groupStrip().getByRole('button', { name: 'Assinaturas' }));
+    expect(path()).toBe('/admin/signing');
     fireEvent.click((await loaded()).getByRole('button', { name: 'Prestadores TSA' }));
     expect(path()).toBe('/admin/signing/tsa');
     cleanup();
 
-    // Signing → operations: an operations tab while a signing pane is open lands under `/admin`.
+    // Signing → operations: an operations pane reached through its group still lands under `/admin`
+    // at its own single-segment address, exactly as it did before t120.
     vi.stubGlobal('fetch', settingsFetch().fn);
     renderWithProviders(
       <>
@@ -7337,11 +7424,60 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
       </>,
       ['/admin/signing/tsl'],
     );
+    await loaded();
+    fireEvent.click(groupStrip().getByRole('button', { name: 'Integrações' }));
+    expect(path()).toBe('/admin/api');
     fireEvent.click((await loaded()).getByRole('button', { name: 'Email' }));
     expect(path()).toBe('/admin/email');
     // …and a cluster's own default id carries no segment, from either side.
-    fireEvent.click((await loaded()).getByRole('button', { name: 'Fornecedores de assinatura' }));
+    fireEvent.click(groupStrip().getByRole('button', { name: 'Assinaturas' }));
     expect(path()).toBe('/admin/signing');
+    expect(
+      (await loaded())
+        .getByRole('button', { name: 'Fornecedores de assinatura' })
+        .getAttribute('aria-pressed'),
+    ).toBe('true');
+  });
+
+  it('resolves a group address to its default pane, and every pane address unchanged (t120)', async () => {
+    // Deep-linking BOTH shapes. The group segment is an inbound alias: `/admin/data` lands on
+    // Armazenamento — the pane `/admin/data` already resolved to through RETIRED_SUBSECTIONS before
+    // t120 — and `/admin/data/backups` addresses within the group. Asserted on paths and on which
+    // group button is pressed, never on the pane's prose.
+    const cases: [address: string, group: string, pane: string][] = [
+      ['/admin/platform', 'Plataforma', 'Serviços'],
+      ['/admin/platform/logs', 'Plataforma', 'Registos'],
+      ['/admin/data', 'Dados', 'Armazenamento'],
+      ['/admin/data/backups', 'Dados', 'Cópias e recuperação'],
+      ['/admin/integrations', 'Integrações', 'API'],
+      ['/admin/content', 'Conteúdo', 'Grupos e bibliotecas'],
+      ['/admin/signing', 'Assinaturas', 'Fornecedores de assinatura'],
+      // Every pre-t120 pane address still resolves to its own pane, now under its group.
+      ['/admin', 'Plataforma', 'Serviços'],
+      ['/admin/keys', 'Dados', 'Chaves e reposição'],
+      ['/admin/repositories', 'Dados', 'Repositórios ZK'],
+      ['/admin/connectors', 'Integrações', 'Conectores e trabalhos'],
+      ['/admin/groups', 'Conteúdo', 'Grupos e bibliotecas'],
+      ['/admin/signing/cmd', 'Assinaturas', 'Chave Móvel Digital (CMD)'],
+      // An out-of-group segment falls back to the group's own default, never to another group's.
+      ['/admin/data/naoexiste', 'Dados', 'Armazenamento'],
+    ];
+    for (const [address, group, pane] of cases) {
+      cleanup();
+      vi.stubGlobal('fetch', settingsFetch().fn);
+      renderWithProviders(<SettingsPage surface="admin" />, [address]);
+      await loaded();
+      expect(
+        groupStrip().getByRole('button', { name: group }).getAttribute('aria-pressed'),
+        address,
+      ).toBe('true');
+      expect(
+        childStrip('Áreas de administração')
+          .getByRole('button', { name: pane })
+          .getAttribute('aria-pressed'),
+        address,
+      ).toBe('true');
+    }
   });
 
   it('keeps the sub-tab strip operable for a reader who may not configure signing', async () => {

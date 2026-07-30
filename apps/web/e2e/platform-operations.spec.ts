@@ -47,7 +47,10 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   await expect(page.getByText('Chancela API server')).toHaveCount(0);
   await expect(page.getByText('Chancela MCP stdio server')).toHaveCount(0);
 
+  // t120: API and IA e MCP live under the Integrações group, so the walk is group-then-pane.
+  const groups = page.getByRole('group', { name: 'Secções de administração' });
   const operations = page.getByRole('group', { name: 'Áreas de administração' });
+  await groups.getByRole('button', { name: 'Integrações' }).click();
   await operations.getByRole('button', { name: 'API' }).click();
   await expect(page.getByRole('heading', { name: 'Servidor API', exact: true })).toBeVisible();
 
@@ -82,9 +85,7 @@ test('the API and MCP tabs own their service rows, and MCP start records as supe
   await expect(mcpRow).toContainText('Servidor MCP stdio');
   await expect(mcpRow).toContainText('Parado');
   await expect(mcpRow).toContainText('Supervisor necessário');
-  await expect(mcpRow).toContainText(
-    platformServicePtPT.serviceLimitation['mcp.external_launch'],
-  );
+  await expect(mcpRow).toContainText(platformServicePtPT.serviceLimitation['mcp.external_launch']);
 
   const controlResponse = waitForApiResponse(
     page,
