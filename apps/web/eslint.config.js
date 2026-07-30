@@ -6,7 +6,12 @@ import prettier from 'eslint-config-prettier';
 // ESLint 9 flat config. Prettier config comes last so it disables any stylistic
 // rules that would fight the formatter.
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', 'coverage'] },
+  // `playwright-report` and `test-results` are Playwright's own output. They are gitignored, so CI
+  // never sees them on a fresh checkout — but a developer who has run the e2e suite locally gets
+  // ~4000 errors from ESLint parsing Playwright's bundled, minified trace viewer, which buries any
+  // real finding. Ignored here for the same reason `dist` and `coverage` are: generated output is
+  // not this project's source.
+  { ignores: ['dist', 'node_modules', 'coverage', 'playwright-report', 'test-results'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
