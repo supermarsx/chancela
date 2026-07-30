@@ -33,10 +33,17 @@
 //!    `upsert_signed_termo_slot_signature`. `require_real_signatures` reads
 //!    `instrument_signatures_for_subject`; a record that is not in that table cannot advance any
 //!    book's open gate, and a test pins that.
-//! 4. **Production only, fail closed.** Absent or incomplete credentials, a non-production
-//!    environment setting, or a server with nowhere to retain the result all refuse before AMA is
-//!    contacted. Nothing here ever falls back to preprod, to the environment when a stored entry
-//!    is incomplete, or to a mock.
+//! 4. **Production only, fail closed.** Absent or incomplete credentials, a credential that does
+//!    not resolve to production, or a server with nowhere to retain the result all refuse before
+//!    AMA is contacted. Nothing here ever falls back to preprod, to the environment when a stored
+//!    entry is incomplete, or to a mock.
+//!
+//!    Since t113 that refusal judges **the credential this test would actually use** — its own
+//!    `env` selector, or the deployment default when it declares none (see
+//!    [`crate::signature::resolve_cmd_env`]) — rather than the deployment setting alone. That is
+//!    strictly tighter, not looser: an entry marked `prod` on a preprod-defaulted deployment used
+//!    to be refused for the wrong reason, and a preprod credential is still refused for the right
+//!    one.
 //!
 //! # Retention, and why refusing is the honest failure
 //!
@@ -79,7 +86,40 @@ use crate::authz::require_permission;
 use crate::confirmation::{ConfirmationAction, ConfirmationProof, require_confirmation};
 use crate::credential_resolve::ResolvedSource;
 use crate::error::ApiError;
-use crate::settings::CmdEnvSetting;
+
+/// Stable Tier-2 [`ApiError::code`](crate::error::ApiError::code) values for this flow's refusals
+/// (t112).
+///
+/// Every refusal below is written in **pt-PT prose**, and the flow renders the server's words
+/// verbatim on purpose — the module refuses closed and NAMES what is wrong. That is right for a
+/// pt-PT operator and wrong for the other thirteen locales, who read a Portuguese sentence in an
+/// otherwise translated dialog. Attaching a code changes nothing an operator, a contract fixture or
+/// a `body["error"]` assertion observes ([`ApiError::with_code`] is message-preserving by
+/// construction); it just lets `apps/web/src/i18n/apiErrorFallback.ts` put a translated headline
+/// above the server's own sentence instead of leaving it as the only thing on screen.
+///
+/// English, snake_case, never translated — the same rule as
+/// [`crate::provider_probe_codes`], and the same rule the rest of the `code` vocabulary follows.
+mod codes {
+    /// The phone number is not in the SCMD `+351 XXXXXXXXX` shape. 422.
+    pub const PHONE_INVALID: &str = "cmd_test_phone_invalid";
+    /// The resolved CMD config is not production. 409 — there is no preprod rehearsal.
+    pub const REQUIRES_PRODUCTION: &str = "cmd_test_requires_production";
+    /// The deployment's CMD environment setting is preprod. 409.
+    pub const ENVIRONMENT_PREPROD: &str = "cmd_test_environment_preprod";
+    /// This instance has an injected (simulated) SCMD transport. 409.
+    pub const SIMULATED_TRANSPORT: &str = "cmd_test_simulated_transport";
+    /// Nowhere on disk to retain the signed PDF, so nothing is signed. 409.
+    pub const NO_RETENTION_STORAGE: &str = "cmd_test_no_retention_storage";
+    /// No usable CMD credential is configured at all. 409.
+    pub const CREDENTIALS_MISSING: &str = "cmd_test_credentials_missing";
+    /// The pinned entry is gone or disabled; the flow does not silently fail over. 409.
+    pub const ENTRY_UNAVAILABLE: &str = "cmd_test_entry_unavailable";
+    /// Only the actor who initiated may confirm. 403.
+    pub const INITIATOR_ONLY: &str = "cmd_test_initiator_only";
+    /// The single-use session aged out. 410 — a phase that expired, not a failure.
+    pub const SESSION_EXPIRED: &str = "cmd_test_session_expired";
+}
 use crate::signature::{
     build_trust_policy, cmd_config_err, configured_tsl_source, finalize_signed_pdf,
     looks_like_scmd_phone, map_signing_error, mask_phone, pdf_time, resolve_cmd_candidates,
@@ -356,7 +396,6 @@ pub async fn initiate_cmd_test_signature(
 
     refuse_injected_transport(&state)?;
     let retention_dir = retention_dir(&state)?;
-    require_production_environment(&state).await?;
 
     let actor_label = actor.resolve(req.actor.as_deref().unwrap_or("api"));
     let phone = req.phone.trim().to_owned();
@@ -364,7 +403,8 @@ pub async fn initiate_cmd_test_signature(
         return Err(ApiError::Unprocessable(
             "número de telemóvel inválido para a Chave Móvel Digital (formato +351 XXXXXXXXX)"
                 .to_owned(),
-        ));
+        )
+        .with_code(codes::PHONE_INVALID));
     }
     // Held transiently: consumed by CCMovelSign below, then zeroized on drop. Never persisted.
     let pin = Zeroizing::new(req.pin);
@@ -380,9 +420,10 @@ pub async fn initiate_cmd_test_signature(
     // settings disagree, and the correct response to that is to refuse.
     if !matches!(cfg.env, CmdEnv::Prod) {
         return Err(ApiError::Conflict(
-            "a assinatura de teste só corre contra o ambiente de produção da Chave Móvel Digital"
+            "a credencial que este teste usaria está resolvida para pré-produção e a assinatura de              teste só corre em produção. Escolha «Produção» no ambiente desta credencial ou, se a              credencial não indicar ambiente, mude o ambiente predefinido nas definições de              assinatura."
                 .to_owned(),
-        ));
+        )
+        .with_code(codes::ENVIRONMENT_PREPROD));
     }
     cfg.validate_http_transport().map_err(cmd_config_err)?;
 
@@ -530,7 +571,6 @@ pub async fn confirm_cmd_test_signature(
 
     refuse_injected_transport(&state)?;
     let retention_dir = retention_dir(&state)?;
-    require_production_environment(&state).await?;
 
     let actor_label = actor.resolve(req.actor.as_deref().unwrap_or("api"));
     let otp = Zeroizing::new(req.otp);
@@ -545,7 +585,8 @@ pub async fn confirm_cmd_test_signature(
     if pending.actor != actor_label {
         return Err(ApiError::Forbidden(
             "apenas quem iniciou a assinatura de teste a pode confirmar".to_owned(),
-        ));
+        )
+        .with_code(codes::INITIATOR_ONLY));
     }
     if OffsetDateTime::now_utc() >= pending.expires_at {
         state
@@ -555,7 +596,8 @@ pub async fn confirm_cmd_test_signature(
             .remove(&pending.session_id);
         return Err(ApiError::Gone(
             "a sessão de assinatura de teste expirou; inicie uma nova".to_owned(),
-        ));
+        )
+        .with_code(codes::SESSION_EXPIRED));
     }
 
     // Pin the EXACT entry the OTP was dispatched against. Never re-resolve: the citizen's OTP was
@@ -563,11 +605,18 @@ pub async fn confirm_cmd_test_signature(
     // silently answer a question about a credential nobody chose to test.
     let (cfg, source) = resolve_pinned_candidate(&state, pending.entry_id.as_deref()).await?;
     let (credential_source, entry_id, entry_label) = describe_source(&source);
+    // A DIFFERENT fact from the initiate-phase refusal, and so a different code: initiate refuses
+    // because the operator picked a preprod credential, which they can fix by choosing another.
+    // Reaching here means the same pinned credential resolved to production at initiate and does
+    // not now — the configuration moved under a live session, with an OTP already dispatched. The
+    // OTP is spent either way; what must not happen is signing under an environment nobody agreed
+    // to, so this refuses too.
     if !matches!(cfg.env, CmdEnv::Prod) {
         return Err(ApiError::Conflict(
             "a assinatura de teste só corre contra o ambiente de produção da Chave Móvel Digital"
                 .to_owned(),
-        ));
+        )
+        .with_code(codes::REQUIRES_PRODUCTION));
     }
     cfg.validate_http_transport().map_err(cmd_config_err)?;
 
@@ -736,25 +785,23 @@ fn refuse_injected_transport(state: &AppState) -> Result<(), ApiError> {
             "esta instância tem um transporte de Chave Móvel Digital injetado; uma assinatura de \
              teste de produção não corre contra um transporte simulado"
                 .to_owned(),
-        ));
+        )
+        .with_code(codes::SIMULATED_TRANSPORT));
     }
     Ok(())
 }
 
-/// Refuse unless the deployment is configured for AMA **production**. There is no preprod fallback:
-/// the operator asked whether production works, and answering with preprod would answer a different
-/// question while still costing a real signature.
-async fn require_production_environment(state: &AppState) -> Result<(), ApiError> {
-    let env = { state.settings.read().await.signing.cmd.env };
-    if matches!(env, CmdEnvSetting::Prod) {
-        return Ok(());
-    }
-    Err(ApiError::Conflict(
-        "a Chave Móvel Digital está configurada para pré-produção; a assinatura de teste só corre \
-         em produção. Mude o ambiente para produção nas definições de assinatura."
-            .to_owned(),
-    ))
-}
+// The deployment-level `require_production_environment` pre-check was REMOVED in t113.
+//
+// It read `settings.signing.cmd.env` and refused before the credential was even resolved, so an
+// entry whose own `env` selector said `prod` was turned away on a deployment whose default was
+// preprod — the defect this change exists to fix, and the one the operator was hitting. It was also
+// a second source of truth for a question `resolve_cmd_env` now answers in exactly one place.
+//
+// Nothing is weakened by its removal: resolving the candidate is local and cheap, and the refusal
+// that replaced it examines the config the signature would ACTUALLY use, which is strictly more
+// accurate than the value the pre-check consulted. Both phases still refuse a non-production
+// config before any SCMD call, and both still sit behind their own reauth + typed-phrase gate.
 
 /// Where retained test signatures go, or a refusal. A server with no data directory keeps nothing,
 /// and producing a real qualified signature that could not be retained is worse than not producing
@@ -769,6 +816,7 @@ fn retention_dir(state: &AppState) -> Result<std::path::PathBuf, ApiError> {
              real não poderia ser conservada; a assinatura de teste não foi iniciada"
                 .to_owned(),
         )
+            .with_code(codes::NO_RETENTION_STORAGE)
         })
 }
 
@@ -792,7 +840,8 @@ async fn resolve_pinned_candidate(
              http_basic_username, http_basic_password e ama_cert_pem na credencial CMD do painel \
              de administração"
                 .to_owned(),
-        ));
+        )
+        .with_code(codes::CREDENTIALS_MISSING));
     }
     let chosen = match entry_id {
         Some(wanted) => candidates
@@ -807,6 +856,7 @@ async fn resolve_pinned_candidate(
                      não recorre a outra credencial"
                         .to_owned(),
                 )
+                .with_code(codes::ENTRY_UNAVAILABLE)
             })?,
         None => candidates
             .into_iter()

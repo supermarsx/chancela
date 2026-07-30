@@ -181,6 +181,7 @@ mod platform_ops;
 mod privacy;
 mod provider_credentials;
 mod provider_credentials_write;
+pub mod provider_probe_codes;
 mod recovery;
 mod registry;
 mod roles;
@@ -3193,6 +3194,16 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/v1/signature/provider-credentials",
             get(provider_credentials_write::list_provider_credentials),
+        )
+        // Before the `{mode}/{provider_id}/entries` pattern below on purpose: `cmd` is a literal
+        // segment here and `ama-certificate` is not a provider id.
+        .route(
+            "/v1/signature/provider-credentials/cmd/ama-certificate/inspect",
+            post(provider_credentials_write::inspect_ama_certificate)
+                // Well above the handler's own 64 KiB refusal, so the coded 422 an operator can act
+                // on is what they normally see, and this is only the backstop against a body that
+                // never gets that far.
+                .layer(DefaultBodyLimit::max(256 * 1024)),
         )
         .route(
             "/v1/signature/provider-credentials/{mode}/{provider_id}/entries",

@@ -1244,6 +1244,15 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         ),
     ),
     (
+        "/v1/signature/provider-credentials/cmd/ama-certificate/inspect",
+        RouteGuard::NotGuarded(
+            "Parses a candidate certificate the operator already holds and reports what it found. \
+             `inspect_ama_certificate` writes no record, appends no ledger event, contacts no \
+             provider and performs no key operation — the credential write that may follow is the \
+             guarded step.",
+        ),
+    ),
+    (
         "/v1/signature/provider-credentials/{mode}/{provider_id}/entries",
         RouteGuard::NotGuarded("Creates a new record; nothing existing is altered or removed."),
     ),

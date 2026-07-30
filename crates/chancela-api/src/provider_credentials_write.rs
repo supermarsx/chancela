@@ -53,16 +53,19 @@ use time::OffsetDateTime;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 use x509_cert::Certificate;
-use x509_cert::der::{Decode, Encode};
+use x509_cert::der::{Decode, DecodePem, Encode};
 use zeroize::Zeroizing;
 
 use crate::actor::{CurrentActor, CurrentAttestor};
 use crate::authz::require_permission;
 use crate::credential_resolve::assemble_pkcs12_input;
 use crate::error::ApiError;
+/// The stable machine names for every operator-facing check sentence below. Imported under a short
+/// alias because the probe functions reference one on nearly every line.
+use crate::provider_probe_codes as codes;
 use crate::secretstore::SecretStoreError;
 use crate::secretstore_persist::{
-    CredentialEntryMetadataView, DecryptedCredentialEntry, FIELD_ACCESS_TOKEN,
+    CredentialEntryMetadataView, DecryptedCredentialEntry, FIELD_ACCESS_TOKEN, FIELD_AMA_CERT_PEM,
     FIELD_APPLICATION_ID, FIELD_CLIENT_ID, FIELD_CLIENT_SECRET, FIELD_HTTP_BASIC_PASSWORD,
     FIELD_HTTP_BASIC_USERNAME, FIELD_SECRET,
 };
@@ -278,7 +281,30 @@ pub struct ProviderProbeCheck {
     pub name: &'static str,
     /// `passed`, `failed`, or `skipped`.
     pub status: &'static str,
+    /// The assertion in English, as the server wrote it. **Still authoritative**: it is what the
+    /// audit log records, what a client that does not know [`detail_code`](Self::detail_code)
+    /// renders, and what a localized client falls back to for a code newer than its catalog.
     pub detail: String,
+    /// Stable machine code for [`detail`](Self::detail), from
+    /// [`crate::provider_probe_codes`]. English, never translated; it is what lets a client show
+    /// this sentence in the operator's own language instead of rendering the English verbatim.
+    pub detail_code: &'static str,
+    /// The values interpolated into [`detail`](Self::detail), so a translated sentence can place
+    /// them itself. Every value is a machine identifier or a number — an admin-panel field name, a
+    /// wire enum value, a pinned endpoint, a count — and must reach the operator verbatim in every
+    /// locale. Omitted from the wire when empty.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub detail_params: BTreeMap<&'static str, String>,
+}
+
+impl ProviderProbeCheck {
+    /// Attach the interpolated values of this check's sentence. See
+    /// [`detail_params`](Self::detail_params) for what may go in one.
+    #[must_use]
+    fn with_params<const N: usize>(mut self, params: [(&'static str, String); N]) -> Self {
+        self.detail_params = params.into_iter().collect();
+        self
+    }
 }
 
 /// Honest result of testing one exact stored credential entry.
@@ -654,6 +680,303 @@ pub async fn reorder_entries(
     }))
 }
 
+/// The largest candidate PEM the inspector will look at, in bytes.
+///
+/// A real X.509 certificate in PEM is a couple of kilobytes; 64 KiB is generous for a bundle
+/// somebody pasted whole. The point is that the handler refuses **by length, before parsing**, so a
+/// megabyte of hostile text is never handed to a DER decoder or held in a `String` while it fails.
+/// The route also carries an axum `DefaultBodyLimit` above this, so the two bound the same thing at
+/// two layers and the coded 422 below is what an operator actually reads.
+const AMA_CERT_PEM_MAX_BYTES: usize = 64 * 1024;
+
+/// Longest subject/issuer distinguished name echoed back.
+///
+/// A certificate is attacker-supplied here — the operator is inspecting something they were sent —
+/// and an RDN sequence can be arbitrarily long inside the size budget above. Truncating keeps one
+/// pasted field from dominating the panel; it is display-only and nothing downstream reads it.
+const AMA_CERT_NAME_MAX_CHARS: usize = 256;
+
+/// `POST /v1/signature/provider-credentials/cmd/ama-certificate/inspect` — say what can be
+/// established about a candidate AMA field-encryption certificate, and nothing more.
+#[derive(Debug, Deserialize)]
+pub struct InspectAmaCertificateRequest {
+    /// The candidate PEM, as pasted or read from a file. Content, never a path — `ama_cert_pem`
+    /// stores the certificate itself, unlike the `CHANCELA_CMD_AMA_CERT_PEM` environment route,
+    /// which names a file for the server to read.
+    pub pem: String,
+}
+
+/// What the inspection could determine, and the four things it deliberately did not.
+///
+/// The negatives are **values, not omitted disclaimers** — the same construction
+/// [`ProviderCredentialProbeResponse`] uses, and for the same reason: a client must not be able to
+/// read "parses, has an RSA key, in date" as "this is AMA's certificate and it is valid". Nothing
+/// here builds a chain, consults a trust anchor, or fetches a Trusted List, so all four are `false`
+/// on every response and there is no code path that sets them otherwise.
+#[derive(Debug, Serialize)]
+pub struct AmaCertificateInspectResponse {
+    /// Whether the text decoded as an X.509 certificate at all.
+    pub parsed: bool,
+    /// Whether [`chancela_cmd::FieldEncryptor::from_ama_cert_pem`] — the **signing path's own**
+    /// parser — could build a field encryptor from it. This is the check that predicts a real
+    /// production signature, which is why it goes through that function rather than a local
+    /// reimplementation that could drift from it.
+    pub rsa_public_key: bool,
+    /// Modulus size in bits, when an RSA key was found.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_bits: Option<u32>,
+    /// `Some(false)` for an expired or not-yet-valid certificate; `None` when the dates could not
+    /// be read. Never conflated with the other checks: a certificate can be perfectly well-formed
+    /// and out of date.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub within_validity: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_before: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub not_after: Option<String>,
+    /// Always false — no certification path is built.
+    pub chain_validated: bool,
+    /// Always false — no Trusted List is fetched or consulted.
+    pub trusted_list_checked: bool,
+    /// Always false — nothing here proves the issuer is who the certificate says it is.
+    pub issuer_authenticated: bool,
+    /// Always false — this endpoint makes no claim of legal validity, exactly as the probe does not.
+    pub legal_validity_claimed: bool,
+    /// The findings, in the same coded shape the probe uses, so one client-side resolver localizes
+    /// both and neither can grow a second English-prose channel.
+    pub checks: Vec<ProviderProbeCheck>,
+}
+
+/// `POST /v1/signature/provider-credentials/cmd/ama-certificate/inspect`.
+///
+/// Gated on `signing.configure` — the same permission as writing the credential this PEM is
+/// destined for, because being able to ask the server to parse a certificate is only useful to
+/// somebody who may store one.
+///
+/// # What it establishes, and what it refuses to say
+///
+/// It reports that the text parses as X.509, that it carries an RSA public key (the thing
+/// [`chancela_cmd::FieldEncryptor`] actually requires, so a certificate without one *will* fail a
+/// production signature), the subject, the issuer, the validity window, and whether now is inside
+/// it. That is the whole list.
+///
+/// It does **not** say the certificate is valid, and there is deliberately no code in the
+/// vocabulary that means that. Establishing that this is genuinely AMA's certificate needs a
+/// certification path and a trust anchor, neither of which exists here — so a green "válido" would
+/// tell an operator something nobody checked. [`codes::AMA_CERT_TRUST_NOT_ESTABLISHED`] rides on
+/// every successful parse and says so in the operator's own language.
+///
+/// Expiry is the one negative it *can* settle, and it is reported as a failed check rather than a
+/// footnote.
+pub async fn inspect_ama_certificate(
+    State(state): State<AppState>,
+    actor: CurrentActor,
+    body: Bytes,
+) -> Result<Json<AmaCertificateInspectResponse>, ApiError> {
+    require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
+    // Length first, parse second: nothing hostile reaches a DER decoder on the strength of being
+    // well-formed JSON.
+    if body.len() > AMA_CERT_PEM_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "the candidate certificate exceeds the {AMA_CERT_PEM_MAX_BYTES}-byte inspection limit"
+        ))
+        .with_code("ama_cert_pem_too_large"));
+    }
+    let req: InspectAmaCertificateRequest = parse_body(&body)?;
+    if req.pem.len() > AMA_CERT_PEM_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "the candidate certificate exceeds the {AMA_CERT_PEM_MAX_BYTES}-byte inspection limit"
+        ))
+        .with_code("ama_cert_pem_too_large"));
+    }
+    // Parsing is pure CPU over a bounded buffer, but it is still not async work; keep it off the
+    // reactor the same way the probe does.
+    let pem = req.pem;
+    let response = tokio::task::spawn_blocking(move || inspect_ama_certificate_pem(&pem))
+        .await
+        .map_err(|_| ApiError::Internal("AMA certificate inspection task failed".to_owned()))?;
+    // No audit event and nothing persisted: this reads a value the operator already has in their
+    // clipboard and writes nothing. The credential write that follows is what gets recorded.
+    Ok(Json(response))
+}
+
+/// The inspection itself, split out so it is unit-testable without a router or a session.
+///
+/// Every fallible step returns rather than panicking: a malformed PEM, DER that decodes to
+/// something that is not a certificate, a key that is not RSA, and validity fields that do not
+/// convert to a timestamp all produce a *finding*, not an error. There is no chain to walk, so
+/// there is nothing here that can walk one unboundedly.
+fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
+    let mut response = AmaCertificateInspectResponse {
+        parsed: false,
+        rsa_public_key: false,
+        key_bits: None,
+        within_validity: None,
+        subject: None,
+        issuer: None,
+        not_before: None,
+        not_after: None,
+        chain_validated: false,
+        trusted_list_checked: false,
+        issuer_authenticated: false,
+        legal_validity_claimed: false,
+        checks: Vec::new(),
+    };
+
+    let certificate = match Certificate::from_pem(pem.as_bytes()) {
+        Ok(certificate) => certificate,
+        Err(e) => {
+            response.checks.push(
+                check(
+                    "certificate_parsed",
+                    codes::AMA_CERT_UNPARSEABLE,
+                    false,
+                    format!("The text is not a PEM-encoded X.509 certificate: {e}"),
+                )
+                .with_params([("detail", e.to_string())]),
+            );
+            return response;
+        }
+    };
+    response.parsed = true;
+    response.checks.push(check(
+        "certificate_parsed",
+        codes::AMA_CERT_PARSED,
+        true,
+        "The text parses as an X.509 certificate.",
+    ));
+    response.subject = Some(truncate_name(
+        &certificate.tbs_certificate.subject.to_string(),
+    ));
+    response.issuer = Some(truncate_name(
+        &certificate.tbs_certificate.issuer.to_string(),
+    ));
+
+    // Through the SIGNING path's own constructor, so what this reports is what a production
+    // signature would actually be able to do with the certificate.
+    match chancela_cmd::FieldEncryptor::from_ama_cert_pem(pem) {
+        Ok(encryptor) => {
+            let bits = rsa_modulus_bits(&encryptor);
+            response.rsa_public_key = true;
+            response.key_bits = bits;
+            response.checks.push(
+                check(
+                    "rsa_public_key",
+                    codes::AMA_CERT_RSA_KEY_PRESENT,
+                    true,
+                    format!(
+                        "The certificate carries an RSA public key of {} bits; a field encryptor \
+                         was built from it.",
+                        bits.unwrap_or_default()
+                    ),
+                )
+                .with_params([("bits", bits.unwrap_or_default().to_string())]),
+            );
+        }
+        Err(e) => {
+            let detail = e.to_string();
+            response.checks.push(
+                check(
+                    "rsa_public_key",
+                    codes::AMA_CERT_RSA_KEY_ABSENT,
+                    false,
+                    format!(
+                        "No RSA public key could be taken from this certificate, so no field \
+                         encryptor can be built from it: {detail}"
+                    ),
+                )
+                .with_params([("detail", detail)]),
+            );
+        }
+    }
+
+    let not_before = rfc3339_from_x509_time(&certificate.tbs_certificate.validity.not_before);
+    let not_after = rfc3339_from_x509_time(&certificate.tbs_certificate.validity.not_after);
+    response.not_before = not_before.clone().map(|(text, _)| text);
+    response.not_after = not_after.clone().map(|(text, _)| text);
+    match (not_before, not_after) {
+        (Some((_, from)), Some((_, until))) => {
+            let now = OffsetDateTime::now_utc();
+            if now < from {
+                response.within_validity = Some(false);
+                response.checks.push(check(
+                    "validity_window",
+                    codes::AMA_CERT_NOT_YET_VALID,
+                    false,
+                    "The certificate's validity window has not started yet.",
+                ));
+            } else if now > until {
+                response.within_validity = Some(false);
+                response.checks.push(check(
+                    "validity_window",
+                    codes::AMA_CERT_EXPIRED,
+                    false,
+                    "The certificate has expired: its validity window has already ended.",
+                ));
+            } else {
+                response.within_validity = Some(true);
+                response.checks.push(check(
+                    "validity_window",
+                    codes::AMA_CERT_WITHIN_VALIDITY,
+                    true,
+                    "The current server time falls inside the certificate's validity window.",
+                ));
+            }
+        }
+        // Unreadable dates are their own honest outcome, never silently treated as in-date.
+        _ => response.checks.push(skipped(
+            "validity_window",
+            codes::AMA_CERT_VALIDITY_UNREADABLE,
+            "The certificate's validity dates could not be read as timestamps, so the window was \
+             not judged.",
+        )),
+    }
+
+    // The standing statement of the boundary. Reported as `skipped` rather than `passed`, because
+    // it names work that was NOT done — rendering it green would be the exact overclaim it exists
+    // to prevent.
+    response.checks.push(skipped(
+        "trust_established",
+        codes::AMA_CERT_TRUST_NOT_ESTABLISHED,
+        "Whether this is genuinely AMA's certificate was not determined: no certification path was \
+         built, no trust anchor was consulted and no Trusted List was fetched.",
+    ));
+    response
+}
+
+/// The RSA modulus size in bits, or `None` for a non-RSA encryptor.
+///
+/// [`chancela_cmd::FieldEncryptor`] is `#[non_exhaustive]`, so the wildcard arm is required and is
+/// also correct: a future variant is not an RSA key and must not be reported as one.
+fn rsa_modulus_bits(encryptor: &chancela_cmd::FieldEncryptor) -> Option<u32> {
+    use rsa::traits::PublicKeyParts;
+    match encryptor {
+        chancela_cmd::FieldEncryptor::AmaRsa(key) => u32::try_from(key.n().bits()).ok(),
+        _ => None,
+    }
+}
+
+/// An X.509 `Time` as RFC 3339 text plus the parsed instant, or `None` when it does not convert.
+fn rfc3339_from_x509_time(time: &x509_cert::time::Time) -> Option<(String, OffsetDateTime)> {
+    let seconds = i64::try_from(time.to_unix_duration().as_secs()).ok()?;
+    let moment = OffsetDateTime::from_unix_timestamp(seconds).ok()?;
+    Some((moment.format(&Rfc3339).ok()?, moment))
+}
+
+/// Bound a distinguished name for display. Truncation is on a CHARACTER boundary, so a multi-byte
+/// name cannot be cut mid-codepoint.
+fn truncate_name(name: &str) -> String {
+    if name.chars().count() <= AMA_CERT_NAME_MAX_CHARS {
+        return name.to_owned();
+    }
+    let head: String = name.chars().take(AMA_CERT_NAME_MAX_CHARS).collect();
+    format!("{head}…")
+}
+
 /// `POST …/entries/{entry_id}/probe` — test one exact stored credential entry without signing a
 /// document or requesting signer authorization.
 pub async fn probe_entry(
@@ -811,19 +1134,34 @@ const PROBE_HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 const PROBE_RESPONSE_LIMIT: u64 = 1024 * 1024;
 const PKCS12_PROBE_DOMAIN: &[u8] = b"chancela-provider-credential-probe-v1\0";
 
-fn check(name: &'static str, passed: bool, detail: impl Into<String>) -> ProviderProbeCheck {
+/// One check outcome. `code` is the stable machine name of `detail` — see
+/// [`crate::provider_probe_codes`] for why the sentence travels with an identifier.
+fn check(
+    name: &'static str,
+    code: &'static str,
+    passed: bool,
+    detail: impl Into<String>,
+) -> ProviderProbeCheck {
     ProviderProbeCheck {
         name,
         status: if passed { "passed" } else { "failed" },
         detail: detail.into(),
+        detail_code: code,
+        detail_params: BTreeMap::new(),
     }
 }
 
-fn skipped(name: &'static str, detail: impl Into<String>) -> ProviderProbeCheck {
+fn skipped(
+    name: &'static str,
+    code: &'static str,
+    detail: impl Into<String>,
+) -> ProviderProbeCheck {
     ProviderProbeCheck {
         name,
         status: "skipped",
         detail: detail.into(),
+        detail_code: code,
+        detail_params: BTreeMap::new(),
     }
 }
 
@@ -840,6 +1178,7 @@ fn probe_stored_entry(
             false,
             vec![check(
                 "entry_enabled",
+                codes::ENTRY_DISABLED,
                 false,
                 "The stored credential entry is disabled.",
             )],
@@ -856,6 +1195,7 @@ fn probe_stored_entry(
             false,
             vec![check(
                 "mode_supported",
+                codes::MODE_NOT_SIGNING_PROVIDER,
                 false,
                 "This is not a signing-provider credential mode.",
             )],
@@ -895,21 +1235,78 @@ fn probe_cmd(
     cmd_trust: &CmdTrustAnchorPreflight,
     entry: DecryptedCredentialEntry,
 ) -> ProbeOutcome {
-    let is_prod = matches!(cmd.env, crate::settings::CmdEnvSetting::Prod);
+    // THIS entry's environment, not the deployment's (t113). The preflight's whole claim is that it
+    // judges the entry against what a signature would actually use, and before t113 it reported the
+    // settings value while the operator was looking at a per-entry selector that said something
+    // else — the exact mismatch that made the panel say "preprod" for an entry marked prod.
+    let entry_env = match crate::signature::resolve_cmd_env(cmd, &entry.selectors) {
+        Ok(env) => env,
+        // An unreadable selector is a finding, not a 500: it is stored data an operator can fix,
+        // and it must not silently fall through to a default that decides a production boundary.
+        Err(_) => {
+            return ProbeOutcome::failed(
+                false,
+                false,
+                vec![
+                    check(
+                        "entry_enabled",
+                        codes::ENTRY_ENABLED,
+                        true,
+                        "The stored credential entry is enabled.",
+                    ),
+                    check(
+                        "configured_environment",
+                        codes::CMD_ENVIRONMENT_SELECTOR_INVALID,
+                        false,
+                        "The entry's environment selector is neither prod nor preprod, so which \
+                         AMA environment it names cannot be determined.",
+                    ),
+                    cmd_live_operation_skipped(),
+                ],
+                "configuration_invalid",
+            );
+        }
+    };
+    let is_prod = matches!(entry_env, chancela_cmd::CmdEnv::Prod);
+    let environment = if is_prod { "prod" } else { "preprod" };
+    let declared = entry
+        .selectors
+        .get(crate::signature::CMD_ENV_SELECTOR)
+        .map(|value| value.trim())
+        .is_some_and(|value| !value.is_empty());
     let mut checks = vec![
         check(
             "entry_enabled",
+            codes::ENTRY_ENABLED,
             true,
             "The stored credential entry is enabled.",
         ),
-        check(
-            "configured_environment",
-            true,
-            format!(
-                "The deployment resolves Chave Móvel Digital to the {} environment.",
-                if is_prod { "prod" } else { "preprod" }
-            ),
-        ),
+        // Two codes, because WHERE the environment came from is the thing the operator needs to
+        // know when it is not what they expected: their own selector, or the deployment default
+        // they may not have realised they were inheriting.
+        if declared {
+            check(
+                "configured_environment",
+                codes::CMD_ENVIRONMENT_FROM_ENTRY,
+                true,
+                format!(
+                    "This entry selects the {environment} Chave Móvel Digital environment, and a \
+                     signature using it would run against that environment."
+                ),
+            )
+            .with_params([("environment", environment.to_owned())])
+        } else {
+            check(
+                "configured_environment",
+                codes::CMD_ENVIRONMENT_RESOLVED,
+                true,
+                format!(
+                    "This entry selects no environment, so it inherits the deployment default: \
+                     {environment}."
+                ),
+            )
+            .with_params([("environment", environment.to_owned())])
+        },
         // Deployment-wide, not a property of this entry, and reported before the credential checks
         // so it survives every early return below: an operator with a perfectly filled CMD form and
         // no trust anchor would otherwise see only green until a real signature refused.
@@ -921,17 +1318,14 @@ fn probe_cmd(
     let cfg = match crate::signature::cmd_config_from_entry(cmd, &entry) {
         Ok(cfg) => cfg,
         Err(err) => {
-            checks.push(check(
-                "stored_credential_fields",
-                false,
-                credential_assembly_detail(err),
-            ));
+            checks.push(credential_assembly_check(err));
             checks.push(cmd_live_operation_skipped());
             return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
         }
     };
     checks.push(check(
         "stored_credential_fields",
+        codes::CMD_CREDENTIAL_FIELDS_PRESENT,
         true,
         "Every credential field this environment requires is present in the stored entry.",
     ));
@@ -941,11 +1335,13 @@ fn probe_cmd(
     checks.push(match (&cfg.ama_cert_pem, is_prod) {
         (Some(_), _) => check(
             "ama_certificate_parseable",
+            codes::CMD_AMA_CERTIFICATE_PARSED,
             true,
             "The stored AMA field-encryption certificate parsed and the field encryptor was built.",
         ),
         (None, false) => check(
             "ama_certificate_parseable",
+            codes::CMD_AMA_CERTIFICATE_ABSENT_PREPROD,
             true,
             "No AMA field-encryption certificate is stored; preprod accepts cleartext fields.",
         ),
@@ -953,39 +1349,57 @@ fn probe_cmd(
         // rather than an `unreachable!()` so a future change in the assembler degrades honestly.
         (None, true) => check(
             "ama_certificate_parseable",
+            codes::CMD_AMA_CERTIFICATE_REQUIRED_PROD,
             false,
-            "Production requires the AMA field-encryption certificate (ama_cert_pem).",
-        ),
+            format!(
+                "Production requires the AMA field-encryption certificate ({FIELD_AMA_CERT_PEM})."
+            ),
+        )
+        .with_params([("field", FIELD_AMA_CERT_PEM.to_owned())]),
     });
 
     // HTTP BasicAuth. Optional in preprod, mandatory for the real production transport.
     let has_basic_auth = cfg.basic_auth.is_some();
-    checks.push(check(
-        "http_basic_configured",
-        has_basic_auth || !is_prod,
-        match (has_basic_auth, is_prod) {
-            (true, _) => "HTTP BasicAuth credentials are configured.".to_owned(),
-            (false, false) => {
-                "No HTTP BasicAuth credentials are stored; preprod may accept unauthenticated calls."
-                    .to_owned()
-            }
-            (false, true) => format!(
+    checks.push(match (has_basic_auth, is_prod) {
+        (true, _) => check(
+            "http_basic_configured",
+            codes::CMD_HTTP_BASIC_CONFIGURED,
+            true,
+            "HTTP BasicAuth credentials are configured.",
+        ),
+        (false, false) => check(
+            "http_basic_configured",
+            codes::CMD_HTTP_BASIC_ABSENT_PREPROD,
+            true,
+            "No HTTP BasicAuth credentials are stored; preprod may accept unauthenticated calls.",
+        ),
+        (false, true) => check(
+            "http_basic_configured",
+            codes::CMD_HTTP_BASIC_REQUIRED_PROD,
+            false,
+            format!(
                 "Production requires HTTP BasicAuth: fill {FIELD_HTTP_BASIC_USERNAME} and \
                  {FIELD_HTTP_BASIC_PASSWORD} on this credential entry."
             ),
-        },
-    ));
+        )
+        .with_params([
+            ("username_field", FIELD_HTTP_BASIC_USERNAME.to_owned()),
+            ("password_field", FIELD_HTTP_BASIC_PASSWORD.to_owned()),
+        ]),
+    });
 
     // The transport-level gate the real HTTP client applies before it will talk to AMA at all.
     match cfg.validate_http_transport() {
         Ok(()) => checks.push(check(
             "http_transport_ready",
+            codes::CMD_HTTP_TRANSPORT_READY,
             true,
             "The resolved configuration satisfies the real AMA HTTP transport's requirements.",
         )),
         Err(_) => {
             checks.push(check(
                 "http_transport_ready",
+                codes::CMD_HTTP_TRANSPORT_NOT_READY,
                 false,
                 "The resolved configuration cannot drive the real AMA HTTP transport.",
             ));
@@ -1007,6 +1421,7 @@ fn probe_cmd(
         _ => {
             checks.push(check(
                 "endpoint_matches_environment",
+                codes::CMD_ENDPOINT_NOT_PINNED,
                 false,
                 "The resolved SCMD endpoint is not the constant this environment names, or it \
                  failed the outbound-network safety policy.",
@@ -1015,16 +1430,20 @@ fn probe_cmd(
             return ProbeOutcome::failed(false, false, checks, "unsafe_endpoint");
         }
     };
-    if let Err(detail) = require_https_probe_endpoint(&vetted, "CMD") {
-        checks.push(check("endpoint_matches_environment", false, detail));
+    if let Err((code, detail)) = require_https_probe_endpoint(&vetted, "CMD") {
+        checks.push(check("endpoint_matches_environment", code, false, detail));
         checks.push(cmd_live_operation_skipped());
         return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
     }
-    checks.push(check(
-        "endpoint_matches_environment",
-        true,
-        format!("The SCMD endpoint is the pinned {expected_endpoint} constant, over HTTPS."),
-    ));
+    checks.push(
+        check(
+            "endpoint_matches_environment",
+            codes::CMD_ENDPOINT_PINNED,
+            true,
+            format!("The SCMD endpoint is the pinned {expected_endpoint} constant, over HTTPS."),
+        )
+        .with_params([("endpoint", expected_endpoint.to_owned())]),
+    );
 
     // Reachability. Production only, and explicitly NOT a protocol operation.
     let reachable = if is_prod {
@@ -1032,20 +1451,22 @@ fn probe_cmd(
             Ok(()) => {
                 checks.push(check(
                     "endpoint_reachable",
+                    codes::CMD_ENDPOINT_REACHABLE,
                     true,
                     "A TLS connection to the AMA production endpoint succeeded. No SCMD operation \
                      was invoked: nothing was signed and no OTP was dispatched.",
                 ));
                 true
             }
-            Err(detail) => {
-                checks.push(check("endpoint_reachable", false, detail));
+            Err((code, detail)) => {
+                checks.push(check("endpoint_reachable", code, false, detail));
                 false
             }
         }
     } else {
         checks.push(skipped(
             "endpoint_reachable",
+            codes::CMD_REACHABILITY_SKIPPED_PREPROD,
             "Reachability is probed only for the AMA production endpoint; this deployment is \
              configured for preprod.",
         ));
@@ -1159,47 +1580,77 @@ fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeC
     match preflight {
         CmdTrustAnchorPreflight::NoListSelected => check(
             "trusted_list_anchors",
+            codes::TSL_NO_LIST_SELECTED,
             false,
             "No Trusted List is selected, so no qualified signature can be authenticated. A CMD \
              signature will refuse. Select a Trusted List source in the signing settings.",
         ),
         CmdTrustAnchorPreflight::SelectionInvalid(detail) => check(
             "trusted_list_anchors",
+            codes::TSL_SELECTION_INVALID,
             false,
             format!("The Trusted List selection is invalid: {detail}"),
-        ),
+        )
+        .with_params([("detail", detail.clone())]),
         CmdTrustAnchorPreflight::AnchorsInvalid(detail) => check(
             "trusted_list_anchors",
+            codes::TSL_ANCHORS_INVALID,
             false,
             format!(
                 "A configured trust anchor could not be parsed, so the trust policy fails closed: \
-                 {detail}. Check signing.tsl_trust_anchor_certs and \
-                 signing.tsl_trust_anchor_sha256."
+                 {detail}. Check {TSL_ANCHOR_CERTS_SETTING} and {TSL_ANCHOR_SHA256_SETTING}."
             ),
-        ),
+        )
+        .with_params([
+            ("detail", detail.clone()),
+            ("certs_setting", TSL_ANCHOR_CERTS_SETTING.to_owned()),
+            ("digest_setting", TSL_ANCHOR_SHA256_SETTING.to_owned()),
+        ]),
         CmdTrustAnchorPreflight::Unanchored => check(
             "trusted_list_anchors",
+            codes::TSL_UNANCHORED,
             false,
             // t61-e2: this used to say a signature would "refuse with an error naming the signer's
             // trust service, though the fault is here". That was true, and is no longer: state (A)
             // now has its own `SigningError::TrustAnchorNotConfigured`, which names the anchor
             // configuration rather than the signer. Leaving the old sentence would have made this
             // check a documented claim about behaviour that no longer exists.
-            "A Trusted List is selected but no trust anchor is configured, and an empty anchor set \
-             authenticates no list. A CMD signature will refuse, naming this missing anchor rather \
-             than the signer's trust service. Provision an anchor in \
-             signing.tsl_trust_anchor_certs or signing.tsl_trust_anchor_sha256.",
-        ),
+            format!(
+                "A Trusted List is selected but no trust anchor is configured, and an empty \
+                 anchor set authenticates no list. A CMD signature will refuse, naming this \
+                 missing anchor rather than the signer's trust service. Provision an anchor in \
+                 {TSL_ANCHOR_CERTS_SETTING} or {TSL_ANCHOR_SHA256_SETTING}."
+            ),
+        )
+        .with_params([
+            ("certs_setting", TSL_ANCHOR_CERTS_SETTING.to_owned()),
+            ("digest_setting", TSL_ANCHOR_SHA256_SETTING.to_owned()),
+        ]),
+        // The provenance clause is a separate CODE per case rather than a phrase interpolated into
+        // a shared sentence: it is prose, and dropping an English clause into an inflected target
+        // language is exactly the construction that produces ungrammatical translations.
         CmdTrustAnchorPreflight::Anchored { total, from_env } => {
-            let provenance = match (*from_env, total - *from_env) {
-                (0, _) => "all of them from the signing settings".to_owned(),
-                (_, 0) => "all of them from the environment".to_owned(),
-                (env, settings) => format!(
-                    "{env} from the environment and at least {settings} from the signing settings"
+            let from_settings = total - *from_env;
+            let (code, provenance) = match (*from_env, from_settings) {
+                (0, _) => (
+                    codes::TSL_ANCHORED_FROM_SETTINGS,
+                    "all of them from the signing settings".to_owned(),
+                ),
+                (_, 0) => (
+                    codes::TSL_ANCHORED_FROM_ENVIRONMENT,
+                    "all of them from the environment".to_owned(),
+                ),
+                (env, settings) => (
+                    codes::TSL_ANCHORED_MIXED,
+                    format!(
+                        "{env} from the environment and at least {settings} from the signing \
+                         settings"
+                    ),
                 ),
             };
             check(
                 "trusted_list_anchors",
+                code,
                 true,
                 format!(
                     "{total} Trusted List trust anchor(s) resolved — {provenance}. Whether the \
@@ -1207,9 +1658,20 @@ fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeC
                      service is Granted, are determined at signing time and are not probed here."
                 ),
             )
+            .with_params([
+                ("total", total.to_string()),
+                ("from_env", from_env.to_string()),
+                ("from_settings", from_settings.to_string()),
+            ])
         }
     }
 }
+
+/// The admin-panel setting paths a trust-anchor diagnostic points an operator at. Machine
+/// identifiers: they are typed into the settings screen exactly as written and are never
+/// translated, in any locale.
+const TSL_ANCHOR_CERTS_SETTING: &str = "signing.tsl_trust_anchor_certs";
+const TSL_ANCHOR_SHA256_SETTING: &str = "signing.tsl_trust_anchor_sha256";
 
 /// Surface the assembler's own message, which already names the missing **admin-panel credential
 /// fields** an operator can go and fill. [`ApiError`] has no `Display`, and the messages that reach
@@ -1230,11 +1692,38 @@ fn credential_assembly_detail(err: ApiError) -> String {
     }
 }
 
+/// The `stored_credential_fields` failure, as a coded check.
+///
+/// The specific arm and the generic arm get **different codes** because they are different facts:
+/// one names the admin-panel fields to fill, the other admits the classifier could not say. Folding
+/// them into one code would have made the generic degradation invisible to a translated client —
+/// precisely the silent-vagueness failure `into_uncoded` exists to prevent.
+fn credential_assembly_check(err: ApiError) -> ProviderProbeCheck {
+    match err.into_uncoded() {
+        ApiError::Unprocessable(message) | ApiError::Conflict(message) => check(
+            "stored_credential_fields",
+            codes::CMD_CREDENTIAL_FIELDS_INCOMPLETE,
+            false,
+            message.clone(),
+        )
+        // The assembler's own message names the admin-panel fields; it rides as a parameter so a
+        // translated sentence can frame it without paraphrasing what it says.
+        .with_params([("detail", message)]),
+        _ => check(
+            "stored_credential_fields",
+            codes::CMD_CREDENTIAL_ASSEMBLY_FAILED,
+            false,
+            "The stored credential entry could not be assembled into a usable CMD configuration.",
+        ),
+    }
+}
+
 /// The skipped-check text that states, verbatim, why no live CMD operation is ever performed by a
 /// probe. Kept as one constant so every early return carries the identical explanation.
 fn cmd_live_operation_skipped() -> ProviderProbeCheck {
     skipped(
         "live_provider_operation",
+        codes::CMD_LIVE_OPERATION_SKIPPED,
         "CMD has no safe non-signing health operation in this integration. A live attempt \
          would initiate the interactive signature flow, so it was not performed.",
     )
@@ -1243,17 +1732,22 @@ fn cmd_live_operation_skipped() -> ProviderProbeCheck {
 /// Open and immediately drop a bounded TLS connection to the AMA endpoint. Sends no SOAP body and
 /// invokes no SCMD action; a `405`/`404`/any HTTP status all prove reachability equally well, so
 /// only a transport-level failure is reported as unreachable.
-fn cmd_endpoint_reachable(vetted: &crate::trust::VettedHttpUrl) -> Result<(), String> {
-    let client = vetted
-        .client(CMD_REACHABILITY_TIMEOUT)
-        .map_err(|_| "The bounded outbound client could not be created.".to_owned())?;
+fn cmd_endpoint_reachable(
+    vetted: &crate::trust::VettedHttpUrl,
+) -> Result<(), (&'static str, &'static str)> {
+    let client = vetted.client(CMD_REACHABILITY_TIMEOUT).map_err(|_| {
+        (
+            codes::OUTBOUND_CLIENT_UNAVAILABLE,
+            "The bounded outbound client could not be created.",
+        )
+    })?;
     match client.head(vetted.as_str()).send() {
         Ok(_) => Ok(()),
-        Err(_) => Err(
-            "The AMA production endpoint could not be reached from this server. No \
-                       SCMD operation was invoked."
-                .to_owned(),
-        ),
+        Err(_) => Err((
+            codes::CMD_ENDPOINT_UNREACHABLE,
+            "The AMA production endpoint could not be reached from this server. No SCMD operation \
+             was invoked.",
+        )),
     }
 }
 
@@ -1299,17 +1793,28 @@ fn configured_endpoint_bound_fields(current: &CredentialEntryMetadataView) -> Ve
         .collect()
 }
 
+/// `Err` carries the detail code alongside the English sentence, so the two can never drift apart
+/// at the three call sites.
 fn require_https_probe_endpoint(
     vetted: &crate::trust::VettedHttpUrl,
     provider: &'static str,
-) -> Result<(), &'static str> {
+) -> Result<(), (&'static str, &'static str)> {
     if reqwest::Url::parse(vetted.as_str()).is_ok_and(|url| url.scheme() == "https") {
         Ok(())
     } else {
         Err(match provider {
-            "CSC" => "The CSC base URL must use HTTPS before stored credentials can be sent.",
-            "CMD" => "The SCMD endpoint must use HTTPS before stored credentials can be sent.",
-            _ => "The SCAP base URL must use HTTPS before stored credentials can be sent.",
+            "CSC" => (
+                codes::CSC_BASE_URL_NOT_HTTPS,
+                "The CSC base URL must use HTTPS before stored credentials can be sent.",
+            ),
+            "CMD" => (
+                codes::CMD_ENDPOINT_NOT_HTTPS,
+                "The SCMD endpoint must use HTTPS before stored credentials can be sent.",
+            ),
+            _ => (
+                codes::SCAP_BASE_URL_NOT_HTTPS,
+                "The SCAP base URL must use HTTPS before stored credentials can be sent.",
+            ),
         })
     }
 }
@@ -1317,6 +1822,7 @@ fn require_https_probe_endpoint(
 fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let mut checks = vec![check(
         "entry_enabled",
+        codes::ENTRY_ENABLED,
         true,
         "The stored credential entry is enabled.",
     )];
@@ -1328,6 +1834,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     else {
         checks.push(check(
             "endpoint_safe",
+            codes::CSC_BASE_URL_MISSING,
             false,
             "A CSC base URL is required for this entry.",
         ));
@@ -1338,18 +1845,20 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Err(_) => {
             checks.push(check(
                 "endpoint_safe",
+                codes::CSC_BASE_URL_UNSAFE,
                 false,
                 "The CSC base URL failed the outbound-network safety policy.",
             ));
             return ProbeOutcome::failed(false, false, checks, "unsafe_endpoint");
         }
     };
-    if let Err(detail) = require_https_probe_endpoint(&vetted, "CSC") {
-        checks.push(check("endpoint_https", false, detail));
+    if let Err((code, detail)) = require_https_probe_endpoint(&vetted, "CSC") {
+        checks.push(check("endpoint_https", code, false, detail));
         return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
     }
     checks.push(check(
         "endpoint_https",
+        codes::CSC_BASE_URL_OK,
         true,
         "The CSC base URL passed the outbound-network safety policy and uses HTTPS.",
     ));
@@ -1365,6 +1874,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         _ => {
             checks.push(check(
                 "authorization_configuration",
+                codes::CSC_AUTHORIZATION_SELECTOR_INVALID,
                 false,
                 "The CSC authorization selector must be service or user.",
             ));
@@ -1381,22 +1891,36 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
                     client_secret.as_str().to_owned(),
                 ),
                 _ => {
-                    checks.push(check(
-                        "authorization_configuration",
-                        false,
-                        "Service authorization requires client_id and client_secret.",
-                    ));
+                    checks.push(
+                        check(
+                            "authorization_configuration",
+                            codes::CSC_SERVICE_AUTHORIZATION_INCOMPLETE,
+                            false,
+                            format!(
+                                "Service authorization requires {FIELD_CLIENT_ID} and \
+                                 {FIELD_CLIENT_SECRET}."
+                            ),
+                        )
+                        .with_params([
+                            ("client_id_field", FIELD_CLIENT_ID.to_owned()),
+                            ("client_secret_field", FIELD_CLIENT_SECRET.to_owned()),
+                        ]),
+                    );
                     return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
                 }
             }
         }
         CscAuthorization::User => {
             let Some(token) = take_nonblank(&mut entry.fields, FIELD_ACCESS_TOKEN) else {
-                checks.push(check(
-                    "authorization_configuration",
-                    false,
-                    "User authorization requires an access_token.",
-                ));
+                checks.push(
+                    check(
+                        "authorization_configuration",
+                        codes::CSC_USER_AUTHORIZATION_INCOMPLETE,
+                        false,
+                        format!("User authorization requires an {FIELD_ACCESS_TOKEN}."),
+                    )
+                    .with_params([("token_field", FIELD_ACCESS_TOKEN.to_owned())]),
+                );
                 return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
             };
             CscSecrets::with_access_token(token.as_str().to_owned())
@@ -1407,6 +1931,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     };
     checks.push(check(
         "authorization_configuration",
+        codes::CSC_AUTHORIZATION_CONFIGURED,
         true,
         "The stored fields satisfy the selected CSC authorization model.",
     ));
@@ -1434,6 +1959,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     if config.validate().is_err() {
         checks.push(check(
             "provider_configuration",
+            codes::CSC_PROVIDER_CONFIGURATION_INVALID,
             false,
             "The CSC provider configuration is invalid.",
         ));
@@ -1446,6 +1972,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Err(_) => {
             checks.push(check(
                 "outbound_client",
+                codes::OUTBOUND_CLIENT_UNAVAILABLE,
                 false,
                 "The bounded outbound client could not be created.",
             ));
@@ -1457,13 +1984,15 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Ok(token) => {
             checks.push(check(
                 "authentication",
+                codes::CSC_AUTHENTICATED,
                 true,
                 "CSC authentication completed without requesting signer authorization.",
             ));
             token
         }
         Err(error) => {
-            checks.push(check("authentication", false, csc_error_detail(&error)));
+            let (code, detail) = csc_error_detail(&error);
+            checks.push(check("authentication", code, false, detail));
             return ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -1474,15 +2003,20 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     };
     let credential_ids = match client.list_credentials(token.as_str()) {
         Ok(ids) => {
-            checks.push(check(
-                "credentials_list",
-                !ids.is_empty(),
-                format!("CSC returned {} signing credential(s).", ids.len()),
-            ));
+            checks.push(
+                check(
+                    "credentials_list",
+                    codes::CSC_CREDENTIALS_LISTED,
+                    !ids.is_empty(),
+                    format!("CSC returned {} signing credential(s).", ids.len()),
+                )
+                .with_params([("count", ids.len().to_string())]),
+            );
             ids
         }
         Err(error) => {
-            checks.push(check("credentials_list", false, csc_error_detail(&error)));
+            let (code, detail) = csc_error_detail(&error);
+            checks.push(check("credentials_list", code, false, detail));
             return ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -1506,6 +2040,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Some(_) => {
             checks.push(check(
                 "credential_selection",
+                codes::CSC_CONFIGURED_CREDENTIAL_NOT_LISTED,
                 false,
                 "The configured credential_id was not returned by credentials/list.",
             ));
@@ -1518,11 +2053,15 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
         None if credential_ids.len() == 1 => credential_ids[0].clone(),
         None => {
-            checks.push(check(
-                "credential_selection",
-                false,
-                "More than one credential is available; configure credential_id.",
-            ));
+            checks.push(
+                check(
+                    "credential_selection",
+                    codes::CSC_CREDENTIAL_SELECTION_REQUIRED,
+                    false,
+                    "More than one credential is available; configure credential_id.",
+                )
+                .with_params([("selector", "credential_id".to_owned())]),
+            );
             return ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -1533,20 +2072,25 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     };
     checks.push(check(
         "credential_selection",
+        codes::CSC_CREDENTIAL_SELECTED,
         true,
         "A single configured signing credential was selected.",
     ));
     match client.credential_info(token.as_str(), &credential_id) {
         Ok(info) => {
-            checks.push(check(
-                "credentials_info",
-                true,
-                format!(
-                    "CSC returned a parseable signing certificate and {} issuer certificate(s); \
-                     activation requirements were inspected but not invoked.",
-                    info.chain_der.len()
-                ),
-            ));
+            checks.push(
+                check(
+                    "credentials_info",
+                    codes::CSC_CREDENTIAL_INFO_OK,
+                    true,
+                    format!(
+                        "CSC returned a parseable signing certificate and {} issuer \
+                         certificate(s); activation requirements were inspected but not invoked.",
+                        info.chain_der.len()
+                    ),
+                )
+                .with_params([("issuer_count", info.chain_der.len().to_string())]),
+            );
             ProbeOutcome {
                 status: "ok",
                 provider_contacted: contacted.load(Ordering::Relaxed),
@@ -1556,7 +2100,8 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
             }
         }
         Err(error) => {
-            checks.push(check("credentials_info", false, csc_error_detail(&error)));
+            let (code, detail) = csc_error_detail(&error);
+            checks.push(check("credentials_info", code, false, detail));
             ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -1567,21 +2112,51 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     }
 }
 
-fn csc_error_detail(error: &CscError) -> &'static str {
+/// The sanitized operator-facing sentence for a CSC failure, with its stable detail code. The pair
+/// is returned together so a new `CscError` variant cannot acquire a sentence without a code.
+fn csc_error_detail(error: &CscError) -> (&'static str, &'static str) {
     match error {
-        CscError::Transport(_) => {
-            "The CSC endpoint could not be reached within the bounded request."
-        }
-        CscError::ResponseTooLarge { .. } => "The CSC response exceeded the safety limit.",
-        CscError::HttpStatus { .. } => "The CSC endpoint returned an unsuccessful HTTP status.",
-        CscError::Service { .. } => "The CSC service rejected the safe probe operation.",
-        CscError::ResponseParse(_) => "The CSC response did not match the expected protocol shape.",
-        CscError::Config(_) => "The CSC probe configuration is incomplete or invalid.",
-        CscError::NoCredential { .. } => "The CSC account exposes no signing credential.",
-        CscError::NoSignature => "The CSC service returned no signature.",
-        CscError::Certificate(_) => "The CSC credential certificate could not be parsed.",
-        CscError::Base64(_) => "The CSC response contained malformed base64 data.",
-        _ => "The CSC probe failed.",
+        CscError::Transport(_) => (
+            codes::CSC_TRANSPORT_FAILED,
+            "The CSC endpoint could not be reached within the bounded request.",
+        ),
+        CscError::ResponseTooLarge { .. } => (
+            codes::CSC_RESPONSE_TOO_LARGE,
+            "The CSC response exceeded the safety limit.",
+        ),
+        CscError::HttpStatus { .. } => (
+            codes::CSC_HTTP_STATUS_UNSUCCESSFUL,
+            "The CSC endpoint returned an unsuccessful HTTP status.",
+        ),
+        CscError::Service { .. } => (
+            codes::CSC_SERVICE_REJECTED,
+            "The CSC service rejected the safe probe operation.",
+        ),
+        CscError::ResponseParse(_) => (
+            codes::CSC_RESPONSE_PARSE_FAILED,
+            "The CSC response did not match the expected protocol shape.",
+        ),
+        CscError::Config(_) => (
+            codes::CSC_CONFIG_INVALID,
+            "The CSC probe configuration is incomplete or invalid.",
+        ),
+        CscError::NoCredential { .. } => (
+            codes::CSC_NO_SIGNING_CREDENTIAL,
+            "The CSC account exposes no signing credential.",
+        ),
+        CscError::NoSignature => (
+            codes::CSC_NO_SIGNATURE_RETURNED,
+            "The CSC service returned no signature.",
+        ),
+        CscError::Certificate(_) => (
+            codes::CSC_CERTIFICATE_UNPARSEABLE,
+            "The CSC credential certificate could not be parsed.",
+        ),
+        CscError::Base64(_) => (
+            codes::CSC_MALFORMED_BASE64,
+            "The CSC response contained malformed base64 data.",
+        ),
+        _ => (codes::CSC_PROBE_FAILED, "The CSC probe failed."),
     }
 }
 
@@ -1690,21 +2265,32 @@ impl CscTransport for ProbeCscTransport {
 fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let mut checks = vec![check(
         "entry_enabled",
+        codes::ENTRY_ENABLED,
         true,
         "The stored credential entry is enabled.",
     )];
     let application_id = take_nonblank(&mut entry.fields, FIELD_APPLICATION_ID);
     let secret = take_nonblank(&mut entry.fields, FIELD_SECRET);
     let (Some(application_id), Some(secret)) = (application_id, secret) else {
-        checks.push(check(
-            "authorization_configuration",
-            false,
-            "SCAP provider listing requires application_id and secret.",
-        ));
+        checks.push(
+            check(
+                "authorization_configuration",
+                codes::SCAP_CREDENTIALS_INCOMPLETE,
+                false,
+                format!(
+                    "SCAP provider listing requires {FIELD_APPLICATION_ID} and {FIELD_SECRET}."
+                ),
+            )
+            .with_params([
+                ("application_id_field", FIELD_APPLICATION_ID.to_owned()),
+                ("secret_field", FIELD_SECRET.to_owned()),
+            ]),
+        );
         return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
     };
     checks.push(check(
         "authorization_configuration",
+        codes::SCAP_CREDENTIALS_CONFIGURED,
         true,
         "The stored SCAP application credentials are configured.",
     ));
@@ -1719,6 +2305,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         _ => {
             checks.push(check(
                 "environment_configuration",
+                codes::SCAP_ENVIRONMENT_SELECTOR_INVALID,
                 false,
                 "The SCAP environment selector must be prod or preprod.",
             ));
@@ -1736,18 +2323,20 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "endpoint_safe",
+                codes::SCAP_BASE_URL_UNSAFE,
                 false,
                 "The SCAP base URL failed the outbound-network safety policy.",
             ));
             return ProbeOutcome::failed(false, false, checks, "unsafe_endpoint");
         }
     };
-    if let Err(detail) = require_https_probe_endpoint(&vetted, "SCAP") {
-        checks.push(check("endpoint_https", false, detail));
+    if let Err((code, detail)) = require_https_probe_endpoint(&vetted, "SCAP") {
+        checks.push(check("endpoint_https", code, false, detail));
         return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
     }
     checks.push(check(
         "endpoint_https",
+        codes::SCAP_BASE_URL_OK,
         true,
         "The SCAP base URL passed the outbound-network safety policy and uses HTTPS.",
     ));
@@ -1766,6 +2355,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "outbound_client",
+                codes::OUTBOUND_CLIENT_UNAVAILABLE,
                 false,
                 "The bounded outbound client could not be created.",
             ));
@@ -1777,6 +2367,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "provider_configuration",
+                codes::SCAP_PROVIDER_CONFIGURATION_INVALID,
                 false,
                 "The SCAP provider configuration is invalid.",
             ));
@@ -1785,14 +2376,19 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
     };
     match client.list_providers() {
         Ok(providers) => {
-            checks.push(check(
-                "providers_list",
-                true,
-                format!(
-                    "SCAP returned {} attribute provider(s); no citizen data or signature was requested.",
-                    providers.len()
-                ),
-            ));
+            checks.push(
+                check(
+                    "providers_list",
+                    codes::SCAP_PROVIDERS_LISTED,
+                    true,
+                    format!(
+                        "SCAP returned {} attribute provider(s); no citizen data or signature was \
+                         requested.",
+                        providers.len()
+                    ),
+                )
+                .with_params([("count", providers.len().to_string())]),
+            );
             ProbeOutcome {
                 status: "ok",
                 provider_contacted: contacted.load(Ordering::Relaxed),
@@ -1804,6 +2400,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "providers_list",
+                codes::SCAP_PROVIDER_LIST_FAILED,
                 false,
                 "The SCAP provider-list operation failed or returned an invalid response.",
             ));
@@ -1923,6 +2520,7 @@ impl ScapTransport for ProbeScapTransport {
 fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let mut checks = vec![check(
         "entry_enabled",
+        codes::ENTRY_ENABLED,
         true,
         "The stored credential entry is enabled.",
     )];
@@ -1931,6 +2529,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "pkcs12_loaded",
+                codes::PKCS12_MATERIAL_INCOMPLETE,
                 false,
                 "The stored PKCS#12 material or identity selector is incomplete or malformed.",
             ));
@@ -1946,6 +2545,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "pkcs12_loaded",
+                codes::PKCS12_IDENTITY_UNDECRYPTABLE,
                 false,
                 "The stored PKCS#12 identity could not be decrypted and selected.",
             ));
@@ -1954,6 +2554,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
     };
     checks.push(check(
         "pkcs12_loaded",
+        codes::PKCS12_IDENTITY_LOADED,
         true,
         "The stored PKCS#12 identity was decrypted and selected.",
     ));
@@ -1970,6 +2571,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(_) => {
             checks.push(check(
                 "challenge_signed",
+                codes::PKCS12_CHALLENGE_SIGN_FAILED,
                 false,
                 "The private key could not sign the non-document probe challenge.",
             ));
@@ -1978,6 +2580,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
     };
     checks.push(check(
         "challenge_signed",
+        codes::PKCS12_CHALLENGE_SIGNED,
         true,
         "The private key signed a random domain-separated non-document challenge.",
     ));
@@ -1985,6 +2588,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(()) => {
             checks.push(check(
                 "challenge_verified",
+                codes::PKCS12_CHALLENGE_VERIFIED,
                 true,
                 "The challenge signature verified locally against the selected certificate.",
             ));
@@ -1999,6 +2603,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Err(()) => {
             checks.push(check(
                 "challenge_verified",
+                codes::PKCS12_CHALLENGE_NOT_VERIFIED,
                 false,
                 "The challenge signature did not verify against the selected certificate.",
             ));
@@ -3316,5 +3921,326 @@ mod tests {
             "{}",
             invalid.detail
         );
+    }
+
+    /// The reported symptom, end to end (t113): *"the signature test function says we're in
+    /// preprod always even if we select prod in type."*
+    ///
+    /// The deployment default stays preprod throughout; only the ENTRY says production. Before
+    /// t113 the preflight read the settings value and answered `preprod`, so the panel contradicted
+    /// the selector the operator was looking at.
+    #[tokio::test]
+    async fn the_preflight_reports_the_environment_the_entry_selects_not_the_deployment_default() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        // Left at the default — preprod. The entry has to win on its own.
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+
+        let create = |label: &str, selectors: Value| {
+            let owner = owner.clone();
+            let state = state.clone();
+            let label = label.to_owned();
+            async move {
+                let (status, created) = send_with(
+                    state,
+                    body_req(
+                        "POST",
+                        "/v1/signature/provider-credentials/cmd/_/entries",
+                        json!({
+                            "label": label,
+                            "selectors": selectors,
+                            "set": {
+                                "application_id": "CHANCELA-0001",
+                                "http_basic_username": "ama-user",
+                                "http_basic_password": "ama-password",
+                            },
+                        }),
+                    ),
+                    Some(&owner),
+                )
+                .await;
+                assert_eq!(status, StatusCode::CREATED, "{created}");
+                created["entry"]["entry_id"]
+                    .as_str()
+                    .expect("entry id")
+                    .to_owned()
+            }
+        };
+        let prod_entry = create("CMD produção", json!({ "env": "prod" })).await;
+        let inherited_entry = create("CMD por omissão", json!({})).await;
+
+        let probe = |entry_id: String| {
+            let owner = owner.clone();
+            let state = state.clone();
+            async move {
+                let (status, body) = send_with(
+                    state,
+                    body_req(
+                        "POST",
+                        &format!(
+                            "/v1/signature/provider-credentials/cmd/_/entries/{entry_id}/probe"
+                        ),
+                        json!({}),
+                    ),
+                    Some(&owner),
+                )
+                .await;
+                assert_eq!(status, StatusCode::OK, "{body}");
+                body
+            }
+        };
+
+        let body = probe(prod_entry).await;
+        let environment = body["checks"]
+            .as_array()
+            .expect("checks")
+            .iter()
+            .find(|check| check["name"] == "configured_environment")
+            .expect("the environment check is reported")
+            .clone();
+        assert_eq!(
+            environment["detail_params"]["environment"], "prod",
+            "the entry selected production and the preflight must say so: {body}"
+        );
+        // And it says WHERE that came from, so an operator can tell "I chose this" from "I
+        // inherited it" — the two used to be indistinguishable because only one existed.
+        assert_eq!(
+            environment["detail_code"],
+            crate::provider_probe_codes::CMD_ENVIRONMENT_FROM_ENTRY,
+            "{body}"
+        );
+
+        let body = probe(inherited_entry).await;
+        let environment = body["checks"]
+            .as_array()
+            .expect("checks")
+            .iter()
+            .find(|check| check["name"] == "configured_environment")
+            .expect("the environment check is reported")
+            .clone();
+        assert_eq!(
+            environment["detail_params"]["environment"], "preprod",
+            "an entry that selects nothing still inherits the deployment default: {body}"
+        );
+        assert_eq!(
+            environment["detail_code"],
+            crate::provider_probe_codes::CMD_ENVIRONMENT_RESOLVED,
+            "{body}"
+        );
+    }
+
+    // --- AMA field-encryption certificate inspection (t112) ----------------------------------
+
+    /// A real RSA certificate, well inside its validity window. This is the SAME fixture
+    /// `chancela-cmd`'s own `field_encryption` tests use, so the inspector and the signing path are
+    /// demonstrably reading one file the same way.
+    const RSA_CERT_PEM: &str = include_str!("../../chancela-cmd/fixtures/ama_encryption_cert.pem");
+    /// RSA, but its window closed in 2021.
+    const EXPIRED_CERT_PEM: &str = include_str!("../fixtures/ama_cert_expired.pem");
+    /// A perfectly well-formed certificate carrying a P-256 key — parses, and cannot encrypt.
+    const EC_CERT_PEM: &str = include_str!("../fixtures/ama_cert_ec.pem");
+
+    fn code_of(report: &AmaCertificateInspectResponse, name: &str) -> &'static str {
+        report
+            .checks
+            .iter()
+            .find(|check| check.name == name)
+            .unwrap_or_else(|| panic!("check {name} is reported"))
+            .detail_code
+    }
+
+    #[test]
+    fn a_usable_ama_certificate_reports_what_it_established_and_claims_nothing_more() {
+        let report = inspect_ama_certificate_pem(RSA_CERT_PEM);
+
+        assert!(report.parsed);
+        assert!(report.rsa_public_key);
+        assert_eq!(report.key_bits, Some(2048));
+        assert_eq!(report.within_validity, Some(true));
+        assert_eq!(
+            code_of(&report, "certificate_parsed"),
+            codes::AMA_CERT_PARSED
+        );
+        assert_eq!(
+            code_of(&report, "rsa_public_key"),
+            codes::AMA_CERT_RSA_KEY_PRESENT
+        );
+        assert_eq!(
+            code_of(&report, "validity_window"),
+            codes::AMA_CERT_WITHIN_VALIDITY
+        );
+
+        // The subject and issuer are echoed, so an operator can see WHICH certificate this is —
+        // which is the only thing standing in for the identity check nobody performed.
+        assert!(
+            report
+                .subject
+                .as_deref()
+                .unwrap_or_default()
+                .contains("AMA"),
+            "{:?}",
+            report.subject
+        );
+        assert!(report.not_before.is_some() && report.not_after.is_some());
+
+        // The four negatives are VALUES on every response, so no client can read a clean parse as
+        // a trust decision.
+        assert!(!report.chain_validated);
+        assert!(!report.trusted_list_checked);
+        assert!(!report.issuer_authenticated);
+        assert!(!report.legal_validity_claimed);
+        let boundary = report
+            .checks
+            .iter()
+            .find(|check| check.name == "trust_established")
+            .expect("the boundary is stated on a successful parse");
+        assert_eq!(boundary.detail_code, codes::AMA_CERT_TRUST_NOT_ESTABLISHED);
+        // `skipped`, never `passed`: it names work that was NOT done.
+        assert_eq!(boundary.status, "skipped");
+
+        // No PASSED check claims validity or trust. The boundary sentence is excluded by
+        // construction — it is `skipped`, and it is the one place "Trusted List" legitimately
+        // appears, precisely to say it was not consulted.
+        for check in report
+            .checks
+            .iter()
+            .filter(|check| check.status == "passed")
+        {
+            let lowered = check.detail.to_ascii_lowercase();
+            for overclaim in [" is valid", "trusted", "genuine", "authentic"] {
+                assert!(
+                    !lowered.contains(overclaim),
+                    "a PASSED inspection check overclaims ({overclaim:?}): {}",
+                    check.detail
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn malformed_input_is_a_finding_rather_than_a_panic_or_an_error() {
+        for candidate in [
+            "",
+            "not a certificate at all",
+            "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----\n",
+            // A valid PEM header wrapping DER that decodes to something that is not a certificate.
+            "-----BEGIN CERTIFICATE-----\nMAoCAQE=\n-----END CERTIFICATE-----\n",
+        ] {
+            let report = inspect_ama_certificate_pem(candidate);
+            assert!(!report.parsed, "{candidate:?} must not report as parsed");
+            assert!(!report.rsa_public_key);
+            assert_eq!(
+                code_of(&report, "certificate_parsed"),
+                codes::AMA_CERT_UNPARSEABLE
+            );
+            // An unparseable candidate stops there: no validity verdict is invented for it.
+            assert!(report.within_validity.is_none());
+            assert!(
+                !report
+                    .checks
+                    .iter()
+                    .any(|check| check.name == "validity_window"),
+                "{candidate:?} produced a validity verdict from nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn a_non_rsa_certificate_parses_and_is_reported_as_unusable_for_field_encryption() {
+        // The genuinely useful check: this certificate is fine by every other measure and a
+        // production CMD signature would still refuse, because there is no RSA key to encrypt with.
+        let report = inspect_ama_certificate_pem(EC_CERT_PEM);
+
+        assert!(report.parsed);
+        assert!(!report.rsa_public_key);
+        assert_eq!(report.key_bits, None);
+        assert_eq!(
+            code_of(&report, "certificate_parsed"),
+            codes::AMA_CERT_PARSED
+        );
+        assert_eq!(
+            code_of(&report, "rsa_public_key"),
+            codes::AMA_CERT_RSA_KEY_ABSENT
+        );
+        // And it is stated as a FAILED check, not a note beside a green parse.
+        let key_check = report
+            .checks
+            .iter()
+            .find(|check| check.name == "rsa_public_key")
+            .expect("reported");
+        assert_eq!(key_check.status, "failed");
+    }
+
+    #[test]
+    fn an_expired_certificate_is_stated_as_expired_and_not_folded_into_the_parse_result() {
+        let report = inspect_ama_certificate_pem(EXPIRED_CERT_PEM);
+
+        // Well-formed and RSA — the two checks that pass must keep passing, or "expired" would be
+        // indistinguishable from "broken" and the operator would go looking for the wrong fault.
+        assert!(report.parsed);
+        assert!(report.rsa_public_key);
+        assert_eq!(report.within_validity, Some(false));
+        assert_eq!(code_of(&report, "validity_window"), codes::AMA_CERT_EXPIRED);
+        let validity = report
+            .checks
+            .iter()
+            .find(|check| check.name == "validity_window")
+            .expect("reported");
+        assert_eq!(validity.status, "failed");
+        assert_eq!(report.not_after.as_deref(), Some("2021-01-01T00:00:00Z"));
+    }
+
+    #[tokio::test]
+    async fn inspection_needs_signing_configure_and_refuses_an_oversized_candidate() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let reader = seed_token(&state, READER_ROLE_ID).await;
+        const URI: &str = "/v1/signature/provider-credentials/cmd/ama-certificate/inspect";
+
+        // Same gate as writing the credential this PEM is destined for.
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", URI, json!({ "pem": RSA_CERT_PEM })),
+            Some(&reader),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", URI, json!({ "pem": RSA_CERT_PEM })),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["parsed"], true, "{body}");
+        assert_eq!(body["rsa_public_key"], true, "{body}");
+        // The honest negatives are on the wire as values, not implied by their absence.
+        assert_eq!(body["chain_validated"], false, "{body}");
+        assert_eq!(body["trusted_list_checked"], false, "{body}");
+        assert_eq!(body["issuer_authenticated"], false, "{body}");
+        assert_eq!(body["legal_validity_claimed"], false, "{body}");
+        // Every finding carries a stable code, so nothing on this surface renders as raw English.
+        for check in body["checks"].as_array().expect("checks") {
+            assert!(
+                check["detail_code"].as_str().is_some_and(|code| {
+                    crate::provider_probe_codes::ALL_PROBE_DETAIL_CODES.contains(&code)
+                }),
+                "a finding escaped the code vocabulary: {check}"
+            );
+        }
+
+        // Oversized input is refused by LENGTH, before any DER decoder sees it, and the refusal
+        // carries a code an operator-facing client can translate.
+        let huge = "A".repeat(AMA_CERT_PEM_MAX_BYTES + 1);
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", URI, json!({ "pem": huge })),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert_eq!(body["code"], "ama_cert_pem_too_large", "{body}");
     }
 }

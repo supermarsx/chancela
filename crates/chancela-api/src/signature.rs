@@ -8452,26 +8452,104 @@ fn cmd_config_from_env(
     Ok(Some(cfg))
 }
 
+/// The per-entry selector naming the AMA environment this credential talks to.
+///
+/// Matches the `env` selector the admin panel already renders for CMD
+/// (`SELECTOR_FIELDS.cmd` in `ProviderCredentialsSection.tsx`) — the name is not new, only its
+/// effect is.
+pub(crate) const CMD_ENV_SELECTOR: &str = "env";
+
+/// Which AMA environment one CMD credential resolves to (t113).
+///
+/// # The precedence, stated once
+///
+/// 1. **The entry's own `env` selector**, when it declares one. This is the control an operator is
+///    already using, and per-entry is the right granularity: an installation may legitimately hold
+///    a preprod credential and a production credential side by side, and a single deployment-wide
+///    switch cannot express that. It is also how **SCAP already works**
+///    (`provider_credentials_write.rs`'s `probe_scap` reads its `environment` selector), so CMD is
+///    following its sibling rather than inventing a third mechanism.
+/// 2. **`settings.signing.cmd.env`**, the deployment default, for an entry that declares none —
+///    and the only source for the two paths that have no selectors at all: the legacy flat record
+///    ([`cmd_config_from_stored`]) and the env/settings-derived config ([`cmd_config_from_env`]).
+/// 3. **`CHANCELA_CMD_ENV` does not participate.** It owns no step here, deliberately: the
+///    environment already has a typed settings slice with a defined precedence, and a second
+///    competing source is the defect this change exists to remove. The registry marks it
+///    `excluded_typed_slice` so the panel shows it read-only with that cross-link, rather than
+///    offering an editor whose edit would do nothing.
+///
+/// # Why absence means the settings value
+///
+/// **Because that is exactly what an entry with no selector resolves to today.** Before this
+/// change CMD ignored the selector entirely and every credential took `settings.signing.cmd.env`,
+/// which defaults to `Preprod`. Keeping absence on that path means no stored credential changes
+/// environment as a result of this change — in particular, none is silently promoted to
+/// production. (Note this differs from SCAP, whose absent selector defaults to `prod`; matching
+/// SCAP's default here would move existing CMD entries, which is precisely what must not happen.)
+///
+/// An entry that *does* declare `prod` starts being honoured, which is the point. That direction is
+/// safe by construction rather than by luck: production additionally requires the AMA
+/// field-encryption certificate and the BasicAuth pair, so an entry that selected `prod` without
+/// them now **fails closed** naming the missing fields, instead of quietly signing against AMA
+/// production.
+///
+/// An unrecognised value is refused rather than silently read as preprod — a selector nobody can
+/// interpret must not decide a production boundary by default.
+pub(crate) fn resolve_cmd_env(
+    cmd: &crate::settings::SigningCmdSettings,
+    selectors: &crate::EntrySelectors,
+) -> Result<CmdEnv, ApiError> {
+    match selectors
+        .get(CMD_ENV_SELECTOR)
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+    {
+        None => Ok(cmd_env_from_setting(cmd.env)),
+        Some("prod") => Ok(CmdEnv::Prod),
+        Some("preprod") => Ok(CmdEnv::Preprod),
+        Some(_) => Err(stored_credentials_invalid_err(
+            CredentialMode::Cmd,
+            "",
+            CMD_ENV_SELECTOR,
+        )),
+    }
+}
+
 /// Assemble a CMD config from a stored **flat** record (the legacy default-entry read path).
+///
+/// A flat record carries no selectors, so it takes the deployment default — step 2 of
+/// [`resolve_cmd_env`]'s precedence, unchanged from before t113.
 fn cmd_config_from_stored(
     cmd: &crate::settings::SigningCmdSettings,
     record: DecryptedCredentialRecord,
 ) -> Result<CmdConfig, ApiError> {
-    cmd_config_from_fields(cmd, record.fields)
+    cmd_config_from_fields(cmd_env_from_setting(cmd.env), record.fields)
 }
 
 /// Assemble a CMD config from one stored **multi-entry** entry (the failover read path).
+///
+/// Every entry-shaped CMD path funnels through here — the failover walk, the pinned-confirm
+/// resolve, and the preflight probe — so honouring the selector here is what makes it authoritative
+/// everywhere at once, with no second place to keep in step.
 pub(crate) fn cmd_config_from_entry(
     cmd: &crate::settings::SigningCmdSettings,
     entry: &DecryptedCredentialEntry,
 ) -> Result<CmdConfig, ApiError> {
-    cmd_config_from_fields(cmd, entry.fields.clone())
+    cmd_config_from_fields(
+        resolve_cmd_env(cmd, &entry.selectors)?,
+        entry.fields.clone(),
+    )
 }
 
 /// Assemble a [`CmdConfig`] from a decrypted field map (shared by the flat + multi-entry paths). A
 /// partial record fails closed rather than mixing with env/settings.
+///
+/// Takes the **already-resolved** environment rather than the settings slice: the caller decides it
+/// through [`resolve_cmd_env`], so there is exactly one place that answers "which environment is
+/// this credential for?" and this function cannot disagree with it. That matters because `env` is
+/// what makes the AMA certificate mandatory below.
 fn cmd_config_from_fields(
-    cmd: &crate::settings::SigningCmdSettings,
+    env: CmdEnv,
     mut fields: BTreeMap<String, Zeroizing<String>>,
 ) -> Result<CmdConfig, ApiError> {
     let application_id = nonblank_runtime_secret(fields.remove(FIELD_APPLICATION_ID));
@@ -8487,7 +8565,7 @@ fn cmd_config_from_fields(
         (None, Some(_)) => missing.push(FIELD_HTTP_BASIC_USERNAME),
         _ => {}
     }
-    if matches!(cmd.env, crate::settings::CmdEnvSetting::Prod) && ama_cert_pem.is_none() {
+    if matches!(env, CmdEnv::Prod) && ama_cert_pem.is_none() {
         missing.push(FIELD_AMA_CERT_PEM);
     }
     if !missing.is_empty() {
@@ -8513,7 +8591,7 @@ fn cmd_config_from_fields(
         _ => None,
     };
     let cfg = CmdConfig {
-        env: cmd_env_from_setting(cmd.env),
+        env,
         application_id: application_id.as_str().to_owned(),
         basic_auth,
         ama_cert_pem: ama_cert_pem.map(|pem| pem.as_str().to_owned()),
@@ -10907,5 +10985,115 @@ mod tests {
         assert!(!markdown.contains("token-hash-must-not-render"));
         assert!(!markdown.contains("cxi_secret_hint"));
         assert!(!markdown.starts_with("%PDF-"));
+    }
+
+    // --- CMD environment precedence (t113) ----------------------------------------------------
+
+    fn cmd_settings(env: crate::settings::CmdEnvSetting) -> crate::settings::SigningCmdSettings {
+        crate::settings::SigningCmdSettings {
+            env,
+            ..Default::default()
+        }
+    }
+
+    fn selectors(pairs: &[(&str, &str)]) -> crate::EntrySelectors {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn an_entry_that_selects_an_environment_decides_its_own() {
+        // The whole point: the selector the operator is looking at is what runs, and it wins over
+        // the deployment default in BOTH directions — not just the one that happens to be safe.
+        let preprod_deployment = cmd_settings(crate::settings::CmdEnvSetting::Preprod);
+        let prod_deployment = cmd_settings(crate::settings::CmdEnvSetting::Prod);
+
+        assert!(matches!(
+            resolve_cmd_env(&preprod_deployment, &selectors(&[("env", "prod")])),
+            Ok(CmdEnv::Prod)
+        ));
+        assert!(matches!(
+            resolve_cmd_env(&prod_deployment, &selectors(&[("env", "preprod")])),
+            Ok(CmdEnv::Preprod)
+        ));
+        // Surrounding whitespace is a storage artefact, not a different value.
+        assert!(matches!(
+            resolve_cmd_env(&preprod_deployment, &selectors(&[("env", "  prod  ")])),
+            Ok(CmdEnv::Prod)
+        ));
+    }
+
+    #[test]
+    fn an_entry_with_no_selector_resolves_exactly_what_it_resolved_before_t113() {
+        // PINNED, deliberately. Before t113 CMD ignored the selector entirely and every credential
+        // took `settings.signing.cmd.env`. Absence must keep meaning that, or existing stored
+        // credentials would change environment — in the worst case silently reaching production.
+        for (setting, expected) in [
+            (crate::settings::CmdEnvSetting::Preprod, CmdEnv::Preprod),
+            (crate::settings::CmdEnvSetting::Prod, CmdEnv::Prod),
+        ] {
+            let cmd = cmd_settings(setting);
+            assert!(matches!(
+                resolve_cmd_env(&cmd, &crate::EntrySelectors::new()),
+                Ok(env) if env == expected
+            ));
+            // A blank or whitespace-only stored value is absence, not a third state.
+            assert!(matches!(
+                resolve_cmd_env(&cmd, &selectors(&[("env", "   ")])),
+                Ok(env) if env == expected
+            ));
+            // Other selectors on the entry do not accidentally count as an environment.
+            assert!(matches!(
+                resolve_cmd_env(&cmd, &selectors(&[("sandbox", "true")])),
+                Ok(env) if env == expected
+            ));
+        }
+        // The default of the default: a deployment that never chose is preprod, so an untouched
+        // installation still points away from production.
+        assert!(matches!(
+            resolve_cmd_env(
+                &crate::settings::SigningCmdSettings::default(),
+                &crate::EntrySelectors::new()
+            ),
+            Ok(CmdEnv::Preprod)
+        ));
+    }
+
+    #[test]
+    fn an_uninterpretable_selector_is_refused_rather_than_defaulted() {
+        // A value nobody can read must not decide a production boundary by falling through to a
+        // default — in either direction. Fail closed and name the selector.
+        let cmd = cmd_settings(crate::settings::CmdEnvSetting::Prod);
+        for value in ["PROD", "production", "sandbox", "true", "0"] {
+            let resolved = resolve_cmd_env(&cmd, &selectors(&[("env", value)]));
+            assert!(resolved.is_err(), "{value:?} must be refused");
+        }
+    }
+
+    #[test]
+    fn production_still_demands_the_ama_certificate_when_the_selector_asks_for_it() {
+        // The safety property behind honouring `prod` on an existing entry: an entry that selects
+        // production without the field-encryption certificate FAILS CLOSED naming the missing
+        // field, rather than quietly signing against AMA production.
+        let mut fields: BTreeMap<String, Zeroizing<String>> = BTreeMap::new();
+        fields.insert(
+            FIELD_APPLICATION_ID.to_owned(),
+            Zeroizing::new("app-id".to_owned()),
+        );
+
+        let err = cmd_config_from_fields(CmdEnv::Prod, fields.clone())
+            .expect_err("prod without the AMA certificate must refuse");
+        let ApiError::Unprocessable(message) = err.into_uncoded() else {
+            panic!("expected a 422 naming the missing field");
+        };
+        assert!(message.contains(FIELD_AMA_CERT_PEM), "{message}");
+
+        // The same fields in preprod are fine — so the refusal is about the environment, not about
+        // the entry being broken.
+        let cfg =
+            cmd_config_from_fields(CmdEnv::Preprod, fields).expect("preprod accepts cleartext");
+        assert!(matches!(cfg.env, CmdEnv::Preprod));
     }
 }

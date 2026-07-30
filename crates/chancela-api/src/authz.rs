@@ -838,6 +838,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ), // GET settings.read@Global (read-only credential storage metadata)
     ("/v1/signature/provider-credentials", RouteClass::Gated), // GET settings.read@Global (metadata only)
     (
+        "/v1/signature/provider-credentials/cmd/ama-certificate/inspect",
+        RouteClass::Gated,
+    ), // POST signing.configure@Global (t112) — reads a candidate PEM, writes and stores nothing
+    (
         "/v1/signature/provider-credentials/{mode}/{provider_id}/entries",
         RouteClass::Gated,
     ), // POST signing.configure@Global (t50)
