@@ -11,11 +11,14 @@
 > by symbol. Every claim about WebAuthn itself is cited to a dated external source at the end — this
 > area moved twice in the last six months and a stale claim here would be expensive.
 >
-> **The dependency and platform spike (task #9) has landed**, on 2026-07-30, and its results are
-> folded in here rather than kept as a separate document. It changed the library ruling, added the
-> Public Suffix List trap to Finding 1, corrected several rows of the platform matrix, and produced
-> the two PRF-stability invariants. Claims it could not establish are marked **unverified** in place;
-> those markers are load-bearing and should not be quietly upgraded to fact.
+> **The dependency and platform spike (task #9) has landed**, on 2026-07-30, with a follow-up on
+> 2026-07-31; their results are folded in here rather than kept as separate documents. Together they
+> added the Public Suffix List trap to Finding 1, corrected several rows of the platform matrix,
+> produced the two PRF-stability invariants, and **settled the library on `webauthn_rp` — reversing
+> an earlier ruling in this document for `webauthn-rs-core`** once it was proven that passkeys can be
+> built with no OpenSSL dependency at all. Reversals are recorded rather than erased, because the
+> reasoning is the part worth keeping. Claims the spikes could not establish are marked
+> **unverified** in place; those markers are load-bearing and should not be quietly upgraded to fact.
 
 ## The load-bearing question
 
@@ -53,7 +56,7 @@ PRF output; no password is typed, and the signed act is still attributable to th
 - **What the signer gets:** a genuine ceremony. Touch the authenticator, the key unwraps, the act is signed under their fingerprint.
 - **Cost 1 — support is real but not universal, and it is six months old on Windows.** See the matrix below.
 - **Cost 2 — a lost passkey loses that wrap, but a *restored* one does not.** These are different events and the doc previously conflated them. **Re-creating** a credential — even for the same account on the same authenticator — yields a different secret; there is no "re-create my PRF". **Restoring** a synced credential (iCloud Keychain, Google Password Manager) to a new device preserves it: the PRF seed travels with the credential. For a device-bound authenticator (Windows Hello, a security key) the question does not arise, because the whole credential is lost, not merely the wrap — which is the ordinary lost-passkey case in Finding 3. See the PRF-stability invariant below for the evidence and its confidence.
-- **Cost 3 — the crate models the wrong layer.** Correcting an earlier claim that `webauthn-rs` 0.5.5 "documents no PRF/`hmac-secret` support": it *does* model CTAP2 `hmac-secret` (`hmac_create_secret`, `hmac_get_secret`, `HmacGetSecretInput`/`Output`), and its own doc comment on `hmac_get_secret` reads *"⚠️ Browsers do not support this!"*. What does not exist anywhere in the crate is **`prf`** — the spike proved this by exhaustively destructuring both extension structs, which compiles. `hmac-secret` is the authenticator-facing CTAP2 extension; `prf` is the browser-facing WebAuthn extension, and only the latter is reachable from a web page. So the conclusion holds — PRF handling is ours — but the reason is that the crate speaks to the wrong layer, not that it is silent. A future reader will otherwise re-derive this.
+- **Cost 3 — no Rust library models `prf`, and the reason matters.** This holds for **both** candidates and so is not a library-selection criterion. Correcting an earlier claim that `webauthn-rs` 0.5.5 "documents no PRF/`hmac-secret` support": it *does* model CTAP2 `hmac-secret` (`hmac_create_secret`, `hmac_get_secret`, `HmacGetSecretInput`/`Output`), and its own doc comment on `hmac_get_secret` reads *"⚠️ Browsers do not support this!"*. What does not exist is **`prf`** — proven for `webauthn-rs` by exhaustively destructuring both extension structs, which compiles; `webauthn_rp` likewise carries no `prf` member. `hmac-secret` is the authenticator-facing CTAP2 extension; `prf` is the browser-facing WebAuthn extension, and only the latter is reachable from a web page. So the conclusion holds — **PRF handling is ours whichever library we pick** — but the reason is that these crates speak to the wrong layer, not that they are silent. A future reader will otherwise re-derive this.
 - **Cost 4 — PRF at `create()` is usually available, and the fallback is the minority path.** Synced providers (iCloud Keychain, Google Password Manager) return the first PRF value at `create()`. Windows Hello does too, from Chrome 147 (`WEBAUTHN_API_VERSION_8`) and Firefox 147+; Chrome/Edge 146 is authentication-only. Older security keys may only generate an hmac-secret if asked for it at creation. Enrolment must still be *prepared* to do `create()` then an immediate `get()`, but that is now the exception rather than the designed flow.
 
 #### B — Passkey authenticates, password still unwraps
@@ -212,10 +215,18 @@ fails in the browser with a `SecurityError` the server never sees**. A public su
 RP ID, and no amount of server-side care detects it, because the crate is not the component that
 enforces the rule.
 
-**The ruling:**
+**Both halves of this validation are ours, and that is now load-bearing rather than
+defence-in-depth.** `webauthn_rp` does **not** cross-check the RP ID against the origin at all: the
+spike completed a full ceremony with RP ID `example.com` against origin
+`https://livros.example.pt`, where `webauthn-rs` refuses that pair at `WebauthnBuilder::new`. A real
+browser never produces that combination, so this is a misconfiguration guard rather than an attack
+surface — but with the library performing neither the suffix check nor a PSL check, **nothing else in
+the stack will catch a mis-set RP ID before it reaches users.**
+
+**The ruling — required, not recommended:**
 
 - **The RP ID is an explicit operator setting**, not a derived value. **Never derive it by stripping a label from `public_base_url`.**
-- It must be **validated against `public_base_url`** — it has to be the host or a registrable suffix of it — **and checked against the Public Suffix List** so a public suffix is refused at configuration time with a named error. Use a PSL crate (`psl` or `publicsuffix`; both are permissively licensed).
+- It must be **validated against `public_base_url`** — it has to be the host or a registrable suffix of it — **and checked against the Public Suffix List** so a public suffix is refused at configuration time with a named error. Use a PSL crate (`psl` or `publicsuffix`; both are permissively licensed). Neither of these checks is optional and neither is provided by the library.
 - Where the operator supplies nothing, offering `public_base_url`'s **host** as the default is safe. Offering a label-stripped parent as a default is not, for the reason above — the parent must be a deliberate, confirmed operator choice.
 - **Never** take the RP ID from the `Origin` or `Host` header — a request-derived RP ID is an attacker-chosen RP ID.
 - Passkey enrolment must be **refused with a clear error when `public_base_url` is unset**, exactly as `an_invitation_cannot_be_issued_without_a_configured_public_base_url` already refuses invitations (`crates/chancela-api/tests/signup_and_invites.rs`). It defaults to `None`; most instances will not have set it.
@@ -415,11 +426,15 @@ The browser decides what to offer from what it holds; the server is never asked 
 `residentKey: "required"` at enrolment. The cost is authenticator storage slots on hardware keys —
 acceptable, and the alternative costs an enumeration oracle.
 
-**This ruling is the reason the library choice below is `webauthn-rs-core` and not the wrapper.** The
-spike found that `start_passkey_registration` does not merely omit the member — it emits
+**This ruling is one of the reasons the library choice below is `webauthn_rp`.** The spike found that
+`webauthn-rs`'s `start_passkey_registration` does not merely omit the member — it emits
 `residentKey: "discouraged"`, which is an *active instruction to the browser not to create a
-discoverable credential*, and there is no setter to change it. Conditional mediation cannot be built
-on that API. See "Library".
+discoverable credential*, and there is no setter to change it. `webauthn_rp`'s `passkey()` helper
+emits `residentKey: "required"` with no configuration at all. See "Library".
+
+Note that **conditional mediation has not been exercised end-to-end in a real browser** — the spike
+drove a software authenticator. Marked **unverified**; it is the first thing the enrolment lane
+should confirm.
 
 ## Signature counter
 
@@ -479,79 +494,94 @@ on there being one.
 
 ## Library
 
-Settled by the task-#9 spike, which exercised the crate rather than reading its docs. Every claim
-below was produced by running code.
+Settled by the task-#9 spike and its follow-up, both of which exercised the crates rather than
+reading their docs. Every claim below was produced by running code.
 
-**Ruling: depend on `webauthn-rs-core` 0.5.5 directly, not on the `webauthn-rs` wrapper.**
+**Ruling: `webauthn_rp` 0.3.0 (crates.io, MIT OR Apache-2.0).**
 
-This is contrary to the crate authors' own loud advice (*"Seriously. Use `webauthn-rs` instead"*), so
-the reasons are given in full. Two are decisive:
+An earlier draft of this section ruled for `webauthn-rs-core` with OpenSSL behind a `passkeys`
+feature. That ruling was reversed after a second spike asked the obvious question — *can passkeys be
+built without OpenSSL at all?* — and answered it by writing code against `webauthn_rp` rather than
+reading its landing page. It can. The reversal is recorded rather than erased because the reasoning
+is the useful part.
 
-1. **The wrapper cannot express `residentKey: "required"`.** `start_passkey_registration` hardcodes `.require_resident_key(false)` and emits `residentKey: "discouraged"` — actively telling the browser *not* to create a discoverable credential. There is no setter. Passing `default-features = false` changes nothing. The two feature-gated escapes are both wrong here: `resident-key-support` forces `AttestationConveyancePreference::Direct` plus a non-empty `AttestationCaList`, contradicting the attestation-`none` ruling; `workaround-google-passkey-specific-issues` is Android/GMS-only. The core builder reaches `residentKey: "required"` + `requireResidentKey: true` while keeping `attestation: "none"`, **with no crate features enabled at all**.
-2. **The wrapper's challenge state will not serialise without a `danger-` flag.** `PasskeyRegistration` is not `Serialize` unless `danger-allow-state-serialisation` is on — the compiler refuses it. The challenge store *must* persist that state between the two HTTP requests, so the wrapper forces us to enable a feature its authors named "danger". `webauthn_rs_core::RegistrationState` serialises with **no features**.
+**Every capability below was proven by running code**, against the same software authenticator used
+for `webauthn-rs`, so the two libraries were compared on identical bytes.
 
-The offsetting cost is small and was measured. `finish_passkey_registration` is literally
-`core.register_credential(reg, &state.rs, None)` and `finish_passkey_authentication` is literally
-`core.authenticate_credential(reg, &state.ast)` — **the wrapper adds nothing on the verification
-path**; all of its policy lives in the challenge builders. Moving to core costs roughly 15 lines of
-builder policy and roughly 12 lines to replace `Passkey::update_credential` (counter and
-backup-state merge). What it does *not* cost is verification safety.
+| Question | Result |
+|---|---|
+| Registrable-parent RP ID + subdomain origin | RP ID `example.pt`, origin `https://livros.example.pt` → verified |
+| `residentKey: "required"` | `{"requireResidentKey":true,"residentKey":"required","userVerification":"required"}` with `attestation:"none"` — **the entire frozen constraint set, from `PublicKeyCredentialCreationOptions::passkey()` with no configuration** |
+| Backup eligibility / state | `Exists` / `Eligible` / `NotEligible`, all three correct |
+| Ceremony-state serialisation | 103 bytes via `Encode`, behind `serializable_server_state` — a feature **not** named `danger-*` |
+| UV enforcement | a UV=0 registration is refused with `UserNotVerified` |
+| Authentication round trip | authenticated; `sign_count` advanced |
+| Tampered signature | refused with `AssertionSignature` |
 
-**Proven capabilities, unpatched.** `WebauthnBuilder::new(rp_id, &rp_origin)` is the right shape for
-Finding 1 and the parent-RP-ID pairing round-trips. `backup_eligible` / `backup_state` are readable
-both as public fields on `webauthn_rs_core::proto::Credential` and via plain serde, and are correct
-across all three flag combinations (synced, backup-eligible-but-not-yet, device-bound);
-`AuthenticationResult` exposes them with no feature gate. A constant-zero signature counter is
-accepted repeatedly with `needs_update = false`, so the signCount ruling below works as written.
+Three ways it is **better** than `webauthn-rs`, not merely equivalent:
 
-**Dependency: a feature-gated C dependency sharing the existing vendored build.**
+1. **The `passkey()` helper is exactly our profile**, with no escape hatch and no `danger-` feature. `webauthn-rs`'s equivalent emits `residentKey: "discouraged"` — an active instruction *not* to create a discoverable credential — and reaching `required` means dropping to `webauthn-rs-core`.
+2. **`Backup` is a three-state enum** (`NotEligible | Eligible | Exists`), so the illegal BE=0/BS=1 combination is **unrepresentable** rather than merely rejected. `webauthn-rs` carries two independent bools.
+3. **It derives the credential ID from `authData`** instead of trusting the client-supplied `id`/`rawId` — its `Registration` type does not accept those fields at all. Strictly stricter on the credential path.
 
-`webauthn-rs-core` declares `openssl ^0.10` **and** `openssl-sys ^0.9` as plain, non-optional
-dependencies, and its own feature table is `default = []` with no other entries — so there is no flag
-that turns them off. This is structural, not feature-reachable.
+**Dependency verdict: three crates, no C.** New to `Cargo.lock`: `webauthn_rp`, `precis-core`,
+`precis-profiles` — all MIT/Apache-2.0. Every cryptographic crate it needs (`p256`, `p384`,
+`ed25519-dalek`, `rsa`, `rand`) is **already in the lock**, and `p256` is what `attestation.rs`
+already uses. No OpenSSL, no `openssl-sys`, no vendored C build, no Perl/NASM toolchain requirement.
+By contrast `webauthn-rs-core` would have added 20 crates plus a hard, non-optional `openssl` +
+`openssl-sys` pair that no feature can switch off. **No `passkeys` cargo feature is needed for
+dependency-isolation reasons** — the earlier ruling's feature gate existed only to keep OpenSSL off
+the default path, and there is no longer an OpenSSL to keep off.
 
-It does **not** follow that OpenSSL becomes unconditional. `openssl-sys` is already in `Cargo.lock`
-today, reachable only through `chancela-store`'s optional `sqlcipher` feature, and is **not** in the
-default build graph (`cargo tree -i openssl-sys --workspace` matches nothing). **Ruling: gate
-passkeys behind a `passkeys` cargo feature**, following the pattern `sqlcipher` and `postgres` already
-establish in `crates/chancela-store/Cargo.toml`, so the default `cargo test`, desktop and
-browser-embedded builds stay OpenSSL-free.
+This also removes the tension with `crates/chancela-store/Cargo.toml`, which records that rustls was
+chosen for Postgres TLS specifically to gain `sslmode` support *"WITHOUT dragging in OpenSSL"*. The
+passkeys path now honours that decision instead of reintroducing the dependency it was made to avoid.
 
-The expensive artefact is shared, not duplicated. `rusqlite`'s
-`bundled-sqlcipher-vendored-openssl` resolves to `libsqlite3-sys`'s feature of the same name, which
-enables **`openssl-sys/vendored`** — the identical crate and identical feature `webauthn-rs-core`
-needs. The vendored C build hangs off `openssl-sys` via `openssl-src`, so within one target directory
-and one feature resolution cargo builds it **once**; the sqlcipher lane's existing build is that same
-artefact. Genuinely new to the lock is one crate: `openssl`, the safe wrapper (`openssl-sys`,
-`openssl-src` and `openssl-probe` are already there).
+### The maintenance risk, stated plainly
 
-**Said out loud, because it cuts against a deliberate decision:** `chancela-store/Cargo.toml` records
-that rustls was chosen for Postgres TLS specifically to gain `sslmode` support *"WITHOUT dragging in
-OpenSSL"*. This feature reintroduces OpenSSL on the passkeys path. That is accepted, feature-gated,
-and noted here so nobody has to rediscover the tension. The build-toolchain requirement is real —
-on a Windows host without a system OpenSSL, the vendored build needs Perl and NASM on `PATH`
-(Strawberry Perl works; a cygwin `perl` earlier on `PATH` breaks it) — but any machine that already
-builds the sqlcipher lane already satisfies it.
+`webauthn_rp` has **one maintainer**, a **self-hosted repository** (`git.philomathiclife.com`), **no
+release since 2025-04**, and roughly **9,500 lifetime downloads** — against `webauthn-rs`, which is
+Kanidm's and widely deployed. This is a real risk and it is accepted deliberately, not overlooked.
 
-**Licence: clean, no new class.** Only 20 crates are new to the lock. MPL-2.0 ×5 (the `webauthn-*`
-crates and `base64urlsafedata`), Apache-2.0 ×1 (`openssl`), the rest MIT/Apache-2.0 dual. MPL-2.0 is
-already present in the tree (`cssparser`, `selectors`, `smallvec`) and is file-level copyleft that
-does not reach Chancela's own sources; the `Unicode-3.0` ICU crates the tree gains are all already
-there. Nothing here is incompatible with the repo's existing set.
+What makes it acceptable is that it is **bounded and the escape route is costed**:
 
-**Alternatives, since the OpenSSL dependency makes the question fair.** `webauthn_rp` (crates.io,
-0.3.0, MIT OR Apache-2.0) is genuinely pure-Rust — `p256`, `p384`, `ed25519-dalek`, `rsa`, no
-OpenSSL and no C toolchain — and `p256` is already what `attestation.rs` uses. Against it: a single
-maintainer, a self-hosted repository, no release since 2025-04, and roughly 9,500 lifetime downloads
-against a library that is Kanidm's and widely deployed. Its PRF, resident-key and backup-flag support
-is **unverified** — the spike read its landing page and wrote no code against it, so this is not a
-claim that it lacks them. `passkey-auth-rs` exists explicitly because `webauthn-rs` hard-depends on
-OpenSSL, which independently corroborates the friction, but at one star and version 0.1 it is not a
-candidate. **Ruling: `webauthn-rs-core` stays.** Swapping a widely-deployed library for a
-single-maintainer one on the credential path, to avoid a feature-gated C dependency that shares an
-existing build, is a bad trade. If that judgement is ever revisited, `webauthn_rp` is the only
-candidate and the spike to run against it is exactly three questions: PRF, `residentKey: "required"`,
-backup flags.
+- It is **MIT OR Apache-2.0** and about **7,700 lines of pure Rust with no C**. If it were abandoned we could vendor it into the tree and maintain it ourselves. Vendoring an abandoned C OpenSSL build is not a comparable proposition.
+- The fallback is not unknown. First-party verification was **seriously costed and rejected on a specific number** (below): **~45 server-side obligations**. A future reader inheriting an abandoned dependency knows exactly what walking away costs.
+
+### Why not implement it ourselves
+
+Asked properly, costed against the WebAuthn L3 text rather than from memory, and rejected. Recorded
+here so the next person to ask "why not just implement it?" gets the count rather than an opinion.
+
+Because the attestation-`none` ruling removes the hardest part, **the cryptography is trivial**:
+
+- **§7.1 registration: zero signature verifications.** The `none` format's verification procedure is that `attStmt` must be empty. The only cryptographic work is one SHA-256 over `clientDataJSON`, one SHA-256 comparison for `rpIdHash`, and a COSE key decode whose on-curve check `p256` already performs.
+- **§7.2 authentication: exactly one ECDSA-P256 verification**, over `authData ‖ SHA256(clientDataJSON)` with a DER-encoded signature (step 26), plus one SHA-256.
+
+**The count: about 45 server-side obligations** — roughly 25 for registration and 20 for
+authentication, after collapsing the attestation branches that `none` makes vacuous. **Four touch
+cryptography. None requires implementing a primitive.**
+
+**The reason not to is the other 41.** Every one of them fails *silently*, and they are precisely
+where real relying-party vulnerabilities live: a challenge that is not single-use (replay), an origin
+matched by substring rather than equality (phishing), an unchecked `type` field (a `webauthn.create`
+response accepted for `webauthn.get`), a missing `alg` allow-list (algorithm confusion), an unchecked
+`rpIdHash` (cross-RP credential reuse), an unchecked `credentialId` uniqueness (takeover). The happy
+path is perhaps 400 lines and a day's work; **the assurance is ~45 negative tests**, and what a
+library actually buys is that someone has already written them. It would also mean owning a CBOR
+parser fed attacker-controlled bytes, with its duplicate-key, indefinite-length and
+non-canonical-integer traps.
+
+First-party was the right answer to "avoid OpenSSL". It stopped being the right answer the moment a
+pure-Rust library was shown to meet every frozen constraint.
+
+### What the spike did not establish
+
+Two things remain **unverified**, and the strength of the recommendation must not quietly upgrade
+them:
+
+- **Conditional mediation end-to-end in a real browser.** The spike drove a software authenticator, not a browser autofill flow.
+- **PRF.** Neither library models the `prf` extension; it is evaluated client-side and the handling is ours under either choice. Nothing about this ruling changes the PRF work described below.
 
 **The PRF handling is ours, and it is smaller than this document previously feared.** Because PRF is
 evaluated client-side and the derived bytes are returned to JS, the **server-side WebAuthn
@@ -579,11 +609,11 @@ this feature is not code — it is operational, and it is the two invariants rec
 1. **RP ID granularity** — the registrable parent (`example.pt`) rather than the host, so a subdomain move survives. It is an **explicit operator setting**, validated against `public_base_url` and against the Public Suffix List — **never** derived by stripping a label. See Finding 1. Cannot be widened afterwards without invalidating every credential.
 2. **Shape A / B / C.** **C**, PRF-first. Determines the storage schema.
 3. **`UserView` stays frozen** — passkeys get their own endpoint and their own contract fixture. This removes the entire ledger-payload cost.
-4. **Library** — `webauthn-rs-core` 0.5.5 directly, behind a `passkeys` cargo feature. See "Library".
+4. **Library** — **`webauthn_rp` 0.3.0**, no OpenSSL, no cargo feature gate needed. See "Library". (An earlier revision of this document ruled for `webauthn-rs-core` behind a `passkeys` feature; that was reversed once a pure-Rust library was proven to meet every constraint.)
 
 **Then, in order:**
 
-5. ~~**Dependency and platform spike** (task #9).~~ **Done, 2026-07-30.** It settled the library ruling, the resident-key and backup-flag questions, the PRF platform matrix, and the two PRF-stability invariants; and it found the Public Suffix List trap in Finding 1. Its results are folded into this document rather than kept separately.
+5. ~~**Dependency and platform spike** (task #9).~~ **Done, 2026-07-30, plus a follow-up on 2026-07-31.** The first settled the resident-key and backup-flag questions, the PRF platform matrix and the two PRF-stability invariants, and found the Public Suffix List trap in Finding 1. The follow-up asked whether passkeys could be built without OpenSSL at all, proved that they can, and reversed the library ruling. Both are folded into this document rather than kept separately.
 5. **The credential-lifecycle predicate** (Finding 3's one-sentence invariant) plus the **step-up pair** (Finding 2's two inseparable changes). Server-side, test-pinned, no UI. This is the security core and must land before any enrolment endpoint exists, or there is a window in which passkey-only users can be created against an unpatched step-up gate.
 
 **Can run in parallel once 1–3 are ruled:**
@@ -603,11 +633,13 @@ this feature is not code — it is operational, and it is the two invariants rec
 
 ## What this document does not answer
 
-- ~~Whether `webauthn-rs` 0.5.5 can express `residentKey: "required"` and return backup flags unpatched.~~ **Answered.** Not through the wrapper — it emits `residentKey: "discouraged"`. Through `webauthn-rs-core`, yes, with no features. Backup flags read back correctly. See "Library".
+- ~~Whether a Rust library can express `residentKey: "required"` and return backup flags unpatched.~~ **Answered, and it decided the library.** `webauthn-rs`'s passkey helper cannot — it emits `residentKey: "discouraged"`, and reaching `required` means dropping to `webauthn-rs-core`. `webauthn_rp`'s `passkey()` helper emits `required` with no configuration. Both return backup flags correctly. See "Library".
 - ~~Whether any real authenticator produces a PRF output stable across an OS credential *migration*.~~ **Answered well enough to build on, and superseded by a better-evidenced risk.** For a synced credential the PRF secret does survive a restore (high confidence, by inference from a vendor statement about an adjacent case); for a device-bound one the whole credential is lost anyway. The sharper, *proven* risk is that an **OS update** can change PRF output — iOS 18.0–18.3 → 18.4 did exactly that and orphaned PRF-wrapped data on shipping devices with no vendor migration guidance. This is why a PRF wrap may never be the only wrap. See "PRF stability — two invariants".
 - Whether the WebKit 311099 fix has reached a **stable** Safari release, rather than only Safari Technology Preview 241 — **unverified**.
 - Whether Chrome-profile-as-authenticator still lacks PRF — carried from the original draft, **unverified**; the spike did not re-check it.
-- Whether `webauthn_rp` supports PRF, resident keys and backup flags — **unverified**. Only its landing page was read; no code was written against it. This matters only if the OpenSSL ruling is ever revisited.
+- ~~Whether `webauthn_rp` supports PRF, resident keys and backup flags.~~ **Answered by writing code against it.** Resident keys, backup flags, UV enforcement, state serialisation and a full authentication round trip all work; it is now the chosen library. PRF is not modelled by *any* Rust library and stays ours — see below.
+- Whether conditional mediation works end-to-end in a real browser — **unverified**. The spike drove a software authenticator, not a browser autofill flow.
+- Whether the PRF extension behaves as the platform matrix says on real hardware — **unverified** in the sense that neither library models `prf`; the client-side handling is ours regardless of library choice.
 - Whether the emailed-code and passkey paths should share a challenge store. Not investigated.
 
 ## Sources
@@ -634,7 +666,8 @@ by running code against `webauthn-rs` 0.5.5, not by reading its documentation.
 - [WebKit bug 311099](https://bugs.webkit.org/show_bug.cgi?id=311099) — Safari returned hmac-secret output undecrypted, breaking Safari↔Chrome round trips. **Fixed**; landed in Safari Technology Preview 241, confirmed 2026-04-09.
 - [WebKit bug 314934](https://bugs.webkit.org/show_bug.cgi?id=314934) — PRF returns `null` for biometric security keys using internal UV (YubiKey Bio). Still open, last updated 2026-05-29. Narrower than the earlier draft implied.
 - [WebKit Features for Safari 26.4](https://webkit.org/blog/17862/webkit-features-for-safari-26-4/) — 2026-03-24; PRF support extended to security keys.
-- [`webauthn_rp` on crates.io](https://crates.io/crates/webauthn_rp) — 0.3.0 (2025-04-03), MIT OR Apache-2.0; pure-Rust (`p256`, `p384`, `ed25519-dalek`, `rsa`), no OpenSSL. The named runner-up; its extension support is unverified.
+- [`webauthn_rp` on crates.io](https://crates.io/crates/webauthn_rp) — 0.3.0 (2025-04-03), MIT OR Apache-2.0; pure-Rust (`p256`, `p384`, `ed25519-dalek`, `rsa`), no OpenSSL. **The chosen library**, proven against by the follow-up spike on 2026-07-31.
+- [W3C WebAuthn Level 3 §7.1 "Registering a New Credential" and §7.2 "Verifying an Authentication Assertion"](https://www.w3.org/TR/webauthn-3/#sctn-rp-operations) — the two verification procedures whose step lists produced the ~45-obligation count behind the "why not implement it ourselves" ruling. Retrieved 2026-07-31.
 - [tauri-apps/tauri#7926 — Allow Passkeys auth support in WebView](https://github.com/tauri-apps/tauri/issues/7926) — open since 2023-09-30, `status: needs triage`.
 - [tauri-apps/tauri — FIDO2/U2F/WebAuthn discussion #6601](https://github.com/orgs/tauri-apps/discussions/6601) — "webview-based applications seem to be in the worst shape of all options right now".
 - [Tauri — Webview Versions](https://v2.tauri.app/reference/webview-versions/) — WebView2 / WKWebView / WebKitGTK per platform.
