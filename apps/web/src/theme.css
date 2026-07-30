@@ -52,6 +52,15 @@
   --radius: 4px;
   --measure: 68ch;
 
+  /* A control's vertical padding, named because two other rules do arithmetic with it and a
+     copied `0.55rem` in either of them is a drift waiting to happen: `.control--textarea`'s
+     height floor is "two lines of text plus this much chrome", and `.menu-item` takes its row
+     metric from `.control` on purpose (7bb5dcd8 — a native `<select>`'s option list is the
+     reference the hand-built menus are matched to). At `:root` rather than on `.control` so
+     `.menu-item`, which is not inside a control, can reach it. Only the block axis needs a name;
+     nothing does arithmetic with the inline one. */
+  --control-padding-block: 0.55rem;
+
   /* Motion — ONE language for every content swap, so a route change, a sub-tab change and
      a panel swap read as the same gesture instead of three invented durations.
      Two roles, deliberately:
@@ -244,19 +253,18 @@ a:focus-visible {
   grid-column: 1 / -1;
 }
 
-/* The two External Signatures cards share one deliberate rhythm. Card bodies own their padding;
-   nested stack/form helpers therefore start and end flush instead of contributing stray margins. */
+/* The two External Signatures cards share one deliberate rhythm.
+   Card bodies own their padding, and the nested stack/form helpers used to need a scoped
+   `margin-block: 0` here so they did not contribute stray margins inside it — the `<form class="form">`
+   in the second card carries the UA stylesheet's `margin-block-end: 1em`. That is now the shared
+   `:where(.panel__body, .card) > *` rule's job (see the container rhythm beside `.panel__body`),
+   which does the same thing for all 262 cards instead of these two, so the scoped rule is gone. */
 .external-signing-workflows > .panel {
   margin-block: 0;
 }
 
 .external-signing-workflows > .panel + .panel {
   margin-top: 1rem;
-}
-
-.external-signing-workflows .panel__body > .stack--tight,
-.external-signing-workflows .panel__body > .form {
-  margin-block: 0;
 }
 
 .informational-notice__actions {
@@ -682,6 +690,41 @@ a:focus-visible {
   padding: 1.25rem;
 }
 
+/* --- Container vertical rhythm (Pass 2, docs/ui-spacing.md) ----------------------------------
+   `.panel__body` and `.card` own their padding but owned no child spacing, so the gap between a
+   card's children was a property of which TAG each child happened to be: a `<p>` brought the user
+   agent's `margin-block: 1em` and looked right by accident, a `<div>` — which is every action row
+   — brought nothing and sat flush. 156 of the app's 262 `<Card>`s do not wrap their children in a
+   `.stack`/`.form`, and 68 of those have more than one child. That is one defect with many faces,
+   and it produced three separate complaints because every previous repair was aimed at whichever
+   screen was being looked at.
+
+   Two declarations, the same shape and for the same reasons as the banner fix (2a538e87), because
+   collapsing the outer edge and spacing siblings are different jobs: zero the block margins so the
+   container's own padding is the only thing setting the inset, then give consecutive children a
+   real gap. A blanket `margin: 0` would do the first and glue the children together.
+
+   1rem is not a new step. It is what every per-surface patch of this exact defect already used —
+   `.settings-notes`, `.email-card .panel__body > * + *` and `:where(.inline-warning)`'s standalone
+   margin — and it is `.form > * + *`'s own band, so a card of loose children now reads like a card
+   whose children happen to sit in a form. All three of those patches are retired by this rule.
+
+   `:where()` pins both at (0,0,0). Every existing rhythm owner outranks them at (0,1,0), so a card
+   that opts into `.stack` (1.5rem), `.stack--tight` (0.75rem) or `.form` (1rem) keeps exactly the
+   rhythm it asked for, and any caller can still override with a plain class selector — no
+   `!important`, no specificity war. It also means this rule reaches only what nothing else claims,
+   which is precisely the population that had no owner.
+
+   Direct children only: a nested helper's own children stay that helper's business. */
+:where(.panel__body, .card) > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+:where(.panel__body, .card) > * + * {
+  margin-top: 1rem;
+}
+
 /* Forms. */
 .form > * + * {
   margin-top: 1rem;
@@ -778,7 +821,7 @@ a:focus-visible {
      over a card, over the leather, and against its own fill in both themes (t35). */
   border: 1px solid var(--field-border);
   border-radius: var(--radius);
-  padding: 0.55rem 0.7rem;
+  padding: var(--control-padding-block) 0.7rem;
 }
 
 .control:focus-visible {
@@ -816,24 +859,54 @@ a:focus-visible {
   border-inline-start: 0;
 }
 
+/* A textarea's UA defaults are a monospace face and a two-row box, so it needs the body face
+   restated and a size of its own; everything else — width, fill, edge, radius, padding, focus
+   ring, disabled treatment — is `.control`'s, and must stay `.control`'s so a textarea and the
+   input beside it read as the same component.
+
+   The usual size comes from `rows`, which `TextArea` now defaults to 3 (see `ui/index.tsx`) —
+   `rows` is the right control for that because a caller overrides it by simply passing a
+   different number, with no specificity involved. `min-height` is a FLOOR, not the default, and
+   it is set at exactly two lines plus this control's own chrome: the smallest `rows` any call
+   site asks for. So it never shrinks or grows a caller that chose its own size, and it never
+   fights `TemplateBlocksEditor`'s JS auto-resize (which writes `style.height` directly) — it
+   only stops the box collapsing below two readable lines if a layout squeezes it.
+
+   Deliberately NOT `field-sizing: content`. It would be a nicer default in Chromium, but it is
+   unimplemented in Firefox and WebKit — the app ships to both through Tauri — so it would make
+   the same screen a different height per platform. It also silently disables the JS auto-resize
+   above: with the box already fitting its content, `scrollHeight` stops exceeding `clientHeight`
+   and the editor freezes at whatever height it last set. */
 .control--textarea {
   resize: vertical;
   font-family: var(--font-body);
   line-height: 1.5;
 }
 
+/* The floor, alone in a `:where()` so it is the weakest rule in the room at (0,0,0).
+   A floor that can outrank a caller is not a floor, it is a mandate — and this one would
+   otherwise TIE `.operations-code-control { min-height: 14rem }` at (0,1,0) and be decided by
+   which chunk Vite happens to emit first, which is not a thing a layout should depend on.
+
+   `lh` rather than a pixel constant so it tracks `line-height` if that ever moves, and
+   `--control-padding-block` rather than a repeated `0.55rem` so it tracks `.control`'s padding.
+   `box-sizing: border-box` is global, hence the padding and border terms. */
+:where(.control--textarea) {
+  min-height: calc(2lh + var(--control-padding-block) * 2 + 2px);
+}
+
+/* `.mono` on a control was inert: it is declared far above `.control`, both are (0,1,0), so
+   `.control`'s own `font-family` won on source order and a "monospace" textarea rendered in the
+   body serif. Measured, not assumed. Two classes to clear that tie, and font-family only —
+   `.mono`'s 0.85em would shrink the field out of step with the inputs beside it, and a control's
+   text is being typed rather than read as a token. */
+.control.mono {
+  font-family: var(--font-mono);
+}
+
 .form__actions {
   display: flex;
   gap: 0.75rem;
-}
-
-/* Email (SMTP) cards (t38): the action row and the test-send result sit as DIRECT children of
-   the card body, which — unlike a `.form` — carries no child-spacing rule, so they butted
-   straight against the rows above with no breathing room. Restore the form's own 1rem rhythm to
-   these trailing blocks so the buttons and the test message get the same gap every other
-   settings block has. Margin only, so it reads identically in light and dark. */
-.email-card .panel__body > * + * {
-  margin-top: 1rem;
 }
 
 .rowline {
@@ -4615,24 +4688,6 @@ a,
       grid-template-columns: subgrid;
     }
   }
-}
-
-/* --- Trailing notes beneath a settings card's rows (t100) ------------------------------
-   Explanatory sentences that follow the whole form rather than any one field — Aparência ›
-   Idioma ends with four of them ("o tema segue o sistema operativo…", the documents-locale
-   distinction, the sign-in-screen caveat).
-
-   They sat flush against the last control, and the reason is worth recording because it will
-   catch the next card: `.panel__body` has NO child-spacing rule, and `.field__hint` sets
-   `margin: 0` so it can sit tight under the control it explains. Both are right on their own;
-   together they mean a hint placed as a SIBLING of the form gets no space at all. The fix
-   belongs here rather than between the cards — the gap the operator sees missing is inside
-   the language card, not around it, and the card split itself (t69: per-user preference vs.
-   instance-wide settings) is doing its job. `.stack--tight` on the same element spaces the
-   notes from each other; this spaces the block from the rows above it, by the same 1rem step
-   `.form > * + *` puts between the form's own blocks. */
-.settings-notes {
-  margin-top: 1rem;
 }
 
 .settings-toggle {
@@ -9850,7 +9905,7 @@ a.btn--primary {
    carry different type sizes and two of them separate their rows while two run them
    contiguous; those are real design differences, not drift. */
 .menu-item {
-  padding: 0.55rem 0.7rem;
+  padding: var(--control-padding-block) 0.7rem;
 }
 
 /* Themed checkbox + radio — gold-on-leather boxes with a gilt fill when checked.
@@ -11598,6 +11653,18 @@ input[type='radio']:disabled {
   flex-direction: column;
   gap: 0.85rem;
 }
+
+/* `.modal__body` owns its child spacing through `gap`, so a child that also brings a margin
+   ADDS to it rather than competing in the cascade — a different mechanism from the
+   `:where(.panel__body, .card)` rhythm above, which is why that rule does not reach here.
+   Measured on a credential-test dialog before this rule, one dialog showed three different
+   gaps: 27.98px under a `<p>` intro carrying the UA's own margins, 13.6px where the child
+   zeroed its own, and 19.98px above the button row. Neutralising child margins at `:where()`
+   zero specificity leaves `gap` as the single source of the rhythm, and any child that wants
+   its own spacing can still say so with a plain class selector. */
+:where(.modal__body) > * {
+  margin-block: 0;
+}
 .modal__intro {
   font-size: 0.9rem;
   color: var(--text);
@@ -11611,11 +11678,14 @@ input[type='radio']:disabled {
   font-size: 0.85rem;
   color: var(--text-muted);
 }
+/* No `margin-top` here: `.modal__body`'s `gap` already spaces this row from what precedes it,
+   and a margin on top of a gap ADDS, which measured 19.98px against the dialog's 13.6px
+   baseline — the button row sitting further from its content than anything else in the
+   dialog. The gap owns the rhythm; this row owns only its own internal layout. */
 .modal__foot {
   display: flex;
   justify-content: flex-end;
   gap: 0.6rem;
-  margin-top: 0.4rem;
 }
 .checkline {
   display: flex;

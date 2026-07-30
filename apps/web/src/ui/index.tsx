@@ -242,10 +242,33 @@ function DateInput(props: InputHTMLAttributes<HTMLInputElement>) {
   );
 }
 
-export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+/**
+ * The multi-line control.
+ *
+ * `className` is destructured and MERGED, not spread over. It used to sit before `{...props}`, so
+ * a caller passing its own class silently replaced `control control--textarea` and got an
+ * unthemed native textarea — no border, no fill, no `width: 100%`, no focus ring. Three call sites
+ * were in that state, and a fourth had already worked around it by restating both shared classes
+ * by hand. `Input` and `Select` have always merged; this is the same shape.
+ *
+ * `rows` defaults to 3 for the same reason a button has a default size: without it the browser
+ * gives two lines, which is the smallest a textarea can be and reads as a mis-rendered input.
+ * Three is what 31 of the app's 47 explicit call sites already ask for. Any caller that passes
+ * `rows` still wins — this is a default, not a floor. The floor lives in `.control--textarea`.
+ */
+export function TextArea({
+  className,
+  rows,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   const describedBy = useDescribedBy(props['aria-describedby']);
   return (
-    <textarea className="control control--textarea" {...props} aria-describedby={describedBy} />
+    <textarea
+      className={`control control--textarea ${className ?? ''}`.trim()}
+      rows={rows ?? 3}
+      {...props}
+      aria-describedby={describedBy}
+    />
   );
 }
 

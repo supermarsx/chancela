@@ -1270,7 +1270,7 @@ export function TemplateBlocksEditor({
             <TextArea
               id={`${idPrefix}-raw`}
               aria-label={bt('templates.editor.blocks.raw.summary')}
-              className="control control--textarea mono"
+              className="mono"
               rows={16}
               spellCheck={false}
               value={value}

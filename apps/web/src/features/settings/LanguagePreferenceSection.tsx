@@ -112,9 +112,10 @@ export function LanguagePreferenceSection() {
       </div>
 
       {/* The four sentences that qualify the whole card rather than the field, grouped so they
-          are spaced off the control above them (t100 — `.field__hint` sets `margin: 0` for the
-          in-field case and `.panel__body` spaces nothing, so as siblings of the form they sat
-          flush against the select). */}
+          are spaced off the control above them. t100 gave `.settings-notes` its own `margin-top`
+          because `.panel__body` spaced nothing; the card body now owns that gap for every card
+          (`:where(.panel__body, .card) > * + *`, at the same 1rem), so the class stays only as a
+          name for the group. */}
       <div className="settings-notes stack--tight">
         {/* Only meaningful while `auto` is the stored choice: it states what the standing
             instruction currently produces WITHOUT the select pretending that is the stored value. */}

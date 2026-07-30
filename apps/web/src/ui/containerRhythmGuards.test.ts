@@ -1,28 +1,26 @@
 /**
- * Structural guards on container vertical rhythm (t89).
+ * Structural guards on container vertical rhythm (t89, Pass 2 landed).
  *
- * ## What this protects, and what it deliberately does not
+ * ## What this protects
  *
- * `.panel__body` and `.card` own padding but declare no child-spacing rule. The gap between a
- * card's children is therefore a property of which TAG each child happens to be: a `<p>` brings the
- * user agent's own `margin-block: 1em` and looks right by accident, a `<div>` — which is every
- * action row — brings nothing. 156 of the app's 262 `<Card>`s do not wrap their children in a
- * rhythm owner, and 68 of those have more than one child, so the gap is visibly wrong today.
- * See `docs/ui-spacing.md` for the full diagnosis and the numbers.
+ * `.panel__body` and `.card` own padding, and now also own their child spacing. Before Pass 2 they
+ * did not, so the gap between a card's children was a property of which TAG each child happened to
+ * be: a `<p>` brought the user agent's own `margin-block: 1em` and looked right by accident, a
+ * `<div>` — which is every action row — brought nothing. 156 of the app's 262 `<Card>`s do not wrap
+ * their children in a rhythm owner, and 68 of those have more than one child, so the gap was
+ * visibly wrong on all of them. See `docs/ui-spacing.md` for the full diagnosis and the numbers.
  *
- * Fixing that (Pass 2) is a product decision, because it moves spacing on ~156 cards at once. It
- * may not happen. **These guards are therefore written against what is true today**, and their job
- * is to stop the sprawl growing while the decision is open — because the sprawl is the recurrence
- * mechanism. Every previous repair was a per-surface patch, each one bought exactly one screen, and
- * each one outranks the eventual shared rule at higher specificity.
+ * The recurrence mechanism was the sprawl of per-surface repairs: each one bought exactly one
+ * screen, and each one outranked the shared rule at higher specificity — so a global fix would have
+ * applied everywhere EXCEPT the screens people had already complained about. Pass 2 added the
+ * shared rule AND retired every patch it supersedes; these guards keep both halves true. They
+ * assert:
  *
- * So this file does NOT assert that a container rhythm exists — that would be a guard that only
- * becomes meaningful after a decision that may not come, which is worse than no guard. It asserts:
- *
- *  1. the inventory of surface-scoped patches reaching container children is **frozen**;
- *  2. the set of distinct rhythm values is **frozen**, so nobody invents a ninth;
- *  3. the current absence of a container rhythm is stated explicitly, so landing Pass 2 is a
- *     deliberate one-line edit here rather than something that silently drifts past the guard.
+ *  1. the shared container rhythm **exists**, at `:where()` zero specificity, on both containers,
+ *     at a frozen value — deleting or rescoping it fails here;
+ *  2. the inventory of surface-scoped patches reaching container children is **frozen at empty**,
+ *     so a fifth surface patch fails at test time instead of quietly shadowing the shared rule;
+ *  3. the set of distinct rhythm values is **frozen**, so nobody invents a ninth.
  *
  * ## Why source analysis rather than a rendered assertion
  *
@@ -83,11 +81,31 @@ function parseRules(css: string): CssRule[] {
   return rules;
 }
 
+/**
+ * Split a selector list on its TOP-LEVEL commas only.
+ *
+ * A naive `split(',')` tears `:where(.panel__body, .card) > * + *` in half and hands the
+ * predicates below two selectors that appear nowhere in the sheet — which is how a zero-specificity
+ * shared rule would read as a surface patch. Depth tracking is the whole fix; the sheet's other
+ * comma-carrying functional selectors (`:where(input:not(…), textarea, …)`) were being shredded the
+ * same way and simply happened not to declare anything these predicates look at.
+ */
 function selectorList(rule: CssRule): string[] {
-  return rule.selector
-    .split(',')
-    .map((s) => s.trim().replace(/\s+/gu, ' '))
-    .filter(Boolean);
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of rule.selector) {
+    if (ch === '(' || ch === '[') depth += 1;
+    else if (ch === ')' || ch === ']') depth -= 1;
+    if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts.map((s) => s.trim().replace(/\s+/gu, ' ')).filter(Boolean);
 }
 
 /** A spacing declaration on the rule — the properties that create vertical rhythm. */
@@ -113,25 +131,42 @@ function reachesContainerChildren(selector: string): boolean {
 }
 
 /**
+ * The shared container rhythm itself — the two selectors Pass 2 added, and nothing else.
+ *
+ * Deliberately exact rather than a prefix test: `:where(.panel__body) .some-page > * + *` also
+ * starts with a zero-specificity container, but it is a surface patch wearing the shared rule's
+ * clothes, and it must fall through to {@link surfacePatches}.
+ */
+const SHARED_CONTAINER_RHYTHM =
+  /^:where\(\s*\.(?:panel__body|card)(?:\s*,\s*\.(?:panel__body|card))*\s*\)\s*>\s*\*(?:\s*\+\s*\*)?$/u;
+
+/** The container rhythm's step. One of {@link KNOWN_RHYTHM_VALUES}, and `.form > * + *`'s band. */
+const CONTAINER_RHYTHM_VALUE = '1rem';
+
+function isSharedContainerRhythm(selector: string): boolean {
+  return SHARED_CONTAINER_RHYTHM.test(selector);
+}
+
+/**
  * Every surface-scoped rule that gives (or removes) spacing on a container's children.
  *
- * This is the per-surface-patch family. It is FROZEN: the three below are the ones that exist, and
- * a fourth means someone has repaired one screen and left the other 155.
+ * This is the per-surface-patch family, and it is FROZEN AT EMPTY. Pass 2 retired all three that
+ * existed — `.email-card .panel__body > * + *` and the two
+ * `.external-signing-workflows .panel__body > …` resets — because the shared rule does the same
+ * job for all 262 cards. A new entry means someone has repaired one screen and left the other 155,
+ * at a specificity that also shadows the shared rule on precisely that screen.
  */
-const KNOWN_SURFACE_PATCHES = [
-  // Adds the rhythm `.panel__body` does not provide — for one card.
-  '.email-card .panel__body > * + *',
-  // Removes stray margins from nested helpers — for one page.
-  '.external-signing-workflows .panel__body > .stack--tight',
-  '.external-signing-workflows .panel__body > .form',
-] as const;
+const KNOWN_SURFACE_PATCHES: readonly string[] = [];
 
 function surfacePatches(rules: CssRule[]): string[] {
   return rules
     .flatMap((rule) =>
-      selectorList(rule)
-        .filter((selector) => reachesContainerChildren(selector) && declaresSpacing(rule.body))
-        .map((selector) => selector),
+      selectorList(rule).filter(
+        (selector) =>
+          reachesContainerChildren(selector) &&
+          !isSharedContainerRhythm(selector) &&
+          declaresSpacing(rule.body),
+      ),
     )
     .sort();
 }
@@ -239,11 +274,11 @@ describe('container vertical rhythm — structural guards', () => {
     expect(
       surfacePatches(RULES),
       'A surface-scoped rule that spaces a `.panel__body`/`.card`’s children repairs exactly one ' +
-        'screen and leaves the other 155, and at its own specificity it will also outrank the ' +
-        'shared rule if one is ever added — so the eventual global fix would apply everywhere ' +
-        'EXCEPT the screens people already complained about. That is the mechanism behind three ' +
-        'separate spacing complaints; see docs/ui-spacing.md. If a card needs breathing room, ' +
-        'wrap its children in `.stack`/`.stack--tight`, or make the case for Pass 2.',
+        'screen and leaves the other 155, and at its own specificity it also outranks the shared ' +
+        'rule — so the global fix would apply everywhere EXCEPT the screens people already ' +
+        'complained about. That is the mechanism behind three separate spacing complaints; see ' +
+        'docs/ui-spacing.md. If a card needs breathing room, wrap its children in ' +
+        '`.stack`/`.stack--tight`, or change the shared rule for everyone.',
     ).toEqual([...KNOWN_SURFACE_PATCHES].sort());
   });
 
@@ -265,22 +300,44 @@ describe('container vertical rhythm — structural guards', () => {
     ).toEqual([]);
   });
 
-  it('states that no container rhythm exists yet, so Pass 2 cannot land silently', () => {
-    // A characterisation assertion, not an endorsement: it records today's state so the guard is
-    // meaningful now rather than only after a decision that may never come. When Pass 2 lands,
-    // THIS is the one line that changes — flip it to expect the shared rule, and the two guards
-    // above keep doing their job unchanged.
-    const containerRhythm = rhythmOwners(RULES).filter((o) =>
-      /^:where\(\.panel__body\)|^\.panel__body\b|^:where\(\.card\)|^\.card\b/u.test(o.selector),
-    );
+  it('keeps the shared container rhythm, on both containers, at the frozen step', () => {
+    const owner = rhythmOwners(RULES).filter((o) => isSharedContainerRhythm(o.selector));
     expect(
-      containerRhythm,
-      'A container rhythm rule has appeared. That is Pass 2 (see docs/ui-spacing.md) and it is a ' +
-        'product decision, not a drive-by: it moves spacing on ~156 cards. If it was approved, ' +
-        'update this assertion to require the rule and retire the per-surface patches in ' +
-        'KNOWN_SURFACE_PATCHES — they shadow it at higher specificity and would keep the ' +
-        'complained-about screens on the old spacing.',
-    ).toEqual([]);
+      owner.map((o) => o.selector),
+      'The shared container rhythm is gone, or no longer covers both containers. It is the whole ' +
+        'of Pass 2 (docs/ui-spacing.md): 156 of 262 cards do not wrap their children in a ' +
+        '`.stack`/`.form`, so without it the gap between a card’s children is decided by which ' +
+        'TAG each child happens to be. Do not replace it with a per-surface patch.',
+    ).toEqual([':where(.panel__body, .card) > * + *']);
+    expect(
+      owner[0]?.value,
+      'The container rhythm’s step moved. 1rem is the value every per-surface patch of this same ' +
+        'defect already used (`.settings-notes`, `.email-card .panel__body > * + *`, ' +
+        '`:where(.inline-warning)`) and it is `.form > * + *`’s band, so a card of loose children ' +
+        'reads like one whose children sit in a form.',
+    ).toBe(CONTAINER_RHYTHM_VALUE);
+  });
+
+  it('keeps the companion rule that collapses the container’s outer edge', () => {
+    // Two declarations, because collapsing the outer edge and spacing siblings are different jobs:
+    // without this one a `<p>` first child lands its UA `margin-block: 1em` INSIDE the container's
+    // padding and blows the box out — the banner defect (2a538e87), one level up.
+    const collapse = RULES.filter((rule) =>
+      selectorList(rule).some((s) => isSharedContainerRhythm(s) && !/\+/u.test(s)),
+    );
+    expect(collapse.map((r) => selectorList(r))).toEqual([[':where(.panel__body, .card) > *']]);
+    expect(collapse[0]?.body).toMatch(/margin-top:\s*0;/u);
+    expect(collapse[0]?.body).toMatch(/margin-bottom:\s*0;/u);
+  });
+
+  it('keeps every rhythm owner a card can opt into above the shared rule', () => {
+    // `:where()` is the entire override story, and it only works while the opt-in helpers stay at
+    // (0,1,0). A card that asks for `.stack` must keep 1.5rem, not silently collapse to the shared
+    // 1rem — so these three have to remain single-class rules with their own steps.
+    const owners = new Map(rhythmOwners(RULES).map((o) => [o.selector, o.value]));
+    expect(owners.get('.stack > * + *')).toBe('1.5rem');
+    expect(owners.get('.stack--tight > * + *')).toBe('0.75rem');
+    expect(owners.get('.form > * + *')).toBe('1rem');
   });
 });
 
@@ -321,14 +378,76 @@ describe('container vertical rhythm — the guards go red without the fix', () =
     expect(invented).toEqual(['1.37rem']);
   });
 
-  it('reports a container rhythm appearing, which is Pass 2 landing', () => {
-    const passTwo = parseRules(
-      `${THEME}\n:where(.panel__body) > * + * {\n  margin-top: 1rem;\n}\n`,
+  /**
+   * The real sheet with the fix taken back out, one way at a time.
+   *
+   * Comments go first, deliberately: the sheet documents the shared rule by quoting its selector,
+   * and a `replace` over the raw text would edit the prose instead of the rule and prove nothing.
+   * Each edit asserts it actually changed something, so a selector that drifts turns these red
+   * rather than silently reverting them to no-ops.
+   */
+  function withoutFix(edit: (css: string) => string): CssRule[] {
+    const bare = THEME.replace(/\/\*[\s\S]*?\*\//gu, '');
+    const edited = edit(bare);
+    expect(edited).not.toBe(bare);
+    return parseRules(edited);
+  }
+
+  it('reports the shared container rhythm being deleted', () => {
+    const reverted = withoutFix((css) =>
+      css.replace(/:where\(\.panel__body, \.card\) > \* \+ \* \{[^}]*\}/u, ''),
     );
-    const containerRhythm = passTwo
-      .flatMap(selectorList)
-      .filter((s) => /^:where\(\.panel__body\)/u.test(s) && /\*\s*\+\s*\*/u.test(s));
-    expect(containerRhythm).toHaveLength(1);
+    expect(rhythmOwners(reverted).filter((o) => isSharedContainerRhythm(o.selector))).toEqual([]);
+  });
+
+  it('reports the shared container rhythm being rescoped away from `.card`', () => {
+    const narrowed = withoutFix((css) =>
+      css.replace(/:where\(\.panel__body, \.card\)/gu, ':where(.panel__body)'),
+    );
+    const owner = rhythmOwners(narrowed).filter((o) => isSharedContainerRhythm(o.selector));
+    expect(owner.map((o) => o.selector)).not.toEqual([':where(.panel__body, .card) > * + *']);
+  });
+
+  it('reports the outer-edge companion being deleted', () => {
+    const reverted = withoutFix((css) =>
+      css.replace(/:where\(\.panel__body, \.card\) > \* \{[^}]*\}/u, ''),
+    );
+    const collapse = reverted.filter((rule) =>
+      selectorList(rule).some((s) => isSharedContainerRhythm(s) && !/\+/u.test(s)),
+    );
+    expect(collapse).toEqual([]);
+  });
+
+  it('reports the shared rule losing its `:where()`, which would outrank `.stack`', () => {
+    // (0,1,0) instead of (0,0,0) TIES `.stack > * + *` and wins on source order, so every card
+    // that opted into a rhythm would silently collapse to the shared step. It must read as a
+    // surface patch, not as the shared rule.
+    const specific = withoutFix((css) =>
+      css.replace(/:where\(\.panel__body, \.card\) > \* \+ \*/u, '.panel__body > * + *'),
+    );
+    expect(surfacePatches(specific)).toContain('.panel__body > * + *');
+    expect(surfacePatches(specific)).not.toEqual([...KNOWN_SURFACE_PATCHES].sort());
+  });
+
+  it('does not mistake a surface patch dressed in `:where()` for the shared rule', () => {
+    expect(isSharedContainerRhythm(':where(.panel__body, .card) > *')).toBe(true);
+    expect(isSharedContainerRhythm(':where(.panel__body, .card) > * + *')).toBe(true);
+    expect(isSharedContainerRhythm(':where(.panel__body) .some-page > * + *')).toBe(false);
+    expect(isSharedContainerRhythm(':where(.panel__body) > .some-block + *')).toBe(false);
+    expect(isSharedContainerRhythm('.some-page :where(.panel__body) > * + *')).toBe(false);
+  });
+
+  it('splits a selector list on top-level commas only', () => {
+    // A naive `split(',')` yields `:where(.panel__body` and `.card) > * + *`, neither of which is
+    // the shared rule — so the shared rule reads as two surface patches and the guard inverts.
+    expect(selectorList({ selector: ':where(.panel__body, .card) > * + *', body: '' })).toEqual([
+      ':where(.panel__body, .card) > * + *',
+    ]);
+    expect(selectorList({ selector: '.a, .b', body: '' })).toEqual(['.a', '.b']);
+    expect(selectorList({ selector: 'a[href*=","], .b', body: '' })).toEqual([
+      'a[href*=","]',
+      '.b',
+    ]);
   });
 
   it('reports an empty sweep rather than passing over nothing', () => {

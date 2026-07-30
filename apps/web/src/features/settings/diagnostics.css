@@ -29,10 +29,12 @@
   word-break: break-word;
 }
 
-.diagnostics-card {
-  /* Section cards stack with the page rhythm; nothing bespoke. */
-  margin: 0;
-}
+/* The section cards carry no spacing rule of their own on purpose: `.diagnostics-report` is a
+   `.stack`, so the 1.5rem between them is the page's own rhythm rather than a diagnostics
+   invention. It used to be `.diagnostics-card { margin: 0 }` — written as "stack with the page
+   rhythm; nothing bespoke", but the report container was a bare `<div>` with no rhythm to
+   inherit, so the margin reset was the only rule in play and the cards rendered edge to edge
+   with no gap at all. See `docs/ui-spacing.md`. */
 
 @media print {
   body.printing-diagnostics {

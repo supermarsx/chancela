@@ -245,9 +245,37 @@ mis-parses. If you revise these numbers, do it the same way, and state which com
 - Menu `line-height` and inter-row gaps are intentional differences and stay.
 - A full spacing-token scale is **declined** as part of this work.
 
+- **Option B landed (Pass 2).** `:where(.panel__body, .card) > *` zeroes child margins and
+  `> * + *` sets a 1rem rhythm — the value all three retired patches already used, and `.form`'s
+  own band, so a card of loose children now reads like one whose children sit in a form. The
+  guard flipped from asserting the rhythm's *absence* to asserting the invariant, with
+  `KNOWN_SURFACE_PATCHES` frozen at empty so a fifth surface patch fails at test time.
+- **`.modal__body` is a separate mechanism and Pass 2 does not reach it.** It owns its child
+  spacing through `gap`, so a child's margin *adds* rather than competing in the cascade. One
+  dialog measured three different gaps — 27.98px under a `<p>` intro carrying UA margins, 13.6px
+  where the child zeroed its own, 19.98px above the button row from `.modal__foot`'s
+  `margin-top: 0.4rem`. Child margins are now neutralised at `:where()` and that `margin-top` is
+  gone; `gap` is the single source.
+
+**Corrections to this document, found by measuring rather than reading specificity:**
+
+- **`.data-status-section > * + *` must NOT be retired.** This document previously listed it as
+  superseded. It is not: its children are *grandchildren* of `.panel__body`, so the shared rule
+  cannot reach them, and its 0.8rem is a deliberately tighter nested band. Retiring it collapses
+  those sections to zero.
+- **`.diagnostics-card { margin: 0 }` had the same shape** and was measured at zero gap with
+  borders touching. Its children are likewise grandchildren; the container now uses `stack` and
+  the blocking rule is gone.
+- Two in-repo comments (t100's and ff0a5f6c's) assert that `.field__hint` carries spacing between
+  siblings. It does not — `.field__hint { margin: 0 }` ties `.stack--tight > * + *` at (0,1,0)
+  and wins on source order, so consecutive hints render at 0px. Both comments are wrong.
+
 **Awaiting the product owner:**
 
-- **Does `.panel__body`/`.card` get a real child rhythm (Option B)?** This is the fix for the
-  paragraph-to-actions complaint and for the 68 visibly-affected cards. It moves spacing on ~156
-  cards in one change. The alternative is a fourth report of the same class of defect, since each
-  per-surface patch has so far bought exactly one surface.
+- **Pass 3 — `.field__hint`, with a named conflict.** Pinning it to `:where()` would fix the
+  0px-between-hints defect above, but would also loosen ff0a5f6c's preservation-package row,
+  whose tightness under its Toggle is deliberate. A third patch already exists in that family
+  (`.signing-evidence .field__hint`). Needs a decision, not a patch.
+- **Placeholder contrast.** `.control::placeholder` measures `rgb(117,117,117)` — roughly 4.1:1
+  in light and 3.3:1 in dark, under the 4.5:1 minimum. Identical on inputs and textareas, so it
+  is a `.control`-wide accessibility decision rather than a per-surface defect.

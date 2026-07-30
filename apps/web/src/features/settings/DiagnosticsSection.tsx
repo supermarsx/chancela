@@ -330,8 +330,12 @@ export function DiagnosticsSection() {
       </Card>
 
       {/* The print-isolated subtree. It also carries the generated-at stamp as ordinary text so a
-          printed sheet is self-describing without the screen chrome around it. */}
-      <div className={REPORT_CLASS} data-generated-at={report.generatedAt}>
+          printed sheet is self-describing without the screen chrome around it.
+
+          `stack` because the section cards need a gap between them and nothing else supplies one:
+          they are grandchildren of the surrounding card body, so the container rhythm does not
+          reach them, and without an owner here they render edge to edge. */}
+      <div className={`stack ${REPORT_CLASS}`} data-generated-at={report.generatedAt}>
         {report.sections.map((section) => (
           <DiagnosticsSectionCard key={section.id} section={section} />
         ))}
