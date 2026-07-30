@@ -65,9 +65,23 @@ preload, or external deployment has been validated.
 - **HTTP rate limiting** - the running server enables an in-memory per-client-IP
   token bucket by default (`CHANCELA_RATE_LIMIT_ENABLED`,
   `CHANCELA_RATE_LIMIT_PER_SECOND`, `CHANCELA_RATE_LIMIT_BURST`). Health,
-  readiness, and metrics probes are exempt. Trusting `X-Forwarded-For` /
-  `X-Real-IP` is opt-in through `CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR` and
-  should be used only behind a trusted reverse proxy.
+  readiness, and metrics probes are exempt.
+- **Client address resolution** - `CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR`
+  (default `false`) is the deployment's statement that a trusted reverse proxy
+  sits in front. It governs **every** client address the app resolves, not only
+  the rate-limit bucket: the address recorded against a session and shown in the
+  active sign-ins list comes from the same resolution. Off, the app uses the TCP
+  peer it accepted and never reads the forwarding headers at all. On, it prefers
+  `X-Real-IP`, then the **right-most** `X-Forwarded-For` entry — the address the
+  trusted proxy itself observed. The left-most entry is whatever the caller put
+  in the header before the request arrived, so it is never used; an entry that
+  does not parse falls back to the TCP peer rather than scanning left into
+  client-supplied values. `Forwarded` (RFC 7239) is not consulted. Set this only
+  when a proxy really is in front and really does set these headers: with no
+  such proxy it lets any caller choose the address recorded against their own
+  session. A session address that came from a header is marked in the sign-ins
+  list, so an operator can tell an address the server observed from one it was
+  told.
 - **Session lifetime** - `CHANCELA_SESSION_MAX_LIFETIME` caps the absolute
   wall-clock age of a session on top of the existing sliding idle expiry.
 

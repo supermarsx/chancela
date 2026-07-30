@@ -602,6 +602,34 @@ acting user's stored verifier. A valid session alone is never enough (failure �
 These are the routes annotated `+ step-up`: book start-over, ledger reanchor/restore, data reset,
 data start-over. RBAC gates *who*; step-up re-proves *the human at the keyboard*.
 
+**The exemption is a membership test, not a field test.** An acting user who holds *no credential of
+any kind* passes on their session alone — a valid self session is the strongest proof they can
+offer, and demanding more would lock out a legacy no-hash operator (t69). "No credential of any
+kind" is resolved in `credentials.rs` from per-kind declarations on `CredentialKind`, not from the
+two hash fields: a credential that can start a session but is not named by the exemption would let
+its holder pass every `ConfirmWithReauth` gate on the session that credential just minted. Each kind
+declares whether it counts toward step-up, whether it can start a session, and whether it can
+recover the account; all three are exhaustive matches with no fallback arm, and a `const` assertion
+refuses a build in which a session-capable kind does not count. TOTP is legitimately outside because
+it cannot start a session.
+
+The same module carries the **account-lifecycle invariant**: after an operation that removes a
+credential, the account must retain at least one credential that can start a session; if what was
+removed could start one, at least one that can recover it; and — where an attestation key still
+exists — at least one non-PRF wrap of that key. It is a wall, not a lockout: the operation is
+refused, nothing changes, and the refusal names what the account would have been left holding.
+`chancela_authz::last_owner_guard` does not cover this; it guards role holding, not sign-in ability.
+
+The third clause is a **separate declaration** (`wrap_role`) from the second (`recovery_role`), and
+the separation is the point. A recovery-phrase reset holds no old password, so it cannot re-wrap the
+attestation scalar — it retires the key. The phrase therefore recovers the *account* and contributes
+nothing to key custody, and only the password wrap satisfies it: a WebAuthn PRF wrap is additional,
+never sufficient, because an OS update can change PRF output (iOS 18.0–18.3 → 18.4 did, orphaning
+PRF-wrapped data on shipping devices). The practical consequence is that **the password may not be
+removed while an attestation key exists**, whatever else the account holds — "passwordless" means no
+password at sign-in, never no password wrap. A `const` assertion additionally refuses a build in
+which no credential kind satisfies key custody, since that would freeze every account holding a key.
+
 ---
 
 ## 6. Integration surface
