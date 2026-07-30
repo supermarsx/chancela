@@ -103,12 +103,34 @@ function parseRules(css: string): CssRule[] {
   return rules;
 }
 
-/** One comma-separated selector at a time — `a, b { … }` is two rules wearing one coat. */
+/**
+ * One comma-separated selector at a time — `a, b { … }` is two rules wearing one coat.
+ *
+ * Split on TOP-LEVEL commas only. A naive `split(',')` tears a functional selector in half:
+ * `:where(.field, .signin__form) > :where(.inline-warning, .table-wrap)` becomes four fragments,
+ * none of which is a real selector, and `:where(.signin__form ) > :where(.inline-warning` then
+ * reads to {@link surfaceScopedOffences} as a page-scoped patch reaching the banner — a false
+ * positive on the shared, zero-specificity rule this file exists to protect. The sheet had no
+ * comma-carrying banner selector until the gap-container neutraliser, which is why the naive
+ * version survived this long; `containerRhythmGuards.test.ts` hit the identical bug and its note
+ * is the same. Depth tracking is the whole fix.
+ */
 function selectorList(rule: CssRule): string[] {
-  return rule.selector
-    .split(',')
-    .map((s) => s.trim().replace(/\s+/gu, ' '))
-    .filter(Boolean);
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const ch of rule.selector) {
+    if (ch === '(' || ch === '[') depth += 1;
+    else if (ch === ')' || ch === ']') depth -= 1;
+    if (ch === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += ch;
+  }
+  parts.push(current);
+  return parts.map((s) => s.trim().replace(/\s+/gu, ' ')).filter(Boolean);
 }
 
 function rulesFor(rules: CssRule[], selector: string): CssRule[] {
@@ -325,6 +347,23 @@ describe('inline banner margins — the guards go red without the fix', () => {
     // would push people towards `!important` instead of towards the shared rule.
     expect(surfaceScopedOffences(parseRules(THEME))).toEqual([]);
     expect(rulesFor(RULES, '.inline-warning__title')[0]?.body).toMatch(/margin:/u);
+  });
+
+  it('splits a selector list on top-level commas only', () => {
+    // A naive `split(',')` shreds the gap-container neutraliser into fragments, and the fragment
+    // `:where(.signin__form ) > :where(.inline-warning` then reads as a page-scoped patch reaching
+    // the banner — the guard inverts and fails on the very rule it is meant to protect.
+    const neutraliser = ':where(.field, .signin__form) > :where(.inline-warning, .table-wrap) + *';
+    expect(selectorList({ selector: neutraliser, body: '' })).toEqual([neutraliser]);
+    expect(selectorList({ selector: '.a, .b', body: '' })).toEqual(['.a', '.b']);
+    expect(selectorList({ selector: 'a[href*=","], .b', body: '' })).toEqual([
+      'a[href*=","]',
+      '.b',
+    ]);
+    // …and the real sheet's own multi-class banner rule survives the walk intact.
+    expect(
+      RULES.flatMap((r) => selectorList(r)).filter((s) => /^:where\([^)]*,/u.test(s)).length,
+    ).toBeGreaterThan(0);
   });
 
   it('reports a hand-rolled banner that spells the class names itself', () => {

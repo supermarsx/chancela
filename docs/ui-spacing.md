@@ -3,7 +3,12 @@
 > **Status.** All three reported defects are **fixed and guarded** (`2a538e87`, `7bb5dcd8`,
 > `28050209`). Pass 2 — the container rhythm, blast radius ~156 cards — was approved by the product
 > owner and landed in `28050209`, together with a fourth surface the same session turned up: modal
-> bodies. What remains open is **Pass 3**, listed under
+> bodies. **Pass 4** then answered a fourth complaint, that tables and banners are "glued to
+> everything or anything that comes next and before": both primitives now own their outer edge —
+> see the "Tables and banners" section under [What was fixed](#what-was-fixed). (Not an anchor
+> link: that heading's em dash slugifies differently under mkdocs and GitHub, and
+> `mkdocs build --strict` fails on the mismatch.) What remains open is
+> **Pass 3**, listed under
 > [What is decided](#what-is-decided-and-what-is-still-open).
 >
 > Component and rule counts below were measured against the tree at **`7e09cf83`** by parsing the
@@ -214,6 +219,173 @@ One ordering dependency is load-bearing and is pinned by a test: the reset and
 `:where(.inline-warning)` are **both** (0,0,0), so which wins is decided by source order alone. The
 reset must stay below the banner primitive, or `InlineWarning`s in dialogs silently regain 1rem.
 
+### Tables and banners — the outer edge (Pass 4)
+
+Reported globally, in one sentence: *"table and banners with alerts dont have global neat margins
+and such theyre glued to everything or anything that comes next and before."*
+
+**This is the same defect one level out.** Pass 2 gave containers a rhythm over their *direct
+children*. These two primitives are usually **not** direct children — they sit inside a plain
+`<div>`, a bare `<section>`, a `<details>`, or a one-off surface class — so the shared rule never
+reached them, and neither primitive owned its own outer edge:
+
+- **`.table-wrap` declared no margin at all.** A table's entire spacing was borrowed from whichever
+  container happened to hold it, and only when it was that container's direct child.
+- **`:where(.inline-warning)` declared `margin-top` and nothing for its bottom edge.** A banner's
+  gap to what *follows* it was always somebody else's `margin-top` — which, when the next sibling
+  is a `<div>`, is zero. Measured `margin-bottom: 0px` on every one of 22 fixtures.
+
+Measured in Chromium against the real sheet, light and dark identical throughout (it is a
+margin-only change). The zeroes are the complaint:
+
+| context | above → below, before | after |
+|---|---|---|
+| table then a `<div>` action row, bare `<section>` | 17 / **0** | 17 / **16** |
+| banner then a `<div>` action row, plain `<div>` | 17 / **0** | 17 / **16** |
+| table then `EmptyState`, plain `<div>` | **0** | **16** |
+| `<details>` summary then table | **0** / 17 | **16** / 16 |
+| table in a plain `<div>` or a bespoke class | 17 / 17 | 17 / 16 |
+| banner in a `<td>` | 16 / 15.19 | 16 / 16 |
+
+Unchanged, and each one deliberately: a table direct-child of `.panel__body` (16/16), `.stack`
+(24/24), `.stack--tight` (17/12), `.form` (17/16), `.settings-rows` (31.39/14.39),
+`.data-status-section` (12.8), the first-child and only-child cases (flush at the container's 20px
+padding), all eight dialogs (13.59px), and the `.stack--tight` inside a table cell.
+
+**The fix, at the primitives, at `:where()` zero specificity:**
+
+```css
+:where(.table-wrap)              { margin-top: 1rem; }   /* beside the table primitive   */
+:where(.table-wrap:first-child)  { margin-top: 0; }
+:where(.inline-warning, .table-wrap) + * { margin-top: 1rem; }   /* the bottom edge */
+```
+
+**The bottom edge is the next sibling's `margin-top`, not a `margin-bottom`, and that is the whole
+design.** Adjacent siblings' block margins **collapse to the max**, and collapsing is a layout rule
+that never consults specificity. A `margin-bottom: 1rem` on the primitive would sit uncontested —
+nothing in the sheet sets `margin-bottom` on these boxes — and beat every container band tighter
+than 1rem: `.stack--tight`'s 0.75rem under all 62 banners and tables it holds, and
+`.data-status-section`'s deliberately tighter 0.8rem. `:where()` would not save it, because the two
+rules are not on the same element. Setting the **next sibling's** `margin-top` puts the rule on the
+same element and property a container rhythm sets, where `.stack--tight > * + *` (0,1,0) beats
+(0,0,0) outright. Verified: `.stack--tight` measures 12px before and after.
+
+**Gap containers, again — and this time there are six.** `:where(A) + *` puts a margin on a flex or
+grid item, where it *adds* to the `gap` rather than competing. One rule beside the primitives
+neutralises both edges for the six gap containers that hold one, `.modal__body` excepted (its own
+`> *` reset is further down the sheet, equally (0,0,0), and already wins on source order):
+
+```css
+:where(.chronology-analytics, .field, .onboarding__body, .pdf-validator-report,
+       .signin__form, .signing-provider-list)
+  > :where(.inline-warning, .table-wrap),
+:where(…same…) > :where(.inline-warning, .table-wrap) + * { margin-top: revert; }
+```
+
+Two things about that rule are load-bearing and were both found by measuring:
+
+- **`revert`, not `0`.** `margin-top: 0` is an author declaration and so also beats the *user
+  agent's*. Measured regression when it was tried: a `<p class="signing-provider-list__note">`
+  after a banner collapsed 27.39px → 10.39px, because its own UA `margin-block: 1em` was zeroed
+  along with ours. `revert` undoes only the author layer.
+- **`.chronology-analytics` was found by the guard, not by hand.** A by-hand sweep of `<Table>` and
+  `<InlineWarning>` call sites missed it, because its table is hand-rolled `.table-wrap` markup
+  rather than the component. Only the tree walk saw it. Without the neutraliser it measured
+  12.8px → 28.8px.
+
+**Side effect, and it is an improvement rather than a regression, but it is a visible change on
+screens nobody complained about.** Neutralising the *primitive's own* margin in those containers
+also removes a **pre-existing** double-gap that
+[What measurement changed](#what-measurement-changed-that-reading-the-css-did-not) item 3 predicted
+and nobody had acted on. Each is exactly −16px, the banner's margin no longer adding to the gap:
+
+| container | gap | before | after |
+|---|---|---|---|
+| `.pdf-validator-report` | 1rem | 49px | 33px |
+| `.signin__form` | 0.9rem | 47.5px | 31.66px |
+| `.signing-provider-list` | 0.65rem | 43.39px | 27.39px |
+| `.onboarding__body` | 0.9rem | 30.39px | 14.39px |
+| `.field` | 0.35rem | 21.59px | 5.59px |
+
+`.field`'s 5.59px is the tightest and the one to look at first: it is the field's own
+label→control band, and the banner below it already sat at 5.59px, so the box is now symmetric
+where it was 21.59 above / 5.59 below. Two call sites (`ServerEnvSection`, `AtaEditorPage`).
+
+**Retired: nothing, and one thing deliberately kept.** There was nothing to supersede — no rule in
+the sheet gave either primitive a block margin, and no rule spaced a sibling of one. The single
+candidate is **`.data-status-table { margin-top: 0.1rem }`** (8 tables, class passed to `<Table>`,
+so it lands on `.table-wrap` at (0,1,0) and outranks the shared rule). It is **kept**, by this
+document's own precedent: it is not a repair of a missing gap but a deliberate *tightening* that
+pins each storage table to its section heading — the same shape as `.data-status-section > * + *`,
+which this document already had to correct itself about. Measured unchanged at 1.59px, against
+12.8px without it. It is registered by name in the guard so the next one is a decision, not a drift.
+
+### Wide panes — the horizontal axis (Pass 5)
+
+Two more reports, minutes apart, and they are one defect again:
+
+> *"the search indexer controls in admin needs to be a bit less wide, make it normal wide."*
+
+> *"the preview info tab shouldn't be as wide as well."*
+
+**`WIDE_SUBSECTIONS` (`SettingsPage.tsx`) already had the principle right and could only apply it
+at whole-pane granularity.** Five panes are lifted past the 1080px reading measure because each
+holds a six- or seven-column grid that scrolls sideways at the normal measure. The same comment
+records the counter-case: sibling panes were kept **out** of the list because widening hurt them —
+*"Política de assinatura is label/control rows (measured 78ch → 126ch when widened)"*. A pane
+holding **both** a grid and label/control rows had to choose, and choosing width dragged the prose
+out with it.
+
+Measured at 1920px (`.app` 1080px normal → 1472px wide), against the identical markup on a
+normal-width page. All five panes had it, not the two reported:
+
+| pane | prose | control row | banner | grid |
+|---|---|---|---|---|
+| normal-page baseline | 117–122ch | 90ch | 94ch | 90ch |
+| `operations:search` | 171 → **122** | 128 → **94** | — | 128 → 128 |
+| `operations:template-preview` | 41 → 41 | — | 132 → **94** | 132 → 132 |
+| `signing:tsl` | 166 → **122** | 128 → 128 † | — | 128 → 128 |
+| `signing:tsa` | 166 → **122** | 128 → 128 † | — | 128 → 128 |
+| `signing:providers` | 171 → **122** | 128 → **94** | — | 128 → 128 |
+
+Every grid keeps its full width; every capped figure lands on the normal-page measure. Three rules
+beside `.app:has(.wide-page)`, all at `:where()` zero specificity:
+
+```css
+:where(.wide-page) :where(.field, .field__hint, .field__error, .inline-warning, p),
+:where(.wide-page) :where(.settings-rows):not(:has(.table-wrap)) {
+  max-inline-size: calc(var(--app-measure) - 2 * var(--app-gutter));
+}
+:where(.wide-page) :where(.control, .input-reset) {
+  max-inline-size: min(100%, calc(var(--app-measure) - 2 * var(--app-gutter)));
+}
+```
+
+**The cap is not a chosen number.** It is `calc(var(--app-measure) - 2 * var(--app-gutter))` — the
+expression `.page-header` is already pinned to — so the target is by construction *the width this
+content has on an ordinary settings tab*, and it moves if the measure ever does. Below the reading
+measure the rules are inert (verified at 900px: nothing moves).
+
+**† The two panes that could not be fully fixed, and why.** `.settings-rows` is `display: grid`
+and `.settings-rows > .field` is `grid-template-columns: subgrid`. **A subgrid item takes its
+tracks from its parent**, so a per-item cap computes and does not bind — measured `max-width:
+984px` in the computed style against a `1334px` used width. Only the container can constrain a
+subgrid row. On `signing:tsl` and `signing:tsa` that same container also holds the seven-column
+table as a `grid-column: 1 / -1` child, so capping it would shrink the table back to the measure
+it scrolled sideways at — trading this defect for the one `WIDE_SUBSECTIONS` was opened to fix.
+Hence `:not(:has(.table-wrap))`, and hence those two rows staying at 128ch on purpose. Their
+*visible* defect is fixed anyway by the third rule: the URL input goes 117ch → 96ch, and their
+prose 166ch → 122ch. Fixing the row box too would mean moving the table out of that grid in
+`SettingsPage.tsx`.
+
+**Not capped, each checked before being left out:** `.table-wrap` and its grids;
+`.template-preview-samples__tabs`, whose subnav rail is full-width on purpose so the editor tabs
+align with the grid's left edge; and `.section-head`, a header bar *for* the grid below it whose
+button aligns with the grid's right edge and whose own prose is shrink-to-fit at 16ch.
+
+**No change to `WIDE_SUBSECTIONS` was needed**, which was the point — removing an entry would have
+restored the sideways-scrolling table, and the list lives in a file another lane is restructuring.
+
 ## Options considered for the remaining defect
 
 **A — keep patching per surface.** What the codebase has done four times. Each patch buys exactly
@@ -260,7 +432,9 @@ See Pass 3.
 **3. The banner primitive's margin reaches into gap containers.**
 `:where(.inline-warning) { margin-top: 1rem }` is invisible in a card (a plain margin among
 margins) but **adds** to a flex `gap`, which is how a dialog's banner sat 29.59px from its
-neighbour. Zero specificity does not mean zero effect.
+neighbour. Zero specificity does not mean zero effect. **Pass 4 closed this** beyond dialogs: five
+more gap containers were measured double-spacing the same way (49 / 47.5 / 43.39 / 30.39 /
+21.59px) and now neutralise the primitive's own margin as well as its successor's.
 
 ## Pass 3 — the remaining work, in priority order
 
@@ -293,6 +467,24 @@ Two structural test files, both AST/source-level:
   a gap container a margin adds rather than competes. The modal predicates work from the AST, since
   the offending rules (`.modal__foot { margin-top }`) never mention `.modal__body` at all. Verified
   non-vacuous against the pre-fix commit: it reports `.modal__foot` there and nothing now.
+  **Pass 4 added the boxed-primitive family** to the same file: that both primitives own an outer
+  rhythm at `:where()` at the frozen step; that **neither declares a block-END margin**, the one
+  invariant here that cannot be expressed as specificity; that the gap containers holding a
+  primitive are exactly the frozen six and each is neutralised on **both** edges; the source
+  ordering against the modal reset; and the inventory of classes passed to `<Table>` that carry a
+  margin, frozen at `.data-status-table`. The population is walked from the component tree rather
+  than grepped for class names — which is how `.chronology-analytics` was found — behind a
+  non-vacuity bound of 200 primitives and 30 host classes.
+  **Pass 5 added the wide-pane measure family** to the same file: the three shared caps exist at
+  `:where()` and stay anchored to the `--app-measure` expression (a re-typed literal fails, because
+  it stops tracking); the per-pane width-override inventory is frozen **at empty**; and no rule
+  caps a `.table-wrap` inside a wide pane. Two things it had to learn by going red first: the
+  patch predicate must be **scoped to wide panes**, or it reports ~20 filter toolbars legitimately
+  sizing their own inputs and demands a regression to satisfy itself; and the grid predicate must
+  strip `:not(…)`/`:has(…)` before reading the selector's subject, or it reports the one rule whose
+  entire purpose is to avoid the regression. The sweep reads **every** stylesheet through
+  `node:fs`, not `import.meta.glob(…, '?raw')` — measured, that returns the paths but empty strings
+  for CSS, so the inventory would have frozen something the walk could not see.
 - `apps/web/src/ui/textareaControlGuards.test.ts` — the multi-line control: that `TextArea` merges
   a caller's `className` rather than replacing it, its `rows` default and caller override, the
   height floor's exact form and its zero specificity, the padding token and its consumers, the mono
@@ -362,6 +554,30 @@ mis-parses. If you revise these numbers, do it the same way, and state which com
   `mkdocs build --strict` fails on the mismatch. Child margins are now neutralised at `:where()`,
   `.modal__foot`'s `margin-top` is gone, and the two dialogs that stacked a `.stack`/`.stack--tight`
   on the body itself dropped it. All eight now render at one 13.6px baseline in both themes.
+
+- **Pass 4 landed — the boxed primitives own their outer edge.** `.table-wrap` gets a
+  `:where()` `margin-top` with a `:first-child` collapse, and both it and `.inline-warning` get
+  their bottom edge as `:where(.inline-warning, .table-wrap) + * { margin-top: 1rem }`. It is the
+  next sibling's margin and **not** a `margin-bottom` because adjacent margins collapse to the max
+  and collapsing never consults specificity — a `margin-bottom` would silently raise every band
+  tighter than 1rem, `.stack--tight`'s 0.75rem included. Six gap containers neutralise it with
+  `margin-top: revert`, on both edges. Nothing was superseded; `.data-status-table`'s 0.1rem is
+  kept as a deliberate tightening and registered by name.
+- **The banner's standalone margin no longer doubles in a gap container.** The measured
+  consequence of the above, on five surfaces, each exactly −16px — see the Pass 4 table. This was
+  a pre-existing defect that correction 3 below predicted; Pass 4 is where it was actually fixed,
+  and it is the one part of Pass 4 that changes screens nobody complained about.
+
+- **Pass 5 landed — a wide pane no longer means 128ch prose.** Three `:where()` caps beside
+  `.app:has(.wide-page)` hold prose, the label/control grid and the control to
+  `calc(var(--app-measure) - 2 * var(--app-gutter))` — the measure `.page-header` already uses —
+  while `.table-wrap` keeps the full wide measure. All five `WIDE_SUBSECTIONS` panes were
+  measured; all five were affected, though only two were reported. **`WIDE_SUBSECTIONS` itself is
+  unchanged**: removing an entry would restore the sideways-scrolling grid it exists to prevent.
+- **`signing:tsl` and `signing:tsa` keep a 128ch control ROW, on purpose.** Their table is a
+  `grid-column: 1 / -1` child of the same `.settings-rows` grid as their fields, and a subgrid
+  item cannot be capped per-item. Their prose and controls are fixed; the row box is not. Closing
+  it means moving the table out of that grid in `SettingsPage.tsx` — a decision, not a patch.
 
 **Corrections to this document, found by measuring rather than reading specificity:**
 

@@ -26,6 +26,24 @@ const PRODUCTION_SOURCES = import.meta.glob('../**/*.tsx', {
   query: '?raw',
 }) as Record<string, string>;
 
+/**
+ * Every production source, parsed ONCE.
+ *
+ * `eachInlineWarning` used to call `ts.createSourceFile` over the whole tree on every call, and it
+ * is called once per test — so the app's ~200 `.tsx` files were parsed three times per run. Plain
+ * `vitest run` absorbed that; under V8 coverage instrumentation each sweep measured 5.3–6.4s
+ * against the 5000ms default `testTimeout`, so all three tests failed on time in CI's
+ * `test:coverage` while passing locally without `--coverage`. Hoisting the parse is the same shape
+ * `containerRhythmGuards.test.ts` already uses (`const CARDS = scanCards(…)` at module level) and
+ * changes no predicate: the tests still walk every file, they just stop re-parsing it.
+ */
+const PARSED_SOURCES: [string, ts.SourceFile][] = Object.entries(PRODUCTION_SOURCES)
+  .filter(([file]) => !/\.(?:test|spec)\.tsx$/u.test(file))
+  .map(([file, source]) => [
+    file,
+    ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX),
+  ]);
+
 interface Offence {
   file: string;
   line: number;
@@ -41,15 +59,7 @@ function eachInlineWarning(
     source: ts.SourceFile,
   ) => void,
 ): void {
-  for (const [file, source] of Object.entries(PRODUCTION_SOURCES)) {
-    if (/\.(?:test|spec)\.tsx$/u.test(file)) continue;
-    const parsed = ts.createSourceFile(
-      file,
-      source,
-      ts.ScriptTarget.Latest,
-      true,
-      ts.ScriptKind.TSX,
-    );
+  for (const [file, parsed] of PARSED_SOURCES) {
     const inspect = (node: ts.Node): void => {
       const opening = ts.isJsxElement(node)
         ? node.openingElement

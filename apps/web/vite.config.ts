@@ -181,6 +181,26 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: false,
+    /**
+     * Sized for an INSTRUMENTED run, not a bare one.
+     *
+     * This was vitest's unchosen 5000ms default, and it is not what CI runs against: the web job
+     * gates on `test:coverage`, and V8 coverage instrumentation roughly triples the cost of the
+     * heaviest React specs. Measured on 2026-07-30, the same specs that pass a plain `vitest run`
+     * crossed the default under `--coverage` whenever the workers were also contending:
+     * `AtaEditorStructured.test.tsx` at 5193/5456/6924ms, `EntitiesPage.enrichment` and
+     * `noticeDismissGuards` likewise. Run in ISOLATION under coverage that same file passes all
+     * 34 tests at about 1.4s each — so nothing was hanging; the budget was simply sized for the
+     * uninstrumented case and CI never runs that.
+     *
+     * The failure mode this removes is the worst kind: a red CI run that reproduces only under
+     * load, points at a different spec each time, and says "timeout" rather than naming a defect.
+     * 20s still fails a genuinely hung test quickly — the cost is paid only by tests that fail —
+     * while leaving ~3x headroom over the slowest instrumented observation.
+     *
+     * If a spec ever needs more than this, that is a signal about the spec, not about the budget.
+     */
+    testTimeout: 20_000,
     css: false,
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     /**

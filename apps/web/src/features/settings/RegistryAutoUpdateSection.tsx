@@ -14,16 +14,18 @@ import {
   Badge,
   Button,
   Card,
+  ColumnHead,
   DateTime,
   EmptyState,
   ErrorNote,
   Field,
+  FieldHelp,
   Icon,
   InlineWarning,
   Input,
   Select,
-  SkeletonDeflist,
   SkeletonRegion,
+  SkeletonTable,
   Table,
   Toggle,
   useToast,
@@ -179,7 +181,11 @@ export function RegistryAutoUpdateSection({
     const cadence = value.cadence;
     if (cadence.kind === 'interval_hours') {
       return (
-        <Field label={t('settings.registryAutoUpdate.cadence.hours')} htmlFor="registry-auto-hours">
+        <Field
+          label={t('settings.registryAutoUpdate.cadence.hours')}
+          htmlFor="registry-auto-hours"
+          help={t('settings.registryAutoUpdate.cadence.hoursHelp')}
+        >
           <Input
             id="registry-auto-hours"
             type="number"
@@ -201,6 +207,7 @@ export function RegistryAutoUpdateSection({
         <Field
           label={t('settings.registryAutoUpdate.cadence.hourUtc')}
           htmlFor="registry-auto-hour-utc"
+          help={t('settings.registryAutoUpdate.cadence.hourUtcHelp')}
         >
           <Input
             id="registry-auto-hour-utc"
@@ -223,6 +230,7 @@ export function RegistryAutoUpdateSection({
         <Field
           label={t('settings.registryAutoUpdate.cadence.hourUtc')}
           htmlFor="registry-auto-hour-utc"
+          help={t('settings.registryAutoUpdate.cadence.hourUtcHelp')}
         >
           <Input
             id="registry-auto-hour-utc"
@@ -241,6 +249,7 @@ export function RegistryAutoUpdateSection({
         <Field
           label={t('settings.registryAutoUpdate.cadence.weekday')}
           htmlFor="registry-auto-weekday"
+          help={t('settings.registryAutoUpdate.cadence.weekdayHelp')}
         >
           <Select
             id="registry-auto-weekday"
@@ -277,9 +286,17 @@ export function RegistryAutoUpdateSection({
     >
       <div className="stack">
         <div className="form settings-rows">
+          {/* The help sentence rides the `Toggle`'s label, the shared idiom for a switch that has
+              no `Field` to hang it on — `FieldHelp` renders a real `<button>`, so it is a tab stop
+              and not a mouse-only affordance. */}
           <Toggle
             id="registry-auto-update-enabled"
-            label={t('settings.registryAutoUpdate.enabled.label')}
+            label={
+              <>
+                {t('settings.registryAutoUpdate.enabled.label')}{' '}
+                <FieldHelp text={t('settings.registryAutoUpdate.enabled.help')} />
+              </>
+            }
             checked={value.enabled}
             onChange={(enabled) => set('enabled', enabled)}
             aria-describedby="registry-auto-update-enabled-hint"
@@ -308,6 +325,7 @@ export function RegistryAutoUpdateSection({
             label={t('settings.registryAutoUpdate.staleThreshold.label')}
             htmlFor="registry-auto-stale"
             hint={t('settings.registryAutoUpdate.staleThreshold.hint')}
+            help={t('settings.registryAutoUpdate.staleThreshold.help')}
           >
             <Input
               id="registry-auto-stale"
@@ -327,6 +345,7 @@ export function RegistryAutoUpdateSection({
           <Field
             label={t('settings.registryAutoUpdate.minBackoff.label')}
             htmlFor="registry-auto-min-backoff"
+            help={t('settings.registryAutoUpdate.minBackoff.help')}
           >
             <Input
               id="registry-auto-min-backoff"
@@ -343,6 +362,7 @@ export function RegistryAutoUpdateSection({
           <Field
             label={t('settings.registryAutoUpdate.maxBackoff.label')}
             htmlFor="registry-auto-max-backoff"
+            help={t('settings.registryAutoUpdate.maxBackoff.help')}
           >
             <Input
               id="registry-auto-max-backoff"
@@ -360,6 +380,7 @@ export function RegistryAutoUpdateSection({
             label={t('settings.registryAutoUpdate.maxAttempts.label')}
             htmlFor="registry-auto-max-attempts"
             hint={t('settings.registryAutoUpdate.maxAttempts.hint')}
+            help={t('settings.registryAutoUpdate.maxAttempts.help')}
           >
             <Input
               id="registry-auto-max-attempts"
@@ -375,7 +396,12 @@ export function RegistryAutoUpdateSection({
 
           <Toggle
             id="registry-auto-update-entity-default-enabled"
-            label={t('settings.registryAutoUpdate.entityDefaults.enabled')}
+            label={
+              <>
+                {t('settings.registryAutoUpdate.entityDefaults.enabled')}{' '}
+                <FieldHelp text={t('settings.registryAutoUpdate.entityDefaults.help')} />
+              </>
+            }
             checked={value.entity_defaults.enabled}
             onChange={(enabled) => setEntityDefaults('enabled', enabled)}
             aria-describedby="registry-auto-update-entity-default-hint"
@@ -390,8 +416,11 @@ export function RegistryAutoUpdateSection({
             aria-labelledby="registry-auto-update-profiles-label"
             aria-describedby="registry-auto-update-entity-default-hint"
           >
-            <span className="field__label" id="registry-auto-update-profiles-label">
-              {t('settings.registryAutoUpdate.table.profile')}
+            <span className="field__labelrow">
+              <span className="field__label" id="registry-auto-update-profiles-label">
+                {t('settings.registryAutoUpdate.table.profile')}
+              </span>
+              <FieldHelp text={t('settings.registryAutoUpdate.entityDefaults.profilesHelp')} />
             </span>
             <div className="registry-auto-update-profiles">
               <label className="api-key-permission">
@@ -421,6 +450,12 @@ export function RegistryAutoUpdateSection({
         <InlineWarning tone="info" title={t('settings.registryAutoUpdate.statusPanel.title')}>
           <div className="stack--tight">
             <p>{t('settings.registryAutoUpdate.statusPanel.body')}</p>
+            {/* This one stays a definition list, deliberately, while the three status blocks below
+                became tables. It is a GLOSSARY: four terms, each explained by a full sentence of
+                prose. There is no second column to compare down and no row to scan across, so a
+                grid would add a header band and a column rule to what is really running text with
+                labels. A two-column key/value STATUS set is a table; a term-and-explanation pair
+                is not. */}
             <dl className="deflist deflist--tight">
               <div>
                 <dt>{t('settings.registryAutoUpdate.outcome.disabled.title')}</dt>
@@ -442,78 +477,110 @@ export function RegistryAutoUpdateSection({
           </div>
         </InlineWarning>
 
-        {/* The plan renders as a tight deflist — generated at, mode, config, … */}
+        {/* The plan renders as two read-only fact tables — the plan itself, then the reasons
+            entities were left out of it. Both were `dl.deflist`: a two-column key/value
+            status set IS a table, and the shared primitive gives it a hidden `<caption>` naming
+            the block plus `<th scope="row">` per fact, which a definition list cannot. The idiom
+            is `DataManagementSection`'s `FactTable`. Nothing here became editable. */}
         {plan.isLoading ? (
           <SkeletonRegion
             className="stack--tight"
             label={t('settings.registryAutoUpdate.loadingPlan')}
           >
-            <SkeletonDeflist rows={3} className="deflist deflist--tight" />
+            <SkeletonTable rows={4} cols={2} />
           </SkeletonRegion>
         ) : null}
         {plan.error ? <ErrorNote error={plan.error} /> : null}
         {plan.data ? (
           <div className="stack--tight">
-            <dl className="deflist deflist--tight">
-              <div>
-                <dt>{t('settings.registryAutoUpdate.plan.generatedAt')}</dt>
+            <Table
+              caption={t('settings.registryAutoUpdate.plan.caption')}
+              head={
+                <tr>
+                  <ColumnHead
+                    label={t('settings.registryAutoUpdate.col.field')}
+                    help={t('settings.registryAutoUpdate.plan.col.fieldHelp')}
+                  />
+                  <ColumnHead
+                    label={t('settings.registryAutoUpdate.col.value')}
+                    help={t('settings.registryAutoUpdate.plan.col.valueHelp')}
+                  />
+                </tr>
+              }
+            >
+              <tr>
                 {/* When the plan was computed is provenance for every row below it. */}
-                <dd className="mono">
+                <th scope="row">{t('settings.registryAutoUpdate.plan.generatedAt')}</th>
+                <td className="mono">
                   <DateTime value={plan.data.generated_at} evidentiary />
-                </dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.plan.mode')}</dt>
-                <dd>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.plan.mode')}</th>
+                <td>
                   <Badge tone={plan.data.dry_run_only ? 'warn' : 'ok'}>
                     {plan.data.dry_run_only
                       ? t('settings.registryAutoUpdate.plan.dryRun')
                       : t('settings.registryAutoUpdate.plan.live')}
                   </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.plan.config')}</dt>
-                <dd>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.plan.config')}</th>
+                <td>
                   <Badge tone={plan.data.config.enabled ? 'ok' : 'neutral'}>
                     {plan.data.config.enabled
                       ? t('settings.registryAutoUpdate.plan.enabled')
                       : t('settings.registryAutoUpdate.plan.disabled')}
                   </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.plan.due')}</dt>
-                <dd className="mono">{plan.data.due.length}</dd>
-              </div>
-            </dl>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.plan.due')}</th>
+                <td className="mono">{plan.data.due.length}</td>
+              </tr>
+            </Table>
 
-            <dl className="deflist deflist--tight">
-              <div>
-                <dt>{t('settings.registryAutoUpdate.skipped.disabled')}</dt>
-                <dd className="mono">{plan.data.skipped.disabled}</dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.skipped.fresh')}</dt>
-                <dd className="mono">{plan.data.skipped.fresh}</dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.skipped.backoff')}</dt>
-                <dd className="mono">{plan.data.skipped.backoff}</dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.skipped.running')}</dt>
-                <dd className="mono">{plan.data.skipped.running}</dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.skipped.orphaned')}</dt>
-                <dd className="mono">{plan.data.skipped.orphaned}</dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.skipped.capped')}</dt>
-                <dd className="mono">{plan.data.skipped.capped}</dd>
-              </div>
-            </dl>
+            <Table
+              caption={t('settings.registryAutoUpdate.skipped.caption')}
+              head={
+                <tr>
+                  <ColumnHead
+                    label={t('settings.registryAutoUpdate.skipped.col.reason')}
+                    help={t('settings.registryAutoUpdate.skipped.col.reasonHelp')}
+                  />
+                  <ColumnHead
+                    label={t('settings.registryAutoUpdate.skipped.col.count')}
+                    help={t('settings.registryAutoUpdate.skipped.col.countHelp')}
+                  />
+                </tr>
+              }
+            >
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.skipped.disabled')}</th>
+                <td className="mono">{plan.data.skipped.disabled}</td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.skipped.fresh')}</th>
+                <td className="mono">{plan.data.skipped.fresh}</td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.skipped.backoff')}</th>
+                <td className="mono">{plan.data.skipped.backoff}</td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.skipped.running')}</th>
+                <td className="mono">{plan.data.skipped.running}</td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.skipped.orphaned')}</th>
+                <td className="mono">{plan.data.skipped.orphaned}</td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.skipped.capped')}</th>
+                <td className="mono">{plan.data.skipped.capped}</td>
+              </tr>
+            </Table>
 
             {plan.data.due.length ? (
               <Table
@@ -574,34 +641,51 @@ export function RegistryAutoUpdateSection({
             tone={attempt.data.accepted ? 'info' : 'warn'}
             title={t('settings.registryAutoUpdate.attempt.resultTitle')}
           >
-            <dl className="deflist deflist--tight">
-              <div>
-                <dt>{t('settings.registryAutoUpdate.table.status')}</dt>
-                <dd>
+            {/* Four key/value facts about one attempt: the same shape as the plan block above,
+                so it takes the same treatment rather than staying the last definition list on a
+                surface of tables. */}
+            <Table
+              caption={t('settings.registryAutoUpdate.attempt.caption')}
+              head={
+                <tr>
+                  <ColumnHead
+                    label={t('settings.registryAutoUpdate.col.field')}
+                    help={t('settings.registryAutoUpdate.attempt.col.fieldHelp')}
+                  />
+                  <ColumnHead
+                    label={t('settings.registryAutoUpdate.col.value')}
+                    help={t('settings.registryAutoUpdate.attempt.col.valueHelp')}
+                  />
+                </tr>
+              }
+            >
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.table.status')}</th>
+                <td>
                   <Badge tone={statusTone(attempt.data.status)}>
                     {t(statusKeys[attempt.data.status])}
                   </Badge>
-                </dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.attempt.accepted')}</dt>
-                <dd>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.attempt.accepted')}</th>
+                <td>
                   {attempt.data.accepted
                     ? t('settings.registryAutoUpdate.yes')
                     : t('settings.registryAutoUpdate.no')}
-                </dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.attempt.nextAllowed')}</dt>
-                <dd className="mono">
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.attempt.nextAllowed')}</th>
+                <td className="mono">
                   <DateTime value={attempt.data.next_allowed_at} />
-                </dd>
-              </div>
-              <div>
-                <dt>{t('settings.registryAutoUpdate.attempt.failures')}</dt>
-                <dd className="mono">{attempt.data.failure_count}</dd>
-              </div>
-            </dl>
+                </td>
+              </tr>
+              <tr>
+                <th scope="row">{t('settings.registryAutoUpdate.attempt.failures')}</th>
+                <td className="mono">{attempt.data.failure_count}</td>
+              </tr>
+            </Table>
             <p>
               {outcomeBody(
                 attempt.data.status,

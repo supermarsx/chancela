@@ -185,6 +185,75 @@ a:focus-visible {
   max-width: var(--app-measure-wide);
 }
 
+/* …but a wide page means "the GRID in here needs room", not "everything in here should be 128ch".
+   Reported twice in one session — "the search indexer controls in admin needs to be a bit less
+   wide" and "the preview info tab shouldn't be as wide as well" — and measured on all five
+   `WIDE_SUBSECTIONS` panes, not the two that were reported:
+
+   |                              | prose | control row | grid |
+   |------------------------------|-------|-------------|------|
+   | operations:search            | 171ch | 128ch       | 128ch |
+   | operations:template-preview  |  67ch | (banner) 132ch | 132ch |
+   | signing:tsl / :tsa           | 166ch | 128ch       | 128ch |
+   | signing:providers            | 171ch | 128ch       | 128ch |
+
+   128ch is the figure `WIDE_SUBSECTIONS`' own comment already records as the broken one — it is
+   why Política de assinatura, CMD and Prestadores were kept OUT of that list ("measured 78ch →
+   126ch when widened"). The list encodes the right principle and could only apply it at
+   whole-pane granularity: a pane holding both a seven-column grid AND label/control rows had to
+   choose, and choosing width dragged the prose out with it. This rule is that same principle at
+   the granularity it actually needs, so a pane no longer has to choose.
+
+   The cap is not a new number. It is `calc(var(--app-measure) - 2 * var(--app-gutter))` — the
+   exact expression `.page-header` below is pinned to, and by construction the width this content
+   would have had on a normal-width page. If the reading measure ever moves, all of this moves
+   with it and nothing has to be re-measured.
+
+   Deliberately NOT capped, and each was measured before being left out: `.table-wrap` and the
+   grids inside it (the whole reason the pane is wide); `.template-preview-samples__tabs`, whose
+   subnav rail is set to full width on purpose so the editor tabs align with the left edge of the
+   grid below; and `.section-head`, which is a header bar FOR the grid that follows it — its
+   button aligns with the grid's right edge, and its own prose is shrink-to-fit at 16ch, so it was
+   never part of the defect.
+
+   `:where()` pins the whole thing at (0,0,0): a pane that genuinely needs wider prose overrides
+   with any plain class selector, and `containerRhythmGuards.test.ts` freezes the inventory of
+   panes that do — at empty — so the fifth per-pane width patch fails at test time rather than
+   quietly reintroducing the defect on one screen at a time. */
+:where(.wide-page) :where(.field, .field__hint, .field__error, .inline-warning, p) {
+  max-inline-size: calc(var(--app-measure) - 2 * var(--app-gutter));
+}
+
+/* The rule above reaches prose and standalone fields. It does NOT reach a `Field` inside
+   `.settings-rows`, and the reason is worth recording because it looks like a bug and is not:
+   `.settings-rows` is `display: grid`, and `.settings-rows > .field` is
+   `grid-template-columns: subgrid` (see the `@supports` block further down). **A subgrid item
+   takes its tracks from its parent**, so the cap computes on the item — `max-width: 984px` is
+   there in the computed style — and does not bind: measured 984px computed, 1334px used. Per-item
+   width cannot constrain a subgrid row; only the grid container can.
+
+   So cap the container. `:not(:has(.table-wrap))` is the whole of the subtlety: on
+   `signing:tsl` and `signing:tsa` the grid that holds the label/control rows ALSO holds the
+   seven-column table as a `grid-column: 1 / -1` child, so capping that container would shrink the
+   table back to the measure it scrolled sideways at — trading this defect for the one
+   `WIDE_SUBSECTIONS` was opened to fix. Those two panes are therefore left alone here, on purpose
+   and with the reason recorded, rather than being quietly half-fixed. */
+:where(.wide-page) :where(.settings-rows):not(:has(.table-wrap)) {
+  max-inline-size: calc(var(--app-measure) - 2 * var(--app-gutter));
+}
+
+/* …which leaves the two panes above still holding a full-width row. The visible defect there is
+   not the invisible grid box, it is the control sitting in it: a URL `<input>` drawn a metre wide.
+   Cap the control instead — the row keeps the width its table needs, and the thing an operator
+   actually looks at returns to the size it has on every other settings tab.
+
+   The value is not invented: it generalises `.search-settings-rows .control[type='number']`'s
+   existing `min(100%, 20rem)` (one pane's own patch of exactly this problem) to every wide pane,
+   at the reading measure rather than a re-typed literal. `min()` so it still shrinks below it. */
+:where(.wide-page) :where(.control, .input-reset) {
+  max-inline-size: min(100%, calc(var(--app-measure) - 2 * var(--app-gutter)));
+}
+
 /* Keep the page header — the title and the shared `<SubNav>` sub-tab strip — at the usual
    reading measure even when a wide sub-tab has widened `.app` (t18). Without this the sub-tab
    bar rides the shell's width: on pages that mix a wide sub-tab with a narrow one (Arquivo's
@@ -1515,6 +1584,36 @@ a.btn.btn--iconOnly {
   overflow-x: auto;
 }
 
+/* --- The table primitive's own outer rhythm (Pass 4, docs/ui-spacing.md) --------------------
+   `.table-wrap` owned NO margin at all, so a table's vertical spacing was entirely borrowed from
+   whichever container happened to hold it — and only when the table was that container's DIRECT
+   child. Measured in Chromium against the real sheet: a table directly under `.panel__body`
+   reads 16px,
+   under `.stack` 24px, under `.stack--tight` 12px; but wrapped one level down in a plain `<div>`,
+   a `<section>`, a `<details>` or a bespoke class (`.acts-table`, `.entities-table`,
+   `.registry-conflict-table`) it reads **0px** above AND below, and a table followed by an action
+   row or an `EmptyState` sat flush against it.
+
+   That is the same defect Pass 2 fixed for cards, one level down, and it cannot be fixed
+   container-side: the wrappers are unnamed `<div>`s and one-off surface classes, so there is no
+   selector to hang a rhythm on. The only lever that reaches a table in an arbitrary wrapper is
+   the primitive's own margin — which is exactly the shape `:where(.inline-warning)` below has
+   used for its top edge since t53.
+
+   `:where()` pins this at (0,0,0), so every container that owns a rhythm still wins outright:
+   `.stack--tight > * + *` (0,1,0) keeps its 12px, `.stack` keeps its 24px, and
+   `.data-status-table`'s deliberate 0.1rem tightening keeps it too. The bottom edge is NOT a
+   `margin-bottom` — see the shared sibling rule below the banner primitive for why it cannot be. */
+:where(.table-wrap) {
+  margin-top: 1rem;
+}
+
+/* Flush against the container's own padding when nothing precedes it — the same guard, and the
+   same reason, as `:where(.inline-warning:first-child)`. */
+:where(.table-wrap:first-child) {
+  margin-top: 0;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
@@ -1697,6 +1796,79 @@ a.btn.btn--iconOnly {
 
 :where(.inline-warning__body) > * + * {
   margin-top: 0.5rem;
+}
+
+/* --- The bottom edge of both boxed primitives (Pass 4, docs/ui-spacing.md) ------------------
+   `:where(.inline-warning)` above declares a `margin-top` and NOTHING for its bottom edge, and
+   `.table-wrap` declared neither until the rule beside the table primitive. So a banner's — and a
+   table's — gap to what FOLLOWS it was always somebody else's `margin-top`, and when the next
+   sibling is a `<div>` (every action row, every nested block) that is zero. Measured: banner then
+   action row inside a plain `<div>` = **0px**; table then action row = **0px**; table then
+   `EmptyState` = **0px**. That is "glued to anything that comes next", literally and globally.
+
+   ## Why this is the next sibling's `margin-top` and not a `margin-bottom`
+
+   Load-bearing, and it is the whole reason this rule looks odd. Adjacent siblings' block margins
+   COLLAPSE TO THE MAX, and collapsing does not consult specificity — it is a layout rule, not a
+   cascade rule. So a `margin-bottom: 1rem` on the primitive would sit UNCONTESTED (nothing in the
+   sheet sets `margin-bottom` on these boxes) and then beat every container band tighter than 1rem:
+   `.stack--tight`'s 0.75rem would silently become 1rem under all 62 banners and tables it holds,
+   and `.data-status-section`'s deliberately tighter 0.8rem likewise. `:where()` would not save it.
+
+   Setting the NEXT SIBLING's `margin-top` puts this rule on the same element and the same property
+   a container rhythm sets, where specificity does decide: `.stack--tight > * + *` (0,1,0) beats
+   this (0,0,0) outright and keeps its 12px. `:where(A) + *` is (0,0,0) because `:where()`
+   contributes nothing and `*` contributes nothing.
+
+   1rem is the container rhythm's own step, not a ninth value. */
+:where(.inline-warning, .table-wrap) + * {
+  margin-top: 1rem;
+}
+
+/* …except inside a container that owns its children's spacing through `gap`, where a child margin
+   does not compete with the container in the cascade — it ADDS to the gap. That is the
+   `.modal__body` mechanism (foot of this file, and docs/ui-spacing.md), and it turns out to have
+   six more instances. The invariant here is the modal one: **inside a gap container neither
+   primitive brings an outer margin, on either edge** — hence both selectors, the box's own margin
+   and its successor's.
+
+   The population is enumerated from the component tree by `containerRhythmGuards.test.ts`, not
+   read off this list, and frozen — so a container that acquires its first banner fails at test
+   time instead of double-spacing quietly. That is not hypothetical: `.chronology-analytics`
+   (`display: grid; gap: 0.8rem`) was missed by a by-hand sweep of `<Table>`/`<InlineWarning>` call
+   sites because its table is hand-rolled `.table-wrap` markup, and only the tree walk found it.
+   `.modal__body` is deliberately absent: its own `> *` reset further down the sheet is equally
+   (0,0,0) and already wins on source order, and listing it here would give one container two
+   owners.
+
+   `revert`, not `0`, and the difference is measurable. The job is to make the two rules above
+   no-ops here — NOT to strip whatever margin the elements already had. `margin-top: 0` is an
+   author declaration and so also beats the USER AGENT's, which measured a real regression when it
+   was tried: a `<p class="signing-provider-list__note">` after a banner collapsed from 27.39px to
+   10.39px, because its own UA `margin-block: 1em` was zeroed along with ours. `revert` rolls the
+   property back to the origin below the author sheet, so a `<p>` keeps its UA margin and a `<div>`
+   keeps its nothing. Any surface rule that genuinely owns the margin (`.onboarding__actions`,
+   `.field__hint`) is (0,1,0), outranks this, and is never reached. */
+:where(
+    .chronology-analytics,
+    .field,
+    .onboarding__body,
+    .pdf-validator-report,
+    .signin__form,
+    .signing-provider-list
+  )
+  > :where(.inline-warning, .table-wrap),
+:where(
+    .chronology-analytics,
+    .field,
+    .onboarding__body,
+    .pdf-validator-report,
+    .signin__form,
+    .signing-provider-list
+  )
+  > :where(.inline-warning, .table-wrap)
+  + * {
+  margin-top: revert;
 }
 
 /* `ErrorNote` — the reviewed pt-PT sentence, then everything the server actually said.
