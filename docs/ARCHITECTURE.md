@@ -503,7 +503,8 @@ trusted-list *status*, not probative-value assertions.
   path stays fully usable.
 - **CMD production needs external AMA/SCMD credentials**: `CHANCELA_CMD_ENV` (`preprod` default /
   `prod`), `CHANCELA_CMD_APPLICATION_ID`, and — for `prod` only — `CHANCELA_CMD_AMA_CERT_PEM` (the
-  field-encryption cert; prod-without-cert is rejected). Secrets come from env only, never the
+  field-encryption key, as a `CERTIFICATE` or a bare `PUBLIC KEY` PEM block; prod without it is
+  rejected). Secrets come from env only, never the
   settings JSON. Default tests are offline (`MockScmdTransport`); real calls are behind a
   `network-tests` feature + `#[ignore]`.
 - **CC production** needs a physical card + reader + Autenticação.gov middleware (module path
