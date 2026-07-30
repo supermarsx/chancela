@@ -1858,6 +1858,9 @@ export const deDE: Catalog = {
   'users.sessions.empty': 'Keine aktiven Sitzungen.',
   'users.sessions.unknownDevice': 'Unbekanntes Gerät',
   'users.sessions.unknownNetwork': 'Unbekanntes Netzwerk',
+  'users.sessions.networkReported': 'vom Proxy gemeldet',
+  'users.sessions.networkReportedHint':
+    'Als „vom Proxy gemeldet“ markierte Netzwerke stammen aus einem Weiterleitungs-Header und wurden nicht direkt vom Server beobachtet.',
   'users.edit.usernameHint':
     'Der Benutzername ist die Prüf-Kennung und kann nicht geändert werden.',
   'users.edit.displayNameLabel': 'Anzeigename',
@@ -1948,6 +1951,63 @@ export const deDE: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Der Autor jedes Prüfereignisses ist der angemeldete Benutzer (oben rechts ausgewählt), nicht ein hier eingegebener Wert.',
+  // --- Wiederkehrende Seitenelemente auf erzeugten Dokumenten -----------------------
+  'documentLayout.section.furniture.title': 'Wiederkehrende Seitenelemente',
+  'documentLayout.section.furniture.description':
+    'Eine Kopfzeile, eine Fußzeile und senkrechter Text in einem Seitenrand, auf jeder Seite gesetzt. Jedes Element reserviert seinen eigenen Platz; wird eines eingeschaltet, fließt der Fließtext also um, statt überdruckt zu werden.',
+  'documentLayout.furniture.notice.title': 'Was diese Änderung bewirkt',
+  'documentLayout.furniture.notice.forward':
+    'Alle Elemente sind standardmäßig ausgeschaltet, und dieser Standard erzeugt exakt die bisherige Ausgabe. Wird eines eingeschaltet, ändert sich der Satz aller ab jetzt erzeugten Dokumente.',
+  'documentLayout.furniture.notice.pinned':
+    'Ein bereits unterzeichnetes Dokument ändert sich dadurch nicht. Jedes Dokument speichert das Layout, mit dem es gesetzt wurde, und jeder spätere Neusatz — einschließlich der Prüfung beim Schließen eines Buchs — verwendet dieses gespeicherte Layout, niemals diese Einstellungen.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Kopfzeile',
+  'documentLayout.field.furnitureHeaderText': 'Text der Kopfzeile',
+  'documentLayout.field.furnitureHeaderAlignment': 'Ausrichtung der Kopfzeile',
+  'documentLayout.field.furnitureHeaderRule': 'Linie unter der Kopfzeile',
+  'documentLayout.field.furnitureFooterEnabled': 'Fußzeile',
+  'documentLayout.field.furnitureFooterText': 'Text der Fußzeile',
+  'documentLayout.field.furnitureFooterAlignment': 'Ausrichtung der Fußzeile',
+  'documentLayout.field.furnitureFooterRule': 'Linie über der Fußzeile',
+  'documentLayout.field.furnitureSideTextEnabled': 'Senkrechter Randtext',
+  'documentLayout.field.furnitureSideText': 'Randtext',
+  'documentLayout.field.furnitureSideTextEdge': 'Seitenrand',
+  'documentLayout.option.alignment.Left': 'Linksbündig',
+  'documentLayout.option.alignment.Center': 'Zentriert',
+  'documentLayout.option.alignment.Right': 'Rechtsbündig',
+  'documentLayout.option.edge.Left': 'Bundsteg (links)',
+  'documentLayout.option.edge.Right': 'Außensteg (rechts)',
+  'documentLayout.value.on': 'Ein',
+  'documentLayout.value.off': 'Aus',
+  'documentLayout.value.empty': 'Leer',
+  'documentLayout.furniture.tokens.intro':
+    'Der Text kann Angaben aus dem Dokument aufnehmen. Schreiben Sie einen Platzhalter zwischen doppelte geschweifte Klammern; alles andere wird unverändert gedruckt.',
+  'documentLayout.furniture.tokens.caption': 'Im Text der Seitenelemente verfügbare Platzhalter',
+  'documentLayout.furniture.tokens.column.token': 'Platzhalter',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Genau so schreiben, wie er hier steht, samt Klammern. Die Liste ist abgeschlossen: Ein Platzhalter, der hier fehlt, wird beim Speichern abgewiesen, statt leer gedruckt zu werden.',
+  'documentLayout.furniture.tokens.column.meaning': 'Steht für',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Die Angabe, durch die der Platzhalter auf jeder Seite ersetzt wird.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Fehlt einem Dokument eine Angabe, die der Text verlangt — etwa bei einem Buch ohne erklärte Seitenkapazität —, entfällt die ganze Zeile, statt halb gefüllt gedruckt zu werden. Der reservierte Platz bleibt reserviert, sodass sich kein Fließtext verschiebt.',
+  'documentLayout.furniture.token.page': 'Die Nummer der Seite, auf der er gesetzt wird.',
+  'documentLayout.furniture.token.pageCount': 'Gesamtzahl der Seiten des Dokuments.',
+  'documentLayout.furniture.token.pageCapacity':
+    'Die vom enthaltenden Buch erklärte Seitenkapazität.',
+  'documentLayout.furniture.token.entityName':
+    'Name der juristischen Person, zu der das Dokument gehört.',
+  'documentLayout.furniture.token.entityNipc': 'Die NIPC der Einheit.',
+  'documentLayout.furniture.token.title': 'Der Titel des Dokuments.',
+  'documentLayout.furniture.token.subject': 'Die verkürzte Betreffzeile des Dokuments.',
+  'documentLayout.furniture.token.date': 'Das Erstellungsdatum des Dokuments.',
+  'documentLayout.furniture.error.tooLong': 'Der Text ist länger als {maximum} Zeichen ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Der Text muss eine einzige Zeile sein.',
+  'documentLayout.furniture.error.unclosed': 'Ein Platzhalter wurde geöffnet und nie geschlossen.',
+  'documentLayout.furniture.error.unknownToken': '„{token}“ ist kein verfügbarer Platzhalter.',
+  'documentLayout.furniture.echo.label': 'Auf dem Beispieldokument steht dann:',
+  'documentLayout.furniture.echo.empty': 'Leer — es wird nichts gesetzt.',
+  'documentLayout.furniture.preview.pointer':
+    'Dies ist ein Textecho, kein Satz. Um die Elemente auf einer echten Seite zu sehen, legen Sie sie an einer Vorlage fest und nutzen Sie deren PDF-Vorschau.',
   'settings.documents.cardTitle': 'Dokumente',
   'settings.documents.locale.label': 'Sprache',
   'settings.documents.locale.hint': 'Sprache der Oberfläche und der Dokumente.',

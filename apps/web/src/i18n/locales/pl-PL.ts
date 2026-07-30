@@ -1839,6 +1839,9 @@ export const plPL: Catalog = {
   'users.sessions.empty': 'Brak aktywnych sesji.',
   'users.sessions.unknownDevice': 'Nieznane urządzenie',
   'users.sessions.unknownNetwork': 'Nieznana sieć',
+  'users.sessions.networkReported': 'podana przez proxy',
+  'users.sessions.networkReportedHint':
+    'Sieci oznaczone jako podane przez proxy pochodzą z nagłówka przekazywania i nie zostały zaobserwowane bezpośrednio przez serwer.',
   'users.edit.usernameHint':
     'Nazwa użytkownika jest identyfikatorem audytu i nie można jej zmienić.',
   'users.edit.displayNameLabel': 'Nazwa wyświetlana',
@@ -1928,6 +1931,63 @@ export const plPL: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Autorem każdego zdarzenia audytu jest zalogowany użytkownik (wybrany w prawym górnym rogu), a nie wartość wprowadzona tutaj.',
+  // --- Powtarzalne elementy strony w generowanych dokumentach -----------------------
+  'documentLayout.section.furniture.title': 'Powtarzalne elementy strony',
+  'documentLayout.section.furniture.description':
+    'Żywa pagina górna, żywa pagina dolna oraz pionowy tekst na marginesie bocznym, rysowane na każdej stronie. Każdy element rezerwuje własne miejsce, więc włączenie go przelewa tekst główny, zamiast nadrukowywać na nim.',
+  'documentLayout.furniture.notice.title': 'Co robi ta zmiana',
+  'documentLayout.furniture.notice.forward':
+    'Wszystkie elementy są domyślnie wyłączone, a te ustawienia domyślne odtwarzają dokładnie dotychczasowy wynik. Włączenie któregokolwiek zmienia sposób składania dokumentów generowanych od tej chwili.',
+  'documentLayout.furniture.notice.pinned':
+    'Nie zmienia to żadnego już podpisanego dokumentu. Każdy dokument przechowuje układ, w jakim został złożony, a każde późniejsze przeliczenie — łącznie z kontrolą przy zamykaniu księgi — korzysta z tego zapisanego układu, nigdy z tych ustawień.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Żywa pagina górna',
+  'documentLayout.field.furnitureHeaderText': 'Tekst paginy górnej',
+  'documentLayout.field.furnitureHeaderAlignment': 'Wyrównanie paginy górnej',
+  'documentLayout.field.furnitureHeaderRule': 'Linia pod paginą górną',
+  'documentLayout.field.furnitureFooterEnabled': 'Żywa pagina dolna',
+  'documentLayout.field.furnitureFooterText': 'Tekst paginy dolnej',
+  'documentLayout.field.furnitureFooterAlignment': 'Wyrównanie paginy dolnej',
+  'documentLayout.field.furnitureFooterRule': 'Linia nad paginą dolną',
+  'documentLayout.field.furnitureSideTextEnabled': 'Pionowy tekst boczny',
+  'documentLayout.field.furnitureSideText': 'Tekst boczny',
+  'documentLayout.field.furnitureSideTextEdge': 'Margines boczny',
+  'documentLayout.option.alignment.Left': 'Do lewej',
+  'documentLayout.option.alignment.Center': 'Wyśrodkowany',
+  'documentLayout.option.alignment.Right': 'Do prawej',
+  'documentLayout.option.edge.Left': 'Margines grzbietowy (lewy)',
+  'documentLayout.option.edge.Right': 'Margines zewnętrzny (prawy)',
+  'documentLayout.value.on': 'Włączony',
+  'documentLayout.value.off': 'Wyłączony',
+  'documentLayout.value.empty': 'Pusty',
+  'documentLayout.furniture.tokens.intro':
+    'Tekst może nieść dane z dokumentu. Wpisz znacznik między podwójnymi nawiasami klamrowymi; cała reszta jest drukowana dosłownie.',
+  'documentLayout.furniture.tokens.caption': 'Znaczniki dostępne w tekście elementów strony',
+  'documentLayout.furniture.tokens.column.token': 'Znacznik',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Wpisz go dokładnie tak, jak tu widnieje, razem z nawiasami. Lista jest zamknięta: znacznik spoza niej zostanie odrzucony przy zapisie, zamiast wydrukować się pusty.',
+  'documentLayout.furniture.tokens.column.meaning': 'Odpowiada',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Dana, którą znacznik zostaje zastąpiony na każdej stronie.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Gdy dokument nie zawiera danej, o którą prosi tekst — na przykład księga, która nie zadeklarowała pojemności stron — cały wiersz zostaje pominięty, zamiast wydrukować się do połowy. Zarezerwowane przez niego miejsce pozostaje zarezerwowane, więc żaden tekst główny się nie przesuwa.',
+  'documentLayout.furniture.token.page': 'Numer strony, na której jest rysowany.',
+  'documentLayout.furniture.token.pageCount': 'Łączna liczba stron dokumentu.',
+  'documentLayout.furniture.token.pageCapacity':
+    'Pojemność stron zadeklarowana przez księgę, która go zawiera.',
+  'documentLayout.furniture.token.entityName': 'Nazwa osoby prawnej, do której należy dokument.',
+  'documentLayout.furniture.token.entityNipc': 'NIPC podmiotu.',
+  'documentLayout.furniture.token.title': 'Tytuł dokumentu.',
+  'documentLayout.furniture.token.subject': 'Skrócony wiersz tematu dokumentu.',
+  'documentLayout.furniture.token.date': 'Data utworzenia dokumentu.',
+  'documentLayout.furniture.error.tooLong': 'Tekst jest dłuższy niż {maximum} znaków ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Tekst musi być jednym wierszem.',
+  'documentLayout.furniture.error.unclosed':
+    'Znacznik został otwarty i nigdy nie został zamknięty.',
+  'documentLayout.furniture.error.unknownToken': '„{token}” nie jest dostępnym znacznikiem.',
+  'documentLayout.furniture.echo.label': 'Na dokumencie przykładowym wydrukuje się:',
+  'documentLayout.furniture.echo.empty': 'Pusty — nic nie zostanie narysowane.',
+  'documentLayout.furniture.preview.pointer':
+    'To jest echo tekstowe, a nie skład. Aby zobaczyć elementy na prawdziwej stronie, ustaw je w szablonie i skorzystaj z podglądu PDF tego szablonu.',
   'settings.documents.cardTitle': 'Dokumenty',
   'settings.documents.locale.label': 'Język',
   'settings.documents.locale.hint': 'Język interfejsu i dokumentów.',

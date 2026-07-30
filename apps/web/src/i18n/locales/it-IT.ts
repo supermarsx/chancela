@@ -1845,6 +1845,9 @@ export const itIT: Catalog = {
   'users.sessions.empty': 'Nessuna sessione attiva.',
   'users.sessions.unknownDevice': 'Dispositivo sconosciuto',
   'users.sessions.unknownNetwork': 'Rete sconosciuta',
+  'users.sessions.networkReported': 'indicata dal proxy',
+  'users.sessions.networkReportedHint':
+    'Le reti contrassegnate come indicate dal proxy provengono da un’intestazione di inoltro e non sono state osservate direttamente dal server.',
   'users.edit.usernameHint':
     "Il nome utente è l'identificatore di audit e non può essere modificato.",
   'users.edit.displayNameLabel': 'Nome visualizzato',
@@ -1934,6 +1937,64 @@ export const itIT: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'L’autore di ogni evento di controllo è l’utente con la sessione avviata (selezionato nell’angolo in alto a destra), non un valore inserito qui.',
+  // --- Elementi di pagina ripetuti sui documenti generati ---------------------------
+  'documentLayout.section.furniture.title': 'Elementi di pagina ripetuti',
+  'documentLayout.section.furniture.description':
+    'Una testatina, un piè di pagina e un testo verticale in un margine laterale, tracciati su ogni pagina. Ogni elemento riserva il proprio spazio, perciò attivarne uno fa rifluire il corpo del testo invece di stamparci sopra.',
+  'documentLayout.furniture.notice.title': 'Che cosa comporta questa modifica',
+  'documentLayout.furniture.notice.forward':
+    'Tutti gli elementi sono disattivati per impostazione predefinita, e questa impostazione riproduce esattamente il risultato attuale. Attivarne uno cambia il modo in cui vengono composti i documenti generati d’ora in avanti.',
+  'documentLayout.furniture.notice.pinned':
+    'Non modifica alcun documento già firmato. Ogni documento conserva l’impaginazione con cui è stato composto, e qualsiasi ricomposizione successiva — compresa la verifica eseguita alla chiusura di un libro — usa quell’impaginazione conservata, mai queste impostazioni.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Testatina',
+  'documentLayout.field.furnitureHeaderText': 'Testo della testatina',
+  'documentLayout.field.furnitureHeaderAlignment': 'Allineamento della testatina',
+  'documentLayout.field.furnitureHeaderRule': 'Filetto sotto la testatina',
+  'documentLayout.field.furnitureFooterEnabled': 'Piè di pagina',
+  'documentLayout.field.furnitureFooterText': 'Testo del piè di pagina',
+  'documentLayout.field.furnitureFooterAlignment': 'Allineamento del piè di pagina',
+  'documentLayout.field.furnitureFooterRule': 'Filetto sopra il piè di pagina',
+  'documentLayout.field.furnitureSideTextEnabled': 'Testo verticale laterale',
+  'documentLayout.field.furnitureSideText': 'Testo laterale',
+  'documentLayout.field.furnitureSideTextEdge': 'Margine laterale',
+  'documentLayout.option.alignment.Left': 'A sinistra',
+  'documentLayout.option.alignment.Center': 'Centrato',
+  'documentLayout.option.alignment.Right': 'A destra',
+  'documentLayout.option.edge.Left': 'Margine di cucitura (sinistra)',
+  'documentLayout.option.edge.Right': 'Margine esterno (destra)',
+  'documentLayout.value.on': 'Attivo',
+  'documentLayout.value.off': 'Inattivo',
+  'documentLayout.value.empty': 'Vuoto',
+  'documentLayout.furniture.tokens.intro':
+    'Il testo può riportare dati del documento. Scrivere un segnaposto tra doppie parentesi graffe; tutto il resto viene stampato così com’è.',
+  'documentLayout.furniture.tokens.caption':
+    'Segnaposto disponibili nel testo degli elementi di pagina',
+  'documentLayout.furniture.tokens.column.token': 'Segnaposto',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Scriverlo esattamente come appare, parentesi comprese. L’elenco è chiuso: un segnaposto che non compaia qui viene rifiutato al salvataggio, invece di essere stampato vuoto.',
+  'documentLayout.furniture.tokens.column.meaning': 'Corrisponde a',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Il dato con cui il segnaposto viene sostituito su ogni pagina.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Quando un documento non porta un dato richiesto dal testo — per esempio un libro che non ha dichiarato alcuna capienza di pagine — l’intera riga viene omessa anziché stampata a metà. Lo spazio che aveva riservato resta riservato, così nessun testo del corpo si sposta.',
+  'documentLayout.furniture.token.page': 'Il numero della pagina su cui viene tracciato.',
+  'documentLayout.furniture.token.pageCount': 'Numero totale di pagine del documento.',
+  'documentLayout.furniture.token.pageCapacity':
+    'La capienza di pagine dichiarata dal libro che lo contiene.',
+  'documentLayout.furniture.token.entityName':
+    'Nome della persona giuridica a cui appartiene il documento.',
+  'documentLayout.furniture.token.entityNipc': 'Il NIPC del soggetto.',
+  'documentLayout.furniture.token.title': 'Il titolo del documento.',
+  'documentLayout.furniture.token.subject': 'La riga di oggetto abbreviata del documento.',
+  'documentLayout.furniture.token.date': 'La data di creazione del documento.',
+  'documentLayout.furniture.error.tooLong': 'Il testo supera i {maximum} caratteri ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Il testo deve stare su una sola riga.',
+  'documentLayout.furniture.error.unclosed': 'Un segnaposto è stato aperto e mai chiuso.',
+  'documentLayout.furniture.error.unknownToken': '«{token}» non è un segnaposto disponibile.',
+  'documentLayout.furniture.echo.label': 'Sul documento di esempio stampa:',
+  'documentLayout.furniture.echo.empty': 'Vuoto — non viene tracciato nulla.',
+  'documentLayout.furniture.preview.pointer':
+    'Questo è un’eco testuale, non una composizione. Per vedere gli elementi su una pagina reale, impostarli su un modello e usare l’anteprima PDF di quel modello.',
   'settings.documents.cardTitle': 'Documenti',
   'settings.documents.locale.label': 'Lingua',
   'settings.documents.locale.hint': 'Lingua dell’interfaccia e dei documenti.',

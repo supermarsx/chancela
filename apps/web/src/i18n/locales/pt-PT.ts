@@ -1880,6 +1880,9 @@ export const ptPT: Catalog = {
   'users.sessions.empty': 'Sem sessões ativas.',
   'users.sessions.unknownDevice': 'Dispositivo desconhecido',
   'users.sessions.unknownNetwork': 'Rede desconhecida',
+  'users.sessions.networkReported': 'indicada pelo proxy',
+  'users.sessions.networkReportedHint':
+    'As redes marcadas como indicadas pelo proxy provêm de um cabeçalho de reencaminhamento e não foram observadas diretamente pelo servidor.',
   'users.edit.usernameHint':
     'O nome de utilizador é o identificador de auditoria e não pode ser alterado.',
   'users.edit.displayNameLabel': 'Nome a apresentar',
@@ -1950,6 +1953,65 @@ export const ptPT: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'O autor de cada evento de auditoria é o utilizador com sessão iniciada (selecionado no canto superior direito), não um valor introduzido aqui.',
+  // --- Elementos repetidos da página nos documentos gerados -------------------------
+  'documentLayout.section.furniture.title': 'Elementos repetidos da página',
+  'documentLayout.section.furniture.description':
+    'Um cabeçalho corrido, um rodapé corrido e texto vertical numa margem lateral, desenhados em todas as páginas. Cada elemento reserva o seu próprio espaço, pelo que ativar um reflui o corpo em vez de imprimir por cima dele.',
+  'documentLayout.furniture.notice.title': 'O que esta alteração faz',
+  'documentLayout.furniture.notice.forward':
+    'Todos os elementos estão desativados por predefinição, e essa predefinição reproduz exatamente o resultado atual. Ativar um altera a forma como passam a ser compostos os documentos gerados a partir de agora.',
+  'documentLayout.furniture.notice.pinned':
+    'Não altera nenhum documento já assinado. Cada documento guarda o formato com que foi composto, e qualquer nova composição — incluindo a verificação feita ao fechar um livro — usa esse formato guardado, nunca estas definições.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Cabeçalho corrido',
+  'documentLayout.field.furnitureHeaderText': 'Texto do cabeçalho',
+  'documentLayout.field.furnitureHeaderAlignment': 'Alinhamento do cabeçalho',
+  'documentLayout.field.furnitureHeaderRule': 'Filete sob o cabeçalho',
+  'documentLayout.field.furnitureFooterEnabled': 'Rodapé corrido',
+  'documentLayout.field.furnitureFooterText': 'Texto do rodapé',
+  'documentLayout.field.furnitureFooterAlignment': 'Alinhamento do rodapé',
+  'documentLayout.field.furnitureFooterRule': 'Filete sobre o rodapé',
+  'documentLayout.field.furnitureSideTextEnabled': 'Texto vertical lateral',
+  'documentLayout.field.furnitureSideText': 'Texto lateral',
+  'documentLayout.field.furnitureSideTextEdge': 'Margem lateral',
+  'documentLayout.option.alignment.Left': 'À esquerda',
+  'documentLayout.option.alignment.Center': 'Centrado',
+  'documentLayout.option.alignment.Right': 'À direita',
+  'documentLayout.option.edge.Left': 'Margem de encadernação (esquerda)',
+  'documentLayout.option.edge.Right': 'Margem exterior (direita)',
+  'documentLayout.value.on': 'Ativo',
+  'documentLayout.value.off': 'Inativo',
+  'documentLayout.value.empty': 'Vazio',
+  'documentLayout.furniture.tokens.intro':
+    'O texto pode transportar factos do documento. Escreva um marcador entre chavetas duplas; tudo o resto é impresso tal como está escrito.',
+  'documentLayout.furniture.tokens.caption':
+    'Marcadores disponíveis no texto dos elementos de página',
+  'documentLayout.furniture.tokens.column.token': 'Marcador',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Escreva-o exatamente como aparece, chavetas incluídas. A lista é fechada: um marcador que não conste aqui é recusado ao guardar, em vez de ser impresso em branco.',
+  'documentLayout.furniture.tokens.column.meaning': 'Corresponde a',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'O facto pelo qual o marcador é substituído em cada página.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Quando um documento não tem um facto pedido pelo texto — por exemplo, um livro que não declarou capacidade de páginas — a linha inteira é omitida, em vez de impressa pela metade. O espaço que reservou continua reservado, pelo que nenhum texto do corpo se desloca.',
+  'documentLayout.furniture.token.page': 'O número da página em que é desenhado.',
+  'documentLayout.furniture.token.pageCount': 'Total de páginas do documento.',
+  'documentLayout.furniture.token.pageCapacity':
+    'A capacidade de páginas declarada pelo livro que o contém.',
+  'documentLayout.furniture.token.entityName':
+    'Nome da pessoa coletiva a que o documento pertence.',
+  'documentLayout.furniture.token.entityNipc': 'O NIPC da entidade.',
+  'documentLayout.furniture.token.title': 'O título do documento.',
+  'documentLayout.furniture.token.subject': 'A linha de assunto abreviada do documento.',
+  'documentLayout.furniture.token.date': 'A data de criação do documento.',
+  'documentLayout.furniture.error.tooLong': 'O texto tem mais de {maximum} caracteres ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'O texto tem de ser uma única linha.',
+  'documentLayout.furniture.error.unclosed':
+    'Foi aberto um marcador que nunca chegou a ser fechado.',
+  'documentLayout.furniture.error.unknownToken': '«{token}» não é um marcador disponível.',
+  'documentLayout.furniture.echo.label': 'No documento de exemplo, imprime:',
+  'documentLayout.furniture.echo.empty': 'Vazio — não é desenhado nada.',
+  'documentLayout.furniture.preview.pointer':
+    'Isto é um eco em texto, não uma composição. Para ver os elementos numa página real, defina-os num modelo e use a pré-visualização em PDF desse modelo.',
   'settings.documents.cardTitle': 'Documentos',
   'settings.documents.locale.label': 'Idioma',
   'settings.documents.locale.hint': 'Idioma da interface e dos documentos.',

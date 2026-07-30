@@ -1836,6 +1836,9 @@ export const fiFI: Catalog = {
   'users.sessions.empty': 'Ei aktiivisia istuntoja.',
   'users.sessions.unknownDevice': 'Tuntematon laite',
   'users.sessions.unknownNetwork': 'Tuntematon verkko',
+  'users.sessions.networkReported': 'välityspalvelimen ilmoittama',
+  'users.sessions.networkReportedHint':
+    'Välityspalvelimen ilmoittamiksi merkityt verkot on ilmoitettu edelleenvälitysotsakkeessa, eikä palvelin ole havainnut niitä suoraan.',
   'users.edit.usernameHint': 'Käyttäjänimi on auditointitunniste, eikä sitä voi muuttaa.',
   'users.edit.displayNameLabel': 'Näyttönimi',
   'users.edit.activationCard': 'Tila',
@@ -1924,6 +1927,65 @@ export const fiFI: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Kunkin tarkastustapahtuman tekijä on kirjautunut käyttäjä (valittu oikeasta yläkulmasta), ei tässä syötetty arvo.',
+  // --- Toistuvat sivuelementit luoduissa asiakirjoissa ------------------------------
+  'documentLayout.section.furniture.title': 'Toistuvat sivuelementit',
+  'documentLayout.section.furniture.description':
+    'Juokseva ylätunniste, juokseva alatunniste ja pystysuora teksti sivumarginaalissa, piirrettyinä jokaiselle sivulle. Kukin elementti varaa oman tilansa, joten yhden käyttöönotto rivittää leipätekstin uudelleen sen sijaan, että painaisi sen päälle.',
+  'documentLayout.furniture.notice.title': 'Mitä tämä muutos tekee',
+  'documentLayout.furniture.notice.forward':
+    'Kaikki elementit ovat oletuksena pois käytöstä, ja tämä oletus tuottaa täsmälleen nykyisen tuloksen. Yhden käyttöönotto muuttaa sitä, miten tästä lähtien luodut asiakirjat taitetaan.',
+  'documentLayout.furniture.notice.pinned':
+    'Se ei muuta jo allekirjoitettua asiakirjaa. Jokainen asiakirja tallentaa taiton, jolla se laadittiin, ja kaikki myöhempi uudelleentaitto — mukaan lukien kirjan sulkemisen yhteydessä tehtävä tarkistus — käyttää tuota tallennettua taittoa, ei koskaan näitä asetuksia.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Juokseva ylätunniste',
+  'documentLayout.field.furnitureHeaderText': 'Ylätunnisteen teksti',
+  'documentLayout.field.furnitureHeaderAlignment': 'Ylätunnisteen tasaus',
+  'documentLayout.field.furnitureHeaderRule': 'Viiva ylätunnisteen alla',
+  'documentLayout.field.furnitureFooterEnabled': 'Juokseva alatunniste',
+  'documentLayout.field.furnitureFooterText': 'Alatunnisteen teksti',
+  'documentLayout.field.furnitureFooterAlignment': 'Alatunnisteen tasaus',
+  'documentLayout.field.furnitureFooterRule': 'Viiva alatunnisteen yllä',
+  'documentLayout.field.furnitureSideTextEnabled': 'Pystysuora reunateksti',
+  'documentLayout.field.furnitureSideText': 'Reunateksti',
+  'documentLayout.field.furnitureSideTextEdge': 'Sivumarginaali',
+  'documentLayout.option.alignment.Left': 'Vasemmalle',
+  'documentLayout.option.alignment.Center': 'Keskitetty',
+  'documentLayout.option.alignment.Right': 'Oikealle',
+  'documentLayout.option.edge.Left': 'Sidontamarginaali (vasen)',
+  'documentLayout.option.edge.Right': 'Ulkomarginaali (oikea)',
+  'documentLayout.value.on': 'Käytössä',
+  'documentLayout.value.off': 'Pois käytöstä',
+  'documentLayout.value.empty': 'Tyhjä',
+  'documentLayout.furniture.tokens.intro':
+    'Teksti voi kantaa asiakirjan tietoja. Kirjoita paikkamerkki kaksinkertaisten aaltosulkeiden väliin; kaikki muu tulostuu sellaisenaan.',
+  'documentLayout.furniture.tokens.caption':
+    'Sivuelementtien tekstissä käytettävissä olevat paikkamerkit',
+  'documentLayout.furniture.tokens.column.token': 'Paikkamerkki',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Kirjoita se täsmälleen näin, sulkeet mukaan lukien. Luettelo on suljettu: paikkamerkki, jota ei ole täällä, hylätään tallennettaessa sen sijaan, että se tulostuisi tyhjänä.',
+  'documentLayout.furniture.tokens.column.meaning': 'Vastaa',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Tieto, jolla paikkamerkki korvataan kullakin sivulla.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Kun asiakirjassa ei ole tekstin pyytämää tietoa — esimerkiksi kirjassa, joka ei ilmoittanut sivukapasiteettia — koko rivi jätetään pois sen sijaan, että se tulostuisi puolinaisena. Sen varaama tila pysyy varattuna, joten leipäteksti ei siirry.',
+  'documentLayout.furniture.token.page': 'Sen sivun numero, jolle se piirretään.',
+  'documentLayout.furniture.token.pageCount': 'Asiakirjan sivujen kokonaismäärä.',
+  'documentLayout.furniture.token.pageCapacity':
+    'Sen sisältävän kirjan ilmoittama sivukapasiteetti.',
+  'documentLayout.furniture.token.entityName': 'Sen oikeushenkilön nimi, jolle asiakirja kuuluu.',
+  'documentLayout.furniture.token.entityNipc': 'Yksikön NIPC.',
+  'documentLayout.furniture.token.title': 'Asiakirjan otsikko.',
+  'documentLayout.furniture.token.subject': 'Asiakirjan lyhennetty aiherivi.',
+  'documentLayout.furniture.token.date': 'Asiakirjan luontipäivä.',
+  'documentLayout.furniture.error.tooLong': 'Teksti on pidempi kuin {maximum} merkkiä ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Tekstin on oltava yksi ainoa rivi.',
+  'documentLayout.furniture.error.unclosed':
+    'Paikkamerkki avattiin, mutta sitä ei koskaan suljettu.',
+  'documentLayout.furniture.error.unknownToken':
+    '”{token}” ei ole käytettävissä oleva paikkamerkki.',
+  'documentLayout.furniture.echo.label': 'Esimerkkiasiakirjassa tulostuu:',
+  'documentLayout.furniture.echo.empty': 'Tyhjä — mitään ei piirretä.',
+  'documentLayout.furniture.preview.pointer':
+    'Tämä on tekstikaiku, ei taitto. Jos haluat nähdä elementit oikealla sivulla, määritä ne mallipohjaan ja käytä sen PDF-esikatselua.',
   'settings.documents.cardTitle': 'Asiakirjat',
   'settings.documents.locale.label': 'Kieli',
   'settings.documents.locale.hint': 'Käyttöliittymän ja asiakirjojen kieli.',

@@ -1836,6 +1836,9 @@ export const daDK: Catalog = {
   'users.sessions.empty': 'Ingen aktive sessioner.',
   'users.sessions.unknownDevice': 'Ukendt enhed',
   'users.sessions.unknownNetwork': 'Ukendt netværk',
+  'users.sessions.networkReported': 'oplyst af proxy',
+  'users.sessions.networkReportedHint':
+    'Netværk, der er markeret som oplyst af proxy, er angivet i en videresendelsesheader og ikke observeret direkte af serveren.',
   'users.edit.usernameHint': 'Brugernavnet er revisionsidentifikatoren og kan ikke ændres.',
   'users.edit.displayNameLabel': 'Vist navn',
   'users.edit.activationCard': 'Status',
@@ -1924,6 +1927,63 @@ export const daDK: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Ophavsmanden til hver revisionshændelse er den bruger, der er logget ind (valgt øverst til højre), ikke en værdi indtastet her.',
+  // --- Gentagne sideelementer på genererede dokumenter -----------------------------
+  'documentLayout.section.furniture.title': 'Gentagne sideelementer',
+  'documentLayout.section.furniture.description':
+    'En løbende sidehoved, en løbende sidefod og lodret tekst i en sidemargen, tegnet på hver side. Hvert element reserverer sin egen plads, så når du slår ét til, ombrydes brødteksten i stedet for at blive trykt hen over.',
+  'documentLayout.furniture.notice.title': 'Hvad denne ændring gør',
+  'documentLayout.furniture.notice.forward':
+    'Alle elementer er slået fra som standard, og den standard gengiver nøjagtigt det nuværende resultat. Slår du ét til, ændrer det, hvordan dokumenter genereret fra nu af sættes op.',
+  'documentLayout.furniture.notice.pinned':
+    'Det ændrer ikke et dokument, der allerede er underskrevet. Hvert dokument gemmer det layout, det blev sat op med, og enhver senere ombrydning — også kontrollen ved lukning af en bog — bruger det gemte layout, aldrig disse indstillinger.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Løbende sidehoved',
+  'documentLayout.field.furnitureHeaderText': 'Tekst i sidehovedet',
+  'documentLayout.field.furnitureHeaderAlignment': 'Justering af sidehovedet',
+  'documentLayout.field.furnitureHeaderRule': 'Streg under sidehovedet',
+  'documentLayout.field.furnitureFooterEnabled': 'Løbende sidefod',
+  'documentLayout.field.furnitureFooterText': 'Tekst i sidefoden',
+  'documentLayout.field.furnitureFooterAlignment': 'Justering af sidefoden',
+  'documentLayout.field.furnitureFooterRule': 'Streg over sidefoden',
+  'documentLayout.field.furnitureSideTextEnabled': 'Lodret sidetekst',
+  'documentLayout.field.furnitureSideText': 'Sidetekst',
+  'documentLayout.field.furnitureSideTextEdge': 'Sidemargen',
+  'documentLayout.option.alignment.Left': 'Venstre',
+  'documentLayout.option.alignment.Center': 'Centreret',
+  'documentLayout.option.alignment.Right': 'Højre',
+  'documentLayout.option.edge.Left': 'Indbindingsmargen (venstre)',
+  'documentLayout.option.edge.Right': 'Ydermargen (højre)',
+  'documentLayout.value.on': 'Til',
+  'documentLayout.value.off': 'Fra',
+  'documentLayout.value.empty': 'Tom',
+  'documentLayout.furniture.tokens.intro':
+    'Teksten kan bære oplysninger fra dokumentet. Skriv en pladsholder mellem dobbelte tuborgparenteser; alt andet trykkes præcis som skrevet.',
+  'documentLayout.furniture.tokens.caption': 'Pladsholdere tilgængelige i sideelementernes tekst',
+  'documentLayout.furniture.tokens.column.token': 'Pladsholder',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Skriv den nøjagtigt som vist, med parenteser. Listen er lukket: en pladsholder, der ikke står her, afvises ved lagring i stedet for at blive trykt tom.',
+  'documentLayout.furniture.tokens.column.meaning': 'Svarer til',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Den oplysning, pladsholderen erstattes af på hver side.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Når et dokument ikke bærer en oplysning, teksten beder om — for eksempel en bog, der ikke har angivet nogen sidekapacitet — udelades hele linjen i stedet for at blive trykt halvt udfyldt. Den plads, den havde reserveret, forbliver reserveret, så ingen brødtekst flytter sig.',
+  'documentLayout.furniture.token.page': 'Nummeret på den side, den tegnes på.',
+  'documentLayout.furniture.token.pageCount': 'Dokumentets samlede antal sider.',
+  'documentLayout.furniture.token.pageCapacity':
+    'Den sidekapacitet, den omgivende bog har angivet.',
+  'documentLayout.furniture.token.entityName':
+    'Navnet på den juridiske person, dokumentet tilhører.',
+  'documentLayout.furniture.token.entityNipc': 'Enhedens NIPC.',
+  'documentLayout.furniture.token.title': 'Dokumentets titel.',
+  'documentLayout.furniture.token.subject': 'Dokumentets forkortede emnelinje.',
+  'documentLayout.furniture.token.date': 'Dokumentets oprettelsesdato.',
+  'documentLayout.furniture.error.tooLong': 'Teksten er længere end {maximum} tegn ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Teksten skal være én enkelt linje.',
+  'documentLayout.furniture.error.unclosed': 'En pladsholder blev åbnet og aldrig lukket igen.',
+  'documentLayout.furniture.error.unknownToken': '“{token}” er ikke en tilgængelig pladsholder.',
+  'documentLayout.furniture.echo.label': 'På eksempeldokumentet trykkes der:',
+  'documentLayout.furniture.echo.empty': 'Tom — der tegnes intet.',
+  'documentLayout.furniture.preview.pointer':
+    'Dette er et tekstekko, ikke en ombrydning. Vil du se elementerne på en rigtig side, så angiv dem på en skabelon og brug skabelonens PDF-forhåndsvisning.',
   'settings.documents.cardTitle': 'Dokumenter',
   'settings.documents.locale.label': 'Sprog',
   'settings.documents.locale.hint': 'Sproget for grænsefladen og dokumenterne.',

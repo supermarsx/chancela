@@ -1840,6 +1840,9 @@ export const svSE: Catalog = {
   'users.sessions.empty': 'Inga aktiva sessioner.',
   'users.sessions.unknownDevice': 'Okänd enhet',
   'users.sessions.unknownNetwork': 'Okänt nätverk',
+  'users.sessions.networkReported': 'uppgiven av proxy',
+  'users.sessions.networkReportedHint':
+    'Nätverk som är märkta som uppgivna av proxy kommer från en vidarebefordringsrubrik och har inte observerats direkt av servern.',
   'users.edit.usernameHint': 'Användarnamnet är granskningsidentifieraren och kan inte ändras.',
   'users.edit.displayNameLabel': 'Visningsnamn',
   'users.edit.activationCard': 'Status',
@@ -1928,6 +1931,63 @@ export const svSE: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'Upphovsmannen till varje granskningshändelse är den inloggade användaren (vald uppe till höger), inte ett värde som anges här.',
+  // --- Återkommande sidelement på genererade dokument ------------------------------
+  'documentLayout.section.furniture.title': 'Återkommande sidelement',
+  'documentLayout.section.furniture.description':
+    'En löpande sidhuvudsrad, en löpande sidfotsrad och lodrät text i en sidmarginal, satta på varje sida. Varje element reserverar sitt eget utrymme, så att slå på ett gör att brödtexten flödar om i stället för att tryckas över.',
+  'documentLayout.furniture.notice.title': 'Vad den här ändringen gör',
+  'documentLayout.furniture.notice.forward':
+    'Alla element är avstängda som standard, och den standarden återger exakt dagens resultat. Att slå på ett ändrar hur dokument som genereras hädanefter sätts.',
+  'documentLayout.furniture.notice.pinned':
+    'Det ändrar inte ett dokument som redan är undertecknat. Varje dokument sparar den layout det sattes med, och all senare omsättning — även kontrollen när en bok stängs — använder den sparade layouten, aldrig dessa inställningar.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Löpande sidhuvud',
+  'documentLayout.field.furnitureHeaderText': 'Text i sidhuvudet',
+  'documentLayout.field.furnitureHeaderAlignment': 'Justering av sidhuvudet',
+  'documentLayout.field.furnitureHeaderRule': 'Linje under sidhuvudet',
+  'documentLayout.field.furnitureFooterEnabled': 'Löpande sidfot',
+  'documentLayout.field.furnitureFooterText': 'Text i sidfoten',
+  'documentLayout.field.furnitureFooterAlignment': 'Justering av sidfoten',
+  'documentLayout.field.furnitureFooterRule': 'Linje ovanför sidfoten',
+  'documentLayout.field.furnitureSideTextEnabled': 'Lodrät kantext',
+  'documentLayout.field.furnitureSideText': 'Kantext',
+  'documentLayout.field.furnitureSideTextEdge': 'Sidmarginal',
+  'documentLayout.option.alignment.Left': 'Vänster',
+  'documentLayout.option.alignment.Center': 'Centrerad',
+  'documentLayout.option.alignment.Right': 'Höger',
+  'documentLayout.option.edge.Left': 'Bindmarginal (vänster)',
+  'documentLayout.option.edge.Right': 'Yttermarginal (höger)',
+  'documentLayout.value.on': 'På',
+  'documentLayout.value.off': 'Av',
+  'documentLayout.value.empty': 'Tom',
+  'documentLayout.furniture.tokens.intro':
+    'Texten kan bära uppgifter från dokumentet. Skriv en platshållare mellan dubbla klammerparenteser; allt annat trycks precis som det står.',
+  'documentLayout.furniture.tokens.caption':
+    'Platshållare som är tillgängliga i sidelementens text',
+  'documentLayout.furniture.tokens.column.token': 'Platshållare',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Skriv den exakt som den visas, med parenteser. Listan är sluten: en platshållare som inte står här avvisas när du sparar, i stället för att tryckas tom.',
+  'documentLayout.furniture.tokens.column.meaning': 'Motsvarar',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Den uppgift som platshållaren ersätts med på varje sida.',
+  'documentLayout.furniture.tokens.absentFact':
+    'När ett dokument saknar en uppgift som texten efterfrågar — till exempel en bok som inte angett någon sidkapacitet — utelämnas hela raden i stället för att tryckas halvfylld. Utrymmet den reserverade förblir reserverat, så ingen brödtext flyttar sig.',
+  'documentLayout.furniture.token.page': 'Numret på den sida där den sätts.',
+  'documentLayout.furniture.token.pageCount': 'Dokumentets totala antal sidor.',
+  'documentLayout.furniture.token.pageCapacity': 'Den sidkapacitet som den omgivande boken angett.',
+  'documentLayout.furniture.token.entityName':
+    'Namnet på den juridiska person som dokumentet tillhör.',
+  'documentLayout.furniture.token.entityNipc': 'Enhetens NIPC.',
+  'documentLayout.furniture.token.title': 'Dokumentets titel.',
+  'documentLayout.furniture.token.subject': 'Dokumentets förkortade ärenderad.',
+  'documentLayout.furniture.token.date': 'Dokumentets skapandedatum.',
+  'documentLayout.furniture.error.tooLong': 'Texten är längre än {maximum} tecken ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Texten måste rymmas på en enda rad.',
+  'documentLayout.furniture.error.unclosed': 'En platshållare öppnades och stängdes aldrig.',
+  'documentLayout.furniture.error.unknownToken': '”{token}” är inte en tillgänglig platshållare.',
+  'documentLayout.furniture.echo.label': 'På exempeldokumentet trycks:',
+  'documentLayout.furniture.echo.empty': 'Tom — ingenting sätts.',
+  'documentLayout.furniture.preview.pointer':
+    'Det här är ett texteko, inte en sättning. Vill du se elementen på en riktig sida anger du dem på en mall och använder mallens PDF-förhandsgranskning.',
   'settings.documents.cardTitle': 'Dokument',
   'settings.documents.locale.label': 'Språk',
   'settings.documents.locale.hint': 'Språk för gränssnittet och dokumenten.',

@@ -1856,6 +1856,9 @@ export const frFR: Catalog = {
   'users.sessions.empty': 'Aucune session active.',
   'users.sessions.unknownDevice': 'Appareil inconnu',
   'users.sessions.unknownNetwork': 'Réseau inconnu',
+  'users.sessions.networkReported': 'indiquée par le proxy',
+  'users.sessions.networkReportedHint':
+    'Les réseaux marqués comme indiqués par le proxy proviennent d’un en-tête de transfert et n’ont pas été observés directement par le serveur.',
   'users.edit.usernameHint':
     "Le nom d'utilisateur est l'identifiant d'audit et ne peut pas être modifié.",
   'users.edit.displayNameLabel': 'Nom affiché',
@@ -1945,6 +1948,64 @@ export const frFR: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'L’auteur de chaque événement d’audit est l’utilisateur connecté (sélectionné dans le coin supérieur droit), et non une valeur saisie ici.',
+  // --- Éléments de page répétés sur les documents générés ---------------------------
+  'documentLayout.section.furniture.title': 'Éléments de page répétés',
+  'documentLayout.section.furniture.description':
+    'Un en-tête courant, un pied de page courant et un texte vertical dans une marge latérale, tracés sur chaque page. Chaque élément réserve son propre espace : en activer un fait donc refluer le corps du texte au lieu d’imprimer par-dessus.',
+  'documentLayout.furniture.notice.title': 'Ce que cette modification fait',
+  'documentLayout.furniture.notice.forward':
+    'Tous les éléments sont désactivés par défaut, et cette valeur reproduit exactement le résultat actuel. En activer un change la façon dont sont composés les documents générés à partir de maintenant.',
+  'documentLayout.furniture.notice.pinned':
+    'Cela ne modifie aucun document déjà signé. Chaque document conserve la mise en page avec laquelle il a été composé, et toute recomposition ultérieure — y compris le contrôle effectué à la clôture d’un livre — utilise cette mise en page conservée, jamais ces réglages.',
+  'documentLayout.field.furnitureHeaderEnabled': 'En-tête courant',
+  'documentLayout.field.furnitureHeaderText': 'Texte de l’en-tête',
+  'documentLayout.field.furnitureHeaderAlignment': 'Alignement de l’en-tête',
+  'documentLayout.field.furnitureHeaderRule': 'Filet sous l’en-tête',
+  'documentLayout.field.furnitureFooterEnabled': 'Pied de page courant',
+  'documentLayout.field.furnitureFooterText': 'Texte du pied de page',
+  'documentLayout.field.furnitureFooterAlignment': 'Alignement du pied de page',
+  'documentLayout.field.furnitureFooterRule': 'Filet au-dessus du pied de page',
+  'documentLayout.field.furnitureSideTextEnabled': 'Texte vertical latéral',
+  'documentLayout.field.furnitureSideText': 'Texte latéral',
+  'documentLayout.field.furnitureSideTextEdge': 'Marge latérale',
+  'documentLayout.option.alignment.Left': 'À gauche',
+  'documentLayout.option.alignment.Center': 'Centré',
+  'documentLayout.option.alignment.Right': 'À droite',
+  'documentLayout.option.edge.Left': 'Marge de reliure (gauche)',
+  'documentLayout.option.edge.Right': 'Marge extérieure (droite)',
+  'documentLayout.value.on': 'Activé',
+  'documentLayout.value.off': 'Désactivé',
+  'documentLayout.value.empty': 'Vide',
+  'documentLayout.furniture.tokens.intro':
+    'Le texte peut porter des données du document. Écrivez un marqueur entre doubles accolades ; tout le reste est imprimé tel quel.',
+  'documentLayout.furniture.tokens.caption':
+    'Marqueurs disponibles dans le texte des éléments de page',
+  'documentLayout.furniture.tokens.column.token': 'Marqueur',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Écrivez-le exactement tel qu’il apparaît, accolades comprises. La liste est fermée : un marqueur absent d’ici est refusé à l’enregistrement, au lieu d’être imprimé vide.',
+  'documentLayout.furniture.tokens.column.meaning': 'Correspond à',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'La donnée par laquelle le marqueur est remplacé sur chaque page.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Lorsqu’un document ne porte pas une donnée demandée par le texte — un livre qui n’a déclaré aucune capacité de pages, par exemple — la ligne entière est omise plutôt qu’imprimée à moitié. L’espace qu’elle avait réservé le reste, de sorte qu’aucun texte du corps ne se déplace.',
+  'documentLayout.furniture.token.page': 'Le numéro de la page sur laquelle il est tracé.',
+  'documentLayout.furniture.token.pageCount': 'Nombre total de pages du document.',
+  'documentLayout.furniture.token.pageCapacity':
+    'La capacité de pages déclarée par le livre qui le contient.',
+  'documentLayout.furniture.token.entityName':
+    'Nom de la personne morale à laquelle appartient le document.',
+  'documentLayout.furniture.token.entityNipc': 'Le NIPC de l’entité.',
+  'documentLayout.furniture.token.title': 'Le titre du document.',
+  'documentLayout.furniture.token.subject': 'La ligne d’objet abrégée du document.',
+  'documentLayout.furniture.token.date': 'La date de création du document.',
+  'documentLayout.furniture.error.tooLong': 'Le texte dépasse {maximum} caractères ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'Le texte doit tenir sur une seule ligne.',
+  'documentLayout.furniture.error.unclosed': 'Un marqueur a été ouvert et jamais refermé.',
+  'documentLayout.furniture.error.unknownToken': '« {token} » n’est pas un marqueur disponible.',
+  'documentLayout.furniture.echo.label': 'Sur le document d’exemple, cela imprime :',
+  'documentLayout.furniture.echo.empty': 'Vide — rien n’est tracé.',
+  'documentLayout.furniture.preview.pointer':
+    'Ceci est un écho textuel, pas une composition. Pour voir les éléments sur une vraie page, définissez-les sur un modèle et utilisez l’aperçu PDF de ce modèle.',
   'settings.documents.cardTitle': 'Documents',
   'settings.documents.locale.label': 'Langue',
   'settings.documents.locale.hint': 'Langue de l’interface et des documents.',

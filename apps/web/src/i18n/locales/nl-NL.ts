@@ -1845,6 +1845,9 @@ export const nlNL: Catalog = {
   'users.sessions.empty': 'Geen actieve sessies.',
   'users.sessions.unknownDevice': 'Onbekend apparaat',
   'users.sessions.unknownNetwork': 'Onbekend netwerk',
+  'users.sessions.networkReported': 'opgegeven door proxy',
+  'users.sessions.networkReportedHint':
+    'Netwerken die zijn gemarkeerd als opgegeven door de proxy komen uit een doorstuurheader en zijn niet rechtstreeks door de server waargenomen.',
   'users.edit.usernameHint':
     'De gebruikersnaam is de audit-identificatie en kan niet worden gewijzigd.',
   'users.edit.displayNameLabel': 'Weergavenaam',
@@ -1934,6 +1937,64 @@ export const nlNL: Catalog = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'De auteur van elke auditgebeurtenis is de aangemelde gebruiker (geselecteerd in de rechterbovenhoek), niet een hier ingevoerde waarde.',
+  // --- Herhaalde pagina-elementen op gegenereerde documenten ------------------------
+  'documentLayout.section.furniture.title': 'Herhaalde pagina-elementen',
+  'documentLayout.section.furniture.description':
+    'Een doorlopende kopregel, een doorlopende voetregel en verticale tekst in een zijmarge, op elke pagina getekend. Elk element reserveert zijn eigen ruimte, dus één inschakelen laat de broodtekst herschikken in plaats van eroverheen te drukken.',
+  'documentLayout.furniture.notice.title': 'Wat deze wijziging doet',
+  'documentLayout.furniture.notice.forward':
+    'Alle elementen staan standaard uit, en die standaard levert precies de huidige uitvoer op. Eén inschakelen verandert hoe voortaan gegenereerde documenten worden opgemaakt.',
+  'documentLayout.furniture.notice.pinned':
+    'Het verandert niets aan een document dat al ondertekend is. Elk document bewaart de opmaak waarmee het is gezet, en elke latere heropmaak — ook de controle bij het sluiten van een boek — gebruikt die bewaarde opmaak, nooit deze instellingen.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Doorlopende kopregel',
+  'documentLayout.field.furnitureHeaderText': 'Tekst van de kopregel',
+  'documentLayout.field.furnitureHeaderAlignment': 'Uitlijning van de kopregel',
+  'documentLayout.field.furnitureHeaderRule': 'Lijn onder de kopregel',
+  'documentLayout.field.furnitureFooterEnabled': 'Doorlopende voetregel',
+  'documentLayout.field.furnitureFooterText': 'Tekst van de voetregel',
+  'documentLayout.field.furnitureFooterAlignment': 'Uitlijning van de voetregel',
+  'documentLayout.field.furnitureFooterRule': 'Lijn boven de voetregel',
+  'documentLayout.field.furnitureSideTextEnabled': 'Verticale zijtekst',
+  'documentLayout.field.furnitureSideText': 'Zijtekst',
+  'documentLayout.field.furnitureSideTextEdge': 'Zijmarge',
+  'documentLayout.option.alignment.Left': 'Links',
+  'documentLayout.option.alignment.Center': 'Gecentreerd',
+  'documentLayout.option.alignment.Right': 'Rechts',
+  'documentLayout.option.edge.Left': 'Rugmarge (links)',
+  'documentLayout.option.edge.Right': 'Buitenmarge (rechts)',
+  'documentLayout.value.on': 'Aan',
+  'documentLayout.value.off': 'Uit',
+  'documentLayout.value.empty': 'Leeg',
+  'documentLayout.furniture.tokens.intro':
+    'De tekst kan gegevens uit het document meedragen. Schrijf een tijdelijke aanduiding tussen dubbele accolades; al het overige wordt letterlijk afgedrukt.',
+  'documentLayout.furniture.tokens.caption':
+    'Beschikbare aanduidingen in de tekst van pagina-elementen',
+  'documentLayout.furniture.tokens.column.token': 'Aanduiding',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Schrijf haar precies zoals ze hier staat, accolades inbegrepen. De lijst is gesloten: een aanduiding die hier ontbreekt wordt bij het opslaan geweigerd in plaats van leeg afgedrukt.',
+  'documentLayout.furniture.tokens.column.meaning': 'Staat voor',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'Het gegeven waardoor de aanduiding op elke pagina wordt vervangen.',
+  'documentLayout.furniture.tokens.absentFact':
+    'Draagt een document een gevraagd gegeven niet — bijvoorbeeld een boek dat geen paginacapaciteit heeft opgegeven — dan vervalt de hele regel in plaats van halfgevuld te worden afgedrukt. De gereserveerde ruimte blijft gereserveerd, zodat er geen broodtekst verschuift.',
+  'documentLayout.furniture.token.page': 'Het nummer van de pagina waarop ze wordt getekend.',
+  'documentLayout.furniture.token.pageCount': 'Totaal aantal pagina’s van het document.',
+  'documentLayout.furniture.token.pageCapacity':
+    'De paginacapaciteit die het omvattende boek heeft opgegeven.',
+  'documentLayout.furniture.token.entityName':
+    'Naam van de rechtspersoon waartoe het document behoort.',
+  'documentLayout.furniture.token.entityNipc': 'Het NIPC van de entiteit.',
+  'documentLayout.furniture.token.title': 'De titel van het document.',
+  'documentLayout.furniture.token.subject': 'De verkorte onderwerpregel van het document.',
+  'documentLayout.furniture.token.date': 'De aanmaakdatum van het document.',
+  'documentLayout.furniture.error.tooLong': 'De tekst is langer dan {maximum} tekens ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'De tekst moet één enkele regel zijn.',
+  'documentLayout.furniture.error.unclosed': 'Er is een aanduiding geopend die nooit is gesloten.',
+  'documentLayout.furniture.error.unknownToken': '“{token}” is geen beschikbare aanduiding.',
+  'documentLayout.furniture.echo.label': 'Op het voorbeelddocument staat er dan:',
+  'documentLayout.furniture.echo.empty': 'Leeg — er wordt niets getekend.',
+  'documentLayout.furniture.preview.pointer':
+    'Dit is een tekstweergave, geen opmaak. Stel de elementen in op een sjabloon en gebruik de PDF-voorbeeldweergave daarvan om ze op een echte pagina te zien.',
   'settings.documents.cardTitle': 'Documenten',
   'settings.documents.locale.label': 'Taal',
   'settings.documents.locale.hint': 'Taal van de interface en de documenten.',

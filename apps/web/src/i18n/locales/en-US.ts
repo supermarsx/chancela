@@ -1833,6 +1833,9 @@ export const enUS = {
   'users.sessions.empty': 'No active sessions.',
   'users.sessions.unknownDevice': 'Unknown device',
   'users.sessions.unknownNetwork': 'Unknown network',
+  'users.sessions.networkReported': 'reported by proxy',
+  'users.sessions.networkReportedHint':
+    'Networks marked as reported by proxy were declared by a forwarding header, not observed directly by the server.',
   'users.edit.usernameHint': 'The username is the audit identifier and cannot be changed.',
   'users.edit.displayNameLabel': 'Display name',
   'users.edit.activationCard': 'Status',
@@ -1921,6 +1924,63 @@ export const enUS = {
   'settings.identity.orgName.placeholder': 'Encosto Estratégico, Lda.',
   'settings.identity.actorNote':
     'The author of each audit event is the signed-in user (selected in the top-right corner), not a value entered here.',
+  // --- Page furniture: repeated page elements on generated documents ----------------
+  'documentLayout.section.furniture.title': 'Repeated page elements',
+  'documentLayout.section.furniture.description':
+    'A running header, a running footer, and vertical text in a side margin, drawn on every page. Each piece reserves its own space, so turning one on reflows the body instead of printing over it.',
+  'documentLayout.furniture.notice.title': 'What changing this does',
+  'documentLayout.furniture.notice.forward':
+    'Every piece is off by default, and those defaults reproduce the current output exactly. Turning one on changes how documents generated from now on are composed.',
+  'documentLayout.furniture.notice.pinned':
+    'It does not change a document that has already been signed. Each document stores the layout it was composed with, and any later recomposition — including the check run when a book is closed — uses that stored layout, never these settings.',
+  'documentLayout.field.furnitureHeaderEnabled': 'Running header',
+  'documentLayout.field.furnitureHeaderText': 'Header text',
+  'documentLayout.field.furnitureHeaderAlignment': 'Header alignment',
+  'documentLayout.field.furnitureHeaderRule': 'Rule below the header',
+  'documentLayout.field.furnitureFooterEnabled': 'Running footer',
+  'documentLayout.field.furnitureFooterText': 'Footer text',
+  'documentLayout.field.furnitureFooterAlignment': 'Footer alignment',
+  'documentLayout.field.furnitureFooterRule': 'Rule above the footer',
+  'documentLayout.field.furnitureSideTextEnabled': 'Vertical side text',
+  'documentLayout.field.furnitureSideText': 'Side text',
+  'documentLayout.field.furnitureSideTextEdge': 'Side margin',
+  'documentLayout.option.alignment.Left': 'Left',
+  'documentLayout.option.alignment.Center': 'Centered',
+  'documentLayout.option.alignment.Right': 'Right',
+  'documentLayout.option.edge.Left': 'Binding edge (left)',
+  'documentLayout.option.edge.Right': 'Fore edge (right)',
+  'documentLayout.value.on': 'On',
+  'documentLayout.value.off': 'Off',
+  'documentLayout.value.empty': 'Empty',
+  'documentLayout.furniture.tokens.intro':
+    'The text can carry facts from the document. Write a token between double braces; everything else is printed exactly as typed.',
+  'documentLayout.furniture.tokens.caption': 'Tokens available in page element text',
+  'documentLayout.furniture.tokens.column.token': 'Token',
+  'documentLayout.furniture.tokens.column.tokenHelp':
+    'Write it exactly as shown, braces included. The list is closed: a token that is not here is refused when you save, instead of printing blank.',
+  'documentLayout.furniture.tokens.column.meaning': 'Stands for',
+  'documentLayout.furniture.tokens.column.meaningHelp':
+    'The fact the token is replaced with on each page.',
+  'documentLayout.furniture.tokens.absentFact':
+    'When a document does not carry a fact the text asks for — a book that declared no page capacity, for instance — the whole line is left out rather than printed half-filled. The space it reserved stays reserved, so no body text moves.',
+  'documentLayout.furniture.token.page': 'The number of the page it is drawn on.',
+  'documentLayout.furniture.token.pageCount': 'Total pages in the document.',
+  'documentLayout.furniture.token.pageCapacity':
+    'The page capacity declared by the book that contains it.',
+  'documentLayout.furniture.token.entityName': 'Name of the legal person the document belongs to.',
+  'documentLayout.furniture.token.entityNipc': 'The entity’s NIPC.',
+  'documentLayout.furniture.token.title': 'The document title.',
+  'documentLayout.furniture.token.subject': 'The document’s short subject line.',
+  'documentLayout.furniture.token.date': 'The document’s creation date.',
+  'documentLayout.furniture.error.tooLong':
+    'The text is longer than {maximum} characters ({actual}).',
+  'documentLayout.furniture.error.lineBreak': 'The text has to be a single line.',
+  'documentLayout.furniture.error.unclosed': 'A token was opened and never closed.',
+  'documentLayout.furniture.error.unknownToken': '“{token}” is not an available token.',
+  'documentLayout.furniture.echo.label': 'On the sample document this prints:',
+  'documentLayout.furniture.echo.empty': 'Empty — nothing is drawn.',
+  'documentLayout.furniture.preview.pointer':
+    'This is a text echo, not a composition. To see the elements on a real page, set them on a template and use that template’s PDF preview.',
   'settings.documents.cardTitle': 'Documents',
   'settings.documents.locale.label': 'Language',
   'settings.documents.locale.hint': 'Language of the interface and documents.',
