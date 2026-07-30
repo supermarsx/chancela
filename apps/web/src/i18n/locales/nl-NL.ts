@@ -3102,12 +3102,7 @@ export const nlNL: Catalog = {
     'Als deze optie actief is, is voor verzegeling geaccepteerd technisch bewijs van een gekwalificeerde handtekening op de bevroren canonieke kopie vereist.',
   'settings.signing.cmd.title': 'Digitale mobiele sleutel (CMD)',
   'settings.signing.cmd.intro':
-    'Ondertekenen in productie vereist de AMA-inloggegevens (ApplicationId en certificaat), aangeleverd via omgevingsvariabelen. Deze waarden worden alleen ter informatie getoond.',
-  'settings.signing.cmd.env': 'Omgeving',
-  'settings.signing.cmd.envHint':
-    'De standaardwaarde voor een inloggegeven dat zelf geen omgeving kiest. Een gegeven dat er wel een kiest, gaat hierboven.',
-  'settings.signing.cmd.envPreprod': 'Preproductie (AMA)',
-  'settings.signing.cmd.envProd': 'Productie (AMA)',
+    'Ondertekenen in productie vereist de AMA-inloggegevens (ApplicationId en certificaat), aangeleverd via omgevingsvariabelen. Deze waarden worden alleen ter informatie getoond. Voorproductie of productie kiest u per inloggegevensvermelding, onder “Ondertekeningsproviders”, en nergens anders.',
   'settings.signing.cmd.applicationId': 'Applicatie-id',
   'settings.signing.cmd.unset': 'Niet ingesteld',
   'settings.signing.cmd.amaCert': 'AMA-certificaat',
@@ -6616,6 +6611,79 @@ export const nlNL: Catalog = {
     'De geldigheidsdatums van het certificaat konden niet als tijdstippen worden gelezen, dus de periode is niet beoordeeld.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
     'Of dit werkelijk het certificaat van AMA is, is niet vastgesteld: er is geen certificeringspad opgebouwd, geen vertrouwensanker geraadpleegd en geen vertrouwenslijst opgehaald.',
+  // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
+  // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
+  // zero-width characters, all of which base64 ignores by specification — and only then read.
+  // Everything below names one difference that survived that and WOULD have changed the decoded
+  // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
+  // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256-vingerafdruk (DER)',
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
+    'Vergelijk deze waarde met de vingerafdruk die AMA u heeft gegeven. Het is het enige in dit overzicht waaraan u kunt zien of dit het juiste certificaat is, en de toepassing vergelijkt het niet voor u.',
+  'settings.providerCredentials.probe.detail.ama_cert_empty': 'Er is geen certificaat opgegeven.',
+  'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
+    'Er is geen PEM-omhulling gevonden: de tekst moet een regel bevatten die exact -----BEGIN CERTIFICATE----- luidt. Er is niets toegevoegd rond wat u hebt geplakt.',
+  'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
+    'Bij de regel -----BEGIN CERTIFICATE----- ontbreekt de bijbehorende regel -----END CERTIFICATE-----, dus het blok lijkt afgekapt. Er is niets voor u afgesloten.',
+  'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
+    'Dit is een PEM-blok met het label “{label}” en niet “CERTIFICATE”. Dit veld neemt het openbare certificaat van AMA op, nooit een privésleutel.',
+  'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
+    'Er is meer dan één PEM-blok geplakt en er is er geen voor u gekozen. Gevonden blokken: {count}. Plak precies één certificaat.',
+  'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
+    'De inhoud van het certificaat bevat op byte-positie {offset} het teken {character}, dat geen base64 en geen witruimte is. Het is blijven staan: het verwijderen of raden waarvoor het stond zou het gelezen certificaat veranderen.',
+  'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
+    'De inhoud van het certificaat is geen geldige base64 en is niet hersteld: het ontbrekende deel is niet terug te halen. De lezer meldt: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_normalised':
+    'Bij het lezen van het certificaat zijn tekens genegeerd die de base64-inhoud niet gebruikt: witruimte, stuurtekens of tekens zonder breedte. Genegeerde tekens: {removed}. Het gedecodeerde certificaat blijft ongewijzigd.',
+  // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
+  // under its own heading and a completed run costs one real qualified electronic signature.
+  'settings.providerCredentials.cmdTest.runEndToEnd':
+    'Test starten en een echte gekwalificeerde elektronische handtekening aanmaken',
+  // --- Probe check NAMES: the row label, not the sentence beside it (t112) ---
+  // These shipped rendering as raw snake_case identifiers (`trusted_list_anchors`,
+  // `stored_credential_fields`) in every locale, because the detail-code work translated the
+  // sentence and not the thing naming it. Short noun phrases, in the register of the column heads
+  // on the same surface. The wire `name` is untouched and still carries the identifier, so nothing
+  // an operator greps or reads in an API response moves.
+  'settings.providerCredentials.probe.checkName.entry_enabled': 'Vermelding actief',
+  'settings.providerCredentials.probe.checkName.mode_supported': 'Providertype ondersteund',
+  'settings.providerCredentials.probe.checkName.outbound_client': 'Uitgaande HTTP-client',
+  'settings.providerCredentials.probe.checkName.configured_environment': 'Geconfigureerde omgeving',
+  'settings.providerCredentials.probe.checkName.stored_credential_fields':
+    'Opgeslagen inloggegevensvelden',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
+    'AMA-certificaat leesbaar',
+  'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-toegang',
+  'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport gereed',
+  'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
+    'Adres past bij de omgeving',
+  'settings.providerCredentials.probe.checkName.endpoint_reachable': 'Adres bereikbaar',
+  'settings.providerCredentials.probe.checkName.live_provider_operation':
+    'Echte bewerking bij de provider',
+  'settings.providerCredentials.probe.checkName.trusted_list_anchors':
+    'Ankers van de vertrouwenslijst',
+  'settings.providerCredentials.probe.checkName.endpoint_safe': 'Adres veilig',
+  'settings.providerCredentials.probe.checkName.endpoint_https': 'Adres via HTTPS',
+  'settings.providerCredentials.probe.checkName.authorization_configuration':
+    'Configuratie van de autorisatie',
+  'settings.providerCredentials.probe.checkName.provider_configuration':
+    'Configuratie van de provider',
+  'settings.providerCredentials.probe.checkName.authentication': 'Authenticatie',
+  'settings.providerCredentials.probe.checkName.credentials_list': 'Lijst met inloggegevens',
+  'settings.providerCredentials.probe.checkName.credential_selection': 'Keuze van de inloggegevens',
+  'settings.providerCredentials.probe.checkName.credentials_info': 'Details van de inloggegevens',
+  'settings.providerCredentials.probe.checkName.environment_configuration':
+    'Configuratie van de omgeving',
+  'settings.providerCredentials.probe.checkName.providers_list': 'Lijst met attribuutproviders',
+  'settings.providerCredentials.probe.checkName.pkcs12_loaded': 'PKCS#12-identiteit geladen',
+  'settings.providerCredentials.probe.checkName.challenge_signed': 'Uitdaging ondertekend',
+  'settings.providerCredentials.probe.checkName.challenge_verified': 'Uitdaging geverifieerd',
+  'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certificaat gelezen',
+  'settings.providerCredentials.probe.checkName.certificate_normalised':
+    'Geplakte tekst opgeschoond',
+  'settings.providerCredentials.probe.checkName.rsa_public_key': 'Openbare RSA-sleutel',
+  'settings.providerCredentials.probe.checkName.validity_window': 'Geldigheidsperiode',
+  'settings.providerCredentials.probe.checkName.trust_established': 'Vertrouwen vastgesteld',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Weggaan zonder op te slaan?',
   'unsaved.body':

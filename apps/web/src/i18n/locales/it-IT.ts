@@ -3103,12 +3103,7 @@ export const itIT: Catalog = {
     'Con questa opzione attiva, il sigillo richiede la prova tecnica accettata di una firma qualificata sulla copia canonica congelata.',
   'settings.signing.cmd.title': 'Chiave mobile digitale (CMD)',
   'settings.signing.cmd.intro':
-    'La firma in produzione richiede le credenziali AMA (ApplicationId e certificato), fornite tramite variabili d’ambiente. Questi valori sono mostrati solo a scopo informativo.',
-  'settings.signing.cmd.env': 'Ambiente',
-  'settings.signing.cmd.envHint':
-    'Il valore predefinito per una voce di credenziale che non sceglie un ambiente proprio. Una voce che ne sceglie uno prevale su questo.',
-  'settings.signing.cmd.envPreprod': 'Preproduzione (AMA)',
-  'settings.signing.cmd.envProd': 'Produzione (AMA)',
+    'La firma in produzione richiede le credenziali AMA (ApplicationId e certificato), fornite tramite variabili d’ambiente. Questi valori sono mostrati solo a scopo informativo. La preproduzione o la produzione si sceglie su ogni voce di credenziale, in «Provider di firma», e in nessun altro punto.',
   'settings.signing.cmd.applicationId': 'ID applicazione',
   'settings.signing.cmd.unset': 'Non impostato',
   'settings.signing.cmd.amaCert': 'Certificato AMA',
@@ -6614,6 +6609,80 @@ export const itIT: Catalog = {
     'Non è stato possibile leggere le date di validità del certificato come istanti temporali, perciò il periodo non è stato valutato.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
     'Non è stato accertato se questo sia davvero il certificato di AMA: non è stata costruita alcuna catena di certificazione, non è stata consultata alcuna ancora di fiducia e non è stata scaricata alcuna lista di fiducia.',
+  // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
+  // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
+  // zero-width characters, all of which base64 ignores by specification — and only then read.
+  // Everything below names one difference that survived that and WOULD have changed the decoded
+  // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
+  // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'Impronta SHA-256 (DER)',
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
+    'Confronti questo valore con l’impronta comunicata dall’AMA. È l’unico elemento di questo pannello in grado di dire se il certificato è quello giusto, e l’applicazione non esegue il confronto al posto suo.',
+  'settings.providerCredentials.probe.detail.ama_cert_empty':
+    'Non è stato fornito alcun certificato.',
+  'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
+    'Non è stata trovata l’intestazione PEM: il testo deve contenere una riga esattamente uguale a -----BEGIN CERTIFICATE-----. Non è stato aggiunto nulla a ciò che ha incollato.',
+  'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
+    'La riga -----BEGIN CERTIFICATE----- non ha la corrispondente riga -----END CERTIFICATE-----, quindi il blocco sembra troncato. Nulla è stato chiuso al posto suo.',
+  'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
+    'Questo è un blocco PEM etichettato come «{label}», non come «CERTIFICATE». Questo campo accoglie il certificato pubblico dell’AMA, mai una chiave privata.',
+  'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
+    'È stato incollato più di un blocco PEM e nessuno è stato scelto al posto suo. Blocchi trovati: {count}. Incolli esattamente un certificato.',
+  'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
+    'Il corpo del certificato contiene {character} alla posizione {offset} (in byte), che non è né base64 né uno spazio. È stato lasciato dov’era: rimuoverlo o indovinare che cosa sostituiva cambierebbe il certificato letto.',
+  'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
+    'Il corpo del certificato non è base64 valido e non è stato riparato: la parte mancante non è recuperabile. Il lettore riporta: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_normalised':
+    'Alla lettura del certificato sono stati ignorati caratteri che il corpo base64 non utilizza: spazi, caratteri di controllo o a larghezza zero. Caratteri ignorati: {removed}. Il certificato decodificato è invariato.',
+  // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
+  // under its own heading and a completed run costs one real qualified electronic signature.
+  'settings.providerCredentials.cmdTest.runEndToEnd':
+    'Avviare il test e produrre una firma elettronica qualificata reale',
+  // --- Probe check NAMES: the row label, not the sentence beside it (t112) ---
+  // These shipped rendering as raw snake_case identifiers (`trusted_list_anchors`,
+  // `stored_credential_fields`) in every locale, because the detail-code work translated the
+  // sentence and not the thing naming it. Short noun phrases, in the register of the column heads
+  // on the same surface. The wire `name` is untouched and still carries the identifier, so nothing
+  // an operator greps or reads in an API response moves.
+  'settings.providerCredentials.probe.checkName.entry_enabled': 'Voce attiva',
+  'settings.providerCredentials.probe.checkName.mode_supported': 'Tipo di provider supportato',
+  'settings.providerCredentials.probe.checkName.outbound_client': 'Client HTTP in uscita',
+  'settings.providerCredentials.probe.checkName.configured_environment': 'Ambiente configurato',
+  'settings.providerCredentials.probe.checkName.stored_credential_fields':
+    'Campi della credenziale salvati',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
+    'Certificato AMA leggibile',
+  'settings.providerCredentials.probe.checkName.http_basic_configured': 'Accesso HTTP Basic',
+  'settings.providerCredentials.probe.checkName.http_transport_ready': 'Trasporto pronto',
+  'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
+    'L’indirizzo corrisponde all’ambiente',
+  'settings.providerCredentials.probe.checkName.endpoint_reachable': 'Indirizzo raggiungibile',
+  'settings.providerCredentials.probe.checkName.live_provider_operation':
+    'Operazione reale sul provider',
+  'settings.providerCredentials.probe.checkName.trusted_list_anchors':
+    'Ancore della lista di fiducia',
+  'settings.providerCredentials.probe.checkName.endpoint_safe': 'Indirizzo sicuro',
+  'settings.providerCredentials.probe.checkName.endpoint_https': 'Indirizzo in HTTPS',
+  'settings.providerCredentials.probe.checkName.authorization_configuration':
+    'Configurazione dell’autorizzazione',
+  'settings.providerCredentials.probe.checkName.provider_configuration':
+    'Configurazione del provider',
+  'settings.providerCredentials.probe.checkName.authentication': 'Autenticazione',
+  'settings.providerCredentials.probe.checkName.credentials_list': 'Elenco delle credenziali',
+  'settings.providerCredentials.probe.checkName.credential_selection': 'Scelta della credenziale',
+  'settings.providerCredentials.probe.checkName.credentials_info': 'Dettagli della credenziale',
+  'settings.providerCredentials.probe.checkName.environment_configuration':
+    'Configurazione dell’ambiente',
+  'settings.providerCredentials.probe.checkName.providers_list':
+    'Elenco dei fornitori di attributi',
+  'settings.providerCredentials.probe.checkName.pkcs12_loaded': 'Identità PKCS#12 caricata',
+  'settings.providerCredentials.probe.checkName.challenge_signed': 'Sfida firmata',
+  'settings.providerCredentials.probe.checkName.challenge_verified': 'Sfida verificata',
+  'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certificato letto',
+  'settings.providerCredentials.probe.checkName.certificate_normalised': 'Testo incollato ripulito',
+  'settings.providerCredentials.probe.checkName.rsa_public_key': 'Chiave pubblica RSA',
+  'settings.providerCredentials.probe.checkName.validity_window': 'Periodo di validità',
+  'settings.providerCredentials.probe.checkName.trust_established': 'Fiducia stabilita',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Uscire senza salvare?',
   'unsaved.body': 'Questa pagina contiene modifiche non salvate. Se esci ora, andranno perse.',

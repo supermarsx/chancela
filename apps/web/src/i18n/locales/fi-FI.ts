@@ -3087,12 +3087,7 @@ export const fiFI: Catalog = {
     'Kun tämä vaihtoehto on käytössä, sinetöinti edellyttää hyväksytyn teknisen todisteen hyväksytystä allekirjoituksesta jäädytetyssä kanonisessa kopiossa.',
   'settings.signing.cmd.title': 'Digitaalinen mobiiliavain (CMD)',
   'settings.signing.cmd.intro':
-    'Tuotannon allekirjoitus vaatii AMA:n tunnistetiedot (ApplicationId ja varmenne), jotka toimitetaan ympäristömuuttujilla. Nämä arvot näytetään vain tiedoksi.',
-  'settings.signing.cmd.env': 'Ympäristö',
-  'settings.signing.cmd.envHint':
-    'Oletusarvo tunnistetiedolle, joka ei valitse omaa ympäristöä. Tunnistetieto, joka valitsee sellaisen, ohittaa tämän.',
-  'settings.signing.cmd.envPreprod': 'Esituotanto (AMA)',
-  'settings.signing.cmd.envProd': 'Tuotanto (AMA)',
+    'Tuotannon allekirjoitus vaatii AMA:n tunnistetiedot (ApplicationId ja varmenne), jotka toimitetaan ympäristömuuttujilla. Nämä arvot näytetään vain tiedoksi. Esituotanto tai tuotanto valitaan kussakin tunnistetietomerkinnässä kohdassa ”Allekirjoituspalveluntarjoajat”, ei missään muualla.',
   'settings.signing.cmd.applicationId': 'ApplicationId',
   'settings.signing.cmd.unset': 'Ei asetettu',
   'settings.signing.cmd.amaCert': 'AMA-varmenne',
@@ -6569,6 +6564,77 @@ export const fiFI: Catalog = {
     'Varmenteen voimassaolopäiviä ei voitu lukea ajanhetkinä, joten aikaväliä ei arvioitu.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
     'Sitä, onko tämä todella AMA:n varmenne, ei todettu: varmennepolkua ei rakennettu, luottamusankkuria ei tarkistettu eikä luottamuslistaa haettu.',
+  // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
+  // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
+  // zero-width characters, all of which base64 ignores by specification — and only then read.
+  // Everything below names one difference that survived that and WOULD have changed the decoded
+  // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
+  // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256-sormenjälki (DER)',
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
+    'Vertaa tätä arvoa AMA:n ilmoittamaan sormenjälkeen. Se on tämän näkymän ainoa tieto, joka kertoo, onko tämä oikea varmenne, eikä sovellus tee vertailua puolestasi.',
+  'settings.providerCredentials.probe.detail.ama_cert_empty': 'Varmennetta ei annettu.',
+  'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
+    'PEM-kehystä ei löytynyt: tekstissä on oltava rivi, joka on täsmälleen -----BEGIN CERTIFICATE-----. Liittämäsi tekstin ympärille ei lisätty mitään.',
+  'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
+    'Rivillä -----BEGIN CERTIFICATE----- ei ole vastaavaa riviä -----END CERTIFICATE-----, joten lohko vaikuttaa katkenneelta. Mitään ei suljettu puolestasi.',
+  'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
+    'Tämä on PEM-lohko, jonka nimiö on ”{label}” eikä ”CERTIFICATE”. Tähän kenttään tulee AMA:n julkinen varmenne, ei koskaan yksityinen avain.',
+  'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
+    'Liitettynä oli useampi kuin yksi PEM-lohko, eikä niistä valittu mitään puolestasi. Löytyneet lohkot: {count}. Liitä täsmälleen yksi varmenne.',
+  'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
+    'Varmenteen sisällössä on tavukohdassa {offset} merkki {character}, joka ei ole base64 eikä tyhjemerkki. Se jätettiin paikalleen: sen poistaminen tai sen arvaaminen, mitä se korvasi, muuttaisi luettua varmennetta.',
+  'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
+    'Varmenteen sisältö ei ole kelvollista base64:ää eikä sitä korjattu: puuttuvaa osaa ei voi palauttaa. Lukija ilmoittaa: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_normalised':
+    'Varmennetta luettaessa ohitettiin merkkejä, joita base64-sisältö ei käytä: tyhjemerkit, ohjausmerkit ja nollalevyiset merkit. Ohitettuja merkkejä: {removed}. Puretun varmenteen sisältö ei muutu.',
+  // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
+  // under its own heading and a completed run costs one real qualified electronic signature.
+  'settings.providerCredentials.cmdTest.runEndToEnd':
+    'Aloita testi ja luo aito hyväksytty sähköinen allekirjoitus',
+  // --- Probe check NAMES: the row label, not the sentence beside it (t112) ---
+  // These shipped rendering as raw snake_case identifiers (`trusted_list_anchors`,
+  // `stored_credential_fields`) in every locale, because the detail-code work translated the
+  // sentence and not the thing naming it. Short noun phrases, in the register of the column heads
+  // on the same surface. The wire `name` is untouched and still carries the identifier, so nothing
+  // an operator greps or reads in an API response moves.
+  'settings.providerCredentials.probe.checkName.entry_enabled': 'Merkintä käytössä',
+  'settings.providerCredentials.probe.checkName.mode_supported': 'Palveluntarjoajan tyyppi tuettu',
+  'settings.providerCredentials.probe.checkName.outbound_client': 'Lähtevä HTTP-asiakas',
+  'settings.providerCredentials.probe.checkName.configured_environment': 'Määritetty ympäristö',
+  'settings.providerCredentials.probe.checkName.stored_credential_fields':
+    'Tallennetut tunnistetietokentät',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
+    'AMA:n varmenne luettavissa',
+  'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-käyttöoikeus',
+  'settings.providerCredentials.probe.checkName.http_transport_ready': 'Siirtoyhteys valmis',
+  'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
+    'Osoite vastaa ympäristöä',
+  'settings.providerCredentials.probe.checkName.endpoint_reachable': 'Osoite tavoitettavissa',
+  'settings.providerCredentials.probe.checkName.live_provider_operation':
+    'Todellinen toimenpide palveluntarjoajalla',
+  'settings.providerCredentials.probe.checkName.trusted_list_anchors': 'Luottamuslistan ankkurit',
+  'settings.providerCredentials.probe.checkName.endpoint_safe': 'Osoite turvallinen',
+  'settings.providerCredentials.probe.checkName.endpoint_https': 'Osoite HTTPS-yhteydellä',
+  'settings.providerCredentials.probe.checkName.authorization_configuration':
+    'Valtuutuksen määritys',
+  'settings.providerCredentials.probe.checkName.provider_configuration':
+    'Palveluntarjoajan määritys',
+  'settings.providerCredentials.probe.checkName.authentication': 'Todennus',
+  'settings.providerCredentials.probe.checkName.credentials_list': 'Tunnistetietojen luettelo',
+  'settings.providerCredentials.probe.checkName.credential_selection': 'Tunnistetiedon valinta',
+  'settings.providerCredentials.probe.checkName.credentials_info': 'Tunnistetiedon tiedot',
+  'settings.providerCredentials.probe.checkName.environment_configuration': 'Ympäristön määritys',
+  'settings.providerCredentials.probe.checkName.providers_list':
+    'Attribuuttipalveluntarjoajien luettelo',
+  'settings.providerCredentials.probe.checkName.pkcs12_loaded': 'PKCS#12-identiteetti ladattu',
+  'settings.providerCredentials.probe.checkName.challenge_signed': 'Haaste allekirjoitettu',
+  'settings.providerCredentials.probe.checkName.challenge_verified': 'Haaste todennettu',
+  'settings.providerCredentials.probe.checkName.certificate_parsed': 'Varmenne luettu',
+  'settings.providerCredentials.probe.checkName.certificate_normalised': 'Liitetty teksti siivottu',
+  'settings.providerCredentials.probe.checkName.rsa_public_key': 'Julkinen RSA-avain',
+  'settings.providerCredentials.probe.checkName.validity_window': 'Voimassaoloaika',
+  'settings.providerCredentials.probe.checkName.trust_established': 'Luottamus osoitettu',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Poistutaanko tallentamatta?',
   'unsaved.body': 'Tällä sivulla on tallentamattomia muutoksia. Jos poistut nyt, ne menetetään.',

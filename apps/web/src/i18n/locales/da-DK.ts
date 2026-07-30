@@ -3083,12 +3083,7 @@ export const daDK: Catalog = {
     'Med denne mulighed aktiv, kræver forsegling accepteret teknisk bevis for en kvalificeret underskrift på den frosne kanoniske kopi.',
   'settings.signing.cmd.title': 'Digital Mobile Key (CMD)',
   'settings.signing.cmd.intro':
-    'Signering i produktion kræver AMA-legitimationsoplysningerne (ApplicationId og certifikat), som leveres via miljøvariabler. Disse værdier vises kun til orientering.',
-  'settings.signing.cmd.env': 'Miljø',
-  'settings.signing.cmd.envHint':
-    'Standardværdien for en legitimationspost, der ikke selv vælger et miljø. En post, der vælger et, går forud for denne.',
-  'settings.signing.cmd.envPreprod': 'Førproduktion (AMA)',
-  'settings.signing.cmd.envProd': 'Produktion (AMA)',
+    'Signering i produktion kræver AMA-legitimationsoplysningerne (ApplicationId og certifikat), som leveres via miljøvariabler. Disse værdier vises kun til orientering. Førproduktion eller produktion vælges på hver enkelt legitimationspost under »Signeringsudbydere« og ingen andre steder.',
   'settings.signing.cmd.applicationId': 'ApplicationId',
   'settings.signing.cmd.unset': 'Ikke angivet',
   'settings.signing.cmd.amaCert': 'AMA-certifikat',
@@ -6555,6 +6550,81 @@ export const daDK: Catalog = {
     'Certifikatets gyldighedsdatoer kunne ikke læses som tidspunkter, så perioden blev ikke vurderet.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
     'Om dette virkelig er AMA’s certifikat, blev ikke fastslået: der blev ikke opbygget nogen certificeringssti, ikke konsulteret noget tillidsanker og ikke hentet nogen tillidsliste.',
+  // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
+  // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
+  // zero-width characters, all of which base64 ignores by specification — and only then read.
+  // Everything below names one difference that survived that and WOULD have changed the decoded
+  // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
+  // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256-fingeraftryk (DER)',
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
+    'Sammenlign denne værdi med det fingeraftryk, AMA har oplyst. Det er det eneste i denne oversigt, der kan vise, om det er det rigtige certifikat, og programmet foretager ikke sammenligningen for dig.',
+  'settings.providerCredentials.probe.detail.ama_cert_empty':
+    'Der blev ikke angivet noget certifikat.',
+  'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
+    'Der blev ikke fundet nogen PEM-indramning: teksten skal indeholde en linje, der lyder præcis -----BEGIN CERTIFICATE-----. Der blev ikke tilføjet noget omkring det, du indsatte.',
+  'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
+    'Linjen -----BEGIN CERTIFICATE----- har ingen tilsvarende linje -----END CERTIFICATE-----, så blokken ser afkortet ud. Der blev ikke lukket noget for dig.',
+  'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
+    'Dette er en PEM-blok med mærkatet «{label}» og ikke «CERTIFICATE». Dette felt modtager AMA’s offentlige certifikat, aldrig en privat nøgle.',
+  'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
+    'Der blev indsat mere end én PEM-blok, og ingen af dem blev valgt for dig. Fundne blokke: {count}. Indsæt præcis ét certifikat.',
+  'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
+    'Certifikatets indhold indeholder på byteposition {offset} tegnet {character}, som hverken er base64 eller blanktegn. Det blev stående: at fjerne det eller gætte, hvad det erstattede, ville ændre det læste certifikat.',
+  'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
+    'Certifikatets indhold er ikke gyldig base64 og blev ikke repareret: den manglende del kan ikke gendannes. Læseren melder: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_normalised':
+    'Ved læsningen af certifikatet blev der set bort fra tegn, som base64-indholdet ikke bruger: blanktegn, styretegn eller tegn uden bredde. Ignorerede tegn: {removed}. Det afkodede certifikat er uændret.',
+  // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
+  // under its own heading and a completed run costs one real qualified electronic signature.
+  'settings.providerCredentials.cmdTest.runEndToEnd':
+    'Start testen, og opret en ægte kvalificeret elektronisk signatur',
+  // --- Probe check NAMES: the row label, not the sentence beside it (t112) ---
+  // These shipped rendering as raw snake_case identifiers (`trusted_list_anchors`,
+  // `stored_credential_fields`) in every locale, because the detail-code work translated the
+  // sentence and not the thing naming it. Short noun phrases, in the register of the column heads
+  // on the same surface. The wire `name` is untouched and still carries the identifier, so nothing
+  // an operator greps or reads in an API response moves.
+  'settings.providerCredentials.probe.checkName.entry_enabled': 'Post aktiv',
+  'settings.providerCredentials.probe.checkName.mode_supported': 'Udbydertype understøttet',
+  'settings.providerCredentials.probe.checkName.outbound_client': 'Udgående HTTP-klient',
+  'settings.providerCredentials.probe.checkName.configured_environment': 'Konfigureret miljø',
+  'settings.providerCredentials.probe.checkName.stored_credential_fields':
+    'Gemte legitimationsfelter',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
+    'AMA-certifikat læsbart',
+  'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-adgang',
+  'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport klar',
+  'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
+    'Adressen passer til miljøet',
+  'settings.providerCredentials.probe.checkName.endpoint_reachable': 'Adresse tilgængelig',
+  'settings.providerCredentials.probe.checkName.live_provider_operation':
+    'Reel handling hos udbyderen',
+  'settings.providerCredentials.probe.checkName.trusted_list_anchors': 'Ankre i tillidslisten',
+  'settings.providerCredentials.probe.checkName.endpoint_safe': 'Adresse sikker',
+  'settings.providerCredentials.probe.checkName.endpoint_https': 'Adresse via HTTPS',
+  'settings.providerCredentials.probe.checkName.authorization_configuration':
+    'Konfiguration af godkendelsen',
+  'settings.providerCredentials.probe.checkName.provider_configuration':
+    'Konfiguration af udbyderen',
+  'settings.providerCredentials.probe.checkName.authentication': 'Autentificering',
+  'settings.providerCredentials.probe.checkName.credentials_list':
+    'Liste over legitimationsoplysninger',
+  'settings.providerCredentials.probe.checkName.credential_selection':
+    'Valg af legitimationsoplysninger',
+  'settings.providerCredentials.probe.checkName.credentials_info':
+    'Detaljer om legitimationsoplysningerne',
+  'settings.providerCredentials.probe.checkName.environment_configuration':
+    'Konfiguration af miljøet',
+  'settings.providerCredentials.probe.checkName.providers_list': 'Liste over attributudbydere',
+  'settings.providerCredentials.probe.checkName.pkcs12_loaded': 'PKCS#12-identitet indlæst',
+  'settings.providerCredentials.probe.checkName.challenge_signed': 'Udfordring underskrevet',
+  'settings.providerCredentials.probe.checkName.challenge_verified': 'Udfordring verificeret',
+  'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certifikat læst',
+  'settings.providerCredentials.probe.checkName.certificate_normalised': 'Indsat tekst renset',
+  'settings.providerCredentials.probe.checkName.rsa_public_key': 'Offentlig RSA-nøgle',
+  'settings.providerCredentials.probe.checkName.validity_window': 'Gyldighedsperiode',
+  'settings.providerCredentials.probe.checkName.trust_established': 'Tillid fastslået',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Forlad uden at gemme?',
   'unsaved.body': 'Denne side har ikke-gemte ændringer. Hvis du forlader den nu, går de tabt.',

@@ -3059,12 +3059,7 @@ export const enGB: Catalog = {
     'With this option active, sealing requires accepted technical evidence of a qualified signature on the frozen canonical copy.',
   'settings.signing.cmd.title': 'Digital Mobile Key (CMD)',
   'settings.signing.cmd.intro':
-    'Production signing requires the AMA credentials (ApplicationId and certificate), supplied through environment variables. These values are shown for reference only.',
-  'settings.signing.cmd.env': 'Environment',
-  'settings.signing.cmd.envHint':
-    'The default for a credential entry that does not select an environment of its own. An entry that does select one overrides this.',
-  'settings.signing.cmd.envPreprod': 'Pre-production (AMA)',
-  'settings.signing.cmd.envProd': 'Production (AMA)',
+    'Production signing requires the AMA credentials (ApplicationId and certificate), supplied through environment variables. These values are shown for reference only. Pre-production or production is chosen on each credential entry, under “Signing providers”, and nowhere else.',
   'settings.signing.cmd.applicationId': 'ApplicationId',
   'settings.signing.cmd.unset': 'Not set',
   'settings.signing.cmd.amaCert': 'AMA certificate',
@@ -6493,6 +6488,75 @@ export const enGB: Catalog = {
     "The certificate's validity dates could not be read as timestamps, so the window was not judged.",
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
     "Whether this is genuinely AMA's certificate was not determined: no certification path was built, no trust anchor was consulted and no Trusted List was fetched.",
+  // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
+  // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
+  // zero-width characters, all of which base64 ignores by specification — and only then read.
+  // Everything below names one difference that survived that and WOULD have changed the decoded
+  // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
+  // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256 fingerprint (DER)',
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
+    'Compare this against the fingerprint AMA gave you. It is the only thing on this panel that can tell you whether this is the right certificate, and the application does not compare it for you.',
+  'settings.providerCredentials.probe.detail.ama_cert_empty': 'No certificate was supplied.',
+  'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
+    'No PEM armour was found: the text must contain a line reading exactly -----BEGIN CERTIFICATE-----. None was added around what you pasted.',
+  'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
+    'The -----BEGIN CERTIFICATE----- line has no matching -----END CERTIFICATE----- line, so the block looks truncated. Nothing was closed off for you.',
+  'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
+    'This is a PEM block labelled “{label}”, not “CERTIFICATE”. This field takes AMA’s public certificate — never a private key.',
+  'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
+    'More than one PEM block was pasted, and none of them was chosen for you. Blocks found: {count}. Paste exactly one certificate.',
+  'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
+    'The certificate body contains {character} at byte offset {offset}, which is neither base64 nor whitespace. It was left in place: removing it, or guessing what it replaced, would change the certificate that was read.',
+  'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
+    'The certificate body is not valid base64 and was not repaired: the missing part cannot be recovered. The reader reports: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_normalised':
+    'Characters the base64 body does not use — whitespace, control or zero-width characters — were ignored when the certificate was read. Characters ignored: {removed}. The decoded certificate is unchanged.',
+  // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
+  // under its own heading and a completed run costs one real qualified electronic signature.
+  'settings.providerCredentials.cmdTest.runEndToEnd':
+    'Start the test and produce a real qualified electronic signature',
+  // --- Probe check NAMES: the row label, not the sentence beside it (t112) ---
+  // These shipped rendering as raw snake_case identifiers (`trusted_list_anchors`,
+  // `stored_credential_fields`) in every locale, because the detail-code work translated the
+  // sentence and not the thing naming it. Short noun phrases, in the register of the column heads
+  // on the same surface. The wire `name` is untouched and still carries the identifier, so nothing
+  // an operator greps or reads in an API response moves.
+  'settings.providerCredentials.probe.checkName.entry_enabled': 'Entry enabled',
+  'settings.providerCredentials.probe.checkName.mode_supported': 'Provider type supported',
+  'settings.providerCredentials.probe.checkName.outbound_client': 'Outbound HTTP client',
+  'settings.providerCredentials.probe.checkName.configured_environment': 'Configured environment',
+  'settings.providerCredentials.probe.checkName.stored_credential_fields':
+    'Stored credential fields',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
+    'AMA certificate readable',
+  'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic gateway',
+  'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport ready',
+  'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
+    'Endpoint matches environment',
+  'settings.providerCredentials.probe.checkName.endpoint_reachable': 'Endpoint reachable',
+  'settings.providerCredentials.probe.checkName.live_provider_operation': 'Live provider operation',
+  'settings.providerCredentials.probe.checkName.trusted_list_anchors': 'Trusted List anchors',
+  'settings.providerCredentials.probe.checkName.endpoint_safe': 'Endpoint safe',
+  'settings.providerCredentials.probe.checkName.endpoint_https': 'Endpoint over HTTPS',
+  'settings.providerCredentials.probe.checkName.authorization_configuration':
+    'Authorisation configuration',
+  'settings.providerCredentials.probe.checkName.provider_configuration': 'Provider configuration',
+  'settings.providerCredentials.probe.checkName.authentication': 'Authentication',
+  'settings.providerCredentials.probe.checkName.credentials_list': 'Credential list',
+  'settings.providerCredentials.probe.checkName.credential_selection': 'Credential selection',
+  'settings.providerCredentials.probe.checkName.credentials_info': 'Credential details',
+  'settings.providerCredentials.probe.checkName.environment_configuration':
+    'Environment configuration',
+  'settings.providerCredentials.probe.checkName.providers_list': 'Attribute-provider list',
+  'settings.providerCredentials.probe.checkName.pkcs12_loaded': 'PKCS#12 identity loaded',
+  'settings.providerCredentials.probe.checkName.challenge_signed': 'Challenge signed',
+  'settings.providerCredentials.probe.checkName.challenge_verified': 'Challenge verified',
+  'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certificate read',
+  'settings.providerCredentials.probe.checkName.certificate_normalised': 'Pasted text cleaned up',
+  'settings.providerCredentials.probe.checkName.rsa_public_key': 'RSA public key',
+  'settings.providerCredentials.probe.checkName.validity_window': 'Validity window',
+  'settings.providerCredentials.probe.checkName.trust_established': 'Trust established',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Leave without saving?',
   'unsaved.body': 'This page has unsaved changes. If you leave now, they will be lost.',

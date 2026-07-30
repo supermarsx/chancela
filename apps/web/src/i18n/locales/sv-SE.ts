@@ -3088,12 +3088,7 @@ export const svSE: Catalog = {
     'Med detta alternativ aktivt kräver försegling accepterade tekniska bevis på en kvalificerad signatur på den frysta kanoniska kopian.',
   'settings.signing.cmd.title': 'Digital Mobile Key (CMD)',
   'settings.signing.cmd.intro':
-    'Signering i produktion kräver AMA-uppgifterna (ApplicationId och certifikat), som tillhandahålls via miljövariabler. Dessa värden visas endast som information.',
-  'settings.signing.cmd.env': 'Miljö',
-  'settings.signing.cmd.envHint':
-    'Standardvärdet för en inloggningsuppgift som inte väljer en egen miljö. En uppgift som väljer en går före det här värdet.',
-  'settings.signing.cmd.envPreprod': 'Förproduktion (AMA)',
-  'settings.signing.cmd.envProd': 'Produktion (AMA)',
+    'Signering i produktion kräver AMA-uppgifterna (ApplicationId och certifikat), som tillhandahålls via miljövariabler. Dessa värden visas endast som information. Förproduktion eller produktion väljs på varje enskild uppgiftspost under ”Signeringsleverantörer” och ingen annanstans.',
   'settings.signing.cmd.applicationId': 'ApplicationId',
   'settings.signing.cmd.unset': 'Ej angivet',
   'settings.signing.cmd.amaCert': 'AMA-certifikat',
@@ -6562,6 +6557,78 @@ export const svSE: Catalog = {
     'Certifikatets giltighetsdatum kunde inte läsas som tidpunkter, så perioden bedömdes inte.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
     'Om detta verkligen är AMA:s certifikat fastställdes inte: ingen certifieringskedja byggdes, inget tillitsankare konsulterades och ingen betrodd förteckning hämtades.',
+  // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
+  // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
+  // zero-width characters, all of which base64 ignores by specification — and only then read.
+  // Everything below names one difference that survived that and WOULD have changed the decoded
+  // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
+  // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint':
+    'SHA-256-fingeravtryck (DER)',
+  'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
+    'Jämför det här värdet med det fingeravtryck som AMA har lämnat. Det är det enda i den här översikten som kan visa om det är rätt certifikat, och programmet gör inte jämförelsen åt dig.',
+  'settings.providerCredentials.probe.detail.ama_cert_empty': 'Inget certifikat angavs.',
+  'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
+    'Ingen PEM-inramning hittades: texten måste innehålla en rad som lyder exakt -----BEGIN CERTIFICATE-----. Inget lades till runt det du klistrade in.',
+  'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
+    'Raden -----BEGIN CERTIFICATE----- saknar motsvarande rad -----END CERTIFICATE-----, så blocket ser avkortat ut. Inget avslutades åt dig.',
+  'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
+    'Det här är ett PEM-block med etiketten ”{label}” och inte ”CERTIFICATE”. Fältet tar emot AMA:s offentliga certifikat, aldrig en privat nyckel.',
+  'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
+    'Mer än ett PEM-block klistrades in, och inget av dem valdes åt dig. Hittade block: {count}. Klistra in exakt ett certifikat.',
+  'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
+    'Certifikatets innehåll har på byteposition {offset} tecknet {character}, som varken är base64 eller blanksteg. Det fick stå kvar: att ta bort det eller gissa vad det ersatte skulle ändra det certifikat som lästes.',
+  'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
+    'Certifikatets innehåll är inte giltig base64 och reparerades inte: den del som saknas går inte att återskapa. Läsaren rapporterar: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_normalised':
+    'Vid läsningen av certifikatet bortsågs från tecken som base64-innehållet inte använder: blanksteg, styrtecken eller tecken utan bredd. Ignorerade tecken: {removed}. Det avkodade certifikatet är oförändrat.',
+  // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
+  // under its own heading and a completed run costs one real qualified electronic signature.
+  'settings.providerCredentials.cmdTest.runEndToEnd':
+    'Starta testet och skapa en verklig kvalificerad elektronisk underskrift',
+  // --- Probe check NAMES: the row label, not the sentence beside it (t112) ---
+  // These shipped rendering as raw snake_case identifiers (`trusted_list_anchors`,
+  // `stored_credential_fields`) in every locale, because the detail-code work translated the
+  // sentence and not the thing naming it. Short noun phrases, in the register of the column heads
+  // on the same surface. The wire `name` is untouched and still carries the identifier, so nothing
+  // an operator greps or reads in an API response moves.
+  'settings.providerCredentials.probe.checkName.entry_enabled': 'Post aktiv',
+  'settings.providerCredentials.probe.checkName.mode_supported': 'Leverantörstyp stöds',
+  'settings.providerCredentials.probe.checkName.outbound_client': 'Utgående HTTP-klient',
+  'settings.providerCredentials.probe.checkName.configured_environment': 'Konfigurerad miljö',
+  'settings.providerCredentials.probe.checkName.stored_credential_fields': 'Sparade uppgiftsfält',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
+    'AMA-certifikat läsbart',
+  'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-åtkomst',
+  'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport klar',
+  'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
+    'Adressen stämmer med miljön',
+  'settings.providerCredentials.probe.checkName.endpoint_reachable': 'Adress nåbar',
+  'settings.providerCredentials.probe.checkName.live_provider_operation':
+    'Verklig åtgärd hos leverantören',
+  'settings.providerCredentials.probe.checkName.trusted_list_anchors':
+    'Ankare i den betrodda förteckningen',
+  'settings.providerCredentials.probe.checkName.endpoint_safe': 'Adress säker',
+  'settings.providerCredentials.probe.checkName.endpoint_https': 'Adress via HTTPS',
+  'settings.providerCredentials.probe.checkName.authorization_configuration':
+    'Konfiguration av behörigheten',
+  'settings.providerCredentials.probe.checkName.provider_configuration':
+    'Konfiguration av leverantören',
+  'settings.providerCredentials.probe.checkName.authentication': 'Autentisering',
+  'settings.providerCredentials.probe.checkName.credentials_list': 'Lista över uppgifter',
+  'settings.providerCredentials.probe.checkName.credential_selection': 'Val av uppgift',
+  'settings.providerCredentials.probe.checkName.credentials_info': 'Uppgiftens detaljer',
+  'settings.providerCredentials.probe.checkName.environment_configuration':
+    'Konfiguration av miljön',
+  'settings.providerCredentials.probe.checkName.providers_list': 'Lista över attributleverantörer',
+  'settings.providerCredentials.probe.checkName.pkcs12_loaded': 'PKCS#12-identitet inläst',
+  'settings.providerCredentials.probe.checkName.challenge_signed': 'Utmaning signerad',
+  'settings.providerCredentials.probe.checkName.challenge_verified': 'Utmaning verifierad',
+  'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certifikat inläst',
+  'settings.providerCredentials.probe.checkName.certificate_normalised': 'Inklistrad text rensad',
+  'settings.providerCredentials.probe.checkName.rsa_public_key': 'Offentlig RSA-nyckel',
+  'settings.providerCredentials.probe.checkName.validity_window': 'Giltighetsperiod',
+  'settings.providerCredentials.probe.checkName.trust_established': 'Tillit fastställd',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Lämna utan att spara?',
   'unsaved.body': 'Den här sidan har osparade ändringar. Om du lämnar den nu går de förlorade.',
