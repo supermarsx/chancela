@@ -137,13 +137,18 @@ async fn books_acts_full_seal_lifecycle() {
         book_doc_events >= 2,
         "book-open abertura + book-close encerramento document events: {events}"
     );
-    // The encerramento is the latest document for the book key (a real csc-termo-encerramento/v1).
+    // The encerramento is the latest document for the book key (a real csc-termo-encerramento).
+    // Asserted on the family's instrument, not on a version literal: what this covers is that
+    // book-close produced the encerramento at all, and pinning a version here only meant a
+    // catalogue mint had to come back and edit an assertion about something else.
     let (status, bundle) = h
         .get_json(&format!("/v1/acts/{book_id}/document/bundle"))
         .await;
     assert_eq!(status, 200, "encerramento bundle: {bundle}");
-    assert_eq!(
-        bundle["document"]["template_id"], "csc-termo-encerramento/v1",
+    assert!(
+        bundle["document"]["template_id"]
+            .as_str()
+            .is_some_and(|id| id.starts_with("csc-termo-encerramento/")),
         "book-close produced the termo de encerramento document: {bundle}"
     );
 

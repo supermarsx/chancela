@@ -10859,15 +10859,20 @@ mod tests {
         );
 
         // The encerramento is the latest document for the book key (a real csc-termo-encerramento).
+        // The subject here is that closing generates the encerramento at all, not which version is
+        // current, so the assertion tracks the family's spine rather than naming a version literal
+        // a catalogue mint would have to come back and edit.
         let (status, bundle) = send(
             state.clone(),
             get(&format!("/v1/acts/{book_id}/document/bundle")),
         )
         .await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(
-            bundle["document"]["template_id"],
-            "csc-termo-encerramento/v1"
+        assert!(
+            bundle["document"]["template_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("csc-termo-encerramento/")),
+            "closing must generate the CSC encerramento: {bundle}"
         );
 
         // The honest book/termo route is stage-specific: a later one-shot close must not relabel

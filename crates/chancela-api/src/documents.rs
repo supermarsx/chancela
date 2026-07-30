@@ -312,22 +312,23 @@ fn spine_template_id(family: EntityFamily, stage: LifecycleStage) -> Option<&'st
         (Association, Ata) => "assoc-ata-ga/v1",
         (Foundation, Ata) => "fundacao-ata-ca/v1",
         (Cooperative, Ata) => "cooperativa-ata-ag/v1",
-        // Termo de abertura — one per family. `/v2` adds the declared page-count row; `/v1` stays
-        // in the catalog, byte-identical, because documents already generated from it name it and
-        // must keep resolving. Only what a NEW termo renders moves.
-        (CommercialCompany, TermoAbertura) => "csc-termo-abertura/v2",
-        (Condominium, TermoAbertura) => "condominio-termo-abertura/v2",
-        (Association, TermoAbertura) => "assoc-termo-abertura/v2",
-        (Foundation, TermoAbertura) => "fundacao-termo-abertura/v2",
-        (Cooperative, TermoAbertura) => "cooperativa-termo-abertura/v2",
-        // Termo de encerramento — each family's closing instrument. CSC also carries a
-        // `-transporte` variant (successor-book carry-over) reachable on demand; the encerramento is
-        // the spine that book-close auto-generates.
-        (CommercialCompany, TermoEncerramento) => "csc-termo-encerramento/v1",
-        (Condominium, TermoEncerramento) => "condominio-termo-encerramento/v1",
-        (Association, TermoEncerramento) => "assoc-termo-encerramento/v1",
-        (Foundation, TermoEncerramento) => "fundacao-termo-encerramento/v1",
-        (Cooperative, TermoEncerramento) => "cooperativa-termo-encerramento/v1",
+        // Termo de abertura — one per family. `/v3` identifies the entity in notarial prose and
+        // states the declared page count in a sentence; `/v2` (labelled rows, page-count row) and
+        // `/v1` stay in the catalog, byte-identical, because documents already generated from them
+        // name them and must keep resolving. Only what a NEW termo renders moves.
+        (CommercialCompany, TermoAbertura) => "csc-termo-abertura/v3",
+        (Condominium, TermoAbertura) => "condominio-termo-abertura/v3",
+        (Association, TermoAbertura) => "assoc-termo-abertura/v3",
+        (Foundation, TermoAbertura) => "fundacao-termo-abertura/v3",
+        (Cooperative, TermoAbertura) => "cooperativa-termo-abertura/v3",
+        // Termo de encerramento — each family's closing instrument, `/v2` being the prose shape.
+        // CSC also carries a `-transporte` variant (successor-book carry-over) reachable on demand;
+        // the encerramento is the spine that book-close auto-generates.
+        (CommercialCompany, TermoEncerramento) => "csc-termo-encerramento/v2",
+        (Condominium, TermoEncerramento) => "condominio-termo-encerramento/v2",
+        (Association, TermoEncerramento) => "assoc-termo-encerramento/v2",
+        (Foundation, TermoEncerramento) => "fundacao-termo-encerramento/v2",
+        (Cooperative, TermoEncerramento) => "cooperativa-termo-encerramento/v2",
         _ => return None,
     })
 }
@@ -1161,16 +1162,61 @@ pub(crate) fn generate_condominium_absent_owner_communication(
     )
 }
 
+/// The template a termo must render against: **the one it was frozen with**, falling back to the
+/// family spine only when nothing was pinned.
+///
+/// A `TermoInstrument` pins `template_id` at `advance_to_signing`
+/// ([`chancela_core::termo::TermoInstrument::advance_to_signing`]) precisely so its PDF is
+/// reproducible. Resolving the *spine* instead makes every re-render follow whatever the catalogue
+/// ships today, so publishing a new `/vN` silently re-renders an instrument its signatories signed
+/// against the old one — the retroactive mutation the frozen-spec gate exists to prevent. The
+/// pinned id therefore wins wherever it exists.
+///
+/// `None` (the spine path) is not a loophole: it is a **pre-pinning** instrument, or a one-shot
+/// book that never entered the two-phase flow and so has no frozen bytes to contradict. Those
+/// legitimately render whatever is current.
+///
+/// **A pinned id that no longer resolves is a hard error, never a fall back to the spine.** Falling
+/// back would render a *different* template than the one the instrument was signed against and
+/// report success — exactly the failure this function exists to remove. A missing pinned template
+/// means the catalogue lost an asset that signed documents depend on, and it must say so.
+fn spec_for_frozen_instrument(
+    pinned_template_id: Option<&str>,
+    family: EntityFamily,
+    stage: LifecycleStage,
+) -> Result<Option<&'static TemplateSpec>, ApiError> {
+    match pinned_template_id {
+        Some(id) => registry().get(id).map(Some).ok_or_else(|| {
+            ApiError::Internal(format!(
+                "this termo was frozen against template {id:?}, which is no longer in the \
+                 catalogue; it cannot be re-rendered, and rendering a different template in its \
+                 place would contradict the bytes its signatories signed"
+            ))
+        }),
+        None => Ok(default_spec(family, stage)),
+    }
+}
+
 /// Generate the termo de abertura document for a freshly-opened book, or `None` if `family` has
 /// no TermoAbertura template yet. Book instruments have no owning act, so the row is keyed by the
 /// book id cast into an [`ActId`] (the `documents.act_id` scope column; the ids never collide).
+///
+/// `pinned_template_id` is the instrument's frozen template (see [`spec_for_frozen_instrument`]).
+/// Pass `None` only from a path that is opening a **fresh** book, which has nothing frozen yet and
+/// should render the current spine.
 pub(crate) fn generate_for_termo(
     termo: &TermoDeAbertura,
     book: &Book,
     entity: &Entity,
+    pinned_template_id: Option<&str>,
     instance_layout: &DocumentLayoutPolicy,
 ) -> Result<Option<Generated>, ApiError> {
-    let Some(spec) = default_spec(entity.family, LifecycleStage::TermoAbertura) else {
+    let Some(spec) = spec_for_frozen_instrument(
+        pinned_template_id,
+        entity.family,
+        LifecycleStage::TermoAbertura,
+    )?
+    else {
         return Ok(None);
     };
     let document_layout =
@@ -1219,7 +1265,15 @@ pub(crate) fn generate_termo_snapshot(
             numbering_scheme,
         )
         .map_err(|e| ApiError::Unprocessable(e.to_string()))?;
-    generate_for_termo(&projected, book, entity, instance_layout)
+    // The instrument's frozen template, not the spine: this snapshot IS the bytes the signatories
+    // sign, and the open path re-renders it from the same call.
+    generate_for_termo(
+        &projected,
+        book,
+        entity,
+        termo.template_id.as_deref(),
+        instance_layout,
+    )
 }
 
 /// The title a fresh termo de abertura draft carries, matching the one-shot render's heading so the
@@ -1378,7 +1432,14 @@ pub(crate) fn generate_encerramento_snapshot(
     pages_used_at_close: Option<u32>,
     instance_layout: &DocumentLayoutPolicy,
 ) -> Result<Option<Generated>, ApiError> {
-    let Some(spec) = default_spec(entity.family, LifecycleStage::TermoEncerramento) else {
+    // Resolved the same way the render below resolves it, so the layout is derived from the very
+    // template the bytes are rendered against — never from a spine that has since moved.
+    let Some(spec) = spec_for_frozen_instrument(
+        termo.template_id.as_deref(),
+        entity.family,
+        LifecycleStage::TermoEncerramento,
+    )?
+    else {
         return Ok(None);
     };
     let document_layout =
@@ -1404,7 +1465,15 @@ pub(crate) fn generate_encerramento_snapshot_with_layout(
     pages_used_at_close: Option<u32>,
     document_layout: &DocumentLayoutPolicy,
 ) -> Result<Option<Generated>, ApiError> {
-    let Some(spec) = default_spec(entity.family, LifecycleStage::TermoEncerramento) else {
+    // **The stale-fact verifier's resolution.** It must be the template the instrument was frozen
+    // with: re-rendering the current spine would make publishing a new `/vN` refuse every
+    // in-flight close, and would compare the signed bytes against a document nobody signed.
+    let Some(spec) = spec_for_frozen_instrument(
+        termo.template_id.as_deref(),
+        entity.family,
+        LifecycleStage::TermoEncerramento,
+    )?
+    else {
         return Ok(None);
     };
     let projected = termo
@@ -5242,7 +5311,7 @@ pub async fn preview_document(
 /// The ata spine templates ignore both, so this is a strict superset safe for every stage.
 ///
 /// **Why `required_signatories` is here.** The five `*-termo-transporte` templates are off the
-/// spine — [`spine_template_id`] maps `TermoEncerramento` to `*-termo-encerramento/v1` for every
+/// spine — [`spine_template_id`] maps `TermoEncerramento` to `*-termo-encerramento/v2` for every
 /// family — so they are only ever reached on demand, through this function. They declare a
 /// signature block over `required_signatories`, which nothing here supplied: the block resolved to
 /// nothing and the renderer dropped it, so a termo de transporte came out with no signature lines
@@ -11211,6 +11280,267 @@ mod tests {
         );
     }
 
+    // --- the pinned template survives a spine repoint -------------------------------------------
+    //
+    // `TermoInstrument::template_id` is pinned at `advance_to_signing`, and the close path
+    // re-renders the encerramento to compare its digest against the bytes the signatories co-signed
+    // (`crate::termo::close_from_termo`). Resolving that re-render through the *spine* instead of
+    // the pinned id meant publishing a new `/vN` silently re-rendered every in-flight instrument
+    // against a template nobody signed, and the guard then refused to close the book.
+    //
+    // These three tests hold the three branches of that resolution. The first is the one that has
+    // to be able to go red: it was confirmed failing with the fix reverted (the re-render came back
+    // as `/v2` prose bytes against a `/v1` signed snapshot).
+
+    /// A book-close on an instrument frozen **before** the spine moved still re-renders to the exact
+    /// bytes its signatories signed, so the snapshot-mismatch guard does not fire.
+    ///
+    /// The signed bytes are built here directly against the pinned `/v1` spec rather than through
+    /// the resolution under test, so the comparison is against a genuinely independent rendering —
+    /// otherwise both sides would move together and the test would pass no matter what the resolver
+    /// did.
+    #[test]
+    fn an_encerramento_frozen_before_the_repoint_still_re_renders_to_its_signed_bytes() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = seed_draft_encerramento(book.id, entity.family, OffsetDateTime::now_utc());
+        termo.fields.instrument_date = Some(date!(2026 - 12 - 31));
+        termo.fields.closing_reason = Some(ClosingReason::BookFull);
+        // Pinned at advance, back when this WAS the spine.
+        termo.template_id = Some("csc-termo-encerramento/v1".to_owned());
+
+        // The premise: the spine has since moved off the pinned version. Without this the test
+        // proves nothing, so it is asserted rather than assumed.
+        assert_eq!(
+            spine_template_id(
+                EntityFamily::CommercialCompany,
+                LifecycleStage::TermoEncerramento
+            ),
+            Some("csc-termo-encerramento/v2"),
+            "the spine must have moved for this test to mean anything"
+        );
+
+        let layout = DocumentLayoutPolicy::default();
+        // The bytes the signatories signed: rendered against the pinned spec, independently of the
+        // resolution under test.
+        let pinned_spec = registry()
+            .get("csc-termo-encerramento/v1")
+            .expect("the pinned encerramento stays in the catalogue");
+        let projected = termo
+            .project_encerramento(7, Some(42))
+            .expect("the frozen instrument projects");
+        let signed = generate(
+            pinned_spec,
+            &encerramento_ctx(&projected, &book, &entity),
+            ActId(termo.id.0),
+            OffsetDateTime::now_utc(),
+            &[],
+            &layout,
+        )
+        .expect("the signed snapshot renders");
+
+        // The counterfactual, kept in the test rather than left to a one-off experiment: what the
+        // pre-fix resolution — the spine, whatever it points at today — would have re-rendered. If
+        // this ever stops differing, the two versions render alike and every assertion below would
+        // hold for the wrong reason.
+        let spine_spec = default_spec(
+            EntityFamily::CommercialCompany,
+            LifecycleStage::TermoEncerramento,
+        )
+        .expect("the encerramento spine is bound");
+        let spine_render = generate(
+            spine_spec,
+            &encerramento_ctx(&projected, &book, &entity),
+            ActId(termo.id.0),
+            OffsetDateTime::now_utc(),
+            &[],
+            &layout,
+        )
+        .expect("the spine renders");
+        assert_ne!(
+            spine_render.stored.pdf_digest, signed.stored.pdf_digest,
+            "resolving the spine really does move the bytes — otherwise this test proves nothing"
+        );
+
+        // What the close path's stale-fact verifier re-renders today.
+        let rederived = generate_encerramento_snapshot_with_layout(
+            &termo,
+            &book,
+            &entity,
+            7,
+            Some(42),
+            &layout,
+        )
+        .expect("the re-render succeeds")
+        .expect("an encerramento template");
+
+        // The operative claim first: these are the bytes `close_from_termo` compares, and a repoint
+        // must not move them. The resolved template is named in the message because it is the cause
+        // this assertion exists to catch.
+        assert_eq!(
+            rederived.stored.pdf_digest, signed.stored.pdf_digest,
+            "the close guard compares these bytes and a repoint must not move them; re-rendered \
+             against {} instead of the pinned csc-termo-encerramento/v1",
+            rederived.stored.template_id
+        );
+        assert_eq!(
+            rederived.stored.template_id, "csc-termo-encerramento/v1",
+            "the re-render must follow the instrument's pinned template, not the spine"
+        );
+        // The `template_moved` observation the refusal detail reports must also stay quiet.
+        assert_eq!(
+            rederived.stored.template_spec_json, signed.stored.template_spec_json,
+            "the bound spec must be the signed one, so `template_moved` cannot fire"
+        );
+    }
+
+    /// An instrument frozen before `template_id` existed carries `None` and must keep working: it
+    /// resolves the family's spine, exactly as it always did.
+    #[test]
+    fn an_encerramento_with_no_pinned_template_still_resolves_the_spine() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = seed_draft_encerramento(book.id, entity.family, OffsetDateTime::now_utc());
+        termo.fields.instrument_date = Some(date!(2026 - 12 - 31));
+        termo.fields.closing_reason = Some(ClosingReason::BookFull);
+        assert_eq!(
+            termo.template_id, None,
+            "a pre-pinning instrument is exactly this shape"
+        );
+
+        let rederived = generate_encerramento_snapshot_with_layout(
+            &termo,
+            &book,
+            &entity,
+            7,
+            Some(42),
+            &DocumentLayoutPolicy::default(),
+        )
+        .expect("the re-render succeeds")
+        .expect("an encerramento template");
+
+        assert_eq!(
+            Some(rederived.stored.template_id.as_str()),
+            spine_template_id(
+                EntityFamily::CommercialCompany,
+                LifecycleStage::TermoEncerramento
+            ),
+            "nothing pinned means the spine, and the spine is what it always resolved"
+        );
+    }
+
+    /// A pinned id the catalogue no longer carries is a **loud fault**, never a quiet fall-back to
+    /// the spine. Falling back would render a template the signatories never saw and report
+    /// success — the exact failure the pinned resolution exists to remove. The id must be in the
+    /// message, because it is the only thing that tells an operator which asset went missing.
+    #[test]
+    fn an_encerramento_pinned_to_a_missing_template_fails_loudly_naming_it() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = seed_draft_encerramento(book.id, entity.family, OffsetDateTime::now_utc());
+        termo.fields.instrument_date = Some(date!(2026 - 12 - 31));
+        termo.fields.closing_reason = Some(ClosingReason::BookFull);
+        termo.template_id = Some("csc-termo-encerramento/v99".to_owned());
+
+        // `Generated` is not `Debug`, so the Ok arm is rejected by hand rather than by `expect_err`.
+        let message = match generate_encerramento_snapshot_with_layout(
+            &termo,
+            &book,
+            &entity,
+            7,
+            Some(42),
+            &DocumentLayoutPolicy::default(),
+        ) {
+            Err(err) => format!("{err:?}"),
+            Ok(Some(g)) => panic!(
+                "a missing pinned template resolved to {} instead of failing",
+                g.stored.template_id
+            ),
+            Ok(None) => panic!("a missing pinned template was treated as no template at all"),
+        };
+
+        assert!(
+            message.contains("csc-termo-encerramento/v99"),
+            "the refusal must name the missing template: {message}"
+        );
+        assert!(
+            !message.contains("csc-termo-encerramento/v2"),
+            "and must not have quietly reached for the spine: {message}"
+        );
+    }
+
+    /// The abertura carries the same pinned resolution even though its open path preserves the
+    /// snapshot rather than re-rendering it, so there is no guard to catch a drift here. That is
+    /// exactly why it is pinned in code and held by a test: the `/v1 → /v2` mint shipped with the
+    /// spine-resolving defect and nothing noticed.
+    #[test]
+    fn an_abertura_frozen_before_the_repoint_renders_its_pinned_template() {
+        let entity = entity_of(EntityKind::SociedadePorQuotas);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let mut termo = seed_draft_abertura(book.id, entity.family, OffsetDateTime::now_utc());
+        termo.fields.instrument_date = Some(date!(2026 - 1 - 15));
+        termo.fields.purpose = Some("livro de atas da assembleia geral".to_owned());
+        termo.template_id = Some("csc-termo-abertura/v2".to_owned());
+
+        assert_eq!(
+            spine_template_id(
+                EntityFamily::CommercialCompany,
+                LifecycleStage::TermoAbertura
+            ),
+            Some("csc-termo-abertura/v3"),
+            "the spine must have moved for this test to mean anything"
+        );
+
+        let snapshot = generate_termo_snapshot(
+            &termo,
+            &book,
+            &entity,
+            NumberingScheme::Sequential,
+            &DocumentLayoutPolicy::default(),
+        )
+        .expect("the snapshot renders")
+        .expect("an abertura template");
+
+        assert_eq!(
+            snapshot.stored.template_id, "csc-termo-abertura/v2",
+            "the snapshot the signatories sign must be the pinned template, not the spine"
+        );
+    }
+
+    /// The spine bindings the auto-generation paths follow. The four version-explicit prose tests
+    /// (`the_prose_termo_states_the_declared_page_count_in_a_sentence` and its siblings) reach their
+    /// templates by literal id; this is the assertion that makes them cover the **live** path, by
+    /// pinning that those literals are what a seal / open / close now actually renders.
+    #[test]
+    fn the_termo_spine_points_at_the_prose_versions() {
+        for family in [
+            EntityFamily::CommercialCompany,
+            EntityFamily::Condominium,
+            EntityFamily::Association,
+            EntityFamily::Foundation,
+            EntityFamily::Cooperative,
+        ] {
+            let abertura = spine_template_id(family, LifecycleStage::TermoAbertura)
+                .expect("every family binds an abertura spine");
+            assert!(
+                abertura.ends_with("/v3"),
+                "{family:?} abertura spine is {abertura}, not the prose version"
+            );
+            let encerramento = spine_template_id(family, LifecycleStage::TermoEncerramento)
+                .expect("every family binds an encerramento spine");
+            assert!(
+                encerramento.ends_with("/v2"),
+                "{family:?} encerramento spine is {encerramento}, not the prose version"
+            );
+            // Both must actually be in the catalogue, or auto-generation silently produces nothing.
+            assert!(registry().get(abertura).is_some(), "{abertura} is shipped");
+            assert!(
+                registry().get(encerramento).is_some(),
+                "{encerramento} is shipped"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn structural_preview_resolves_instance_then_draft_template_layout() {
         use chancela_core::{
@@ -15431,9 +15761,11 @@ mod tests {
             generate_for_encerramento(&termo, &book, &entity, &DocumentLayoutPolicy::default())
                 .expect("generation ok")
                 .expect("a termo document");
+        // Tracks the spine deliberately: what this pins is that the one-shot close binds the
+        // *condomínio* encerramento (and keys it by the book id), not which version is current.
         assert_eq!(
-            generated.stored.template_id,
-            "condominio-termo-encerramento/v1"
+            Some(generated.stored.template_id.as_str()),
+            spine_template_id(EntityFamily::Condominium, LifecycleStage::TermoEncerramento)
         );
         assert!(generated.stored.pdf_bytes.starts_with(b"%PDF-"));
         // Keyed by the book id cast into an ActId (book instruments have no owning act).
@@ -15502,19 +15834,35 @@ mod tests {
         .expect("csc termo abertura spec")
     }
 
-    /// The spine now renders `/v2`, which states the declared page count in a labelled row.
-    /// Asserted on the row's *value* and on the key/value pairing, not on prose: the label is
-    /// reviewable copy, but that the number reaches a row of its own is the contract.
+    /// The row-based abertura, `/v2`. **Pinned by id, not resolved through the spine**, which has
+    /// since moved to the prose `/v3`. `/v2` is still shipped and still reached by every instrument
+    /// pinned to it, so its guarantee still needs guarding — following the spine here would have
+    /// silently retired that guard the moment the spine moved.
+    fn abertura_v2_spec() -> &'static TemplateSpec {
+        registry()
+            .get("csc-termo-abertura/v2")
+            .expect("the row-based abertura stays in the catalogue")
+    }
+
+    /// `/v2` states the declared page count in a labelled row. Asserted on the row's *value* and on
+    /// the key/value pairing, not on prose: the label is reviewable copy, but that the number
+    /// reaches a row of its own is the contract.
+    ///
+    /// The same guarantee for the version the spine now renders is
+    /// [`the_prose_termo_states_the_declared_page_count_in_a_sentence`].
     #[test]
-    fn the_spine_termo_states_the_declared_page_count_in_its_own_row() {
+    fn the_v2_termo_states_the_declared_page_count_in_its_own_row() {
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = Book::new(entity.id, BookKind::AssembleiaGeral);
         let mut termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
         termo.page_capacity = Some(250);
 
-        let model =
-            chancela_templates::render_with_body(abertura_spec(), &termo_ctx(&termo, &book), &[])
-                .expect("termo renders");
+        let model = chancela_templates::render_with_body(
+            abertura_v2_spec(),
+            &termo_ctx(&termo, &book),
+            &[],
+        )
+        .expect("termo renders");
         let rows: Vec<(String, String)> = model
             .blocks
             .iter()
@@ -15536,8 +15884,13 @@ mod tests {
     /// A one-shot book declares no capacity and is genuinely unlimited, so `/v2` must print no
     /// page-count row at all — not a blank, not a `none`. This is the case that would have
     /// regressed had the context carried a null instead of omitting the key.
+    ///
+    /// Pinned to `/v2` for the same reason as
+    /// [`the_v2_termo_states_the_declared_page_count_in_its_own_row`], and here the spine would not
+    /// even have gone red: `/v3` emits no `KeyValue` block at all, so this loop would have iterated
+    /// over nothing and passed while testing nothing.
     #[test]
-    fn the_spine_termo_omits_the_row_when_no_page_count_was_declared() {
+    fn the_v2_termo_omits_the_row_when_no_page_count_was_declared() {
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = Book::new(entity.id, BookKind::AssembleiaGeral);
         let termo = abertura_with(vec![signatory("Amélia Marques", None, None)]);
@@ -15546,9 +15899,19 @@ mod tests {
             "the one-shot shape declares none"
         );
 
-        let model =
-            chancela_templates::render_with_body(abertura_spec(), &termo_ctx(&termo, &book), &[])
-                .expect("termo renders");
+        let model = chancela_templates::render_with_body(
+            abertura_v2_spec(),
+            &termo_ctx(&termo, &book),
+            &[],
+        )
+        .expect("termo renders");
+        assert!(
+            model
+                .blocks
+                .iter()
+                .any(|b| matches!(b, Block::KeyValue { .. })),
+            "/v2 is the row-based version; with no rows this test would assert nothing"
+        );
         for block in &model.blocks {
             if let Block::KeyValue { rows } = block {
                 for row in rows {
@@ -15756,10 +16119,15 @@ mod tests {
         );
 
         // And read the real document: the English word must not survive into the PDF.
-        let generated =
-            generate_for_termo(&termo, &book, &entity, &DocumentLayoutPolicy::default())
-                .expect("generation ok")
-                .expect("a termo document");
+        let generated = generate_for_termo(
+            &termo,
+            &book,
+            &entity,
+            None,
+            &DocumentLayoutPolicy::default(),
+        )
+        .expect("generation ok")
+        .expect("a termo document");
         let text = extract_pdf_text(&generated.stored.pdf_bytes);
         assert!(text.contains("Gerente"), "rendered termo:\n{text}");
         assert!(text.contains("Amélia Marques"), "rendered termo:\n{text}");
@@ -15829,17 +16197,20 @@ mod tests {
         );
     }
 
+    /// The row-based encerramento, `/v1`. Pinned by id rather than resolved through the spine,
+    /// which has since moved to the prose `/v2`: `/v1` is still shipped and still rendered for every
+    /// instrument pinned to it, so the `Motivo` row it prints still needs a guard. The same
+    /// guarantees against the version the spine now renders are held by
+    /// [`the_prose_encerramento_states_every_closing_reason_and_its_own_dissolution`].
     #[test]
     fn encerramento_renders_the_closing_reason_and_qualidade_in_portuguese() {
         use chancela_core::act::SignatoryCapacity;
 
         let entity = entity_of(EntityKind::SociedadePorQuotas);
         let book = Book::new(entity.id, BookKind::AssembleiaGeral);
-        let spec = default_spec(
-            EntityFamily::CommercialCompany,
-            LifecycleStage::TermoEncerramento,
-        )
-        .expect("csc termo encerramento spec");
+        let spec = registry()
+            .get("csc-termo-encerramento/v1")
+            .expect("the row-based encerramento stays in the catalogue");
 
         let motivo_of = |reason: ClosingReason| -> String {
             let records = vec![signatory(
@@ -15968,6 +16339,10 @@ mod tests {
         );
     }
 
+    /// Pinned to the row-based `/v1` for the same reason as
+    /// [`encerramento_renders_the_closing_reason_and_qualidade_in_portuguese`]; the prose `/v2` the
+    /// spine now renders is covered by
+    /// [`the_prose_encerramento_states_every_closing_reason_and_its_own_dissolution`].
     #[test]
     fn every_family_encerramento_names_its_own_dissolution() {
         // Five independent sentences, one per family — never one interpolated shell, which would
@@ -15982,8 +16357,16 @@ mod tests {
         for (kind, expected) in cases {
             let entity = entity_of(kind);
             let book = Book::new(entity.id, BookKind::AssembleiaGeral);
-            let spec = default_spec(kind.family(), LifecycleStage::TermoEncerramento)
-                .expect("family encerramento spec");
+            let stem = match kind.family() {
+                EntityFamily::CommercialCompany => "csc",
+                EntityFamily::Condominium => "condominio",
+                EntityFamily::Association => "assoc",
+                EntityFamily::Foundation => "fundacao",
+                EntityFamily::Cooperative => "cooperativa",
+            };
+            let spec = registry()
+                .get(&format!("{stem}-termo-encerramento/v1"))
+                .expect("the row-based family encerramento stays in the catalogue");
             let termo = TermoDeEncerramento {
                 ata_count: 3,
                 reason: ClosingReason::EntityDissolved,

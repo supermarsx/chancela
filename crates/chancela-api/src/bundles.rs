@@ -602,10 +602,13 @@ pub async fn start_over_book(
         .termo_abertura
         .as_ref()
         .expect("termo present immediately after open");
+    // The successor opens as a fresh book with a clean termo (see above), so nothing is frozen yet
+    // and it renders the current spine — the same `None` one-shot open `books::create_book` does.
     let generated = match crate::documents::generate_for_termo(
         termo_ref,
         &new_book,
         entity,
+        None,
         &instance_layout,
     ) {
         Ok(g) => g,

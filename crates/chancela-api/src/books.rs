@@ -303,14 +303,21 @@ pub async fn create_book(
         .termo_abertura
         .as_ref()
         .expect("termo present immediately after open");
-    let generated =
-        match crate::documents::generate_for_termo(termo_ref, &book, entity, &instance_layout) {
-            Ok(g) => g,
-            Err(e) => {
-                AppState::rollback_ledger_events(&mut ledger, 1);
-                return Err(e);
-            }
-        };
+    // A freshly-created book has nothing frozen — no `TermoInstrument` has pinned a template yet —
+    // so it renders the current spine. `None` here is the one-shot open, never a re-render.
+    let generated = match crate::documents::generate_for_termo(
+        termo_ref,
+        &book,
+        entity,
+        None,
+        &instance_layout,
+    ) {
+        Ok(g) => g,
+        Err(e) => {
+            AppState::rollback_ledger_events(&mut ledger, 1);
+            return Err(e);
+        }
+    };
     match generated {
         Some(made) => {
             let scope = format!("entity:{}/book:{}", book.entity_id, book.id);
