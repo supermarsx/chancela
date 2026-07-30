@@ -3,11 +3,16 @@ import type { ReactNode } from 'react';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes, useLocation } from 'react-router-dom';
 import { ProviderCredentialPage } from './ProviderCredentialPage';
-import type { ProviderCredentialProbeResponse, ProviderCredentialsListView } from '../../api/types';
+import type {
+  AmaCertificateInspectResponse,
+  ProviderCredentialProbeResponse,
+  ProviderCredentialsListView,
+} from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { hasUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import { permissionsValue, StaticPermissionsProvider } from '../session/permissions';
 import { providerCredentialsPtPT as copy } from '../../i18n/providerCredentialsFallback';
+import { ptPT } from '../../i18n/locales/pt-PT';
 
 const list: ProviderCredentialsListView = {
   strict: false,
@@ -122,12 +127,62 @@ interface Call {
   body: string | null;
 }
 
+/**
+ * What the server says about a candidate AMA certificate: it parses, it carries an RSA key, it is
+ * in date — and, as values, the four things nobody checked. Mirrors the real DTO, including the
+ * `detail_code` that keeps the sentences out of an English-prose channel.
+ */
+const amaCertInspection: AmaCertificateInspectResponse = {
+  parsed: true,
+  rsa_public_key: true,
+  key_bits: 2048,
+  within_validity: true,
+  subject: 'CN=CMD Field Encryption,O=AMA,C=PT',
+  issuer: 'CN=CMD Field Encryption,O=AMA,C=PT',
+  not_before: '2026-07-06T18:43:30Z',
+  not_after: '2036-07-03T18:43:30Z',
+  chain_validated: false,
+  trusted_list_checked: false,
+  issuer_authenticated: false,
+  legal_validity_claimed: false,
+  checks: [
+    {
+      name: 'certificate_parsed',
+      status: 'passed',
+      detail: 'The text parses as an X.509 certificate.',
+      detail_code: 'ama_cert_parsed',
+    },
+    {
+      name: 'rsa_public_key',
+      status: 'passed',
+      detail: 'The certificate carries an RSA public key of 2048 bits.',
+      detail_code: 'ama_cert_rsa_key_present',
+      detail_params: { bits: '2048' },
+    },
+    {
+      name: 'validity_window',
+      status: 'passed',
+      detail: "The current server time falls inside the certificate's validity window.",
+      detail_code: 'ama_cert_within_validity',
+    },
+    {
+      name: 'trust_established',
+      status: 'skipped',
+      detail: "Whether this is genuinely AMA's certificate was not determined.",
+      detail_code: 'ama_cert_trust_not_established',
+    },
+  ],
+};
+
+const INSPECT_PATH = '/provider-credentials/cmd/ama-certificate/inspect';
+
 function stubFetch(
   options: {
     view?: ProviderCredentialsListView;
     writeStatus?: number;
     writeBody?: unknown;
     hangWrite?: boolean;
+    inspectBody?: AmaCertificateInspectResponse;
   } = {},
 ) {
   const {
@@ -135,12 +190,21 @@ function stubFetch(
     writeStatus = 200,
     writeBody = { mode: 'csc', provider_id: 'encosto qtsp', deleted: false },
     hangWrite = false,
+    inspectBody = amaCertInspection,
   } = options;
   const calls: Call[] = [];
   const fn = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const method = init?.method ?? 'GET';
     calls.push({ url, method, body: (init?.body as string) ?? null });
+    if (url.endsWith(INSPECT_PATH)) {
+      return Promise.resolve(
+        new Response(JSON.stringify(inspectBody), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+    }
     if (method !== 'GET' && !url.endsWith('/probe') && hangWrite)
       return new Promise<Response>(() => {});
     const body = method === 'GET' ? view : url.endsWith('/probe') ? probe : writeBody;
@@ -489,7 +553,10 @@ describe('ProviderCredentialPage', () => {
     renderPage('/admin/signing/providers/csc/encosto%20qtsp/entry-a/edit');
 
     fireEvent.click(await screen.findByRole('button', { name: 'Testar' }));
-    expect(await screen.findByRole('heading', { name: 'Resultado do teste' })).toBeTruthy();
+    // Progress and the log moved into a dialog (t112); the honest legal-status grid is unchanged
+    // and is asserted inside it.
+    expect(await screen.findByTestId('provider-probe-modal')).toBeTruthy();
+    expect(await screen.findByTestId('provider-probe-result')).toBeTruthy();
     expect(screen.getByText('Fornecedor contactado').nextElementSibling?.textContent).toBe('Sim');
     expect(screen.getByText('Documento assinado').nextElementSibling?.textContent).toBe('Não');
     expect(screen.getByText('Validade jurídica alegada').nextElementSibling?.textContent).toBe(
@@ -545,8 +612,14 @@ describe('ProviderCredentialPage', () => {
       expect(JSON.parse(request?.body ?? '{}')).toEqual({
         confirm_private_key_operation: true,
       });
-      expect(screen.queryByRole('dialog')).toBeNull();
     });
+    // The key-operation gate is gone and the progress dialog has replaced it — never both at once,
+    // and the gate is never re-offered from inside the result (a re-run is a real key operation).
+    const progress = await screen.findByTestId('provider-probe-modal');
+    expect(
+      within(progress).queryByRole('button', { name: 'Executar operação de chave' }),
+    ).toBeNull();
+    expect(within(progress).queryByRole('button', { name: 'Executar de novo' })).toBeNull();
   });
 
   it('fails closed on a direct route without signing.configure and performs no read', () => {
@@ -595,5 +668,195 @@ describe('ProviderCredentialPage', () => {
     expect(
       screen.queryByRole('button', { name: copy['providerCredentials.cmdTest.button'] }),
     ).toBeNull();
+  });
+
+  /**
+   * The AMA field-encryption certificate field (t112): load from a file, paste from the clipboard,
+   * and ask the server what it could establish.
+   *
+   * Assertions are on structure, stable test ids and CODES — never on translated prose, except
+   * where the point of the assertion is that a specific catalog string is what reached the screen.
+   */
+  describe('the AMA certificate field', () => {
+    const PEM = '-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n';
+
+    /** A `File` whose `text()` and `size` are controlled, without needing a real Blob polyfill. */
+    function certFile(name: string, text: string, size = text.length): File {
+      return {
+        name,
+        size,
+        text: () => Promise.resolve(text),
+      } as unknown as File;
+    }
+
+    function stubClipboard(readText: () => Promise<string>) {
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { readText } });
+    }
+
+    async function openCmdCreatePage() {
+      const stub = stubFetch();
+      vi.stubGlobal('fetch', stub.fn);
+      renderPage('/admin/signing/providers/new?mode=cmd');
+      const field = (await screen.findByLabelText(
+        ptPT['settings.providerCredentials.field.amaCertPem'],
+      )) as HTMLTextAreaElement;
+      return { stub, field };
+    }
+
+    it('reads a chosen file as TEXT into the field, never a path', async () => {
+      const { field } = await openCmdCreatePage();
+      const input = screen.getByTestId('ama-cert-file-input') as HTMLInputElement;
+
+      Object.defineProperty(input, 'files', { value: [certFile('ama.pem', PEM)] });
+      fireEvent.change(input);
+
+      await waitFor(() => expect(field.value).toBe(PEM));
+      // The FILENAME is feedback; the field holds the certificate's content. A path in the field
+      // would be the `CHANCELA_CMD_AMA_CERT_PEM` confusion this control exists to avoid.
+      expect(screen.getByText(/ama\.pem/)).toBeTruthy();
+      expect(field.value).not.toContain('ama.pem');
+    });
+
+    it('refuses an implausibly large file without reading it, and says so', async () => {
+      const { field } = await openCmdCreatePage();
+      const input = screen.getByTestId('ama-cert-file-input') as HTMLInputElement;
+      let read = false;
+      const huge = {
+        name: 'huge.pem',
+        size: 64 * 1024 + 1,
+        text: () => {
+          read = true;
+          return Promise.resolve('x');
+        },
+      } as unknown as File;
+
+      Object.defineProperty(input, 'files', { value: [huge] });
+      fireEvent.change(input);
+
+      await screen.findByRole('alert');
+      // The whole point of bounding by `size`: the bytes are never pulled into memory.
+      expect(read).toBe(false);
+      expect(field.value).toBe('');
+    });
+
+    it('pastes from the clipboard', async () => {
+      stubClipboard(() => Promise.resolve(PEM));
+      const { field } = await openCmdCreatePage();
+
+      fireEvent.click(screen.getByTestId('ama-cert-from-clipboard'));
+
+      await waitFor(() => expect(field.value).toBe(PEM));
+    });
+
+    it.each([
+      ['unavailable', undefined],
+      ['denied', () => Promise.reject(new Error('denied'))],
+      ['empty', () => Promise.resolve('   ')],
+    ] as const)(
+      'shows a clipboard %s failure instead of doing nothing silently',
+      async (_label, readText) => {
+        vi.stubGlobal('navigator', {
+          ...navigator,
+          clipboard: readText ? { readText } : undefined,
+        });
+        const { field } = await openCmdCreatePage();
+
+        fireEvent.click(screen.getByTestId('ama-cert-from-clipboard'));
+
+        // Visible and assertive, per the rule `DiagnosticsSection.copyReport` set for the write
+        // direction: an operator who gets nothing must be told to paste by hand.
+        const alert = await screen.findByRole('alert');
+        expect(alert.textContent?.trim()).toBeTruthy();
+        expect(field.value).toBe('');
+      },
+    );
+
+    it('refuses to inspect an empty field and sends no request', async () => {
+      const { stub } = await openCmdCreatePage();
+
+      fireEvent.click(screen.getByTestId('ama-cert-inspect'));
+
+      await screen.findByRole('alert');
+      expect(stub.calls.some((call) => call.url.endsWith(INSPECT_PATH))).toBe(false);
+    });
+
+    it('inspects through the server and states what was NOT checked as explicit values', async () => {
+      const { stub, field } = await openCmdCreatePage();
+      fireEvent.change(field, { target: { value: PEM } });
+      fireEvent.click(screen.getByTestId('ama-cert-inspect'));
+
+      const panel = await screen.findByTestId('ama-cert-inspect-result');
+      const request = await waitFor(() => {
+        const call = stub.calls.find((c) => c.url.endsWith(INSPECT_PATH));
+        expect(call).toBeTruthy();
+        return call!;
+      });
+      // The candidate travels as content, and only the content — trimmed, so trailing whitespace
+      // from a paste is not what the parser is asked to judge.
+      expect(JSON.parse(request.body ?? '{}')).toEqual({ pem: PEM.trim() });
+
+      // Findings render TRANSLATED through the shared code→key resolver, not as server English.
+      expect(
+        within(panel).getByText(ptPT['settings.providerCredentials.probe.detail.ama_cert_parsed']),
+      ).toBeTruthy();
+      expect(panel.textContent).not.toContain('The text parses as an X.509 certificate.');
+      // The RSA finding keeps its machine parameter verbatim.
+      expect(panel.querySelector('[data-check="rsa_public_key"]')?.textContent).toContain('2048');
+
+      // The four negatives are shown as values. Four "Não" rows, not an omitted disclaimer.
+      for (const key of [
+        'settings.providerCredentials.field.amaCertPem.inspect.chainValidated',
+        'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked',
+        'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated',
+        'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed',
+      ] as const) {
+        expect(within(panel).getByText(ptPT[key]).nextElementSibling?.textContent).toBe(
+          copy['providerCredentials.probe.no'],
+        );
+      }
+
+      // And nowhere does the panel pronounce the certificate valid or trusted. `Válido a partir
+      // de` / `Válido até` are date LABELS, so the guard looks for the verdict words only.
+      expect(panel.textContent).not.toMatch(/\bcertificado v[áa]lido\b/i);
+      expect(panel.textContent).not.toMatch(/\bconfi[áa]vel\b/i);
+    });
+
+    it('renders an expired certificate as a failed check, keeping the parse result honest', async () => {
+      const expired: AmaCertificateInspectResponse = {
+        ...amaCertInspection,
+        within_validity: false,
+        not_after: '2021-01-01T00:00:00Z',
+        checks: [
+          amaCertInspection.checks[0],
+          amaCertInspection.checks[1],
+          {
+            name: 'validity_window',
+            status: 'failed',
+            detail: 'The certificate has expired.',
+            detail_code: 'ama_cert_expired',
+          },
+          amaCertInspection.checks[3],
+        ],
+      };
+      const stub = stubFetch({ inspectBody: expired });
+      vi.stubGlobal('fetch', stub.fn);
+      renderPage('/admin/signing/providers/new?mode=cmd');
+      const field = (await screen.findByLabelText(
+        ptPT['settings.providerCredentials.field.amaCertPem'],
+      )) as HTMLTextAreaElement;
+      fireEvent.change(field, { target: { value: PEM } });
+      fireEvent.click(screen.getByTestId('ama-cert-inspect'));
+
+      const panel = await screen.findByTestId('ama-cert-inspect-result');
+      const validity = panel.querySelector('[data-check="validity_window"]') as HTMLElement;
+      expect(validity.textContent).toContain(
+        ptPT['settings.providerCredentials.probe.detail.ama_cert_expired'],
+      );
+      // Expiry must not read as "broken": the parse and the key stay reported as passed, or the
+      // operator goes looking for the wrong fault.
+      expect(
+        within(panel).getByText(ptPT['settings.providerCredentials.probe.detail.ama_cert_parsed']),
+      ).toBeTruthy();
+    });
   });
 });

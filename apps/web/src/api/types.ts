@@ -4579,7 +4579,67 @@ export interface ReorderProviderCredentialEntriesBody {
 export interface ProviderCredentialProbeCheck {
   name: string;
   status: 'passed' | 'failed' | 'skipped';
+  /**
+   * The assertion in ENGLISH, exactly as the server wrote it. Still authoritative — it is what the
+   * audit log records — but it is not what a localized UI shows: resolve
+   * {@link ProviderCredentialProbeCheck.detail_code} through
+   * `i18n/providerProbeDiagnostics.ts` and fall back to this only when the code is unknown, marking
+   * it visibly as untranslated.
+   */
   detail: string;
+  /**
+   * Stable machine code for `detail` (`crates/chancela-api/src/provider_probe_codes.rs`). English,
+   * never translated. Optional because a server older than t112 does not send one; that case takes
+   * the same visible English fallback as an unrecognised code.
+   */
+  detail_code?: string;
+  /**
+   * Values interpolated into the sentence — an admin-panel field name, a wire enum value, a pinned
+   * endpoint, a count. All machine identifiers or numbers, rendered verbatim in every locale.
+   * Omitted by the server when the sentence has none.
+   */
+  detail_params?: Record<string, string>;
+}
+
+/** `POST /v1/signature/provider-credentials/cmd/ama-certificate/inspect` body. */
+export interface InspectAmaCertificateBody {
+  /**
+   * The candidate certificate's CONTENT, never a path. `ama_cert_pem` stores the PEM itself; the
+   * `CHANCELA_CMD_AMA_CERT_PEM` environment route is the one that names a file for the server to
+   * read, and the two must not be conflated.
+   */
+  pem: string;
+}
+
+/**
+ * What the server could establish about a candidate AMA field-encryption certificate — and, as
+ * values rather than omitted disclaimers, the four things it deliberately did not.
+ *
+ * There is no `valid` field and there will not be one: establishing that this is genuinely AMA's
+ * certificate needs a certification path and a trust anchor, and this endpoint builds neither.
+ * `checks` carries the findings in the same coded shape the probe uses, so
+ * `i18n/providerProbeDiagnostics.ts` localizes both.
+ */
+export interface AmaCertificateInspectResponse {
+  parsed: boolean;
+  /** Whether the SIGNING path's own parser could build a field encryptor from it. */
+  rsa_public_key: boolean;
+  key_bits?: number;
+  /** `false` for expired or not-yet-valid; absent when the dates could not be read. */
+  within_validity?: boolean;
+  subject?: string;
+  issuer?: string;
+  not_before?: string;
+  not_after?: string;
+  /** Always false — no certification path is built. */
+  chain_validated: boolean;
+  /** Always false — no Trusted List is fetched or consulted. */
+  trusted_list_checked: boolean;
+  /** Always false — nothing here proves the issuer is who the certificate says it is. */
+  issuer_authenticated: boolean;
+  /** Always false — this surface makes no claim of legal validity. */
+  legal_validity_claimed: boolean;
+  checks: ProviderCredentialProbeCheck[];
 }
 
 /**

@@ -12,14 +12,13 @@ import {
   PageHeader,
   SkeletonRegion,
   SkeletonTable,
-  useToast,
 } from '../../ui';
 import { PermissionDeniedNote, useCan } from '../session/permissions';
 import {
   ProtectionBanner,
   Pkcs12ProbeConfirmModal,
   ProviderCredentialEntryForm,
-  ProviderCredentialProbeResult,
+  ProviderCredentialProbeModal,
   canStoreSecrets,
 } from './ProviderCredentialsSection';
 import { CmdTestSignatureAction } from './CmdTestSignatureAction';
@@ -30,7 +29,6 @@ const LIST_PATH = '/admin/signing/providers';
 export function ProviderCredentialPage() {
   const t = useT();
   const pt = useProviderCredentialsT();
-  const toast = useToast();
   const navigate = useNavigate();
   const can = useCan();
   const [searchParams] = useSearchParams();
@@ -49,6 +47,8 @@ export function ProviderCredentialPage() {
   const credentials = useProviderCredentials(allowed);
   const probe = useProbeProviderCredentialEntry();
   const [confirmingProbe, setConfirmingProbe] = useState(false);
+  // Progress and the per-check log live in the dialog (t112), not inline under the form.
+  const [probeOpen, setProbeOpen] = useState(false);
 
   const queryMode = searchParams.get('mode');
   const mode: CredentialMode | null = isEdit
@@ -147,10 +147,8 @@ export function ProviderCredentialPage() {
             setConfirmingProbe(true);
             return;
           }
-          probe.mutate(
-            { mode, providerId, entryId: existing.entry_id },
-            { onError: (error) => toast.error(error) },
-          );
+          setProbeOpen(true);
+          probe.mutate({ mode, providerId, entryId: existing.entry_id });
         }}
       >
         {probe.isPending
@@ -185,12 +183,25 @@ export function ProviderCredentialPage() {
         onClose={() => setConfirmingProbe(false)}
         onConfirm={async () => {
           if (!isEdit || !existing || providerId === undefined) return;
-          await probe.mutateAsync({ mode, providerId, entryId: existing.entry_id });
           setConfirmingProbe(false);
+          setProbeOpen(true);
+          probe.mutate({ mode, providerId, entryId: existing.entry_id });
         }}
       />
-      {probe.data ? <ProviderCredentialProbeResult result={probe.data} /> : null}
-      {probe.error ? <ErrorNote error={probe.error} /> : null}
+      <ProviderCredentialProbeModal
+        open={probeOpen}
+        onClose={() => setProbeOpen(false)}
+        pending={probe.isPending}
+        result={probe.data}
+        error={probe.error}
+        // No re-run for PKCS#12: repeating it is a real private-key operation, and it must go back
+        // through the confirmation gate rather than a button inside the result dialog.
+        onRerun={
+          mode !== 'pkcs12' && isEdit && existing && providerId !== undefined
+            ? () => probe.mutate({ mode, providerId, entryId: existing.entry_id })
+            : undefined
+        }
+      />
       {/*
         The route from the safe probe to the real thing (t82). An operator who runs the probe on
         this page reads `live_provider_operation — Not run` and, until now, had nowhere to go from

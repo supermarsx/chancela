@@ -4310,6 +4310,21 @@ export function useProbeProviderCredentialEntry() {
 }
 
 /**
+ * Ask the server what it can establish about a candidate AMA field-encryption certificate.
+ *
+ * Read-only: it parses a PEM and returns findings, and nothing is stored until the operator saves
+ * the credential. The parse goes through the SIGNING path's own `FieldEncryptor::from_ama_cert_pem`
+ * rather than a client-side X.509 library — a second parser would drift from the one that decides
+ * whether a production signature works, and the CSP (`script-src 'self'`) plus the offline
+ * requirement rule one out anyway.
+ */
+export function useInspectAmaCertificate() {
+  return useMutation({
+    mutationFn: (pem: string) => api.inspectAmaCertificate({ pem }),
+  });
+}
+
+/**
  * The CMD PRODUCTION test signature (t51-e3/t69), phase 1: phone + PIN + T3 confirmation proof →
  * the server dispatches a real SMS OTP against AMA production and returns a `session_id`. Unlike
  * {@link useProbeProviderCredentialEntry}, a completed initiate+confirm pair costs a real,

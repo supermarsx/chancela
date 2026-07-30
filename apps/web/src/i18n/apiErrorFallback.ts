@@ -375,6 +375,30 @@ export const apiErrorPtPT = {
   'apiError.upstream':
     'Um serviço externo não respondeu como esperado. O detalhe ficou registado no servidor; indique o identificador do pedido a quem administra o sistema.',
 
+  // ═══ CMD PRODUCTION TEST SIGNATURE (t112) ═════════════════════════════════════════════════
+  // Every refusal here is fail-closed and by design: the flow costs one real qualified signature,
+  // so it stops rather than improvising. The server's own pt-PT sentence still rides in the
+  // details block; this is the headline above it, and the reason the other 13 locales stop
+  // reading a Portuguese sentence in an otherwise translated dialog.
+  'apiError.cmd_test_phone_invalid':
+    'O número de telemóvel não tem o formato que a Chave Móvel Digital aceita.',
+  'apiError.cmd_test_requires_production':
+    'A assinatura de teste foi recusada: só corre contra o ambiente de produção da Chave Móvel Digital. Repetir não altera o resultado.',
+  'apiError.cmd_test_environment_preprod':
+    'A assinatura de teste foi recusada: esta instalação está configurada para pré-produção. Repetir não altera o resultado enquanto o ambiente não for mudado nas definições de assinatura.',
+  'apiError.cmd_test_simulated_transport':
+    'A assinatura de teste foi recusada: esta instância usa um transporte simulado, e um teste de produção não corre contra uma simulação. Repetir não altera o resultado.',
+  'apiError.cmd_test_no_retention_storage':
+    'A assinatura de teste foi recusada antes de assinar: esta instância não guarda ficheiros em disco, pelo que uma assinatura qualificada real não poderia ser conservada. Nada foi assinado, e repetir não altera o resultado.',
+  'apiError.cmd_test_credentials_missing':
+    'A assinatura de teste foi recusada: não há credencial da Chave Móvel Digital configurada. Repetir não altera o resultado enquanto os campos em falta não forem preenchidos.',
+  'apiError.cmd_test_entry_unavailable':
+    'A assinatura de teste foi recusada: a credencial indicada não existe ou está desativada, e o teste não recorre a outra. Repetir não altera o resultado.',
+  'apiError.cmd_test_initiator_only':
+    'A confirmação foi recusada: só quem iniciou a assinatura de teste a pode confirmar. Repetir não altera o resultado.',
+  'apiError.cmd_test_session_expired':
+    'O código da assinatura de teste expirou antes de ser confirmado e nada foi assinado. Inicie um teste novo para receber outro código.',
+
   // ═══ THE TECHNICAL-DETAILS BLOCK (consumed by t58-e6's ErrorNote) ═════════════════════════
   'apiError.details.summary': 'Detalhes técnicos',
   'apiError.details.code': 'Código',
@@ -646,6 +670,26 @@ export const apiErrorEnglish = {
   'apiError.upstream':
     'An external service did not respond as expected. The detail was recorded on the server; give the request identifier to whoever administers the system.',
 
+  // ═══ CMD PRODUCTION TEST SIGNATURE (t112) ═════════════════════════════════════════════════
+  'apiError.cmd_test_phone_invalid':
+    'The phone number is not in the shape Chave Móvel Digital accepts.',
+  'apiError.cmd_test_requires_production':
+    'The test signature was refused: it only runs against the Chave Móvel Digital production environment. Repeating it changes nothing.',
+  'apiError.cmd_test_environment_preprod':
+    'The test signature was refused: this deployment is configured for preprod. Repeating it changes nothing until the environment is switched in the signing settings.',
+  'apiError.cmd_test_simulated_transport':
+    'The test signature was refused: this instance uses a simulated transport, and a production test does not run against a simulation. Repeating it changes nothing.',
+  'apiError.cmd_test_no_retention_storage':
+    'The test signature was refused before signing: this instance keeps no files on disk, so a real qualified signature could not be retained. Nothing was signed, and repeating it changes nothing.',
+  'apiError.cmd_test_credentials_missing':
+    'The test signature was refused: no Chave Móvel Digital credential is configured. Repeating it changes nothing until the missing fields are filled in.',
+  'apiError.cmd_test_entry_unavailable':
+    'The test signature was refused: the chosen credential does not exist or is disabled, and the test does not fall back to another. Repeating it changes nothing.',
+  'apiError.cmd_test_initiator_only':
+    'The confirmation was refused: only whoever started the test signature may confirm it. Repeating it changes nothing.',
+  'apiError.cmd_test_session_expired':
+    'The test-signature code expired before it was confirmed, and nothing was signed. Start a new test to receive another code.',
+
   'apiError.details.summary': 'Technical details',
   'apiError.details.code': 'Code',
   'apiError.details.status': 'HTTP status',
@@ -728,6 +772,16 @@ export const NON_ROUTINE_CODES = [
   // until the operator edits their anchor configuration.
   'trust_anchor_not_configured',
   'trusted_list_not_anchored',
+  // t112: the CMD production test-signature refusals. Each one stops BEFORE a real qualified
+  // signature is produced and none of them clears on a retry — `cmd_test_session_expired` is
+  // deliberately absent, because that one IS cleared by starting again.
+  'cmd_test_requires_production',
+  'cmd_test_environment_preprod',
+  'cmd_test_simulated_transport',
+  'cmd_test_no_retention_storage',
+  'cmd_test_credentials_missing',
+  'cmd_test_entry_unavailable',
+  'cmd_test_initiator_only',
 ] as const;
 
 /** Statuses with a guaranteed tier headline. Every status `ApiError` can produce is here. */

@@ -7244,6 +7244,39 @@ describe('SettingsPage — second-level sub-tabs (t73)', () => {
     expect(path()).toBe('/admin/signing');
   });
 
+  /**
+   * **t113.** The CMD environment stopped being a read-only `<dl>` row.
+   *
+   * It was one of three ways to express the environment and the only editable one was inert, so
+   * an operator had no way at all to move a deployment to production from the UI. It is now the
+   * editable DEFAULT for a credential entry that declares none, saved through the ordinary
+   * settings `PUT` — asserted here by the request body, not by prose.
+   */
+  it('lets an operator change the CMD environment default and saves it', async () => {
+    const { fn, calls } = settingsFetch();
+    vi.stubGlobal('fetch', fn);
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/cmd']);
+
+    const select = (await screen.findByLabelText('Ambiente')) as HTMLSelectElement;
+    // Ships pointing away from production, and the control reflects that rather than inventing
+    // a value.
+    expect(select.value).toBe('preprod');
+    fireEvent.change(select, { target: { value: 'prod' } });
+
+    // Autosave is always-on here, exactly as for every other settings control — the environment
+    // is an ordinary edit to the settings document, not a bespoke write path.
+    await waitFor(
+      () => {
+        const put = calls.find(
+          (call) => call.method === 'PUT' && call.url.endsWith('/v1/settings'),
+        );
+        expect(put, 'the environment is saved through the ordinary settings write').toBeTruthy();
+        expect(JSON.parse(put?.body ?? '{}').signing.cmd.env).toBe('prod');
+      },
+      { timeout: 3000 },
+    );
+  });
+
   it('falls back to the first sub-tab for an unknown one, and crosses clusters via the flat strip', async () => {
     const { fn } = settingsFetch();
     vi.stubGlobal('fetch', fn);

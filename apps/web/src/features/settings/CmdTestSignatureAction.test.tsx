@@ -636,4 +636,56 @@ describe('CmdTestSignatureAction', () => {
     ).toBe(copy['providerCredentials.cmdTest.coverage.unrecognised']);
     expect(within(panel).queryByText('some_future_verdict')).toBeNull();
   });
+
+  /**
+   * **t113.** Which environment the run will use, stated before the operator commits.
+   *
+   * The run is production-only and the server refuses anything else. An operator who is about to
+   * type a phrase and a password should be told the credential is preprod BEFORE they do, not
+   * after — and the notice is read straight off the entry's own `env` selector, which is the value
+   * the server now treats as authoritative.
+   */
+  it.each([
+    ['prod', 'providerCredentials.cmdTest.envEntryProd', 'field__hint'],
+    ['preprod', 'providerCredentials.cmdTest.envEntryPreprod', 'field__error'],
+  ] as const)('names the %s environment on the credentials step', async (env, key, className) => {
+    const view: ProviderCredentialsListView = {
+      ...cmdList,
+      providers: [
+        {
+          ...cmdList.providers[0],
+          entries: [{ ...cmdList.providers[0].entries[0], selectors: { env } }],
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', stubFetch(view).fn);
+    renderSection();
+
+    const dialog = await openFlow();
+    const notice = within(dialog).getByTestId('cmd-test-environment-notice');
+    expect(notice.textContent).toBe(copy[key]);
+    // A preprod credential is a refusal the operator is walking into, and reads as one.
+    expect(notice.className).toBe(className);
+  });
+
+  it('says an entry with no selector inherits the deployment default', async () => {
+    const view: ProviderCredentialsListView = {
+      ...cmdList,
+      providers: [
+        {
+          ...cmdList.providers[0],
+          entries: [{ ...cmdList.providers[0].entries[0], selectors: {} }],
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', stubFetch(view).fn);
+    renderSection();
+
+    const dialog = await openFlow();
+    // It does NOT claim which environment that default is — the client does not resolve it, and
+    // guessing would be the same overclaim this whole change is removing.
+    expect(within(dialog).getByTestId('cmd-test-environment-notice').textContent).toBe(
+      copy['providerCredentials.cmdTest.envEntryInherited'],
+    );
+  });
 });

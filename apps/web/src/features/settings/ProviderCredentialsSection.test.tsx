@@ -56,7 +56,23 @@ const probe: ProviderCredentialProbeResponse = {
   document_signed: false,
   legal_validity_claimed: false,
   qualified_status_determined: false,
-  checks: [{ name: 'credentials_info', status: 'passed', detail: 'Certificate parsed.' }],
+  checks: [
+    {
+      name: 'credentials_info',
+      status: 'passed',
+      detail: 'CSC returned a parseable signing certificate and 2 issuer certificate(s).',
+      detail_code: 'csc_credential_info_ok',
+      detail_params: { issuer_count: '2' },
+    },
+    // A code this build does not know: the panel must show the server's English, MARKED, rather
+    // than blank it or pass it off as translated copy (t112).
+    {
+      name: 'invented_check',
+      status: 'failed',
+      detail: 'A sentence only a newer server knows.',
+      detail_code: 'invented_by_a_newer_server',
+    },
+  ],
   tested_at: '2026-07-25T10:00:00Z',
   duration_ms: 42,
 };
@@ -179,13 +195,15 @@ describe('ProviderCredentialsSection', () => {
     );
   });
 
-  it('runs the exact-entry probe and keeps its list result compact and honest', async () => {
+  it('runs the exact-entry probe and reports progress and the log in a dialog', async () => {
     const stub = stubFetch();
     vi.stubGlobal('fetch', stub.fn);
     renderSection();
 
     const row = (await screen.findByText('Primária')).closest('tr') as HTMLElement;
-    fireEvent.click(within(row).getByRole('button', { name: 'Testar' }));
+    // Asserted by its stable test id, not by its visible text: the control is icon-only now, and
+    // an accessible name is translated prose that must not be pinned here.
+    fireEvent.click(within(row).getByTestId('provider-probe-run'));
 
     await waitFor(() => {
       expect(
@@ -196,9 +214,24 @@ describe('ProviderCredentialsSection', () => {
         ),
       ).toBe(true);
     });
-    expect(within(row).getByText('Operacional')).toBeTruthy();
-    expect(within(row).getByText(/não assina documentos/i)).toBeTruthy();
-    expect(within(row).queryByRole('heading', { name: 'Resultado do teste' })).toBeNull();
+
+    // The log lives in the dialog, never spilled back into the table cell it was launched from.
+    const dialog = await screen.findByTestId('provider-probe-modal');
+    expect(await within(dialog).findByTestId('provider-probe-result')).toBeTruthy();
+    expect(within(row).queryByTestId('provider-probe-result')).toBeNull();
+
+    // A known code renders TRANSLATED, with its machine parameter verbatim, and never leaks the
+    // catalog key itself.
+    expect(within(dialog).queryByText(/settings\.providerCredentials/)).toBeNull();
+    const info = dialog.querySelector('[data-check="credentials_info"]') as HTMLElement;
+    expect(info.textContent).toContain('2');
+    expect(info.textContent).not.toContain('CSC returned a parseable');
+
+    // An unknown code keeps the server's English, marked and tagged `lang="en"`.
+    const unknown = dialog.querySelector('[data-check="invented_check"]') as HTMLElement;
+    expect(unknown.querySelector('[lang="en"]')?.textContent).toBe(
+      'A sentence only a newer server knows.',
+    );
   });
 
   it('confirms a PKCS#12 list probe and sends nothing on cancel', async () => {
@@ -227,13 +260,16 @@ describe('ProviderCredentialsSection', () => {
     vi.stubGlobal('fetch', stub.fn);
     renderSection();
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Testar' }));
+    fireEvent.click(await screen.findByTestId('provider-probe-run'));
     expect(await screen.findByRole('dialog')).toBeTruthy();
     expect(stub.calls.filter((call) => call.method !== 'GET')).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
     expect(screen.queryByRole('dialog')).toBeNull();
+    // The progress dialog must not stand in for the key-operation gate: cancelling the gate
+    // leaves nothing open at all.
+    expect(screen.queryByTestId('provider-probe-modal')).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Testar' }));
+    fireEvent.click(screen.getByTestId('provider-probe-run'));
     fireEvent.click(await screen.findByRole('button', { name: 'Executar operação de chave' }));
     await waitFor(() => {
       const request = stub.calls.find(
@@ -242,8 +278,10 @@ describe('ProviderCredentialsSection', () => {
       expect(JSON.parse(request?.body ?? '{}')).toEqual({
         confirm_private_key_operation: true,
       });
-      expect(screen.queryByRole('dialog')).toBeNull();
     });
+    // Only AFTER the gate is granted does the progress dialog take over; the two never stack.
+    const dialog = await screen.findByTestId('provider-probe-modal');
+    expect(within(dialog).queryByRole('button', { name: 'Executar operação de chave' })).toBeNull();
   });
 
   it('keeps reorder, enable/disable and delete mutations on the list', async () => {
@@ -254,7 +292,7 @@ describe('ProviderCredentialsSection', () => {
     const first = (await screen.findByText('Primária')).closest('tr') as HTMLElement;
     fireEvent.click(within(first).getByRole('button', { name: 'Descer prioridade' }));
     fireEvent.click(within(first).getByRole('switch', { name: 'Ativa' }));
-    fireEvent.click(within(first).getByRole('button', { name: 'Remover' }));
+    fireEvent.click(within(first).getByTestId('provider-entry-remove'));
     fireEvent.click(await screen.findByRole('button', { name: 'Remover entrada' }));
 
     await waitFor(() => {
@@ -276,7 +314,7 @@ describe('ProviderCredentialsSection', () => {
 
     const create = await screen.findByRole('button', { name: 'Nova entrada' });
     expect(create.getAttribute('aria-disabled')).toBe('true');
-    const test = screen.getAllByRole('button', { name: 'Testar' })[0];
+    const test = screen.getAllByTestId('provider-probe-run')[0];
     expect(test.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(test);
     expect(stub.calls.filter((call) => call.method !== 'GET')).toHaveLength(0);

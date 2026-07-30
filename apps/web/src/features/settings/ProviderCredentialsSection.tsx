@@ -28,14 +28,17 @@
  * grandfathered to every prior `settings.manage` holder, so no current operator loses the pane.
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import type {
+  AmaCertificateInspectResponse,
   CredentialMode,
   CredentialProtectionLevel,
   CredentialStorageFailure,
   CreateProviderCredentialEntryBody,
   ProviderCredentialEntryView,
   ProviderCredentialGroupView,
+  ProviderCredentialProbeCheck,
   ProviderCredentialProbeResponse,
   UpdateProviderCredentialEntryBody,
 } from '../../api/types';
@@ -46,10 +49,13 @@ import {
   useDeleteProviderCredentialEntry,
   useReorderProviderCredentialEntries,
   useProbeProviderCredentialEntry,
+  useInspectAmaCertificate,
 } from '../../api/hooks';
-import { useT, type TFunction } from '../../i18n';
+import { useActiveLocale, useT, type TFunction } from '../../i18n';
+import { formatDateTime } from '../../format';
 import type { MessageKey } from '../../i18n';
 import { useProviderCredentialsT } from '../../i18n/providerCredentialsFallback';
+import { resolveProbeDetail } from '../../i18n/providerProbeDiagnostics';
 import { allowNextNavigation, useUnsavedChanges } from '../../hooks/useUnsavedChanges';
 import {
   Badge,
@@ -67,11 +73,21 @@ import {
   SkeletonTable,
   Select,
   Table,
+  TextArea,
   Toggle,
   TooltipText,
   useToast,
 } from '../../ui';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
+import { useFocusTrap } from '../../ui/useFocusTrap';
+import { isTauri } from '../../desktop/tauri';
+import {
+  acceptAttribute,
+  openTextFileNative,
+  readClipboardText,
+  readPickedTextFile,
+  type OpenTextFileResult,
+} from '../../desktop/openTextFile';
 import { GateButton, GateIconButton, useCan } from '../session/permissions';
 import { CmdTestSignatureAction } from './CmdTestSignatureAction';
 import { providerCredentialsFieldHelp, providerCredentialFieldHelp } from './fieldHelp';
@@ -855,6 +871,21 @@ export function ProviderCredentialEntryForm({
         <p className="field__hint">{t('settings.providerCredentials.form.secretHint')}</p>
         {SECRET_FIELDS[effectiveMode].map((spec) => {
           const id = `${idBase}-secret-${spec.name}`;
+          // The AMA certificate is the one field here that is not a secret at all — it is a public
+          // certificate, and it is multi-line. It gets its own control (t112) so it can be pasted,
+          // loaded from a file, read back, and inspected; see {@link AmaCertPemField}.
+          if (spec.name === AMA_CERT_PEM_FIELD) {
+            return (
+              <AmaCertPemField
+                key={spec.name}
+                id={id}
+                labelKey={spec.labelKey}
+                isEdit={isEdit}
+                value={form.secrets[spec.name] ?? ''}
+                onChange={(value) => setSecret(spec.name, value)}
+              />
+            );
+          }
           return (
             <Field
               key={spec.name}
@@ -897,29 +928,384 @@ export function ProviderCredentialEntryForm({
   );
 }
 
+/** The credential field this section gives its own control to. */
+const AMA_CERT_PEM_FIELD = 'ama_cert_pem';
+
+/** Extensions offered by both the browser `accept` and the Tauri dialog filter. */
+const CERT_FILE_EXTENSIONS = ['pem', 'crt', 'cer'];
+
+/**
+ * The client-side ceiling, in bytes, on a file loaded into the field.
+ *
+ * Deliberately the same 64 KiB the server refuses at, so the two agree and an operator does not
+ * pass one gate only to be turned away by the other. Checked BEFORE the bytes are read: a picker
+ * will hand back a multi-gigabyte file, and reading it into a string freezes the tab before any
+ * validation runs.
+ */
+const CERT_FILE_MAX_BYTES = 64 * 1024;
+
+/** A one-line, in-place outcome for a file/clipboard action. Never a toast that scrolls away. */
+interface FieldNotice {
+  tone: 'ok' | 'error';
+  text: string;
+}
+
+/**
+ * What the server established about a candidate certificate, and the four things it did not.
+ *
+ * The negatives are a grid of explicit "No" values rather than an omitted disclaimer — the same
+ * construction the probe panel uses, and for the same reason. There is deliberately no "valid"
+ * badge anywhere in here: parsing, carrying an RSA key and being in date are the three things the
+ * server actually checked, and none of them establishes that this is AMA's certificate.
+ */
+function AmaCertInspectPanel({ report }: { report: AmaCertificateInspectResponse }) {
+  const t = useT();
+  const pt = useProviderCredentialsT();
+  const locale = useActiveLocale();
+  const no = pt('providerCredentials.probe.no');
+  const formatMoment = (value: string | undefined) => (value ? formatDateTime(value, locale) : '—');
+
+  return (
+    <section className="stack stack--tight" data-testid="ama-cert-inspect-result">
+      <h4 className="card__label">
+        {t('settings.providerCredentials.field.amaCertPem.inspect.resultTitle')}
+      </h4>
+      <ul className="stack">
+        {report.checks.map((probeCheck, index) => (
+          <li key={`${probeCheck.name}:${index}`} data-check={probeCheck.name}>
+            <Badge
+              tone={
+                probeCheck.status === 'passed'
+                  ? 'ok'
+                  : probeCheck.status === 'failed'
+                    ? 'error'
+                    : 'neutral'
+              }
+            >
+              {pt(`providerCredentials.probe.check.${probeCheck.status}`)}
+            </Badge>{' '}
+            <ProbeDetailText check={probeCheck} />
+          </li>
+        ))}
+      </ul>
+      {report.parsed ? (
+        <dl className="detail-grid">
+          <div>
+            <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.subject')}</dt>
+            <dd className="mono">{report.subject ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.issuer')}</dt>
+            <dd className="mono">{report.issuer ?? '—'}</dd>
+          </div>
+          <div>
+            <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.notBefore')}</dt>
+            <dd>{formatMoment(report.not_before)}</dd>
+          </div>
+          <div>
+            <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.notAfter')}</dt>
+            <dd>{formatMoment(report.not_after)}</dd>
+          </div>
+        </dl>
+      ) : null}
+      <h4 className="card__label">
+        {t('settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle')}
+      </h4>
+      <dl className="detail-grid">
+        <div>
+          <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.chainValidated')}</dt>
+          <dd>{report.chain_validated ? pt('providerCredentials.probe.yes') : no}</dd>
+        </div>
+        <div>
+          <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked')}</dt>
+          <dd>{report.trusted_list_checked ? pt('providerCredentials.probe.yes') : no}</dd>
+        </div>
+        <div>
+          <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated')}</dt>
+          <dd>{report.issuer_authenticated ? pt('providerCredentials.probe.yes') : no}</dd>
+        </div>
+        <div>
+          <dt>{t('settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed')}</dt>
+          <dd>{report.legal_validity_claimed ? pt('providerCredentials.probe.yes') : no}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * The `ama_cert_pem` control (t112): paste, load from a file, or inspect what you pasted.
+ *
+ * # Why this field is not the generic secret `<Input type="password">`
+ *
+ * It is the only entry in `SECRET_FIELDS` that is **not a secret**. An X.509 certificate is public
+ * key material; it rides the encrypted credential store because everything in that store does, not
+ * because its contents need hiding. Masking it made the one field an operator most needs to *look
+ * at* — to check they pasted the right certificate, and the whole point of the inspect action —
+ * unreadable, and PEM is multi-line, which a single-line masked input mangles. So it is a visible
+ * `<TextArea>`. The write-only posture is unchanged: the value still only ever travels inwards, the
+ * API still never returns it, and it is still cleared from component state on submit.
+ *
+ * # Content, never a path
+ *
+ * Everything here produces the certificate's TEXT. `ama_cert_pem` stores the certificate itself;
+ * `CHANCELA_CMD_AMA_CERT_PEM` is the environment route and names a *file* for the server to read.
+ * The hint says so, and {@link ../../desktop/openTextFile} does not return a path at all, so the
+ * confusion is hard to write by accident.
+ *
+ * # The three affordances, and their failure paths
+ *
+ * - **File.** Under Tauri, the native dialog via the same `isTauri()` + dynamic-`import()` idiom
+ *   `saveFile.ts` established; in a browser, an ordinary `<input type="file">` with an `accept` for
+ *   `.pem`/`.crt`/`.cer`. Both bound the size *before* reading.
+ * - **Clipboard.** `navigator.clipboard.readText()`, with insecure-context, permission-denied and
+ *   empty reported as three distinct visible notices — the rule `DiagnosticsSection.copyReport`
+ *   set for the write direction, applied to the read direction. Never a silent no-op.
+ * - **Inspect.** A server round-trip, because the parser that matters is the Rust one the signing
+ *   path uses. See {@link AmaCertInspectPanel} for what it may and may not say.
+ */
+function AmaCertPemField({
+  id,
+  labelKey,
+  isEdit,
+  value,
+  onChange,
+}: {
+  id: string;
+  labelKey: MessageKey;
+  isEdit: boolean;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const t = useT();
+  const inspect = useInspectAmaCertificate();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [notice, setNotice] = useState<FieldNotice | null>(null);
+  const noticeId = `${id}-notice`;
+
+  /** Map an {@link OpenTextFileResult} onto the field, saying WHY nothing happened when nothing did. */
+  function applyFileResult(result: OpenTextFileResult) {
+    switch (result.kind) {
+      case 'opened':
+        onChange(result.text);
+        inspect.reset();
+        setNotice({
+          tone: 'ok',
+          text: t('settings.providerCredentials.field.amaCertPem.fileLoaded', {
+            name: result.name,
+          }),
+        });
+        return;
+      case 'too-large':
+        setNotice({
+          tone: 'error',
+          text: t('settings.providerCredentials.field.amaCertPem.fileTooLarge', {
+            max: Math.floor(CERT_FILE_MAX_BYTES / 1024),
+          }),
+        });
+        return;
+      case 'unreadable':
+      case 'unavailable':
+        setNotice({
+          tone: 'error',
+          text: t('settings.providerCredentials.field.amaCertPem.fileReadFailed'),
+        });
+        return;
+      // A cancelled dialog is not a failure and gets no notice.
+      case 'cancelled':
+        return;
+    }
+  }
+
+  async function chooseFile() {
+    if (isTauri()) {
+      const result = await openTextFileNative({
+        filterName: t('settings.providerCredentials.field.amaCertPem.fileFilter'),
+        extensions: CERT_FILE_EXTENSIONS,
+        maxBytes: CERT_FILE_MAX_BYTES,
+      });
+      // `unavailable` under Tauri means the plugins would not load; fall through to the browser
+      // input rather than leaving the operator with a button that does nothing.
+      if (result.kind !== 'unavailable') {
+        applyFileResult(result);
+        return;
+      }
+    }
+    fileInputRef.current?.click();
+  }
+
+  async function pasteFromClipboard() {
+    const result = await readClipboardText();
+    if (result.kind === 'read') {
+      onChange(result.text);
+      inspect.reset();
+      setNotice({
+        tone: 'ok',
+        text: t('settings.providerCredentials.field.amaCertPem.clipboardPasted'),
+      });
+      return;
+    }
+    const key =
+      result.kind === 'unavailable'
+        ? 'settings.providerCredentials.field.amaCertPem.clipboardUnavailable'
+        : result.kind === 'denied'
+          ? 'settings.providerCredentials.field.amaCertPem.clipboardDenied'
+          : 'settings.providerCredentials.field.amaCertPem.clipboardEmpty';
+    setNotice({ tone: 'error', text: t(key) });
+  }
+
+  function runInspection() {
+    const candidate = value.trim();
+    if (candidate.length === 0) {
+      setNotice({
+        tone: 'error',
+        text: t('settings.providerCredentials.field.amaCertPem.empty'),
+      });
+      return;
+    }
+    setNotice(null);
+    inspect.mutate(candidate);
+  }
+
+  return (
+    <Field
+      label={t(labelKey)}
+      htmlFor={id}
+      help={providerCredentialFieldHelp(AMA_CERT_PEM_FIELD)}
+      hint={
+        isEdit
+          ? t('settings.providerCredentials.form.keepFieldHint')
+          : t('settings.providerCredentials.field.amaCertPem.hint')
+      }
+    >
+      <div className="stack stack--tight">
+        <TextArea
+          id={id}
+          rows={6}
+          className="mono"
+          value={value}
+          autoComplete="off"
+          spellCheck={false}
+          aria-describedby={notice ? noticeId : undefined}
+          onChange={(e) => {
+            onChange(e.target.value);
+            // A finding describes the text it was run against; editing invalidates it, and leaving
+            // a stale verdict beside changed input is worse than showing none.
+            inspect.reset();
+            setNotice(null);
+          }}
+        />
+        {/* Kept mounted rather than created on demand: an `<input type="file">` that is in the
+            DOM is reachable by keyboard and by assistive tech, and `.click()` on it is the same
+            gesture a browser trusts. Under Tauri it is the fallback the native path degrades to. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          className="sr-only"
+          accept={acceptAttribute(CERT_FILE_EXTENSIONS)}
+          data-testid="ama-cert-file-input"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            // Reset the input so choosing the SAME file twice fires `change` again.
+            e.target.value = '';
+            if (!file) return;
+            void readPickedTextFile(file, CERT_FILE_MAX_BYTES).then(applyFileResult);
+          }}
+        />
+        <span className="row-wrap">
+          <Button
+            type="button"
+            variant="secondary"
+            data-testid="ama-cert-from-file"
+            onClick={() => void chooseFile()}
+          >
+            {t('settings.providerCredentials.field.amaCertPem.fromFile')}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            data-testid="ama-cert-from-clipboard"
+            onClick={() => void pasteFromClipboard()}
+          >
+            {t('settings.providerCredentials.field.amaCertPem.fromClipboard')}
+          </Button>
+          <GateButton
+            perm="signing.configure"
+            type="button"
+            variant="secondary"
+            disabled={inspect.isPending}
+            data-testid="ama-cert-inspect"
+            onClick={runInspection}
+          >
+            {inspect.isPending
+              ? t('settings.providerCredentials.field.amaCertPem.inspecting')
+              : t('settings.providerCredentials.field.amaCertPem.inspect')}
+          </GateButton>
+        </span>
+        {notice ? (
+          <p
+            id={noticeId}
+            className={notice.tone === 'error' ? 'field__error' : 'field__hint'}
+            role={notice.tone === 'error' ? 'alert' : 'status'}
+          >
+            {notice.text}
+          </p>
+        ) : null}
+        {/* A failed request is shown where a result would be, never swallowed. */}
+        {inspect.error ? <ErrorNote error={inspect.error} /> : null}
+        {inspect.data ? <AmaCertInspectPanel report={inspect.data} /> : null}
+      </div>
+    </Field>
+  );
+}
+
+/**
+ * One check's sentence, in the operator's language when the server named it with a code.
+ *
+ * When it did NOT — an unrecognised code, or a server older than the code vocabulary — the raw
+ * English is shown with a visible `In English` badge and `lang="en"` (so a screen reader
+ * pronounces it as English rather than mangling it in the page language). That marking is the
+ * point: a silent fallback would pass the server's English off as localized copy and make the
+ * next backend-added code invisible instead of loud.
+ */
+function ProbeDetailText({ check }: { check: ProviderCredentialProbeCheck }) {
+  const t = useT();
+  const detail = resolveProbeDetail(check, t);
+  if (!detail.untranslated) return <>{detail.text}</>;
+  return (
+    <>
+      <span lang="en">{detail.text}</span>{' '}
+      {/* The badge is a real tab stop carrying the explanation on `aria-describedby` (the
+          `ColumnHead`/`FieldHelp` arrangement), so the marking is keyboard-reachable and not
+          hover-only. */}
+      <Badge tone="neutral">
+        <TooltipText
+          label={t('settings.providerCredentials.probe.untranslatedHint')}
+          onlyWhenClipped={false}
+        >
+          {t('settings.providerCredentials.probe.untranslatedBadge')}
+        </TooltipText>
+      </Badge>
+    </>
+  );
+}
+
+/**
+ * The per-check log and the honest legal-status grid. Rendered inside
+ * {@link ProviderCredentialProbeModal}; kept a separate component so the panel and the dialog
+ * chrome stay independently readable.
+ */
 export function ProviderCredentialProbeResult({
   result,
 }: {
   result: ProviderCredentialProbeResponse;
 }) {
+  const t = useT();
   const pt = useProviderCredentialsT();
-  const statusLabel =
-    result.status === 'ok'
-      ? pt('providerCredentials.probe.ok')
-      : result.status === 'interactive_required'
-        ? pt('providerCredentials.probe.interactive')
-        : pt('providerCredentials.probe.failed');
   const yesNo = (value: boolean) =>
     pt(value ? 'providerCredentials.probe.yes' : 'providerCredentials.probe.no');
   return (
-    <Card
-      title={pt('providerCredentials.probe.title')}
-      actions={
-        <Badge tone={result.status === 'ok' ? 'ok' : result.status === 'failed' ? 'error' : 'warn'}>
-          {statusLabel}
-        </Badge>
-      }
-    >
+    <div className="stack" data-testid="provider-probe-result">
       <p className="field__hint">{pt('providerCredentials.probe.disclaimer')}</p>
       <dl className="detail-grid">
         <div>
@@ -947,9 +1333,10 @@ export function ProviderCredentialProbeResult({
           <dd>{yesNo(result.qualified_status_determined)}</dd>
         </div>
       </dl>
+      <h3 className="card__label">{t('settings.providerCredentials.probe.modal.checksTitle')}</h3>
       <ul className="stack">
         {result.checks.map((probeCheck, index) => (
-          <li key={`${probeCheck.name}:${index}`}>
+          <li key={`${probeCheck.name}:${index}`} data-check={probeCheck.name}>
             <Badge
               tone={
                 probeCheck.status === 'passed'
@@ -961,7 +1348,8 @@ export function ProviderCredentialProbeResult({
             >
               {pt(`providerCredentials.probe.check.${probeCheck.status}`)}
             </Badge>{' '}
-            <strong>{probeCheck.name}</strong> — {probeCheck.detail}
+            <strong className="mono">{probeCheck.name}</strong> —{' '}
+            <ProbeDetailText check={probeCheck} />
           </li>
         ))}
       </ul>
@@ -971,27 +1359,125 @@ export function ProviderCredentialProbeResult({
           timestamp: result.tested_at,
         })}
       </p>
-    </Card>
+    </div>
   );
 }
 
-function ProviderCredentialProbeSummary({ result }: { result: ProviderCredentialProbeResponse }) {
+/**
+ * Progress and the per-check log for one credential test, in a dialog (t112).
+ *
+ * Before this the pending state and the whole result panel rendered *inside the table cell* the
+ * action button sits in, which reflowed the grid mid-run and buried a seven-line diagnostic in a
+ * column. The dialog is the same chrome `ConfirmActionModal` uses, for the same reasons:
+ *
+ * - `useFocusTrap(open)` moves focus into the dialog and **restores it to the trigger** on close;
+ * - Escape closes, but never mid-request — a probe that performs a private-key operation must not
+ *   be abandoned in an unknown state, exactly as the destructive-confirm dialog treats its submit;
+ * - it is portaled to `document.body`, so the fixed backdrop escapes the routed content's
+ *   transformed ancestor.
+ *
+ * **It does not soften a failure.** A failed check keeps its `error` badge and its own sentence, a
+ * failed request renders `ErrorNote` in the same place a result would, and the honest
+ * `document_signed` / `legal_validity_claimed` / `qualified_status_determined` negatives are shown
+ * whatever the outcome. Nothing here converts a negative verdict into a neutral one.
+ */
+export function ProviderCredentialProbeModal({
+  open,
+  onClose,
+  pending,
+  result,
+  error,
+  onRerun,
+}: {
+  open: boolean;
+  onClose: () => void;
+  pending: boolean;
+  result: ProviderCredentialProbeResponse | undefined;
+  error: unknown;
+  /** Omitted when the operator may not re-run (permission, or a disabled entry). */
+  onRerun?: () => void;
+}) {
+  const t = useT();
   const pt = useProviderCredentialsT();
-  const statusLabel =
-    result.status === 'ok'
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const titleId = useRef(`probe-${Math.random().toString(36).slice(2)}`).current;
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !pending) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, pending, onClose]);
+
+  if (!open) return null;
+
+  const statusLabel = !result
+    ? null
+    : result.status === 'ok'
       ? pt('providerCredentials.probe.ok')
       : result.status === 'interactive_required'
         ? pt('providerCredentials.probe.interactive')
         : pt('providerCredentials.probe.failed');
-  const failed = result.checks.find((probeCheck) => probeCheck.status === 'failed');
-  return (
-    <div className="stack stack--tight" role="status">
-      <Badge tone={result.status === 'ok' ? 'ok' : result.status === 'failed' ? 'error' : 'warn'}>
-        {statusLabel}
-      </Badge>
-      {failed ? <span className="field__hint">{failed.detail}</span> : null}
-      <span className="field__hint">{pt('providerCredentials.probe.disclaimer')}</span>
-    </div>
+
+  return createPortal(
+    <div
+      className="modal-backdrop"
+      onClick={() => {
+        if (!pending) onClose();
+      }}
+    >
+      <div
+        ref={trapRef}
+        className="modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        data-testid="provider-probe-modal"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <header className="modal__head">
+          <h2 className="modal__title" id={titleId}>
+            {t('settings.providerCredentials.probe.modal.title')}
+          </h2>
+          {statusLabel ? (
+            <Badge
+              tone={result?.status === 'ok' ? 'ok' : result?.status === 'failed' ? 'error' : 'warn'}
+            >
+              {statusLabel}
+            </Badge>
+          ) : null}
+        </header>
+        <div className="modal__body">
+          {pending ? (
+            <div className="stack stack--tight" role="status" aria-live="polite">
+              <p className="card__label">
+                {t('settings.providerCredentials.probe.modal.runningTitle')}
+              </p>
+              <p className="field__hint">
+                {t('settings.providerCredentials.probe.modal.runningBody')}
+              </p>
+            </div>
+          ) : null}
+          {/* A request that never produced a result is as visible as one that did, in the same
+              place — never a toast the dialog swallows. */}
+          {!pending && error ? <ErrorNote error={error} /> : null}
+          {!pending && result ? <ProviderCredentialProbeResult result={result} /> : null}
+        </div>
+        <div className="modal__foot">
+          <Button type="button" variant="ghost" disabled={pending} onClick={onClose}>
+            {t('settings.providerCredentials.probe.modal.close')}
+          </Button>
+          {onRerun ? (
+            <Button type="button" variant="secondary" disabled={pending} onClick={onRerun}>
+              {t('settings.providerCredentials.probe.modal.rerun')}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -1044,15 +1530,16 @@ function EntryRow({
   const can = useCan();
   const [confirming, setConfirming] = useState(false);
   const [confirmingProbe, setConfirmingProbe] = useState(false);
+  const [probeOpen, setProbeOpen] = useState(false);
 
   const providerId = group.provider_id;
   const canPerformProbe = group.mode !== 'pkcs12' || can('signing.perform');
 
+  // The dialog owns progress and the log; the mutation's own error is rendered INSIDE it rather
+  // than toasted away, so a request that never produced a result is as visible as one that did.
   function runProbe() {
-    probe.mutate(
-      { mode: group.mode, providerId, entryId: entry.entry_id },
-      { onError: (error) => toast.error(error) },
-    );
+    setProbeOpen(true);
+    probe.mutate({ mode: group.mode, providerId, entryId: entry.entry_id });
   }
 
   function toggleEnabled(enabled: boolean) {
@@ -1156,38 +1643,35 @@ function EntryRow({
             disabled={busy || index === count - 1}
             onClick={() => move(1)}
           />
-          <GateButton
+          <GateIconButton
             perm="signing.configure"
-            type="button"
-            variant="ghost"
             icon={<Icon.Pencil />}
+            label={t('settings.providerCredentials.entry.edit')}
             disabled={busy}
             onClick={onEdit}
-          >
-            {t('settings.providerCredentials.entry.edit')}
-          </GateButton>
-          <GateButton
+          />
+          {/* Distinct glyph per meaning, per the icon-only rule: the safe configuration test is a
+              diagnostic (wrench); the CMD control below produces a REAL signature (pen nib). */}
+          <GateIconButton
             perm="signing.configure"
-            type="button"
-            variant="ghost"
+            icon={<Icon.Wrench />}
+            label={
+              canPerformProbe
+                ? t('settings.providerCredentials.entry.test')
+                : pt('providerCredentials.probe.pkcs12.permission')
+            }
             disabled={busy || !canPerformProbe}
-            title={canPerformProbe ? undefined : pt('providerCredentials.probe.pkcs12.permission')}
+            data-testid="provider-probe-run"
             onClick={() => (group.mode === 'pkcs12' ? setConfirmingProbe(true) : runProbe())}
-          >
-            {probe.isPending
-              ? pt('providerCredentials.action.testing')
-              : pt('providerCredentials.action.test')}
-          </GateButton>
-          <GateButton
+          />
+          <GateIconButton
             perm="signing.configure"
-            type="button"
-            variant="ghost"
             icon={<Icon.Trash />}
+            label={t('common.remove')}
             disabled={busy}
+            data-testid="provider-entry-remove"
             onClick={() => setConfirming(true)}
-          >
-            {t('common.remove')}
-          </GateButton>
+          />
         </span>
 
         <ConfirmActionModal
@@ -1207,17 +1691,30 @@ function EntryRow({
             setConfirming(false);
           }}
         />
+        {/* The PKCS#12 gate is unchanged: the key operation is still confirmed BEFORE anything
+            runs. Only once it is granted does the progress dialog take over, so the two never
+            stack on top of one another. */}
         <Pkcs12ProbeConfirmModal
           open={group.mode === 'pkcs12' && confirmingProbe}
           pending={probe.isPending}
           onClose={() => setConfirmingProbe(false)}
           onConfirm={async () => {
-            await probe.mutateAsync({ mode: group.mode, providerId, entryId: entry.entry_id });
             setConfirmingProbe(false);
+            runProbe();
           }}
         />
-        {probe.data ? <ProviderCredentialProbeSummary result={probe.data} /> : null}
-        {probe.error ? <ErrorNote error={probe.error} /> : null}
+        <ProviderCredentialProbeModal
+          open={probeOpen}
+          onClose={() => setProbeOpen(false)}
+          pending={probe.isPending}
+          result={probe.data}
+          error={probe.error}
+          onRerun={
+            canPerformProbe && group.mode !== 'pkcs12'
+              ? () => probe.mutate({ mode: group.mode, providerId, entryId: entry.entry_id })
+              : undefined
+          }
+        />
         {/* The CMD PRODUCTION test signature (t51-e3/t69) is deliberately its own control, never
             folded into the safe probe button above: a completed run costs one real qualified
             signature against AMA's live service, so it needs its own gate and its own space. */}

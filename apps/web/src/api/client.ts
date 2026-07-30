@@ -267,6 +267,8 @@ import type {
   ProviderCredentialsListView,
   ProviderCredentialEntryMutationResponse,
   ProviderCredentialEntryListResponse,
+  AmaCertificateInspectResponse,
+  InspectAmaCertificateBody,
   ProviderCredentialProbeResponse,
   CreateProviderCredentialEntryBody,
   UpdateProviderCredentialEntryBody,
@@ -1841,6 +1843,14 @@ export const api = {
     post<ProviderCredentialProbeResponse>(
       `/v1/signature/provider-credentials/${mode}/${providerSegment(providerId)}/entries/${encodeURIComponent(entryId)}/probe`,
       mode === 'pkcs12' ? { confirm_private_key_operation: true } : {},
+    ),
+  // Read-only, writes nothing, and stores nothing: the server parses a candidate PEM with the
+  // SIGNING path's own parser and reports what it could establish. Deliberately not part of the
+  // credential write — an operator inspects before saving.
+  inspectAmaCertificate: (body: InspectAmaCertificateBody) =>
+    post<AmaCertificateInspectResponse>(
+      '/v1/signature/provider-credentials/cmd/ama-certificate/inspect',
+      body,
     ),
   // The CMD PRODUCTION test signature (t51-e3) — a real qualified signature against AMA, not the
   // safe provider probe above. See `crates/chancela-api/src/cmd_test_signature.rs` module docs.

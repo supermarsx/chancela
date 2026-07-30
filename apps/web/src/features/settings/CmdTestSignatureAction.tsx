@@ -55,7 +55,17 @@ import {
 import { useActiveLocale, useT } from '../../i18n';
 import { formatDateTime } from '../../format';
 import { useProviderCredentialsT } from '../../i18n/providerCredentialsFallback';
-import { Badge, Button, Field, Input, Stepper, useToast, type StepperStep } from '../../ui';
+import {
+  Badge,
+  Button,
+  Field,
+  Icon,
+  IconButton,
+  Input,
+  Stepper,
+  useToast,
+  type StepperStep,
+} from '../../ui';
 import { useConfirmationGate } from '../../ui/ConfirmationGate';
 import { useFocusTrap } from '../../ui/useFocusTrap';
 import { saveBlobAs, saveBlobResultMessage } from '../../desktop/saveFile';
@@ -479,6 +489,21 @@ function CmdTestSignatureFlowModal({
                     label: entry.label || entry.entry_id,
                   })}
                 </p>
+                {/* WHICH environment this will run against, before the operator commits (t113).
+                    The run is production-only and the server refuses anything else, so an entry
+                    marked preprod is a refusal the operator should see coming rather than meet
+                    after typing a phrase and a password. Read straight off the entry's own `env`
+                    selector — the value the server now treats as authoritative. */}
+                <p
+                  className={entry.selectors.env === 'preprod' ? 'field__error' : 'field__hint'}
+                  data-testid="cmd-test-environment-notice"
+                >
+                  {entry.selectors.env === 'prod'
+                    ? pt('providerCredentials.cmdTest.envEntryProd')
+                    : entry.selectors.env === 'preprod'
+                      ? pt('providerCredentials.cmdTest.envEntryPreprod')
+                      : pt('providerCredentials.cmdTest.envEntryInherited')}
+                </p>
               </div>
               <Field
                 label={pt('providerCredentials.cmdTest.phoneLabel')}
@@ -632,22 +657,31 @@ export function CmdTestSignatureAction({
   const disabled = !canPerform || !entry.enabled;
   const validated = result ? selfValidationOk(result.self_validation) : true;
 
+  /**
+   * The control is icon-only (t112), so its accessible NAME has to carry everything the label
+   * used to: which action this is, and where the run stands. It is the tooltip text too, so a
+   * sighted operator reads the same sentence on hover or on keyboard focus — the pen nib is not
+   * expected to convey "a real qualified signature" on its own, and no other action in this row
+   * uses that glyph.
+   */
+  const actionLabel = !canPerform
+    ? pt('providerCredentials.cmdTest.permission')
+    : result
+      ? pt('providerCredentials.cmdTest.viewResult')
+      : session
+        ? pt('providerCredentials.cmdTest.confirmButton')
+        : pt('providerCredentials.cmdTest.button');
+
   return (
     <div className="stack stack--tight">
       <span className="row-wrap">
-        <Button
-          type="button"
-          variant="ghost"
+        <IconButton
+          icon={<Icon.PenNib />}
+          label={actionLabel}
           disabled={disabled}
-          title={!canPerform ? pt('providerCredentials.cmdTest.permission') : undefined}
+          data-testid="cmd-test-signature-open"
           onClick={() => setOpen(true)}
-        >
-          {result
-            ? pt('providerCredentials.cmdTest.viewResult')
-            : session
-              ? pt('providerCredentials.cmdTest.confirmButton')
-              : pt('providerCredentials.cmdTest.button')}
-        </Button>
+        />
         {session ? <Badge tone="warn">{pt('providerCredentials.cmdTest.pending')}</Badge> : null}
         {/* A test whose signature the application could NOT verify does not get to look like a
             clean pass from the table either. */}

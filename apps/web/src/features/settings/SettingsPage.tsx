@@ -2876,23 +2876,38 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                 </Card>
               ) : null}
 
-              {/* Chave Móvel Digital — read-only config. The non-secret selectors (env,
-                  ApplicationId) plus the "AMA cert configured?" flag come from the server; the
-                  AMA secret material itself is supplied via environment variables, never the
-                  settings document, so it is surfaced here for transparency, not edited. */}
+              {/* Chave Móvel Digital. The AMA secret material is supplied via environment
+                  variables, never the settings document, so it stays a read-only fact below.
+                  The ENVIRONMENT is different (t113): it is a real decision an operator makes,
+                  and leaving it as a `<dd>` meant the only two places it could be expressed —
+                  this and the per-entry selector — were both inert from the UI. It is now the
+                  editable DEFAULT for a credential entry that declares no environment of its
+                  own; an entry that declares one overrides it, and the hint says so. */}
               {sub === 'cmd' ? (
                 <Card title={t('settings.signing.cmd.title')}>
                   <div className="form settings-rows">
                     <p className="field__hint">{t('settings.signing.cmd.intro')}</p>
+                    <Field
+                      label={t('settings.signing.cmd.env')}
+                      htmlFor="set-cmd-env"
+                      hint={t('settings.signing.cmd.envHint')}
+                    >
+                      <Select
+                        id="set-cmd-env"
+                        value={draft.signing.cmd.env}
+                        onChange={(e) =>
+                          setSigning('cmd', {
+                            ...draft.signing.cmd,
+                            env: e.target.value as 'preprod' | 'prod',
+                          })
+                        }
+                        options={[
+                          { value: 'preprod', label: t('settings.signing.cmd.envPreprod') },
+                          { value: 'prod', label: t('settings.signing.cmd.envProd') },
+                        ]}
+                      />
+                    </Field>
                     <dl className="deflist">
-                      <div>
-                        <dt>{t('settings.signing.cmd.env')}</dt>
-                        <dd>
-                          {draft.signing.cmd.env === 'prod'
-                            ? t('settings.signing.cmd.envProd')
-                            : t('settings.signing.cmd.envPreprod')}
-                        </dd>
-                      </div>
                       <div>
                         <dt>{t('settings.signing.cmd.applicationId')}</dt>
                         <dd className="mono">
