@@ -142,6 +142,7 @@ nav:
       - Signing companion (design decision): signing-companion.md
       - Record deletion (design decision): record-deletion.md
       - UI vertical spacing (design decision): ui-spacing.md
+      - Passkeys (design decision): passkeys.md
       - Comparison with other tools: comparison.md
       - Extras & utilities: extras.md
       - Specification (repo): https://github.com/supermarsx/chancela/blob/main/spec.md
