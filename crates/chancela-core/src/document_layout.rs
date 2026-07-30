@@ -33,6 +33,9 @@ const MAX_PARAGRAPH_SPACING_PT: u16 = 24;
 const MIN_HEADING_SCALE_PERCENT: u16 = 75;
 const MAX_HEADING_SCALE_PERCENT: u16 = 200;
 const MAX_REGION_GAP_MM: u16 = 30;
+/// Longest page-furniture template accepted, in characters. Furniture is a single line of page
+/// apparatus, never prose; the bound keeps a runaway string out of a signed instrument's margin.
+pub const MAX_FURNITURE_TEXT_CHARS: usize = 200;
 
 /// Supported physical page sizes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -126,6 +129,372 @@ pub struct DocumentRegions {
     pub footer_gap_mm: u16,
 }
 
+/// A fact a page-furniture template may interpolate with `{{ token }}`.
+///
+/// Deliberately a **closed** vocabulary rather than a general expression language. The `{{ … }}`
+/// surface is the same one the template catalog uses, but the catalog's resolver cannot serve
+/// furniture: it runs at freeze time, *before* pagination exists, so [`Self::Page`] and
+/// [`Self::PageCount`] are unknowable to it. Keeping the vocabulary closed buys the thing a
+/// general engine cannot — [`DocumentLayoutPolicy::validate`] rejects a typo when the policy is
+/// authored, instead of an operator discovering a blank footer on an already-signed instrument.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FurniturePlaceholder {
+    /// 1-based number of the page the furniture is being drawn on.
+    Page,
+    /// Total pages in this document.
+    PageCount,
+    /// The containing book's declared page capacity. Absent on a book that declared none.
+    PageCapacity,
+    /// The legal person the document belongs to.
+    EntityName,
+    /// The entity's NIPC. Absent when the entity carries none.
+    EntityNipc,
+    /// The document title.
+    Title,
+    /// The document's short subject line.
+    Subject,
+    /// The document's ISO-8601 creation timestamp, as supplied by the caller.
+    Date,
+}
+
+impl FurniturePlaceholder {
+    /// Every placeholder, in stable document order.
+    pub const ALL: [Self; 8] = [
+        Self::Page,
+        Self::PageCount,
+        Self::PageCapacity,
+        Self::EntityName,
+        Self::EntityNipc,
+        Self::Title,
+        Self::Subject,
+        Self::Date,
+    ];
+
+    /// The token an author writes between `{{` and `}}`.
+    #[must_use]
+    pub const fn token(self) -> &'static str {
+        match self {
+            Self::Page => "page",
+            Self::PageCount => "page_count",
+            Self::PageCapacity => "page_capacity",
+            Self::EntityName => "entity_name",
+            Self::EntityNipc => "entity_nipc",
+            Self::Title => "title",
+            Self::Subject => "subject",
+            Self::Date => "date",
+        }
+    }
+
+    /// Recognise a token, or `None` when it is not in the closed vocabulary.
+    #[must_use]
+    pub fn parse(token: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|known| known.token() == token)
+    }
+
+    fn known_tokens() -> String {
+        Self::ALL
+            .into_iter()
+            .map(Self::token)
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+/// One parsed piece of a furniture template.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FurnitureSegment {
+    /// Text emitted verbatim.
+    Literal(String),
+    /// A fact resolved per page.
+    Placeholder(FurniturePlaceholder),
+}
+
+/// Why a furniture template is not authorable.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum FurnitureTemplateError {
+    /// The template exceeds [`MAX_FURNITURE_TEXT_CHARS`].
+    #[error("furniture text is longer than {maximum} characters (got {actual})")]
+    TooLong { maximum: usize, actual: usize },
+    /// A `{{` was opened and never closed.
+    #[error("furniture text has an unclosed `{{{{` placeholder")]
+    UnclosedPlaceholder,
+    /// A placeholder token is outside the closed vocabulary.
+    #[error(
+        "furniture text uses unknown placeholder `{{{{ {name} }}}}`; known placeholders are: {known}"
+    )]
+    UnknownPlaceholder { name: String, known: String },
+    /// Furniture is a single line by construction; a break would silently overprint the body.
+    #[error("furniture text must be a single line")]
+    LineBreak,
+}
+
+/// Parse a furniture template into literal/placeholder segments.
+///
+/// Every rejection is an authoring-time rejection: an unknown token is an error rather than an
+/// empty string, because a placeholder that silently renders nothing is exactly the defect this
+/// vocabulary exists to prevent.
+pub fn parse_furniture_template(
+    source: &str,
+) -> Result<Vec<FurnitureSegment>, FurnitureTemplateError> {
+    let actual = source.chars().count();
+    if actual > MAX_FURNITURE_TEXT_CHARS {
+        return Err(FurnitureTemplateError::TooLong {
+            maximum: MAX_FURNITURE_TEXT_CHARS,
+            actual,
+        });
+    }
+    if source.contains(['\n', '\r']) {
+        return Err(FurnitureTemplateError::LineBreak);
+    }
+
+    let mut segments = Vec::new();
+    let mut literal = String::new();
+    let mut rest = source;
+    while let Some(open) = rest.find("{{") {
+        literal.push_str(&rest[..open]);
+        let after = &rest[open + 2..];
+        let close = after
+            .find("}}")
+            .ok_or(FurnitureTemplateError::UnclosedPlaceholder)?;
+        let name = after[..close].trim();
+        let placeholder = FurniturePlaceholder::parse(name).ok_or_else(|| {
+            FurnitureTemplateError::UnknownPlaceholder {
+                name: name.to_owned(),
+                known: FurniturePlaceholder::known_tokens(),
+            }
+        })?;
+        if !literal.is_empty() {
+            segments.push(FurnitureSegment::Literal(std::mem::take(&mut literal)));
+        }
+        segments.push(FurnitureSegment::Placeholder(placeholder));
+        rest = &after[close + 2..];
+    }
+    literal.push_str(rest);
+    if !literal.is_empty() {
+        segments.push(FurnitureSegment::Literal(literal));
+    }
+    Ok(segments)
+}
+
+/// The per-page facts a furniture template resolves against. `None` means *this document does not
+/// carry that fact*, which is distinct from an empty value.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FurnitureFacts<'a> {
+    pub page: Option<u32>,
+    pub page_count: Option<u32>,
+    pub page_capacity: Option<u32>,
+    pub entity_name: Option<&'a str>,
+    pub entity_nipc: Option<&'a str>,
+    pub title: Option<&'a str>,
+    pub subject: Option<&'a str>,
+    pub date: Option<&'a str>,
+}
+
+impl FurnitureFacts<'_> {
+    fn value(&self, placeholder: FurniturePlaceholder) -> Option<String> {
+        match placeholder {
+            FurniturePlaceholder::Page => self.page.map(|value| value.to_string()),
+            FurniturePlaceholder::PageCount => self.page_count.map(|value| value.to_string()),
+            FurniturePlaceholder::PageCapacity => self.page_capacity.map(|value| value.to_string()),
+            FurniturePlaceholder::EntityName => self.entity_name.map(str::to_owned),
+            FurniturePlaceholder::EntityNipc => self.entity_nipc.map(str::to_owned),
+            FurniturePlaceholder::Title => self.title.map(str::to_owned),
+            FurniturePlaceholder::Subject => self.subject.map(str::to_owned),
+            FurniturePlaceholder::Date => self.date.map(str::to_owned),
+        }
+    }
+}
+
+/// Resolve parsed `segments` against `facts`.
+///
+/// Returns `None` when the template references a fact this document does not carry. Furniture is
+/// decorative page apparatus, and a half-resolved line — `"Página 3 de "` — printed on a signed
+/// legal instrument asserts something false. Omitting the line asserts nothing. The space the
+/// furniture reserves is a pure function of the policy, so an omitted line never moves body text.
+#[must_use]
+pub fn resolve_furniture_segments(
+    segments: &[FurnitureSegment],
+    facts: &FurnitureFacts<'_>,
+) -> Option<String> {
+    let mut out = String::new();
+    for segment in segments {
+        match segment {
+            FurnitureSegment::Literal(text) => out.push_str(text),
+            FurnitureSegment::Placeholder(placeholder) => out.push_str(&facts.value(*placeholder)?),
+        }
+    }
+    Some(out)
+}
+
+/// Horizontal placement of a header or footer furniture line within the text column.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DocumentFurnitureAlignment {
+    /// Flush with the left edge of the text column.
+    Left,
+    /// Centred on the text column.
+    #[default]
+    Center,
+    /// Flush with the right edge of the text column.
+    Right,
+}
+
+/// Which side margin carries the vertical marginal text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum DocumentSideTextEdge {
+    /// The binding edge, as in a conventional bound register.
+    #[default]
+    Left,
+    /// The fore edge.
+    Right,
+}
+
+/// A running header line drawn above the text column on every page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocumentHeaderFurniture {
+    /// Off by default: an absent policy must reproduce today's page exactly.
+    pub enabled: bool,
+    /// A furniture template (see [`parse_furniture_template`]). Empty draws nothing.
+    pub text: String,
+    /// Horizontal placement within the text column.
+    pub alignment: DocumentFurnitureAlignment,
+    /// Draw a hairline rule between the header line and the body.
+    pub rule: bool,
+}
+
+impl Default for DocumentHeaderFurniture {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            text: String::new(),
+            alignment: DocumentFurnitureAlignment::Center,
+            rule: true,
+        }
+    }
+}
+
+/// A running footer line drawn below the text column on every page.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocumentFooterFurniture {
+    /// Off by default: an absent policy must reproduce today's page exactly.
+    pub enabled: bool,
+    /// A furniture template (see [`parse_furniture_template`]). Empty draws nothing.
+    pub text: String,
+    /// Horizontal placement within the text column.
+    pub alignment: DocumentFurnitureAlignment,
+    /// Draw a hairline rule between the body and the footer line.
+    pub rule: bool,
+}
+
+impl Default for DocumentFooterFurniture {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            text: String::new(),
+            alignment: DocumentFurnitureAlignment::Center,
+            rule: true,
+        }
+    }
+}
+
+/// Vertical text set in a side margin, as a Portuguese bound register carries its rubric.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocumentSideTextFurniture {
+    /// Off by default: an absent policy must reproduce today's page exactly.
+    pub enabled: bool,
+    /// A furniture template (see [`parse_furniture_template`]). Empty draws nothing.
+    pub text: String,
+    /// Which margin carries the text.
+    pub edge: DocumentSideTextEdge,
+}
+
+/// Repeated page apparatus: running header, running footer, and marginal side text.
+///
+/// Every piece is **disabled by default** and every piece reserves its own space out of the text
+/// column, so enabling one reflows the body rather than overprinting it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocumentPageFurniture {
+    #[serde(skip_serializing_if = "DocumentPageFurniture::header_is_default")]
+    pub header: DocumentHeaderFurniture,
+    #[serde(skip_serializing_if = "DocumentPageFurniture::footer_is_default")]
+    pub footer: DocumentFooterFurniture,
+    #[serde(skip_serializing_if = "DocumentPageFurniture::side_text_is_default")]
+    pub side_text: DocumentSideTextFurniture,
+}
+
+impl DocumentPageFurniture {
+    /// Whether no piece departs from the disabled default. Used to omit the whole object from the
+    /// wire form, so a policy that predates furniture and a policy that declines it are one byte
+    /// sequence — which is what keeps an already-signed document's layout digest stable.
+    #[must_use]
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+
+    fn header_is_default(header: &DocumentHeaderFurniture) -> bool {
+        header == &DocumentHeaderFurniture::default()
+    }
+
+    fn footer_is_default(footer: &DocumentFooterFurniture) -> bool {
+        footer == &DocumentFooterFurniture::default()
+    }
+
+    fn side_text_is_default(side_text: &DocumentSideTextFurniture) -> bool {
+        side_text == &DocumentSideTextFurniture::default()
+    }
+
+    /// Whether any piece will draw. A piece with empty text draws nothing even when enabled.
+    #[must_use]
+    pub fn draws_anything(&self) -> bool {
+        self.header_draws() || self.footer_draws() || self.side_text_draws()
+    }
+
+    /// Whether the running header will draw.
+    #[must_use]
+    pub fn header_draws(&self) -> bool {
+        self.header.enabled && !self.header.text.trim().is_empty()
+    }
+
+    /// Whether the running footer will draw.
+    #[must_use]
+    pub fn footer_draws(&self) -> bool {
+        self.footer.enabled && !self.footer.text.trim().is_empty()
+    }
+
+    /// Whether the marginal side text will draw.
+    #[must_use]
+    pub fn side_text_draws(&self) -> bool {
+        self.side_text.enabled && !self.side_text.text.trim().is_empty()
+    }
+
+    /// Parse every furniture template, including disabled ones.
+    ///
+    /// Disabled text is validated too, so flipping `enabled` can never turn a stored policy that
+    /// validated yesterday into one that fails to render today.
+    pub fn validate(&self) -> Result<(), DocumentLayoutValidationError> {
+        for (field, text) in [
+            (DocumentLayoutField::FurnitureHeaderText, &self.header.text),
+            (DocumentLayoutField::FurnitureFooterText, &self.footer.text),
+            (DocumentLayoutField::FurnitureSideText, &self.side_text.text),
+        ] {
+            validate_furniture_text(field, text)?;
+        }
+        Ok(())
+    }
+}
+
+fn validate_furniture_text(
+    field: DocumentLayoutField,
+    text: &str,
+) -> Result<(), DocumentLayoutValidationError> {
+    parse_furniture_template(text)
+        .map(|_| ())
+        .map_err(|source| DocumentLayoutValidationError::Furniture { field, source })
+}
+
 /// Complete renderer input after inheritance has been resolved.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -133,6 +502,10 @@ pub struct DocumentLayoutPolicy {
     pub page: DocumentPageLayout,
     pub typography: DocumentTypography,
     pub regions: DocumentRegions,
+    /// Repeated page apparatus. Omitted from the wire form at its all-disabled default so that a
+    /// policy authored before furniture existed serializes identically to one that declines it.
+    #[serde(default, skip_serializing_if = "DocumentPageFurniture::is_default")]
+    pub furniture: DocumentPageFurniture,
 }
 
 impl Default for DocumentLayoutPolicy {
@@ -165,6 +538,7 @@ impl Default for DocumentLayoutPolicy {
                 header_gap_mm: 4,
                 footer_gap_mm: 4,
             },
+            furniture: DocumentPageFurniture::default(),
         }
     }
 }
@@ -227,6 +601,7 @@ impl DocumentLayoutPolicy {
             0,
             MAX_REGION_GAP_MM,
         )?;
+        self.furniture.validate()?;
 
         let (page_width_mm, page_height_mm) = self.page_dimensions_mm();
         let Some((usable_width_mm, usable_height_mm)) = self.usable_page_dimensions_mm() else {
@@ -351,6 +726,69 @@ impl DocumentRegionsOverrides {
     }
 }
 
+/// Optional page-furniture leaves. Missing means inherited.
+///
+/// Flattened to one leaf per authored value (rather than nesting one override struct per piece)
+/// because that is what the provenance map keys on: a book that only moves the footer text must
+/// not be recorded as having supplied the header's alignment.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct DocumentPageFurnitureOverrides {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_alignment: Option<DocumentFurnitureAlignment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub header_rule: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_alignment: Option<DocumentFurnitureAlignment>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub footer_rule: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side_text_enabled: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side_text: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side_text_edge: Option<DocumentSideTextEdge>,
+}
+
+impl DocumentPageFurnitureOverrides {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.header_enabled.is_none()
+            && self.header_text.is_none()
+            && self.header_alignment.is_none()
+            && self.header_rule.is_none()
+            && self.footer_enabled.is_none()
+            && self.footer_text.is_none()
+            && self.footer_alignment.is_none()
+            && self.footer_rule.is_none()
+            && self.side_text_enabled.is_none()
+            && self.side_text.is_none()
+            && self.side_text_edge.is_none()
+    }
+
+    /// Parse every authored furniture template in this layer.
+    pub fn validate(&self) -> Result<(), DocumentLayoutValidationError> {
+        for (field, text) in [
+            (DocumentLayoutField::FurnitureHeaderText, &self.header_text),
+            (DocumentLayoutField::FurnitureFooterText, &self.footer_text),
+            (DocumentLayoutField::FurnitureSideText, &self.side_text),
+        ] {
+            if let Some(text) = text {
+                validate_furniture_text(field, text)?;
+            }
+        }
+        Ok(())
+    }
+}
+
 /// One inheritable layout layer. Every leaf is optional and defaults to inheritance.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -361,13 +799,18 @@ pub struct DocumentLayoutOverrides {
     pub typography: DocumentTypographyOverrides,
     #[serde(skip_serializing_if = "DocumentRegionsOverrides::is_empty")]
     pub regions: DocumentRegionsOverrides,
+    #[serde(skip_serializing_if = "DocumentPageFurnitureOverrides::is_empty")]
+    pub furniture: DocumentPageFurnitureOverrides,
 }
 
 impl DocumentLayoutOverrides {
     /// Whether this layer overrides no field.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.page.is_empty() && self.typography.is_empty() && self.regions.is_empty()
+        self.page.is_empty()
+            && self.typography.is_empty()
+            && self.regions.is_empty()
+            && self.furniture.is_empty()
     }
 
     /// Validate all values present in this layer. Cross-field usable-page validation happens after
@@ -402,6 +845,7 @@ impl DocumentLayoutOverrides {
                 MAX_REGION_GAP_MM,
             )?;
         }
+        self.furniture.validate()?;
         Ok(())
     }
 }
@@ -427,11 +871,22 @@ pub enum DocumentLayoutField {
     HeadingScalePercent,
     HeaderGapMm,
     FooterGapMm,
+    FurnitureHeaderEnabled,
+    FurnitureHeaderText,
+    FurnitureHeaderAlignment,
+    FurnitureHeaderRule,
+    FurnitureFooterEnabled,
+    FurnitureFooterText,
+    FurnitureFooterAlignment,
+    FurnitureFooterRule,
+    FurnitureSideTextEnabled,
+    FurnitureSideText,
+    FurnitureSideTextEdge,
 }
 
 impl DocumentLayoutField {
     /// Every field, in stable document order.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 28] = [
         Self::PageSize,
         Self::PageOrientation,
         Self::MarginTopMm,
@@ -449,6 +904,17 @@ impl DocumentLayoutField {
         Self::HeadingScalePercent,
         Self::HeaderGapMm,
         Self::FooterGapMm,
+        Self::FurnitureHeaderEnabled,
+        Self::FurnitureHeaderText,
+        Self::FurnitureHeaderAlignment,
+        Self::FurnitureHeaderRule,
+        Self::FurnitureFooterEnabled,
+        Self::FurnitureFooterText,
+        Self::FurnitureFooterAlignment,
+        Self::FurnitureFooterRule,
+        Self::FurnitureSideTextEnabled,
+        Self::FurnitureSideText,
+        Self::FurnitureSideTextEdge,
     ];
 }
 
@@ -502,6 +968,13 @@ pub enum DocumentLayoutValidationError {
         usable_height_mm: u16,
         minimum_width_mm: u16,
         minimum_height_mm: u16,
+    },
+    /// A page-furniture template is not authorable.
+    #[error("{field:?}: {source}")]
+    Furniture {
+        field: DocumentLayoutField,
+        #[source]
+        source: FurnitureTemplateError,
     },
 }
 
@@ -636,6 +1109,61 @@ fn apply_overrides(
         overrides.regions.footer_gap_mm,
         policy.regions.footer_gap_mm,
         DocumentLayoutField::FooterGapMm
+    );
+    apply!(
+        overrides.furniture.header_enabled,
+        policy.furniture.header.enabled,
+        DocumentLayoutField::FurnitureHeaderEnabled
+    );
+    apply!(
+        overrides.furniture.header_text.clone(),
+        policy.furniture.header.text,
+        DocumentLayoutField::FurnitureHeaderText
+    );
+    apply!(
+        overrides.furniture.header_alignment,
+        policy.furniture.header.alignment,
+        DocumentLayoutField::FurnitureHeaderAlignment
+    );
+    apply!(
+        overrides.furniture.header_rule,
+        policy.furniture.header.rule,
+        DocumentLayoutField::FurnitureHeaderRule
+    );
+    apply!(
+        overrides.furniture.footer_enabled,
+        policy.furniture.footer.enabled,
+        DocumentLayoutField::FurnitureFooterEnabled
+    );
+    apply!(
+        overrides.furniture.footer_text.clone(),
+        policy.furniture.footer.text,
+        DocumentLayoutField::FurnitureFooterText
+    );
+    apply!(
+        overrides.furniture.footer_alignment,
+        policy.furniture.footer.alignment,
+        DocumentLayoutField::FurnitureFooterAlignment
+    );
+    apply!(
+        overrides.furniture.footer_rule,
+        policy.furniture.footer.rule,
+        DocumentLayoutField::FurnitureFooterRule
+    );
+    apply!(
+        overrides.furniture.side_text_enabled,
+        policy.furniture.side_text.enabled,
+        DocumentLayoutField::FurnitureSideTextEnabled
+    );
+    apply!(
+        overrides.furniture.side_text.clone(),
+        policy.furniture.side_text.text,
+        DocumentLayoutField::FurnitureSideText
+    );
+    apply!(
+        overrides.furniture.side_text_edge,
+        policy.furniture.side_text.edge,
+        DocumentLayoutField::FurnitureSideTextEdge
     );
 }
 
@@ -1020,6 +1548,245 @@ mod tests {
                 "typography": {"font_path": "C:/private/font.ttf"}
             }))
             .is_err()
+        );
+    }
+
+    #[test]
+    fn furniture_is_disabled_by_default_and_stays_off_the_wire() {
+        let policy = DocumentLayoutPolicy::default();
+        assert!(policy.furniture.is_default());
+        assert!(!policy.furniture.header_draws());
+        assert!(!policy.furniture.footer_draws());
+        assert!(!policy.furniture.side_text_draws());
+        assert!(!policy.furniture.draws_anything());
+        let json = serde_json::to_value(&policy).expect("serializes");
+        assert!(
+            json.get("furniture").is_none(),
+            "the all-disabled default must not appear in the wire form"
+        );
+    }
+
+    #[test]
+    fn a_stored_policy_written_before_furniture_existed_still_deserializes() {
+        // `document_layout_json` rows persisted before this field existed must keep parsing, and
+        // must mean "no furniture" — otherwise every signed document's pinned policy changes
+        // meaning the moment the field lands.
+        let stored = serde_json::json!({
+            "page": {"size": "A4", "orientation": "Portrait",
+                     "margins_mm": {"top": 20, "right": 20, "bottom": 20, "left": 20}},
+            "typography": {"body_font_family": "NotoSerif", "body_font_size_pt": 11,
+                           "header_font_family": "NotoSerif", "header_font_size_pt": 11,
+                           "footer_font_family": "NotoSerif", "footer_font_size_pt": 9,
+                           "line_spacing_percent": 140, "paragraph_spacing_pt": 6,
+                           "heading_scale_percent": 100},
+            "regions": {"header_gap_mm": 4, "footer_gap_mm": 4}
+        });
+        let policy: DocumentLayoutPolicy =
+            serde_json::from_value(stored.clone()).expect("an old row still parses");
+        assert!(policy.furniture.is_default());
+        policy.validate().expect("and still validates");
+        assert_eq!(
+            serde_json::to_value(&policy).expect("re-serializes"),
+            stored,
+            "an untouched old row must round-trip to the same bytes, so its layout digest holds"
+        );
+    }
+
+    #[test]
+    fn an_authored_furniture_policy_round_trips_and_only_names_what_it_set() {
+        let mut policy = DocumentLayoutPolicy::default();
+        policy.furniture.footer.enabled = true;
+        policy.furniture.footer.text = "{{ page }} / {{ page_count }}".to_owned();
+        policy.validate().expect("valid");
+        let json = serde_json::to_value(&policy).expect("serializes");
+        assert_eq!(
+            json["furniture"],
+            serde_json::json!({
+                "footer": {
+                    "enabled": true,
+                    "text": "{{ page }} / {{ page_count }}",
+                    "alignment": "Center",
+                    "rule": true
+                }
+            }),
+            "the untouched header and side text stay omitted"
+        );
+        let back: DocumentLayoutPolicy = serde_json::from_value(json).expect("deserializes");
+        assert_eq!(back, policy);
+    }
+
+    #[test]
+    fn the_furniture_placeholder_vocabulary_is_closed_and_typos_are_rejected() {
+        // Closing the vocabulary is the point: a general engine would render `{{ pagina }}` as the
+        // empty string and the operator would only find out on an already-signed instrument.
+        let segments = parse_furniture_template("Página {{ page }} de {{ page_capacity }}")
+            .expect("known placeholders parse");
+        assert_eq!(
+            segments,
+            vec![
+                FurnitureSegment::Literal("Página ".to_owned()),
+                FurnitureSegment::Placeholder(FurniturePlaceholder::Page),
+                FurnitureSegment::Literal(" de ".to_owned()),
+                FurnitureSegment::Placeholder(FurniturePlaceholder::PageCapacity),
+            ]
+        );
+
+        let error = parse_furniture_template("Página {{ pagina }}")
+            .expect_err("an unknown token must not be silently blank");
+        assert!(
+            matches!(&error, FurnitureTemplateError::UnknownPlaceholder { name, .. } if name == "pagina"),
+            "got {error:?}"
+        );
+        assert!(matches!(
+            parse_furniture_template("{{ page"),
+            Err(FurnitureTemplateError::UnclosedPlaceholder)
+        ));
+        assert!(matches!(
+            parse_furniture_template("cabeçalho\nrodapé"),
+            Err(FurnitureTemplateError::LineBreak)
+        ));
+        assert!(matches!(
+            parse_furniture_template(&"a".repeat(MAX_FURNITURE_TEXT_CHARS + 1)),
+            Err(FurnitureTemplateError::TooLong { .. })
+        ));
+        // Every advertised token is actually recognised.
+        for placeholder in FurniturePlaceholder::ALL {
+            assert_eq!(
+                FurniturePlaceholder::parse(placeholder.token()),
+                Some(placeholder)
+            );
+        }
+    }
+
+    #[test]
+    fn a_furniture_template_that_asks_for_an_absent_fact_resolves_to_nothing() {
+        let segments =
+            parse_furniture_template("Página {{ page }} de {{ page_capacity }}").unwrap();
+        let known = FurnitureFacts {
+            page: Some(3),
+            page_capacity: Some(100),
+            ..Default::default()
+        };
+        assert_eq!(
+            resolve_furniture_segments(&segments, &known).as_deref(),
+            Some("Página 3 de 100")
+        );
+        // A book that declared no capacity: the whole line is withheld rather than printed as
+        // "Página 3 de ", which on a signed instrument would state something false.
+        let unknown = FurnitureFacts {
+            page: Some(3),
+            ..Default::default()
+        };
+        assert_eq!(resolve_furniture_segments(&segments, &unknown), None);
+    }
+
+    #[test]
+    fn validation_rejects_a_malformed_template_even_on_a_disabled_piece() {
+        // Disabled text is validated too, so flipping `enabled` can never turn a policy that
+        // validated yesterday into one that fails to render today.
+        let mut policy = DocumentLayoutPolicy::default();
+        policy.furniture.header.enabled = false;
+        policy.furniture.header.text = "{{ nao_existe }}".to_owned();
+        let error = policy
+            .validate()
+            .expect_err("a typo must be caught at authoring time");
+        assert!(
+            matches!(
+                error,
+                DocumentLayoutValidationError::Furniture {
+                    field: DocumentLayoutField::FurnitureHeaderText,
+                    ..
+                }
+            ),
+            "got {error:?}"
+        );
+    }
+
+    #[test]
+    fn furniture_leaves_inherit_and_record_provenance_like_every_other_leaf() {
+        let instance = DocumentLayoutPolicy::default();
+        let entity = DocumentLayoutOverrides {
+            furniture: DocumentPageFurnitureOverrides {
+                footer_enabled: Some(true),
+                footer_text: Some("{{ entity_name }} — {{ page }}".to_owned()),
+                side_text_enabled: Some(true),
+                side_text: Some("{{ title }}".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let book = DocumentLayoutOverrides {
+            furniture: DocumentPageFurnitureOverrides {
+                footer_text: Some("Página {{ page }} de {{ page_capacity }}".to_owned()),
+                footer_alignment: Some(DocumentFurnitureAlignment::Right),
+                side_text_edge: Some(DocumentSideTextEdge::Right),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let resolved = resolve_document_layout(&instance, None, Some(&entity), Some(&book))
+            .expect("valid cascade");
+
+        assert!(resolved.policy.furniture.footer.enabled);
+        assert_eq!(
+            resolved.policy.furniture.footer.text,
+            "Página {{ page }} de {{ page_capacity }}"
+        );
+        assert_eq!(
+            resolved.policy.furniture.footer.alignment,
+            DocumentFurnitureAlignment::Right
+        );
+        assert!(resolved.policy.furniture.side_text.enabled);
+        assert_eq!(resolved.policy.furniture.side_text.text, "{{ title }}");
+        assert_eq!(
+            resolved.policy.furniture.side_text.edge,
+            DocumentSideTextEdge::Right
+        );
+        assert!(!resolved.policy.furniture.header.enabled);
+
+        // The book moved only the footer text, alignment and the side edge — not the rest.
+        assert_eq!(
+            resolved.source(DocumentLayoutField::FurnitureFooterEnabled),
+            Some(DocumentLayoutSource::Entity)
+        );
+        assert_eq!(
+            resolved.source(DocumentLayoutField::FurnitureFooterText),
+            Some(DocumentLayoutSource::Book)
+        );
+        assert_eq!(
+            resolved.source(DocumentLayoutField::FurnitureSideText),
+            Some(DocumentLayoutSource::Entity)
+        );
+        assert_eq!(
+            resolved.source(DocumentLayoutField::FurnitureSideTextEdge),
+            Some(DocumentLayoutSource::Book)
+        );
+        assert_eq!(
+            resolved.source(DocumentLayoutField::FurnitureHeaderText),
+            Some(DocumentLayoutSource::Instance)
+        );
+        assert_eq!(resolved.sources.len(), DocumentLayoutField::ALL.len());
+    }
+
+    #[test]
+    fn an_override_layer_is_range_checked_before_it_is_applied() {
+        let overrides = DocumentLayoutOverrides {
+            furniture: DocumentPageFurnitureOverrides {
+                footer_text: Some("{{ paginas }}".to_owned()),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        assert!(overrides.validate().is_err());
+        assert!(
+            resolve_document_layout(
+                &DocumentLayoutPolicy::default(),
+                None,
+                None,
+                Some(&overrides)
+            )
+            .is_err(),
+            "a book must not be able to author a template that cannot render"
         );
     }
 

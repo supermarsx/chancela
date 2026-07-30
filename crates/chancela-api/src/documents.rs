@@ -30,9 +30,11 @@ use chancela_core::book::BookId;
 use chancela_core::termo::{TermoClause, TermoInstrument, TermoKind};
 use chancela_core::{
     Act, ActBody, ActId, ActState, Block, Book, BookKind, Convening, DispatchChannel,
-    DocumentFontFamily, DocumentLayoutPolicy, DocumentModel, DocumentOrientation,
-    DocumentPageLayout, DocumentPageMargins, DocumentPageSize, DocumentRegions, DocumentTypography,
-    Entity, EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme, PresenceMode, Run,
+    DocumentFontFamily, DocumentFooterFurniture, DocumentFurnitureAlignment,
+    DocumentHeaderFurniture, DocumentLayoutPolicy, DocumentModel, DocumentOrientation,
+    DocumentPageFurniture, DocumentPageLayout, DocumentPageMargins, DocumentPageSize,
+    DocumentRegions, DocumentSideTextEdge, DocumentSideTextFurniture, DocumentTypography, Entity,
+    EntityFamily, LifecycleStage, MeetingChannel, NumberingScheme, PresenceMode, Run,
     SignaturePolicyHint, TermoDeAbertura, TermoDeEncerramento,
 };
 use chancela_signing::{
@@ -542,6 +544,28 @@ fn frozen_legacy_unbound_document_layout() -> DocumentLayoutPolicy {
         regions: DocumentRegions {
             header_gap_mm: 4,
             footer_gap_mm: 4,
+        },
+        // The pre-binding writer drew no page furniture, and nothing may ever give an historical
+        // unbound document some. Pinned explicitly rather than via `Default` so that a future
+        // change to the product's furniture defaults cannot reach back into these bytes.
+        furniture: DocumentPageFurniture {
+            header: DocumentHeaderFurniture {
+                enabled: false,
+                text: String::new(),
+                alignment: DocumentFurnitureAlignment::Center,
+                rule: true,
+            },
+            footer: DocumentFooterFurniture {
+                enabled: false,
+                text: String::new(),
+                alignment: DocumentFurnitureAlignment::Center,
+                rule: true,
+            },
+            side_text: DocumentSideTextFurniture {
+                enabled: false,
+                text: String::new(),
+                edge: DocumentSideTextEdge::Left,
+            },
         },
     }
 }
@@ -12182,6 +12206,7 @@ mod tests {
                 },
             ],
             document_layout: Default::default(),
+            page_capacity: None,
         };
         (act_id, doc, model)
     }

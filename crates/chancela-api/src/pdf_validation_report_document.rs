@@ -686,6 +686,8 @@ pub fn build_pdf_validation_report_document(
         created_at: Some(ctx.generated_at.to_owned()),
         blocks,
         document_layout: Default::default(),
+        // A verification report belongs to no book, so it declares no page capacity.
+        page_capacity: None,
     }
 }
 

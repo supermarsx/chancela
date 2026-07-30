@@ -122,6 +122,27 @@ impl DecorativeArtifact {
             target: signature_line_target(block_index, slot_index),
         }
     }
+
+    /// Build decorative artifact metadata for the running header furniture line.
+    pub fn page_furniture_header() -> Self {
+        Self {
+            target: furniture_target("header"),
+        }
+    }
+
+    /// Build decorative artifact metadata for the running footer furniture line.
+    pub fn page_furniture_footer() -> Self {
+        Self {
+            target: furniture_target("footer"),
+        }
+    }
+
+    /// Build decorative artifact metadata for the marginal side-text furniture.
+    pub fn page_furniture_side_text() -> Self {
+        Self {
+            target: furniture_target("side-text"),
+        }
+    }
 }
 
 /// Accessibility report input. Plain `&DocumentModel` values are accepted and carry no
@@ -403,6 +424,9 @@ pub struct ArtifactMarkingReport {
     pub vote_table_rule_artifact_count: usize,
     /// Signature blank-line rules.
     pub signature_line_artifact_count: usize,
+    /// Enabled page-furniture pieces (running header, running footer, marginal side text). Counted
+    /// per piece rather than per page: each is one decorative definition the writer repeats.
+    pub page_furniture_artifact_count: usize,
 }
 
 /// Local facts about non-text alternate text and decorative accounting.
@@ -530,7 +554,7 @@ impl AccessibilityReport {
 \"structure_tree\":{{\"catalog_mark_info_marked\":{catalog_mark_info_marked},\"catalog_struct_tree_root\":{catalog_struct_tree_root},\"struct_tree_root_type\":{struct_tree_root_type},\"document_element_role\":{document_element_role},\"parent_tree_present\":{parent_tree_present},\"parent_tree_next_key_tracks_pages\":{parent_tree_next_key_tracks_pages},\"pages_have_struct_parents\":{pages_have_struct_parents},\"page_struct_parents_are_page_indexes\":{page_struct_parents_are_page_indexes},\"pages_use_structure_tab_order\":{structure_tree_pages_use_tab_order},\"complete_for_local_profile\":{structure_tree_complete}}},\
 \"structure_depth\":{{\"bounded_local_profile\":{bounded_local_profile},\"max_depth\":{max_depth},\"top_level_semantic_block_count\":{top_level_count},\"table_count\":{depth_table_count},\"table_row_count\":{table_row_count},\"table_cell_count\":{table_cell_count},\"document_root_children_are_top_level_semantic_blocks\":{root_children_top_level},\"tables_contain_rows_only\":{tables_rows_only},\"rows_contain_header_or_data_cells_only\":{rows_cells_only},\"row_and_cell_roles_are_table_scoped\":{row_cell_scoped},\"complete_for_local_profile\":{depth_complete}}},\
 \"marked_content\":{{\"structure_element_count\":{marked_structure_count},\"marked_leaf_element_count\":{marked_leaf_count},\"table_cell_marked_leaf_count\":{marked_table_cell_count},\"artifact_scope_count\":{marked_artifact_scope_count},\"semantic_leaves_have_marked_content\":{semantic_leaves_marked},\"parent_tree_maps_page_mcids\":{parent_tree_maps_mcids},\"artifacts_are_marked_without_mcid\":{artifacts_without_mcid},\"complete_for_local_profile\":{marked_complete}}},\
-\"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"known_layout_artifact_targets\":[{artifact_targets}],\"artifact_scope_operator\":{artifact_scope_operator},\"artifacts_use_mcid\":{artifacts_use_mcid},\"path_painting_scoped_as_artifact\":{path_painting_scoped},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts}}}\
+\"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"known_layout_artifact_targets\":[{artifact_targets}],\"artifact_scope_operator\":{artifact_scope_operator},\"artifacts_use_mcid\":{artifacts_use_mcid},\"path_painting_scoped_as_artifact\":{path_painting_scoped},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts},\"page_furniture_artifact_count\":{furniture_artifacts}}}\
 }},\
 \"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"writer_owned_decorative_artifacts_accounted_for\":{writer_decorative_accounted},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
 \"alt_text_model_present\":{alt_text},\
@@ -633,6 +657,7 @@ impl AccessibilityReport {
             rule_artifacts = self.artifact_marking.horizontal_rule_artifact_count,
             vote_rule_artifacts = self.artifact_marking.vote_table_rule_artifact_count,
             signature_artifacts = self.artifact_marking.signature_line_artifact_count,
+            furniture_artifacts = self.artifact_marking.page_furniture_artifact_count,
             non_text_model_supplied = self.non_text_content.model_supplied,
             non_text_all_accounted = self.non_text_content.all_non_text_content_accounted_for,
             text_alt_count = self.non_text_content.text_alternative_count,
@@ -1249,6 +1274,10 @@ fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
         })
         .sum::<usize>();
     let header_rule_artifact_count = 1;
+    let furniture = &doc.document_layout.furniture;
+    let page_furniture_artifact_count = usize::from(furniture.header_draws())
+        + usize::from(furniture.footer_draws())
+        + usize::from(furniture.side_text_draws());
     let known_layout_artifact_count = known_layout_artifact_targets.len();
 
     ArtifactMarkingReport {
@@ -1262,6 +1291,7 @@ fn artifact_marking(doc: &DocumentModel) -> ArtifactMarkingReport {
         horizontal_rule_artifact_count,
         vote_table_rule_artifact_count,
         signature_line_artifact_count,
+        page_furniture_artifact_count,
     }
 }
 
@@ -1337,6 +1367,19 @@ fn non_text_content(
 
 fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
     let mut targets = vec![header_rule_target()];
+    // One target per enabled piece, not per page: the furniture is a single decorative definition
+    // that the writer repeats, and enumerating it per page would make this accounting depend on a
+    // page count the report cannot see without laying the document out.
+    let furniture = &doc.document_layout.furniture;
+    if furniture.header_draws() {
+        targets.push(furniture_target("header"));
+    }
+    if furniture.footer_draws() {
+        targets.push(furniture_target("footer"));
+    }
+    if furniture.side_text_draws() {
+        targets.push(furniture_target("side-text"));
+    }
     for (index, block) in doc.blocks.iter().enumerate() {
         match block {
             // New caller-owned non-text block variants must update this accounting before
@@ -1362,6 +1405,10 @@ fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
 
 fn header_rule_target() -> String {
     "layout:header-rule".to_string()
+}
+
+fn furniture_target(piece: &str) -> String {
+    format!("layout:page-furniture:{piece}")
 }
 
 fn block_rule_target(index: usize) -> String {

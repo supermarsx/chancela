@@ -1328,6 +1328,8 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
         created_at: Some(input.generated_at.to_owned()),
         blocks,
         document_layout: Default::default(),
+        // An archive export belongs to no book, so it declares no page capacity.
+        page_capacity: None,
     }
 }
 

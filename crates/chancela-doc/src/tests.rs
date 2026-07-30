@@ -6,7 +6,7 @@
 
 use chancela_core::{
     Block, DocumentFontFamily, DocumentLayoutPolicy, DocumentModel, DocumentOrientation,
-    DocumentPageSize, KvRow, Run, SignatureSlot, VoteRow,
+    DocumentPageSize, DocumentSideTextEdge, KvRow, Run, SignatureSlot, VoteRow,
 };
 use lopdf::{Dictionary, Document, Object, ObjectId};
 
@@ -2518,4 +2518,484 @@ fn selfcheck_rejects_a_structure_leaf_whose_child_is_not_a_marked_content_refere
     // that looks populated and points at nothing.
     let err = mutant(|bytes| replace_once(bytes, b"/Type/MCR", b"/Type/MCS"));
     assert_diagnostic(&err, "is not an /MCR dictionary");
+}
+
+// --- Page furniture (running header, running footer, marginal side text) -------------------------
+
+/// One positioned text-showing operator, with the marked-content scope it sits in.
+#[derive(Debug, Clone, PartialEq)]
+struct PositionedText {
+    /// `true` when the operator sits inside an `/Artifact` scope rather than a tagged one.
+    artifact: bool,
+    x: f32,
+    y: f32,
+    size: f32,
+    /// The text matrix, when the fragment was positioned by `Tm` rather than `Td`.
+    matrix: Option<[f32; 4]>,
+}
+
+fn page_content_streams(parsed: &Document) -> Vec<String> {
+    parsed
+        .page_iter()
+        .map(|page_id| {
+            let page = parsed
+                .get_object(page_id)
+                .and_then(Object::as_dict)
+                .expect("page dictionary");
+            let content_ref = page
+                .get(b"Contents")
+                .and_then(Object::as_reference)
+                .expect("page contents reference");
+            let content = parsed
+                .get_object(content_ref)
+                .and_then(Object::as_stream)
+                .expect("page content stream");
+            String::from_utf8_lossy(&content.content).into_owned()
+        })
+        .collect()
+}
+
+/// Walk one page's content stream, pairing every `Tj` with the position and scope in force.
+fn positioned_text(page_content: &str) -> Vec<PositionedText> {
+    let mut out = Vec::new();
+    let mut artifact_depth = 0usize;
+    let mut scope_depth = 0usize;
+    let (mut x, mut y, mut size) = (0.0f32, 0.0f32, 0.0f32);
+    let mut matrix: Option<[f32; 4]> = None;
+    for raw in page_content.lines() {
+        let line = raw.trim();
+        let tokens: Vec<&str> = line.split_whitespace().collect();
+        match tokens.last().copied() {
+            Some("BMC") | Some("BDC") => {
+                scope_depth += 1;
+                if line.starts_with("/Artifact") {
+                    artifact_depth += 1;
+                }
+            }
+            Some("EMC") => {
+                scope_depth = scope_depth.saturating_sub(1);
+                artifact_depth = artifact_depth.min(scope_depth);
+            }
+            Some("Tf") if tokens.len() == 3 => size = tokens[1].parse().expect("font size"),
+            Some("Td") if tokens.len() == 3 => {
+                x = tokens[0].parse().expect("Td x");
+                y = tokens[1].parse().expect("Td y");
+                matrix = None;
+            }
+            Some("Tm") if tokens.len() == 7 => {
+                matrix = Some([
+                    tokens[0].parse().expect("Tm a"),
+                    tokens[1].parse().expect("Tm b"),
+                    tokens[2].parse().expect("Tm c"),
+                    tokens[3].parse().expect("Tm d"),
+                ]);
+                x = tokens[4].parse().expect("Tm e");
+                y = tokens[5].parse().expect("Tm f");
+            }
+            Some("Tj") => out.push(PositionedText {
+                artifact: artifact_depth > 0,
+                x,
+                y,
+                size,
+                matrix,
+            }),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether a fragment is turned 90 degrees. Synthesised italics also carry a `Tm`, so the matrix
+/// itself — not merely its presence — is what distinguishes rotated marginal text.
+fn is_rotated(item: &PositionedText) -> bool {
+    matches!(item.matrix, Some([0.0, _, _, 0.0]))
+}
+
+/// A document whose body overflows a page, so furniture has real body text to collide with.
+fn dense_body(paragraphs: usize) -> DocumentModel {
+    let mut doc = DocumentModel::new(
+        "Livro de atas",
+        "Encosto Estratégico Lda",
+        "Ensaio de mobiliário de página",
+    );
+    doc.created_at = Some("2026-07-06T10:30:00Z".to_string());
+    doc.blocks = (0..paragraphs)
+        .map(|index| Block::Paragraph {
+            runs: vec![Run {
+                text: format!(
+                    "Parágrafo {index} com texto suficiente para encher a coluna de texto e \
+                     obrigar a paginação a transbordar para a página seguinte."
+                ),
+                bold: false,
+                italic: false,
+            }],
+        })
+        .collect();
+    doc
+}
+
+fn furnished(paragraphs: usize) -> DocumentModel {
+    let mut doc = dense_body(paragraphs);
+    let furniture = &mut doc.document_layout.furniture;
+    furniture.header.enabled = true;
+    furniture.header.text = "{{ entity_name }} — {{ title }}".to_string();
+    furniture.footer.enabled = true;
+    furniture.footer.text = "{{ page }} / {{ page_count }}".to_string();
+    furniture.side_text.enabled = true;
+    furniture.side_text.text = "{{ subject }}".to_string();
+    doc
+}
+
+#[test]
+fn page_furniture_is_off_by_default_and_omitted_from_the_policy_wire_form() {
+    // The whole byte-stability argument rests on this: a policy authored before furniture existed
+    // and a policy that declines it must be the same bytes, or every stored `document_layout_json`
+    // would re-digest differently the moment this field landed.
+    let policy = DocumentLayoutPolicy::default();
+    assert!(!policy.furniture.draws_anything());
+    let json = serde_json::to_string(&policy).expect("policy serializes");
+    assert!(
+        !json.contains("furniture"),
+        "the all-disabled default must stay off the wire, got {json}"
+    );
+
+    let pre_furniture = r#"{
+        "page":{"size":"A4","orientation":"Portrait",
+                "margins_mm":{"top":20,"right":20,"bottom":20,"left":20}},
+        "typography":{"body_font_family":"NotoSerif","body_font_size_pt":10,
+                      "header_font_family":"NotoSerif","header_font_size_pt":11,
+                      "footer_font_family":"NotoSerif","footer_font_size_pt":9,
+                      "line_spacing_percent":140,"paragraph_spacing_pt":6,
+                      "heading_scale_percent":100},
+        "regions":{"header_gap_mm":4,"footer_gap_mm":4}
+    }"#;
+    let restored: DocumentLayoutPolicy =
+        serde_json::from_str(pre_furniture).expect("a stored pre-furniture policy still parses");
+    assert_eq!(
+        restored, policy,
+        "an absent key must mean today's behaviour"
+    );
+
+    // …and the same model rendered under both is the same file, byte for byte.
+    let mut from_stored = fixture();
+    from_stored.document_layout = restored;
+    assert_eq!(
+        pdfa::write(&from_stored).expect("write from stored policy"),
+        pdfa::write(&fixture()).expect("write from default policy"),
+    );
+}
+
+#[test]
+fn page_furniture_reserves_its_band_and_body_text_never_enters_it() {
+    // The test that matters: a page full of body text, with all three pieces of furniture on.
+    // Furniture takes its space out of the text column, so the body reflows around it. Nothing
+    // here re-implements the engine's arithmetic — every bound is read off the furniture the
+    // engine actually emitted.
+    let doc = furnished(40);
+    let bytes = pdfa::write(&doc).expect("write furnished document");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let pages = page_content_streams(&parsed);
+    assert!(pages.len() > 1, "the fixture must overflow one page");
+
+    for (page_index, page) in pages.iter().enumerate() {
+        let text = positioned_text(page);
+        let (furniture, body): (Vec<_>, Vec<_>) = text.into_iter().partition(|item| item.artifact);
+        assert_eq!(
+            furniture.len(),
+            3,
+            "page {page_index} must carry exactly the header, footer and side text"
+        );
+        assert!(
+            !body.is_empty(),
+            "page {page_index} must carry body text to collide with"
+        );
+
+        let upright: Vec<_> = furniture.iter().filter(|f| !is_rotated(f)).collect();
+        assert_eq!(upright.len(), 2, "header and footer are upright");
+        let header = upright.iter().map(|f| f.y).fold(f32::MIN, f32::max);
+        let footer = upright.iter().map(|f| f.y).fold(f32::MAX, f32::min);
+        let side = furniture
+            .iter()
+            .find(|f| is_rotated(f))
+            .expect("rotated side text");
+
+        for item in &body {
+            assert!(
+                item.y + item.size <= header,
+                "page {page_index}: body text at y={} rises into the header band (baseline {header})",
+                item.y
+            );
+            assert!(
+                item.y >= footer + item.size,
+                "page {page_index}: body text at y={} drops into the footer band (baseline {footer})",
+                item.y
+            );
+            assert!(
+                item.x >= side.x + side.size * 0.5,
+                "page {page_index}: body text at x={} runs into the marginal band (baseline {})",
+                item.x,
+                side.x
+            );
+        }
+    }
+}
+
+#[test]
+fn enabling_furniture_reflows_the_body_instead_of_overprinting_it() {
+    // The corollary of reserving space: the same blocks need more pages once furniture is on. If
+    // furniture were painted into the margin without reserving, this count would not move — and
+    // the overlap test above would be the only thing standing between a footer and a body line.
+    let plain = dense_body(40);
+    let with_furniture = furnished(40);
+    assert!(
+        pdfa::page_count(&with_furniture).expect("furnished count")
+            >= pdfa::page_count(&plain).expect("plain count"),
+        "furniture must never buy back space"
+    );
+
+    // …and the space it costs is visible directly: the first body baseline drops by the reserve.
+    let mut header_only = dense_body(6);
+    header_only.document_layout.furniture.header.enabled = true;
+    header_only.document_layout.furniture.header.text =
+        "{{ entity_name }} — {{ page }}".to_string();
+
+    let first_body_top = |doc: &DocumentModel| -> f32 {
+        let bytes = pdfa::write(doc).expect("write");
+        let parsed = Document::load_mem(&bytes).expect("parse");
+        positioned_text(&page_content_streams(&parsed)[0])
+            .into_iter()
+            .filter(|item| !item.artifact)
+            .map(|item| item.y)
+            .fold(f32::MIN, f32::max)
+    };
+    let reserved = first_body_top(&header_only);
+    let unreserved = first_body_top(&dense_body(6));
+    assert!(
+        reserved < unreserved,
+        "a running header must push the body down, got {reserved} vs {unreserved}"
+    );
+}
+
+#[test]
+fn page_furniture_is_emitted_as_artifacts_carrying_no_mcid() {
+    // Repeated page apparatus is not document content. Marked as an artifact and kept out of the
+    // structure tree, a screen reader skips it; tagged as content, it would read the entity name
+    // and "3 / 7" between every paragraph on every page.
+    let doc = furnished(40);
+    let bytes = pdfa::write(&doc).expect("write furnished document");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+
+    for (page_index, page) in page_content_streams(&parsed).iter().enumerate() {
+        for item in positioned_text(page) {
+            // Every furniture fragment is the artifact one; nothing else on the page is.
+            assert_eq!(
+                item.artifact,
+                item.size == f32::from(doc.document_layout.typography.footer_font_size_pt),
+                "page {page_index}: artifact scoping and furniture must coincide"
+            );
+        }
+        // Artifact scopes are BMC and never carry an /MCID — the invariant `selfcheck` enforces
+        // and `ArtifactMarkingReport.artifacts_use_mcid` reports.
+        for line in page.lines().map(str::trim) {
+            if line.starts_with("/Artifact") {
+                assert!(line.ends_with(" BMC"), "artifact scope must be BMC: {line}");
+                assert!(
+                    !line.contains("/MCID"),
+                    "artifact must carry no MCID: {line}"
+                );
+            }
+        }
+    }
+
+    let report = pdfa::accessibility_report(&doc);
+    assert!(report.artifact_marking.layout_artifacts_marked);
+    assert!(!report.artifact_marking.artifacts_use_mcid);
+    assert_eq!(report.artifact_marking.page_furniture_artifact_count, 3);
+    assert!(
+        report
+            .artifact_marking
+            .known_layout_artifact_targets
+            .iter()
+            .any(|target| target == "layout:page-furniture:side-text"),
+        "furniture must be enumerated as writer-owned decorative content"
+    );
+    assert!(
+        report.pdf_ua_claimed,
+        "furnished output still claims PDF/UA"
+    );
+}
+
+#[test]
+fn marginal_side_text_is_rotated_by_the_text_matrix_only() {
+    // Rotation lives in the text matrix, not a page `/Rotate` and not a form XObject, so the
+    // glyphs stay in the page's own space and nothing downstream has to know the text is turned.
+    let mut left = dense_body(6);
+    left.document_layout.furniture.side_text.enabled = true;
+    left.document_layout.furniture.side_text.text = "Livro de atas".to_string();
+    let bytes = pdfa::write(&left).expect("write left-edge side text");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    assert!(
+        first_page(&parsed).get(b"Rotate").is_err(),
+        "the page must not be rotated"
+    );
+    let rotated = positioned_text(&page_content_streams(&parsed)[0])
+        .into_iter()
+        .find(is_rotated)
+        .expect("rotated fragment");
+    assert!(rotated.artifact, "marginal text is an artifact");
+    // Bottom-to-top at the binding edge.
+    assert_eq!(rotated.matrix, Some([0.0, 1.0, -1.0, 0.0]));
+
+    let mut right = left.clone();
+    right.document_layout.furniture.side_text.edge = DocumentSideTextEdge::Right;
+    let right_bytes = pdfa::write(&right).expect("write right-edge side text");
+    let right_parsed = Document::load_mem(&right_bytes).expect("parse");
+    let right_rotated = positioned_text(&page_content_streams(&right_parsed)[0])
+        .into_iter()
+        .find(is_rotated)
+        .expect("rotated fragment");
+    // Top-to-bottom at the fore edge.
+    assert_eq!(right_rotated.matrix, Some([0.0, -1.0, 1.0, 0.0]));
+    assert!(
+        right_rotated.x > rotated.x,
+        "the fore-edge band sits on the other side of the page"
+    );
+}
+
+#[test]
+fn footer_resolves_the_page_number_against_the_page_count_on_every_page() {
+    let mut doc = dense_body(40);
+    doc.document_layout.furniture.footer.enabled = true;
+    doc.document_layout.furniture.footer.text = "Página {{ page }} de {{ page_count }}".to_string();
+    let bytes = pdfa::write(&doc).expect("write paginated footer");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let pages = page_content_streams(&parsed);
+    let total = pages.len();
+    assert!(total > 1);
+
+    let font = Font::load_family(DocumentFontFamily::NotoSerif).expect("serif");
+    for (index, page) in pages.iter().enumerate() {
+        let expected = glyph_hex(&font, &format!("Página {} de {total}", index + 1));
+        assert!(
+            page.contains(&format!("<{expected}> Tj")),
+            "page {index} must carry its own resolved footer"
+        );
+    }
+}
+
+#[test]
+fn footer_against_book_capacity_resolves_only_when_the_document_carries_one() {
+    let mut with_capacity = dense_body(4);
+    with_capacity.page_capacity = Some(100);
+    with_capacity.document_layout.furniture.footer.enabled = true;
+    with_capacity.document_layout.furniture.footer.text =
+        "Página {{ page }} de {{ page_capacity }}".to_string();
+    let bytes = pdfa::write(&with_capacity).expect("write capacity footer");
+    let parsed = Document::load_mem(&bytes).expect("parse");
+    let font = Font::load_family(DocumentFontFamily::NotoSerif).expect("serif");
+    assert!(
+        page_content_streams(&parsed)[0]
+            .contains(&format!("<{}> Tj", glyph_hex(&font, "Página 1 de 100"))),
+        "a declared capacity must reach the footer"
+    );
+
+    // A book that declared no capacity: the line is omitted whole rather than printed as
+    // "Página 1 de ", which would be a false statement on a signed instrument.
+    let mut without = with_capacity.clone();
+    without.page_capacity = None;
+    let without_bytes = pdfa::write(&without).expect("write capacity-less footer");
+    let without_parsed = Document::load_mem(&without_bytes).expect("parse");
+    let furniture: Vec<_> = positioned_text(&page_content_streams(&without_parsed)[0])
+        .into_iter()
+        .filter(|item| item.artifact)
+        .collect();
+    assert!(
+        furniture.is_empty(),
+        "an unresolvable footer must draw nothing, got {furniture:?}"
+    );
+    // …and the omission must not move the body, because the reserve is policy-derived.
+    let with_text: Vec<_> = positioned_text(&page_content_streams(&parsed)[0])
+        .into_iter()
+        .filter(|item| !item.artifact)
+        .collect();
+    let without_text: Vec<_> = positioned_text(&page_content_streams(&without_parsed)[0])
+        .into_iter()
+        .filter(|item| !item.artifact)
+        .collect();
+    assert_eq!(
+        with_text, without_text,
+        "body layout must not depend on furniture text"
+    );
+}
+
+#[test]
+fn an_enabled_but_empty_furniture_line_costs_the_body_nothing() {
+    let mut empty = dense_body(40);
+    empty.document_layout.furniture.footer.enabled = true;
+    empty.document_layout.furniture.footer.text = "   ".to_string();
+    assert_eq!(
+        pdfa::write(&empty).expect("write empty footer"),
+        pdfa::write(&dense_body(40)).expect("write plain"),
+        "furniture that cannot draw must reserve nothing"
+    );
+}
+
+#[test]
+fn a_malformed_furniture_template_fails_the_render_closed() {
+    let mut doc = dense_body(2);
+    doc.document_layout.furniture.footer.enabled = true;
+    doc.document_layout.furniture.footer.text = "Página {{ pagina }}".to_string();
+    let error = pdfa::write(&doc).expect_err("an unknown placeholder must not render");
+    assert!(
+        error.to_string().contains("unknown placeholder"),
+        "diagnostic must name the defect, got {error}"
+    );
+}
+
+#[test]
+fn artifact_text_is_admitted_but_bare_text_is_still_rejected() {
+    // Relaxing the gate to admit artifact text must not admit *bare* text: "no untagged real
+    // content" is the whole reason the check exists. Exercised directly on synthetic streams,
+    // because no byte-level mutation of a real file can leave a `Tj` outside every scope without
+    // first unbalancing the scopes — which is a different rejection.
+    let check = |content: &str| {
+        selfcheck::verify_marked_content_scopes(content.as_bytes(), 0, &|message| {
+            crate::DocError::Conformance(message)
+        })
+    };
+
+    let bare = "BT
+/F1 9.00 Tf
+56.69 700.00 Td
+<0024> Tj
+ET
+";
+    let error = check(bare).expect_err("bare text must still be rejected");
+    assert!(
+        error.to_string().contains("outside a marked-content scope"),
+        "got {error}"
+    );
+
+    // Page apparatus: legitimate, and the shape the furniture emitter produces.
+    let artifact = format!(
+        "/Artifact BMC
+{bare}EMC
+"
+    );
+    check(&artifact).expect("artifact text is admitted");
+
+    // Real content: unchanged.
+    let tagged = format!(
+        "/P << /MCID 0 >> BDC
+{bare}EMC
+"
+    );
+    check(&tagged).expect("tagged content is admitted");
+
+    // An artifact that smuggles in an MCID is still a contradiction.
+    let unbalanced = format!(
+        "/Artifact BMC
+{bare}"
+    );
+    assert!(check(&unbalanced).is_err(), "unclosed scopes stay rejected");
 }

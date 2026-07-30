@@ -4121,12 +4121,21 @@ fn carry_forward_omitted_document_layout(
     previous: &Settings,
     next: &mut Settings,
 ) {
-    if raw
+    let Some(layout) = raw
         .get("documents")
         .and_then(|documents| documents.get("layout_defaults"))
-        .is_none()
-    {
+    else {
         next.documents.layout_defaults = previous.documents.layout_defaults.clone();
+        return;
+    };
+    // The same argument one level deeper. Every other leaf of `DocumentLayoutPolicy` is mandatory,
+    // so a stale client that omitted one would fail to deserialize and be told so; `furniture` is
+    // the first optional leaf, and omitting it deserializes to "all disabled" — which would erase a
+    // configured running header the moment an older tab saved any unrelated setting. Silently, and
+    // with no way to tell that from a deliberate reset.
+    if layout.get("furniture").is_none() {
+        next.documents.layout_defaults.furniture =
+            previous.documents.layout_defaults.furniture.clone();
     }
 }
 
@@ -4834,6 +4843,78 @@ mod tests {
             explicit_next.documents.layout_defaults,
             DocumentLayoutPolicy::default(),
             "an explicit product reset must not be mistaken for omission"
+        );
+    }
+
+    #[test]
+    fn a_stale_client_that_omits_only_the_furniture_key_does_not_erase_it() {
+        // `furniture` is the first optional leaf of `DocumentLayoutPolicy`. Every other leaf is
+        // mandatory, so a client that omits one is told so; omitting this one deserializes clean to
+        // "all disabled" and would quietly wipe a configured running header when an older tab saved
+        // an unrelated setting.
+        let mut previous = Settings::default();
+        previous.documents.layout_defaults.furniture.footer.enabled = true;
+        previous.documents.layout_defaults.furniture.footer.text =
+            "Página {{ page }} de {{ page_count }}".to_owned();
+        previous
+            .documents
+            .layout_defaults
+            .validate()
+            .expect("configured prior policy validates");
+
+        let mut stale_layout =
+            serde_json::to_value(DocumentLayoutPolicy::default()).expect("policy serializes");
+        assert!(
+            stale_layout.get("furniture").is_none(),
+            "the default policy is exactly what a furniture-unaware client echoes back"
+        );
+        stale_layout["typography"]["body_font_size_pt"] = serde_json::json!(12);
+        let stale_raw = serde_json::json!({ "documents": { "layout_defaults": stale_layout } });
+        let mut stale_next: Settings =
+            serde_json::from_value(stale_raw.clone()).expect("stale client document parses");
+        assert!(
+            !stale_next
+                .documents
+                .layout_defaults
+                .furniture
+                .footer
+                .enabled,
+            "serde alone silently disables it — which is the defect"
+        );
+
+        carry_forward_omitted_document_layout(&stale_raw, &previous, &mut stale_next);
+        assert_eq!(
+            stale_next.documents.layout_defaults.furniture,
+            previous.documents.layout_defaults.furniture,
+            "an omitted furniture key must carry the configured furniture forward"
+        );
+        assert_eq!(
+            stale_next
+                .documents
+                .layout_defaults
+                .typography
+                .body_font_size_pt,
+            12,
+            "…while everything the client did send still applies"
+        );
+
+        // An explicit reset is still a reset: omission and intent must stay distinguishable.
+        let mut explicit_layout =
+            serde_json::to_value(DocumentLayoutPolicy::default()).expect("policy serializes");
+        explicit_layout["furniture"] = serde_json::json!({});
+        let explicit_raw = serde_json::json!({
+            "documents": { "layout_defaults": explicit_layout }
+        });
+        let mut explicit_next: Settings =
+            serde_json::from_value(explicit_raw.clone()).expect("explicit policy parses");
+        carry_forward_omitted_document_layout(&explicit_raw, &previous, &mut explicit_next);
+        assert!(
+            explicit_next
+                .documents
+                .layout_defaults
+                .furniture
+                .is_default(),
+            "an explicit empty furniture object must clear it"
         );
     }
 

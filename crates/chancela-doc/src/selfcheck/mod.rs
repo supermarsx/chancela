@@ -1435,7 +1435,7 @@ enum MarkedScope {
     Artifact,
 }
 
-fn verify_marked_content_scopes(
+pub(crate) fn verify_marked_content_scopes(
     content: &[u8],
     page_index: usize,
     fail: &dyn Fn(String) -> DocError,
@@ -1485,11 +1485,16 @@ fn verify_marked_content_scopes(
                 "page {page_index} paints a path outside an /Artifact marked-content scope"
             )));
         }
-        // No untagged real content (UA / G13): every text-showing operator must sit inside a
-        // tagged marked-content scope (one carrying an /MCID), never bare or under an /Artifact.
-        if is_text_showing_operator(line) && stack.last() != Some(&MarkedScope::TaggedContent) {
+        // No untagged real content (UA / G13): every text-showing operator must sit inside *some*
+        // marked-content scope — a tagged one (carrying an /MCID) for real content, or an
+        // /Artifact scope for repeated page apparatus. Bare text is still a failure; that is the
+        // invariant this gate exists for. Artifact text is not an exception to it: ISO 14289-1
+        // §7.8 requires running headers, footers and marginal text to be artifacts precisely so a
+        // screen reader does not read them between every paragraph, and a writer that could not
+        // emit them would have no conformant way to paginate a page at all.
+        if is_text_showing_operator(line) && stack.last().is_none() {
             return Err(fail(format!(
-                "page {page_index} line {} shows text outside a tagged marked-content scope",
+                "page {page_index} line {} shows text outside a marked-content scope",
                 line_index + 1
             )));
         }

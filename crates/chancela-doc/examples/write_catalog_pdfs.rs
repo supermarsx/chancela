@@ -430,6 +430,36 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
+    // One extra document with every piece of page furniture on. Furniture defaults to off, so
+    // without this the external veraPDF gate would validate a corpus in which no running header,
+    // no running footer and no rotated marginal text ever appears — and the repeated page
+    // apparatus is exactly the classic way to break PDF/UA. It lands in the same directory the
+    // gate globs, so it is validated under both flavours with no workflow change.
+    let case = cases()
+        .into_iter()
+        .find(|case| case.slug == "csc")
+        .ok_or("the csc family case is missing")?;
+    let act = act(&case);
+    let spec = registry
+        .get(case.ata_template)
+        .ok_or_else(|| format!("template {} is not in the catalog", case.ata_template))?;
+    let mut model = chancela_templates::render(spec, &act_ctx(&act, &case))
+        .map_err(|e| format!("{}: render failed: {e}", case.ata_template))?;
+    model.page_capacity = Some(100);
+    let furniture = &mut model.document_layout.furniture;
+    furniture.header.enabled = true;
+    furniture.header.text = "{{ entity_name }} — {{ title }}".to_owned();
+    furniture.footer.enabled = true;
+    furniture.footer.text = "Página {{ page }} de {{ page_capacity }}".to_owned();
+    furniture.side_text.enabled = true;
+    furniture.side_text.text = "Livro de atas — {{ entity_nipc }}".to_owned();
+    let bytes = chancela_doc::pdfa::write(&model)
+        .map_err(|e| format!("furnished ata: PDF/A write failed: {e}"))?;
+    let path = out_dir.join("csc-ata-furnished.pdf");
+    std::fs::write(&path, bytes)?;
+    println!("{}\t{} (page furniture)", path.display(), case.ata_template);
+    written += 1;
+
     eprintln!("wrote {written} catalog documents to {}", out_dir.display());
     Ok(())
 }

@@ -815,6 +815,17 @@ pub fn render_with_body(
     .map_err(|error| RenderError::InvalidDocumentLayout(error.to_string()))?
     .policy;
 
+    // Carried on the model rather than left to the renderer to look up, so page furniture can
+    // print `{{ page_capacity }}` against the capacity the document was *rendered* under. A book
+    // whose capacity is later amended must not change what an already-signed instrument
+    // re-renders as, and a value frozen into the model is the only version of this fact that
+    // cannot drift. Absent from the context ⇒ absent from the model ⇒ the furniture line that
+    // asks for it is omitted rather than printed half-resolved.
+    let page_capacity = ctx
+        .get("page_capacity")
+        .and_then(Value::as_u64)
+        .and_then(|value| u32::try_from(value).ok());
+
     let mut doc = DocumentModel {
         title,
         entity_name,
@@ -824,6 +835,7 @@ pub fn render_with_body(
         created_at,
         document_layout,
         blocks: Vec::new(),
+        page_capacity,
     };
 
     for block in &spec.blocks {

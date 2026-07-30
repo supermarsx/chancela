@@ -10,7 +10,8 @@
 use std::collections::BTreeMap;
 
 use chancela_core::{
-    Block, DocumentLayoutPolicy, DocumentModel, DocumentOrientation, DocumentPageSize, Run,
+    Block, DocumentFurnitureAlignment, DocumentLayoutPolicy, DocumentModel, DocumentOrientation,
+    DocumentPageSize, DocumentSideTextEdge, FurnitureFacts, Run,
 };
 
 use crate::DocError;
@@ -19,11 +20,19 @@ use crate::font::Font;
 const PT_PER_MM: f32 = 72.0 / 25.4;
 /// Text-matrix shear for synthesized italics (~12°).
 const ITALIC_SHEAR: f32 = 0.2126;
+/// Vertical clearance between a header/footer furniture line (or its rule) and the text column.
+const FURNITURE_BODY_GAP: f32 = 4.0;
+/// Horizontal clearance between marginal side text and the text column.
+const FURNITURE_SIDE_GAP: f32 = 4.0;
+/// Width of the marginal band, as a multiple of the furniture font size, before the side gap.
+const FURNITURE_SIDE_BAND: f32 = 1.5;
 
 #[derive(Clone, Copy)]
 enum FontSlot {
     Body,
     Header,
+    /// The face used for page furniture (`typography.footer_font_*`).
+    Footer,
 }
 
 #[derive(Clone, Copy)]
@@ -58,6 +67,7 @@ pub struct FontCatalog {
     pub fonts: Vec<Font>,
     body_index: usize,
     header_index: usize,
+    footer_index: usize,
 }
 
 impl FontCatalog {
@@ -67,17 +77,28 @@ impl FontCatalog {
             .map_err(|error| DocError::Layout(error.to_string()))?;
         let body_family = policy.typography.body_font_family;
         let header_family = policy.typography.header_font_family;
+        let footer_family = policy.typography.footer_font_family;
         let mut fonts = vec![Font::load_family(body_family)?];
-        let header_index = if header_family == body_family {
-            0
-        } else {
-            fonts.push(Font::load_family(header_family)?);
-            1
-        };
+        let mut families = vec![body_family];
+        // Equal families share one object. A slot whose face is never used emits no font object at
+        // all (`pdfa::write` skips an empty glyph set), so loading the footer face here cannot move
+        // the bytes of a document that draws no furniture.
+        let intern =
+            |fonts: &mut Vec<Font>, families: &mut Vec<_>, family| -> Result<usize, DocError> {
+                if let Some(index) = families.iter().position(|known| *known == family) {
+                    return Ok(index);
+                }
+                fonts.push(Font::load_family(family)?);
+                families.push(family);
+                Ok(fonts.len() - 1)
+            };
+        let header_index = intern(&mut fonts, &mut families, header_family)?;
+        let footer_index = intern(&mut fonts, &mut families, footer_family)?;
         Ok(Self {
             fonts,
             body_index: 0,
             header_index,
+            footer_index,
         })
     }
 
@@ -85,6 +106,7 @@ impl FontCatalog {
         match slot {
             FontSlot::Body => self.body_index,
             FontSlot::Header => self.header_index,
+            FontSlot::Footer => self.footer_index,
         }
     }
 
@@ -108,6 +130,16 @@ struct Metrics {
     heading_scale: f32,
     header_gap: f32,
     footer_gap: f32,
+    /// Font size for every piece of page furniture.
+    furniture_size: f32,
+    /// Vertical space taken out of the top of the text column for the running header.
+    header_reserve: f32,
+    /// Vertical space taken out of the bottom of the text column for the running footer.
+    footer_reserve: f32,
+    /// Horizontal space taken out of one side of the text column for the marginal text.
+    side_reserve: f32,
+    /// Which side `side_reserve` comes out of.
+    side_edge: DocumentSideTextEdge,
 }
 
 impl Metrics {
@@ -122,6 +154,29 @@ impl Metrics {
             DocumentOrientation::Portrait => (portrait_w, portrait_h),
             DocumentOrientation::Landscape => (portrait_h, portrait_w),
         };
+        // Furniture reserves space out of the text column rather than sitting free in the margin,
+        // so a body that fills the page reflows around it instead of overprinting it. Every
+        // reserve is a pure function of the policy — never of the text a given page resolves to —
+        // so an omitted or short furniture line cannot move body content.
+        let line_spacing = f32::from(policy.typography.line_spacing_percent) / 100.0;
+        let furniture_size = f32::from(policy.typography.footer_font_size_pt);
+        let furniture_line = furniture_size * line_spacing;
+        let furniture = &policy.furniture;
+        let header_reserve = if furniture.header_draws() {
+            furniture_line + FURNITURE_BODY_GAP
+        } else {
+            0.0
+        };
+        let footer_reserve = if furniture.footer_draws() {
+            furniture_line + FURNITURE_BODY_GAP
+        } else {
+            0.0
+        };
+        let side_reserve = if furniture.side_text_draws() {
+            furniture_size * FURNITURE_SIDE_BAND + FURNITURE_SIDE_GAP
+        } else {
+            0.0
+        };
         Self {
             page_w,
             page_h,
@@ -131,12 +186,27 @@ impl Metrics {
             margin_left: f32::from(policy.page.margins_mm.left) * PT_PER_MM,
             body_size: f32::from(policy.typography.body_font_size_pt),
             header_size: f32::from(policy.typography.header_font_size_pt),
-            line_spacing: f32::from(policy.typography.line_spacing_percent) / 100.0,
+            line_spacing,
             paragraph_spacing: f32::from(policy.typography.paragraph_spacing_pt),
             heading_scale: f32::from(policy.typography.heading_scale_percent) / 100.0,
             header_gap: f32::from(policy.regions.header_gap_mm) * PT_PER_MM,
             footer_gap: f32::from(policy.regions.footer_gap_mm) * PT_PER_MM,
+            furniture_size,
+            header_reserve,
+            footer_reserve,
+            side_reserve,
+            side_edge: policy.furniture.side_text.edge,
         }
+    }
+
+    /// Top of the text column: the top margin, less anything the running header reserved.
+    fn content_top(&self) -> f32 {
+        self.page_h - self.margin_top - self.header_reserve
+    }
+
+    /// Baseline of the footer band — where the text column stops if no footer is drawn.
+    fn footer_band_y(&self) -> f32 {
+        self.margin_bottom + self.footer_gap
     }
 }
 
@@ -231,7 +301,7 @@ impl<'f> Layouter<'f> {
             metrics,
             pages: Vec::new(),
             cur: Vec::new(),
-            y: metrics.page_h - metrics.margin_top,
+            y: metrics.content_top(),
             used: (0..fonts.fonts.len()).map(|_| BTreeMap::new()).collect(),
             structure_elements: Vec::new(),
             current_element: None,
@@ -241,21 +311,30 @@ impl<'f> Layouter<'f> {
 
     fn content_x0(&self) -> f32 {
         self.metrics.margin_left
+            + match self.metrics.side_edge {
+                DocumentSideTextEdge::Left => self.metrics.side_reserve,
+                DocumentSideTextEdge::Right => 0.0,
+            }
     }
     fn content_x1(&self) -> f32 {
-        self.metrics.page_w - self.metrics.margin_right
+        self.metrics.page_w
+            - self.metrics.margin_right
+            - match self.metrics.side_edge {
+                DocumentSideTextEdge::Left => 0.0,
+                DocumentSideTextEdge::Right => self.metrics.side_reserve,
+            }
     }
     fn body_size(&self) -> f32 {
         self.metrics.body_size
     }
     fn bottom_y(&self) -> f32 {
-        self.metrics.margin_bottom + self.metrics.footer_gap
+        self.metrics.footer_band_y() + self.metrics.footer_reserve
     }
 
     fn new_page(&mut self) {
         let done = std::mem::take(&mut self.cur);
         self.pages.push(done);
-        self.y = self.metrics.page_h - self.metrics.margin_top;
+        self.y = self.metrics.content_top();
     }
 
     fn current_page_index(&self) -> usize {
@@ -712,12 +791,10 @@ impl<'f> Layouter<'f> {
         );
     }
 
-    /// Draw plain (non-bold, non-italic) text, dropping trailing characters that would exceed
-    /// `max_w` (simple clip for table labels).
-    fn frag_clip(&mut self, font: FontSlot, x: f32, baseline: f32, size: f32, s: &str, max_w: f32) {
+    /// The longest prefix of `s` that fits `max_w`, ellipsised when it had to be cut.
+    fn clip_to_width(&self, font: FontSlot, s: &str, size: f32, max_w: f32) -> String {
         if self.text_w(font, s, size) <= max_w {
-            self.frag(font, x, baseline, size, FontEmphasis::Normal, s);
-            return;
+            return s.to_string();
         }
         let mut acc = String::new();
         for c in s.chars() {
@@ -728,7 +805,51 @@ impl<'f> Layouter<'f> {
             acc.push(c);
         }
         acc.push('…');
-        self.frag(font, x, baseline, size, FontEmphasis::Normal, &acc);
+        acc
+    }
+
+    /// Draw plain (non-bold, non-italic) text, dropping trailing characters that would exceed
+    /// `max_w` (simple clip for table labels).
+    fn frag_clip(&mut self, font: FontSlot, x: f32, baseline: f32, size: f32, s: &str, max_w: f32) {
+        let text = self.clip_to_width(font, s, size, max_w);
+        self.frag(font, x, baseline, size, FontEmphasis::Normal, &text);
+    }
+
+    /// Emit one rotated text fragment (its own `BT…ET`), recording used glyphs.
+    ///
+    /// The rotation is a **text-matrix** rotation, not a page `/Rotate` and not a form XObject: the
+    /// glyphs stay in the page's own coordinate space, so page-breaking, the enclosing artifact
+    /// scope, and the PAdES byte shape all stay exactly as they are for upright text. `clockwise`
+    /// reads top-to-bottom (the fore-edge convention); otherwise bottom-to-top (the binding edge).
+    fn frag_rotated(
+        &mut self,
+        font_slot: FontSlot,
+        x: f32,
+        y: f32,
+        size: f32,
+        clockwise: bool,
+        s: &str,
+    ) {
+        if s.is_empty() {
+            return;
+        }
+        let font_index = self.fonts.index(font_slot);
+        let mut hex = String::with_capacity(s.len() * 4);
+        for c in s.chars() {
+            let gid = self.fonts.fonts[font_index].glyph_id(c);
+            self.used[font_index].entry(gid).or_insert(c as u32);
+            hex.push_str(&format!("{gid:04X}"));
+        }
+        let (b, c) = if clockwise { (-1.0, 1.0) } else { (1.0, -1.0) };
+        self.cur.extend_from_slice(b"BT\n");
+        self.cur
+            .extend_from_slice(format!("/F{} {} Tf\n", font_index + 1, num(size)).as_bytes());
+        self.cur.extend_from_slice(b"0 g\n0 Tr\n");
+        self.cur.extend_from_slice(
+            format!("0 {} {} 0 {} {} Tm\n", num(b), num(c), num(x), num(y)).as_bytes(),
+        );
+        self.cur
+            .extend_from_slice(format!("<{hex}> Tj\nET\n").as_bytes());
     }
 
     fn signature_block(&mut self, slots: &[chancela_core::SignatureSlot]) {
@@ -824,6 +945,176 @@ impl<'f> Layouter<'f> {
         self.rule_at(self.content_x0(), self.content_x1(), y, 0.6);
         self.gap(self.metrics.header_gap);
     }
+
+    // --- Page furniture --------------------------------------------------------------------------
+
+    /// Append the running header, running footer and marginal side text to every page.
+    ///
+    /// Runs **after** the body has been laid out, because `{{ page_count }}` is not knowable until
+    /// then. That ordering is safe precisely because furniture never participates in the flow: the
+    /// space it occupies was already taken out of the text column by [`Metrics::from_policy`], and
+    /// that reserve depends only on the policy, so no furniture text — long, short, or omitted —
+    /// can move a single body glyph.
+    ///
+    /// Every piece is emitted inside an `/Artifact` scope and carries no `/MCID`, so none of it
+    /// enters the structure tree. That is the correct classification, not a convenience: each line
+    /// is a pure function of the policy, the page index and metadata the document already states in
+    /// its tagged content, so exposing it as content would make a screen reader re-read the same
+    /// facts between every paragraph — the exact defect ISO 14289-1 §7.8 exists to prevent.
+    fn draw_page_furniture(&mut self, doc: &DocumentModel) -> Result<(), DocError> {
+        let furniture = &doc.document_layout.furniture;
+        if !furniture.draws_anything() {
+            return Ok(());
+        }
+        // True by construction here — every `tagged_element` scope has closed — but pinned rather
+        // than asserted: if furniture ever emitted inside a structure element, `frag` would open an
+        // `/MCID` sequence *inside* an `/Artifact` scope, which is content marked as decoration and
+        // a PDF/UA failure that only the external gate would catch.
+        self.current_element = None;
+        let parse = |text: &str| {
+            chancela_core::parse_furniture_template(text)
+                .map_err(|error| DocError::Layout(format!("page furniture: {error}")))
+        };
+        let header = furniture
+            .header_draws()
+            .then(|| parse(&furniture.header.text))
+            .transpose()?;
+        let footer = furniture
+            .footer_draws()
+            .then(|| parse(&furniture.footer.text))
+            .transpose()?;
+        let side_text = furniture
+            .side_text_draws()
+            .then(|| parse(&furniture.side_text.text))
+            .transpose()?;
+
+        let page_count = u32::try_from(self.pages.len()).ok();
+        for page_index in 0..self.pages.len() {
+            let facts = FurnitureFacts {
+                page: u32::try_from(page_index + 1).ok(),
+                page_count,
+                page_capacity: doc.page_capacity,
+                entity_name: Some(doc.entity_name.as_str()),
+                entity_nipc: doc
+                    .entity_nipc
+                    .as_deref()
+                    .filter(|nipc| !nipc.trim().is_empty()),
+                title: Some(doc.title.as_str()),
+                subject: Some(doc.subject.as_str()),
+                date: doc.created_at.as_deref(),
+            };
+            debug_assert!(self.cur.is_empty());
+            if let Some(segments) = &header
+                && let Some(text) = chancela_core::resolve_furniture_segments(segments, &facts)
+            {
+                self.draw_furniture_line(
+                    &text,
+                    furniture.header.alignment,
+                    true,
+                    furniture.header.rule,
+                );
+            }
+            if let Some(segments) = &footer
+                && let Some(text) = chancela_core::resolve_furniture_segments(segments, &facts)
+            {
+                self.draw_furniture_line(
+                    &text,
+                    furniture.footer.alignment,
+                    false,
+                    furniture.footer.rule,
+                );
+            }
+            if let Some(segments) = &side_text
+                && let Some(text) = chancela_core::resolve_furniture_segments(segments, &facts)
+            {
+                self.draw_furniture_side_text(&text);
+            }
+            let drawn = std::mem::take(&mut self.cur);
+            self.pages[page_index].extend_from_slice(&drawn);
+        }
+        Ok(())
+    }
+
+    /// Draw one horizontal furniture line inside the band its reserve created.
+    fn draw_furniture_line(
+        &mut self,
+        text: &str,
+        alignment: DocumentFurnitureAlignment,
+        is_header: bool,
+        rule: bool,
+    ) {
+        let size = self.metrics.furniture_size;
+        let x0 = self.content_x0();
+        let x1 = self.content_x1();
+        let column = x1 - x0;
+        if column <= 0.0 {
+            return;
+        }
+        let clipped = self.clip_to_width(FontSlot::Footer, text.trim(), size, column);
+        if clipped.is_empty() {
+            return;
+        }
+        let width = self.text_w(FontSlot::Footer, &clipped, size);
+        let x = match alignment {
+            DocumentFurnitureAlignment::Left => x0,
+            DocumentFurnitureAlignment::Center => x0 + (column - width) / 2.0,
+            DocumentFurnitureAlignment::Right => x1 - width,
+        }
+        .max(x0);
+        let line = size * self.metrics.line_spacing;
+        let (baseline, rule_y) = if is_header {
+            let band_top = self.metrics.page_h - self.metrics.margin_top;
+            (band_top - size, band_top - line)
+        } else {
+            let band = self.metrics.footer_band_y();
+            (band + size * 0.3, band + line)
+        };
+        self.cur.extend_from_slice(b"/Artifact BMC\n");
+        self.frag(
+            FontSlot::Footer,
+            x,
+            baseline,
+            size,
+            FontEmphasis::Normal,
+            &clipped,
+        );
+        self.cur.extend_from_slice(b"EMC\n");
+        if rule {
+            self.rule_at(x0, x1, rule_y, 0.4);
+        }
+    }
+
+    /// Draw the marginal side text, rotated 90°, centred on the text column's height.
+    fn draw_furniture_side_text(&mut self, text: &str) {
+        let size = self.metrics.furniture_size;
+        let top = self.metrics.content_top();
+        let bottom = self.bottom_y();
+        let available = top - bottom;
+        if available <= 0.0 {
+            return;
+        }
+        let clipped = self.clip_to_width(FontSlot::Footer, text.trim(), size, available);
+        if clipped.is_empty() {
+            return;
+        }
+        let width = self.text_w(FontSlot::Footer, &clipped, size);
+        let centre = (top + bottom) / 2.0;
+        // The baseline sits one font size inside the reserved band, which leaves the ascenders room
+        // to lean out towards the paper edge and keeps the descenders clear of the text column.
+        let (x, y, clockwise) = match self.metrics.side_edge {
+            DocumentSideTextEdge::Left => {
+                (self.metrics.margin_left + size, centre - width / 2.0, false)
+            }
+            DocumentSideTextEdge::Right => (
+                self.metrics.page_w - self.metrics.margin_right - size,
+                centre + width / 2.0,
+                true,
+            ),
+        };
+        self.cur.extend_from_slice(b"/Artifact BMC\n");
+        self.frag_rotated(FontSlot::Footer, x, y, size, clockwise, &clipped);
+        self.cur.extend_from_slice(b"EMC\n");
+    }
 }
 
 fn marked_content_tag(role: StructureRole) -> &'static str {
@@ -885,6 +1176,8 @@ pub fn lay_out(doc: &DocumentModel, fonts: &FontCatalog) -> Result<Laid, DocErro
     if l.pages.is_empty() {
         l.pages.push(Vec::new());
     }
+    // Last, once the page count exists: repeated page apparatus, as artifacts.
+    l.draw_page_furniture(doc)?;
     Ok(Laid {
         pages: l.pages,
         used: l.used,

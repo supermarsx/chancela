@@ -57,12 +57,16 @@ pub use book::{
     TermoSignatory,
 };
 pub use document_layout::{
-    DocumentFontFamily, DocumentLayoutField, DocumentLayoutOverrides, DocumentLayoutPolicy,
-    DocumentLayoutSource, DocumentLayoutValidationError, DocumentOrientation, DocumentPageLayout,
+    DocumentFontFamily, DocumentFooterFurniture, DocumentFurnitureAlignment,
+    DocumentHeaderFurniture, DocumentLayoutField, DocumentLayoutOverrides, DocumentLayoutPolicy,
+    DocumentLayoutSource, DocumentLayoutValidationError, DocumentOrientation,
+    DocumentPageFurniture, DocumentPageFurnitureOverrides, DocumentPageLayout,
     DocumentPageLayoutOverrides, DocumentPageMargins, DocumentPageMarginsOverrides,
-    DocumentPageSize, DocumentRegions, DocumentRegionsOverrides, DocumentTypography,
-    DocumentTypographyOverrides, MIN_USABLE_PAGE_HEIGHT_MM, MIN_USABLE_PAGE_WIDTH_MM,
-    ResolvedDocumentLayout, resolve_document_layout,
+    DocumentPageSize, DocumentRegions, DocumentRegionsOverrides, DocumentSideTextEdge,
+    DocumentSideTextFurniture, DocumentTypography, DocumentTypographyOverrides, FurnitureFacts,
+    FurniturePlaceholder, FurnitureSegment, FurnitureTemplateError, MAX_FURNITURE_TEXT_CHARS,
+    MIN_USABLE_PAGE_HEIGHT_MM, MIN_USABLE_PAGE_WIDTH_MM, ResolvedDocumentLayout,
+    parse_furniture_template, resolve_document_layout, resolve_furniture_segments,
 };
 pub use document_model::{
     Block, DocumentModel, KvRow, LifecycleStage, Run, SignatureSlot, VoteRow,

@@ -172,6 +172,15 @@ pub struct DocumentModel {
         skip_serializing_if = "crate::document_layout::DocumentLayoutPolicy::is_product_default"
     )]
     pub document_layout: crate::document_layout::DocumentLayoutPolicy,
+    /// The containing book's declared page capacity, when it declared one.
+    ///
+    /// Carried only so page furniture can render `{{ page_capacity }}` — the renderer has no other
+    /// route to a fact that lives on the book, and the alternative (re-resolving it at render
+    /// time) would let a later capacity edit change what an already-signed instrument re-renders
+    /// as. `None` means the book declared no capacity, and a furniture line that asks for it is
+    /// omitted rather than printed half-resolved.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub page_capacity: Option<u32>,
 }
 
 impl DocumentModel {
@@ -192,6 +201,7 @@ impl DocumentModel {
             created_at: None,
             blocks: Vec::new(),
             document_layout: crate::document_layout::DocumentLayoutPolicy::default(),
+            page_capacity: None,
         }
     }
 }
@@ -252,6 +262,7 @@ mod tests {
                 Block::Rule,
             ],
             document_layout: crate::document_layout::DocumentLayoutPolicy::default(),
+            page_capacity: None,
         }
     }
 
