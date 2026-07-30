@@ -118,6 +118,12 @@ export const apiErrorPtPT = {
   'apiError.termo_encerramento_not_signed':
     'O livro não foi encerrado: falta a assinatura digital de pelo menos um signatário obrigatório do termo de encerramento. Esta é uma recusa, não uma falha passageira — repetir a operação não a resolve.',
 
+  // — Termo, freeze-time drift between the seeded text and the model it would be frozen against
+  // (422). Recusa, mas resolúvel: rever e guardar as cláusulas no editor limpa-a, e por isso a copy
+  // diz o que fazer em vez de dizer que repetir não ajuda.
+  'apiError.termo_seed_template_drift':
+    'Este termo ainda tem cláusulas com o texto de uma versão anterior do modelo, mas seria congelado contra a versão atual, que já não inclui esse texto. Reveja as cláusulas do termo e guarde-as antes de o congelar para assinatura.',
+
   // — Termo de abertura, open-time fail-closed refusal (409) ————————————————————————————————
   'apiError.termo_abertura_not_signed':
     'O livro não foi aberto: o termo de abertura ainda não tem assinatura digital de todos os signatários obrigatórios. Esta é uma recusa deliberada, não uma falha passageira — repetir a operação não a resolve. Cada signatário obrigatório tem de assinar digitalmente o termo antes de o livro poder abrir.',
@@ -191,6 +197,22 @@ export const apiErrorPtPT = {
     'A delegação foi recusada por inteiro. Nenhuma das autorizações pedidas foi atribuída.',
   'apiError.password_policy':
     'A palavra-passe não cumpre os requisitos de segurança. Os requisitos por cumprir estão indicados abaixo.',
+
+  // — The account-lifecycle wall (409) — a refusal, never a lockout ————————————————————————————
+  // The server refuses the *operation* and changes nothing; the account is exactly as it was. Its
+  // detail names which credentials would have been left, in a list after a colon — the noun never
+  // enters a sentence, here or there. Neither may read as retryable: repeating the removal without
+  // first establishing another credential fails identically.
+  'apiError.account_would_have_no_sign_in_credential':
+    'A operação foi recusada: deixaria esta conta sem qualquer credencial com que iniciar sessão, e ninguém poderia voltar a entrar nela. Nada foi alterado. Estabeleça outra forma de iniciar sessão antes de remover esta; repetir a operação não a resolve. Os detalhes técnicos indicam o que ficaria na conta.',
+  'apiError.account_would_have_no_recovery_credential':
+    'A operação foi recusada: removeria uma forma de iniciar sessão sem que a conta ficasse com forma de ser recuperada, e perder a credencial que resta deixaria a conta inacessível. Nada foi alterado. Emita uma frase de recuperação antes de remover esta credencial; repetir a operação não a resolve. Os detalhes técnicos indicam o que ficaria na conta.',
+  // The key-custody clause. The palavra-passe protects the attestation key even on an account that
+  // signs in with a chave de acesso, so it is refused as a *wrap*, not as a sign-in credential —
+  // and the copy has to say that, or the refusal reads as arbitrary to someone who has just been
+  // told they no longer need to type it.
+  'apiError.account_attestation_key_would_have_no_wrap':
+    'A operação foi recusada: a chave de assinatura desta conta deixaria de ter uma proteção que se possa abrir, e a conta não voltaria a poder assinar. Nada foi alterado. A palavra-passe protege esta chave mesmo quando não é usada para iniciar sessão, por isso não pode ser removida enquanto a chave existir; repetir a operação não a resolve. Os detalhes técnicos indicam o que ficaria na conta.',
 
   // ═══ THE NOUN LIVES IN THE KEY ════════════════════════════════════════════════════════════
   // «A entidade» / «O livro» / «A ata» — the article alone already makes a single templated
@@ -455,6 +477,9 @@ export const apiErrorEnglish = {
   'apiError.termo_encerramento_not_signed':
     'The book was not closed: at least one required signatory of the termo de encerramento has no cryptographic signature. This is a refusal, not a transient failure — retrying will not resolve it.',
 
+  'apiError.termo_seed_template_drift':
+    'This termo still carries clauses seeded from an earlier version of the template, but it would be frozen against the current version, which no longer includes that text. Review the termo clauses and save them before freezing it for signature.',
+
   'apiError.termo_abertura_not_signed':
     'The book was not opened: the termo de abertura is not yet cryptographically signed by every required signatory. This is a deliberate refusal, not a transient failure — retrying will not resolve it. Every required signatory must sign the termo cryptographically before the book can open.',
 
@@ -514,6 +539,13 @@ export const apiErrorEnglish = {
     'The delegation was refused in full. None of the requested permissions were granted.',
   'apiError.password_policy':
     'The password does not meet the security requirements. The unmet requirements are listed below.',
+
+  'apiError.account_would_have_no_sign_in_credential':
+    'The operation was refused: it would leave this account with no credential to sign in with, and nobody could get back into it. Nothing was changed. Establish another way to sign in before removing this one; repeating the operation will not resolve it. The technical details name what the account would be left holding.',
+  'apiError.account_would_have_no_recovery_credential':
+    'The operation was refused: it would remove a way to sign in while leaving the account with no way to be recovered, and losing the remaining credential would leave the account unreachable. Nothing was changed. Issue a recovery phrase before removing this credential; repeating the operation will not resolve it. The technical details name what the account would be left holding.',
+  'apiError.account_attestation_key_would_have_no_wrap':
+    'The operation was refused: this account’s signing key would be left with no protection that can be opened, and the account could never sign again. Nothing was changed. The password protects this key even when it is not used to sign in, so it cannot be removed while the key exists; repeating the operation will not resolve it. The technical details name what the account would be left holding.',
 
   'apiError.not_found.entity': 'The entity you asked for does not exist.',
   'apiError.not_found.book': 'The book you asked for does not exist.',
@@ -768,6 +800,11 @@ export const NON_ROUTINE_CODES = [
   'api_key_rate_limited',
   'cluster_not_leader',
   'cross_user_proof_required',
+  // The account-lifecycle wall. Both are refusals of the *operation*, not failures of it: nothing
+  // was changed, and the removal will be refused identically until another credential exists.
+  'account_would_have_no_sign_in_credential',
+  'account_would_have_no_recovery_credential',
+  'account_attestation_key_would_have_no_wrap',
   // A refused qualified signature is a refusal, not a hiccup, and repeating it changes nothing
   // until the operator edits their anchor configuration.
   'trust_anchor_not_configured',

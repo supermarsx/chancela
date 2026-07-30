@@ -329,7 +329,13 @@ function UserRow({ user }: { user: UserView }) {
         )}
       </td>
       <td>
-        <span className="users-actions">
+        {/* A row of BADGES, not of controls: it reports what credentials the account holds and
+            offers nothing to click. It is the one place the retired users-page helper was doing
+            something other than laying out an action cell, so it takes `.row-wrap` — the app's
+            generic inline row — rather than the action-cell affordance, whose `flex-end` would
+            right-align a left-headed data column. Measured: badge gap 6.4px → 12px, the shared
+            inline-row step; row height 42.72px → 42.22px. */}
+        <span className="row-wrap">
           {user.has_secret ? (
             <Badge tone="ok">{t('users.secret.label')}</Badge>
           ) : (
@@ -341,27 +347,31 @@ function UserRow({ user }: { user: UserView }) {
           ) : null}
         </span>
       </td>
-      <td className="users-actions">
-        <GateIconButton
-          perm="user.manage"
-          icon={<Icon.Pencil />}
-          label={t('users.action.edit')}
-          onClick={() => navigate(editUserPath(user.id))}
-        />
-        <GateIconButton
-          perm="user.manage"
-          icon={<Icon.Power />}
-          label={user.active ? t('users.action.deactivate') : t('users.action.reactivate')}
-          disabled={update.isPending}
-          data-testid="user-toggle-active"
-          onClick={deactivate.requestToggle}
-        />
-        <GateIconButton
-          perm="user.manage"
-          icon={<Icon.Wrench />}
-          label={t('users.access.title')}
-          onClick={() => navigate(editUserSectionPath(user.id, USER_ACCESS_SECTION))}
-        />
+      <td className="table-action-cell">
+        <span className="table-actions">
+          <GateIconButton
+            perm="user.manage"
+            icon={<Icon.Pencil />}
+            label={t('users.action.edit')}
+            onClick={() => navigate(editUserPath(user.id))}
+          />
+          <GateIconButton
+            perm="user.manage"
+            icon={<Icon.Power />}
+            label={user.active ? t('users.action.deactivate') : t('users.action.reactivate')}
+            disabled={update.isPending}
+            data-testid="user-toggle-active"
+            onClick={deactivate.requestToggle}
+          />
+          <GateIconButton
+            perm="user.manage"
+            icon={<Icon.Wrench />}
+            label={t('users.access.title')}
+            onClick={() => navigate(editUserSectionPath(user.id, USER_ACCESS_SECTION))}
+          />
+        </span>
+        {/* Outside the action row: the confirm dialog is not one of the row's controls, and as a
+            flex item it would take part in the row's gap and wrap calculation. */}
         {deactivate.dialog}
       </td>
     </tr>

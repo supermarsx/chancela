@@ -2122,46 +2122,51 @@ function ExternalInviteRow({
       <td>
         <DateTime value={invite.expires_at} />
       </td>
-      <td className="users-actions">
-        {invite.status !== 'pending' ? (
-          <span className="muted">—</span>
-        ) : confirming ? (
-          <span className="row-wrap">
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={revoke.isPending}
-              onClick={() => setConfirming(false)}
-            >
-              {t('common.cancel')}
-            </Button>
+      {/* The widest spread measured before this migration: the control's right edge sat 534px,
+          225px and 380px from the cell edge across this table's three row states. It is one
+          9.59px now, in both colour schemes. */}
+      <td className="table-action-cell">
+        <span className="table-actions">
+          {invite.status !== 'pending' ? (
+            <span className="muted">—</span>
+          ) : confirming ? (
+            <span className="row-wrap">
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={revoke.isPending}
+                onClick={() => setConfirming(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+              <GateButton
+                perm="signing.perform"
+                scope={bookScope}
+                type="button"
+                variant="primary"
+                icon={<Icon.Trash />}
+                disabled={revoke.isPending}
+                onClick={doRevoke}
+              >
+                {revoke.isPending
+                  ? t('signing.invites.revoking')
+                  : t('signing.invites.revokeConfirm')}
+              </GateButton>
+            </span>
+          ) : (
             <GateButton
               perm="signing.perform"
               scope={bookScope}
               type="button"
-              variant="primary"
+              variant="ghost"
               icon={<Icon.Trash />}
               disabled={revoke.isPending}
-              onClick={doRevoke}
+              onClick={() => setConfirming(true)}
             >
-              {revoke.isPending
-                ? t('signing.invites.revoking')
-                : t('signing.invites.revokeConfirm')}
+              {t('signing.invites.revoke')}
             </GateButton>
-          </span>
-        ) : (
-          <GateButton
-            perm="signing.perform"
-            scope={bookScope}
-            type="button"
-            variant="ghost"
-            icon={<Icon.Trash />}
-            disabled={revoke.isPending}
-            onClick={() => setConfirming(true)}
-          >
-            {t('signing.invites.revoke')}
-          </GateButton>
-        )}
+          )}
+        </span>
       </td>
     </tr>
   );

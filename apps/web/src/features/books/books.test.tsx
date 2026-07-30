@@ -2744,7 +2744,9 @@ describe('BookDetailPage — sub-tabs', () => {
     renderAtBook('/books/book-1/layout');
 
     const modes = await screen.findAllByRole('combobox', { name: /^Modo de / });
-    expect(modes).toHaveLength(17);
+    // One per leaf of the server's layout contract (`DocumentLayoutField::ALL`): 17 page /
+    // typography / region leaves plus the 11 page-furniture leaves.
+    expect(modes).toHaveLength(28);
     for (const mode of modes) expect((mode as HTMLSelectElement).value).toBe('inherit');
 
     fireEvent.change(screen.getByRole('combobox', { name: 'Modo de Orientação' }), {
