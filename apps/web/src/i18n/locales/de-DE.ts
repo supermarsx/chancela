@@ -3128,6 +3128,8 @@ export const deDE: Catalog = {
   'settings.signing.cmd.intro':
     'Die Signatur in der Produktion erfordert die AMA-Zugangsdaten (ApplicationId und Zertifikat), die über Umgebungsvariablen bereitgestellt werden. Diese Werte werden nur zur Information angezeigt.',
   'settings.signing.cmd.env': 'Umgebung',
+  'settings.signing.cmd.envHint':
+    'Der Standardwert für einen Anmeldedaten-Eintrag, der keine eigene Umgebung wählt. Ein Eintrag, der eine wählt, setzt sich darüber hinweg.',
   'settings.signing.cmd.envPreprod': 'Vorproduktion (AMA)',
   'settings.signing.cmd.envProd': 'Produktion (AMA)',
   'settings.signing.cmd.applicationId': 'Anwendungs-ID',
@@ -5341,7 +5343,7 @@ export const deDE: Catalog = {
   'settings.providerCredentials.help.passphrase':
     'Passwort, das die .pfx/.p12-Datei schützt. Z. B. das beim Exportieren des Zertifikats festgelegte.',
   'settings.providerCredentials.help.env':
-    'Anbieterumgebung, mit der dieser Eintrag verbunden ist. Z. B. „Vorproduktion“ zum Testen, „Produktion“ für den echten Einsatz.',
+    'Umgebung des Anbieters, mit der dieser Eintrag verbunden ist und gegen die eine Signatur läuft, die ihn verwendet. Z. B. „Vorproduktion“ zum Testen, „Produktion“ für den echten Einsatz. Lassen Sie es unbestimmt, um dem Standardwert in den Signatureinstellungen zu folgen.',
   'settings.providerCredentials.help.authorization':
     'Wie die Signatursitzung beim QTSP autorisiert wird. Z. B. „Dienst“ für Kontoanmeldedaten, „Benutzer“, wenn jeder Unterzeichner autorisiert.',
   'settings.providerCredentials.help.credentialId':
@@ -6422,6 +6424,222 @@ export const deDE: Catalog = {
     'Ein einziger Eintrag, ohne Anbieterkennung. Benötigt werden die Umgebung (Vorproduktion oder Produktion) und, in der Produktion, die von der AMA vergebene Anwendungs-ID samt zugehörigem Geheimnis. Die Basisadresse ist optional: ohne sie wird die Adresse der gewählten Umgebung verwendet. HTTP-Basic-Zugangsdaten sind optional.',
   'settings.providerCredentials.modes.setup.pkcs12':
     'Ein Eintrag je Identität, jeweils mit eigener Bezeichnung. Benötigt werden die Datei .pfx/.p12 und die Passphrase, die sie öffnet. Enthält die Datei mehrere Identitäten, wählen Sie eine über den Anzeigenamen oder über die local key ID in Hexadezimalform. Es gibt keine Adresse einzurichten.',
+  'settings.providerCredentials.entry.test': 'Diese Anmeldedaten testen',
+  'settings.providerCredentials.probe.modal.title': 'Test der Anmeldedaten',
+  'settings.providerCredentials.probe.modal.runningTitle': 'Test läuft',
+  'settings.providerCredentials.probe.modal.runningBody':
+    'Die gespeicherte Konfiguration wird geprüft. Es wird kein Dokument signiert und keine Signatur erzeugt.',
+  'settings.providerCredentials.probe.modal.checksTitle': 'Was geprüft wurde',
+  'settings.providerCredentials.probe.modal.close': 'Schließen',
+  'settings.providerCredentials.probe.modal.rerun': 'Erneut ausführen',
+  // Die eingesetzten Werte ({field}, {environment}, {endpoint}, {certs_setting}, {count},
+  // {detail}) sind Maschinenbezeichner, Zahlen oder die Worte des Signaturpfads selbst: sie werden
+  // nie übersetzt. Übersetzt wird der Satz um sie herum.
+  'settings.providerCredentials.probe.untranslatedBadge': 'Auf Englisch',
+  'settings.providerCredentials.probe.untranslatedHint':
+    'Dieser Satz kam vom Server und es gibt in dieser Version keine Übersetzung dafür. Er wird genau so angezeigt, wie der Server ihn geschrieben hat, auf Englisch.',
+  'settings.providerCredentials.probe.detail.entry_disabled':
+    'Der gespeicherte Anmeldedaten-Eintrag ist deaktiviert.',
+  'settings.providerCredentials.probe.detail.entry_enabled':
+    'Der gespeicherte Anmeldedaten-Eintrag ist aktiv.',
+  'settings.providerCredentials.probe.detail.mode_not_signing_provider':
+    'Diese Art von Anmeldedaten ist kein Signaturanbieter.',
+  'settings.providerCredentials.probe.detail.outbound_client_unavailable':
+    'Der begrenzte ausgehende Client konnte nicht erstellt werden, daher wurde keine Anfrage versucht.',
+  'settings.providerCredentials.probe.detail.cmd_environment_resolved':
+    'Dieser Eintrag wählt keine Umgebung und erbt deshalb den Standardwert der Installation: {environment}.',
+  'settings.providerCredentials.probe.detail.cmd_environment_from_entry':
+    'Dieser Eintrag wählt die Umgebung {environment} von Chave Móvel Digital, und eine Signatur, die ihn verwendet, liefe gegen diese Umgebung.',
+  'settings.providerCredentials.probe.detail.cmd_environment_selector_invalid':
+    'Der Umgebungsselektor des Eintrags lautet weder prod noch preprod, daher ließ sich nicht feststellen, welche AMA-Umgebung er nennt. Es wurde nichts angenommen.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_incomplete':
+    'Aus dem gespeicherten Eintrag entsteht keine nutzbare Konfiguration. Der Signaturpfad meldet: {detail}',
+  'settings.providerCredentials.probe.detail.cmd_credential_assembly_failed':
+    'Aus dem gespeicherten Anmeldedaten-Eintrag konnte keine nutzbare CMD-Konfiguration erzeugt werden.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
+    'Alle Anmeldedatenfelder, die diese Umgebung verlangt, sind im gespeicherten Eintrag vorhanden.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
+    'Das gespeicherte AMA-Zertifikat für die Feldverschlüsselung wurde gelesen und der Feldverschlüsseler wurde aufgebaut.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
+    'Es ist kein AMA-Zertifikat für die Feldverschlüsselung gespeichert; die Vorproduktion akzeptiert Felder im Klartext.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
+    'Die Produktion verlangt das AMA-Zertifikat für die Feldverschlüsselung. Füllen Sie {field} in diesem Anmeldedaten-Eintrag aus.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
+    'Die HTTP-BasicAuth-Anmeldedaten sind konfiguriert.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
+    'Es sind keine HTTP-BasicAuth-Anmeldedaten gespeichert; die Vorproduktion akzeptiert möglicherweise nicht authentifizierte Aufrufe.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_required_prod':
+    'Die Produktion verlangt HTTP BasicAuth. Füllen Sie {username_field} und {password_field} in diesem Anmeldedaten-Eintrag aus.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_ready':
+    'Die aufgelöste Konfiguration erfüllt die Anforderungen des echten HTTP-Transports von AMA.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_not_ready':
+    'Die aufgelöste Konfiguration kann den echten HTTP-Transport von AMA nicht betreiben.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_pinned':
+    'Die aufgelöste SCMD-Adresse ist nicht die Konstante, die diese Umgebung nennt, oder sie hat die Sicherheitsrichtlinie für ausgehende Verbindungen nicht bestanden.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_https':
+    'Die SCMD-Adresse muss HTTPS verwenden, bevor gespeicherte Anmeldedaten an sie gesendet werden dürfen.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_pinned':
+    'Die SCMD-Adresse ist die für diese Umgebung festgelegte Konstante, über HTTPS: {endpoint}',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_reachable':
+    'Eine TLS-Verbindung zur AMA-Produktionsadresse kam zustande. Es wurde keine SCMD-Operation aufgerufen: nichts wurde signiert und es wurde kein SMS-Code versendet.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_unreachable':
+    'Die AMA-Produktionsadresse war von diesem Server aus nicht erreichbar. Es wurde keine SCMD-Operation aufgerufen.',
+  'settings.providerCredentials.probe.detail.cmd_reachability_skipped_preprod':
+    'Die Erreichbarkeit wird nur für die AMA-Produktionsadresse geprüft, und diese Installation ist für die Vorproduktion konfiguriert.',
+  'settings.providerCredentials.probe.detail.cmd_live_operation_skipped':
+    'In dieser Anbindung hat Chave Móvel Digital keine sichere Diagnoseoperation, die nicht signiert. Ein echter Versuch würde den interaktiven Signaturablauf starten, deshalb wurde keiner ausgeführt.',
+  'settings.providerCredentials.probe.detail.tsl_no_list_selected':
+    'Es ist keine Vertrauensliste ausgewählt, daher kann keine qualifizierte Signatur authentifiziert werden. Eine CMD-Signatur wird verweigert. Wählen Sie in den Signatureinstellungen eine Quelle für die Vertrauensliste aus.',
+  'settings.providerCredentials.probe.detail.tsl_selection_invalid':
+    'Die Auswahl der Vertrauensliste ist ungültig. Der Signaturpfad meldet: {detail}',
+  'settings.providerCredentials.probe.detail.tsl_anchors_invalid':
+    'Ein konfigurierter Vertrauensanker konnte nicht gelesen werden, daher schlägt die Vertrauensrichtlinie geschlossen fehl. Der Signaturpfad meldet: {detail}. Prüfen Sie {certs_setting} und {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_unanchored':
+    'Es ist eine Vertrauensliste ausgewählt, aber kein Vertrauensanker konfiguriert, und eine leere Ankermenge authentifiziert keine Liste. Eine CMD-Signatur wird verweigert und nennt dabei diesen fehlenden Anker statt des Vertrauensdienstes des Unterzeichners. Richten Sie einen Anker in {certs_setting} oder {digest_setting} ein.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_settings':
+    'Aufgelöste Vertrauensanker der Vertrauensliste: {total}, alle aus den Signatureinstellungen. Ob sich die ausgewählte Liste tatsächlich gegen sie authentifiziert und ob der Dienst des Unterzeichners den Status Granted hat, wird zum Signaturzeitpunkt entschieden und hier nicht geprüft.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_environment':
+    'Aufgelöste Vertrauensanker der Vertrauensliste: {total}, alle aus der Umgebung. Ob sich die ausgewählte Liste tatsächlich gegen sie authentifiziert und ob der Dienst des Unterzeichners den Status Granted hat, wird zum Signaturzeitpunkt entschieden und hier nicht geprüft.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_mixed':
+    'Aufgelöste Vertrauensanker der Vertrauensliste: {total} — {from_env} aus der Umgebung und mindestens {from_settings} aus den Signatureinstellungen. Ob sich die ausgewählte Liste tatsächlich gegen sie authentifiziert und ob der Dienst des Unterzeichners den Status Granted hat, wird zum Signaturzeitpunkt entschieden und hier nicht geprüft.',
+  'settings.providerCredentials.probe.detail.csc_base_url_missing':
+    'Dieser Eintrag benötigt eine CSC-Basisadresse.',
+  'settings.providerCredentials.probe.detail.csc_base_url_unsafe':
+    'Die CSC-Basisadresse hat die Sicherheitsrichtlinie für ausgehende Verbindungen nicht bestanden.',
+  'settings.providerCredentials.probe.detail.csc_base_url_not_https':
+    'Die CSC-Basisadresse muss HTTPS verwenden, bevor gespeicherte Anmeldedaten an sie gesendet werden dürfen.',
+  'settings.providerCredentials.probe.detail.csc_base_url_ok':
+    'Die CSC-Basisadresse hat die Sicherheitsrichtlinie für ausgehende Verbindungen bestanden und verwendet HTTPS.',
+  'settings.providerCredentials.probe.detail.csc_authorization_selector_invalid':
+    'Der CSC-Selektor authorization muss service oder user lauten.',
+  'settings.providerCredentials.probe.detail.csc_service_authorization_incomplete':
+    'Die Autorisierung über den Dienst verlangt {client_id_field} und {client_secret_field}.',
+  'settings.providerCredentials.probe.detail.csc_user_authorization_incomplete':
+    'Die Autorisierung über die Benutzerin oder den Benutzer verlangt {token_field}.',
+  'settings.providerCredentials.probe.detail.csc_authorization_configured':
+    'Die gespeicherten Felder erfüllen das gewählte CSC-Autorisierungsmodell.',
+  'settings.providerCredentials.probe.detail.csc_provider_configuration_invalid':
+    'Die Konfiguration des CSC-Anbieters ist ungültig.',
+  'settings.providerCredentials.probe.detail.csc_authenticated':
+    'Die CSC-Authentifizierung wurde abgeschlossen, ohne vom Unterzeichner irgendeine Autorisierung anzufordern.',
+  'settings.providerCredentials.probe.detail.csc_credentials_listed':
+    'Von CSC zurückgegebene Signatur-Anmeldedaten: {count}.',
+  'settings.providerCredentials.probe.detail.csc_configured_credential_not_listed':
+    'Die konfigurierte credential_id wurde von credentials/list nicht zurückgegeben.',
+  'settings.providerCredentials.probe.detail.csc_credential_selection_required':
+    'Es sind mehrere Anmeldedaten verfügbar. Konfigurieren Sie {selector}.',
+  'settings.providerCredentials.probe.detail.csc_credential_selected':
+    'Es wurde genau eine konfigurierte Signatur-Anmeldung ausgewählt.',
+  'settings.providerCredentials.probe.detail.csc_credential_info_ok':
+    'CSC hat ein lesbares Signaturzertifikat zurückgegeben, mit Ausstellerzertifikaten: {issuer_count}. Die Aktivierungsanforderungen wurden geprüft, aber nicht aufgerufen.',
+  'settings.providerCredentials.probe.detail.csc_transport_failed':
+    'Die CSC-Adresse war innerhalb der begrenzten Anfrage nicht erreichbar.',
+  'settings.providerCredentials.probe.detail.csc_response_too_large':
+    'Die CSC-Antwort hat die Sicherheitsgrenze überschritten.',
+  'settings.providerCredentials.probe.detail.csc_http_status_unsuccessful':
+    'Die CSC-Adresse hat einen nicht erfolgreichen HTTP-Status zurückgegeben.',
+  'settings.providerCredentials.probe.detail.csc_service_rejected':
+    'Der CSC-Dienst hat die sichere Testoperation abgelehnt.',
+  'settings.providerCredentials.probe.detail.csc_response_parse_failed':
+    'Die CSC-Antwort entspricht nicht der erwarteten Protokollform.',
+  'settings.providerCredentials.probe.detail.csc_config_invalid':
+    'Die CSC-Testkonfiguration ist unvollständig oder ungültig.',
+  'settings.providerCredentials.probe.detail.csc_no_signing_credential':
+    'Das CSC-Konto stellt keine Signatur-Anmeldedaten bereit.',
+  'settings.providerCredentials.probe.detail.csc_no_signature_returned':
+    'Der CSC-Dienst hat keine Signatur zurückgegeben.',
+  'settings.providerCredentials.probe.detail.csc_certificate_unparseable':
+    'Das Zertifikat der CSC-Anmeldedaten konnte nicht gelesen werden.',
+  'settings.providerCredentials.probe.detail.csc_malformed_base64':
+    'Die CSC-Antwort enthielt fehlerhafte Base64-Daten.',
+  'settings.providerCredentials.probe.detail.csc_probe_failed': 'Der CSC-Test ist fehlgeschlagen.',
+  'settings.providerCredentials.probe.detail.scap_credentials_incomplete':
+    'Das Auflisten von SCAP-Anbietern verlangt {application_id_field} und {secret_field}.',
+  'settings.providerCredentials.probe.detail.scap_credentials_configured':
+    'Die gespeicherten SCAP-Anwendungsanmeldedaten sind konfiguriert.',
+  'settings.providerCredentials.probe.detail.scap_environment_selector_invalid':
+    'Der SCAP-Umgebungsselektor muss prod oder preprod lauten.',
+  'settings.providerCredentials.probe.detail.scap_base_url_unsafe':
+    'Die SCAP-Basisadresse hat die Sicherheitsrichtlinie für ausgehende Verbindungen nicht bestanden.',
+  'settings.providerCredentials.probe.detail.scap_base_url_not_https':
+    'Die SCAP-Basisadresse muss HTTPS verwenden, bevor gespeicherte Anmeldedaten an sie gesendet werden dürfen.',
+  'settings.providerCredentials.probe.detail.scap_base_url_ok':
+    'Die SCAP-Basisadresse hat die Sicherheitsrichtlinie für ausgehende Verbindungen bestanden und verwendet HTTPS.',
+  'settings.providerCredentials.probe.detail.scap_provider_configuration_invalid':
+    'Die Konfiguration des SCAP-Anbieters ist ungültig.',
+  'settings.providerCredentials.probe.detail.scap_providers_listed':
+    'Von SCAP zurückgegebene Attributanbieter: {count}. Es wurden weder Bürgerdaten noch eine Signatur angefordert.',
+  'settings.providerCredentials.probe.detail.scap_provider_list_failed':
+    'Das Auflisten der SCAP-Anbieter ist fehlgeschlagen oder hat eine ungültige Antwort geliefert.',
+  'settings.providerCredentials.probe.detail.pkcs12_material_incomplete':
+    'Das gespeicherte PKCS#12-Material oder der Identitätsselektor ist unvollständig oder fehlerhaft.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_undecryptable':
+    'Die gespeicherte PKCS#12-Identität konnte nicht entschlüsselt und ausgewählt werden.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_loaded':
+    'Die gespeicherte PKCS#12-Identität wurde entschlüsselt und ausgewählt.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_sign_failed':
+    'Der private Schlüssel konnte die Testabfrage, die kein Dokument ist, nicht signieren.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_signed':
+    'Der private Schlüssel hat eine zufällige, domänengetrennte Abfrage signiert, die kein Dokument ist.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_verified':
+    'Die Signatur der Abfrage wurde lokal gegen das ausgewählte Zertifikat verifiziert.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
+    'Die Signatur der Abfrage konnte gegen das ausgewählte Zertifikat nicht verifiziert werden.',
+  'settings.providerCredentials.field.amaCertPem.hint':
+    'Das Zertifikat selbst, kein Pfad dorthin — PEM-Text, der mit BEGIN CERTIFICATE beginnt.',
+  'settings.providerCredentials.field.amaCertPem.fromFile': 'Datei wählen…',
+  'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Aus der Zwischenablage einfügen',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Zertifikat prüfen',
+  'settings.providerCredentials.field.amaCertPem.inspecting': 'Wird geprüft…',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Zertifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileTooLarge':
+    'Diese Datei ist zu groß für ein PEM-Zertifikat (Grenze {max} KiB). Es wurde nichts gelesen.',
+  'settings.providerCredentials.field.amaCertPem.fileReadFailed':
+    'Die gewählte Datei konnte nicht gelesen werden.',
+  'settings.providerCredentials.field.amaCertPem.fileLoaded': 'Datei geladen: {name}',
+  'settings.providerCredentials.field.amaCertPem.clipboardUnavailable':
+    'Die Zwischenablage ist hier nicht verfügbar — die Seite läuft nicht in einem sicheren Kontext, oder eine Berechtigungsrichtlinie blockiert sie. Fügen Sie den Text von Hand in das Feld ein.',
+  'settings.providerCredentials.field.amaCertPem.clipboardDenied':
+    'Das Lesen der Zwischenablage wurde verweigert. Fügen Sie den Text von Hand in das Feld ein.',
+  'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'Die Zwischenablage ist leer.',
+  'settings.providerCredentials.field.amaCertPem.clipboardPasted':
+    'Text aus der Zwischenablage eingefügt.',
+  'settings.providerCredentials.field.amaCertPem.empty':
+    'Fügen Sie ein Zertifikat ein oder laden Sie eines, bevor Sie es prüfen.',
+  'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
+    'Was über dieses Zertifikat festgestellt wurde',
+  'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Inhaber',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Aussteller',
+  'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Gültig ab',
+  'settings.providerCredentials.field.amaCertPem.inspect.notAfter': 'Gültig bis',
+  'settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle':
+    'Was NICHT geprüft wurde',
+  'settings.providerCredentials.field.amaCertPem.inspect.chainValidated':
+    'Zertifizierungspfad aufgebaut',
+  'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked':
+    'Vertrauensliste abgefragt',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated':
+    'Aussteller authentifiziert',
+  'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed':
+    'Rechtsgültigkeit behauptet',
+  'settings.providerCredentials.probe.detail.ama_cert_parsed':
+    'Der Text lässt sich als X.509-Zertifikat lesen.',
+  'settings.providerCredentials.probe.detail.ama_cert_unparseable':
+    'Der Text ist kein PEM-kodiertes X.509-Zertifikat. Der Leser meldet: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
+    'Das Zertifikat trägt einen öffentlichen RSA-Schlüssel mit {bits} Bit, und daraus wurde ein Feldverschlüsseler aufgebaut. Genau das braucht eine Signatur in der Produktion.',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
+    'Aus diesem Zertifikat ließ sich kein öffentlicher RSA-Schlüssel gewinnen, daher kann daraus kein Feldverschlüsseler aufgebaut werden und eine CMD-Signatur in der Produktion wird verweigert. Der Leser meldet: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_within_validity':
+    'Die aktuelle Serverzeit liegt innerhalb des Gültigkeitszeitraums des Zertifikats.',
+  'settings.providerCredentials.probe.detail.ama_cert_expired':
+    'Das Zertifikat ist abgelaufen: sein Gültigkeitszeitraum ist bereits beendet.',
+  'settings.providerCredentials.probe.detail.ama_cert_not_yet_valid':
+    'Der Gültigkeitszeitraum des Zertifikats hat noch nicht begonnen.',
+  'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
+    'Die Gültigkeitsdaten des Zertifikats ließen sich nicht als Zeitpunkte lesen, daher wurde der Zeitraum nicht beurteilt.',
+  'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
+    'Ob dies wirklich das Zertifikat der AMA ist, wurde nicht festgestellt: es wurde kein Zertifizierungspfad aufgebaut, kein Vertrauensanker abgefragt und keine Vertrauensliste geholt.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Ohne Speichern verlassen?',
   'unsaved.body':

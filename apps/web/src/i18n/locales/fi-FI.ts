@@ -3089,6 +3089,8 @@ export const fiFI: Catalog = {
   'settings.signing.cmd.intro':
     'Tuotannon allekirjoitus vaatii AMA:n tunnistetiedot (ApplicationId ja varmenne), jotka toimitetaan ympäristömuuttujilla. Nämä arvot näytetään vain tiedoksi.',
   'settings.signing.cmd.env': 'Ympäristö',
+  'settings.signing.cmd.envHint':
+    'Oletusarvo tunnistetiedolle, joka ei valitse omaa ympäristöä. Tunnistetieto, joka valitsee sellaisen, ohittaa tämän.',
   'settings.signing.cmd.envPreprod': 'Esituotanto (AMA)',
   'settings.signing.cmd.envProd': 'Tuotanto (AMA)',
   'settings.signing.cmd.applicationId': 'ApplicationId',
@@ -5289,7 +5291,7 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.help.passphrase':
     'Salasana, joka suojaa .pfx/.p12-tiedostoa. Esim. se, jonka määritit varmennetta vietäessä.',
   'settings.providerCredentials.help.env':
-    'Palveluntarjoajan ympäristö, johon tämä merkintä yhdistää. Esim. ”Esituotanto” testaukseen, ”Tuotanto” todelliseen käyttöön.',
+    'Palveluntarjoajan ympäristö, johon tämä tunnistetieto yhdistää ja jota vasten sitä käyttävä allekirjoitus suoritetaan. Esim. ”Esituotanto” testeihin, ”Tuotanto” oikeaan käyttöön. Jätä määrittämättä, niin seurataan allekirjoitusasetusten oletusarvoa.',
   'settings.providerCredentials.help.authorization':
     'Miten allekirjoitusistunto valtuutetaan QTSP:ssä. Esim. ”Palvelu” tilin tunnuksille, ”Käyttäjä”, kun kukin allekirjoittaja valtuuttaa.',
   'settings.providerCredentials.help.credentialId':
@@ -6353,6 +6355,220 @@ export const fiFI: Catalog = {
     'Yksi ainoa merkintä, ilman palveluntarjoajan tunnistetta. Se vaatii ympäristön (esituotanto tai tuotanto) ja tuotannossa myös AMA:n myöntämän sovellustunnuksen sekä sitä vastaavan salaisuuden. Perusosoite on valinnainen: ilman sitä käytetään valitun ympäristön osoitetta. HTTP Basic -tunnistetiedot ovat valinnaisia.',
   'settings.providerCredentials.modes.setup.pkcs12':
     'Yksi merkintä henkilöllisyyttä kohti, kullakin oma nimi. Se vaatii .pfx/.p12-tiedoston ja salalauseen, joka avaa sen. Jos tiedostossa on useampi kuin yksi henkilöllisyys, osoita yksi kuvaavalla nimellä tai heksadesimaalisella local key ID -arvolla. Osoitetta ei ole määritettävänä.',
+  'settings.providerCredentials.entry.test': 'Testaa tämä tunnistetieto',
+  'settings.providerCredentials.probe.modal.title': 'Tunnistetiedon testi',
+  'settings.providerCredentials.probe.modal.runningTitle': 'Testi käynnissä',
+  'settings.providerCredentials.probe.modal.runningBody':
+    'Tallennettua määritystä tarkistetaan. Yhtään asiakirjaa ei allekirjoiteta eikä yhtään allekirjoitusta synny.',
+  'settings.providerCredentials.probe.modal.checksTitle': 'Mitä tarkistettiin',
+  'settings.providerCredentials.probe.modal.close': 'Sulje',
+  'settings.providerCredentials.probe.modal.rerun': 'Suorita uudelleen',
+  // Sijoitetut arvot ({field}, {environment}, {endpoint}, {certs_setting}, {count}, {detail}) ovat
+  // konetunnisteita, lukuja tai allekirjoituspolun omia sanoja: niitä ei koskaan käännetä.
+  // Käännetään niitä ympäröivä lause.
+  'settings.providerCredentials.probe.untranslatedBadge': 'Englanniksi',
+  'settings.providerCredentials.probe.untranslatedHint':
+    'Tämä lause tuli palvelimelta, eikä tässä versiossa ole sille käännöstä. Se näytetään täsmälleen siinä muodossa kuin palvelin sen kirjoitti, englanniksi.',
+  'settings.providerCredentials.probe.detail.entry_disabled':
+    'Tallennettu tunnistetieto on poistettu käytöstä.',
+  'settings.providerCredentials.probe.detail.entry_enabled':
+    'Tallennettu tunnistetieto on käytössä.',
+  'settings.providerCredentials.probe.detail.mode_not_signing_provider':
+    'Tämä tunnistetiedon laji ei ole allekirjoituspalvelun tarjoaja.',
+  'settings.providerCredentials.probe.detail.outbound_client_unavailable':
+    'Rajattua lähtevän liikenteen asiakasta ei voitu luoda, joten yhtään pyyntöä ei yritetty.',
+  'settings.providerCredentials.probe.detail.cmd_environment_resolved':
+    'Tämä tunnistetieto ei valitse ympäristöä, joten se perii asennuksen oletusarvon: {environment}.',
+  'settings.providerCredentials.probe.detail.cmd_environment_from_entry':
+    'Tämä tunnistetieto valitsee Chave Móvel Digitalin ympäristön {environment}, ja sitä käyttävä allekirjoitus suoritettaisiin sitä ympäristöä vasten.',
+  'settings.providerCredentials.probe.detail.cmd_environment_selector_invalid':
+    'Tunnistetiedon ympäristövalitsin ei ole prod eikä preprod, joten ei voitu todeta, minkä AMA-ympäristön se nimeää. Mitään ei oletettu.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_incomplete':
+    'Tallennetusta tiedosta ei muodostu käyttökelpoista määritystä. Allekirjoituspolku ilmoittaa: {detail}',
+  'settings.providerCredentials.probe.detail.cmd_credential_assembly_failed':
+    'Tallennetusta tunnistetiedosta ei voitu muodostaa käyttökelpoista CMD-määritystä.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
+    'Kaikki tämän ympäristön vaatimat tunnistetiedon kentät ovat tallennetussa tiedossa.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
+    'Tallennettu AMA:n kenttäsalausvarmenne luettiin ja kenttäsalain rakennettiin.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
+    'AMA:n kenttäsalausvarmennetta ei ole tallennettu; esituotanto hyväksyy kentät selväkielisinä.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
+    'Tuotanto vaatii AMA:n kenttäsalausvarmenteen. Täytä {field} tähän tunnistetietoon.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
+    'HTTP BasicAuth -tunnistetiedot on määritetty.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
+    'HTTP BasicAuth -tunnistetietoja ei ole tallennettu; esituotanto saattaa hyväksyä tunnistautumattomia kutsuja.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_required_prod':
+    'Tuotanto vaatii HTTP BasicAuthin. Täytä {username_field} ja {password_field} tähän tunnistetietoon.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_ready':
+    'Selvitetty määritys täyttää AMA:n todellisen HTTP-siirtokerroksen vaatimukset.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_not_ready':
+    'Selvitetty määritys ei pysty käyttämään AMA:n todellista HTTP-siirtokerrosta.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_pinned':
+    'Selvitetty SCMD-osoite ei ole tämän ympäristön nimeämä vakio, tai se ei läpäissyt lähtevän liikenteen turvakäytäntöä.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_https':
+    'SCMD-osoitteen on käytettävä HTTPS:ää, ennen kuin sinne saa lähettää tallennettuja tunnistetietoja.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_pinned':
+    'SCMD-osoite on tälle ympäristölle kiinnitetty vakio, HTTPS:n yli: {endpoint}',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_reachable':
+    'TLS-yhteys AMA:n tuotanto-osoitteeseen onnistui. Yhtään SCMD-toimintoa ei kutsuttu: mitään ei allekirjoitettu eikä tekstiviestikoodia lähetetty.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_unreachable':
+    'AMA:n tuotanto-osoitetta ei tavoitettu tältä palvelimelta. Yhtään SCMD-toimintoa ei kutsuttu.',
+  'settings.providerCredentials.probe.detail.cmd_reachability_skipped_preprod':
+    'Tavoitettavuus testataan vain AMA:n tuotanto-osoitteelle, ja tämä asennus on määritetty esituotantoon.',
+  'settings.providerCredentials.probe.detail.cmd_live_operation_skipped':
+    'Tässä integraatiossa Chave Móvel Digitalilla ei ole turvallista diagnostiikkatoimintoa, joka ei allekirjoittaisi. Todellinen yritys käynnistäisi vuorovaikutteisen allekirjoitusvaiheen, joten yhtään ei suoritettu.',
+  'settings.providerCredentials.probe.detail.tsl_no_list_selected':
+    'Yhtään luottamuslistaa ei ole valittu, joten yhtään hyväksyttyä allekirjoitusta ei voi todentaa. CMD-allekirjoitus kieltäytyy. Valitse luottamuslistan lähde allekirjoitusasetuksista.',
+  'settings.providerCredentials.probe.detail.tsl_selection_invalid':
+    'Luottamuslistan valinta ei kelpaa. Allekirjoituspolku ilmoittaa: {detail}',
+  'settings.providerCredentials.probe.detail.tsl_anchors_invalid':
+    'Määritettyä luottamusankkuria ei voitu lukea, joten luottamuskäytäntö epäonnistuu suljettuna. Allekirjoituspolku ilmoittaa: {detail}. Tarkista {certs_setting} ja {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_unanchored':
+    'Luottamuslista on valittu, mutta yhtään luottamusankkuria ei ole määritetty, eikä tyhjä ankkurijoukko todenna mitään listaa. CMD-allekirjoitus kieltäytyy ja nimeää tämän puuttuvan ankkurin allekirjoittajan luottamuspalvelun sijaan. Määritä ankkuri kohtaan {certs_setting} tai {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_settings':
+    'Selvitetyt luottamuslistan luottamusankkurit: {total}, kaikki allekirjoitusasetuksista. Se, todentuuko valittu lista tosiasiassa niitä vastaan ja onko allekirjoittajan palvelun tila Granted, ratkeaa allekirjoitushetkellä eikä sitä testata tässä.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_environment':
+    'Selvitetyt luottamuslistan luottamusankkurit: {total}, kaikki ympäristöstä. Se, todentuuko valittu lista tosiasiassa niitä vastaan ja onko allekirjoittajan palvelun tila Granted, ratkeaa allekirjoitushetkellä eikä sitä testata tässä.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_mixed':
+    'Selvitetyt luottamuslistan luottamusankkurit: {total} — {from_env} ympäristöstä ja vähintään {from_settings} allekirjoitusasetuksista. Se, todentuuko valittu lista tosiasiassa niitä vastaan ja onko allekirjoittajan palvelun tila Granted, ratkeaa allekirjoitushetkellä eikä sitä testata tässä.',
+  'settings.providerCredentials.probe.detail.csc_base_url_missing':
+    'Tämä tieto vaatii CSC-perusosoitteen.',
+  'settings.providerCredentials.probe.detail.csc_base_url_unsafe':
+    'CSC-perusosoite ei läpäissyt lähtevän liikenteen turvakäytäntöä.',
+  'settings.providerCredentials.probe.detail.csc_base_url_not_https':
+    'CSC-perusosoitteen on käytettävä HTTPS:ää, ennen kuin sinne saa lähettää tallennettuja tunnistetietoja.',
+  'settings.providerCredentials.probe.detail.csc_base_url_ok':
+    'CSC-perusosoite läpäisi lähtevän liikenteen turvakäytännön ja käyttää HTTPS:ää.',
+  'settings.providerCredentials.probe.detail.csc_authorization_selector_invalid':
+    'CSC:n valitsimen authorization arvon on oltava service tai user.',
+  'settings.providerCredentials.probe.detail.csc_service_authorization_incomplete':
+    'Palvelun kautta tapahtuva valtuutus vaatii kentät {client_id_field} ja {client_secret_field}.',
+  'settings.providerCredentials.probe.detail.csc_user_authorization_incomplete':
+    'Käyttäjän kautta tapahtuva valtuutus vaatii kentän {token_field}.',
+  'settings.providerCredentials.probe.detail.csc_authorization_configured':
+    'Tallennetut kentät täyttävät valitun CSC-valtuutusmallin.',
+  'settings.providerCredentials.probe.detail.csc_provider_configuration_invalid':
+    'CSC-tarjoajan määritys ei kelpaa.',
+  'settings.providerCredentials.probe.detail.csc_authenticated':
+    'CSC-tunnistautuminen valmistui pyytämättä allekirjoittajalta mitään valtuutusta.',
+  'settings.providerCredentials.probe.detail.csc_credentials_listed':
+    'CSC:n palauttamat allekirjoitustunnistetiedot: {count}.',
+  'settings.providerCredentials.probe.detail.csc_configured_credential_not_listed':
+    'Määritettyä credential_id-arvoa ei palautettu kutsusta credentials/list.',
+  'settings.providerCredentials.probe.detail.csc_credential_selection_required':
+    'Käytettävissä on useampi kuin yksi tunnistetieto. Määritä {selector}.',
+  'settings.providerCredentials.probe.detail.csc_credential_selected':
+    'Valittiin yksi määritetty allekirjoitustunnistetieto.',
+  'settings.providerCredentials.probe.detail.csc_credential_info_ok':
+    'CSC palautti luettavan allekirjoitusvarmenteen sekä myöntäjän varmenteita: {issuer_count}. Aktivointivaatimukset tarkastettiin mutta niitä ei kutsuttu.',
+  'settings.providerCredentials.probe.detail.csc_transport_failed':
+    'CSC-osoitetta ei tavoitettu rajatun pyynnön aikana.',
+  'settings.providerCredentials.probe.detail.csc_response_too_large':
+    'CSC:n vastaus ylitti turvarajan.',
+  'settings.providerCredentials.probe.detail.csc_http_status_unsuccessful':
+    'CSC-osoite palautti epäonnistuneen HTTP-tilan.',
+  'settings.providerCredentials.probe.detail.csc_service_rejected':
+    'CSC-palvelu hylkäsi turvallisen testitoiminnon.',
+  'settings.providerCredentials.probe.detail.csc_response_parse_failed':
+    'CSC:n vastaus ei vastaa odotettua protokollan muotoa.',
+  'settings.providerCredentials.probe.detail.csc_config_invalid':
+    'CSC:n testimääritys on puutteellinen tai virheellinen.',
+  'settings.providerCredentials.probe.detail.csc_no_signing_credential':
+    'CSC-tili ei tarjoa yhtään allekirjoitustunnistetietoa.',
+  'settings.providerCredentials.probe.detail.csc_no_signature_returned':
+    'CSC-palvelu ei palauttanut yhtään allekirjoitusta.',
+  'settings.providerCredentials.probe.detail.csc_certificate_unparseable':
+    'CSC-tunnistetiedon varmennetta ei voitu lukea.',
+  'settings.providerCredentials.probe.detail.csc_malformed_base64':
+    'CSC:n vastaus sisälsi virheellistä base64-dataa.',
+  'settings.providerCredentials.probe.detail.csc_probe_failed': 'CSC-testi epäonnistui.',
+  'settings.providerCredentials.probe.detail.scap_credentials_incomplete':
+    'SCAP-tarjoajien listaaminen vaatii kentät {application_id_field} ja {secret_field}.',
+  'settings.providerCredentials.probe.detail.scap_credentials_configured':
+    'Tallennetut SCAP-sovellustunnistetiedot on määritetty.',
+  'settings.providerCredentials.probe.detail.scap_environment_selector_invalid':
+    'SCAP:n ympäristövalitsimen arvon on oltava prod tai preprod.',
+  'settings.providerCredentials.probe.detail.scap_base_url_unsafe':
+    'SCAP-perusosoite ei läpäissyt lähtevän liikenteen turvakäytäntöä.',
+  'settings.providerCredentials.probe.detail.scap_base_url_not_https':
+    'SCAP-perusosoitteen on käytettävä HTTPS:ää, ennen kuin sinne saa lähettää tallennettuja tunnistetietoja.',
+  'settings.providerCredentials.probe.detail.scap_base_url_ok':
+    'SCAP-perusosoite läpäisi lähtevän liikenteen turvakäytännön ja käyttää HTTPS:ää.',
+  'settings.providerCredentials.probe.detail.scap_provider_configuration_invalid':
+    'SCAP-tarjoajan määritys ei kelpaa.',
+  'settings.providerCredentials.probe.detail.scap_providers_listed':
+    'SCAP:n palauttamat attribuuttitarjoajat: {count}. Kansalaistietoja tai allekirjoitusta ei pyydetty.',
+  'settings.providerCredentials.probe.detail.scap_provider_list_failed':
+    'SCAP-tarjoajien listaus epäonnistui tai palautti virheellisen vastauksen.',
+  'settings.providerCredentials.probe.detail.pkcs12_material_incomplete':
+    'Tallennettu PKCS#12-aineisto tai identiteettivalitsin on puutteellinen tai virheellinen.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_undecryptable':
+    'Tallennettua PKCS#12-identiteettiä ei voitu purkaa ja valita.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_loaded':
+    'Tallennettu PKCS#12-identiteetti purettiin ja valittiin.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_sign_failed':
+    'Yksityinen avain ei pystynyt allekirjoittamaan testihaastetta, joka ei ole asiakirja.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_signed':
+    'Yksityinen avain allekirjoitti satunnaisen, verkkotunnuksittain erotellun haasteen, joka ei ole asiakirja.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_verified':
+    'Haasteen allekirjoitus varmennettiin paikallisesti valittua varmennetta vastaan.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
+    'Haasteen allekirjoitus ei varmentunut valittua varmennetta vastaan.',
+  'settings.providerCredentials.field.amaCertPem.hint':
+    'Itse varmenne, ei polku siihen — PEM-teksti, joka alkaa merkinnällä BEGIN CERTIFICATE.',
+  'settings.providerCredentials.field.amaCertPem.fromFile': 'Valitse tiedosto…',
+  'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Liitä leikepöydältä',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Tutki varmenne',
+  'settings.providerCredentials.field.amaCertPem.inspecting': 'Tutkitaan…',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Varmenne (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileTooLarge':
+    'Tiedosto on liian suuri PEM-varmenteeksi (raja {max} KiB). Mitään ei luettu.',
+  'settings.providerCredentials.field.amaCertPem.fileReadFailed':
+    'Valittua tiedostoa ei voitu lukea.',
+  'settings.providerCredentials.field.amaCertPem.fileLoaded': 'Tiedosto ladattu: {name}',
+  'settings.providerCredentials.field.amaCertPem.clipboardUnavailable':
+    'Leikepöytä ei ole täällä käytettävissä — sivu ei ole suojatussa yhteydessä, tai käyttöoikeuskäytäntö estää sen. Liitä teksti kenttään käsin.',
+  'settings.providerCredentials.field.amaCertPem.clipboardDenied':
+    'Leikepöydän lukeminen evättiin. Liitä teksti kenttään käsin.',
+  'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'Leikepöytä on tyhjä.',
+  'settings.providerCredentials.field.amaCertPem.clipboardPasted':
+    'Teksti liitettiin leikepöydältä.',
+  'settings.providerCredentials.field.amaCertPem.empty':
+    'Liitä tai lataa varmenne ennen sen tutkimista.',
+  'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
+    'Mitä tästä varmenteesta todettiin',
+  'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Haltija',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Myöntäjä',
+  'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Voimassa alkaen',
+  'settings.providerCredentials.field.amaCertPem.inspect.notAfter': 'Voimassa asti',
+  'settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle': 'Mitä EI tarkistettu',
+  'settings.providerCredentials.field.amaCertPem.inspect.chainValidated':
+    'Varmennepolku rakennettu',
+  'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked':
+    'Luottamuslista tarkistettu',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated':
+    'Myöntäjä todennettu',
+  'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed':
+    'Oikeudellinen pätevyys väitetty',
+  'settings.providerCredentials.probe.detail.ama_cert_parsed': 'Teksti luetaan X.509-varmenteena.',
+  'settings.providerCredentials.probe.detail.ama_cert_unparseable':
+    'Teksti ei ole PEM-muotoinen X.509-varmenne. Lukija ilmoittaa: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
+    'Varmenteessa on {bits} bitin RSA-julkisavain, ja siitä rakennettiin kenttäsalain. Juuri sitä tuotannon allekirjoitus tarvitsee.',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
+    'Tästä varmenteesta ei saatu yhtään RSA-julkisavainta, joten siitä ei voi rakentaa kenttäsalainta ja tuotannon CMD-allekirjoitus kieltäytyy. Lukija ilmoittaa: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_within_validity':
+    'Palvelimen nykyinen aika osuu varmenteen voimassaoloaikaan.',
+  'settings.providerCredentials.probe.detail.ama_cert_expired':
+    'Varmenne on vanhentunut: sen voimassaoloaika on jo päättynyt.',
+  'settings.providerCredentials.probe.detail.ama_cert_not_yet_valid':
+    'Varmenteen voimassaoloaika ei ole vielä alkanut.',
+  'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
+    'Varmenteen voimassaolopäiviä ei voitu lukea ajanhetkinä, joten aikaväliä ei arvioitu.',
+  'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
+    'Sitä, onko tämä todella AMA:n varmenne, ei todettu: varmennepolkua ei rakennettu, luottamusankkuria ei tarkistettu eikä luottamuslistaa haettu.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Poistutaanko tallentamatta?',
   'unsaved.body': 'Tällä sivulla on tallentamattomia muutoksia. Jos poistut nyt, ne menetetään.',

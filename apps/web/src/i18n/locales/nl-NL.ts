@@ -3104,6 +3104,8 @@ export const nlNL: Catalog = {
   'settings.signing.cmd.intro':
     'Ondertekenen in productie vereist de AMA-inloggegevens (ApplicationId en certificaat), aangeleverd via omgevingsvariabelen. Deze waarden worden alleen ter informatie getoond.',
   'settings.signing.cmd.env': 'Omgeving',
+  'settings.signing.cmd.envHint':
+    'De standaardwaarde voor een inloggegeven dat zelf geen omgeving kiest. Een gegeven dat er wel een kiest, gaat hierboven.',
   'settings.signing.cmd.envPreprod': 'Preproductie (AMA)',
   'settings.signing.cmd.envProd': 'Productie (AMA)',
   'settings.signing.cmd.applicationId': 'Applicatie-id',
@@ -5321,7 +5323,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.help.passphrase':
     'Wachtwoord dat het .pfx/.p12-bestand beschermt. Bijv. het wachtwoord dat u instelde bij het exporteren van het certificaat.',
   'settings.providerCredentials.help.env':
-    'Provideromgeving waarmee deze vermelding verbinding maakt. Bijv. „Preproductie” voor testen, „Productie” voor echt gebruik.',
+    'Omgeving van de aanbieder waarmee dit gegeven verbinding maakt, en waartegen een handtekening loopt die het gebruikt. Bijv. “Preproductie” om te testen, “Productie” voor echt gebruik. Laat het onbepaald om de standaardwaarde uit de ondertekeninstellingen te volgen.',
   'settings.providerCredentials.help.authorization':
     'Hoe de ondertekeningssessie bij de QTSP wordt geautoriseerd. Bijv. „Service” voor accountgegevens, „Gebruiker” wanneer elke ondertekenaar autoriseert.',
   'settings.providerCredentials.help.credentialId':
@@ -6398,6 +6400,222 @@ export const nlNL: Catalog = {
     'Eén enkele vermelding, zonder provider-identificatie. Vereist de omgeving (voorproductie of productie) en, in productie, de door de AMA uitgegeven toepassings-id met het bijbehorende geheim. Het basisadres is optioneel: zonder dat adres wordt het adres van de gekozen omgeving gebruikt. HTTP Basic-inloggegevens zijn optioneel.',
   'settings.providerCredentials.modes.setup.pkcs12':
     'Eén vermelding per identiteit, elk met een eigen label. Vereist het .pfx/.p12-bestand en de wachtwoordzin die het opent. Bevat het bestand meer dan één identiteit, wijs er dan een aan via de beschrijvende naam of via de local key ID in hexadecimale vorm. Er is geen adres in te stellen.',
+  'settings.providerCredentials.entry.test': 'Deze inloggegevens testen',
+  'settings.providerCredentials.probe.modal.title': 'Test van de inloggegevens',
+  'settings.providerCredentials.probe.modal.runningTitle': 'Test loopt',
+  'settings.providerCredentials.probe.modal.runningBody':
+    'De opgeslagen configuratie wordt gecontroleerd. Er wordt geen document ondertekend en geen handtekening aangemaakt.',
+  'settings.providerCredentials.probe.modal.checksTitle': 'Wat is gecontroleerd',
+  'settings.providerCredentials.probe.modal.close': 'Sluiten',
+  'settings.providerCredentials.probe.modal.rerun': 'Opnieuw uitvoeren',
+  // De ingevulde waarden ({field}, {environment}, {endpoint}, {certs_setting}, {count}, {detail})
+  // zijn machine-identifiers, getallen of de woorden van het ondertekenpad zelf: die worden nooit
+  // vertaald. De zin eromheen wordt vertaald.
+  'settings.providerCredentials.probe.untranslatedBadge': 'In het Engels',
+  'settings.providerCredentials.probe.untranslatedHint':
+    'Deze zin kwam van de server en er is in deze versie geen vertaling voor. Hij wordt precies zo getoond als de server hem schreef, in het Engels.',
+  'settings.providerCredentials.probe.detail.entry_disabled':
+    'Het opgeslagen inloggegeven staat uit.',
+  'settings.providerCredentials.probe.detail.entry_enabled':
+    'Het opgeslagen inloggegeven staat aan.',
+  'settings.providerCredentials.probe.detail.mode_not_signing_provider':
+    'Dit soort inloggegeven is geen ondertekenaanbieder.',
+  'settings.providerCredentials.probe.detail.outbound_client_unavailable':
+    'De begrensde uitgaande client kon niet worden aangemaakt, dus er is geen verzoek geprobeerd.',
+  'settings.providerCredentials.probe.detail.cmd_environment_resolved':
+    'Dit gegeven kiest geen omgeving en erft daarom de standaardwaarde van de installatie: {environment}.',
+  'settings.providerCredentials.probe.detail.cmd_environment_from_entry':
+    'Dit gegeven kiest de omgeving {environment} van Chave Móvel Digital, en een handtekening die het gebruikt zou tegen die omgeving lopen.',
+  'settings.providerCredentials.probe.detail.cmd_environment_selector_invalid':
+    'De omgevingskeuze van het gegeven is prod noch preprod, dus welke AMA-omgeving het noemt kon niet worden vastgesteld. Er is niets aangenomen.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_incomplete':
+    'Het opgeslagen gegeven levert geen bruikbare configuratie op. Het ondertekenpad meldt: {detail}',
+  'settings.providerCredentials.probe.detail.cmd_credential_assembly_failed':
+    'Het opgeslagen inloggegeven kon niet worden omgezet in een bruikbare CMD-configuratie.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
+    'Alle velden die deze omgeving vereist, staan in het opgeslagen gegeven.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
+    'Het opgeslagen AMA-certificaat voor veldversleuteling is gelezen en de veldversleutelaar is opgebouwd.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
+    'Er is geen AMA-certificaat voor veldversleuteling opgeslagen; preproductie aanvaardt velden in leesbare tekst.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
+    'Productie vereist het AMA-certificaat voor veldversleuteling. Vul {field} in bij dit inloggegeven.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
+    'De HTTP BasicAuth-inloggegevens zijn ingesteld.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
+    'Er zijn geen HTTP BasicAuth-inloggegevens opgeslagen; preproductie aanvaardt mogelijk niet-geauthenticeerde aanroepen.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_required_prod':
+    'Productie vereist HTTP BasicAuth. Vul {username_field} en {password_field} in bij dit inloggegeven.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_ready':
+    'De herleide configuratie voldoet aan de eisen van het echte HTTP-transport van AMA.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_not_ready':
+    'De herleide configuratie kan het echte HTTP-transport van AMA niet aansturen.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_pinned':
+    'Het herleide SCMD-adres is niet de constante die deze omgeving noemt, of het is niet door het veiligheidsbeleid voor uitgaand netwerkverkeer gekomen.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_https':
+    'Het SCMD-adres moet HTTPS gebruiken voordat er opgeslagen inloggegevens naartoe mogen worden gestuurd.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_pinned':
+    'Het SCMD-adres is de vastgezette constante voor deze omgeving, via HTTPS: {endpoint}',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_reachable':
+    'Een TLS-verbinding met het productieadres van AMA is gelukt. Er is geen SCMD-bewerking aangeroepen: er is niets ondertekend en er is geen sms-code verstuurd.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_unreachable':
+    'Het productieadres van AMA was vanaf deze server niet bereikbaar. Er is geen SCMD-bewerking aangeroepen.',
+  'settings.providerCredentials.probe.detail.cmd_reachability_skipped_preprod':
+    'Bereikbaarheid wordt alleen getest voor het productieadres van AMA, en deze installatie is ingesteld op preproductie.',
+  'settings.providerCredentials.probe.detail.cmd_live_operation_skipped':
+    'In deze koppeling heeft Chave Móvel Digital geen veilige diagnosebewerking die niet ondertekent. Een echte poging zou de interactieve ondertekenstroom starten, dus is er geen uitgevoerd.',
+  'settings.providerCredentials.probe.detail.tsl_no_list_selected':
+    'Er is geen vertrouwenslijst geselecteerd, dus er kan geen gekwalificeerde handtekening worden geauthenticeerd. Een CMD-handtekening zal weigeren. Kies een bron voor de vertrouwenslijst in de ondertekeninstellingen.',
+  'settings.providerCredentials.probe.detail.tsl_selection_invalid':
+    'De keuze van de vertrouwenslijst is ongeldig. Het ondertekenpad meldt: {detail}',
+  'settings.providerCredentials.probe.detail.tsl_anchors_invalid':
+    'Een ingestelde vertrouwensanker kon niet worden gelezen, dus het vertrouwensbeleid faalt gesloten. Het ondertekenpad meldt: {detail}. Controleer {certs_setting} en {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_unanchored':
+    'Er is een vertrouwenslijst geselecteerd, maar er is geen vertrouwensanker ingesteld, en een lege ankerverzameling authenticeert geen enkele lijst. Een CMD-handtekening zal weigeren en daarbij dit ontbrekende anker noemen in plaats van de vertrouwensdienst van de ondertekenaar. Stel een anker in bij {certs_setting} of {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_settings':
+    'Herleide vertrouwensankers van de vertrouwenslijst: {total}, alle uit de ondertekeninstellingen. Of de gekozen lijst zich daadwerkelijk tegenover die ankers authenticeert, en of de dienst van de ondertekenaar de status Granted heeft, wordt bij het ondertekenen bepaald en hier niet getest.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_environment':
+    'Herleide vertrouwensankers van de vertrouwenslijst: {total}, alle uit de omgeving. Of de gekozen lijst zich daadwerkelijk tegenover die ankers authenticeert, en of de dienst van de ondertekenaar de status Granted heeft, wordt bij het ondertekenen bepaald en hier niet getest.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_mixed':
+    'Herleide vertrouwensankers van de vertrouwenslijst: {total} — {from_env} uit de omgeving en ten minste {from_settings} uit de ondertekeninstellingen. Of de gekozen lijst zich daadwerkelijk tegenover die ankers authenticeert, en of de dienst van de ondertekenaar de status Granted heeft, wordt bij het ondertekenen bepaald en hier niet getest.',
+  'settings.providerCredentials.probe.detail.csc_base_url_missing':
+    'Dit gegeven heeft een CSC-basisadres nodig.',
+  'settings.providerCredentials.probe.detail.csc_base_url_unsafe':
+    'Het CSC-basisadres is niet door het veiligheidsbeleid voor uitgaand netwerkverkeer gekomen.',
+  'settings.providerCredentials.probe.detail.csc_base_url_not_https':
+    'Het CSC-basisadres moet HTTPS gebruiken voordat er opgeslagen inloggegevens naartoe mogen worden gestuurd.',
+  'settings.providerCredentials.probe.detail.csc_base_url_ok':
+    'Het CSC-basisadres is door het veiligheidsbeleid voor uitgaand netwerkverkeer gekomen en gebruikt HTTPS.',
+  'settings.providerCredentials.probe.detail.csc_authorization_selector_invalid':
+    'De CSC-keuze authorization moet service of user zijn.',
+  'settings.providerCredentials.probe.detail.csc_service_authorization_incomplete':
+    'Autorisatie via de dienst vereist {client_id_field} en {client_secret_field}.',
+  'settings.providerCredentials.probe.detail.csc_user_authorization_incomplete':
+    'Autorisatie via de gebruiker vereist {token_field}.',
+  'settings.providerCredentials.probe.detail.csc_authorization_configured':
+    'De opgeslagen velden voldoen aan het gekozen CSC-autorisatiemodel.',
+  'settings.providerCredentials.probe.detail.csc_provider_configuration_invalid':
+    'De configuratie van de CSC-aanbieder is ongeldig.',
+  'settings.providerCredentials.probe.detail.csc_authenticated':
+    'De CSC-authenticatie is voltooid zonder de ondertekenaar om enige autorisatie te vragen.',
+  'settings.providerCredentials.probe.detail.csc_credentials_listed':
+    'Door CSC teruggegeven ondertekeninloggegevens: {count}.',
+  'settings.providerCredentials.probe.detail.csc_configured_credential_not_listed':
+    'De ingestelde credential_id is niet teruggegeven door credentials/list.',
+  'settings.providerCredentials.probe.detail.csc_credential_selection_required':
+    'Er is meer dan één inloggegeven beschikbaar. Stel {selector} in.',
+  'settings.providerCredentials.probe.detail.csc_credential_selected':
+    'Er is één ingesteld ondertekeninloggegeven gekozen.',
+  'settings.providerCredentials.probe.detail.csc_credential_info_ok':
+    'CSC gaf een leesbaar ondertekencertificaat terug, met certificaten van de uitgever: {issuer_count}. De activeringsvereisten zijn bekeken maar niet aangeroepen.',
+  'settings.providerCredentials.probe.detail.csc_transport_failed':
+    'Het CSC-adres was binnen het begrensde verzoek niet bereikbaar.',
+  'settings.providerCredentials.probe.detail.csc_response_too_large':
+    'Het antwoord van CSC overschreed de veiligheidsgrens.',
+  'settings.providerCredentials.probe.detail.csc_http_status_unsuccessful':
+    'Het CSC-adres gaf een niet-succesvolle HTTP-status terug.',
+  'settings.providerCredentials.probe.detail.csc_service_rejected':
+    'De CSC-dienst weigerde de veilige testbewerking.',
+  'settings.providerCredentials.probe.detail.csc_response_parse_failed':
+    'Het antwoord van CSC komt niet overeen met de verwachte protocolvorm.',
+  'settings.providerCredentials.probe.detail.csc_config_invalid':
+    'De CSC-testconfiguratie is onvolledig of ongeldig.',
+  'settings.providerCredentials.probe.detail.csc_no_signing_credential':
+    'Het CSC-account biedt geen enkel ondertekeninloggegeven.',
+  'settings.providerCredentials.probe.detail.csc_no_signature_returned':
+    'De CSC-dienst gaf geen handtekening terug.',
+  'settings.providerCredentials.probe.detail.csc_certificate_unparseable':
+    'Het certificaat van het CSC-inloggegeven kon niet worden gelezen.',
+  'settings.providerCredentials.probe.detail.csc_malformed_base64':
+    'Het antwoord van CSC bevatte onjuist opgemaakte base64-gegevens.',
+  'settings.providerCredentials.probe.detail.csc_probe_failed': 'De CSC-test is mislukt.',
+  'settings.providerCredentials.probe.detail.scap_credentials_incomplete':
+    'Het opsommen van SCAP-aanbieders vereist {application_id_field} en {secret_field}.',
+  'settings.providerCredentials.probe.detail.scap_credentials_configured':
+    'De opgeslagen SCAP-applicatie-inloggegevens zijn ingesteld.',
+  'settings.providerCredentials.probe.detail.scap_environment_selector_invalid':
+    'De SCAP-omgevingskeuze moet prod of preprod zijn.',
+  'settings.providerCredentials.probe.detail.scap_base_url_unsafe':
+    'Het SCAP-basisadres is niet door het veiligheidsbeleid voor uitgaand netwerkverkeer gekomen.',
+  'settings.providerCredentials.probe.detail.scap_base_url_not_https':
+    'Het SCAP-basisadres moet HTTPS gebruiken voordat er opgeslagen inloggegevens naartoe mogen worden gestuurd.',
+  'settings.providerCredentials.probe.detail.scap_base_url_ok':
+    'Het SCAP-basisadres is door het veiligheidsbeleid voor uitgaand netwerkverkeer gekomen en gebruikt HTTPS.',
+  'settings.providerCredentials.probe.detail.scap_provider_configuration_invalid':
+    'De configuratie van de SCAP-aanbieder is ongeldig.',
+  'settings.providerCredentials.probe.detail.scap_providers_listed':
+    'Door SCAP teruggegeven attribuutaanbieders: {count}. Er zijn geen burgergegevens en geen handtekening opgevraagd.',
+  'settings.providerCredentials.probe.detail.scap_provider_list_failed':
+    'Het opsommen van SCAP-aanbieders is mislukt of gaf een ongeldig antwoord terug.',
+  'settings.providerCredentials.probe.detail.pkcs12_material_incomplete':
+    'Het opgeslagen PKCS#12-materiaal of de identiteitskeuze is onvolledig of onjuist opgemaakt.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_undecryptable':
+    'De opgeslagen PKCS#12-identiteit kon niet worden ontsleuteld en gekozen.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_loaded':
+    'De opgeslagen PKCS#12-identiteit is ontsleuteld en gekozen.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_sign_failed':
+    'De privésleutel kon de testuitdaging, die geen document is, niet ondertekenen.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_signed':
+    'De privésleutel heeft een willekeurige, per domein gescheiden uitdaging ondertekend die geen document is.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_verified':
+    'De handtekening op de uitdaging is lokaal geverifieerd tegen het gekozen certificaat.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
+    'De handtekening op de uitdaging is niet geverifieerd tegen het gekozen certificaat.',
+  'settings.providerCredentials.field.amaCertPem.hint':
+    'Het certificaat zelf, geen pad ernaartoe — PEM-tekst die begint met BEGIN CERTIFICATE.',
+  'settings.providerCredentials.field.amaCertPem.fromFile': 'Bestand kiezen…',
+  'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Plakken vanaf het klembord',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Certificaat inspecteren',
+  'settings.providerCredentials.field.amaCertPem.inspecting': 'Bezig met inspecteren…',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certificaat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileTooLarge':
+    'Dat bestand is te groot voor een PEM-certificaat (grens {max} KiB). Er is niets gelezen.',
+  'settings.providerCredentials.field.amaCertPem.fileReadFailed':
+    'Het gekozen bestand kon niet worden gelezen.',
+  'settings.providerCredentials.field.amaCertPem.fileLoaded': 'Bestand geladen: {name}',
+  'settings.providerCredentials.field.amaCertPem.clipboardUnavailable':
+    'Het klembord is hier niet beschikbaar — de pagina staat niet in een beveiligde context, of een machtigingsbeleid blokkeert het. Plak de tekst met de hand in het veld.',
+  'settings.providerCredentials.field.amaCertPem.clipboardDenied':
+    'Het lezen van het klembord is geweigerd. Plak de tekst met de hand in het veld.',
+  'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'Het klembord is leeg.',
+  'settings.providerCredentials.field.amaCertPem.clipboardPasted':
+    'Tekst geplakt vanaf het klembord.',
+  'settings.providerCredentials.field.amaCertPem.empty':
+    'Plak of laad een certificaat voordat u het inspecteert.',
+  'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
+    'Wat over dit certificaat is vastgesteld',
+  'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Houder',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Uitgever',
+  'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Geldig vanaf',
+  'settings.providerCredentials.field.amaCertPem.inspect.notAfter': 'Geldig tot',
+  'settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle':
+    'Wat NIET is gecontroleerd',
+  'settings.providerCredentials.field.amaCertPem.inspect.chainValidated':
+    'Certificeringspad opgebouwd',
+  'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked':
+    'Vertrouwenslijst geraadpleegd',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated':
+    'Uitgever geauthenticeerd',
+  'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed':
+    'Rechtsgeldigheid geclaimd',
+  'settings.providerCredentials.probe.detail.ama_cert_parsed':
+    'De tekst laat zich lezen als een X.509-certificaat.',
+  'settings.providerCredentials.probe.detail.ama_cert_unparseable':
+    'De tekst is geen PEM-gecodeerd X.509-certificaat. De lezer meldt: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
+    'Het certificaat draagt een openbare RSA-sleutel van {bits} bits, en daaruit is een veldversleutelaar opgebouwd. Dat is wat een handtekening in productie nodig heeft.',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
+    'Uit dit certificaat kon geen openbare RSA-sleutel worden gehaald, dus er kan geen veldversleutelaar uit worden opgebouwd en een CMD-handtekening in productie zal weigeren. De lezer meldt: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_within_validity':
+    'De huidige servertijd valt binnen de geldigheidsperiode van het certificaat.',
+  'settings.providerCredentials.probe.detail.ama_cert_expired':
+    'Het certificaat is verlopen: de geldigheidsperiode is al voorbij.',
+  'settings.providerCredentials.probe.detail.ama_cert_not_yet_valid':
+    'De geldigheidsperiode van het certificaat is nog niet begonnen.',
+  'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
+    'De geldigheidsdatums van het certificaat konden niet als tijdstippen worden gelezen, dus de periode is niet beoordeeld.',
+  'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
+    'Of dit werkelijk het certificaat van AMA is, is niet vastgesteld: er is geen certificeringspad opgebouwd, geen vertrouwensanker geraadpleegd en geen vertrouwenslijst opgehaald.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Weggaan zonder op te slaan?',
   'unsaved.body':

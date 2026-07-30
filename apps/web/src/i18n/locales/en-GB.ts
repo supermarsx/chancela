@@ -3061,6 +3061,8 @@ export const enGB: Catalog = {
   'settings.signing.cmd.intro':
     'Production signing requires the AMA credentials (ApplicationId and certificate), supplied through environment variables. These values are shown for reference only.',
   'settings.signing.cmd.env': 'Environment',
+  'settings.signing.cmd.envHint':
+    'The default for a credential entry that does not select an environment of its own. An entry that does select one overrides this.',
   'settings.signing.cmd.envPreprod': 'Pre-production (AMA)',
   'settings.signing.cmd.envProd': 'Production (AMA)',
   'settings.signing.cmd.applicationId': 'ApplicationId',
@@ -5229,7 +5231,7 @@ export const enGB: Catalog = {
   'settings.providerCredentials.help.passphrase':
     'Passphrase that protects the .pfx/.p12 file. E.g. the one you set when exporting the certificate.',
   'settings.providerCredentials.help.env':
-    'Provider environment this entry connects to. E.g. “Pre-production” for testing, “Production” for real use.',
+    'Provider environment this entry connects to, and what a signature using it runs against. E.g. “Pre-production” for testing, “Production” for real use. Leave it unset to follow the default in the signing settings.',
   'settings.providerCredentials.help.authorization':
     'How the signing session is authorised at the QTSP. E.g. “Service” for account credentials, “User” when each signatory authorises.',
   'settings.providerCredentials.help.credentialId':
@@ -6277,6 +6279,220 @@ export const enGB: Catalog = {
     'A single entry, with no provider identifier. It needs the environment (pre-production or production) and, in production, the application id issued by AMA and its secret. The base address is optional: without it the address of the chosen environment is used. HTTP Basic credentials are optional.',
   'settings.providerCredentials.modes.setup.pkcs12':
     'One entry per identity, each with its own label. It needs the .pfx/.p12 file and the passphrase that opens it. When the file holds more than one identity, pick one out by friendly name or by local key id in hexadecimal. There is no address to configure.',
+  'settings.providerCredentials.entry.test': 'Test this credential',
+  'settings.providerCredentials.probe.modal.title': 'Credential test',
+  'settings.providerCredentials.probe.modal.runningTitle': 'Running the test',
+  'settings.providerCredentials.probe.modal.runningBody':
+    'Checking the stored configuration. No document is signed and no signature is produced.',
+  'settings.providerCredentials.probe.modal.checksTitle': 'What was checked',
+  'settings.providerCredentials.probe.modal.close': 'Close',
+  'settings.providerCredentials.probe.modal.rerun': 'Run again',
+  // Interpolated values ({field}, {environment}, {endpoint}, {certs_setting}, {count}, {detail})
+  // are machine identifiers, numbers, or the signing path's own words: never translated.
+  'settings.providerCredentials.probe.untranslatedBadge': 'In English',
+  'settings.providerCredentials.probe.untranslatedHint':
+    'This sentence arrived from the server with no translation available in this version. It is shown exactly as the server wrote it, in English.',
+  'settings.providerCredentials.probe.detail.entry_disabled':
+    'The stored credential entry is disabled.',
+  'settings.providerCredentials.probe.detail.entry_enabled':
+    'The stored credential entry is enabled.',
+  'settings.providerCredentials.probe.detail.mode_not_signing_provider':
+    'This is not a signing-provider credential mode.',
+  'settings.providerCredentials.probe.detail.outbound_client_unavailable':
+    'The bounded outbound client could not be created, so no request was attempted.',
+  'settings.providerCredentials.probe.detail.cmd_environment_resolved':
+    'This entry selects no environment, so it inherits the deployment default: {environment}.',
+  'settings.providerCredentials.probe.detail.cmd_environment_from_entry':
+    'This entry selects the {environment} Chave Móvel Digital environment, and a signature using it would run against that environment.',
+  'settings.providerCredentials.probe.detail.cmd_environment_selector_invalid':
+    "The entry's environment selector is neither prod nor preprod, so which AMA environment it names could not be determined. Nothing was assumed.",
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_incomplete':
+    'The stored entry does not assemble into a usable configuration. The signing path reports: {detail}',
+  'settings.providerCredentials.probe.detail.cmd_credential_assembly_failed':
+    'The stored credential entry could not be assembled into a usable CMD configuration.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
+    'Every credential field this environment requires is present in the stored entry.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
+    'The stored AMA field-encryption certificate parsed, and the field encryptor was built.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
+    'No AMA field-encryption certificate is stored; preprod accepts cleartext fields.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
+    'Production requires the AMA field-encryption certificate. Fill {field} on this credential entry.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
+    'HTTP BasicAuth credentials are configured.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
+    'No HTTP BasicAuth credentials are stored; preprod may accept unauthenticated calls.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_required_prod':
+    'Production requires HTTP BasicAuth. Fill {username_field} and {password_field} on this credential entry.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_ready':
+    "The resolved configuration satisfies the real AMA HTTP transport's requirements.",
+  'settings.providerCredentials.probe.detail.cmd_http_transport_not_ready':
+    'The resolved configuration cannot drive the real AMA HTTP transport.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_pinned':
+    'The resolved SCMD endpoint is not the constant this environment names, or it failed the outbound-network safety policy.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_https':
+    'The SCMD endpoint must use HTTPS before stored credentials can be sent to it.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_pinned':
+    'The SCMD endpoint is the pinned constant for this environment, over HTTPS: {endpoint}',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_reachable':
+    'A TLS connection to the AMA production endpoint succeeded. No SCMD operation was invoked: nothing was signed and no SMS code was sent.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_unreachable':
+    'The AMA production endpoint could not be reached from this server. No SCMD operation was invoked.',
+  'settings.providerCredentials.probe.detail.cmd_reachability_skipped_preprod':
+    'Reachability is probed only for the AMA production endpoint, and this deployment is configured for preprod.',
+  'settings.providerCredentials.probe.detail.cmd_live_operation_skipped':
+    'Chave Móvel Digital has no safe non-signing health operation in this integration. A live attempt would start the interactive signature flow, so none was performed.',
+  'settings.providerCredentials.probe.detail.tsl_no_list_selected':
+    'No Trusted List is selected, so no qualified signature can be authenticated. A CMD signature will refuse. Select a Trusted List source in the signing settings.',
+  'settings.providerCredentials.probe.detail.tsl_selection_invalid':
+    'The Trusted List selection is invalid. The signing path reports: {detail}',
+  'settings.providerCredentials.probe.detail.tsl_anchors_invalid':
+    'A configured trust anchor could not be parsed, so the trust policy fails closed. The signing path reports: {detail}. Check {certs_setting} and {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_unanchored':
+    "A Trusted List is selected but no trust anchor is configured, and an empty anchor set authenticates no list. A CMD signature will refuse, naming this missing anchor rather than the signer's trust service. Provision an anchor in {certs_setting} or {digest_setting}.",
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_settings':
+    "Trusted List trust anchors resolved: {total}, all of them from the signing settings. Whether the selected list actually authenticates against them, and whether the signer's service is Granted, are determined at signing time and are not tested here.",
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_environment':
+    "Trusted List trust anchors resolved: {total}, all of them from the environment. Whether the selected list actually authenticates against them, and whether the signer's service is Granted, are determined at signing time and are not tested here.",
+  'settings.providerCredentials.probe.detail.tsl_anchored_mixed':
+    "Trusted List trust anchors resolved: {total} — {from_env} from the environment and at least {from_settings} from the signing settings. Whether the selected list actually authenticates against them, and whether the signer's service is Granted, are determined at signing time and are not tested here.",
+  'settings.providerCredentials.probe.detail.csc_base_url_missing':
+    'A CSC base URL is required for this entry.',
+  'settings.providerCredentials.probe.detail.csc_base_url_unsafe':
+    'The CSC base URL failed the outbound-network safety policy.',
+  'settings.providerCredentials.probe.detail.csc_base_url_not_https':
+    'The CSC base URL must use HTTPS before stored credentials can be sent to it.',
+  'settings.providerCredentials.probe.detail.csc_base_url_ok':
+    'The CSC base URL passed the outbound-network safety policy and uses HTTPS.',
+  'settings.providerCredentials.probe.detail.csc_authorization_selector_invalid':
+    'The CSC authorization selector must be service or user.',
+  'settings.providerCredentials.probe.detail.csc_service_authorization_incomplete':
+    'Service authorisation requires {client_id_field} and {client_secret_field}.',
+  'settings.providerCredentials.probe.detail.csc_user_authorization_incomplete':
+    'User authorisation requires {token_field}.',
+  'settings.providerCredentials.probe.detail.csc_authorization_configured':
+    'The stored fields satisfy the selected CSC authorisation model.',
+  'settings.providerCredentials.probe.detail.csc_provider_configuration_invalid':
+    'The CSC provider configuration is invalid.',
+  'settings.providerCredentials.probe.detail.csc_authenticated':
+    'CSC authentication completed without requesting any signer authorisation.',
+  'settings.providerCredentials.probe.detail.csc_credentials_listed':
+    'Signing credentials returned by CSC: {count}.',
+  'settings.providerCredentials.probe.detail.csc_configured_credential_not_listed':
+    'The configured credential_id was not returned by credentials/list.',
+  'settings.providerCredentials.probe.detail.csc_credential_selection_required':
+    'More than one credential is available. Configure {selector}.',
+  'settings.providerCredentials.probe.detail.csc_credential_selected':
+    'A single configured signing credential was selected.',
+  'settings.providerCredentials.probe.detail.csc_credential_info_ok':
+    'CSC returned a parseable signing certificate, with issuer certificates: {issuer_count}. Activation requirements were inspected but not invoked.',
+  'settings.providerCredentials.probe.detail.csc_transport_failed':
+    'The CSC endpoint could not be reached within the bounded request.',
+  'settings.providerCredentials.probe.detail.csc_response_too_large':
+    'The CSC response exceeded the safety limit.',
+  'settings.providerCredentials.probe.detail.csc_http_status_unsuccessful':
+    'The CSC endpoint returned an unsuccessful HTTP status.',
+  'settings.providerCredentials.probe.detail.csc_service_rejected':
+    'The CSC service rejected the safe test operation.',
+  'settings.providerCredentials.probe.detail.csc_response_parse_failed':
+    'The CSC response did not match the expected protocol shape.',
+  'settings.providerCredentials.probe.detail.csc_config_invalid':
+    'The CSC test configuration is incomplete or invalid.',
+  'settings.providerCredentials.probe.detail.csc_no_signing_credential':
+    'The CSC account exposes no signing credential.',
+  'settings.providerCredentials.probe.detail.csc_no_signature_returned':
+    'The CSC service returned no signature.',
+  'settings.providerCredentials.probe.detail.csc_certificate_unparseable':
+    'The CSC credential certificate could not be parsed.',
+  'settings.providerCredentials.probe.detail.csc_malformed_base64':
+    'The CSC response contained malformed base64 data.',
+  'settings.providerCredentials.probe.detail.csc_probe_failed': 'The CSC test failed.',
+  'settings.providerCredentials.probe.detail.scap_credentials_incomplete':
+    'Listing SCAP providers requires {application_id_field} and {secret_field}.',
+  'settings.providerCredentials.probe.detail.scap_credentials_configured':
+    'The stored SCAP application credentials are configured.',
+  'settings.providerCredentials.probe.detail.scap_environment_selector_invalid':
+    'The SCAP environment selector must be prod or preprod.',
+  'settings.providerCredentials.probe.detail.scap_base_url_unsafe':
+    'The SCAP base URL failed the outbound-network safety policy.',
+  'settings.providerCredentials.probe.detail.scap_base_url_not_https':
+    'The SCAP base URL must use HTTPS before stored credentials can be sent to it.',
+  'settings.providerCredentials.probe.detail.scap_base_url_ok':
+    'The SCAP base URL passed the outbound-network safety policy and uses HTTPS.',
+  'settings.providerCredentials.probe.detail.scap_provider_configuration_invalid':
+    'The SCAP provider configuration is invalid.',
+  'settings.providerCredentials.probe.detail.scap_providers_listed':
+    'Attribute providers returned by SCAP: {count}. No citizen data and no signature was requested.',
+  'settings.providerCredentials.probe.detail.scap_provider_list_failed':
+    'The SCAP provider listing failed or returned an invalid response.',
+  'settings.providerCredentials.probe.detail.pkcs12_material_incomplete':
+    'The stored PKCS#12 material or identity selector is incomplete or malformed.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_undecryptable':
+    'The stored PKCS#12 identity could not be decrypted and selected.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_loaded':
+    'The stored PKCS#12 identity was decrypted and selected.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_sign_failed':
+    'The private key could not sign the non-document test challenge.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_signed':
+    'The private key signed a random, domain-separated, non-document challenge.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_verified':
+    'The challenge signature verified locally against the selected certificate.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
+    'The challenge signature did not verify against the selected certificate.',
+  'settings.providerCredentials.field.amaCertPem.hint':
+    'The certificate itself, not a path to it — PEM text beginning with BEGIN CERTIFICATE.',
+  'settings.providerCredentials.field.amaCertPem.fromFile': 'Choose file…',
+  'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Paste from clipboard',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Inspect certificate',
+  'settings.providerCredentials.field.amaCertPem.inspecting': 'Inspecting…',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certificate (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileTooLarge':
+    'That file is too large to be a PEM certificate (limit {max} KiB). Nothing was read.',
+  'settings.providerCredentials.field.amaCertPem.fileReadFailed':
+    'The chosen file could not be read.',
+  'settings.providerCredentials.field.amaCertPem.fileLoaded': 'File loaded: {name}',
+  'settings.providerCredentials.field.amaCertPem.clipboardUnavailable':
+    'The clipboard is not available here — the page is not in a secure context, or a permissions policy blocks it. Paste into the field by hand instead.',
+  'settings.providerCredentials.field.amaCertPem.clipboardDenied':
+    'Reading the clipboard was refused. Paste into the field by hand instead.',
+  'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'The clipboard is empty.',
+  'settings.providerCredentials.field.amaCertPem.clipboardPasted':
+    'Text pasted from the clipboard.',
+  'settings.providerCredentials.field.amaCertPem.empty':
+    'Paste or load a certificate before inspecting it.',
+  'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
+    'What was established about this certificate',
+  'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Subject',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Issuer',
+  'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Valid from',
+  'settings.providerCredentials.field.amaCertPem.inspect.notAfter': 'Valid until',
+  'settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle': 'What was NOT checked',
+  'settings.providerCredentials.field.amaCertPem.inspect.chainValidated':
+    'Certification path built',
+  'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked':
+    'Trusted List consulted',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated':
+    'Issuer authenticated',
+  'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed':
+    'Legal validity claimed',
+  'settings.providerCredentials.probe.detail.ama_cert_parsed':
+    'The text parses as an X.509 certificate.',
+  'settings.providerCredentials.probe.detail.ama_cert_unparseable':
+    'The text is not a PEM-encoded X.509 certificate. The parser reports: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
+    'The certificate carries an RSA public key of {bits} bits, and a field encryptor was built from it. That is what a production signature needs.',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
+    'No RSA public key could be taken from this certificate, so no field encryptor can be built from it and a production CMD signature will refuse. The parser reports: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_within_validity':
+    "The current server time falls inside the certificate's validity window.",
+  'settings.providerCredentials.probe.detail.ama_cert_expired':
+    'The certificate has expired: its validity window has already ended.',
+  'settings.providerCredentials.probe.detail.ama_cert_not_yet_valid':
+    "The certificate's validity window has not started yet.",
+  'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
+    "The certificate's validity dates could not be read as timestamps, so the window was not judged.",
+  'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
+    "Whether this is genuinely AMA's certificate was not determined: no certification path was built, no trust anchor was consulted and no Trusted List was fetched.",
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Leave without saving?',
   'unsaved.body': 'This page has unsaved changes. If you leave now, they will be lost.',

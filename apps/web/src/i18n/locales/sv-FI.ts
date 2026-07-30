@@ -3093,6 +3093,8 @@ export const svFI: Catalog = {
   'settings.signing.cmd.intro':
     'Signering i produktion kräver AMA-uppgifterna (ApplicationId och certifikat), som tillhandahålls via miljövariabler. Dessa värden visas endast som information.',
   'settings.signing.cmd.env': 'Miljö',
+  'settings.signing.cmd.envHint':
+    'Standardvärdet för en användaruppgift som inte väljer en egen miljö. En uppgift som väljer en går före det här värdet.',
   'settings.signing.cmd.envPreprod': 'Förproduktion (AMA)',
   'settings.signing.cmd.envProd': 'Produktion (AMA)',
   'settings.signing.cmd.applicationId': 'ApplicationId',
@@ -5285,7 +5287,7 @@ export const svFI: Catalog = {
   'settings.providerCredentials.help.passphrase':
     'Lösenord som skyddar .pfx/.p12-filen. T.ex. det du angav när du exporterade certifikatet.',
   'settings.providerCredentials.help.env':
-    'Leverantörsmiljö som den här posten ansluter till. T.ex. ”Förproduktion” för test, ”Produktion” för verklig användning.',
+    'Leverantörsmiljö som den här uppgiften ansluter till, och som en signatur med den körs mot. T.ex. ”Förproduktion” för test, ”Produktion” för skarp användning. Lämna det obestämt för att följa standardvärdet i signeringsinställningarna.',
   'settings.providerCredentials.help.authorization':
     'Hur signeringssessionen auktoriseras hos QTSP. T.ex. ”Tjänst” för kontouppgifter, ”Användare” när varje undertecknare auktoriserar.',
   'settings.providerCredentials.help.credentialId':
@@ -6349,6 +6351,221 @@ export const svFI: Catalog = {
     'En enda post, utan leverantörsidentifierare. Den kräver miljön (förproduktion eller produktion) och, i produktion, det program-id som AMA utfärdat samt tillhörande hemlighet. Basadressen är valfri: utan den används adressen för den valda miljön. HTTP Basic-uppgifter är valfria.',
   'settings.providerCredentials.modes.setup.pkcs12':
     'En post per identitet, var och en med egen etikett. Den kräver filen .pfx/.p12 och lösenfrasen som öppnar den. Om filen rymmer fler än en identitet pekar du ut en med det beskrivande namnet eller med local key ID i hexadecimal form. Det finns ingen adress att konfigurera.',
+  'settings.providerCredentials.entry.test': 'Testa den här användaruppgiften',
+  'settings.providerCredentials.probe.modal.title': 'Test av användaruppgiften',
+  'settings.providerCredentials.probe.modal.runningTitle': 'Testet pågår',
+  'settings.providerCredentials.probe.modal.runningBody':
+    'Den sparade konfigurationen kontrolleras. Inget dokument signeras och ingen signatur skapas.',
+  'settings.providerCredentials.probe.modal.checksTitle': 'Vad som kontrollerades',
+  'settings.providerCredentials.probe.modal.close': 'Stäng',
+  'settings.providerCredentials.probe.modal.rerun': 'Kör igen',
+  // De insatta värdena ({field}, {environment}, {endpoint}, {certs_setting}, {count}, {detail}) är
+  // maskinidentifierare, tal eller signeringsvägens egna ord: de översätts aldrig. Det är
+  // meningen runt dem som översätts.
+  'settings.providerCredentials.probe.untranslatedBadge': 'På engelska',
+  'settings.providerCredentials.probe.untranslatedHint':
+    'Den här meningen kom från servern och det finns ingen översättning i den här versionen. Den visas exakt som servern skrev den, på engelska.',
+  'settings.providerCredentials.probe.detail.entry_disabled':
+    'Den sparade användaruppgiften är avstängd.',
+  'settings.providerCredentials.probe.detail.entry_enabled':
+    'Den sparade användaruppgiften är påslagen.',
+  'settings.providerCredentials.probe.detail.mode_not_signing_provider':
+    'Den här sortens användaruppgift är inte en signeringsleverantör.',
+  'settings.providerCredentials.probe.detail.outbound_client_unavailable':
+    'Den begränsade utgående klienten kunde inte skapas, så ingen förfrågan gjordes.',
+  'settings.providerCredentials.probe.detail.cmd_environment_resolved':
+    'Den här uppgiften väljer ingen miljö och ärver därför installationens standardvärde: {environment}.',
+  'settings.providerCredentials.probe.detail.cmd_environment_from_entry':
+    'Den här uppgiften väljer miljön {environment} i Chave Móvel Digital, och en signatur med den skulle köras mot den miljön.',
+  'settings.providerCredentials.probe.detail.cmd_environment_selector_invalid':
+    'Uppgiftens miljöväljare är varken prod eller preprod, så vilken AMA-miljö den anger gick inte att fastställa. Ingenting antogs.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_incomplete':
+    'Den sparade uppgiften blir inte en användbar konfiguration. Signeringsvägen rapporterar: {detail}',
+  'settings.providerCredentials.probe.detail.cmd_credential_assembly_failed':
+    'Den sparade användaruppgiften kunde inte omvandlas till en användbar CMD-konfiguration.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
+    'Alla fält som den här miljön kräver finns i den sparade uppgiften.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
+    'Det sparade AMA-certifikatet för fältkryptering lästes och fältkrypteraren byggdes.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
+    'Inget AMA-certifikat för fältkryptering är sparat; förproduktion godtar fält i klartext.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
+    'Produktion kräver AMA-certifikatet för fältkryptering. Fyll i {field} i den här uppgiften.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
+    'HTTP BasicAuth-uppgifterna är konfigurerade.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
+    'Inga HTTP BasicAuth-uppgifter är sparade; förproduktion kan godta anrop utan autentisering.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_required_prod':
+    'Produktion kräver HTTP BasicAuth. Fyll i {username_field} och {password_field} i den här uppgiften.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_ready':
+    'Den framtagna konfigurationen uppfyller kraven för AMA:s riktiga HTTP-transport.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_not_ready':
+    'Den framtagna konfigurationen kan inte driva AMA:s riktiga HTTP-transport.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_pinned':
+    'Den framtagna SCMD-adressen är inte den konstant som den här miljön anger, eller så klarade den inte säkerhetspolicyn för utgående nätverk.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_https':
+    'SCMD-adressen måste använda HTTPS innan sparade uppgifter får skickas till den.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_pinned':
+    'SCMD-adressen är den fastlagda konstanten för den här miljön, över HTTPS: {endpoint}',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_reachable':
+    'En TLS-anslutning till AMA:s produktionsadress lyckades. Ingen SCMD-operation anropades: inget signerades och ingen SMS-kod skickades.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_unreachable':
+    'AMA:s produktionsadress kunde inte nås från den här servern. Ingen SCMD-operation anropades.',
+  'settings.providerCredentials.probe.detail.cmd_reachability_skipped_preprod':
+    'Nåbarhet testas bara för AMA:s produktionsadress, och den här installationen är inställd på förproduktion.',
+  'settings.providerCredentials.probe.detail.cmd_live_operation_skipped':
+    'I den här integrationen har Chave Móvel Digital ingen säker diagnosoperation som inte signerar. Ett riktigt försök skulle starta det interaktiva signeringsflödet, så inget utfördes.',
+  'settings.providerCredentials.probe.detail.tsl_no_list_selected':
+    'Ingen betrodd förteckning är vald, så ingen kvalificerad signatur kan autentiseras. En CMD-signatur kommer att vägras. Välj en källa för den betrodda förteckningen i signeringsinställningarna.',
+  'settings.providerCredentials.probe.detail.tsl_selection_invalid':
+    'Valet av betrodd förteckning är ogiltigt. Signeringsvägen rapporterar: {detail}',
+  'settings.providerCredentials.probe.detail.tsl_anchors_invalid':
+    'Ett konfigurerat tillitsankare kunde inte läsas, så tillitspolicyn fallerar stängt. Signeringsvägen rapporterar: {detail}. Kontrollera {certs_setting} och {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_unanchored':
+    'En betrodd förteckning är vald men inget tillitsankare är konfigurerat, och en tom ankaruppsättning autentiserar ingen förteckning. En CMD-signatur kommer att vägras och nämna detta saknade ankare i stället för undertecknarens tillitstjänst. Lägg in ett ankare i {certs_setting} eller {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_settings':
+    'Framtagna tillitsankare för den betrodda förteckningen: {total}, alla från signeringsinställningarna. Om den valda förteckningen faktiskt autentiseras mot dem, och om undertecknarens tjänst har statusen Granted, avgörs vid signeringstillfället och testas inte här.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_environment':
+    'Framtagna tillitsankare för den betrodda förteckningen: {total}, alla från miljön. Om den valda förteckningen faktiskt autentiseras mot dem, och om undertecknarens tjänst har statusen Granted, avgörs vid signeringstillfället och testas inte här.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_mixed':
+    'Framtagna tillitsankare för den betrodda förteckningen: {total} — {from_env} från miljön och minst {from_settings} från signeringsinställningarna. Om den valda förteckningen faktiskt autentiseras mot dem, och om undertecknarens tjänst har statusen Granted, avgörs vid signeringstillfället och testas inte här.',
+  'settings.providerCredentials.probe.detail.csc_base_url_missing':
+    'Den här uppgiften behöver en CSC-basadress.',
+  'settings.providerCredentials.probe.detail.csc_base_url_unsafe':
+    'CSC-basadressen klarade inte säkerhetspolicyn för utgående nätverk.',
+  'settings.providerCredentials.probe.detail.csc_base_url_not_https':
+    'CSC-basadressen måste använda HTTPS innan sparade uppgifter får skickas till den.',
+  'settings.providerCredentials.probe.detail.csc_base_url_ok':
+    'CSC-basadressen klarade säkerhetspolicyn för utgående nätverk och använder HTTPS.',
+  'settings.providerCredentials.probe.detail.csc_authorization_selector_invalid':
+    'CSC-väljaren authorization måste vara service eller user.',
+  'settings.providerCredentials.probe.detail.csc_service_authorization_incomplete':
+    'Auktorisering via tjänsten kräver {client_id_field} och {client_secret_field}.',
+  'settings.providerCredentials.probe.detail.csc_user_authorization_incomplete':
+    'Auktorisering via användaren kräver {token_field}.',
+  'settings.providerCredentials.probe.detail.csc_authorization_configured':
+    'De sparade fälten uppfyller den valda CSC-auktoriseringsmodellen.',
+  'settings.providerCredentials.probe.detail.csc_provider_configuration_invalid':
+    'Konfigurationen av CSC-leverantören är ogiltig.',
+  'settings.providerCredentials.probe.detail.csc_authenticated':
+    'CSC-autentiseringen slutfördes utan att be undertecknaren om någon auktorisering.',
+  'settings.providerCredentials.probe.detail.csc_credentials_listed':
+    'Signeringsuppgifter som CSC returnerade: {count}.',
+  'settings.providerCredentials.probe.detail.csc_configured_credential_not_listed':
+    'Det konfigurerade credential_id returnerades inte av credentials/list.',
+  'settings.providerCredentials.probe.detail.csc_credential_selection_required':
+    'Det finns fler än en uppgift tillgänglig. Konfigurera {selector}.',
+  'settings.providerCredentials.probe.detail.csc_credential_selected':
+    'En enda konfigurerad signeringsuppgift valdes.',
+  'settings.providerCredentials.probe.detail.csc_credential_info_ok':
+    'CSC returnerade ett läsbart signeringscertifikat, med utfärdarcertifikat: {issuer_count}. Aktiveringskraven granskades men anropades inte.',
+  'settings.providerCredentials.probe.detail.csc_transport_failed':
+    'CSC-adressen kunde inte nås inom den begränsade förfrågan.',
+  'settings.providerCredentials.probe.detail.csc_response_too_large':
+    'CSC-svaret överskred säkerhetsgränsen.',
+  'settings.providerCredentials.probe.detail.csc_http_status_unsuccessful':
+    'CSC-adressen returnerade en misslyckad HTTP-status.',
+  'settings.providerCredentials.probe.detail.csc_service_rejected':
+    'CSC-tjänsten avvisade den säkra testoperationen.',
+  'settings.providerCredentials.probe.detail.csc_response_parse_failed':
+    'CSC-svaret motsvarar inte den förväntade protokollformen.',
+  'settings.providerCredentials.probe.detail.csc_config_invalid':
+    'CSC-testkonfigurationen är ofullständig eller ogiltig.',
+  'settings.providerCredentials.probe.detail.csc_no_signing_credential':
+    'CSC-kontot erbjuder ingen signeringsuppgift.',
+  'settings.providerCredentials.probe.detail.csc_no_signature_returned':
+    'CSC-tjänsten returnerade ingen signatur.',
+  'settings.providerCredentials.probe.detail.csc_certificate_unparseable':
+    'Certifikatet för CSC-uppgiften kunde inte läsas.',
+  'settings.providerCredentials.probe.detail.csc_malformed_base64':
+    'CSC-svaret innehöll felaktigt utformade base64-data.',
+  'settings.providerCredentials.probe.detail.csc_probe_failed': 'CSC-testet misslyckades.',
+  'settings.providerCredentials.probe.detail.scap_credentials_incomplete':
+    'Att lista SCAP-leverantörer kräver {application_id_field} och {secret_field}.',
+  'settings.providerCredentials.probe.detail.scap_credentials_configured':
+    'De sparade SCAP-applikationsuppgifterna är konfigurerade.',
+  'settings.providerCredentials.probe.detail.scap_environment_selector_invalid':
+    'SCAP-miljöväljaren måste vara prod eller preprod.',
+  'settings.providerCredentials.probe.detail.scap_base_url_unsafe':
+    'SCAP-basadressen klarade inte säkerhetspolicyn för utgående nätverk.',
+  'settings.providerCredentials.probe.detail.scap_base_url_not_https':
+    'SCAP-basadressen måste använda HTTPS innan sparade uppgifter får skickas till den.',
+  'settings.providerCredentials.probe.detail.scap_base_url_ok':
+    'SCAP-basadressen klarade säkerhetspolicyn för utgående nätverk och använder HTTPS.',
+  'settings.providerCredentials.probe.detail.scap_provider_configuration_invalid':
+    'Konfigurationen av SCAP-leverantören är ogiltig.',
+  'settings.providerCredentials.probe.detail.scap_providers_listed':
+    'Attributleverantörer som SCAP returnerade: {count}. Varken medborgardata eller någon signatur begärdes.',
+  'settings.providerCredentials.probe.detail.scap_provider_list_failed':
+    'Listningen av SCAP-leverantörer misslyckades eller returnerade ett ogiltigt svar.',
+  'settings.providerCredentials.probe.detail.pkcs12_material_incomplete':
+    'Det sparade PKCS#12-materialet eller identitetsväljaren är ofullständig eller felaktigt utformad.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_undecryptable':
+    'Den sparade PKCS#12-identiteten kunde inte dekrypteras och väljas.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_loaded':
+    'Den sparade PKCS#12-identiteten dekrypterades och valdes.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_sign_failed':
+    'Den privata nyckeln kunde inte signera testutmaningen, som inte är ett dokument.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_signed':
+    'Den privata nyckeln signerade en slumpmässig, domänseparerad utmaning som inte är ett dokument.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_verified':
+    'Signaturen på utmaningen verifierades lokalt mot det valda certifikatet.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
+    'Signaturen på utmaningen verifierades inte mot det valda certifikatet.',
+  'settings.providerCredentials.field.amaCertPem.hint':
+    'Själva certifikatet, inte en sökväg till det — PEM-text som börjar med BEGIN CERTIFICATE.',
+  'settings.providerCredentials.field.amaCertPem.fromFile': 'Välj fil…',
+  'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Klistra in från urklipp',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Granska certifikatet',
+  'settings.providerCredentials.field.amaCertPem.inspecting': 'Granskar…',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileTooLarge':
+    'Filen är för stor för att vara ett PEM-certifikat (gräns {max} KiB). Ingenting lästes.',
+  'settings.providerCredentials.field.amaCertPem.fileReadFailed':
+    'Den valda filen kunde inte läsas.',
+  'settings.providerCredentials.field.amaCertPem.fileLoaded': 'Fil inläst: {name}',
+  'settings.providerCredentials.field.amaCertPem.clipboardUnavailable':
+    'Urklipp är inte tillgängligt här — sidan körs inte i en säker kontext, eller så blockeras det av en behörighetspolicy. Klistra in texten i fältet för hand.',
+  'settings.providerCredentials.field.amaCertPem.clipboardDenied':
+    'Läsning av urklipp nekades. Klistra in texten i fältet för hand.',
+  'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'Urklipp är tomt.',
+  'settings.providerCredentials.field.amaCertPem.clipboardPasted': 'Text inklistrad från urklipp.',
+  'settings.providerCredentials.field.amaCertPem.empty':
+    'Klistra in eller läs in ett certifikat innan du granskar det.',
+  'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
+    'Vad som konstaterades om det här certifikatet',
+  'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Innehavare',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Utfärdare',
+  'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Giltigt från',
+  'settings.providerCredentials.field.amaCertPem.inspect.notAfter': 'Giltigt till',
+  'settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle':
+    'Vad som INTE kontrollerades',
+  'settings.providerCredentials.field.amaCertPem.inspect.chainValidated':
+    'Certifieringskedja uppbyggd',
+  'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked':
+    'Betrodd förteckning konsulterad',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated':
+    'Utfärdare autentiserad',
+  'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed':
+    'Rättslig giltighet hävdad',
+  'settings.providerCredentials.probe.detail.ama_cert_parsed':
+    'Texten går att läsa som ett X.509-certifikat.',
+  'settings.providerCredentials.probe.detail.ama_cert_unparseable':
+    'Texten är inte ett PEM-kodat X.509-certifikat. Läsaren rapporterar: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
+    'Certifikatet bär en offentlig RSA-nyckel på {bits} bitar, och en fältkrypterare byggdes av den. Det är vad en signatur i produktion behöver.',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
+    'Ingen offentlig RSA-nyckel kunde hämtas ur det här certifikatet, så ingen fältkrypterare kan byggas av det och en CMD-signatur i produktion kommer att vägras. Läsaren rapporterar: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_within_validity':
+    'Serverns aktuella tid ligger inom certifikatets giltighetstid.',
+  'settings.providerCredentials.probe.detail.ama_cert_expired':
+    'Certifikatet har gått ut: dess giltighetstid är redan slut.',
+  'settings.providerCredentials.probe.detail.ama_cert_not_yet_valid':
+    'Certifikatets giltighetstid har ännu inte börjat.',
+  'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
+    'Certifikatets giltighetsdatum kunde inte läsas som tidpunkter, så perioden bedömdes inte.',
+  'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
+    'Om detta verkligen är AMA:s certifikat konstaterades inte: ingen certifieringskedja byggdes, inget tillitsankare konsulterades och ingen betrodd förteckning hämtades.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Lämna utan att spara?',
   'unsaved.body': 'Den här sidan har osparade ändringar. Om du lämnar den nu går de förlorade.',

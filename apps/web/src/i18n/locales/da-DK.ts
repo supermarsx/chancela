@@ -3085,6 +3085,8 @@ export const daDK: Catalog = {
   'settings.signing.cmd.intro':
     'Signering i produktion kræver AMA-legitimationsoplysningerne (ApplicationId og certifikat), som leveres via miljøvariabler. Disse værdier vises kun til orientering.',
   'settings.signing.cmd.env': 'Miljø',
+  'settings.signing.cmd.envHint':
+    'Standardværdien for en legitimationspost, der ikke selv vælger et miljø. En post, der vælger et, går forud for denne.',
   'settings.signing.cmd.envPreprod': 'Førproduktion (AMA)',
   'settings.signing.cmd.envProd': 'Produktion (AMA)',
   'settings.signing.cmd.applicationId': 'ApplicationId',
@@ -5271,7 +5273,7 @@ export const daDK: Catalog = {
   'settings.providerCredentials.help.passphrase':
     'Adgangskode, der beskytter .pfx/.p12-filen. F.eks. den, du angav ved eksport af certifikatet.',
   'settings.providerCredentials.help.env':
-    'Udbydermiljø, som denne post opretter forbindelse til. F.eks. »Præproduktion« til test, »Produktion« til reel brug.',
+    'Udbydermiljø, som denne post forbinder til, og som en signatur, der bruger den, kører imod. F.eks. ”Præproduktion” til test, ”Produktion” til rigtig brug. Lad det stå ubestemt for at følge standardværdien i signeringsindstillingerne.',
   'settings.providerCredentials.help.authorization':
     'Hvordan signeringssessionen godkendes hos QTSP. F.eks. »Tjeneste« for kontooplysninger, »Bruger«, når hver underskriver godkender.',
   'settings.providerCredentials.help.credentialId':
@@ -6338,6 +6340,221 @@ export const daDK: Catalog = {
     'Én enkelt post, uden udbyderidentifikator. Den kræver miljøet (præproduktion eller produktion) og i produktion tillige det program-id, AMA har udstedt, samt den tilhørende hemmelighed. Basisadressen er valgfri: uden den bruges adressen for det valgte miljø. HTTP Basic-legitimationsoplysninger er valgfri.',
   'settings.providerCredentials.modes.setup.pkcs12':
     'Én post pr. identitet, hver med sin egen etiket. Den kræver filen .pfx/.p12 og den adgangssætning, der åbner den. Rummer filen mere end én identitet, så udpeg en via det beskrivende navn eller via local key ID i hexadecimal form. Der er ingen adresse at opsætte.',
+  'settings.providerCredentials.entry.test': 'Test denne legitimation',
+  'settings.providerCredentials.probe.modal.title': 'Test af legitimationen',
+  'settings.providerCredentials.probe.modal.runningTitle': 'Testen kører',
+  'settings.providerCredentials.probe.modal.runningBody':
+    'Den gemte konfiguration kontrolleres. Intet dokument underskrives, og der dannes ingen signatur.',
+  'settings.providerCredentials.probe.modal.checksTitle': 'Hvad der blev kontrolleret',
+  'settings.providerCredentials.probe.modal.close': 'Luk',
+  'settings.providerCredentials.probe.modal.rerun': 'Kør igen',
+  // De indsatte værdier ({field}, {environment}, {endpoint}, {certs_setting}, {count}, {detail})
+  // er maskin-id'er, tal eller signeringsvejens egne ord: de oversættes aldrig. Det er sætningen
+  // omkring dem, der oversættes.
+  'settings.providerCredentials.probe.untranslatedBadge': 'På engelsk',
+  'settings.providerCredentials.probe.untranslatedHint':
+    'Denne sætning kom fra serveren, og der findes ingen oversættelse i denne version. Den vises nøjagtigt, som serveren skrev den, på engelsk.',
+  'settings.providerCredentials.probe.detail.entry_disabled':
+    'Den gemte legitimationspost er slået fra.',
+  'settings.providerCredentials.probe.detail.entry_enabled':
+    'Den gemte legitimationspost er slået til.',
+  'settings.providerCredentials.probe.detail.mode_not_signing_provider':
+    'Denne slags legitimation er ikke en signeringsudbyder.',
+  'settings.providerCredentials.probe.detail.outbound_client_unavailable':
+    'Den afgrænsede udgående klient kunne ikke oprettes, så der blev ikke forsøgt nogen forespørgsel.',
+  'settings.providerCredentials.probe.detail.cmd_environment_resolved':
+    'Denne post vælger intet miljø og arver derfor installationens standardværdi: {environment}.',
+  'settings.providerCredentials.probe.detail.cmd_environment_from_entry':
+    'Denne post vælger miljøet {environment} i Chave Móvel Digital, og en signatur, der bruger den, ville køre mod det miljø.',
+  'settings.providerCredentials.probe.detail.cmd_environment_selector_invalid':
+    'Postens miljøvælger er hverken prod eller preprod, så hvilket AMA-miljø den nævner kunne ikke fastslås. Der blev ikke antaget noget.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_incomplete':
+    'Den gemte post bliver ikke til en brugbar konfiguration. Signeringsvejen melder: {detail}',
+  'settings.providerCredentials.probe.detail.cmd_credential_assembly_failed':
+    'Den gemte legitimationspost kunne ikke omsættes til en brugbar CMD-konfiguration.',
+  'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
+    'Alle legitimationsfelter, som dette miljø kræver, findes i den gemte post.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
+    'Det gemte AMA-certifikat til feltkryptering blev læst, og feltkrypteringen blev bygget.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
+    'Der er ikke gemt noget AMA-certifikat til feltkryptering; præproduktion accepterer felter i klartekst.',
+  'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
+    'Produktion kræver AMA-certifikatet til feltkryptering. Udfyld {field} i denne legitimationspost.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
+    'HTTP BasicAuth-legitimationen er konfigureret.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
+    'Der er ikke gemt nogen HTTP BasicAuth-legitimation; præproduktion accepterer muligvis ikke-godkendte kald.',
+  'settings.providerCredentials.probe.detail.cmd_http_basic_required_prod':
+    'Produktion kræver HTTP BasicAuth. Udfyld {username_field} og {password_field} i denne legitimationspost.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_ready':
+    'Den udledte konfiguration opfylder kravene til AMA’s rigtige HTTP-transport.',
+  'settings.providerCredentials.probe.detail.cmd_http_transport_not_ready':
+    'Den udledte konfiguration kan ikke drive AMA’s rigtige HTTP-transport.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_pinned':
+    'Den udledte SCMD-adresse er ikke den konstant, dette miljø nævner, eller den bestod ikke sikkerhedspolitikken for udgående net.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_not_https':
+    'SCMD-adressen skal bruge HTTPS, før der må sendes gemt legitimation til den.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_pinned':
+    'SCMD-adressen er den fastlagte konstant for dette miljø, over HTTPS: {endpoint}',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_reachable':
+    'En TLS-forbindelse til AMA’s produktionsadresse lykkedes. Ingen SCMD-handling blev kaldt: intet blev underskrevet, og der blev ikke sendt nogen sms-kode.',
+  'settings.providerCredentials.probe.detail.cmd_endpoint_unreachable':
+    'AMA’s produktionsadresse kunne ikke nås fra denne server. Ingen SCMD-handling blev kaldt.',
+  'settings.providerCredentials.probe.detail.cmd_reachability_skipped_preprod':
+    'Tilgængelighed testes kun for AMA’s produktionsadresse, og denne installation er sat op til præproduktion.',
+  'settings.providerCredentials.probe.detail.cmd_live_operation_skipped':
+    'I denne integration har Chave Móvel Digital ingen sikker diagnosehandling, der ikke underskriver. Et rigtigt forsøg ville starte det interaktive signeringsforløb, så ingen blev udført.',
+  'settings.providerCredentials.probe.detail.tsl_no_list_selected':
+    'Der er ikke valgt nogen tillidsliste, så ingen kvalificeret signatur kan godkendes. En CMD-signatur vil blive afvist. Vælg en kilde til tillidslisten i signeringsindstillingerne.',
+  'settings.providerCredentials.probe.detail.tsl_selection_invalid':
+    'Valget af tillidsliste er ugyldigt. Signeringsvejen melder: {detail}',
+  'settings.providerCredentials.probe.detail.tsl_anchors_invalid':
+    'Et konfigureret tillidsanker kunne ikke læses, så tillidspolitikken fejler lukket. Signeringsvejen melder: {detail}. Kontrollér {certs_setting} og {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_unanchored':
+    'Der er valgt en tillidsliste, men der er ikke konfigureret noget tillidsanker, og et tomt sæt ankre godkender ingen liste. En CMD-signatur vil blive afvist og nævne dette manglende anker frem for underskriverens tillidstjeneste. Opret et anker i {certs_setting} eller {digest_setting}.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_settings':
+    'Udledte tillidsankre for tillidslisten: {total}, alle fra signeringsindstillingerne. Om den valgte liste faktisk godkendes over for dem, og om underskriverens tjeneste har status Granted, afgøres på signeringstidspunktet og testes ikke her.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_from_environment':
+    'Udledte tillidsankre for tillidslisten: {total}, alle fra miljøet. Om den valgte liste faktisk godkendes over for dem, og om underskriverens tjeneste har status Granted, afgøres på signeringstidspunktet og testes ikke her.',
+  'settings.providerCredentials.probe.detail.tsl_anchored_mixed':
+    'Udledte tillidsankre for tillidslisten: {total} — {from_env} fra miljøet og mindst {from_settings} fra signeringsindstillingerne. Om den valgte liste faktisk godkendes over for dem, og om underskriverens tjeneste har status Granted, afgøres på signeringstidspunktet og testes ikke her.',
+  'settings.providerCredentials.probe.detail.csc_base_url_missing':
+    'Denne post kræver en CSC-basisadresse.',
+  'settings.providerCredentials.probe.detail.csc_base_url_unsafe':
+    'CSC-basisadressen bestod ikke sikkerhedspolitikken for udgående net.',
+  'settings.providerCredentials.probe.detail.csc_base_url_not_https':
+    'CSC-basisadressen skal bruge HTTPS, før der må sendes gemt legitimation til den.',
+  'settings.providerCredentials.probe.detail.csc_base_url_ok':
+    'CSC-basisadressen bestod sikkerhedspolitikken for udgående net og bruger HTTPS.',
+  'settings.providerCredentials.probe.detail.csc_authorization_selector_invalid':
+    'CSC-vælgeren authorization skal være service eller user.',
+  'settings.providerCredentials.probe.detail.csc_service_authorization_incomplete':
+    'Godkendelse via tjenesten kræver {client_id_field} og {client_secret_field}.',
+  'settings.providerCredentials.probe.detail.csc_user_authorization_incomplete':
+    'Godkendelse via brugeren kræver {token_field}.',
+  'settings.providerCredentials.probe.detail.csc_authorization_configured':
+    'De gemte felter opfylder den valgte CSC-godkendelsesmodel.',
+  'settings.providerCredentials.probe.detail.csc_provider_configuration_invalid':
+    'Konfigurationen af CSC-udbyderen er ugyldig.',
+  'settings.providerCredentials.probe.detail.csc_authenticated':
+    'CSC-godkendelsen blev gennemført uden at bede underskriveren om nogen tilladelse.',
+  'settings.providerCredentials.probe.detail.csc_credentials_listed':
+    'Signeringslegitimationer returneret af CSC: {count}.',
+  'settings.providerCredentials.probe.detail.csc_configured_credential_not_listed':
+    'Det konfigurerede credential_id blev ikke returneret af credentials/list.',
+  'settings.providerCredentials.probe.detail.csc_credential_selection_required':
+    'Der er mere end én legitimation til rådighed. Konfigurér {selector}.',
+  'settings.providerCredentials.probe.detail.csc_credential_selected':
+    'Der blev valgt én enkelt konfigureret signeringslegitimation.',
+  'settings.providerCredentials.probe.detail.csc_credential_info_ok':
+    'CSC returnerede et læsbart signeringscertifikat, med udstedercertifikater: {issuer_count}. Aktiveringskravene blev undersøgt, men ikke kaldt.',
+  'settings.providerCredentials.probe.detail.csc_transport_failed':
+    'CSC-adressen kunne ikke nås inden for den afgrænsede forespørgsel.',
+  'settings.providerCredentials.probe.detail.csc_response_too_large':
+    'CSC-svaret oversteg sikkerhedsgrænsen.',
+  'settings.providerCredentials.probe.detail.csc_http_status_unsuccessful':
+    'CSC-adressen returnerede en mislykket HTTP-status.',
+  'settings.providerCredentials.probe.detail.csc_service_rejected':
+    'CSC-tjenesten afviste den sikre testhandling.',
+  'settings.providerCredentials.probe.detail.csc_response_parse_failed':
+    'CSC-svaret svarer ikke til den forventede protokolform.',
+  'settings.providerCredentials.probe.detail.csc_config_invalid':
+    'CSC-testkonfigurationen er ufuldstændig eller ugyldig.',
+  'settings.providerCredentials.probe.detail.csc_no_signing_credential':
+    'CSC-kontoen udstiller ingen signeringslegitimation.',
+  'settings.providerCredentials.probe.detail.csc_no_signature_returned':
+    'CSC-tjenesten returnerede ingen signatur.',
+  'settings.providerCredentials.probe.detail.csc_certificate_unparseable':
+    'Certifikatet for CSC-legitimationen kunne ikke læses.',
+  'settings.providerCredentials.probe.detail.csc_malformed_base64':
+    'CSC-svaret indeholdt fejlformede base64-data.',
+  'settings.providerCredentials.probe.detail.csc_probe_failed': 'CSC-testen mislykkedes.',
+  'settings.providerCredentials.probe.detail.scap_credentials_incomplete':
+    'At liste SCAP-udbydere kræver {application_id_field} og {secret_field}.',
+  'settings.providerCredentials.probe.detail.scap_credentials_configured':
+    'Den gemte SCAP-applikationslegitimation er konfigureret.',
+  'settings.providerCredentials.probe.detail.scap_environment_selector_invalid':
+    'SCAP-miljøvælgeren skal være prod eller preprod.',
+  'settings.providerCredentials.probe.detail.scap_base_url_unsafe':
+    'SCAP-basisadressen bestod ikke sikkerhedspolitikken for udgående net.',
+  'settings.providerCredentials.probe.detail.scap_base_url_not_https':
+    'SCAP-basisadressen skal bruge HTTPS, før der må sendes gemt legitimation til den.',
+  'settings.providerCredentials.probe.detail.scap_base_url_ok':
+    'SCAP-basisadressen bestod sikkerhedspolitikken for udgående net og bruger HTTPS.',
+  'settings.providerCredentials.probe.detail.scap_provider_configuration_invalid':
+    'Konfigurationen af SCAP-udbyderen er ugyldig.',
+  'settings.providerCredentials.probe.detail.scap_providers_listed':
+    'Attributudbydere returneret af SCAP: {count}. Der blev hverken anmodet om borgerdata eller om nogen signatur.',
+  'settings.providerCredentials.probe.detail.scap_provider_list_failed':
+    'Listningen af SCAP-udbydere mislykkedes eller returnerede et ugyldigt svar.',
+  'settings.providerCredentials.probe.detail.pkcs12_material_incomplete':
+    'Det gemte PKCS#12-materiale eller identitetsvælgeren er ufuldstændig eller fejlformet.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_undecryptable':
+    'Den gemte PKCS#12-identitet kunne ikke dekrypteres og vælges.',
+  'settings.providerCredentials.probe.detail.pkcs12_identity_loaded':
+    'Den gemte PKCS#12-identitet blev dekrypteret og valgt.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_sign_failed':
+    'Den private nøgle kunne ikke underskrive testudfordringen, som ikke er et dokument.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_signed':
+    'Den private nøgle underskrev en tilfældig, domæneadskilt udfordring, som ikke er et dokument.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_verified':
+    'Signaturen på udfordringen blev verificeret lokalt mod det valgte certifikat.',
+  'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
+    'Signaturen på udfordringen kunne ikke verificeres mod det valgte certifikat.',
+  'settings.providerCredentials.field.amaCertPem.hint':
+    'Selve certifikatet, ikke en sti til det — PEM-tekst, der begynder med BEGIN CERTIFICATE.',
+  'settings.providerCredentials.field.amaCertPem.fromFile': 'Vælg fil…',
+  'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Indsæt fra udklipsholderen',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Undersøg certifikatet',
+  'settings.providerCredentials.field.amaCertPem.inspecting': 'Undersøger…',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileTooLarge':
+    'Filen er for stor til at være et PEM-certifikat (grænse {max} KiB). Der blev ikke læst noget.',
+  'settings.providerCredentials.field.amaCertPem.fileReadFailed':
+    'Den valgte fil kunne ikke læses.',
+  'settings.providerCredentials.field.amaCertPem.fileLoaded': 'Fil indlæst: {name}',
+  'settings.providerCredentials.field.amaCertPem.clipboardUnavailable':
+    'Udklipsholderen er ikke tilgængelig her — siden kører ikke i en sikker kontekst, eller en tilladelsespolitik blokerer den. Indsæt teksten i feltet i hånden.',
+  'settings.providerCredentials.field.amaCertPem.clipboardDenied':
+    'Læsning af udklipsholderen blev afvist. Indsæt teksten i feltet i hånden.',
+  'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'Udklipsholderen er tom.',
+  'settings.providerCredentials.field.amaCertPem.clipboardPasted':
+    'Tekst indsat fra udklipsholderen.',
+  'settings.providerCredentials.field.amaCertPem.empty':
+    'Indsæt eller indlæs et certifikat, før du undersøger det.',
+  'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
+    'Hvad der blev fastslået om dette certifikat',
+  'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Indehaver',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Udsteder',
+  'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Gyldigt fra',
+  'settings.providerCredentials.field.amaCertPem.inspect.notAfter': 'Gyldigt til',
+  'settings.providerCredentials.field.amaCertPem.inspect.notCheckedTitle':
+    'Hvad der IKKE blev kontrolleret',
+  'settings.providerCredentials.field.amaCertPem.inspect.chainValidated':
+    'Certificeringssti opbygget',
+  'settings.providerCredentials.field.amaCertPem.inspect.trustedListChecked':
+    'Tillidsliste konsulteret',
+  'settings.providerCredentials.field.amaCertPem.inspect.issuerAuthenticated': 'Udsteder godkendt',
+  'settings.providerCredentials.field.amaCertPem.inspect.legalValidityClaimed':
+    'Retsgyldighed påstået',
+  'settings.providerCredentials.probe.detail.ama_cert_parsed':
+    'Teksten kan læses som et X.509-certifikat.',
+  'settings.providerCredentials.probe.detail.ama_cert_unparseable':
+    'Teksten er ikke et PEM-kodet X.509-certifikat. Læseren melder: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
+    'Certifikatet bærer en offentlig RSA-nøgle på {bits} bit, og der blev bygget en feltkryptering ud fra den. Det er, hvad en signatur i produktion har brug for.',
+  'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
+    'Der kunne ikke hentes nogen offentlig RSA-nøgle ud af dette certifikat, så der kan ikke bygges en feltkryptering ud fra det, og en CMD-signatur i produktion vil blive afvist. Læseren melder: {detail}',
+  'settings.providerCredentials.probe.detail.ama_cert_within_validity':
+    'Den aktuelle servertid ligger inden for certifikatets gyldighedsperiode.',
+  'settings.providerCredentials.probe.detail.ama_cert_expired':
+    'Certifikatet er udløbet: dets gyldighedsperiode er allerede slut.',
+  'settings.providerCredentials.probe.detail.ama_cert_not_yet_valid':
+    'Certifikatets gyldighedsperiode er endnu ikke begyndt.',
+  'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
+    'Certifikatets gyldighedsdatoer kunne ikke læses som tidspunkter, så perioden blev ikke vurderet.',
+  'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
+    'Om dette virkelig er AMA’s certifikat, blev ikke fastslået: der blev ikke opbygget nogen certificeringssti, ikke konsulteret noget tillidsanker og ikke hentet nogen tillidsliste.',
   // --- Unsaved-work guard (t52): leaving a page / closing the app with typed work ---
   'unsaved.title': 'Forlad uden at gemme?',
   'unsaved.body': 'Denne side har ikke-gemte ændringer. Hvis du forlader den nu, går de tabt.',
