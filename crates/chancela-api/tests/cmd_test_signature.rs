@@ -518,6 +518,122 @@ async fn a_preprod_deployment_is_refused_and_never_falls_back() {
     assert_no_retained_signature(&dir.0);
 }
 
+/// **t113, the reported bug.** Deployment default preprod, entry says prod.
+///
+/// Network-free by construction: it refuses before AMA is contacted, so the assertion is about
+/// WHICH refusal — i.e. which environment was resolved — not about signing.
+#[tokio::test]
+async fn an_entry_marked_prod_is_honoured_on_a_preprod_deployment_and_still_needs_the_cert() {
+    let _guard = ENV_LOCK.write().await;
+    let _env = EnvRestore::capture_and_remove(&CMD_ENV_KEYS);
+    set_provider_credential_test_key();
+    let dir = TempDir::new();
+    let state = state_at(&dir.0).await;
+    let token = bootstrap(&state).await;
+
+    // (1) DEPLOYMENT DEFAULT PREPROD, ENTRY SAYS PROD — the reported bug.
+    //
+    // The entry deliberately omits `ama_cert_pem`. If the selector were ignored the entry would
+    // resolve preprod, where the certificate is optional, and the run would be turned away by the
+    // ENVIRONMENT refusal. Being turned away for the MISSING CERTIFICATE instead is what proves
+    // the selector was honoured — and simultaneously proves production still demands it.
+    let (status, created) = send(
+        &state,
+        json_req(
+            "POST",
+            "/v1/signature/provider-credentials/cmd/_/entries",
+            Some(&token),
+            json!({
+                "label": "CMD produção",
+                "selectors": { "env": "prod" },
+                "set": {
+                    "application_id": "CHANCELA-PROD-0001",
+                    "http_basic_username": "ama-user",
+                    "http_basic_password": "ama-password",
+                },
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+
+    let (status, body) = send(
+        &state,
+        json_req("POST", INITIATE_URI, Some(&token), initiate_body()),
+    )
+    .await;
+    assert_ne!(
+        body["code"], "cmd_test_environment_preprod",
+        "the entry selected production, so the environment must no longer be the refusal: {body}"
+    );
+    assert!(
+        error_of(&body).contains("ama_cert_pem"),
+        "production still demands the AMA field-encryption certificate: {status} {body}"
+    );
+    assert_no_retained_signature(&dir.0);
+}
+
+/// **t113, the other direction.** A complete production-grade credential that its own selector
+/// marks preprod is refused, on a deployment whose default is production.
+///
+/// Its own state, because the failover walk assembles every enabled entry and one unusable entry
+/// would mask what this is asserting.
+#[tokio::test]
+async fn an_entry_marked_preprod_is_refused_even_on_a_production_deployment() {
+    let _guard = ENV_LOCK.write().await;
+    let _env = EnvRestore::capture_and_remove(&CMD_ENV_KEYS);
+    set_provider_credential_test_key();
+    let dir = TempDir::new();
+    let state = state_at(&dir.0).await;
+    set_prod(&state).await;
+    let token = bootstrap(&state).await;
+
+    // Making the selector authoritative must not become a way to fire a real signature against a
+    // credential the operator marked as non-production.
+    let (status, created) = send(
+        &state,
+        json_req(
+            "POST",
+            "/v1/signature/provider-credentials/cmd/_/entries",
+            Some(&token),
+            json!({
+                "label": "CMD pré-produção",
+                "selectors": { "env": "preprod" },
+                "set": {
+                    "application_id": "CHANCELA-PREPROD-0002",
+                    "http_basic_username": "ama-user",
+                    "http_basic_password": "ama-password",
+                    "ama_cert_pem": AMA_CERT_PEM,
+                },
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{created}");
+    let preprod_entry = created["entry"]["entry_id"]
+        .as_str()
+        .expect("entry id")
+        .to_owned();
+
+    let mut body = initiate_body();
+    body["entry_id"] = json!(preprod_entry);
+    let (status, response) = send(&state, json_req("POST", INITIATE_URI, Some(&token), body)).await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "a preprod-marked entry must refuse even on a prod deployment: {response}"
+    );
+    assert_eq!(
+        response["code"], "cmd_test_environment_preprod",
+        "{response}"
+    );
+    assert!(
+        state.pending_cmd_test_signatures.read().await.is_empty(),
+        "a refused environment must not create a pending session"
+    );
+    assert_no_retained_signature(&dir.0);
+}
+
 /// No credentials at all: refuse, and name the **admin-panel** fields an operator can go and fill —
 /// not the environment variables they never set.
 #[tokio::test]

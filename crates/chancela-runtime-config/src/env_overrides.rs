@@ -520,12 +520,29 @@ pub const REGISTRY: &[EnvVarSpec] = &[
     secret("CHANCELA_SCAP_APPLICATION_ID", G::Scap),
     secret("CHANCELA_SCAP_SECRET", G::Scap),
     // ---- CMD ----------------------------------------------------------------------------------
-    spec_a(
-        "CHANCELA_CMD_ENV",
-        G::Cmd,
-        Some("preprod"),
-        V::Enum(&["preprod", "prod"]),
-    ),
+    // t113: the CMD environment is decided by the credential's own `env` selector, falling back to
+    // the `signing.cmd.env` settings slice — `chancela-api`'s `signature::resolve_cmd_env` is the
+    // single place that answers it. `CmdConfig::from_env` still parses this variable, but the
+    // resolver discards its `env` field, so an override written here would change nothing. That is
+    // exactly the "editable box whose edit does nothing" this registry refuses to grant, and the
+    // typed-slice exclusion is the mechanism for it: the row stays visible as a fact with a
+    // cross-link, and is never editable.
+    EnvVarSpec {
+        name: "CHANCELA_CMD_ENV",
+        group: G::Cmd,
+        tier: T::A,
+        secret: false,
+        boundary: false,
+        narrow_only: false,
+        acknowledgement_required: false,
+        excluded_typed_slice: Some(
+            "signing.cmd.env — the CMD environment is the credential entry's own `env` selector, \
+             falling back to this settings slice; the variable is not consulted",
+        ),
+        external_reader: None,
+        default_value: Some("preprod"),
+        validator: V::Enum(&["preprod", "prod"]),
+    },
     secret("CHANCELA_CMD_APPLICATION_ID", G::Cmd),
     secret("CHANCELA_CMD_HTTP_BASIC_USERNAME", G::Cmd),
     secret("CHANCELA_CMD_HTTP_BASIC_PASSWORD", G::Cmd),
