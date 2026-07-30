@@ -2469,6 +2469,9 @@ export const fiFI: Catalog = {
   'settings.saved': 'Asetukset tallennettu.',
   'toast.settings.saved': 'Asetukset tallennettu.',
   'settings.saveNow': 'Tallenna nyt',
+  'settings.finder.match.keywords': 'Avainsana',
+  'settings.finder.match.label': 'Kenttä',
+  'settings.finder.match.value': 'Arvo',
   'settings.autosave.pending': 'Tallentamattomia muutoksia…',
   'settings.autosave.error':
     'Automaattinen tallennus epäonnistui. Muutokset säilyvät ja ne voidaan yrittää uudelleen.',
@@ -2756,6 +2759,12 @@ export const fiFI: Catalog = {
   'entities.nipcUnvalidated.badge': 'ei validoitu',
   'entities.nipcUnvalidated.aria': 'NIPC ei validoitu',
   'entities.print.nipcUnvalidated': '(ei validoitu)',
+  'settings.adminGroup.aria': 'Hallinnan osiot',
+  'settings.adminGroup.platform': 'Alusta',
+  'settings.adminGroup.data': 'Tiedot',
+  'settings.adminGroup.integrations': 'Integraatiot',
+  'settings.adminGroup.content': 'Sisältö',
+  'settings.adminGroup.signing': 'Allekirjoitukset',
   'settings.subnav.aria': 'Asetusosiot',
   'settings.subnav.mcp': 'Tekoäly ja MCP',
   'settings.subnav.operations.aria': 'Käyttöalueet',
@@ -5231,7 +5240,7 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.field.applicationId': 'Sovellustunnus',
   'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic -käyttäjänimi',
   'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic -salasana',
-  'settings.providerCredentials.field.amaCertPem': 'AMA-varmenne (PEM)',
+  'settings.providerCredentials.field.amaCertPem': 'AMA:n varmenne tai julkinen avain (PEM)',
   'settings.providerCredentials.field.clientId': 'Asiakastunnus',
   'settings.providerCredentials.field.clientSecret': 'Asiakassalaisuus',
   'settings.providerCredentials.field.accessToken': 'Käyttöoikeustunnus',
@@ -5274,7 +5283,7 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.help.httpBasicPassword':
     'HTTP Basic -todennuksen salasana, joka kuuluu käyttäjätunnukseen. Esim. pitkä salainen merkkijono palveluntarjoajalta.',
   'settings.providerCredentials.help.amaCertPem':
-    'AMA:n julkinen varmenne PEM-muodossa. Sen RSA-avain salaa matkapuhelinnumeron, PIN-koodin ja kertakoodin ennen kuin ne lähtevät SCMD-pyynnössä; tuotannossa se vaaditaan, ja ilman sitä nämä kentät lähtevät esituotannossa selväkielisinä. Esim. lohko ”-----BEGIN CERTIFICATE-----…”.',
+    'AMA:n julkinen varmenne tai pelkkä julkinen avain PEM-muodossa. Kumpi tahansa kelpaa, sillä käytössä on vain RSA-avain: se salaa matkapuhelinnumeron, PIN-koodin ja kertakoodin ennen kuin ne lähtevät SCMD-pyynnössä. Tuotannossa se vaaditaan, ja ilman sitä nämä kentät lähtevät esituotannossa selväkielisinä. Esim. lohko ”-----BEGIN CERTIFICATE-----…” tai ”-----BEGIN PUBLIC KEY-----…”.',
   'settings.providerCredentials.help.clientId':
     'QTSP:n myöntämä OAuth2-asiakastunnus. Esim. ”chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -6385,11 +6394,11 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
     'Kaikki tämän ympäristön vaatimat tunnistetiedon kentät ovat tallennetussa tiedossa.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
-    'Tallennettu AMA:n kenttäsalausvarmenne luettiin ja kenttäsalain rakennettiin.',
+    'Tallennettu AMA:n kenttäsalausavain luettiin ja kenttäsalain rakennettiin.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
-    'AMA:n kenttäsalausvarmennetta ei ole tallennettu; esituotanto hyväksyy kentät selväkielisinä.',
+    'AMA:n kenttäsalausavainta ei ole tallennettu; esituotanto hyväksyy selväkieliset kentät.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
-    'Tuotanto vaatii AMA:n kenttäsalausvarmenteen. Täytä {field} tähän tunnistetietoon.',
+    'Tuotanto vaatii AMA:n kenttäsalausavaimen. Täytä {field} tähän tunnistetietoon.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
     'HTTP BasicAuth -tunnistetiedot on määritetty.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
@@ -6512,12 +6521,12 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
     'Haasteen allekirjoitus ei varmentunut valittua varmennetta vastaan.',
   'settings.providerCredentials.field.amaCertPem.hint':
-    'Itse varmenne, ei polku siihen — PEM-teksti, joka alkaa merkinnällä BEGIN CERTIFICATE.',
+    'Itse varmenne tai itse avain, ei polku niihin — PEM-tekstiä, joka alkaa rivillä BEGIN CERTIFICATE tai BEGIN PUBLIC KEY.',
   'settings.providerCredentials.field.amaCertPem.fromFile': 'Valitse tiedosto…',
   'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Liitä leikepöydältä',
-  'settings.providerCredentials.field.amaCertPem.inspect': 'Tutki varmenne',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Tarkasta',
   'settings.providerCredentials.field.amaCertPem.inspecting': 'Tutkitaan…',
-  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Varmenne (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Varmenne tai julkinen avain (PEM)',
   'settings.providerCredentials.field.amaCertPem.fileTooLarge':
     'Tiedosto on liian suuri PEM-varmenteeksi (raja {max} KiB). Mitään ei luettu.',
   'settings.providerCredentials.field.amaCertPem.fileReadFailed':
@@ -6531,9 +6540,9 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.field.amaCertPem.clipboardPasted':
     'Teksti liitettiin leikepöydältä.',
   'settings.providerCredentials.field.amaCertPem.empty':
-    'Liitä tai lataa varmenne ennen sen tutkimista.',
+    'Liitä tai lataa varmenne tai julkinen avain ennen tarkastusta.',
   'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
-    'Mitä tästä varmenteesta todettiin',
+    'Mitä antamastasi aineistosta todettiin',
   'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Haltija',
   'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Myöntäjä',
   'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Voimassa alkaen',
@@ -6551,9 +6560,9 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_unparseable':
     'Teksti ei ole PEM-muotoinen X.509-varmenne. Lukija ilmoittaa: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
-    'Varmenteessa on {bits} bitin RSA-julkisavain, ja siitä rakennettiin kenttäsalain. Juuri sitä tuotannon allekirjoitus tarvitsee.',
+    'Antamassasi aineistossa on {bits} bitin julkinen RSA-avain, ja siitä rakennettiin kenttäsalain. Juuri sitä tuotannon allekirjoitus tarvitsee.',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
-    'Tästä varmenteesta ei saatu yhtään RSA-julkisavainta, joten siitä ei voi rakentaa kenttäsalainta ja tuotannon CMD-allekirjoitus kieltäytyy. Lukija ilmoittaa: {detail}',
+    'Antamastasi aineistosta ei saatu julkista RSA-avainta, joten kenttäsalainta ei voi rakentaa ja tuotannon CMD-allekirjoitus hylätään. Lukija ilmoittaa: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_within_validity':
     'Palvelimen nykyinen aika osuu varmenteen voimassaoloaikaan.',
   'settings.providerCredentials.probe.detail.ama_cert_expired':
@@ -6563,31 +6572,49 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
     'Varmenteen voimassaolopäiviä ei voitu lukea ajanhetkinä, joten aikaväliä ei arvioitu.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
-    'Sitä, onko tämä todella AMA:n varmenne, ei todettu: varmennepolkua ei rakennettu, luottamusankkuria ei tarkistettu eikä luottamuslistaa haettu.',
+    'Sitä, onko tämä avain todella AMA:n, ei todettu: varmenneketjua ei muodostettu, luottamusankkuria ei tarkistettu eikä luottamuslistaa haettu.',
   // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
   // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
   // zero-width characters, all of which base64 ignores by specification — and only then read.
   // Everything below names one difference that survived that and WOULD have changed the decoded
   // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
   // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
-  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256-sormenjälki (DER)',
   'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
-    'Vertaa tätä arvoa AMA:n ilmoittamaan sormenjälkeen. Se on tämän näkymän ainoa tieto, joka kertoo, onko tämä oikea varmenne, eikä sovellus tee vertailua puolestasi.',
-  'settings.providerCredentials.probe.detail.ama_cert_empty': 'Varmennetta ei annettu.',
+    'Vertaa näitä arvoja AMA:n julkaisemiin. Julkisen avaimen sormenjälki kattaa avaimen itsensä, joten se on sama riippumatta siitä, saitko varmenteen vai pelkän avaimen; varmenteen sormenjälki kattaa koko varmenteen ja on samalle avaimelle eri arvo. Ne ovat tämän näkymän ainoat tiedot, jotka kertovat, onko tämä oikea avain, eikä sovellus tee vertailua puolestasi.',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind': 'Mitä annoit',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.certificate': 'X.509-varmenne',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey':
+    'Pelkkä julkinen avain (ei varmennetta)',
+  'settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint':
+    'Julkisen avaimen SHA-256-sormenjälki (SPKI)',
+  'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint':
+    'Varmenteen SHA-256-sormenjälki (DER)',
+  'settings.providerCredentials.probe.detail.ama_cert_empty':
+    'Varmennetta tai julkista avainta ei annettu.',
   'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
-    'PEM-kehystä ei löytynyt: tekstissä on oltava rivi, joka on täsmälleen -----BEGIN CERTIFICATE-----. Liittämäsi tekstin ympärille ei lisätty mitään.',
+    'PEM-kehystä ei löytynyt: tekstissä on oltava rivi, joka on täsmälleen -----BEGIN CERTIFICATE----- tai täsmälleen -----BEGIN PUBLIC KEY-----. Liittämäsi tekstin ympärille ei lisätty mitään.',
   'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
-    'Rivillä -----BEGIN CERTIFICATE----- ei ole vastaavaa riviä -----END CERTIFICATE-----, joten lohko vaikuttaa katkenneelta. Mitään ei suljettu puolestasi.',
+    'Riviltä -----BEGIN {label}----- puuttuu vastaava rivi -----END {label}-----, joten lohko vaikuttaa katkenneelta. Mitään ei suljettu puolestasi.',
   'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
-    'Tämä on PEM-lohko, jonka nimiö on ”{label}” eikä ”CERTIFICATE”. Tähän kenttään tulee AMA:n julkinen varmenne, ei koskaan yksityinen avain.',
+    'Tämä on PEM-lohko, jonka nimiö on ”{label}” eikä ”CERTIFICATE” tai ”PUBLIC KEY”. Tähän kenttään tulee AMA:n kenttäsalausavain: julkinen varmenne tai pelkkä julkinen avain.',
   'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
-    'Liitettynä oli useampi kuin yksi PEM-lohko, eikä niistä valittu mitään puolestasi. Löytyneet lohkot: {count}. Liitä täsmälleen yksi varmenne.',
+    'Liitettiin useampi kuin yksi PEM-lohko, eikä yhtäkään valittu puolestasi. Löytyneitä lohkoja: {count} ({labels}). Liitä täsmälleen yksi varmenne tai yksi julkinen avain.',
   'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
-    'Varmenteen sisällössä on tavukohdassa {offset} merkki {character}, joka ei ole base64 eikä tyhjemerkki. Se jätettiin paikalleen: sen poistaminen tai sen arvaaminen, mitä se korvasi, muuttaisi luettua varmennetta.',
+    'PEM-lohkon sisällössä on {character} tavukohdassa {offset}, eikä se ole base64 eikä tyhjemerkki. Se jätettiin paikalleen: sen poistaminen tai sen arvaaminen, mitä se korvasi, muuttaisi luettua avainta.',
   'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
-    'Varmenteen sisältö ei ole kelvollista base64:ää eikä sitä korjattu: puuttuvaa osaa ei voi palauttaa. Lukija ilmoittaa: {detail}',
+    'PEM-lohkon sisältö ei ole kelvollista base64:ää eikä sitä korjattu: puuttuvaa osaa ei voi palauttaa. Lukija ilmoittaa: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_normalised':
-    'Varmennetta luettaessa ohitettiin merkkejä, joita base64-sisältö ei käytä: tyhjemerkit, ohjausmerkit ja nollalevyiset merkit. Ohitettuja merkkejä: {removed}. Puretun varmenteen sisältö ei muutu.',
+    'Tekstiä luettaessa ohitettiin merkkejä, joita base64-sisältö ei käytä: tyhjemerkit, ohjausmerkit ja nollalevyiset merkit. Ohitettuja merkkejä: {removed}. Puretut tavut eivät muutu.',
+  'settings.providerCredentials.probe.detail.ama_key_public_key_parsed':
+    'Teksti luetaan pelkkänä julkisena avaimena (SubjectPublicKeyInfo). Se ei sisällä varmennetta.',
+  'settings.providerCredentials.probe.detail.ama_key_not_a_public_key':
+    'Lohkon nimiö on PUBLIC KEY, eivätkä sen puretut tavut ole julkinen avain. Mitään ei myöskään luettu sen sijaan varmenteena. Lukija ilmoittaa: {detail}',
+  'settings.providerCredentials.probe.detail.ama_key_pkcs1_not_spki':
+    'Tämä on PEM-lohko, jonka nimiö on ”RSA PUBLIC KEY”: PKCS#1-muotoinen avain eli moduli ja eksponentti ilman algoritmitunnistetta ympärillään. Tähän kenttään tulee SubjectPublicKeyInfo-muoto, jota ”PUBLIC KEY” -lohko sisältää. Muunna se komennolla: openssl rsa -RSAPublicKey_in -in key.pem -pubout',
+  'settings.providerCredentials.probe.detail.ama_key_certificate_fields_absent':
+    'Antamasi aineisto on pelkkä julkinen avain, joten sillä ei ole haltijaa, myöntäjää eikä voimassaoloaikaa: ne kuuluvat varmenteeseen, eikä varmennetta annettu. Ne puuttuvat, eivät ole lukukelvottomia.',
+  'settings.providerCredentials.probe.detail.ama_key_private_key':
+    'Tämä on PEM-lohko, jonka nimiö on ”{label}”, eli YKSITYINEN avain. Tähän kenttään tulee vain julkista aineistoa: AMA:n varmenne tai sen julkinen avain. Arvo hylättiin eikä sitä tallennettu; jos kyseessä on todellinen yksityinen avain, pidä sitä paljastuneena ja vaihda se.',
   // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
   // under its own heading and a completed run costs one real qualified electronic signature.
   'settings.providerCredentials.cmdTest.runEndToEnd':
@@ -6604,8 +6631,7 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.probe.checkName.configured_environment': 'Määritetty ympäristö',
   'settings.providerCredentials.probe.checkName.stored_credential_fields':
     'Tallennetut tunnistetietokentät',
-  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
-    'AMA:n varmenne luettavissa',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable': 'AMA-avain luettavissa',
   'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-käyttöoikeus',
   'settings.providerCredentials.probe.checkName.http_transport_ready': 'Siirtoyhteys valmis',
   'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
@@ -6631,6 +6657,8 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.probe.checkName.challenge_signed': 'Haaste allekirjoitettu',
   'settings.providerCredentials.probe.checkName.challenge_verified': 'Haaste todennettu',
   'settings.providerCredentials.probe.checkName.certificate_parsed': 'Varmenne luettu',
+  'settings.providerCredentials.probe.checkName.public_key_parsed': 'Julkinen avain luettu',
+  'settings.providerCredentials.probe.checkName.certificate_fields': 'Varmenteen tiedot',
   'settings.providerCredentials.probe.checkName.certificate_normalised': 'Liitetty teksti siivottu',
   'settings.providerCredentials.probe.checkName.rsa_public_key': 'Julkinen RSA-avain',
   'settings.providerCredentials.probe.checkName.validity_window': 'Voimassaoloaika',

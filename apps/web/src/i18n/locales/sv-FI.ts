@@ -2473,6 +2473,9 @@ export const svFI: Catalog = {
   'settings.saved': 'Inställningarna är sparade.',
   'toast.settings.saved': 'Inställningarna är sparade.',
   'settings.saveNow': 'Spara nu',
+  'settings.finder.match.keywords': 'Nyckelord',
+  'settings.finder.match.label': 'Fält',
+  'settings.finder.match.value': 'Värde',
   'settings.autosave.pending': 'Osparade ändringar…',
   'settings.autosave.error':
     'Det gick inte att spara automatiskt. Dina ändringar behålls och kan försökas igen.',
@@ -2759,6 +2762,12 @@ export const svFI: Catalog = {
   'entities.nipcUnvalidated.badge': 'ej validerad',
   'entities.nipcUnvalidated.aria': 'NIPC ej validerad',
   'entities.print.nipcUnvalidated': '(ej validerad)',
+  'settings.adminGroup.aria': 'Administrationsavsnitt',
+  'settings.adminGroup.platform': 'Plattform',
+  'settings.adminGroup.data': 'Data',
+  'settings.adminGroup.integrations': 'Integrationer',
+  'settings.adminGroup.content': 'Innehåll',
+  'settings.adminGroup.signing': 'Signering',
   'settings.subnav.aria': 'Konfigurationsavsnitt',
   'settings.subnav.mcp': 'AI och MCP',
   'settings.subnav.operations.aria': 'Driftområden',
@@ -5228,7 +5237,7 @@ export const svFI: Catalog = {
   'settings.providerCredentials.field.applicationId': 'Applikations-id',
   'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic-användarnamn',
   'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-lösenord',
-  'settings.providerCredentials.field.amaCertPem': 'AMA-certifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem': 'AMA-certifikat eller offentlig nyckel (PEM)',
   'settings.providerCredentials.field.clientId': 'Klient-id',
   'settings.providerCredentials.field.clientSecret': 'Klienthemlighet',
   'settings.providerCredentials.field.accessToken': 'Åtkomsttoken',
@@ -5270,7 +5279,7 @@ export const svFI: Catalog = {
   'settings.providerCredentials.help.httpBasicPassword':
     'Lösenord för HTTP Basic-autentisering som hör till användarnamnet. T.ex. en lång hemlig sträng från leverantören.',
   'settings.providerCredentials.help.amaCertPem':
-    'Offentligt AMA-certifikat i PEM-format. Dess RSA-nyckel krypterar mobilnumret, pinkoden och engångskoden innan de skickas med i SCMD-begäran; i produktion krävs det, och utan det går fälten i klartext i förproduktion. T.ex. blocket ”-----BEGIN CERTIFICATE-----…”.',
+    'AMA:s offentliga certifikat, eller bara den offentliga nyckeln, i PEM-format. Båda tas emot, eftersom endast RSA-nyckeln används: den krypterar mobilnumret, pinkoden och engångskoden innan de skickas med i SCMD-begäran. I produktion krävs den, och utan den går fälten i klartext i förproduktion. T.ex. blocket ”-----BEGIN CERTIFICATE-----…” eller ”-----BEGIN PUBLIC KEY-----…”.',
   'settings.providerCredentials.help.clientId':
     'OAuth2-klientidentifierare som tilldelats av QTSP. T.ex. ”chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -6381,11 +6390,11 @@ export const svFI: Catalog = {
   'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
     'Alla fält som den här miljön kräver finns i den sparade uppgiften.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
-    'Det sparade AMA-certifikatet för fältkryptering lästes och fältkrypteraren byggdes.',
+    'Den lagrade AMA-nyckeln för fältkryptering lästes in och fältkrypteringen byggdes.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
-    'Inget AMA-certifikat för fältkryptering är sparat; förproduktion godtar fält i klartext.',
+    'Ingen AMA-nyckel för fältkryptering är lagrad; förproduktion godtar fält i klartext.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
-    'Produktion kräver AMA-certifikatet för fältkryptering. Fyll i {field} i den här uppgiften.',
+    'Produktion kräver AMA-nyckeln för fältkryptering. Fyll i {field} i den här uppgiften.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
     'HTTP BasicAuth-uppgifterna är konfigurerade.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
@@ -6508,12 +6517,13 @@ export const svFI: Catalog = {
   'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
     'Signaturen på utmaningen verifierades inte mot det valda certifikatet.',
   'settings.providerCredentials.field.amaCertPem.hint':
-    'Själva certifikatet, inte en sökväg till det — PEM-text som börjar med BEGIN CERTIFICATE.',
+    'Själva certifikatet eller själva nyckeln, inte en sökväg till dem — PEM-text som börjar med BEGIN CERTIFICATE eller med BEGIN PUBLIC KEY.',
   'settings.providerCredentials.field.amaCertPem.fromFile': 'Välj fil…',
   'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Klistra in från urklipp',
-  'settings.providerCredentials.field.amaCertPem.inspect': 'Granska certifikatet',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Granska',
   'settings.providerCredentials.field.amaCertPem.inspecting': 'Granskar…',
-  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileFilter':
+    'Certifikat eller offentlig nyckel (PEM)',
   'settings.providerCredentials.field.amaCertPem.fileTooLarge':
     'Filen är för stor för att vara ett PEM-certifikat (gräns {max} KiB). Ingenting lästes.',
   'settings.providerCredentials.field.amaCertPem.fileReadFailed':
@@ -6526,9 +6536,9 @@ export const svFI: Catalog = {
   'settings.providerCredentials.field.amaCertPem.clipboardEmpty': 'Urklipp är tomt.',
   'settings.providerCredentials.field.amaCertPem.clipboardPasted': 'Text inklistrad från urklipp.',
   'settings.providerCredentials.field.amaCertPem.empty':
-    'Klistra in eller läs in ett certifikat innan du granskar det.',
+    'Klistra in eller läs in ett certifikat eller en offentlig nyckel innan du granskar det.',
   'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
-    'Vad som konstaterades om det här certifikatet',
+    'Vad som fastställdes om det du angav',
   'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Innehavare',
   'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Utfärdare',
   'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Giltigt från',
@@ -6548,9 +6558,9 @@ export const svFI: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_unparseable':
     'Texten är inte ett PEM-kodat X.509-certifikat. Läsaren rapporterar: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
-    'Certifikatet bär en offentlig RSA-nyckel på {bits} bitar, och en fältkrypterare byggdes av den. Det är vad en signatur i produktion behöver.',
+    'Det du angav innehåller en offentlig RSA-nyckel på {bits} bitar, och en fältkryptering byggdes utifrån den. Det är vad en signatur i produktion behöver.',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
-    'Ingen offentlig RSA-nyckel kunde hämtas ur det här certifikatet, så ingen fältkrypterare kan byggas av det och en CMD-signatur i produktion kommer att vägras. Läsaren rapporterar: {detail}',
+    'Ingen offentlig RSA-nyckel gick att hämta ur det du angav, så ingen fältkryptering kan byggas och en CMD-signatur i produktion kommer att avvisas. Inläsningen rapporterar: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_within_validity':
     'Serverns aktuella tid ligger inom certifikatets giltighetstid.',
   'settings.providerCredentials.probe.detail.ama_cert_expired':
@@ -6560,32 +6570,49 @@ export const svFI: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
     'Certifikatets giltighetsdatum kunde inte läsas som tidpunkter, så perioden bedömdes inte.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
-    'Om detta verkligen är AMA:s certifikat konstaterades inte: ingen certifieringskedja byggdes, inget tillitsankare konsulterades och ingen betrodd förteckning hämtades.',
+    'Om den här nyckeln verkligen är AMA:s fastställdes inte: ingen certifieringsväg byggdes, ingen förtroendeankare användes och ingen förtroendelista hämtades.',
   // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
   // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
   // zero-width characters, all of which base64 ignores by specification — and only then read.
   // Everything below names one difference that survived that and WOULD have changed the decoded
   // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
   // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
-  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint':
-    'SHA-256-fingeravtryck (DER)',
   'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
-    'Jämför det här värdet med det fingeravtryck som AMA har lämnat. Det är det enda i den här översikten som kan visa om det är rätt certifikat, och programmet gör inte jämförelsen åt dig.',
-  'settings.providerCredentials.probe.detail.ama_cert_empty': 'Inget certifikat angavs.',
+    'Jämför de här värdena med det AMA har publicerat. Den offentliga nyckelns fingeravtryck omfattar själva nyckeln och är därför detsamma oavsett om du fick certifikatet eller bara nyckeln; certifikatets fingeravtryck omfattar hela certifikatet och är ett annat värde för samma nyckel. De är det enda i den här översikten som kan visa om det är rätt nyckel, och programmet gör inte jämförelsen åt dig.',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind': 'Vad du angav',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.certificate': 'X.509-certifikat',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey':
+    'Endast den offentliga nyckeln (inget certifikat)',
+  'settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint':
+    'SHA-256-fingeravtryck av den offentliga nyckeln (SPKI)',
+  'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint':
+    'SHA-256-fingeravtryck av certifikatet (DER)',
+  'settings.providerCredentials.probe.detail.ama_cert_empty':
+    'Varken något certifikat eller någon offentlig nyckel angavs.',
   'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
-    'Ingen PEM-inramning hittades: texten måste innehålla en rad som lyder exakt -----BEGIN CERTIFICATE-----. Inget lades till runt det du klistrade in.',
+    'Ingen PEM-inramning hittades: texten måste innehålla en rad som lyder exakt -----BEGIN CERTIFICATE----- eller exakt -----BEGIN PUBLIC KEY-----. Inget lades till runt det du klistrade in.',
   'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
-    'Raden -----BEGIN CERTIFICATE----- saknar motsvarande rad -----END CERTIFICATE-----, så blocket ser avkortat ut. Inget avslutades åt dig.',
+    'Raden -----BEGIN {label}----- saknar motsvarande rad -----END {label}-----, så blocket ser avkortat ut. Inget slöts åt dig.',
   'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
-    'Det här är ett PEM-block med etiketten ”{label}” och inte ”CERTIFICATE”. Fältet tar emot AMA:s offentliga certifikat, aldrig en privat nyckel.',
+    'Det här är ett PEM-block med etiketten ”{label}” och inte ”CERTIFICATE” eller ”PUBLIC KEY”. Fältet tar emot AMA:s nyckel för fältkryptering: det offentliga certifikatet, eller den offentliga nyckeln för sig.',
   'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
-    'Mer än ett PEM-block klistrades in, och inget av dem valdes åt dig. Hittade block: {count}. Klistra in exakt ett certifikat.',
+    'Fler än ett PEM-block klistrades in, och inget av dem valdes åt dig. Hittade block: {count} ({labels}). Klistra in exakt ett certifikat eller en offentlig nyckel.',
   'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
-    'Certifikatets innehåll har på byteposition {offset} tecknet {character}, som varken är base64 eller blanksteg. Det fick stå kvar: att ta bort det eller gissa vad det ersatte skulle ändra det certifikat som lästes.',
+    'Innehållet i PEM-blocket innehåller {character} på byteposition {offset}, vilket varken är base64 eller blanksteg. Det lämnades som det var: att ta bort det, eller gissa vad det ersatte, skulle ändra nyckeln som lästes in.',
   'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
-    'Certifikatets innehåll är inte giltig base64 och reparerades inte: den del som saknas går inte att återskapa. Läsaren rapporterar: {detail}',
+    'Innehållet i PEM-blocket är inte giltig base64 och reparerades inte: den saknade delen går inte att återskapa. Inläsningen rapporterar: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_normalised':
-    'Vid läsningen av certifikatet bortsågs från tecken som base64-innehållet inte använder: blanksteg, styrtecken eller tecken utan bredd. Ignorerade tecken: {removed}. Det avkodade certifikatet är oförändrat.',
+    'Vid läsningen av texten bortsågs från tecken som base64-innehållet inte använder: blanksteg, styrtecken eller tecken utan bredd. Ignorerade tecken: {removed}. De avkodade byten är oförändrade.',
+  'settings.providerCredentials.probe.detail.ama_key_public_key_parsed':
+    'Texten läses som en fristående offentlig nyckel (en SubjectPublicKeyInfo). Den innehåller inget certifikat.',
+  'settings.providerCredentials.probe.detail.ama_key_not_a_public_key':
+    'Blocket har etiketten PUBLIC KEY och dess avkodade byte är inte en offentlig nyckel. Inget lästes heller in som certifikat i stället. Inläsningen rapporterar: {detail}',
+  'settings.providerCredentials.probe.detail.ama_key_pkcs1_not_spki':
+    'Det här är ett PEM-block med etiketten ”RSA PUBLIC KEY”: en nyckel i PKCS#1, alltså modulus och exponent utan någon algoritmangivelse omkring sig. Fältet tar emot formen SubjectPublicKeyInfo, som är den ett ”PUBLIC KEY”-block innehåller. Konvertera den med: openssl rsa -RSAPublicKey_in -in key.pem -pubout',
+  'settings.providerCredentials.probe.detail.ama_key_certificate_fields_absent':
+    'Det du angav är en fristående offentlig nyckel och har därför varken innehavare, utfärdare eller giltighetstid: de hör till ett certifikat, och något sådant angavs inte. De saknas, de är inte oläsliga.',
+  'settings.providerCredentials.probe.detail.ama_key_private_key':
+    'Det här är ett PEM-block med etiketten ”{label}”, alltså en PRIVAT nyckel. Fältet tar endast emot offentligt material: AMA:s certifikat eller dess offentliga nyckel. Värdet avvisades och sparades inte; om det är en riktig privat nyckel, betrakta den som röjd och byt ut den.',
   // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
   // under its own heading and a completed run costs one real qualified electronic signature.
   'settings.providerCredentials.cmdTest.runEndToEnd':
@@ -6601,8 +6628,7 @@ export const svFI: Catalog = {
   'settings.providerCredentials.probe.checkName.outbound_client': 'Utgående HTTP-klient',
   'settings.providerCredentials.probe.checkName.configured_environment': 'Konfigurerad miljö',
   'settings.providerCredentials.probe.checkName.stored_credential_fields': 'Sparade uppgiftsfält',
-  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
-    'AMA-certifikat läsbart',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable': 'AMA-nyckel läsbar',
   'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-åtkomst',
   'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport klar',
   'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
@@ -6629,6 +6655,8 @@ export const svFI: Catalog = {
   'settings.providerCredentials.probe.checkName.challenge_signed': 'Utmaning signerad',
   'settings.providerCredentials.probe.checkName.challenge_verified': 'Utmaning verifierad',
   'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certifikat inläst',
+  'settings.providerCredentials.probe.checkName.public_key_parsed': 'Offentlig nyckel inläst',
+  'settings.providerCredentials.probe.checkName.certificate_fields': 'Certifikatuppgifter',
   'settings.providerCredentials.probe.checkName.certificate_normalised': 'Inklistrad text rensad',
   'settings.providerCredentials.probe.checkName.rsa_public_key': 'Offentlig RSA-nyckel',
   'settings.providerCredentials.probe.checkName.validity_window': 'Giltighetsperiod',

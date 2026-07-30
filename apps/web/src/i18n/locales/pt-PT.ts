@@ -2494,6 +2494,9 @@ export const ptPT: Catalog = {
   'settings.saved': 'Configurações guardadas.',
   'toast.settings.saved': 'Configurações guardadas.',
   'settings.saveNow': 'Guardar agora',
+  'settings.finder.match.keywords': 'Palavra-chave',
+  'settings.finder.match.label': 'Campo',
+  'settings.finder.match.value': 'Valor',
   'settings.autosave.pending': 'Alterações por guardar…',
   'settings.autosave.error':
     'Não foi possível guardar automaticamente. As alterações mantêm-se e podem ser repetidas.',
@@ -2815,6 +2818,12 @@ export const ptPT: Catalog = {
   'entities.nipcUnvalidated.badge': 'não validado',
   'entities.nipcUnvalidated.aria': 'NIPC não validado',
   'entities.print.nipcUnvalidated': '(não validado)',
+  'settings.adminGroup.aria': 'Secções de administração',
+  'settings.adminGroup.platform': 'Plataforma',
+  'settings.adminGroup.data': 'Dados',
+  'settings.adminGroup.integrations': 'Integrações',
+  'settings.adminGroup.content': 'Conteúdo',
+  'settings.adminGroup.signing': 'Assinaturas',
   'settings.subnav.aria': 'Secções de configuração',
   'settings.subnav.mcp': 'IA e MCP',
   'settings.subnav.operations.aria': 'Áreas de operações',
@@ -5298,7 +5307,7 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.field.applicationId': 'ID de aplicação',
   'settings.providerCredentials.field.httpBasicUsername': 'Utilizador HTTP Basic',
   'settings.providerCredentials.field.httpBasicPassword': 'Palavra-passe HTTP Basic',
-  'settings.providerCredentials.field.amaCertPem': 'Certificado AMA (PEM)',
+  'settings.providerCredentials.field.amaCertPem': 'Certificado ou chave pública da AMA (PEM)',
   'settings.providerCredentials.field.clientId': 'Client ID',
   'settings.providerCredentials.field.clientSecret': 'Client secret',
   'settings.providerCredentials.field.accessToken': 'Token de acesso',
@@ -5340,7 +5349,7 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.help.httpBasicPassword':
     'Palavra-passe de autenticação HTTP Basic que acompanha o utilizador. Ex.: uma cadeia secreta longa fornecida pelo fornecedor.',
   'settings.providerCredentials.help.amaCertPem':
-    'Certificado público da AMA em PEM. A sua chave RSA cifra o número de telemóvel, o PIN e o OTP antes de seguirem no pedido ao SCMD; é obrigatório em produção e, sem ele, em pré-produção estes campos seguem em claro. Ex.: o bloco «-----BEGIN CERTIFICATE-----…».',
+    'Certificado público da AMA, ou apenas a chave pública, em PEM. Qualquer um serve, porque só a chave RSA é usada: é ela que cifra o número de telemóvel, o PIN e o OTP antes de seguirem no pedido ao SCMD. É obrigatória em produção e, sem ela, em pré-produção estes campos seguem em claro. Ex.: o bloco «-----BEGIN CERTIFICATE-----…» ou «-----BEGIN PUBLIC KEY-----…».',
   'settings.providerCredentials.help.clientId':
     'Identificador OAuth2 do cliente atribuído pelo QTSP. Ex.: «chancela-prod».',
   'settings.providerCredentials.help.clientSecret':
@@ -6402,11 +6411,11 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
     'Todos os campos de credencial exigidos por este ambiente estão presentes na entrada guardada.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
-    'O certificado de cifra de campos da AMA guardado foi lido e o cifrador de campos foi construído.',
+    'A chave de cifra de campos da AMA guardada foi lida e o cifrador de campos foi construído.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
-    'Não há certificado de cifra de campos da AMA guardado; a pré-produção aceita campos em claro.',
+    'Não há qualquer chave de cifra de campos da AMA guardada; a pré-produção aceita campos em claro.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
-    'A produção exige o certificado de cifra de campos da AMA. Preencha {field} nesta entrada de credencial.',
+    'A produção exige a chave de cifra de campos da AMA. Preencha {field} nesta entrada de credencial.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
     'As credenciais HTTP BasicAuth estão configuradas.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
@@ -6529,12 +6538,12 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
     'A assinatura do desafio não foi verificada perante o certificado selecionado.',
   'settings.providerCredentials.field.amaCertPem.hint':
-    'O próprio certificado, não um caminho para ele — texto PEM começado por BEGIN CERTIFICATE.',
+    'O próprio certificado ou a própria chave, não um caminho para eles — texto PEM começado por BEGIN CERTIFICATE ou BEGIN PUBLIC KEY.',
   'settings.providerCredentials.field.amaCertPem.fromFile': 'Escolher ficheiro…',
   'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Colar da área de transferência',
-  'settings.providerCredentials.field.amaCertPem.inspect': 'Inspecionar certificado',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Inspecionar',
   'settings.providerCredentials.field.amaCertPem.inspecting': 'A inspecionar…',
-  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certificado (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certificado ou chave pública (PEM)',
   'settings.providerCredentials.field.amaCertPem.fileTooLarge':
     'O ficheiro é demasiado grande para ser um certificado PEM (limite de {max} KiB). Não foi lido nada.',
   'settings.providerCredentials.field.amaCertPem.fileReadFailed':
@@ -6549,9 +6558,9 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.field.amaCertPem.clipboardPasted':
     'Texto colado da área de transferência.',
   'settings.providerCredentials.field.amaCertPem.empty':
-    'Cole ou carregue um certificado antes de o inspecionar.',
+    'Cole ou carregue um certificado ou uma chave pública antes de inspecionar.',
   'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
-    'O que foi apurado sobre este certificado',
+    'O que foi apurado sobre o que indicou',
   'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Titular',
   'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Emissor',
   'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Válido a partir de',
@@ -6571,9 +6580,9 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_unparseable':
     'O texto não é um certificado X.509 codificado em PEM. O leitor indica: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
-    'O certificado tem uma chave pública RSA de {bits} bits, e foi construído a partir dela um cifrador de campos. É disso que uma assinatura de produção precisa.',
+    'O que indicou tem uma chave pública RSA de {bits} bits, e foi construído a partir dela um cifrador de campos. É disso que uma assinatura de produção precisa.',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
-    'Não foi possível obter deste certificado qualquer chave pública RSA, pelo que não se pode construir um cifrador de campos e uma assinatura CMD de produção será recusada. O leitor indica: {detail}',
+    'Não foi possível obter do que indicou qualquer chave pública RSA, pelo que não se pode construir um cifrador de campos e uma assinatura CMD de produção será recusada. O leitor indica: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_within_validity':
     'A hora atual do servidor está dentro do período de validade do certificado.',
   'settings.providerCredentials.probe.detail.ama_cert_expired':
@@ -6583,33 +6592,50 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
     'Não foi possível ler as datas de validade do certificado como instantes de tempo, pelo que o período não foi avaliado.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
-    'Não foi apurado se este é mesmo o certificado da AMA: não se construiu qualquer cadeia de certificação, não se consultou qualquer âncora de confiança e não se obteve qualquer Lista de Confiança.',
+    'Não foi apurado se esta chave é mesmo da AMA: não se construiu qualquer cadeia de certificação, não se consultou qualquer âncora de confiança e não se obteve qualquer Lista de Confiança.',
   // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
   // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
   // zero-width characters, all of which base64 ignores by specification — and only then read.
   // Everything below names one difference that survived that and WOULD have changed the decoded
   // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
   // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
-  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint':
-    'Impressão digital SHA-256 (DER)',
   'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
-    'Compare este valor com a impressão digital que a AMA lhe indicou. É o único elemento deste painel capaz de mostrar se este é o certificado certo, e a aplicação não faz essa comparação por si.',
+    'Compare estes valores com os que a AMA publicou. A impressão digital da chave pública abrange a chave em si, pelo que é a mesma quer lhe tenham enviado o certificado quer só a chave; a do certificado abrange o certificado inteiro e é um valor diferente para a mesma chave. São os únicos elementos deste painel capazes de mostrar se esta é a chave certa, e a aplicação não faz essa comparação por si.',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind': 'O que indicou',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.certificate':
+    'Certificado X.509',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey':
+    'Apenas a chave pública (sem certificado)',
+  'settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint':
+    'Impressão digital SHA-256 da chave pública (SPKI)',
+  'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint':
+    'Impressão digital SHA-256 do certificado (DER)',
   'settings.providerCredentials.probe.detail.ama_cert_empty':
-    'Não foi indicado qualquer certificado.',
+    'Não foi indicado qualquer certificado nem qualquer chave pública.',
   'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
-    'Não foi encontrado o invólucro PEM: o texto tem de conter uma linha exatamente igual a -----BEGIN CERTIFICATE-----. Não foi acrescentado nada ao que colou.',
+    'Não foi encontrado o invólucro PEM: o texto tem de conter uma linha exatamente igual a -----BEGIN CERTIFICATE----- ou a -----BEGIN PUBLIC KEY-----. Não foi acrescentado nada ao que colou.',
   'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
-    'A linha -----BEGIN CERTIFICATE----- não tem a linha -----END CERTIFICATE----- correspondente, pelo que o bloco parece truncado. Nada foi fechado por si.',
+    'A linha -----BEGIN {label}----- não tem a linha -----END {label}----- correspondente, pelo que o bloco parece truncado. Nada foi fechado por si.',
   'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
-    'Este é um bloco PEM identificado como «{label}», e não como «CERTIFICATE». Este campo recebe o certificado público da AMA — nunca uma chave privada.',
+    'Este é um bloco PEM identificado como «{label}», e não como «CERTIFICATE» ou «PUBLIC KEY». Este campo recebe a chave de cifra de campos da AMA: o certificado público ou apenas a chave pública.',
   'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
-    'Foi colado mais do que um bloco PEM e não foi escolhido nenhum por si. Blocos encontrados: {count}. Cole exatamente um certificado.',
+    'Foi colado mais do que um bloco PEM e não foi escolhido nenhum por si. Blocos encontrados: {count} ({labels}). Cole exatamente um certificado ou uma chave pública.',
   'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
-    'O corpo do certificado contém {character} na posição {offset} (em bytes), que não é base64 nem espaço. Foi deixado como está: retirá-lo ou adivinhar o que substituiu mudaria o certificado lido.',
+    'O corpo do bloco PEM contém {character} na posição {offset} (em bytes), que não é base64 nem espaço. Foi deixado como está: retirá-lo ou adivinhar o que substituiu mudaria a chave lida.',
   'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
-    'O corpo do certificado não é base64 válido e não foi corrigido: a parte em falta não se pode recuperar. O leitor indica: {detail}',
+    'O corpo do bloco PEM não é base64 válido e não foi corrigido: a parte em falta não se pode recuperar. O leitor indica: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_normalised':
-    'Foram ignorados, na leitura do certificado, carateres que o corpo base64 não utiliza: espaços, carateres de controlo ou de largura zero. Carateres ignorados: {removed}. O certificado descodificado é o mesmo.',
+    'Foram ignorados, na leitura do texto, carateres que o corpo base64 não utiliza: espaços, carateres de controlo ou de largura zero. Carateres ignorados: {removed}. Os bytes descodificados são os mesmos.',
+  'settings.providerCredentials.probe.detail.ama_key_public_key_parsed':
+    'O texto é lido como uma chave pública isolada (um SubjectPublicKeyInfo). Não traz qualquer certificado.',
+  'settings.providerCredentials.probe.detail.ama_key_not_a_public_key':
+    'O bloco está identificado como PUBLIC KEY e os bytes descodificados não são uma chave pública. Também não foi lido nada como certificado em vez disso. O leitor indica: {detail}',
+  'settings.providerCredentials.probe.detail.ama_key_pkcs1_not_spki':
+    'Este é um bloco PEM identificado como «RSA PUBLIC KEY»: uma chave em PKCS#1, o módulo e o expoente sem qualquer identificador de algoritmo à volta. Este campo recebe a forma SubjectPublicKeyInfo, que é a que um bloco «PUBLIC KEY» contém. Converta-a com: openssl rsa -RSAPublicKey_in -in key.pem -pubout',
+  'settings.providerCredentials.probe.detail.ama_key_certificate_fields_absent':
+    'O que indicou é apenas uma chave pública, pelo que não tem titular, nem emissor, nem período de validade: esses pertencem a um certificado, e não foi indicado nenhum. Estão ausentes, não ilegíveis.',
+  'settings.providerCredentials.probe.detail.ama_key_private_key':
+    'Este é um bloco PEM identificado como «{label}», que é uma chave PRIVADA. Este campo recebe apenas material público — o certificado da AMA ou a respetiva chave pública. O valor foi recusado e não foi guardado; se for mesmo uma chave privada, considere-a exposta e substitua-a.',
   // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
   // under its own heading and a completed run costs one real qualified electronic signature.
   'settings.providerCredentials.cmdTest.runEndToEnd':
@@ -6626,8 +6652,7 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.probe.checkName.configured_environment': 'Ambiente configurado',
   'settings.providerCredentials.probe.checkName.stored_credential_fields':
     'Campos de credencial guardados',
-  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
-    'Certificado AMA legível',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable': 'Chave AMA legível',
   'settings.providerCredentials.probe.checkName.http_basic_configured': 'Acesso HTTP Basic',
   'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transporte pronto',
   'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
@@ -6655,6 +6680,8 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.probe.checkName.challenge_signed': 'Desafio assinado',
   'settings.providerCredentials.probe.checkName.challenge_verified': 'Desafio verificado',
   'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certificado lido',
+  'settings.providerCredentials.probe.checkName.public_key_parsed': 'Chave pública lida',
+  'settings.providerCredentials.probe.checkName.certificate_fields': 'Campos do certificado',
   'settings.providerCredentials.probe.checkName.certificate_normalised': 'Texto colado limpo',
   'settings.providerCredentials.probe.checkName.rsa_public_key': 'Chave pública RSA',
   'settings.providerCredentials.probe.checkName.validity_window': 'Período de validade',

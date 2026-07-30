@@ -2482,6 +2482,9 @@ export const nlNL: Catalog = {
   'settings.saved': 'Instellingen opgeslagen.',
   'toast.settings.saved': 'Instellingen opgeslagen.',
   'settings.saveNow': 'Nu opslaan',
+  'settings.finder.match.keywords': 'Trefwoord',
+  'settings.finder.match.label': 'Veld',
+  'settings.finder.match.value': 'Waarde',
   'settings.autosave.pending': 'Niet-opgeslagen wijzigingen…',
   'settings.autosave.error':
     'Automatisch opslaan is mislukt. Uw wijzigingen blijven behouden en kunnen opnieuw worden geprobeerd.',
@@ -2769,6 +2772,12 @@ export const nlNL: Catalog = {
   'entities.nipcUnvalidated.badge': 'niet-gevalideerd',
   'entities.nipcUnvalidated.aria': 'NIPC niet-gevalideerd',
   'entities.print.nipcUnvalidated': '(niet-gevalideerd)',
+  'settings.adminGroup.aria': 'Beheersecties',
+  'settings.adminGroup.platform': 'Platform',
+  'settings.adminGroup.data': 'Gegevens',
+  'settings.adminGroup.integrations': 'Integraties',
+  'settings.adminGroup.content': 'Inhoud',
+  'settings.adminGroup.signing': 'Ondertekening',
   'settings.subnav.aria': 'Configuratiesecties',
   'settings.subnav.mcp': 'AI en MCP',
   'settings.subnav.operations.aria': 'Bewerkingsgebieden',
@@ -5264,7 +5273,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.field.applicationId': 'Toepassings-ID',
   'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic-gebruikersnaam',
   'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-wachtwoord',
-  'settings.providerCredentials.field.amaCertPem': 'AMA-certificaat (PEM)',
+  'settings.providerCredentials.field.amaCertPem': 'AMA-certificaat of openbare sleutel (PEM)',
   'settings.providerCredentials.field.clientId': 'Client-ID',
   'settings.providerCredentials.field.clientSecret': 'Klantgeheim',
   'settings.providerCredentials.field.accessToken': 'Toegangstoken',
@@ -5306,7 +5315,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.help.httpBasicPassword':
     'Wachtwoord voor HTTP Basic-authenticatie dat bij de gebruikersnaam hoort. Bijv. een lange geheime tekenreeks van de provider.',
   'settings.providerCredentials.help.amaCertPem':
-    'Openbaar AMA-certificaat in PEM-formaat. De RSA-sleutel ervan versleutelt het mobiele nummer, de pincode en de OTP voordat ze in het SCMD-verzoek meegaan; in productie is het verplicht, en zonder dat certificaat gaan die velden in voorproductie onversleuteld mee. Bijv. het blok „-----BEGIN CERTIFICATE-----…”.',
+    'Openbaar AMA-certificaat, of alleen de openbare sleutel, in PEM-formaat. Beide worden aanvaard, want alleen de RSA-sleutel wordt gebruikt: die versleutelt het mobiele nummer, de pincode en de OTP voordat ze in het SCMD-verzoek meegaan. In productie is die verplicht, en zonder die sleutel gaan die velden in voorproductie onversleuteld mee. Bijv. het blok „-----BEGIN CERTIFICATE-----…” of „-----BEGIN PUBLIC KEY-----…”.',
   'settings.providerCredentials.help.clientId':
     'Door de QTSP toegewezen OAuth2-client-identificatie. Bijv. „chancela-prod”.',
   'settings.providerCredentials.help.clientSecret':
@@ -6430,11 +6439,11 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
     'Alle velden die deze omgeving vereist, staan in het opgeslagen gegeven.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
-    'Het opgeslagen AMA-certificaat voor veldversleuteling is gelezen en de veldversleutelaar is opgebouwd.',
+    'De opgeslagen AMA-sleutel voor veldversleuteling is gelezen en de veldversleuteling is opgebouwd.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
-    'Er is geen AMA-certificaat voor veldversleuteling opgeslagen; preproductie aanvaardt velden in leesbare tekst.',
+    'Er is geen AMA-sleutel voor veldversleuteling opgeslagen; voorproductie aanvaardt onversleutelde velden.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
-    'Productie vereist het AMA-certificaat voor veldversleuteling. Vul {field} in bij dit inloggegeven.',
+    'Productie vereist de AMA-sleutel voor veldversleuteling. Vul {field} in bij dit inloggegeven.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
     'De HTTP BasicAuth-inloggegevens zijn ingesteld.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
@@ -6557,12 +6566,13 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
     'De handtekening op de uitdaging is niet geverifieerd tegen het gekozen certificaat.',
   'settings.providerCredentials.field.amaCertPem.hint':
-    'Het certificaat zelf, geen pad ernaartoe — PEM-tekst die begint met BEGIN CERTIFICATE.',
+    'Het certificaat of de sleutel zelf, niet een pad ernaartoe — PEM-tekst die begint met BEGIN CERTIFICATE of met BEGIN PUBLIC KEY.',
   'settings.providerCredentials.field.amaCertPem.fromFile': 'Bestand kiezen…',
   'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Plakken vanaf het klembord',
-  'settings.providerCredentials.field.amaCertPem.inspect': 'Certificaat inspecteren',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Onderzoeken',
   'settings.providerCredentials.field.amaCertPem.inspecting': 'Bezig met inspecteren…',
-  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certificaat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileFilter':
+    'Certificaat of openbare sleutel (PEM)',
   'settings.providerCredentials.field.amaCertPem.fileTooLarge':
     'Dat bestand is te groot voor een PEM-certificaat (grens {max} KiB). Er is niets gelezen.',
   'settings.providerCredentials.field.amaCertPem.fileReadFailed':
@@ -6576,9 +6586,9 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.field.amaCertPem.clipboardPasted':
     'Tekst geplakt vanaf het klembord.',
   'settings.providerCredentials.field.amaCertPem.empty':
-    'Plak of laad een certificaat voordat u het inspecteert.',
+    'Plak of laad een certificaat of een openbare sleutel voordat u het onderzoekt.',
   'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
-    'Wat over dit certificaat is vastgesteld',
+    'Wat is vastgesteld over wat u hebt opgegeven',
   'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Houder',
   'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Uitgever',
   'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Geldig vanaf',
@@ -6598,9 +6608,9 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_unparseable':
     'De tekst is geen PEM-gecodeerd X.509-certificaat. De lezer meldt: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
-    'Het certificaat draagt een openbare RSA-sleutel van {bits} bits, en daaruit is een veldversleutelaar opgebouwd. Dat is wat een handtekening in productie nodig heeft.',
+    'Wat u hebt opgegeven bevat een openbare RSA-sleutel van {bits} bits, en daaruit is een veldversleuteling opgebouwd. Dat is wat een handtekening in productie nodig heeft.',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
-    'Uit dit certificaat kon geen openbare RSA-sleutel worden gehaald, dus er kan geen veldversleutelaar uit worden opgebouwd en een CMD-handtekening in productie zal weigeren. De lezer meldt: {detail}',
+    'Uit wat u hebt opgegeven kon geen openbare RSA-sleutel worden gehaald, dus er kan geen veldversleuteling uit worden opgebouwd en een CMD-handtekening in productie wordt geweigerd. De lezer meldt: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_within_validity':
     'De huidige servertijd valt binnen de geldigheidsperiode van het certificaat.',
   'settings.providerCredentials.probe.detail.ama_cert_expired':
@@ -6610,31 +6620,50 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
     'De geldigheidsdatums van het certificaat konden niet als tijdstippen worden gelezen, dus de periode is niet beoordeeld.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
-    'Of dit werkelijk het certificaat van AMA is, is niet vastgesteld: er is geen certificeringspad opgebouwd, geen vertrouwensanker geraadpleegd en geen vertrouwenslijst opgehaald.',
+    'Of deze sleutel echt van AMA is, is niet vastgesteld: er is geen certificeringspad opgebouwd, geen vertrouwensanker geraadpleegd en geen vertrouwenslijst opgehaald.',
   // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
   // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
   // zero-width characters, all of which base64 ignores by specification — and only then read.
   // Everything below names one difference that survived that and WOULD have changed the decoded
   // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
   // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
-  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256-vingerafdruk (DER)',
   'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
-    'Vergelijk deze waarde met de vingerafdruk die AMA u heeft gegeven. Het is het enige in dit overzicht waaraan u kunt zien of dit het juiste certificaat is, en de toepassing vergelijkt het niet voor u.',
-  'settings.providerCredentials.probe.detail.ama_cert_empty': 'Er is geen certificaat opgegeven.',
+    'Vergelijk deze waarden met wat AMA heeft gepubliceerd. De vingerafdruk van de openbare sleutel gaat over de sleutel zelf en is dus dezelfde of u nu het certificaat of alleen de sleutel hebt gekregen; die van het certificaat gaat over het hele certificaat en is voor dezelfde sleutel een andere waarde. Ze zijn het enige in dit overzicht waaraan u kunt zien of dit de juiste sleutel is, en de toepassing vergelijkt ze niet voor u.',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind': 'Wat u hebt opgegeven',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.certificate':
+    'X.509-certificaat',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey':
+    'Alleen de openbare sleutel (geen certificaat)',
+  'settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint':
+    'SHA-256-vingerafdruk van de openbare sleutel (SPKI)',
+  'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint':
+    'SHA-256-vingerafdruk van het certificaat (DER)',
+  'settings.providerCredentials.probe.detail.ama_cert_empty':
+    'Er is geen certificaat en geen openbare sleutel opgegeven.',
   'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
-    'Er is geen PEM-omhulling gevonden: de tekst moet een regel bevatten die exact -----BEGIN CERTIFICATE----- luidt. Er is niets toegevoegd rond wat u hebt geplakt.',
+    'Er is geen PEM-omhulling gevonden: de tekst moet een regel bevatten die exact -----BEGIN CERTIFICATE----- of exact -----BEGIN PUBLIC KEY----- luidt. Er is niets toegevoegd rond wat u hebt geplakt.',
   'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
-    'Bij de regel -----BEGIN CERTIFICATE----- ontbreekt de bijbehorende regel -----END CERTIFICATE-----, dus het blok lijkt afgekapt. Er is niets voor u afgesloten.',
+    'Bij de regel -----BEGIN {label}----- ontbreekt de bijbehorende regel -----END {label}-----, waardoor het blok afgekapt lijkt. Er is niets voor u afgesloten.',
   'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
-    'Dit is een PEM-blok met het label “{label}” en niet “CERTIFICATE”. Dit veld neemt het openbare certificaat van AMA op, nooit een privésleutel.',
+    'Dit is een PEM-blok met het label “{label}” en niet “CERTIFICATE” of “PUBLIC KEY”. Dit veld neemt de AMA-sleutel voor veldversleuteling op: het openbare certificaat, of de openbare sleutel op zichzelf.',
   'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
-    'Er is meer dan één PEM-blok geplakt en er is er geen voor u gekozen. Gevonden blokken: {count}. Plak precies één certificaat.',
+    'Er is meer dan één PEM-blok geplakt en er is er geen voor u gekozen. Gevonden blokken: {count} ({labels}). Plak precies één certificaat of één openbare sleutel.',
   'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
-    'De inhoud van het certificaat bevat op byte-positie {offset} het teken {character}, dat geen base64 en geen witruimte is. Het is blijven staan: het verwijderen of raden waarvoor het stond zou het gelezen certificaat veranderen.',
+    'De inhoud van het PEM-blok bevat {character} op byte-positie {offset}, en dat is geen base64 en geen witruimte. Het is ongemoeid gelaten: het weghalen, of raden waar het voor stond, zou de gelezen sleutel veranderen.',
   'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
-    'De inhoud van het certificaat is geen geldige base64 en is niet hersteld: het ontbrekende deel is niet terug te halen. De lezer meldt: {detail}',
+    'De inhoud van het PEM-blok is geen geldige base64 en is niet hersteld: het ontbrekende deel is niet terug te halen. De lezer meldt: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_normalised':
-    'Bij het lezen van het certificaat zijn tekens genegeerd die de base64-inhoud niet gebruikt: witruimte, stuurtekens of tekens zonder breedte. Genegeerde tekens: {removed}. Het gedecodeerde certificaat blijft ongewijzigd.',
+    'Bij het lezen van de tekst zijn tekens genegeerd die de base64-inhoud niet gebruikt: witruimte, stuurtekens of tekens zonder breedte. Genegeerde tekens: {removed}. De gedecodeerde bytes blijven ongewijzigd.',
+  'settings.providerCredentials.probe.detail.ama_key_public_key_parsed':
+    'De tekst wordt gelezen als een op zichzelf staande openbare sleutel (een SubjectPublicKeyInfo). Er zit geen certificaat bij.',
+  'settings.providerCredentials.probe.detail.ama_key_not_a_public_key':
+    'Het blok heeft het label PUBLIC KEY en de gedecodeerde bytes zijn geen openbare sleutel. Er is ook niets in plaats daarvan als certificaat gelezen. De lezer meldt: {detail}',
+  'settings.providerCredentials.probe.detail.ama_key_pkcs1_not_spki':
+    'Dit is een PEM-blok met het label “RSA PUBLIC KEY”: een sleutel in PKCS#1, de modulus en de exponent zonder enige algoritme-aanduiding eromheen. Dit veld neemt de vorm SubjectPublicKeyInfo op, en die zit in een “PUBLIC KEY”-blok. Zet hem om met: openssl rsa -RSAPublicKey_in -in key.pem -pubout',
+  'settings.providerCredentials.probe.detail.ama_key_certificate_fields_absent':
+    'Wat u hebt opgegeven is een op zichzelf staande openbare sleutel en heeft dus geen houder, geen uitgever en geen geldigheidsduur: die horen bij een certificaat, en dat is niet opgegeven. Ze ontbreken, ze zijn niet onleesbaar.',
+  'settings.providerCredentials.probe.detail.ama_key_private_key':
+    'Dit is een PEM-blok met het label “{label}”, en dat is een PRIVÉsleutel. Dit veld neemt uitsluitend openbaar materiaal op: het certificaat van AMA of de openbare sleutel daarvan. De waarde is geweigerd en niet opgeslagen; als het een echte privésleutel is, beschouw hem dan als blootgesteld en vervang hem.',
   // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
   // under its own heading and a completed run costs one real qualified electronic signature.
   'settings.providerCredentials.cmdTest.runEndToEnd':
@@ -6651,8 +6680,7 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.probe.checkName.configured_environment': 'Geconfigureerde omgeving',
   'settings.providerCredentials.probe.checkName.stored_credential_fields':
     'Opgeslagen inloggegevensvelden',
-  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
-    'AMA-certificaat leesbaar',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable': 'AMA-sleutel leesbaar',
   'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-toegang',
   'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport gereed',
   'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
@@ -6679,6 +6707,8 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.probe.checkName.challenge_signed': 'Uitdaging ondertekend',
   'settings.providerCredentials.probe.checkName.challenge_verified': 'Uitdaging geverifieerd',
   'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certificaat gelezen',
+  'settings.providerCredentials.probe.checkName.public_key_parsed': 'Openbare sleutel gelezen',
+  'settings.providerCredentials.probe.checkName.certificate_fields': 'Certificaatgegevens',
   'settings.providerCredentials.probe.checkName.certificate_normalised':
     'Geplakte tekst opgeschoond',
   'settings.providerCredentials.probe.checkName.rsa_public_key': 'Openbare RSA-sleutel',

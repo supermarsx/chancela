@@ -2464,6 +2464,9 @@ export const daDK: Catalog = {
   'settings.saved': 'Indstillingerne er gemt.',
   'toast.settings.saved': 'Indstillingerne er gemt.',
   'settings.saveNow': 'Gem nu',
+  'settings.finder.match.keywords': 'Nøgleord',
+  'settings.finder.match.label': 'Felt',
+  'settings.finder.match.value': 'Værdi',
   'settings.autosave.pending': 'Ugemte ændringer…',
   'settings.autosave.error':
     'Kunne ikke gemme automatisk. Dine ændringer bevares og kan forsøges igen.',
@@ -2751,6 +2754,12 @@ export const daDK: Catalog = {
   'entities.nipcUnvalidated.badge': 'ikke valideret',
   'entities.nipcUnvalidated.aria': 'NIPC ikke valideret',
   'entities.print.nipcUnvalidated': '(ikke valideret)',
+  'settings.adminGroup.aria': 'Administrationsafsnit',
+  'settings.adminGroup.platform': 'Platform',
+  'settings.adminGroup.data': 'Data',
+  'settings.adminGroup.integrations': 'Integrationer',
+  'settings.adminGroup.content': 'Indhold',
+  'settings.adminGroup.signing': 'Signering',
   'settings.subnav.aria': 'Konfigurationsafsnit',
   'settings.subnav.mcp': 'AI og MCP',
   'settings.subnav.operations.aria': 'Driftsområder',
@@ -5214,7 +5223,7 @@ export const daDK: Catalog = {
   'settings.providerCredentials.field.applicationId': 'Applikations-id',
   'settings.providerCredentials.field.httpBasicUsername': 'HTTP Basic-brugernavn',
   'settings.providerCredentials.field.httpBasicPassword': 'HTTP Basic-adgangskode',
-  'settings.providerCredentials.field.amaCertPem': 'AMA-certifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem': 'AMA-certifikat eller offentlig nøgle (PEM)',
   'settings.providerCredentials.field.clientId': 'Klient-id',
   'settings.providerCredentials.field.clientSecret': 'Klienthemmelighed',
   'settings.providerCredentials.field.accessToken': 'Adgangstoken',
@@ -5256,7 +5265,7 @@ export const daDK: Catalog = {
   'settings.providerCredentials.help.httpBasicPassword':
     'Adgangskode til HTTP Basic-godkendelse, der følger med brugernavnet. F.eks. en lang hemmelig streng fra udbyderen.',
   'settings.providerCredentials.help.amaCertPem':
-    'Offentligt AMA-certifikat i PEM-format. Dets RSA-nøgle krypterer mobilnummer, pinkode og engangskode, før de sendes med i SCMD-anmodningen; i produktion er det påkrævet, og uden det sendes felterne i klartekst i præproduktion. F.eks. blokken »-----BEGIN CERTIFICATE-----…«.',
+    'AMA’s offentlige certifikat, eller blot den offentlige nøgle, i PEM-format. Begge dele accepteres, for kun RSA-nøglen bruges: den krypterer mobilnummer, pinkode og engangskode, før de sendes med i SCMD-anmodningen. I produktion er den påkrævet, og uden den sendes felterne i klartekst i præproduktion. F.eks. blokken »-----BEGIN CERTIFICATE-----…« eller »-----BEGIN PUBLIC KEY-----…«.',
   'settings.providerCredentials.help.clientId':
     'OAuth2-klientidentifikator tildelt af QTSP. F.eks. »chancela-prod«.',
   'settings.providerCredentials.help.clientSecret':
@@ -6370,11 +6379,11 @@ export const daDK: Catalog = {
   'settings.providerCredentials.probe.detail.cmd_credential_fields_present':
     'Alle legitimationsfelter, som dette miljø kræver, findes i den gemte post.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_parsed':
-    'Det gemte AMA-certifikat til feltkryptering blev læst, og feltkrypteringen blev bygget.',
+    'Den gemte AMA-nøgle til feltkryptering blev læst, og feltkrypteringen blev bygget.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_absent_preprod':
-    'Der er ikke gemt noget AMA-certifikat til feltkryptering; præproduktion accepterer felter i klartekst.',
+    'Der er ingen gemt AMA-nøgle til feltkryptering; præproduktion accepterer felter i klartekst.',
   'settings.providerCredentials.probe.detail.cmd_ama_certificate_required_prod':
-    'Produktion kræver AMA-certifikatet til feltkryptering. Udfyld {field} i denne legitimationspost.',
+    'Produktion kræver AMA-nøglen til feltkryptering. Udfyld {field} i denne legitimationspost.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_configured':
     'HTTP BasicAuth-legitimationen er konfigureret.',
   'settings.providerCredentials.probe.detail.cmd_http_basic_absent_preprod':
@@ -6497,12 +6506,13 @@ export const daDK: Catalog = {
   'settings.providerCredentials.probe.detail.pkcs12_challenge_not_verified':
     'Signaturen på udfordringen kunne ikke verificeres mod det valgte certifikat.',
   'settings.providerCredentials.field.amaCertPem.hint':
-    'Selve certifikatet, ikke en sti til det — PEM-tekst, der begynder med BEGIN CERTIFICATE.',
+    'Selve certifikatet eller selve nøglen, ikke en sti til dem — PEM-tekst, der begynder med BEGIN CERTIFICATE eller med BEGIN PUBLIC KEY.',
   'settings.providerCredentials.field.amaCertPem.fromFile': 'Vælg fil…',
   'settings.providerCredentials.field.amaCertPem.fromClipboard': 'Indsæt fra udklipsholderen',
-  'settings.providerCredentials.field.amaCertPem.inspect': 'Undersøg certifikatet',
+  'settings.providerCredentials.field.amaCertPem.inspect': 'Undersøg',
   'settings.providerCredentials.field.amaCertPem.inspecting': 'Undersøger…',
-  'settings.providerCredentials.field.amaCertPem.fileFilter': 'Certifikat (PEM)',
+  'settings.providerCredentials.field.amaCertPem.fileFilter':
+    'Certifikat eller offentlig nøgle (PEM)',
   'settings.providerCredentials.field.amaCertPem.fileTooLarge':
     'Filen er for stor til at være et PEM-certifikat (grænse {max} KiB). Der blev ikke læst noget.',
   'settings.providerCredentials.field.amaCertPem.fileReadFailed':
@@ -6516,9 +6526,9 @@ export const daDK: Catalog = {
   'settings.providerCredentials.field.amaCertPem.clipboardPasted':
     'Tekst indsat fra udklipsholderen.',
   'settings.providerCredentials.field.amaCertPem.empty':
-    'Indsæt eller indlæs et certifikat, før du undersøger det.',
+    'Indsæt eller indlæs et certifikat eller en offentlig nøgle, før du undersøger det.',
   'settings.providerCredentials.field.amaCertPem.inspect.resultTitle':
-    'Hvad der blev fastslået om dette certifikat',
+    'Hvad der blev fastslået om det, du angav',
   'settings.providerCredentials.field.amaCertPem.inspect.subject': 'Indehaver',
   'settings.providerCredentials.field.amaCertPem.inspect.issuer': 'Udsteder',
   'settings.providerCredentials.field.amaCertPem.inspect.notBefore': 'Gyldigt fra',
@@ -6537,9 +6547,9 @@ export const daDK: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_unparseable':
     'Teksten er ikke et PEM-kodet X.509-certifikat. Læseren melder: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_present':
-    'Certifikatet bærer en offentlig RSA-nøgle på {bits} bit, og der blev bygget en feltkryptering ud fra den. Det er, hvad en signatur i produktion har brug for.',
+    'Det, du angav, indeholder en offentlig RSA-nøgle på {bits} bit, og der blev bygget en feltkryptering ud fra den. Det er, hvad en signatur i produktion har brug for.',
   'settings.providerCredentials.probe.detail.ama_cert_rsa_key_absent':
-    'Der kunne ikke hentes nogen offentlig RSA-nøgle ud af dette certifikat, så der kan ikke bygges en feltkryptering ud fra det, og en CMD-signatur i produktion vil blive afvist. Læseren melder: {detail}',
+    'Der kunne ikke hentes nogen offentlig RSA-nøgle ud af det, du angav, så der kan ikke bygges en feltkryptering, og en CMD-signatur i produktion vil blive afvist. Læseren melder: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_within_validity':
     'Den aktuelle servertid ligger inden for certifikatets gyldighedsperiode.',
   'settings.providerCredentials.probe.detail.ama_cert_expired':
@@ -6549,32 +6559,49 @@ export const daDK: Catalog = {
   'settings.providerCredentials.probe.detail.ama_cert_validity_unreadable':
     'Certifikatets gyldighedsdatoer kunne ikke læses som tidspunkter, så perioden blev ikke vurderet.',
   'settings.providerCredentials.probe.detail.ama_cert_trust_not_established':
-    'Om dette virkelig er AMA’s certifikat, blev ikke fastslået: der blev ikke opbygget nogen certificeringssti, ikke konsulteret noget tillidsanker og ikke hentet nogen tillidsliste.',
+    'Det blev ikke fastslået, om denne nøgle virkelig er AMA’s: der blev ikke bygget nogen certificeringssti, ikke konsulteret nogen tillidsanker og ikke hentet nogen tillidsliste.',
   // --- AMA certificate: fingerprint, and the refusals the normaliser names (t112) ---
   // A pasted PEM is normalised first — line endings, a BOM, trailing spaces, control and
   // zero-width characters, all of which base64 ignores by specification — and only then read.
   // Everything below names one difference that survived that and WOULD have changed the decoded
   // certificate, so each is refused rather than repaired. `{character}` arrives as U+XXXX
   // notation, `{label}`/`{count}`/`{offset}`/`{removed}`/`{detail}` are machine values.
-  'settings.providerCredentials.field.amaCertPem.inspect.fingerprint': 'SHA-256-fingeraftryk (DER)',
   'settings.providerCredentials.field.amaCertPem.inspect.fingerprintHint':
-    'Sammenlign denne værdi med det fingeraftryk, AMA har oplyst. Det er det eneste i denne oversigt, der kan vise, om det er det rigtige certifikat, og programmet foretager ikke sammenligningen for dig.',
+    'Sammenlign disse værdier med dem, AMA har offentliggjort. Fingeraftrykket af den offentlige nøgle dækker selve nøglen og er derfor det samme, uanset om du fik tilsendt certifikatet eller kun nøglen; certifikatets fingeraftryk dækker hele certifikatet og er en anden værdi for den samme nøgle. De er det eneste i denne oversigt, der kan vise, om det er den rigtige nøgle, og programmet foretager ikke sammenligningen for dig.',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind': 'Hvad du angav',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.certificate': 'X.509-certifikat',
+  'settings.providerCredentials.field.amaCertPem.inspect.inputKind.publicKey':
+    'Kun den offentlige nøgle (intet certifikat)',
+  'settings.providerCredentials.field.amaCertPem.inspect.publicKeyFingerprint':
+    'SHA-256-fingeraftryk af den offentlige nøgle (SPKI)',
+  'settings.providerCredentials.field.amaCertPem.inspect.certificateFingerprint':
+    'SHA-256-fingeraftryk af certifikatet (DER)',
   'settings.providerCredentials.probe.detail.ama_cert_empty':
-    'Der blev ikke angivet noget certifikat.',
+    'Der blev hverken angivet et certifikat eller en offentlig nøgle.',
   'settings.providerCredentials.probe.detail.ama_cert_armour_missing':
-    'Der blev ikke fundet nogen PEM-indramning: teksten skal indeholde en linje, der lyder præcis -----BEGIN CERTIFICATE-----. Der blev ikke tilføjet noget omkring det, du indsatte.',
+    'Der blev ikke fundet nogen PEM-indramning: teksten skal indeholde en linje, der lyder præcis -----BEGIN CERTIFICATE----- eller præcis -----BEGIN PUBLIC KEY-----. Der blev ikke tilføjet noget omkring det, du indsatte.',
   'settings.providerCredentials.probe.detail.ama_cert_end_armour_missing':
-    'Linjen -----BEGIN CERTIFICATE----- har ingen tilsvarende linje -----END CERTIFICATE-----, så blokken ser afkortet ud. Der blev ikke lukket noget for dig.',
+    'Linjen -----BEGIN {label}----- har ingen tilsvarende linje -----END {label}-----, så blokken virker afkortet. Der blev ikke lukket noget for dig.',
   'settings.providerCredentials.probe.detail.ama_cert_wrong_pem_label':
-    'Dette er en PEM-blok med mærkatet «{label}» og ikke «CERTIFICATE». Dette felt modtager AMA’s offentlige certifikat, aldrig en privat nøgle.',
+    'Dette er en PEM-blok med mærkatet «{label}» og ikke «CERTIFICATE» eller «PUBLIC KEY». Dette felt modtager AMA-nøglen til feltkryptering: det offentlige certifikat eller den offentlige nøgle alene.',
   'settings.providerCredentials.probe.detail.ama_cert_multiple_blocks':
-    'Der blev indsat mere end én PEM-blok, og ingen af dem blev valgt for dig. Fundne blokke: {count}. Indsæt præcis ét certifikat.',
+    'Der blev indsat mere end én PEM-blok, og ingen af dem blev valgt for dig. Fundne blokke: {count} ({labels}). Indsæt præcis ét certifikat eller én offentlig nøgle.',
   'settings.providerCredentials.probe.detail.ama_cert_illegal_character':
-    'Certifikatets indhold indeholder på byteposition {offset} tegnet {character}, som hverken er base64 eller blanktegn. Det blev stående: at fjerne det eller gætte, hvad det erstattede, ville ændre det læste certifikat.',
+    'Indholdet af PEM-blokken indeholder {character} på byteposition {offset}, hvilket hverken er base64 eller blanktegn. Det blev efterladt, som det var: at fjerne det eller gætte, hvad det erstattede, ville ændre den nøgle, der blev læst.',
   'settings.providerCredentials.probe.detail.ama_cert_base64_invalid':
-    'Certifikatets indhold er ikke gyldig base64 og blev ikke repareret: den manglende del kan ikke gendannes. Læseren melder: {detail}',
+    'Indholdet af PEM-blokken er ikke gyldig base64 og blev ikke repareret: den manglende del kan ikke genskabes. Læseren melder: {detail}',
   'settings.providerCredentials.probe.detail.ama_cert_normalised':
-    'Ved læsningen af certifikatet blev der set bort fra tegn, som base64-indholdet ikke bruger: blanktegn, styretegn eller tegn uden bredde. Ignorerede tegn: {removed}. Det afkodede certifikat er uændret.',
+    'Ved læsningen af teksten blev der set bort fra tegn, som base64-indholdet ikke bruger: blanktegn, styretegn eller tegn uden bredde. Ignorerede tegn: {removed}. De afkodede byte er uændrede.',
+  'settings.providerCredentials.probe.detail.ama_key_public_key_parsed':
+    'Teksten læses som en offentlig nøgle for sig (en SubjectPublicKeyInfo). Den indeholder intet certifikat.',
+  'settings.providerCredentials.probe.detail.ama_key_not_a_public_key':
+    'Blokken har mærkatet PUBLIC KEY, og dens afkodede byte er ikke en offentlig nøgle. Der blev heller ikke læst noget som certifikat i stedet. Læseren melder: {detail}',
+  'settings.providerCredentials.probe.detail.ama_key_pkcs1_not_spki':
+    'Dette er en PEM-blok med mærkatet «RSA PUBLIC KEY»: en nøgle i PKCS#1, altså modulus og eksponent uden nogen algoritmeangivelse omkring sig. Dette felt modtager formen SubjectPublicKeyInfo, som er den, en «PUBLIC KEY»-blok indeholder. Konverter den med: openssl rsa -RSAPublicKey_in -in key.pem -pubout',
+  'settings.providerCredentials.probe.detail.ama_key_certificate_fields_absent':
+    'Det, du angav, er en offentlig nøgle for sig og har derfor hverken indehaver, udsteder eller gyldighedsperiode: de hører til et certifikat, og der blev ikke angivet noget. De mangler; de er ikke ulæselige.',
+  'settings.providerCredentials.probe.detail.ama_key_private_key':
+    'Dette er en PEM-blok med mærkatet «{label}», altså en PRIVAT nøgle. Dette felt modtager kun offentligt materiale: AMA’s certifikat eller dets offentlige nøgle. Værdien blev afvist og ikke gemt; hvis det er en rigtig privat nøgle, så betragt den som eksponeret og udskift den.',
   // The end-to-end production test's launcher, LABELLED rather than icon-only: it stands alone
   // under its own heading and a completed run costs one real qualified electronic signature.
   'settings.providerCredentials.cmdTest.runEndToEnd':
@@ -6591,8 +6618,7 @@ export const daDK: Catalog = {
   'settings.providerCredentials.probe.checkName.configured_environment': 'Konfigureret miljø',
   'settings.providerCredentials.probe.checkName.stored_credential_fields':
     'Gemte legitimationsfelter',
-  'settings.providerCredentials.probe.checkName.ama_certificate_parseable':
-    'AMA-certifikat læsbart',
+  'settings.providerCredentials.probe.checkName.ama_certificate_parseable': 'AMA-nøgle læsbar',
   'settings.providerCredentials.probe.checkName.http_basic_configured': 'HTTP-Basic-adgang',
   'settings.providerCredentials.probe.checkName.http_transport_ready': 'Transport klar',
   'settings.providerCredentials.probe.checkName.endpoint_matches_environment':
@@ -6621,6 +6647,8 @@ export const daDK: Catalog = {
   'settings.providerCredentials.probe.checkName.challenge_signed': 'Udfordring underskrevet',
   'settings.providerCredentials.probe.checkName.challenge_verified': 'Udfordring verificeret',
   'settings.providerCredentials.probe.checkName.certificate_parsed': 'Certifikat læst',
+  'settings.providerCredentials.probe.checkName.public_key_parsed': 'Offentlig nøgle læst',
+  'settings.providerCredentials.probe.checkName.certificate_fields': 'Certifikatoplysninger',
   'settings.providerCredentials.probe.checkName.certificate_normalised': 'Indsat tekst renset',
   'settings.providerCredentials.probe.checkName.rsa_public_key': 'Offentlig RSA-nøgle',
   'settings.providerCredentials.probe.checkName.validity_window': 'Gyldighedsperiode',
