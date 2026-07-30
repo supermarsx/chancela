@@ -39,8 +39,16 @@ impl FieldEncryptor {
     /// Extracts the RSA public key from the certificate's `SubjectPublicKeyInfo`.
     /// Returns [`CmdError::Encryption`] if the PEM is not a valid X.509 cert carrying
     /// an RSA key.
+    ///
+    /// The text goes through [`crate::normalize_certificate_pem`] first, so this accepts what an
+    /// operator actually pasted — CRLF, a BOM, trailing spaces, a one-line block — while a
+    /// difference that would change the decoded bytes is still refused, by name. The credential
+    /// write path already stores the canonical form, so for a panel-configured deployment this is
+    /// a no-op; it matters for `CHANCELA_CMD_AMA_CERT_PEM`, which reads a file straight off disk.
     pub fn from_ama_cert_pem(pem: &str) -> Result<Self, CmdError> {
-        let cert = Certificate::from_pem(pem.as_bytes())
+        let normalized = crate::normalize_certificate_pem(pem)
+            .map_err(|e| CmdError::Encryption(format!("invalid AMA certificate PEM: {e}")))?;
+        let cert = Certificate::from_pem(normalized.pem().as_bytes())
             .map_err(|e| CmdError::Encryption(format!("invalid AMA certificate PEM: {e}")))?;
         let spki_der = cert
             .tbs_certificate
@@ -128,6 +136,41 @@ mod tests {
         let out = enc.encrypt(&mut rng, "1234").unwrap();
         let decoded = STANDARD.decode(&out).unwrap();
         assert_eq!(decoded.len(), 256);
+    }
+
+    /// The signing path must accept the same dirt the admin panel does, and reach the same key.
+    ///
+    /// `CHANCELA_CMD_AMA_CERT_PEM` reads a file off the server's disk with no normalisation upstream
+    /// of it, so this is the path where a CRLF checkout or a BOM would otherwise take production
+    /// down with "invalid AMA certificate PEM".
+    #[test]
+    fn a_filthily_pasted_certificate_builds_the_same_key() {
+        use rsa::traits::PublicKeyParts;
+
+        let clean = match FieldEncryptor::from_ama_cert_pem(AMA_CERT_PEM).unwrap() {
+            FieldEncryptor::AmaRsa(key) => key,
+            other => panic!("the fixture carries an RSA key, got {other:?}"),
+        };
+        let filthy = format!("\u{feff}{}", AMA_CERT_PEM.replace('\n', "  \r\n"));
+        let dirty = match FieldEncryptor::from_ama_cert_pem(&filthy).unwrap() {
+            FieldEncryptor::AmaRsa(key) => key,
+            other => {
+                panic!("normalisation must not change what the certificate carries: {other:?}")
+            }
+        };
+        assert_eq!(clean.n(), dirty.n());
+        assert_eq!(clean.e(), dirty.e());
+    }
+
+    /// A defect that would change the bytes is still refused, and the message names it.
+    #[test]
+    fn a_corrupt_certificate_is_still_refused_with_a_reason() {
+        let err = FieldEncryptor::from_ama_cert_pem(
+            "-----BEGIN PRIVATE KEY-----\nMAoCAQE=\n-----END PRIVATE KEY-----\n",
+        )
+        .unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("PRIVATE KEY"), "{message}");
     }
 
     #[test]

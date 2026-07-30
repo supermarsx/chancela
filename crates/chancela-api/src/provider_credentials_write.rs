@@ -730,6 +730,18 @@ pub struct AmaCertificateInspectResponse {
     /// and out of date.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub within_validity: Option<bool>,
+    /// SHA-256 of the certificate's DER, as 64 lowercase hex characters.
+    ///
+    /// The one value on this response that can establish *which* certificate this is. Everything
+    /// else the inspection reports — that it parses, that it carries an RSA key, its subject and
+    /// its dates — is copied out of a document the operator was handed and would read exactly the
+    /// same on a substituted certificate. The fingerprint is checkable against what AMA issued, and
+    /// it is over the DER precisely so that re-wrapping or re-pasting the PEM cannot move it.
+    ///
+    /// It still is not a trust decision, and nothing here makes one: comparing it is the operator's
+    /// act, not the server's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sha256_fingerprint: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub subject: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -816,6 +828,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
         rsa_public_key: false,
         key_bits: None,
         within_validity: None,
+        sha256_fingerprint: None,
         subject: None,
         issuer: None,
         not_before: None,
@@ -827,12 +840,42 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
         checks: Vec::new(),
     };
 
+    // Normalise, then verify, then refuse — in that order, and with no repair step between the
+    // second and the third. What is normalised is only what base64 ignores by specification, so the
+    // certificate this reports on is byte-for-byte the certificate the operator pasted.
+    let normalized = match chancela_cmd::normalize_certificate_pem(pem) {
+        Ok(normalized) => normalized,
+        Err(e) => {
+            response.checks.push(certificate_refusal_check(&e));
+            return response;
+        }
+    };
+    if normalized.removed_characters() > 0 {
+        let removed = normalized.removed_characters();
+        response.checks.push(
+            check(
+                codes::CHECK_CERTIFICATE_NORMALISED,
+                codes::AMA_CERT_NORMALISED,
+                true,
+                format!(
+                    "{removed} character(s) the base64 body does not use — whitespace, control or \
+                     zero-width characters — were ignored. The decoded certificate is unchanged."
+                ),
+            )
+            .with_params([("removed", removed.to_string())]),
+        );
+    }
+    response.sha256_fingerprint = Some(normalized.sha256_fingerprint());
+
+    // From here on the canonical text is what is read, so the inspector and the credential store
+    // are demonstrably looking at the same bytes.
+    let pem = normalized.pem();
     let certificate = match Certificate::from_pem(pem.as_bytes()) {
         Ok(certificate) => certificate,
         Err(e) => {
             response.checks.push(
                 check(
-                    "certificate_parsed",
+                    codes::CHECK_CERTIFICATE_PARSED,
                     codes::AMA_CERT_UNPARSEABLE,
                     false,
                     format!("The text is not a PEM-encoded X.509 certificate: {e}"),
@@ -844,7 +887,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
     };
     response.parsed = true;
     response.checks.push(check(
-        "certificate_parsed",
+        codes::CHECK_CERTIFICATE_PARSED,
         codes::AMA_CERT_PARSED,
         true,
         "The text parses as an X.509 certificate.",
@@ -865,7 +908,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
             response.key_bits = bits;
             response.checks.push(
                 check(
-                    "rsa_public_key",
+                    codes::CHECK_RSA_PUBLIC_KEY,
                     codes::AMA_CERT_RSA_KEY_PRESENT,
                     true,
                     format!(
@@ -881,7 +924,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
             let detail = e.to_string();
             response.checks.push(
                 check(
-                    "rsa_public_key",
+                    codes::CHECK_RSA_PUBLIC_KEY,
                     codes::AMA_CERT_RSA_KEY_ABSENT,
                     false,
                     format!(
@@ -904,7 +947,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
             if now < from {
                 response.within_validity = Some(false);
                 response.checks.push(check(
-                    "validity_window",
+                    codes::CHECK_VALIDITY_WINDOW,
                     codes::AMA_CERT_NOT_YET_VALID,
                     false,
                     "The certificate's validity window has not started yet.",
@@ -912,7 +955,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
             } else if now > until {
                 response.within_validity = Some(false);
                 response.checks.push(check(
-                    "validity_window",
+                    codes::CHECK_VALIDITY_WINDOW,
                     codes::AMA_CERT_EXPIRED,
                     false,
                     "The certificate has expired: its validity window has already ended.",
@@ -920,7 +963,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
             } else {
                 response.within_validity = Some(true);
                 response.checks.push(check(
-                    "validity_window",
+                    codes::CHECK_VALIDITY_WINDOW,
                     codes::AMA_CERT_WITHIN_VALIDITY,
                     true,
                     "The current server time falls inside the certificate's validity window.",
@@ -929,7 +972,7 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
         }
         // Unreadable dates are their own honest outcome, never silently treated as in-date.
         _ => response.checks.push(skipped(
-            "validity_window",
+            codes::CHECK_VALIDITY_WINDOW,
             codes::AMA_CERT_VALIDITY_UNREADABLE,
             "The certificate's validity dates could not be read as timestamps, so the window was \
              not judged.",
@@ -940,12 +983,56 @@ fn inspect_ama_certificate_pem(pem: &str) -> AmaCertificateInspectResponse {
     // it names work that was NOT done — rendering it green would be the exact overclaim it exists
     // to prevent.
     response.checks.push(skipped(
-        "trust_established",
+        codes::CHECK_TRUST_ESTABLISHED,
         codes::AMA_CERT_TRUST_NOT_ESTABLISHED,
         "Whether this is genuinely AMA's certificate was not determined: no certification path was \
          built, no trust anchor was consulted and no Trusted List was fetched.",
     ));
     response
+}
+
+/// One refusal from the PEM normaliser, as the `certificate_parsed` check that failed.
+///
+/// Every variant gets its own code and its own parameters, because the whole reason this exists is
+/// that "invalid certificate" told an operator holding two kilobytes of base64 nothing they could
+/// act on. `character` is `U+XXXX` notation rather than the character itself — a hostile candidate
+/// can carry a bidirectional override or a control code, and neither belongs in a rendered
+/// sentence. `#[non_exhaustive]` on the error means the wildcard arm is required; it maps to the
+/// generic code so a variant added upstream degrades to the old behaviour rather than failing to
+/// compile a client.
+fn certificate_refusal_check(error: &chancela_cmd::CertificatePemError) -> ProviderProbeCheck {
+    use chancela_cmd::CertificatePemError as E;
+
+    const NAME: codes::CheckName = codes::CHECK_CERTIFICATE_PARSED;
+    let detail = error.to_string();
+    match error {
+        E::Empty => check(NAME, codes::AMA_CERT_EMPTY, false, detail),
+        E::ArmourMissing => check(NAME, codes::AMA_CERT_ARMOUR_MISSING, false, detail),
+        E::EndArmourMissing => check(NAME, codes::AMA_CERT_END_ARMOUR_MISSING, false, detail),
+        E::WrongLabel { label } => check(NAME, codes::AMA_CERT_WRONG_PEM_LABEL, false, detail)
+            .with_params([("label", truncate_name(label))]),
+        E::MultipleBlocks { count } => check(NAME, codes::AMA_CERT_MULTIPLE_BLOCKS, false, detail)
+            .with_params([("count", count.to_string())]),
+        E::IllegalCharacter { character, offset } => {
+            check(NAME, codes::AMA_CERT_ILLEGAL_CHARACTER, false, detail).with_params([
+                ("character", character.clone()),
+                ("offset", offset.to_string()),
+            ])
+        }
+        E::Base64Invalid { detail: reason } => {
+            let reason = reason.clone();
+            check(NAME, codes::AMA_CERT_BASE64_INVALID, false, detail)
+                .with_params([("detail", reason)])
+        }
+        // `NotACertificate` and any future variant land on the generic code, whose sentence already
+        // carries the reader's own `{detail}`; a client too old for a newly added code renders that
+        // rather than nothing.
+        _ => {
+            let reason = detail.clone();
+            check(NAME, codes::AMA_CERT_UNPARSEABLE, false, detail)
+                .with_params([("detail", reason)])
+        }
+    }
 }
 
 /// The RSA modulus size in bits, or `None` for a non-RSA encryptor.
@@ -1137,13 +1224,13 @@ const PKCS12_PROBE_DOMAIN: &[u8] = b"chancela-provider-credential-probe-v1\0";
 /// One check outcome. `code` is the stable machine name of `detail` — see
 /// [`crate::provider_probe_codes`] for why the sentence travels with an identifier.
 fn check(
-    name: &'static str,
+    name: codes::CheckName,
     code: &'static str,
     passed: bool,
     detail: impl Into<String>,
 ) -> ProviderProbeCheck {
     ProviderProbeCheck {
-        name,
+        name: name.as_str(),
         status: if passed { "passed" } else { "failed" },
         detail: detail.into(),
         detail_code: code,
@@ -1152,12 +1239,12 @@ fn check(
 }
 
 fn skipped(
-    name: &'static str,
+    name: codes::CheckName,
     code: &'static str,
     detail: impl Into<String>,
 ) -> ProviderProbeCheck {
     ProviderProbeCheck {
-        name,
+        name: name.as_str(),
         status: "skipped",
         detail: detail.into(),
         detail_code: code,
@@ -1177,7 +1264,7 @@ fn probe_stored_entry(
             false,
             false,
             vec![check(
-                "entry_enabled",
+                codes::CHECK_ENTRY_ENABLED,
                 codes::ENTRY_DISABLED,
                 false,
                 "The stored credential entry is disabled.",
@@ -1194,7 +1281,7 @@ fn probe_stored_entry(
             false,
             false,
             vec![check(
-                "mode_supported",
+                codes::CHECK_MODE_SUPPORTED,
                 codes::MODE_NOT_SIGNING_PROVIDER,
                 false,
                 "This is not a signing-provider credential mode.",
@@ -1249,13 +1336,13 @@ fn probe_cmd(
                 false,
                 vec![
                     check(
-                        "entry_enabled",
+                        codes::CHECK_ENTRY_ENABLED,
                         codes::ENTRY_ENABLED,
                         true,
                         "The stored credential entry is enabled.",
                     ),
                     check(
-                        "configured_environment",
+                        codes::CHECK_CONFIGURED_ENVIRONMENT,
                         codes::CMD_ENVIRONMENT_SELECTOR_INVALID,
                         false,
                         "The entry's environment selector is neither prod nor preprod, so which \
@@ -1276,7 +1363,7 @@ fn probe_cmd(
         .is_some_and(|value| !value.is_empty());
     let mut checks = vec![
         check(
-            "entry_enabled",
+            codes::CHECK_ENTRY_ENABLED,
             codes::ENTRY_ENABLED,
             true,
             "The stored credential entry is enabled.",
@@ -1286,7 +1373,7 @@ fn probe_cmd(
         // they may not have realised they were inheriting.
         if declared {
             check(
-                "configured_environment",
+                codes::CHECK_CONFIGURED_ENVIRONMENT,
                 codes::CMD_ENVIRONMENT_FROM_ENTRY,
                 true,
                 format!(
@@ -1297,7 +1384,7 @@ fn probe_cmd(
             .with_params([("environment", environment.to_owned())])
         } else {
             check(
-                "configured_environment",
+                codes::CHECK_CONFIGURED_ENVIRONMENT,
                 codes::CMD_ENVIRONMENT_RESOLVED,
                 true,
                 format!(
@@ -1324,7 +1411,7 @@ fn probe_cmd(
         }
     };
     checks.push(check(
-        "stored_credential_fields",
+        codes::CHECK_STORED_CREDENTIAL_FIELDS,
         codes::CMD_CREDENTIAL_FIELDS_PRESENT,
         true,
         "Every credential field this environment requires is present in the stored entry.",
@@ -1334,13 +1421,13 @@ fn probe_cmd(
     // built, so reaching here means the AMA certificate parsed; report which mode that implies.
     checks.push(match (&cfg.ama_cert_pem, is_prod) {
         (Some(_), _) => check(
-            "ama_certificate_parseable",
+            codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_PARSED,
             true,
             "The stored AMA field-encryption certificate parsed and the field encryptor was built.",
         ),
         (None, false) => check(
-            "ama_certificate_parseable",
+            codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_ABSENT_PREPROD,
             true,
             "No AMA field-encryption certificate is stored; preprod accepts cleartext fields.",
@@ -1348,7 +1435,7 @@ fn probe_cmd(
         // Unreachable: prod without a certificate fails assembly above. Kept as a fail-closed arm
         // rather than an `unreachable!()` so a future change in the assembler degrades honestly.
         (None, true) => check(
-            "ama_certificate_parseable",
+            codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_REQUIRED_PROD,
             false,
             format!(
@@ -1362,19 +1449,19 @@ fn probe_cmd(
     let has_basic_auth = cfg.basic_auth.is_some();
     checks.push(match (has_basic_auth, is_prod) {
         (true, _) => check(
-            "http_basic_configured",
+            codes::CHECK_HTTP_BASIC_CONFIGURED,
             codes::CMD_HTTP_BASIC_CONFIGURED,
             true,
             "HTTP BasicAuth credentials are configured.",
         ),
         (false, false) => check(
-            "http_basic_configured",
+            codes::CHECK_HTTP_BASIC_CONFIGURED,
             codes::CMD_HTTP_BASIC_ABSENT_PREPROD,
             true,
             "No HTTP BasicAuth credentials are stored; preprod may accept unauthenticated calls.",
         ),
         (false, true) => check(
-            "http_basic_configured",
+            codes::CHECK_HTTP_BASIC_CONFIGURED,
             codes::CMD_HTTP_BASIC_REQUIRED_PROD,
             false,
             format!(
@@ -1391,14 +1478,14 @@ fn probe_cmd(
     // The transport-level gate the real HTTP client applies before it will talk to AMA at all.
     match cfg.validate_http_transport() {
         Ok(()) => checks.push(check(
-            "http_transport_ready",
+            codes::CHECK_HTTP_TRANSPORT_READY,
             codes::CMD_HTTP_TRANSPORT_READY,
             true,
             "The resolved configuration satisfies the real AMA HTTP transport's requirements.",
         )),
         Err(_) => {
             checks.push(check(
-                "http_transport_ready",
+                codes::CHECK_HTTP_TRANSPORT_READY,
                 codes::CMD_HTTP_TRANSPORT_NOT_READY,
                 false,
                 "The resolved configuration cannot drive the real AMA HTTP transport.",
@@ -1420,7 +1507,7 @@ fn probe_cmd(
         Ok(vetted) if endpoint == expected_endpoint => vetted,
         _ => {
             checks.push(check(
-                "endpoint_matches_environment",
+                codes::CHECK_ENDPOINT_MATCHES_ENVIRONMENT,
                 codes::CMD_ENDPOINT_NOT_PINNED,
                 false,
                 "The resolved SCMD endpoint is not the constant this environment names, or it \
@@ -1431,13 +1518,18 @@ fn probe_cmd(
         }
     };
     if let Err((code, detail)) = require_https_probe_endpoint(&vetted, "CMD") {
-        checks.push(check("endpoint_matches_environment", code, false, detail));
+        checks.push(check(
+            codes::CHECK_ENDPOINT_MATCHES_ENVIRONMENT,
+            code,
+            false,
+            detail,
+        ));
         checks.push(cmd_live_operation_skipped());
         return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
     }
     checks.push(
         check(
-            "endpoint_matches_environment",
+            codes::CHECK_ENDPOINT_MATCHES_ENVIRONMENT,
             codes::CMD_ENDPOINT_PINNED,
             true,
             format!("The SCMD endpoint is the pinned {expected_endpoint} constant, over HTTPS."),
@@ -1450,7 +1542,7 @@ fn probe_cmd(
         match cmd_endpoint_reachable(&vetted) {
             Ok(()) => {
                 checks.push(check(
-                    "endpoint_reachable",
+                    codes::CHECK_ENDPOINT_REACHABLE,
                     codes::CMD_ENDPOINT_REACHABLE,
                     true,
                     "A TLS connection to the AMA production endpoint succeeded. No SCMD operation \
@@ -1459,13 +1551,13 @@ fn probe_cmd(
                 true
             }
             Err((code, detail)) => {
-                checks.push(check("endpoint_reachable", code, false, detail));
+                checks.push(check(codes::CHECK_ENDPOINT_REACHABLE, code, false, detail));
                 false
             }
         }
     } else {
         checks.push(skipped(
-            "endpoint_reachable",
+            codes::CHECK_ENDPOINT_REACHABLE,
             codes::CMD_REACHABILITY_SKIPPED_PREPROD,
             "Reachability is probed only for the AMA production endpoint; this deployment is \
              configured for preprod.",
@@ -1579,21 +1671,21 @@ pub(crate) async fn resolve_cmd_trust_anchor_preflight(
 fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeCheck {
     match preflight {
         CmdTrustAnchorPreflight::NoListSelected => check(
-            "trusted_list_anchors",
+            codes::CHECK_TRUSTED_LIST_ANCHORS,
             codes::TSL_NO_LIST_SELECTED,
             false,
             "No Trusted List is selected, so no qualified signature can be authenticated. A CMD \
              signature will refuse. Select a Trusted List source in the signing settings.",
         ),
         CmdTrustAnchorPreflight::SelectionInvalid(detail) => check(
-            "trusted_list_anchors",
+            codes::CHECK_TRUSTED_LIST_ANCHORS,
             codes::TSL_SELECTION_INVALID,
             false,
             format!("The Trusted List selection is invalid: {detail}"),
         )
         .with_params([("detail", detail.clone())]),
         CmdTrustAnchorPreflight::AnchorsInvalid(detail) => check(
-            "trusted_list_anchors",
+            codes::CHECK_TRUSTED_LIST_ANCHORS,
             codes::TSL_ANCHORS_INVALID,
             false,
             format!(
@@ -1607,7 +1699,7 @@ fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeC
             ("digest_setting", TSL_ANCHOR_SHA256_SETTING.to_owned()),
         ]),
         CmdTrustAnchorPreflight::Unanchored => check(
-            "trusted_list_anchors",
+            codes::CHECK_TRUSTED_LIST_ANCHORS,
             codes::TSL_UNANCHORED,
             false,
             // t61-e2: this used to say a signature would "refuse with an error naming the signer's
@@ -1649,7 +1741,7 @@ fn cmd_trust_anchor_check(preflight: &CmdTrustAnchorPreflight) -> ProviderProbeC
                 ),
             };
             check(
-                "trusted_list_anchors",
+                codes::CHECK_TRUSTED_LIST_ANCHORS,
                 code,
                 true,
                 format!(
@@ -1701,7 +1793,7 @@ fn credential_assembly_detail(err: ApiError) -> String {
 fn credential_assembly_check(err: ApiError) -> ProviderProbeCheck {
     match err.into_uncoded() {
         ApiError::Unprocessable(message) | ApiError::Conflict(message) => check(
-            "stored_credential_fields",
+            codes::CHECK_STORED_CREDENTIAL_FIELDS,
             codes::CMD_CREDENTIAL_FIELDS_INCOMPLETE,
             false,
             message.clone(),
@@ -1710,7 +1802,7 @@ fn credential_assembly_check(err: ApiError) -> ProviderProbeCheck {
         // translated sentence can frame it without paraphrasing what it says.
         .with_params([("detail", message)]),
         _ => check(
-            "stored_credential_fields",
+            codes::CHECK_STORED_CREDENTIAL_FIELDS,
             codes::CMD_CREDENTIAL_ASSEMBLY_FAILED,
             false,
             "The stored credential entry could not be assembled into a usable CMD configuration.",
@@ -1722,7 +1814,7 @@ fn credential_assembly_check(err: ApiError) -> ProviderProbeCheck {
 /// probe. Kept as one constant so every early return carries the identical explanation.
 fn cmd_live_operation_skipped() -> ProviderProbeCheck {
     skipped(
-        "live_provider_operation",
+        codes::CHECK_LIVE_PROVIDER_OPERATION,
         codes::CMD_LIVE_OPERATION_SKIPPED,
         "CMD has no safe non-signing health operation in this integration. A live attempt \
          would initiate the interactive signature flow, so it was not performed.",
@@ -1821,7 +1913,7 @@ fn require_https_probe_endpoint(
 
 fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let mut checks = vec![check(
-        "entry_enabled",
+        codes::CHECK_ENTRY_ENABLED,
         codes::ENTRY_ENABLED,
         true,
         "The stored credential entry is enabled.",
@@ -1833,7 +1925,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         .filter(|value| !value.is_empty())
     else {
         checks.push(check(
-            "endpoint_safe",
+            codes::CHECK_ENDPOINT_SAFE,
             codes::CSC_BASE_URL_MISSING,
             false,
             "A CSC base URL is required for this entry.",
@@ -1844,7 +1936,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Ok(vetted) => vetted,
         Err(_) => {
             checks.push(check(
-                "endpoint_safe",
+                codes::CHECK_ENDPOINT_SAFE,
                 codes::CSC_BASE_URL_UNSAFE,
                 false,
                 "The CSC base URL failed the outbound-network safety policy.",
@@ -1853,11 +1945,11 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
     };
     if let Err((code, detail)) = require_https_probe_endpoint(&vetted, "CSC") {
-        checks.push(check("endpoint_https", code, false, detail));
+        checks.push(check(codes::CHECK_ENDPOINT_HTTPS, code, false, detail));
         return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
     }
     checks.push(check(
-        "endpoint_https",
+        codes::CHECK_ENDPOINT_HTTPS,
         codes::CSC_BASE_URL_OK,
         true,
         "The CSC base URL passed the outbound-network safety policy and uses HTTPS.",
@@ -1873,7 +1965,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         "user" => CscAuthorization::User,
         _ => {
             checks.push(check(
-                "authorization_configuration",
+                codes::CHECK_AUTHORIZATION_CONFIGURATION,
                 codes::CSC_AUTHORIZATION_SELECTOR_INVALID,
                 false,
                 "The CSC authorization selector must be service or user.",
@@ -1893,7 +1985,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
                 _ => {
                     checks.push(
                         check(
-                            "authorization_configuration",
+                            codes::CHECK_AUTHORIZATION_CONFIGURATION,
                             codes::CSC_SERVICE_AUTHORIZATION_INCOMPLETE,
                             false,
                             format!(
@@ -1914,7 +2006,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
             let Some(token) = take_nonblank(&mut entry.fields, FIELD_ACCESS_TOKEN) else {
                 checks.push(
                     check(
-                        "authorization_configuration",
+                        codes::CHECK_AUTHORIZATION_CONFIGURATION,
                         codes::CSC_USER_AUTHORIZATION_INCOMPLETE,
                         false,
                         format!("User authorization requires an {FIELD_ACCESS_TOKEN}."),
@@ -1930,7 +2022,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
     };
     checks.push(check(
-        "authorization_configuration",
+        codes::CHECK_AUTHORIZATION_CONFIGURATION,
         codes::CSC_AUTHORIZATION_CONFIGURED,
         true,
         "The stored fields satisfy the selected CSC authorization model.",
@@ -1958,7 +2050,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     };
     if config.validate().is_err() {
         checks.push(check(
-            "provider_configuration",
+            codes::CHECK_PROVIDER_CONFIGURATION,
             codes::CSC_PROVIDER_CONFIGURATION_INVALID,
             false,
             "The CSC provider configuration is invalid.",
@@ -1971,7 +2063,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Ok(transport) => transport,
         Err(_) => {
             checks.push(check(
-                "outbound_client",
+                codes::CHECK_OUTBOUND_CLIENT,
                 codes::OUTBOUND_CLIENT_UNAVAILABLE,
                 false,
                 "The bounded outbound client could not be created.",
@@ -1983,7 +2075,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
     let token = match client.authenticate() {
         Ok(token) => {
             checks.push(check(
-                "authentication",
+                codes::CHECK_AUTHENTICATION,
                 codes::CSC_AUTHENTICATED,
                 true,
                 "CSC authentication completed without requesting signer authorization.",
@@ -1992,7 +2084,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
         Err(error) => {
             let (code, detail) = csc_error_detail(&error);
-            checks.push(check("authentication", code, false, detail));
+            checks.push(check(codes::CHECK_AUTHENTICATION, code, false, detail));
             return ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -2005,7 +2097,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Ok(ids) => {
             checks.push(
                 check(
-                    "credentials_list",
+                    codes::CHECK_CREDENTIALS_LIST,
                     codes::CSC_CREDENTIALS_LISTED,
                     !ids.is_empty(),
                     format!("CSC returned {} signing credential(s).", ids.len()),
@@ -2016,7 +2108,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
         Err(error) => {
             let (code, detail) = csc_error_detail(&error);
-            checks.push(check("credentials_list", code, false, detail));
+            checks.push(check(codes::CHECK_CREDENTIALS_LIST, code, false, detail));
             return ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -2039,7 +2131,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
         Some(_) => {
             checks.push(check(
-                "credential_selection",
+                codes::CHECK_CREDENTIAL_SELECTION,
                 codes::CSC_CONFIGURED_CREDENTIAL_NOT_LISTED,
                 false,
                 "The configured credential_id was not returned by credentials/list.",
@@ -2055,7 +2147,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         None => {
             checks.push(
                 check(
-                    "credential_selection",
+                    codes::CHECK_CREDENTIAL_SELECTION,
                     codes::CSC_CREDENTIAL_SELECTION_REQUIRED,
                     false,
                     "More than one credential is available; configure credential_id.",
@@ -2071,7 +2163,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
     };
     checks.push(check(
-        "credential_selection",
+        codes::CHECK_CREDENTIAL_SELECTION,
         codes::CSC_CREDENTIAL_SELECTED,
         true,
         "A single configured signing credential was selected.",
@@ -2080,7 +2172,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         Ok(info) => {
             checks.push(
                 check(
-                    "credentials_info",
+                    codes::CHECK_CREDENTIALS_INFO,
                     codes::CSC_CREDENTIAL_INFO_OK,
                     true,
                     format!(
@@ -2101,7 +2193,7 @@ fn probe_csc(provider_id: &str, mut entry: DecryptedCredentialEntry) -> ProbeOut
         }
         Err(error) => {
             let (code, detail) = csc_error_detail(&error);
-            checks.push(check("credentials_info", code, false, detail));
+            checks.push(check(codes::CHECK_CREDENTIALS_INFO, code, false, detail));
             ProbeOutcome::failed(
                 contacted.load(Ordering::Relaxed),
                 false,
@@ -2264,7 +2356,7 @@ impl CscTransport for ProbeCscTransport {
 
 fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let mut checks = vec![check(
-        "entry_enabled",
+        codes::CHECK_ENTRY_ENABLED,
         codes::ENTRY_ENABLED,
         true,
         "The stored credential entry is enabled.",
@@ -2274,7 +2366,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let (Some(application_id), Some(secret)) = (application_id, secret) else {
         checks.push(
             check(
-                "authorization_configuration",
+                codes::CHECK_AUTHORIZATION_CONFIGURATION,
                 codes::SCAP_CREDENTIALS_INCOMPLETE,
                 false,
                 format!(
@@ -2289,7 +2381,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         return ProbeOutcome::failed(false, false, checks, "configuration_incomplete");
     };
     checks.push(check(
-        "authorization_configuration",
+        codes::CHECK_AUTHORIZATION_CONFIGURATION,
         codes::SCAP_CREDENTIALS_CONFIGURED,
         true,
         "The stored SCAP application credentials are configured.",
@@ -2304,7 +2396,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         "preprod" => ScapEnvironment::Preprod,
         _ => {
             checks.push(check(
-                "environment_configuration",
+                codes::CHECK_ENVIRONMENT_CONFIGURATION,
                 codes::SCAP_ENVIRONMENT_SELECTOR_INVALID,
                 false,
                 "The SCAP environment selector must be prod or preprod.",
@@ -2322,7 +2414,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(vetted) => vetted,
         Err(_) => {
             checks.push(check(
-                "endpoint_safe",
+                codes::CHECK_ENDPOINT_SAFE,
                 codes::SCAP_BASE_URL_UNSAFE,
                 false,
                 "The SCAP base URL failed the outbound-network safety policy.",
@@ -2331,11 +2423,11 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         }
     };
     if let Err((code, detail)) = require_https_probe_endpoint(&vetted, "SCAP") {
-        checks.push(check("endpoint_https", code, false, detail));
+        checks.push(check(codes::CHECK_ENDPOINT_HTTPS, code, false, detail));
         return ProbeOutcome::failed(false, false, checks, "insecure_endpoint");
     }
     checks.push(check(
-        "endpoint_https",
+        codes::CHECK_ENDPOINT_HTTPS,
         codes::SCAP_BASE_URL_OK,
         true,
         "The SCAP base URL passed the outbound-network safety policy and uses HTTPS.",
@@ -2354,7 +2446,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(transport) => transport,
         Err(_) => {
             checks.push(check(
-                "outbound_client",
+                codes::CHECK_OUTBOUND_CLIENT,
                 codes::OUTBOUND_CLIENT_UNAVAILABLE,
                 false,
                 "The bounded outbound client could not be created.",
@@ -2366,7 +2458,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(client) => client,
         Err(_) => {
             checks.push(check(
-                "provider_configuration",
+                codes::CHECK_PROVIDER_CONFIGURATION,
                 codes::SCAP_PROVIDER_CONFIGURATION_INVALID,
                 false,
                 "The SCAP provider configuration is invalid.",
@@ -2378,7 +2470,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(providers) => {
             checks.push(
                 check(
-                    "providers_list",
+                    codes::CHECK_PROVIDERS_LIST,
                     codes::SCAP_PROVIDERS_LISTED,
                     true,
                     format!(
@@ -2399,7 +2491,7 @@ fn probe_scap(mut entry: DecryptedCredentialEntry) -> ProbeOutcome {
         }
         Err(_) => {
             checks.push(check(
-                "providers_list",
+                codes::CHECK_PROVIDERS_LIST,
                 codes::SCAP_PROVIDER_LIST_FAILED,
                 false,
                 "The SCAP provider-list operation failed or returned an invalid response.",
@@ -2519,7 +2611,7 @@ impl ScapTransport for ProbeScapTransport {
 
 fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
     let mut checks = vec![check(
-        "entry_enabled",
+        codes::CHECK_ENTRY_ENABLED,
         codes::ENTRY_ENABLED,
         true,
         "The stored credential entry is enabled.",
@@ -2528,7 +2620,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(input) => input,
         Err(_) => {
             checks.push(check(
-                "pkcs12_loaded",
+                codes::CHECK_PKCS12_LOADED,
                 codes::PKCS12_MATERIAL_INCOMPLETE,
                 false,
                 "The stored PKCS#12 material or identity selector is incomplete or malformed.",
@@ -2544,7 +2636,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(source) => source,
         Err(_) => {
             checks.push(check(
-                "pkcs12_loaded",
+                codes::CHECK_PKCS12_LOADED,
                 codes::PKCS12_IDENTITY_UNDECRYPTABLE,
                 false,
                 "The stored PKCS#12 identity could not be decrypted and selected.",
@@ -2553,7 +2645,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         }
     };
     checks.push(check(
-        "pkcs12_loaded",
+        codes::CHECK_PKCS12_LOADED,
         codes::PKCS12_IDENTITY_LOADED,
         true,
         "The stored PKCS#12 identity was decrypted and selected.",
@@ -2570,7 +2662,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         Ok(raw) => raw,
         Err(_) => {
             checks.push(check(
-                "challenge_signed",
+                codes::CHECK_CHALLENGE_SIGNED,
                 codes::PKCS12_CHALLENGE_SIGN_FAILED,
                 false,
                 "The private key could not sign the non-document probe challenge.",
@@ -2579,7 +2671,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         }
     };
     checks.push(check(
-        "challenge_signed",
+        codes::CHECK_CHALLENGE_SIGNED,
         codes::PKCS12_CHALLENGE_SIGNED,
         true,
         "The private key signed a random domain-separated non-document challenge.",
@@ -2587,7 +2679,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
     match verify_pkcs12_probe_signature(&challenge, &raw) {
         Ok(()) => {
             checks.push(check(
-                "challenge_verified",
+                codes::CHECK_CHALLENGE_VERIFIED,
                 codes::PKCS12_CHALLENGE_VERIFIED,
                 true,
                 "The challenge signature verified locally against the selected certificate.",
@@ -2602,7 +2694,7 @@ fn probe_pkcs12(entry: DecryptedCredentialEntry) -> ProbeOutcome {
         }
         Err(()) => {
             checks.push(check(
-                "challenge_verified",
+                codes::CHECK_CHALLENGE_VERIFIED,
                 codes::PKCS12_CHALLENGE_NOT_VERIFIED,
                 false,
                 "The challenge signature did not verify against the selected certificate.",
@@ -2739,9 +2831,58 @@ fn build_set(
     let mut pairs = Vec::with_capacity(set.len());
     for (name, value) in set {
         let field = resolve_field(mode, &name)?;
-        pairs.push((field, value.0));
+        let value = if field == FIELD_AMA_CERT_PEM {
+            canonical_ama_cert_pem(value.0)?
+        } else {
+            value.0
+        };
+        pairs.push((field, value));
     }
     Ok(pairs)
+}
+
+/// Normalise a submitted AMA certificate into its canonical form, or refuse the write.
+///
+/// # Why the STORED value is the normalised one
+///
+/// This field is not read back by anybody: the API never returns it, and its only consumer is
+/// [`chancela_cmd::FieldEncryptor::from_ama_cert_pem`] on the way to encrypting a citizen's phone
+/// number, PIN and OTP. Keeping the operator's bytes verbatim would therefore preserve nothing
+/// anybody can see, while leaving a value that has to be re-normalised — identically — by every
+/// future reader. Storing the canonical form means there is exactly one representation of a given
+/// certificate on disk, a re-save cannot produce a different record for the same certificate, and
+/// what reaches the signing path is already something a strict reader accepts.
+///
+/// The transformation is safe to make silently *only* because of what it is: the canonical PEM is a
+/// function of the decoded DER and nothing else, so it cannot differ from the submission except in
+/// layout. Anything that would have changed those bytes is refused here instead — which is why this
+/// returns an error rather than a best effort.
+///
+/// # Why an unusable certificate is refused at the door
+///
+/// Storing one that cannot build a field encryptor would turn a mistake an operator can see and fix
+/// on this screen into a production CMD signature that fails at the moment a citizen is holding
+/// their phone waiting for an OTP. Expiry is deliberately NOT refused: an expired certificate is
+/// well-formed, is a fact the inspection reports plainly, and an operator loading next year's
+/// certificate before its window opens has a legitimate reason to save it.
+fn canonical_ama_cert_pem(value: Zeroizing<String>) -> Result<Zeroizing<String>, ApiError> {
+    if value.len() > AMA_CERT_PEM_MAX_BYTES {
+        return Err(ApiError::Unprocessable(format!(
+            "the AMA certificate exceeds the {AMA_CERT_PEM_MAX_BYTES}-byte limit"
+        ))
+        .with_code("ama_cert_pem_too_large"));
+    }
+    let normalized = chancela_cmd::normalize_certificate_pem(&value).map_err(|e| {
+        ApiError::Unprocessable(format!("{FIELD_AMA_CERT_PEM} is not usable: {e}"))
+            .with_code("ama_cert_pem_invalid")
+    })?;
+    // The signing path's own constructor, not a local reimplementation, so a certificate accepted
+    // here is one a production signature can actually encrypt with.
+    chancela_cmd::FieldEncryptor::from_ama_cert_pem(normalized.pem()).map_err(|e| {
+        ApiError::Unprocessable(format!("{FIELD_AMA_CERT_PEM} is not usable: {e}"))
+            .with_code("ama_cert_pem_invalid")
+    })?;
+    Ok(Zeroizing::new(normalized.pem().to_owned()))
 }
 
 fn build_clear(mode: CredentialMode, clear: &[String]) -> Result<Vec<&'static str>, ApiError> {
@@ -4119,22 +4260,49 @@ mod tests {
 
     #[test]
     fn malformed_input_is_a_finding_rather_than_a_panic_or_an_error() {
-        for candidate in [
-            "",
-            "not a certificate at all",
-            "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----\n",
+        for (candidate, expected) in [
+            ("", codes::AMA_CERT_EMPTY),
+            ("   \n\t\n", codes::AMA_CERT_EMPTY),
+            ("not a certificate at all", codes::AMA_CERT_ARMOUR_MISSING),
+            (
+                "-----BEGIN CERTIFICATE-----\nZm9v\n",
+                codes::AMA_CERT_END_ARMOUR_MISSING,
+            ),
+            (
+                "-----BEGIN PRIVATE KEY-----\nMAoCAQE=\n-----END PRIVATE KEY-----\n",
+                codes::AMA_CERT_WRONG_PEM_LABEL,
+            ),
+            (
+                "-----BEGIN CERTIFICATE-----\nZm9\u{201C}v\n-----END CERTIFICATE-----\n",
+                codes::AMA_CERT_ILLEGAL_CHARACTER,
+            ),
+            (
+                "-----BEGIN CERTIFICATE-----\nZm9\n-----END CERTIFICATE-----\n",
+                codes::AMA_CERT_BASE64_INVALID,
+            ),
+            (
+                "-----BEGIN CERTIFICATE-----\nZm9v\n-----END CERTIFICATE-----\n",
+                codes::AMA_CERT_UNPARSEABLE,
+            ),
             // A valid PEM header wrapping DER that decodes to something that is not a certificate.
-            "-----BEGIN CERTIFICATE-----\nMAoCAQE=\n-----END CERTIFICATE-----\n",
+            (
+                "-----BEGIN CERTIFICATE-----\nMAoCAQE=\n-----END CERTIFICATE-----\n",
+                codes::AMA_CERT_UNPARSEABLE,
+            ),
         ] {
             let report = inspect_ama_certificate_pem(candidate);
             assert!(!report.parsed, "{candidate:?} must not report as parsed");
             assert!(!report.rsa_public_key);
+            // The refusal NAMES what was wrong; "unparseable" is reserved for bytes that really did
+            // reach the DER reader and were not a certificate.
             assert_eq!(
                 code_of(&report, "certificate_parsed"),
-                codes::AMA_CERT_UNPARSEABLE
+                expected,
+                "{candidate:?}"
             );
-            // An unparseable candidate stops there: no validity verdict is invented for it.
+            // Nothing is claimed about a candidate that was refused.
             assert!(report.within_validity.is_none());
+            assert!(report.sha256_fingerprint.is_none(), "{candidate:?}");
             assert!(
                 !report
                     .checks
@@ -4143,6 +4311,168 @@ mod tests {
                 "{candidate:?} produced a validity verdict from nothing"
             );
         }
+    }
+
+    /// What gets STORED is the canonical form, so `FieldEncryptor` never has to re-normalise.
+    #[test]
+    fn the_credential_write_stores_one_canonical_representation_of_a_certificate() {
+        let expected = chancela_cmd::normalize_certificate_pem(RSA_CERT_PEM)
+            .unwrap()
+            .pem()
+            .to_owned();
+
+        for candidate in [
+            RSA_CERT_PEM.to_owned(),
+            format!("\u{FEFF}{}", RSA_CERT_PEM.replace('\n', "\r\n")),
+            RSA_CERT_PEM
+                .lines()
+                .map(|line| format!("{line}   \n"))
+                .collect::<String>(),
+        ] {
+            let set = BTreeMap::from([(
+                FIELD_AMA_CERT_PEM.to_owned(),
+                SecretField(Zeroizing::new(candidate.clone())),
+            )]);
+            let pairs =
+                build_set(CredentialMode::Cmd, set).expect("a usable certificate is stored");
+            assert_eq!(pairs.len(), 1);
+            assert_eq!(pairs[0].0, FIELD_AMA_CERT_PEM);
+            assert_eq!(pairs[0].1.as_str(), expected);
+        }
+    }
+
+    /// A certificate that cannot encrypt is refused at the door, with a code and a named reason.
+    ///
+    /// The alternative is storing it and discovering it at the moment a citizen is holding their
+    /// phone waiting for an OTP.
+    #[test]
+    fn the_credential_write_refuses_a_certificate_that_could_not_be_used() {
+        for (candidate, expect_in_message) in [
+            (
+                "-----BEGIN PRIVATE KEY-----\nMAoCAQE=\n-----END PRIVATE KEY-----\n",
+                "PRIVATE KEY",
+            ),
+            ("nothing here", "armour"),
+            // Parses perfectly, carries a P-256 key, and cannot encrypt a PIN.
+            (EC_CERT_PEM, "RSA"),
+        ] {
+            let set = BTreeMap::from([(
+                FIELD_AMA_CERT_PEM.to_owned(),
+                SecretField(Zeroizing::new(candidate.to_owned())),
+            )]);
+            let err = build_set(CredentialMode::Cmd, set).expect_err("{candidate:?} is not usable");
+            let rendered = format!("{err:?}");
+            assert!(
+                rendered.contains(expect_in_message),
+                "the refusal must name what was wrong: {rendered}"
+            );
+        }
+
+        // Expiry is NOT a refusal: it is a fact about a well-formed certificate, and the operator
+        // may legitimately be loading one whose window has not opened yet.
+        let set = BTreeMap::from([(
+            FIELD_AMA_CERT_PEM.to_owned(),
+            SecretField(Zeroizing::new(EXPIRED_CERT_PEM.to_owned())),
+        )]);
+        assert!(build_set(CredentialMode::Cmd, set).is_ok());
+    }
+
+    /// Two certificates, or a certificate and its key: refused, never silently reduced to one.
+    #[test]
+    fn a_bundle_is_refused_rather_than_resolved_to_its_first_block() {
+        let report = inspect_ama_certificate_pem(&format!("{RSA_CERT_PEM}{EC_CERT_PEM}"));
+        assert!(!report.parsed);
+        assert_eq!(
+            code_of(&report, "certificate_parsed"),
+            codes::AMA_CERT_MULTIPLE_BLOCKS
+        );
+    }
+
+    /// The proof the normalisation is a normalisation: every filthy paste of one certificate
+    /// produces the same fingerprint as the clean one, and the same everything else.
+    ///
+    /// This is the check that would catch a "helpful" repair being added later — a repair changes
+    /// the decoded bytes, and the fingerprint is over the decoded bytes.
+    #[test]
+    fn a_filthy_paste_inspects_identically_to_the_clean_certificate() {
+        let clean = inspect_ama_certificate_pem(RSA_CERT_PEM);
+        let fingerprint = clean
+            .sha256_fingerprint
+            .clone()
+            .expect("a parsed certificate is fingerprinted");
+        assert_eq!(fingerprint.len(), 64);
+        assert!(fingerprint.chars().all(|c| c.is_ascii_hexdigit()));
+
+        let body: String = {
+            let start = RSA_CERT_PEM.find("-----BEGIN CERTIFICATE-----").unwrap() + 27;
+            let len = RSA_CERT_PEM[start..]
+                .find("-----END CERTIFICATE-----")
+                .unwrap();
+            RSA_CERT_PEM[start..start + len]
+                .chars()
+                .filter(|c| !c.is_whitespace())
+                .collect()
+        };
+
+        for (name, candidate) in [
+            (
+                "crlf-and-bom",
+                format!("\u{FEFF}{}", RSA_CERT_PEM.replace('\n', "\r\n")),
+            ),
+            (
+                "trailing-spaces",
+                RSA_CERT_PEM
+                    .lines()
+                    .map(|line| format!("{line}  \n"))
+                    .collect::<String>(),
+            ),
+            (
+                "one-line",
+                format!("-----BEGIN CERTIFICATE-----{body}-----END CERTIFICATE-----"),
+            ),
+            (
+                "embedded-nul-and-nbsp",
+                format!(
+                    "-----BEGIN CERTIFICATE-----\n{body}\0\u{00A0}\u{200B}\n-----END CERTIFICATE-----"
+                ),
+            ),
+        ] {
+            let report = inspect_ama_certificate_pem(&candidate);
+            assert!(report.parsed, "{name}");
+            assert!(report.rsa_public_key, "{name}");
+            assert_eq!(
+                report.sha256_fingerprint.as_deref(),
+                Some(fingerprint.as_str()),
+                "{name}"
+            );
+            assert_eq!(report.subject, clean.subject, "{name}");
+            assert_eq!(report.key_bits, clean.key_bits, "{name}");
+        }
+    }
+
+    /// Cleaning up the input is disclosed, not hidden — and only when there was something to clean.
+    #[test]
+    fn normalisation_is_reported_when_it_removed_anything_and_not_otherwise() {
+        let clean = inspect_ama_certificate_pem(RSA_CERT_PEM);
+        assert!(
+            !clean
+                .checks
+                .iter()
+                .any(|check| check.name == "certificate_normalised"),
+            "an already-clean certificate must not claim it was cleaned up"
+        );
+
+        let dirty = inspect_ama_certificate_pem(&RSA_CERT_PEM.replace('\n', " \t\n"));
+        let note = dirty
+            .checks
+            .iter()
+            .find(|check| check.name == "certificate_normalised")
+            .expect("removing characters is disclosed");
+        assert_eq!(note.detail_code, codes::AMA_CERT_NORMALISED);
+        assert_ne!(
+            note.detail_params.get("removed").map(String::as_str),
+            Some("0")
+        );
     }
 
     #[test]

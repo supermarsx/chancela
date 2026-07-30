@@ -8469,9 +8469,22 @@ pub(crate) const CMD_ENV_SELECTOR: &str = "env";
 ///    switch cannot express that. It is also how **SCAP already works**
 ///    (`provider_credentials_write.rs`'s `probe_scap` reads its `environment` selector), so CMD is
 ///    following its sibling rather than inventing a third mechanism.
-/// 2. **`settings.signing.cmd.env`**, the deployment default, for an entry that declares none —
-///    and the only source for the two paths that have no selectors at all: the legacy flat record
+/// 2. **`settings.signing.cmd.env`**, for an entry that declares none — and the only source for the
+///    two paths that have no selectors at all: the legacy flat record
 ///    ([`cmd_config_from_stored`]) and the env/settings-derived config ([`cmd_config_from_env`]).
+///
+///    **It has no editor in the admin panel, deliberately, and must not grow one back.** It briefly
+///    did; two places to choose prod/preprod is one too many, and a deployment-wide switch cannot
+///    describe an installation holding a preprod credential and a production credential side by
+///    side — which is the arrangement the per-entry selector exists for. The CMD credential form
+///    now always writes the `env` selector (`SELECTOR_FIELDS.cmd`'s `requiredDefault` in
+///    `ProviderCredentialsSection.tsx`), so for every entry-based credential this step is
+///    unreachable in practice.
+///
+///    What it still serves is [`cmd_config_from_env`]: a deployment configured entirely through
+///    `CHANCELA_CMD_*` has no credential entry and therefore no selector, and `CHANCELA_CMD_ENV`
+///    does not participate (step 3). For that deployment this settings field is the environment,
+///    written through `PUT /v1/settings` rather than a control on the CMD card.
 /// 3. **`CHANCELA_CMD_ENV` does not participate.** It owns no step here, deliberately: the
 ///    environment already has a typed settings slice with a defined precedence, and a second
 ///    competing source is the defect this change exists to remove. The registry marks it
@@ -8519,6 +8532,17 @@ pub(crate) fn resolve_cmd_env(
 ///
 /// A flat record carries no selectors, so it takes the deployment default — step 2 of
 /// [`resolve_cmd_env`]'s precedence, unchanged from before t113.
+///
+/// # This path cannot be reached by a real deployment
+///
+/// Worth stating because it changes how much weight step 2 has to carry.
+/// `ProviderCredentialStore::read_runtime` resolves the entry whose id is literally
+/// `DEFAULT_ENTRY_ID` (`"default"`); the only writer of that id is the flat
+/// `ProviderCredentialStore::put` shim, whose only callers in the whole tree are `#[cfg(test)]`.
+/// Every credential the admin panel creates gets a `Uuid::new_v4()` id, and the sidecar is schema
+/// v2 with **no** v1→v2 migration (the loader fails closed), so no on-disk record predating the
+/// entry list can exist either. It stays because the shim is still exercised by tests and a
+/// silently divergent second assembler would be worse than one that agrees.
 fn cmd_config_from_stored(
     cmd: &crate::settings::SigningCmdSettings,
     record: DecryptedCredentialRecord,

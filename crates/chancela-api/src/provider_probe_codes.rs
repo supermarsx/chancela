@@ -46,6 +46,148 @@
 //! every one of them to a catalog key. A code added here without a translation fails that test
 //! loudly, rather than silently rendering English on the settings screen again.
 
+// --- Check NAMES ---------------------------------------------------------------------------------
+//
+// The codes below name a check's *sentence*. This section names the check itself — the row label a
+// human reads down the left of the diagnostic list.
+//
+// It exists because the codes work shipped without it, and the row labels went out rendering as
+// `trusted_list_anchors` and `stored_credential_fields` in every locale, including Portuguese. The
+// detail sentence beside them was translated; the thing naming it was not.
+//
+// **These are UI labels, not identifiers an operator handles.** That is the distinction that
+// decides whether they get translated at all, and it goes the opposite way from the DPIA
+// `no_claims` flags and the `CHANCELA_*` variable names, which stay verbatim because an operator
+// types or greps them. Nobody types a check name: the wire `name` field, the audit payload and the
+// API response all still carry the snake_case identifier untouched, so anything greppable is
+// unaffected — only the rendered label changes.
+
+/// A probe check's stable machine name.
+///
+/// A newtype rather than a bare `&'static str` so that the *compiler* enumerates the call sites.
+/// [`ProviderProbeCheck`](crate::provider_credentials_write::ProviderProbeCheck) has exactly two
+/// constructors and both take this type, so a new check cannot be written with an ad-hoc string
+/// literal and quietly ship an untranslated row again — which is precisely how the last one got
+/// out. Adding a name means adding a constant here, and the constant is what the client's
+/// completeness test reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct CheckName(&'static str);
+
+impl CheckName {
+    /// The wire form — unchanged, untranslated, and still what `data-check` and the audit log use.
+    pub const fn as_str(self) -> &'static str {
+        self.0
+    }
+}
+
+impl std::fmt::Display for CheckName {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+
+/// Whether the stored credential entry is switched on.
+pub const CHECK_ENTRY_ENABLED: CheckName = CheckName("entry_enabled");
+/// Whether the entry's mode is a signing provider at all.
+pub const CHECK_MODE_SUPPORTED: CheckName = CheckName("mode_supported");
+/// Whether the bounded outbound HTTP client could be built.
+pub const CHECK_OUTBOUND_CLIENT: CheckName = CheckName("outbound_client");
+/// Which AMA/provider environment the entry resolves to.
+pub const CHECK_CONFIGURED_ENVIRONMENT: CheckName = CheckName("configured_environment");
+/// Whether the stored credential fields the environment requires are present.
+pub const CHECK_STORED_CREDENTIAL_FIELDS: CheckName = CheckName("stored_credential_fields");
+/// Whether the stored AMA field-encryption certificate can build an encryptor.
+pub const CHECK_AMA_CERTIFICATE_PARSEABLE: CheckName = CheckName("ama_certificate_parseable");
+/// Whether the HTTP-Basic gateway pair is configured.
+pub const CHECK_HTTP_BASIC_CONFIGURED: CheckName = CheckName("http_basic_configured");
+/// Whether the CMD SOAP transport could be constructed.
+pub const CHECK_HTTP_TRANSPORT_READY: CheckName = CheckName("http_transport_ready");
+/// Whether the endpoint in use is the pinned one for the resolved environment.
+pub const CHECK_ENDPOINT_MATCHES_ENVIRONMENT: CheckName = CheckName("endpoint_matches_environment");
+/// Whether the endpoint answered.
+pub const CHECK_ENDPOINT_REACHABLE: CheckName = CheckName("endpoint_reachable");
+/// The live provider operation — never run by a probe, and this says so.
+pub const CHECK_LIVE_PROVIDER_OPERATION: CheckName = CheckName("live_provider_operation");
+/// Whether Trusted List trust anchors are configured and usable.
+pub const CHECK_TRUSTED_LIST_ANCHORS: CheckName = CheckName("trusted_list_anchors");
+/// Whether the configured base URL is safe to send credentials to.
+pub const CHECK_ENDPOINT_SAFE: CheckName = CheckName("endpoint_safe");
+/// Whether the configured base URL is HTTPS.
+pub const CHECK_ENDPOINT_HTTPS: CheckName = CheckName("endpoint_https");
+/// Whether the CSC authorization mode and its material are complete.
+pub const CHECK_AUTHORIZATION_CONFIGURATION: CheckName = CheckName("authorization_configuration");
+/// Whether the provider configuration assembled at all.
+pub const CHECK_PROVIDER_CONFIGURATION: CheckName = CheckName("provider_configuration");
+/// Whether the provider authenticated the credential.
+pub const CHECK_AUTHENTICATION: CheckName = CheckName("authentication");
+/// Whether the provider returned its credential list.
+pub const CHECK_CREDENTIALS_LIST: CheckName = CheckName("credentials_list");
+/// Whether a signing credential was selected from that list.
+pub const CHECK_CREDENTIAL_SELECTION: CheckName = CheckName("credential_selection");
+/// Whether the selected credential's details could be read.
+pub const CHECK_CREDENTIALS_INFO: CheckName = CheckName("credentials_info");
+/// Whether the SCAP environment selector is interpretable.
+pub const CHECK_ENVIRONMENT_CONFIGURATION: CheckName = CheckName("environment_configuration");
+/// Whether SCAP returned its attribute-provider list.
+pub const CHECK_PROVIDERS_LIST: CheckName = CheckName("providers_list");
+/// Whether the stored PKCS#12 identity decrypted and loaded.
+pub const CHECK_PKCS12_LOADED: CheckName = CheckName("pkcs12_loaded");
+/// Whether the private key signed the non-document challenge.
+pub const CHECK_CHALLENGE_SIGNED: CheckName = CheckName("challenge_signed");
+/// Whether that challenge signature verified against the selected certificate.
+pub const CHECK_CHALLENGE_VERIFIED: CheckName = CheckName("challenge_verified");
+/// Whether a candidate AMA certificate parsed as X.509.
+pub const CHECK_CERTIFICATE_PARSED: CheckName = CheckName("certificate_parsed");
+/// Whether characters the base64 body does not use were ignored on the way in.
+pub const CHECK_CERTIFICATE_NORMALISED: CheckName = CheckName("certificate_normalised");
+/// Whether the candidate certificate carries an RSA public key.
+pub const CHECK_RSA_PUBLIC_KEY: CheckName = CheckName("rsa_public_key");
+/// Where the candidate certificate's validity window stands.
+pub const CHECK_VALIDITY_WINDOW: CheckName = CheckName("validity_window");
+/// The standing statement that trust was NOT established.
+pub const CHECK_TRUST_ESTABLISHED: CheckName = CheckName("trust_established");
+
+/// Every check name a probe or an inspection can emit, in one closed list.
+///
+/// Read by this module's own tests and — as the file's text — by
+/// `apps/web/src/i18n/providerProbeDiagnostics.test.ts`, which proves the client has a translated
+/// label for each. The same guard the detail codes get, widened to cover names, rather than a
+/// second parallel test.
+pub const ALL_PROBE_CHECK_NAMES: &[CheckName] = &[
+    CHECK_ENTRY_ENABLED,
+    CHECK_MODE_SUPPORTED,
+    CHECK_OUTBOUND_CLIENT,
+    CHECK_CONFIGURED_ENVIRONMENT,
+    CHECK_STORED_CREDENTIAL_FIELDS,
+    CHECK_AMA_CERTIFICATE_PARSEABLE,
+    CHECK_HTTP_BASIC_CONFIGURED,
+    CHECK_HTTP_TRANSPORT_READY,
+    CHECK_ENDPOINT_MATCHES_ENVIRONMENT,
+    CHECK_ENDPOINT_REACHABLE,
+    CHECK_LIVE_PROVIDER_OPERATION,
+    CHECK_TRUSTED_LIST_ANCHORS,
+    CHECK_ENDPOINT_SAFE,
+    CHECK_ENDPOINT_HTTPS,
+    CHECK_AUTHORIZATION_CONFIGURATION,
+    CHECK_PROVIDER_CONFIGURATION,
+    CHECK_AUTHENTICATION,
+    CHECK_CREDENTIALS_LIST,
+    CHECK_CREDENTIAL_SELECTION,
+    CHECK_CREDENTIALS_INFO,
+    CHECK_ENVIRONMENT_CONFIGURATION,
+    CHECK_PROVIDERS_LIST,
+    CHECK_PKCS12_LOADED,
+    CHECK_CHALLENGE_SIGNED,
+    CHECK_CHALLENGE_VERIFIED,
+    CHECK_CERTIFICATE_PARSED,
+    CHECK_CERTIFICATE_NORMALISED,
+    CHECK_RSA_PUBLIC_KEY,
+    CHECK_VALIDITY_WINDOW,
+    CHECK_TRUST_ESTABLISHED,
+];
+
+// --- Detail CODES --------------------------------------------------------------------------------
+
 /// The stored credential entry is switched off, so nothing else was examined.
 pub const ENTRY_DISABLED: &str = "entry_disabled";
 /// The stored credential entry is switched on.
@@ -229,6 +371,33 @@ pub const PKCS12_CHALLENGE_NOT_VERIFIED: &str = "pkcs12_challenge_not_verified";
 pub const AMA_CERT_PARSED: &str = "ama_cert_parsed";
 /// The text is not a PEM-encoded X.509 certificate. Params: `detail` (the parser's own message).
 pub const AMA_CERT_UNPARSEABLE: &str = "ama_cert_unparseable";
+
+// The refusals below are the *named* halves of what used to be one `AMA_CERT_UNPARSEABLE`. A
+// pasted certificate is normalised first — line endings, a BOM, trailing spaces and other
+// characters that base64 ignores by specification — and only then read. Everything that survives
+// that is a real difference between what the operator has and what they meant to have, so each
+// one gets its own sentence saying which. None of them is repaired: see
+// `chancela_cmd::normalize_certificate_pem` for why guessing here would fabricate key material.
+
+/// Nothing but whitespace was supplied.
+pub const AMA_CERT_EMPTY: &str = "ama_cert_empty";
+/// No `-----BEGIN CERTIFICATE-----` boundary was found, and none was synthesised.
+pub const AMA_CERT_ARMOUR_MISSING: &str = "ama_cert_armour_missing";
+/// The opening boundary has no matching `-----END CERTIFICATE-----`.
+pub const AMA_CERT_END_ARMOUR_MISSING: &str = "ama_cert_end_armour_missing";
+/// The block is PEM with a different label — a private key, most consequentially. Params: `label`.
+pub const AMA_CERT_WRONG_PEM_LABEL: &str = "ama_cert_wrong_pem_label";
+/// More than one PEM block was pasted; none was chosen for the operator. Params: `count`.
+pub const AMA_CERT_MULTIPLE_BLOCKS: &str = "ama_cert_multiple_blocks";
+/// A character in the body that is neither base64 nor ignorable whitespace, so removing it would
+/// change the decoded bytes. Params: `character` (`U+XXXX` notation), `offset` (byte offset).
+pub const AMA_CERT_ILLEGAL_CHARACTER: &str = "ama_cert_illegal_character";
+/// The body is all base64 characters and still does not decode; it was not re-padded. Params:
+/// `detail` (the decoder's own message).
+pub const AMA_CERT_BASE64_INVALID: &str = "ama_cert_base64_invalid";
+/// Characters the base64 does not need were ignored on the way in, and this says how many, so the
+/// transformation is disclosed rather than silent. Params: `removed`.
+pub const AMA_CERT_NORMALISED: &str = "ama_cert_normalised";
 /// The certificate carries an RSA public key — what field encryption needs. Params: `bits`.
 pub const AMA_CERT_RSA_KEY_PRESENT: &str = "ama_cert_rsa_key_present";
 /// It carries no RSA public key, so no field encryptor can be built from it. Params: `detail`.
@@ -326,6 +495,14 @@ pub const ALL_PROBE_DETAIL_CODES: &[&str] = &[
     PKCS12_CHALLENGE_NOT_VERIFIED,
     AMA_CERT_PARSED,
     AMA_CERT_UNPARSEABLE,
+    AMA_CERT_EMPTY,
+    AMA_CERT_ARMOUR_MISSING,
+    AMA_CERT_END_ARMOUR_MISSING,
+    AMA_CERT_WRONG_PEM_LABEL,
+    AMA_CERT_MULTIPLE_BLOCKS,
+    AMA_CERT_ILLEGAL_CHARACTER,
+    AMA_CERT_BASE64_INVALID,
+    AMA_CERT_NORMALISED,
     AMA_CERT_RSA_KEY_PRESENT,
     AMA_CERT_RSA_KEY_ABSENT,
     AMA_CERT_WITHIN_VALIDITY,
@@ -363,6 +540,38 @@ mod tests {
                 "detail code {code:?} is not lower_snake_case ascii"
             );
         }
+    }
+
+    #[test]
+    fn every_check_name_is_unique_and_a_lowercase_machine_identifier() {
+        let unique: BTreeSet<CheckName> = ALL_PROBE_CHECK_NAMES.iter().copied().collect();
+        assert_eq!(
+            unique.len(),
+            ALL_PROBE_CHECK_NAMES.len(),
+            "two constants name the same check, so one of their labels is unreachable"
+        );
+        for name in ALL_PROBE_CHECK_NAMES {
+            let raw = name.as_str();
+            assert!(
+                !raw.is_empty()
+                    && raw
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "check name {raw:?} is not lower_snake_case ascii"
+            );
+        }
+    }
+
+    #[test]
+    fn the_check_name_list_is_not_accidentally_empty_or_truncated() {
+        // Same non-vacuity floor the detail codes carry, and for the same reason: the web guard
+        // reads this list, and a halved list would make it pass while proving nothing.
+        assert!(
+            ALL_PROBE_CHECK_NAMES.len() >= 30,
+            "the check-name list shrank to {}; a name that leaves this list stops being \
+             translatable and renders as a raw identifier again",
+            ALL_PROBE_CHECK_NAMES.len()
+        );
     }
 
     #[test]

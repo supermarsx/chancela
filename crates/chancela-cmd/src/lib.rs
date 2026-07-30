@@ -21,6 +21,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod certificate_pem;
 pub mod config;
 pub mod error;
 pub mod field_encryption;
@@ -29,6 +30,7 @@ pub mod mock;
 pub mod soap;
 pub mod transport;
 
+pub use certificate_pem::{CertificatePemError, NormalizedCertificate, normalize_certificate_pem};
 pub use config::{CmdBasicAuth, CmdConfig, CmdEnv, PREPROD_ENDPOINT, PROD_ENDPOINT};
 pub use error::CmdError;
 pub use field_encryption::FieldEncryptor;
