@@ -28,6 +28,7 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::attestation::verify_secret;
 use crate::authz::require_permission;
+use crate::credentials::{HeldCredentials, step_up_is_vacuous};
 use crate::error::ApiError;
 use crate::recovery::map_store_error;
 
@@ -49,9 +50,18 @@ fn default_actor() -> String {
 
 /// The step-up re-auth proof carried on a destructive request (mirrors the t51/t52 secret-op
 /// posture): the acting user's current **password** OR a valid **recovery phrase**. For a
-/// credentialed acting user a valid session alone is NOT enough (§8-F); a user who holds neither a
-/// password nor a recovery phrase can leave both fields empty — their self session is the proof (see
+/// credentialed acting user a valid session alone is NOT enough (§8-F); a user who holds **no
+/// credential at all** can leave both fields empty — their self session is the proof (see
 /// [`require_step_up`]).
+///
+/// **Adding a proof here (e.g. a passkey assertion): read this first.** This struct is the "with
+/// what" axis, and it is the right place for a new alternative — do *not* add a rung to
+/// [`crate::confirmation::ConfirmationStrictness`], which answers "how hard"; the existing
+/// precedent is [`crate::confirmation::PairingConfirmationMethod`]. A **passkey assertion field
+/// must carry a server-issued, single-use, short-TTL challenge scoped to step-up** — not a sign-in
+/// challenge, and never a client-chosen nonce. Without that binding an assertion captured at
+/// sign-in replays into a factory reset. See [`crate::credentials::StepUpRole::ProofPending`] for
+/// the full list of what that arm owes.
 #[derive(Deserialize, Default)]
 pub struct ReAuth {
     #[serde(default)]
@@ -65,12 +75,20 @@ pub struct ReAuth {
 ///
 /// - The acting user HAS a password → they must supply+pass it (or a valid recovery phrase).
 /// - The acting user has NO password but HAS a recovery phrase → they must supply+pass the phrase.
-/// - The acting user has NEITHER a password NOR a recovery phrase → a valid **authenticated self
-///   session** already IS the strongest proof they can offer; there is nothing further to prove, so
-///   the session satisfies step-up and this returns `Ok`. This is the t69 lockout fix: a legacy
+/// - The acting user holds **no credential of any kind** → a valid **authenticated self session**
+///   already IS the strongest proof they can offer; there is nothing further to prove, so the
+///   session satisfies step-up and this returns `Ok`. This is the t69 lockout fix: a legacy
 ///   no-hash operator with no recovery phrase must never be `403`'d for lacking a credential
 ///   they never set, or a legacy no-hash-only instance whose chain breaks could never be recovered
 ///   (the degraded gate exempts recovery, but step-up would otherwise block it).
+///
+/// **"No credential of any kind" is a membership test over
+/// [`CredentialKind`](crate::credentials::CredentialKind), not over the two fields this function
+/// reads verifiers from.** Those are not the same statement the moment a third kind exists: a
+/// credential that can start a session but is not named by the exemption would let its holder pass
+/// this gate — and therefore every `ConfirmWithReauth` gate in the product — on their session token
+/// alone. The predicate therefore lives in [`crate::credentials::step_up_is_vacuous`], derived from
+/// per-kind declarations, and this function passes it the whole held set.
 ///
 /// A session with a wrong proof, or a *credentialed* acting user who supplies no proof, is still
 /// refused with a uniform `403` — the destructive op cannot proceed on the session token alone when
@@ -81,18 +99,6 @@ pub struct ReAuth {
 /// ANOTHER user's credential when the target is legacy no-hash stays refused (t52 hole stays closed).
 /// RBAC (`require_permission`) at each call site remains the primary who-may gate — step-up is
 /// defense-in-depth layered on top of it, never a substitute.
-/// Whether [`require_step_up`] would pass for this user on their **session alone** — i.e. whether
-/// they hold neither a password nor a recovery phrase, so there is no stronger proof to demand.
-///
-/// **The single definition of the t69 exemption**, so a caller that needs to reason about it does
-/// not restate the condition and drift from it. [`require_step_up`] is the primary reader; the
-/// device-pairing mail path (`crate::pairing`) is the other, because for that one feature a vacuous
-/// step-up is not a neutral outcome — see the refusal there for why.
-#[must_use]
-pub(crate) fn step_up_is_vacuous(password_hash: Option<&str>, recovery_hash: Option<&str>) -> bool {
-    password_hash.is_none() && recovery_hash.is_none()
-}
-
 pub(crate) async fn require_step_up(
     state: &AppState,
     actor: &CurrentActor,
@@ -101,10 +107,14 @@ pub(crate) async fn require_step_up(
     let username = actor
         .session_username()
         .ok_or_else(|| ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))?;
-    let (password_hash, recovery_hash) = {
+    let (held, password_hash, recovery_hash) = {
         let users = state.users.read().await;
         match users.values().find(|u| u.username == username) {
-            Some(u) => (u.password_hash.clone(), u.recovery_hash.clone()),
+            Some(u) => (
+                HeldCredentials::held_by(u),
+                u.password_hash.clone(),
+                u.recovery_hash.clone(),
+            ),
             // A valid session that no longer maps to a user should not happen (the `CurrentActor`
             // extractor resolves only existing, active users) — refuse rather than treat a phantom
             // acting user as credential-less-and-therefore-exempt.
@@ -112,26 +122,50 @@ pub(crate) async fn require_step_up(
         }
     };
 
-    // t69: the acting user holds NEITHER a password NOR a recovery phrase. A valid authenticated
-    // self session is the strongest proof they can provide (there is nothing stronger to demand), so
-    // it satisfies step-up. SELF only — the cross-user path is untouched.
-    if step_up_is_vacuous(password_hash.as_deref(), recovery_hash.as_deref()) {
+    decide_step_up(
+        &held,
+        password_hash.as_deref(),
+        recovery_hash.as_deref(),
+        reauth,
+    )
+}
+
+/// The step-up decision itself, with the user already resolved — pure, so the rule can be exercised
+/// against account shapes the record cannot express yet (see `credentials.rs`'s red-proof for a
+/// session-capable account holding neither of the two verifiers below).
+///
+/// `held` is the *membership* the exemption is decided on; `password_hash` / `recovery_hash` are the
+/// verifiers the two implemented proof arms check against. They are separate parameters precisely
+/// because they will stop coinciding: a passkey is held, counts, and has no argon2id verifier here.
+pub(crate) fn decide_step_up(
+    held: &HeldCredentials,
+    password_hash: Option<&str>,
+    recovery_hash: Option<&str>,
+    reauth: &ReAuth,
+) -> Result<(), ApiError> {
+    // t69: the acting user holds NO credential at all. A valid authenticated self session is the
+    // strongest proof they can provide (there is nothing stronger to demand), so it satisfies
+    // step-up. SELF only — the cross-user path is untouched.
+    if step_up_is_vacuous(held) {
         return Ok(());
     }
 
     // The acting user HAS at least one credential — they must actually prove it (unchanged).
     // Prove the current password …
-    if let (Some(pw), Some(phc)) = (reauth.password.as_deref(), password_hash.as_deref())
+    if let (Some(pw), Some(phc)) = (reauth.password.as_deref(), password_hash)
         && verify_secret(pw, phc)
     {
         return Ok(());
     }
     // … or a valid recovery phrase.
-    if let (Some(phrase), Some(phc)) = (reauth.recovery_phrase.as_deref(), recovery_hash.as_deref())
+    if let (Some(phrase), Some(phc)) = (reauth.recovery_phrase.as_deref(), recovery_hash)
         && verify_secret(phrase, phc)
     {
         return Ok(());
     }
+    // Every other case, including a held credential whose proof arm does not exist yet
+    // (`StepUpRole::ProofPending`), is the same uniform `403`. Fail-closed: an account with
+    // something to prove that cannot prove it is refused, never exempted.
     Err(ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))
 }
 
