@@ -197,6 +197,124 @@ function rhythmOwners(rules: CssRule[]): { selector: string; value: string | und
   );
 }
 
+/**
+ * ## The `.modal__body` family — the same defect, the opposite mechanism
+ *
+ * `.modal__body` is `display: flex; flex-direction: column; gap: 0.85rem`, so unlike
+ * `.panel__body` it DOES own its child spacing. That inverts the failure mode: a child's own
+ * block margin does not compete with the container in the cascade, it **adds** to the gap. So a
+ * `:where()` rule cannot fix it the way it fixes a card, and a per-surface margin does not merely
+ * shadow the shared rhythm — it silently doubles it.
+ *
+ * Measured across all eight dialogs before the fix, `.modal__body` produced SIX different child
+ * gaps: 13.6px (the intended one), 19.98px above every button row (`.modal__foot`'s own
+ * `margin-top`), 25.6px and 37.6px in the two dialogs that put a `.stack`/`.stack--tight` on the
+ * body itself, 29.59px above an `InlineWarning` (the banner primitive's standalone margin), and
+ * 34.38px under a `<p>` intro carrying the UA's own margins.
+ *
+ * Two invariants, therefore, and neither is expressible as a selector sweep: the offending rules
+ * (`.modal__foot { margin-top }`) never mention `.modal__body` at all. Both work from the AST
+ * instead — the set of classes actually used as a modal body's children.
+ */
+const MODAL_BODY_CLASS = 'modal__body';
+
+/** Block-axis margin values a declaration block sets, normalised. `[]` when it sets none. */
+function blockMargins(body: string): string[] {
+  const out: string[] = [];
+  const shorthand = /(?:^|[;{\s])margin\s*:\s*([^;]+);/u.exec(body)?.[1]?.trim();
+  if (shorthand) {
+    const parts = shorthand.split(/\s+/u);
+    // `margin: a` / `a b` / `a b c` / `a b c d` — block axis is the 1st and (3rd ?? 1st).
+    out.push(parts[0] as string, (parts[2] ?? parts[0]) as string);
+  }
+  const block = /(?:^|[;{\s])margin-block\s*:\s*([^;]+);/u.exec(body)?.[1]?.trim();
+  if (block) {
+    const parts = block.split(/\s+/u);
+    out.push(parts[0] as string, (parts[1] ?? parts[0]) as string);
+  }
+  for (const prop of ['margin-top', 'margin-bottom', 'margin-block-start', 'margin-block-end']) {
+    const m = new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*([^;]+);`, 'u').exec(body)?.[1]?.trim();
+    if (m) out.push(m);
+  }
+  return out;
+}
+
+/** Does this rule put a NON-ZERO block margin on whatever it matches? `margin: 0` is fine. */
+function addsBlockMargin(body: string): boolean {
+  return blockMargins(body).some((v) => v !== '0' && v !== '0px' && v !== '0rem');
+}
+
+/** Single-class rules, by class name, so a child class can be looked up. */
+function singleClassRules(rules: CssRule[]): Map<string, string> {
+  const byClass = new Map<string, string>();
+  for (const rule of rules) {
+    for (const selector of selectorList(rule)) {
+      const m = /^\.([\w-]+)$/u.exec(selector);
+      if (m?.[1]) byClass.set(m[1], (byClass.get(m[1]) ?? '') + rule.body);
+    }
+  }
+  return byClass;
+}
+
+/**
+ * Every `.modal__body` in the app: the extra classes on the body itself, and the classes of the
+ * direct children it renders — including those inside `{cond ? <X/> : null}`, which are direct
+ * children in the DOM too.
+ */
+function scanModalBodies(sources: Record<string, string>): {
+  bodies: number;
+  withExtraRhythm: string[];
+  childClasses: Set<string>;
+} {
+  let bodies = 0;
+  const withExtraRhythm: string[] = [];
+  const childClasses = new Set<string>();
+  const classOf = (node: ts.JsxElement | ts.JsxSelfClosingElement): string => {
+    const attrs = ts.isJsxElement(node) ? node.openingElement.attributes : node.attributes;
+    const attr = attrs.properties.find(
+      (p): p is ts.JsxAttribute =>
+        ts.isJsxAttribute(p) && ts.isIdentifier(p.name) && p.name.text === 'className',
+    );
+    const init = attr?.initializer;
+    return init && ts.isStringLiteral(init) ? init.text : '';
+  };
+  for (const [file, source] of Object.entries(sources)) {
+    if (/\.(?:test|spec)\.tsx$/u.test(file)) continue;
+    const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    const visit = (node: ts.Node): void => {
+      if (ts.isJsxElement(node)) {
+        const classes = classOf(node).split(/\s+/u).filter(Boolean);
+        if (classes.includes(MODAL_BODY_CLASS)) {
+          bodies += 1;
+          for (const c of classes) {
+            if (c !== MODAL_BODY_CLASS && /^(?:stack|stack--tight|form)$/u.test(c)) {
+              withExtraRhythm.push(`${file}: .${c}`);
+            }
+          }
+          const kids: (ts.JsxElement | ts.JsxSelfClosingElement)[] = [];
+          const collect = (n: ts.Node): void => {
+            if (ts.isJsxElement(n) || ts.isJsxSelfClosingElement(n)) {
+              kids.push(n);
+              return;
+            }
+            ts.forEachChild(n, collect);
+          };
+          for (const child of node.children) {
+            if (ts.isJsxElement(child) || ts.isJsxSelfClosingElement(child)) kids.push(child);
+            else if (ts.isJsxExpression(child) && child.expression) collect(child.expression);
+          }
+          for (const kid of kids) {
+            for (const c of classOf(kid).split(/\s+/u).filter(Boolean)) childClasses.add(c);
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sf);
+  }
+  return { bodies, withExtraRhythm, childClasses };
+}
+
 /** `<Card>` elements, and whether each wraps its children in a single rhythm-owning child. */
 function scanCards(sources: Record<string, string>): {
   cards: number;
@@ -253,6 +371,7 @@ const PRODUCTION_SOURCES = import.meta.glob('../**/*.tsx', {
 }) as Record<string, string>;
 
 const CARDS = scanCards(PRODUCTION_SOURCES);
+const MODALS = scanModalBodies(PRODUCTION_SOURCES);
 
 let THEME = '';
 let RULES: CssRule[] = [];
@@ -268,6 +387,9 @@ describe('container vertical rhythm — structural guards', () => {
     expect(rhythmOwners(RULES).length).toBeGreaterThan(10);
     expect(CARDS.files).toBeGreaterThan(150);
     expect(CARDS.cards).toBeGreaterThan(200);
+    // The bound that catches a walk which stops recognising modal bodies and passes over nothing.
+    expect(MODALS.bodies).toBeGreaterThanOrEqual(8);
+    expect(MODALS.childClasses.size).toBeGreaterThanOrEqual(10);
   });
 
   it('does not let a new surface patch the container rhythm for itself', () => {
@@ -328,6 +450,61 @@ describe('container vertical rhythm — structural guards', () => {
     expect(collapse.map((r) => selectorList(r))).toEqual([[':where(.panel__body, .card) > *']]);
     expect(collapse[0]?.body).toMatch(/margin-top:\s*0;/u);
     expect(collapse[0]?.body).toMatch(/margin-bottom:\s*0;/u);
+  });
+
+  it('keeps `.modal__body` a gap container with its child margins neutralised', () => {
+    const body = RULES.find((r) => selectorList(r).includes(`.${MODAL_BODY_CLASS}`))?.body ?? '';
+    expect(
+      body,
+      '`.modal__body` stopped being a gap container. Everything below assumes `gap` owns the ' +
+        'rhythm — without it, zeroing the children’s margins leaves every dialog flush.',
+    ).toMatch(/gap:\s*0\.85rem;/u);
+
+    const reset = RULES.filter((r) =>
+      selectorList(r).some((s) => /^:where\(\.modal__body\)\s*>\s*\*$/u.test(s)),
+    );
+    expect(
+      reset.map((r) => selectorList(r)),
+      'The zero-specificity reset is what stops a child’s own margin ADDING to the gap — the UA ' +
+        'margins on a `<p>` intro (measured 34.38px against a 13.6px baseline) and the banner ' +
+        'primitive’s standalone `margin-top` (29.59px).',
+    ).toEqual([[':where(.modal__body) > *']]);
+    expect(reset[0]?.body).toMatch(/margin-block:\s*0;/u);
+  });
+
+  it('orders the modal reset after the banner primitive, which it has to outrank', () => {
+    // Both are (0,0,0), so this is decided by source order alone and by nothing else. If the
+    // banner rule ever moves below this one, `InlineWarning`s in dialogs silently regain 1rem
+    // on top of the gap. Measured: 29.59px before the reset, 13.59px after.
+    const banner = THEME.indexOf(':where(.inline-warning) {');
+    const reset = THEME.indexOf(':where(.modal__body) > * {');
+    expect(banner).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(-1);
+    expect(reset).toBeGreaterThan(banner);
+  });
+
+  it('does not let a modal child bring a margin that adds to the gap', () => {
+    const byClass = singleClassRules(RULES);
+    const offenders = [...MODALS.childClasses]
+      .filter((c) => addsBlockMargin(byClass.get(c) ?? ''))
+      .sort();
+    expect(
+      offenders,
+      'On a flex container with `gap`, a child’s block margin ADDS to the gap instead of ' +
+        'competing with it, so this cannot be fixed by specificity and the `:where()` reset ' +
+        'cannot reach it either — the rule does not mention `.modal__body`. This is how ' +
+        '`.modal__foot { margin-top: 0.4rem }` put every dialog’s button row 19.98px from its ' +
+        'content while everything else sat at 13.6px. Let the gap own it.',
+    ).toEqual([]);
+  });
+
+  it('does not let a modal body stack a second rhythm on top of its own gap', () => {
+    expect(
+      MODALS.withExtraRhythm,
+      'A `.stack`/`.stack--tight`/`.form` on the same element as `.modal__body` does not replace ' +
+        'the body’s `gap`, it ADDS to it — measured 37.6px and 25.6px against the 13.6px every ' +
+        'other dialog uses. The body already owns the rhythm.',
+    ).toEqual([]);
   });
 
   it('keeps every rhythm owner a card can opt into above the shared rule', () => {
@@ -450,10 +627,55 @@ describe('container vertical rhythm — the guards go red without the fix', () =
     ]);
   });
 
+  it('reports a modal child that brings a margin, and ignores a zeroing one', () => {
+    // `.modal__foot`'s own rule, exactly as it was — the regression this predicate exists for.
+    const byClass = singleClassRules(
+      parseRules(
+        '.modal__foot { display: flex; gap: 0.6rem; margin-top: 0.4rem; }\n' +
+          '.modal__note { display: flex; margin: 0; }\n',
+      ),
+    );
+    expect(addsBlockMargin(byClass.get('modal__foot') ?? '')).toBe(true);
+    expect(addsBlockMargin(byClass.get('modal__note') ?? '')).toBe(false);
+  });
+
+  it('reads the block axis out of every margin spelling', () => {
+    // A shorthand hides the block axis behind its position, and the inline axis must not trip it.
+    expect(addsBlockMargin('margin: 0;')).toBe(false);
+    expect(addsBlockMargin('margin: 0 auto;')).toBe(false);
+    expect(addsBlockMargin('margin: 0 0 0 1rem;')).toBe(false);
+    expect(addsBlockMargin('margin: 0.4rem 0 0;')).toBe(true);
+    expect(addsBlockMargin('margin: 0 0 1rem;')).toBe(true);
+    expect(addsBlockMargin('margin-block: 0;')).toBe(false);
+    expect(addsBlockMargin('margin-block: 0 1rem;')).toBe(true);
+    expect(addsBlockMargin('margin-bottom: 2px;')).toBe(true);
+    expect(addsBlockMargin('padding-top: 1rem;')).toBe(false);
+  });
+
+  it('reports the modal reset being deleted, and a body stacking a second rhythm', () => {
+    const reverted = withoutFix((css) =>
+      css.replace(/:where\(\.modal__body\) > \* \{[^}]*\}/u, ''),
+    );
+    expect(
+      reverted.filter((r) =>
+        selectorList(r).some((s) => /^:where\(\.modal__body\)\s*>\s*\*$/u.test(s)),
+      ),
+    ).toEqual([]);
+
+    const stacked = scanModalBodies({
+      '../features/x/Dlg.tsx': '<div className="modal__body stack--tight"><p /></div>;',
+    });
+    expect(stacked.bodies).toBe(1);
+    expect(stacked.withExtraRhythm).toEqual(['../features/x/Dlg.tsx: .stack--tight']);
+  });
+
   it('reports an empty sweep rather than passing over nothing', () => {
     const empty = scanCards({});
     expect(empty.cards).toBe(0);
     expect(empty.files).toBe(0);
     expect(parseRules('')).toEqual([]);
+    const noModals = scanModalBodies({});
+    expect(noModals.bodies).toBe(0);
+    expect(noModals.childClasses.size).toBe(0);
   });
 });

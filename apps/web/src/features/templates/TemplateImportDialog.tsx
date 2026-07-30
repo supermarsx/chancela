@@ -146,7 +146,10 @@ export function TemplateImportDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <ImportModal title={t('templates.import.title')} onClose={onClose}>
-      <div className="modal__body stack--tight">
+      {/* No `stack--tight` here: `.modal__body` is a flex column with its own `gap`, so a rhythm
+          class on the same element ADDS to that gap instead of replacing it — measured 25.6px
+          against every other dialog's 13.6px. The body owns the rhythm; see docs/ui-spacing.md. */}
+      <div className="modal__body">
         <p className="field__hint">{it('templates.import.hint')}</p>
 
         <div className="row-wrap" role="group" aria-label={t('templates.import.title')}>

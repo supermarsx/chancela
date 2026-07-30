@@ -1,12 +1,18 @@
 # UI vertical spacing (design decision)
 
-> **Status.** Two of the three reported defects are **fixed and guarded** (`2a538e87`, `7bb5dcd8`).
-> The third is **not fixed**: it needs a container-rhythm rule whose blast radius is ~156 cards, and
-> that is [AWAITING DECISION](#what-is-decided-and-what-is-still-open) with the product owner. This
-> document is written so that decision can be taken, and Pass 2 resumed, by someone who was not
-> present. Every number below was measured against the tree at **`7e09cf83`** by parsing the
+> **Status.** All three reported defects are **fixed and guarded** (`2a538e87`, `7bb5dcd8`,
+> `28050209`). Pass 2 — the container rhythm, blast radius ~156 cards — was approved by the product
+> owner and landed in `28050209`, together with a fourth surface the same session turned up: modal
+> bodies. What remains open is **Pass 3**, listed under
+> [What is decided](#what-is-decided-and-what-is-still-open).
+>
+> Component and rule counts below were measured against the tree at **`7e09cf83`** by parsing the
 > TypeScript and CSS ASTs, not by grepping — the method matters, because a regex count of this same
 > component family was wrong by a factor of two (see [Counting](#counting-why-the-numbers-here-are-ast-derived)).
+> **Every spacing figure quoted in pixels was measured differently again**: by rendering the real
+> stylesheet in headless Chromium and reading the computed box, in both colour schemes. That method
+> is not decoration. Reading specificity off the page got three conclusions in this document wrong —
+> see [What measurement changed](#what-measurement-changed-that-reading-the-css-did-not).
 
 ## The request
 
@@ -148,6 +154,66 @@ Two things deliberately **not** changed, and recorded so nobody "finishes the jo
 No conversion between native and custom was needed, and none should be attempted: the native options
 are the target, not the problem.
 
+### Container rhythm — `28050209` (Pass 2)
+
+Option B, approved. Two rules beside `.panel__body`, the same shape as the banner fix:
+
+```css
+:where(.panel__body, .card) > *     { margin-top: 0; margin-bottom: 0; }
+:where(.panel__body, .card) > * + * { margin-top: 1rem; }
+```
+
+**1rem is not a ninth value and not an arbitrary pick from the eight.** It is what every
+per-surface patch of this exact defect already used — `.settings-notes`,
+`.email-card .panel__body > * + *`, `:where(.inline-warning)`'s standalone margin — and it is
+`.form > * + *`'s band, so a card of loose children reads like one whose children sit in a form.
+
+Retired with it, all three measured byte-identical before and after: `.settings-notes`,
+`.email-card .panel__body > * + *`, and
+`.external-signing-workflows .panel__body > .stack--tight, > .form` (which existed to cancel the
+UA's `form { margin-block-end: 1em }` — both those cards have exactly one body child, so the new
+`> *` reset covers it exactly).
+
+Measured effect, light and dark identical (it is a margin-only change): the connector-egress card's
+paragraph-to-field gap 0 → 16px; a card of bare `<p>`s keeps its 16px inner gaps but loses 36px of
+accidental air at its edges; a hint-then-actions row 0 → 16px. Unchanged, as required: single-child
+cards, `.stack`-wrapped cards, dashboard metric tiles, `.data-status-section`, the book-export row,
+a hint inside a `.field`, the banner fix, and the notification popup's footer.
+
+### Modal bodies — `28050209`
+
+The same defect wearing the opposite mechanism, found while verifying Pass 2 and reported as
+"buttons in the credential test modal have wrong margins".
+
+**`.modal__body` is `display: flex; flex-direction: column; gap: 0.85rem`** — unlike
+`.panel__body` it *does* own its child spacing. That inverts everything: a child's own block margin
+does not compete with the container in the cascade, it **adds** to the gap. So the Pass 2 rule does
+not reach modals, a `:where()` rule cannot fix it the way it fixes a card, and a per-surface margin
+does not merely shadow the shared rhythm — it silently doubles it.
+
+Measured across all eight dialogs, `.modal__body` produced **six different child gaps**:
+
+| gap | cause |
+|---|---|
+| 13.6px | the intended one, where the child zeroes its own margin |
+| 19.98px | `.modal__foot { margin-top: 0.4rem }` — every dialog's button row |
+| 25.6px / 37.6px | two dialogs putting `.stack--tight` / `.stack` on the body *itself* |
+| 29.59px | `:where(.inline-warning)`'s standalone `margin-top`, adding to the gap |
+| 34.38px | a `<p class="modal__intro">` carrying the UA's own block margins |
+
+Fixed by one rule beside the primitive plus two retirements — not a per-surface patch:
+
+```css
+:where(.modal__body) > * { margin-block: 0; }
+```
+
+`.modal__foot` lost its `margin-top`, and the two dialogs that stacked a `.stack`/`.stack--tight`
+on the body dropped it. All eight dialogs now render at a single 13.6px baseline in both themes.
+
+One ordering dependency is load-bearing and is pinned by a test: the reset and
+`:where(.inline-warning)` are **both** (0,0,0), so which wins is decided by source order alone. The
+reset must stay below the banner primitive, or `InlineWarning`s in dialogs silently regain 1rem.
+
 ## Options considered for the remaining defect
 
 **A — keep patching per surface.** What the codebase has done four times. Each patch buys exactly
@@ -168,20 +234,47 @@ not smuggled in as a bundled extra.
 change available in this area — on a product being actively demonstrated. That cost is the entire
 reason it is a product decision rather than an engineering one.
 
-## Pass 2, if it is approved
+## What measurement changed that reading the CSS did not
 
-1. Add the container rhythm next to `.panel__body`, at `:where()` zero specificity, in the same
-   shape as the banner fix.
-2. **Then** retire the per-surface patches it supersedes — `.settings-notes`,
-   `.email-card .panel__body > * + *`, `.data-status-section > * + *`, and the scoped overrides
-   added by `ff0a5f6c` — because while they exist they shadow the shared rule at higher specificity.
-   Leaving them is how a global fix ends up applying everywhere except the screens people already
-   complained about.
-3. Extend the structural guard (below) to the container-rhythm family, so a fifth surface-scoped
-   patch fails at test time.
+Three conclusions in earlier drafts of this document were wrong, and each was caught the same way:
+by rendering the real stylesheet in Chromium and reading the computed box, rather than by reasoning
+about specificity. Recorded because the method is the transferable part.
 
-**Pass 3** — a broader sweep of the bespoke `> * + *` re-inventions onto the shared rhythm — is
-contingent on Pass 2 landing and should not be started before it.
+**1. `.data-status-section > * + *` (0.8rem) must be KEPT.** This document previously listed it for
+retirement in Pass 2. That is wrong. `.data-status-section` is a `<section>` inside a `.data-status`
+flex column inside the card body, so its children are **grandchildren** of `.panel__body` — the
+shared rule cannot reach them, and 0.8rem is a deliberately tighter nested band. Retiring it would
+collapse those sections to zero. Likewise `ff0a5f6c`'s
+`.book-export-table .stack--tight > * + .btn` is scoped inside a `.stack--tight` in a table cell,
+not to a container's children, and is also not superseded. **Neither is a surface patch shadowing
+the shared rule**, so keeping them does not make the global fix inert anywhere.
+
+**2. Two comments in this repo assert something `.field__hint` does not do.** The note at
+`.settings-notes` (t100) says *"`.stack--tight` on the same element spaces the notes from each
+other"*, and `ff0a5f6c`'s says the hint sits tight under its control *by design*. Measured:
+`.field__hint { margin: 0 }` and `.stack--tight > * + *` are **both (0,1,0)**, and `.field__hint` is
+declared later in the sheet, so it wins — hints inside a `.stack--tight` render **0px apart**. The
+diagnostics intro's three sentences and the language card's four notes are crammed together today.
+See Pass 3.
+
+**3. The banner primitive's margin reaches into gap containers.**
+`:where(.inline-warning) { margin-top: 1rem }` is invisible in a card (a plain margin among
+margins) but **adds** to a flex `gap`, which is how a dialog's banner sat 29.59px from its
+neighbour. Zero specificity does not mean zero effect.
+
+## Pass 3 — the remaining work, in priority order
+
+1. **`.field__hint` in a rhythm owner.** The (0,1,0) tie above. The obvious fix is pinning
+   `.field__hint`'s zero margin to `:where()` so any explicit rhythm owner outranks it, which
+   repairs the diagnostics intro and the settings notes at a stroke. **It has a named conflict**:
+   it would also loosen `ff0a5f6c`'s preservation-package row, whose tightness under its `Toggle`
+   is deliberate. That trade is the decision; it is not a drive-by. There is already a third patch
+   in this family — `.signing-evidence .field__hint { margin-top: 0.7rem }`.
+2. **The bespoke `> * + *` re-inventions**, swept onto the shared rhythm.
+3. **A spacing-token scale**, only if it is ever wanted on its own merits — see Option C.
+
+Both of these, plus the placeholder-contrast issue, are restated as decisions in
+[What is decided](#what-is-decided-and-what-is-still-open); that list is the canonical one.
 
 ## The guards
 
@@ -193,6 +286,17 @@ Two structural test files, both AST/source-level:
 - `apps/web/src/ui/menuItemGuards.test.ts` — fails when an element with an ARIA menu role lacks the
   shared `menu-item` class, when any menu restates its own entry padding, or when `.menu-item` stops
   agreeing with `.control`.
+- `apps/web/src/ui/containerRhythmGuards.test.ts` — requires the shared container rhythm to exist
+  on both containers at `:where()` zero specificity at its frozen step; freezes the surface-patch
+  inventory **at empty**; freezes the set of distinct rhythm values; and covers the `.modal__body`
+  family, where the invariant is the opposite one — *no* child may bring a block margin, because on
+  a gap container a margin adds rather than competes. The modal predicates work from the AST, since
+  the offending rules (`.modal__foot { margin-top }`) never mention `.modal__body` at all. Verified
+  non-vacuous against the pre-fix commit: it reports `.modal__foot` there and nothing now.
+- `apps/web/src/ui/textareaControlGuards.test.ts` — the multi-line control: that `TextArea` merges
+  a caller's `className` rather than replacing it, its `rows` default and caller override, the
+  height floor's exact form and its zero specificity, the padding token and its consumers, the mono
+  rule, and that `field-sizing` stays out.
 
 **Why not a rendered assertion.** jsdom does not apply stylesheet declarations to
 `getComputedStyle`, so a test that mounts a component and reads its margin passes whether or not the
@@ -251,11 +355,13 @@ mis-parses. If you revise these numbers, do it the same way, and state which com
   guard flipped from asserting the rhythm's *absence* to asserting the invariant, with
   `KNOWN_SURFACE_PATCHES` frozen at empty so a fifth surface patch fails at test time.
 - **`.modal__body` is a separate mechanism and Pass 2 does not reach it.** It owns its child
-  spacing through `gap`, so a child's margin *adds* rather than competing in the cascade. One
-  dialog measured three different gaps — 27.98px under a `<p>` intro carrying UA margins, 13.6px
-  where the child zeroed its own, 19.98px above the button row from `.modal__foot`'s
-  `margin-top: 0.4rem`. Child margins are now neutralised at `:where()` and that `margin-top` is
-  gone; `gap` is the single source.
+  spacing through `gap`, so a child's margin *adds* rather than competing in the cascade. Swept
+  across all eight dialogs it produced **six** different gaps (13.6 / 19.98 / 25.6 / 29.59 / 34.38
+  / 37.6px); the full table and causes are in the "Modal bodies" section above. A heading anchor is
+  deliberately not linked there: its em dash slugifies differently under mkdocs and GitHub, and
+  `mkdocs build --strict` fails on the mismatch. Child margins are now neutralised at `:where()`,
+  `.modal__foot`'s `margin-top` is gone, and the two dialogs that stacked a `.stack`/`.stack--tight`
+  on the body itself dropped it. All eight now render at one 13.6px baseline in both themes.
 
 **Corrections to this document, found by measuring rather than reading specificity:**
 

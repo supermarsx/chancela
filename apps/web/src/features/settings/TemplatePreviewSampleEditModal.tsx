@@ -54,7 +54,10 @@ export function TemplatePreviewSampleEditModal({
             {title}
           </h2>
         </header>
-        <form className="modal__body stack" onSubmit={submit}>
+        {/* No `stack` here: `.modal__body` is a flex column with its own `gap`, so a rhythm class
+            on the same element ADDS to that gap instead of replacing it — measured 37.6px against
+            every other dialog's 13.6px. The body owns the rhythm; see docs/ui-spacing.md. */}
+        <form className="modal__body" onSubmit={submit}>
           <div className="template-preview-sample-modal__fields">{children}</div>
           <div className="form__actions">
             <Button type="button" variant="ghost" onClick={onClose}>
