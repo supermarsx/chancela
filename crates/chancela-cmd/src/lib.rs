@@ -1,10 +1,12 @@
-//! `chancela-cmd` — Chave Movel Digital qualified remote-signature SOAP client (spec 04).
+//! `chancela-cmd` — Chave Movel Digital qualified remote-signature JSON/REST client (spec 04).
 //!
-//! Hand-builds SOAP 1.1 envelopes for the AMA SCMD service (`CCMovelDigitalSignature.svc`)
-//! behind a [`ScmdTransport`] trait, and drives the SIG-02 qualified-signature flow:
+//! Builds ASP.NET-AJAX JSON requests for the AMA SCMD service (`AppSCMDService.svc`) behind a
+//! [`ScmdTransport`] trait, and drives the SIG-02 qualified-signature flow. The wire contract
+//! (endpoint, operation names, field encodings, response shapes) is aligned to the working
+//! reference `recov-pt`, which completes the full flow against the live service:
 //!
 //! 1. [`ScmdClient::get_certificate`] (`GetCertificate`) — fetch the citizen's signing cert.
-//! 2. [`ScmdClient::request_signature`] (`CCMovelSign`) — start the signature; the PIN is the
+//! 2. [`ScmdClient::request_signature`] (`SCMDSign`) — start the signature; the PIN is the
 //!    knowledge factor and the service dispatches an **OTP** to the citizen's device.
 //! 3. [`ScmdClient::confirm_otp`] (`ValidateOtp`) — the citizen supplies the OTP (possession
 //!    factor); the service returns a **raw RSA-PKCS#1 v1.5 signature** over the DigestInfo of
@@ -27,8 +29,8 @@ pub mod error;
 pub mod field_encryption;
 pub mod flow;
 pub mod mock;
-pub mod soap;
 pub mod transport;
+pub mod wire;
 
 pub use certificate_pem::{
     AmaKeyPemKind, CertificatePemError, NormalizedAmaKeyPem, normalize_ama_key_pem,

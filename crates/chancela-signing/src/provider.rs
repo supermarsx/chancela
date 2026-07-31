@@ -256,8 +256,11 @@ where
     }
 
     fn certificate_chain(&self) -> Result<CertificateChain, SigningError> {
+        // `OsRng` is consumed only by the PROD field-encryption hook (the mobile is encrypted for
+        // GetCertificate too); cleartext (preprod/mock) ignores it.
+        let mut rng = OsRng;
         self.client
-            .get_certificate(&self.user_id)
+            .get_certificate(&mut rng, &self.user_id)
             .map_err(|e| SigningError::Provider(e.to_string()))
     }
 }

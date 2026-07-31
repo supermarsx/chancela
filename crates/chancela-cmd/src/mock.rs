@@ -1,4 +1,4 @@
-//! [`MockScmdTransport`] — canned SOAP responses so the full request -> OTP -> retrieve
+//! [`MockScmdTransport`] — canned JSON responses so the full request -> OTP -> retrieve
 //! round-trip is unit-tested offline (no network). Also records the requests it received
 //! so tests can assert the flow wired the `ProcessId`, encrypted fields, etc. correctly.
 
@@ -6,28 +6,26 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::error::CmdError;
-use crate::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
 use crate::transport::ScmdTransport;
+use crate::wire::{OP_GET_CERTIFICATE, OP_SCMD_SIGN, OP_VALIDATE_OTP};
 
-/// Canned `GetCertificate` success (leaf + issuer PEM chain).
-pub const GET_CERTIFICATE_OK: &str = include_str!("../fixtures/get_certificate_response.xml");
-/// Canned `CCMovelSign` success (`Code` 200 + `ProcessId`).
-pub const CCMOVEL_SIGN_OK: &str = include_str!("../fixtures/ccmovelsign_response.xml");
-/// Canned `ValidateOtp` success (base64 signature + `Status.Code` 200).
-pub const VALIDATE_OTP_OK: &str = include_str!("../fixtures/validateotp_response.xml");
-/// Canned `CCMovelSign` failure (`Code` 401, invalid PIN).
-pub const CCMOVEL_SIGN_ERROR: &str = include_str!("../fixtures/ccmovelsign_error.xml");
+/// Canned `GetCertificate` success (leaf + issuer PEM chain, `{"d": "<pem>"}`-wrapped).
+pub const GET_CERTIFICATE_OK: &str = include_str!("../fixtures/get_certificate_response.json");
+/// Canned `SCMDSign` success (`Code` 200 + `ProcessId`).
+pub const SCMD_SIGN_OK: &str = include_str!("../fixtures/scmd_sign_response.json");
+/// Canned `ValidateOtp` success (integer-array signature + `Status.Code` 200).
+pub const VALIDATE_OTP_OK: &str = include_str!("../fixtures/validateotp_response.json");
+/// Canned `SCMDSign` failure (`Code` 401, invalid PIN).
+pub const SCMD_SIGN_ERROR: &str = include_str!("../fixtures/scmd_sign_error.json");
 /// Canned `ValidateOtp` rejection (`Status.Code` 402, invalid OTP).
-pub const VALIDATE_OTP_REJECTED: &str = include_str!("../fixtures/validateotp_rejected.xml");
-/// A SOAP `Fault` (invalid ApplicationId).
-pub const SOAP_FAULT: &str = include_str!("../fixtures/soap_fault.xml");
+pub const VALIDATE_OTP_REJECTED: &str = include_str!("../fixtures/validateotp_rejected.json");
 
 /// A request the mock received, for post-hoc assertions.
 #[derive(Debug, Clone)]
 pub struct RecordedCall {
-    /// The SOAPAction the flow used.
+    /// The operation the flow used (`GetCertificate` / `SCMDSign` / `ValidateOtp`).
     pub action: String,
-    /// The full request envelope the flow sent.
+    /// The full JSON request body the flow sent.
     pub envelope: String,
 }
 
@@ -47,24 +45,24 @@ impl MockScmdTransport {
     /// A mock where all three operations succeed — the happy-path round trip.
     pub fn preprod_success() -> Self {
         Self::empty()
-            .with_response(ACTION_GET_CERTIFICATE, GET_CERTIFICATE_OK)
-            .with_response(ACTION_CCMOVEL_SIGN, CCMOVEL_SIGN_OK)
-            .with_response(ACTION_VALIDATE_OTP, VALIDATE_OTP_OK)
+            .with_response(OP_GET_CERTIFICATE, GET_CERTIFICATE_OK)
+            .with_response(OP_SCMD_SIGN, SCMD_SIGN_OK)
+            .with_response(OP_VALIDATE_OTP, VALIDATE_OTP_OK)
     }
 
-    /// Success mock, but `CCMovelSign` fails with an invalid-PIN status.
-    pub fn ccmovel_sign_error() -> Self {
-        Self::preprod_success().with_response(ACTION_CCMOVEL_SIGN, CCMOVEL_SIGN_ERROR)
+    /// Success mock, but `SCMDSign` fails with an invalid-PIN status.
+    pub fn scmd_sign_error() -> Self {
+        Self::preprod_success().with_response(OP_SCMD_SIGN, SCMD_SIGN_ERROR)
     }
 
     /// Success mock, but `ValidateOtp` rejects the OTP.
     pub fn otp_rejected() -> Self {
-        Self::preprod_success().with_response(ACTION_VALIDATE_OTP, VALIDATE_OTP_REJECTED)
+        Self::preprod_success().with_response(OP_VALIDATE_OTP, VALIDATE_OTP_REJECTED)
     }
 
-    /// Set (or override) the canned response for a SOAPAction.
-    pub fn with_response(mut self, action: &str, xml: impl Into<String>) -> Self {
-        self.responses.insert(action.to_string(), xml.into());
+    /// Set (or override) the canned JSON response for an operation.
+    pub fn with_response(mut self, action: &str, body: impl Into<String>) -> Self {
+        self.responses.insert(action.to_string(), body.into());
         self
     }
 
@@ -85,10 +83,10 @@ impl MockScmdTransport {
 }
 
 impl ScmdTransport for MockScmdTransport {
-    fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
+    fn call(&self, action: &str, body: &str) -> Result<String, CmdError> {
         self.recorded.borrow_mut().push(RecordedCall {
             action: action.to_string(),
-            envelope: soap_body.to_string(),
+            envelope: body.to_string(),
         });
         self.responses.get(action).cloned().ok_or_else(|| {
             CmdError::Transport(format!(

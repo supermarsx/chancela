@@ -44,7 +44,7 @@ use chancela_api::{
     AppState, CmdCredentialFields, CredentialFieldSet, CredentialMode, CscCredentialFields,
     EntryMetadata, EntrySelectors, router,
 };
-use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
+use chancela_cmd::wire::{OP_GET_CERTIFICATE, OP_SCMD_SIGN, OP_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_csc::mock::{
     CREDENTIALS_LIST_OK, OAUTH_TOKEN_OK, SEND_OTP_OK, credentials_info_response, sign_hash_response,
@@ -186,12 +186,6 @@ fn build_self_signed(
     }
 }
 
-fn between<'a>(hay: &'a str, open: &str, close: &str) -> Option<&'a str> {
-    let start = hay.find(open)? + open.len();
-    let end = hay[start..].find(close)? + start;
-    Some(&hay[start..end])
-}
-
 // --- failover-aware CMD mock ------------------------------------------------------------------
 
 /// How one stored CMD entry (identified by its ApplicationId) behaves.
@@ -236,11 +230,13 @@ impl FailoverCmdTransport {
         }
     }
 
-    /// The ApplicationId whose base64 appears in this SOAP body (the entry making the call).
-    fn acting_application_id(&self, soap_body: &str) -> Option<String> {
+    /// The ApplicationId carried (raw) in this JSON body (the entry making the call).
+    fn acting_application_id(&self, body: &str) -> Option<String> {
+        let value: serde_json::Value = serde_json::from_str(body).ok()?;
+        let app = value["ApplicationId"].as_str()?;
         self.entries
             .iter()
-            .find(|e| soap_body.contains(&STANDARD.encode(e.application_id.as_bytes())))
+            .find(|e| e.application_id == app)
             .map(|e| e.application_id.clone())
     }
 
@@ -291,68 +287,45 @@ impl ScmdTransport for FailoverCmdTransport {
             }
         }
 
-        if action == ACTION_GET_CERTIFICATE {
+        if action == OP_GET_CERTIFICATE {
             Ok(get_certificate_response(&self.leaf_pem, &self.issuer_pem))
-        } else if action == ACTION_CCMOVEL_SIGN {
-            let hash_b64 = between(soap_body, "<d:Hash>", "</d:Hash>")
-                .ok_or_else(|| CmdError::Transport("no <d:Hash> in CCMovelSign".into()))?;
+        } else if action == OP_SCMD_SIGN {
+            let value: serde_json::Value =
+                serde_json::from_str(soap_body).map_err(|e| CmdError::Transport(e.to_string()))?;
+            let hash_b64 = value["Hash"]
+                .as_str()
+                .ok_or_else(|| CmdError::Transport("no Hash in SCMDSign".into()))?;
             let hash = STANDARD
-                .decode(hash_b64.trim())
+                .decode(hash_b64)
                 .map_err(|e| CmdError::Base64(e.to_string()))?;
             *self.captured_hash.lock().unwrap() = Some(hash);
-            Ok(CCMOVEL_SIGN_OK.to_string())
-        } else if action == ACTION_VALIDATE_OTP {
+            Ok(SCMD_SIGN_OK.to_string())
+        } else if action == OP_VALIDATE_OTP {
             let guard = self.captured_hash.lock().unwrap();
-            let hash = guard.as_ref().expect("CCMovelSign captured the hash first");
+            let hash = guard.as_ref().expect("SCMDSign captured the hash first");
             assert_submitted_digest_info(hash);
             let sig = sign_submitted_digest_info(&self.leaf_key, hash);
-            Ok(validate_otp_response(&STANDARD.encode(&sig)))
+            Ok(validate_otp_response(&sig))
         } else {
             Err(CmdError::Transport(format!("unexpected action {action}")))
         }
     }
 }
 
-const CCMOVEL_SIGN_OK: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <CCMovelSignResponse xmlns="http://tempuri.org/">
-      <CCMovelSignResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Code>200</a:Code>
-        <a:Message>Confirme com o OTP enviado.</a:Message>
-        <a:ProcessId>b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b</a:ProcessId>
-      </CCMovelSignResult>
-    </CCMovelSignResponse>
-  </s:Body>
-</s:Envelope>"#;
+const SCMD_SIGN_OK: &str = r#"{"d":{"Code":"200","Message":"Confirme com o OTP enviado.","ProcessId":"b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b"}}"#;
 
 fn get_certificate_response(leaf_pem: &str, issuer_pem: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <GetCertificateResponse xmlns="http://tempuri.org/">
-      <GetCertificateResult>{leaf_pem}{issuer_pem}</GetCertificateResult>
-    </GetCertificateResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+    serde_json::json!({ "d": format!("{leaf_pem}{issuer_pem}") }).to_string()
 }
 
-fn validate_otp_response(signature_b64: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <ValidateOtpResponse xmlns="http://tempuri.org/">
-      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Signature>{signature_b64}</a:Signature>
-        <a:Status><a:Code>200</a:Code><a:Message>Assinatura concluída.</a:Message></a:Status>
-      </ValidateOtpResult>
-    </ValidateOtpResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+fn validate_otp_response(signature: &[u8]) -> String {
+    serde_json::json!({
+        "d": {
+            "Status": { "Code": "200", "Message": "Assinatura concluída." },
+            "Signature": signature,
+        }
+    })
+    .to_string()
 }
 
 // --- failover-aware CSC mock ------------------------------------------------------------------
@@ -716,7 +689,7 @@ async fn cmd_initiate_fails_over_on_a_retryable_error() {
         vec![
             CmdMockEntry {
                 application_id: APP_PRIMARY.to_owned(),
-                behavior: CmdBehavior::RetryableAt(ACTION_GET_CERTIFICATE),
+                behavior: CmdBehavior::RetryableAt(OP_GET_CERTIFICATE),
             },
             CmdMockEntry {
                 application_id: APP_SECONDARY.to_owned(),
@@ -750,7 +723,7 @@ async fn cmd_initiate_fails_over_on_a_retryable_error() {
         "the primary entry must have been attempted first"
     );
     assert_eq!(
-        transport.application_id_at(ACTION_CCMOVEL_SIGN).as_deref(),
+        transport.application_id_at(OP_SCMD_SIGN).as_deref(),
         Some(APP_SECONDARY),
         "the OTP must have been dispatched against the secondary (failed-over) entry"
     );
@@ -768,7 +741,7 @@ async fn cmd_initiate_stops_on_terminal_and_does_not_burn_the_next_entry() {
         vec![
             CmdMockEntry {
                 application_id: APP_PRIMARY.to_owned(),
-                behavior: CmdBehavior::TerminalAt(ACTION_CCMOVEL_SIGN),
+                behavior: CmdBehavior::TerminalAt(OP_SCMD_SIGN),
             },
             CmdMockEntry {
                 application_id: APP_SECONDARY.to_owned(),
@@ -823,7 +796,7 @@ async fn cmd_confirm_resolves_the_same_entry_the_walk_chose() {
         vec![
             CmdMockEntry {
                 application_id: APP_PRIMARY.to_owned(),
-                behavior: CmdBehavior::RetryableAt(ACTION_GET_CERTIFICATE),
+                behavior: CmdBehavior::RetryableAt(OP_GET_CERTIFICATE),
             },
             CmdMockEntry {
                 application_id: APP_SECONDARY.to_owned(),
@@ -865,7 +838,7 @@ async fn cmd_confirm_resolves_the_same_entry_the_walk_chose() {
     assert_eq!(done["family"], "ChaveMovelDigital");
     // Confirm ran ValidateOtp against the SAME (secondary) entry the walk pinned — never the default.
     assert_eq!(
-        transport.application_id_at(ACTION_VALIDATE_OTP).as_deref(),
+        transport.application_id_at(OP_VALIDATE_OTP).as_deref(),
         Some(APP_SECONDARY),
         "confirm must resolve the pinned entry, not re-resolve default_entry"
     );
@@ -873,7 +846,7 @@ async fn cmd_confirm_resolves_the_same_entry_the_walk_chose() {
         !transport
             .calls()
             .iter()
-            .any(|(action, app)| action == ACTION_VALIDATE_OTP && app == APP_PRIMARY),
+            .any(|(action, app)| action == OP_VALIDATE_OTP && app == APP_PRIMARY),
         "confirm must never submit the OTP against the failed-over-from primary entry"
     );
 }
@@ -919,9 +892,7 @@ async fn cmd_initiate_uses_highest_priority_enabled_entry() {
         .await;
         assert_eq!(status, StatusCode::OK, "initiate: {init}");
         assert_eq!(
-            transport
-                .application_id_at(ACTION_GET_CERTIFICATE)
-                .as_deref(),
+            transport.application_id_at(OP_GET_CERTIFICATE).as_deref(),
             Some(APP_PRIMARY),
             "the highest-priority entry must be used first"
         );
@@ -971,9 +942,7 @@ async fn cmd_initiate_uses_highest_priority_enabled_entry() {
             "a disabled entry must be skipped entirely"
         );
         assert_eq!(
-            transport
-                .application_id_at(ACTION_GET_CERTIFICATE)
-                .as_deref(),
+            transport.application_id_at(OP_GET_CERTIFICATE).as_deref(),
             Some(APP_SECONDARY),
             "the next enabled entry must be used"
         );

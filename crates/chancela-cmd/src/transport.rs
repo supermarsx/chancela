@@ -3,6 +3,10 @@
 //! Putting the wire behind a trait makes the whole SIG-02 flow mock-testable offline
 //! (see [`crate::mock::MockScmdTransport`]). Only the real HTTP path touches the network,
 //! and it is exercised solely by `network-tests` + `#[ignore]` integration tests.
+//!
+//! The SCMD `AppSCMDService.svc` service is JSON/REST: each operation is a sibling path segment
+//! under the `.svc` endpoint, so the transport POSTs `body` (a JSON string) to
+//! `{endpoint}/{operation}` with `Content-Type: application/json`. There is no SOAPAction header.
 
 use std::time::Duration;
 
@@ -13,19 +17,19 @@ use crate::error::CmdError;
 /// endpoint. Enforced against both `Content-Length` and the buffered bytes (t41-e4 H4).
 pub(crate) const MAX_CMD_RESPONSE: u64 = 1024 * 1024;
 
-/// A synchronous SOAP transport for the SCMD service.
+/// A synchronous JSON transport for the SCMD service.
 ///
-/// `action` is the SOAPAction URI; `soap_body` is the **complete** SOAP 1.1 envelope XML
-/// (built by [`crate::soap`]). The returned string is the raw SOAP response XML, which the
-/// flow layer parses. Faults (HTTP 500 with a `<Fault>` body) are returned as the response
-/// string for the flow to interpret; connection/TLS/timeout failures surface as
-/// [`CmdError::Transport`].
+/// `action` is the operation name / path segment (`GetCertificate`, `SCMDSign`, `ValidateOtp` —
+/// the `OP_*` constants in [`crate::wire`]); `body` is the JSON request string (built by
+/// [`crate::wire`]). The returned string is the raw JSON response body, which the flow layer
+/// parses. A non-2xx HTTP status surfaces as [`CmdError::Transport`]; connection/TLS/timeout
+/// failures do too.
 pub trait ScmdTransport {
-    /// POST `soap_body` under SOAPAction `action`, returning the response envelope XML.
-    fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError>;
+    /// POST `body` to the `action` operation, returning the raw JSON response body.
+    fn call(&self, action: &str, body: &str) -> Result<String, CmdError>;
 }
 
-/// Real SCMD transport: POSTs hand-built SOAP 1.1 over a blocking `reqwest` client.
+/// Real SCMD transport: POSTs JSON over a blocking `reqwest` client.
 pub struct HttpScmdTransport {
     endpoint: String,
     basic_auth: Option<crate::config::CmdBasicAuth>,
@@ -73,15 +77,16 @@ impl HttpScmdTransport {
 }
 
 impl ScmdTransport for HttpScmdTransport {
-    fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
-        // WCF requires a non-empty, quoted SOAPAction matching the operation.
-        let soap_action = format!("\"{action}\"");
+    fn call(&self, action: &str, body: &str) -> Result<String, CmdError> {
+        // Each operation is a sibling path under the `.svc` endpoint (e.g. `.../AppSCMDService.svc/
+        // SCMDSign`). No SOAPAction header: the service is JSON/REST.
+        let url = format!("{}/{}", self.endpoint.trim_end_matches('/'), action);
         let mut req = self
             .client
-            .post(&self.endpoint)
-            .header("Content-Type", "text/xml; charset=utf-8")
-            .header("SOAPAction", soap_action)
-            .body(soap_body.to_owned());
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .body(body.to_owned());
         if let Some(auth) = &self.basic_auth {
             req = req.basic_auth(&auth.username, Some(auth.password.as_str()));
         }
@@ -108,9 +113,10 @@ impl ScmdTransport for HttpScmdTransport {
             });
         }
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        // WCF SOAP faults come back as HTTP 500 with a <Fault> body — pass those through so
-        // the flow layer can extract the fault message. Only bare error statuses fail here.
-        if !status.is_success() && !text.contains("Fault") {
+        // The JSON service reports business errors as a status `Code` inside a 2xx body (parsed by
+        // the flow layer). A non-2xx HTTP status is a hard transport failure — there is no fault
+        // body to interpret, matching the working reference (recov-pt `src/cli/cmd_verify.rs`).
+        if !status.is_success() {
             return Err(CmdError::Transport(format!(
                 "HTTP {status} from SCMD endpoint"
             )));
@@ -129,9 +135,12 @@ mod tests {
     use std::thread;
 
     #[test]
-    fn sends_basic_auth_when_configured() {
+    fn posts_json_to_the_operation_path_with_basic_auth() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let endpoint = format!(
+            "http://{}/Ama.Authentication.Frontend/AppSCMDService.svc",
+            listener.local_addr().unwrap()
+        );
         let (tx, rx) = mpsc::channel();
         let server = thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
@@ -149,10 +158,10 @@ mod tests {
             }
             tx.send(String::from_utf8_lossy(&request).into_owned())
                 .unwrap();
-            let body = "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body/></s:Envelope>";
+            let body = r#"{"d":"ok"}"#;
             write!(
                 stream,
-                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
                 body.len(),
                 body
             )
@@ -164,13 +173,21 @@ mod tests {
             CmdBasicAuth::new("ama-user", "ama-password"),
         )
         .unwrap();
-        let response = transport.call("urn:test-action", "<s:Envelope/>").unwrap();
-        assert!(response.contains("<s:Envelope"));
+        let response = transport
+            .call("SCMDSign", r#"{"ApplicationId":"a"}"#)
+            .unwrap();
+        assert_eq!(response, r#"{"d":"ok"}"#);
         let request = rx.recv().unwrap();
         server.join().unwrap();
 
+        // POSTed to the per-operation path segment, as JSON, with no SOAPAction header.
+        assert!(
+            request.starts_with("POST /Ama.Authentication.Frontend/AppSCMDService.svc/SCMDSign "),
+            "request line was not the operation path: {request}"
+        );
         let request_lower = request.to_ascii_lowercase();
-        assert!(request_lower.contains("soapaction: \"urn:test-action\""));
+        assert!(request_lower.contains("content-type: application/json"));
+        assert!(!request_lower.contains("soapaction"));
         assert!(request_lower.contains("authorization: basic yw1hlxvzzxi6yw1hlxbhc3n3b3jk"));
     }
 

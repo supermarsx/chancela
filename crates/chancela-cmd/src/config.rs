@@ -10,17 +10,33 @@ use zeroize::Zeroizing;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum CmdEnv {
-    /// AMA pre-production (`preprod.cmd.autenticacao.gov.pt`). Default; cleartext fields allowed.
+    /// AMA pre-production (`preprod.cmd.autenticacao.gov.pt`). The real HTTP transport requires
+    /// field encryption in every environment (see [`CmdConfig::validate_http_transport`]).
     Preprod,
     /// AMA production (`cmd.autenticacao.gov.pt`). Field encryption required.
     Prod,
 }
 
-/// PREPROD `CCMovelDigitalSignature.svc` endpoint (spec 04 §1.3).
-pub const PREPROD_ENDPOINT: &str = "https://preprod.cmd.autenticacao.gov.pt/Ama.Authentication.Frontend/CCMovelDigitalSignature.svc";
-/// PROD `CCMovelDigitalSignature.svc` endpoint (spec 04 §1.3).
+/// PROD `AppSCMDService.svc` endpoint.
+///
+/// **Provenance — proven.** recov-pt (`F:\Projects\recov-pt`), the working reference that completes
+/// the full CMD flow against the live service, targets exactly this URL
+/// (`recov-pt/src/cli/scanner.rs:15`). This value is trusted because a working tool uses it.
 pub const PROD_ENDPOINT: &str =
-    "https://cmd.autenticacao.gov.pt/Ama.Authentication.Frontend/CCMovelDigitalSignature.svc";
+    "https://cmd.autenticacao.gov.pt/Ama.Authentication.Frontend/AppSCMDService.svc";
+/// PREPROD `AppSCMDService.svc` endpoint.
+///
+/// **Provenance — documented-by-convention, UNVERIFIED here.** No in-tree source names a preprod
+/// host for `AppSCMDService.svc`. This URL is composed from two documented parts: the `preprod.`
+/// host prefix + `Ama.Authentication.Frontend` path are AMA's documented pre-production convention
+/// (bundled middleware
+/// `autenticacao.gov-3.15.0/pteid-mw-pt/_src/eidmw/CMD/services/CCMovelDigitalSignature.h:1180`,
+/// which documents preprod for the older SOAP service on the same host family), and the
+/// `AppSCMDService.svc` service segment is the working prod generation's
+/// (`recov-pt/src/cli/scanner.rs:15`). It is therefore *documented-but-not-verified-here*: unlike
+/// prod, no live call has confirmed it. Swap it for the exact value if a doc names one directly.
+pub const PREPROD_ENDPOINT: &str =
+    "https://preprod.cmd.autenticacao.gov.pt/Ama.Authentication.Frontend/AppSCMDService.svc";
 
 impl CmdEnv {
     /// The SCMD service endpoint URL for this environment.
@@ -194,9 +210,27 @@ impl CmdConfig {
 
     /// Validate requirements that apply only to the real HTTP transport.
     ///
-    /// Mock transports may run with just an `ApplicationId`, but production HTTP calls need
-    /// both AMA field encryption and HTTP BasicAuth credentials.
+    /// Mock transports may run with just an `ApplicationId`, but a real call to the SCMD JSON
+    /// service needs AMA field encryption in **every** environment, plus HTTP BasicAuth in
+    /// production.
+    ///
+    /// **Field encryption is mandatory on the real transport, preprod included.** The working
+    /// reference (recov-pt) always RSA-encrypts the mobile/PIN/OTP, and the service rejects
+    /// cleartext; a cleartext HTTP client would only ever build a request the service refuses. So a
+    /// transport without an AMA certificate is refused here rather than silently sending cleartext
+    /// that fails on the wire. The offline [`crate::mock::MockScmdTransport`] path
+    /// ([`crate::ScmdClient::new`]) may still run [`FieldEncryptor::Cleartext`] because it never
+    /// reaches the service; this gate is what keeps that mode off the real JSON path.
     pub fn validate_http_transport(&self) -> Result<(), CmdError> {
+        if self.ama_cert_pem.is_none() {
+            return Err(CmdError::Config(
+                "CMD HTTP transport requires an AMA field-encryption certificate (field encryption \
+                 is mandatory on the SCMD service): set CHANCELA_CMD_AMA_CERT_PEM or the credential's \
+                 ama_cert_pem"
+                    .to_string(),
+            ));
+        }
+        // Also validates that the certificate parses into an RSA encryptor.
         self.field_encryptor()?;
         if matches!(self.env, CmdEnv::Prod) && self.basic_auth.is_none() {
             return Err(CmdError::Config(

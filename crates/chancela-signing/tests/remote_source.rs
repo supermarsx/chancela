@@ -17,8 +17,6 @@
 use std::str::FromStr;
 use std::time::Duration as StdDuration;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use der::asn1::{Any, BitString, ObjectIdentifier};
 use der::pem::LineEnding;
 use der::{Encode, EncodePem};
@@ -31,7 +29,7 @@ use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 use zeroize::Zeroizing;
 
-use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
+use chancela_cmd::wire::{OP_GET_CERTIFICATE, OP_SCMD_SIGN, OP_VALIDATE_OTP};
 use chancela_cmd::{MockScmdTransport, ScmdClient};
 
 use chancela_cades::{
@@ -189,38 +187,20 @@ fn sign_opts() -> SignOptions {
     }
 }
 
-// --- Mock SCMD SOAP responses derived from an ephemeral signer ------------------------------------
+// --- Mock SCMD JSON responses derived from an ephemeral signer ------------------------------------
 
 fn get_certificate_response(leaf_pem: &str, issuer_pem: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <GetCertificateResponse xmlns="http://tempuri.org/">
-      <GetCertificateResult>{leaf_pem}{issuer_pem}</GetCertificateResult>
-    </GetCertificateResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+    serde_json::json!({ "d": format!("{leaf_pem}{issuer_pem}") }).to_string()
 }
 
-fn validate_otp_response(signature_b64: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <ValidateOtpResponse xmlns="http://tempuri.org/">
-      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Signature>{signature_b64}</a:Signature>
-        <a:Status>
-          <a:Code>200</a:Code>
-          <a:Message>Signature completed.</a:Message>
-        </a:Status>
-      </ValidateOtpResult>
-    </ValidateOtpResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+fn validate_otp_response(signature: &[u8]) -> String {
+    serde_json::json!({
+        "d": {
+            "Status": { "Code": "200", "Message": "Signature completed." },
+            "Signature": signature,
+        }
+    })
+    .to_string()
 }
 
 // --- A mock RemoteSigningSource — the shape a CSC-v2 QTSP adapter (t59 Slice 2) will take ----------
@@ -420,10 +400,10 @@ fn cmd_remote_source_is_byte_identical_to_the_cmd_facade() {
     let make_init = || {
         let transport = MockScmdTransport::empty()
             .with_response(
-                ACTION_GET_CERTIFICATE,
+                OP_GET_CERTIFICATE,
                 get_certificate_response(&leaf.cert_pem(), &issuer.cert_pem()),
             )
-            .with_response(ACTION_CCMOVEL_SIGN, chancela_cmd::mock::CCMOVEL_SIGN_OK);
+            .with_response(OP_SCMD_SIGN, chancela_cmd::mock::SCMD_SIGN_OK);
         ScmdClient::new(transport, APP_ID)
     };
 
@@ -480,16 +460,16 @@ fn cmd_remote_source_is_byte_identical_to_the_cmd_facade() {
     )
     .expect("signed attrs digest");
     let raw_sig = leaf.sign_digest(&signed_attrs);
-    let otp_response = validate_otp_response(&STANDARD.encode(&raw_sig));
+    let otp_response = validate_otp_response(&raw_sig);
 
     // Each confirm is its own stateless request = its own transport (mirrors the deployment).
     let make_confirm_client = || {
         let transport = MockScmdTransport::empty()
             .with_response(
-                ACTION_GET_CERTIFICATE,
+                OP_GET_CERTIFICATE,
                 get_certificate_response(&leaf.cert_pem(), &issuer.cert_pem()),
             )
-            .with_response(ACTION_VALIDATE_OTP, otp_response.clone());
+            .with_response(OP_VALIDATE_OTP, otp_response.clone());
         ScmdClient::new(transport, APP_ID)
     };
 

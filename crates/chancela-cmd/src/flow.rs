@@ -1,12 +1,12 @@
 //! The SIG-02 request -> OTP -> retrieve flow, producing a [`RawSignature`].
 //!
 //! Chave Movel Digital is a *qualified remote signature*. The citizen authorizes with
-//! two factors — the **PIN** (knowledge) sent in `CCMovelSign`, and the **OTP**
+//! two factors — the **PIN** (knowledge) sent in `SCMDSign`, and the **OTP**
 //! (possession) confirmed in `ValidateOtp` — which together establish sole control
 //! (spec 04 SIG-02). The OTP is a confirmation *step inside* the qualified flow; it is
 //! **never** the signature.
 //!
-//! **The value submitted to `CCMovelSign` is the DER `DigestInfo`, not a bare digest.** AMA
+//! **The value submitted to `SCMDSign` is the DER `DigestInfo`, not a bare digest.** AMA
 //! specifies it as RFC 8017 §9.2 (EMSA-PKCS1-v1_5) stopping at step 2, so the 19-byte SHA-256
 //! prefix is ours to prepend: 51 bytes on the wire. [`ccmovel_sign_hash`] builds it and
 //! [`ScmdClient::request_signature`] applies it, so a caller hands over the bare 32-byte digest.
@@ -26,10 +26,10 @@ use chancela_cades::{RawSignature, SignatureAlgorithm};
 use crate::config::CmdConfig;
 use crate::error::CmdError;
 use crate::field_encryption::FieldEncryptor;
-use crate::soap;
 use crate::transport::ScmdTransport;
+use crate::wire;
 
-/// SCMD success status code (`CCMovelSign` / `ValidateOtp` `Code`).
+/// SCMD success status code (`SCMDSign` / `ValidateOtp` `Code`).
 ///
 /// t41-e4 L9: SCMD v1.6 reports success exclusively as `"200"`. An earlier revision also
 /// accepted `"0"` ("some deployments report success as 0"); that path was removed because a
@@ -45,7 +45,7 @@ fn is_success(code: &str) -> bool {
 /// PKCS#1 v1.5 `DigestInfo` prefix for SHA-256 (RFC 8017 §9.2), 19 bytes:
 /// `SEQUENCE { SEQUENCE { OID sha-256, NULL }, OCTET STRING (32) }`.
 ///
-/// Exported so callers and tests can assert the shape of the value submitted to `CCMovelSign`
+/// Exported so callers and tests can assert the shape of the value submitted to `SCMDSign`
 /// without re-deriving it. `chancela-smartcard` carries an independent copy of the same constant
 /// for the on-card `CKM_RSA_PKCS` path.
 pub const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
@@ -53,10 +53,10 @@ pub const SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x00, 0x04, 0x20,
 ];
 
-/// Length of the value `CCMovelSign` receives: the 19-byte `DigestInfo` prefix + a 32-byte digest.
+/// Length of the value `SCMDSign` receives: the 19-byte `DigestInfo` prefix + a 32-byte digest.
 pub const CCMOVEL_SIGN_HASH_LEN: usize = SHA256_DIGEST_INFO_PREFIX.len() + 32;
 
-/// Build the DER `DigestInfo` that `CCMovelSign` expects in its `Hash` field.
+/// Build the DER `DigestInfo` that `SCMDSign` expects in its `Hash` field.
 ///
 /// AMA's CMD service specification defines the submitted value per RFC 8017 §9.2
 /// (EMSA-PKCS1-v1_5) **stopping at step 2** — the `DigestInfo` DER encoding, *not* the bare
@@ -74,7 +74,7 @@ pub const CCMOVEL_SIGN_HASH_LEN: usize = SHA256_DIGEST_INFO_PREFIX.len() + 32;
 pub fn ccmovel_sign_hash(digest: &[u8]) -> Result<[u8; CCMOVEL_SIGN_HASH_LEN], CmdError> {
     let digest: &[u8; 32] = digest.try_into().map_err(|_| {
         CmdError::RequestBuild(format!(
-            "CCMovelSign hash must be a 32-byte SHA-256 digest, got {} bytes",
+            "SCMDSign hash must be a 32-byte SHA-256 digest, got {} bytes",
             digest.len()
         ))
     })?;
@@ -113,7 +113,7 @@ impl Drop for SignRequest {
     }
 }
 
-/// A pending signature process returned by `CCMovelSign`. The OTP has been dispatched to
+/// A pending signature process returned by `SCMDSign`. The OTP has been dispatched to
 /// the citizen's device; call [`ScmdClient::confirm_otp`] with this handle.
 #[derive(Debug, Clone)]
 pub struct ProcessHandle {
@@ -121,9 +121,9 @@ pub struct ProcessHandle {
     pub process_id: String,
     /// The citizen mobile number, retained so `confirm_otp` can fetch the certificate.
     pub user_id: String,
-    /// The `CCMovelSign` status code (`"200"` on success).
+    /// The `SCMDSign` status code (`"200"` on success).
     pub code: String,
-    /// The `CCMovelSign` status message.
+    /// The `SCMDSign` status message.
     pub message: String,
 }
 
@@ -188,26 +188,27 @@ impl<T: ScmdTransport> ScmdClient<T> {
         &self.transport
     }
 
-    fn application_id_b64(&self) -> String {
-        STANDARD.encode(self.application_id.as_bytes())
-    }
-
     /// `GetCertificate` — fetch the citizen's signing certificate + issuer chain (PEM on
     /// the wire, returned here as DER). Needed before signing to build the CAdES
     /// signing-certificate attribute.
-    pub fn get_certificate(&self, user_id: &str) -> Result<CertificateChain, CmdError> {
-        let envelope = soap::get_certificate_envelope(&self.application_id_b64(), user_id);
-        let response = self
-            .transport
-            .call(soap::ACTION_GET_CERTIFICATE, &envelope)?;
-        if let Some(fault) = soap::fault_message(&response) {
-            return Err(CmdError::SoapFault(fault));
-        }
-        let pem = soap::require_text(&response, "GetCertificateResult")?;
+    ///
+    /// The `ApplicationId` is sent as the **raw** AMA string (never base64-encoded), and the
+    /// citizen mobile is passed through the field encryptor — the working reference encrypts the
+    /// mobile for `GetCertificate` too (recov-pt `src/cli/cmd_verify.rs:544-545`). `rng` is used
+    /// only when a real encryptor is configured; the cleartext (offline/mock) encryptor ignores it.
+    pub fn get_certificate<R: CryptoRngCore>(
+        &self,
+        rng: &mut R,
+        user_id: &str,
+    ) -> Result<CertificateChain, CmdError> {
+        let user_field = self.encryptor.encrypt(rng, &normalize_user_id(user_id))?;
+        let body = wire::get_certificate_body(&self.application_id, &user_field)?;
+        let response = self.transport.call(wire::OP_GET_CERTIFICATE, &body)?;
+        let pem = wire::get_certificate_pem(&response)?;
         parse_cert_chain(&pem)
     }
 
-    /// `CCMovelSign` — start a qualified signature over `req.hash`. Dispatches the OTP to the
+    /// `SCMDSign` — start a qualified signature over `req.hash`. Dispatches the OTP to the
     /// citizen's device and returns a [`ProcessHandle`]. The PIN and mobile number are passed
     /// through the field encryptor (`rng` is used only when encrypting).
     ///
@@ -224,31 +225,34 @@ impl<T: ScmdTransport> ScmdClient<T> {
         req: &SignRequest,
     ) -> Result<ProcessHandle, CmdError> {
         let pin_field = self.encryptor.encrypt(rng, &req.pin)?;
-        let user_field = self.encryptor.encrypt(rng, &req.user_id)?;
+        let user_field = self
+            .encryptor
+            .encrypt(rng, &normalize_user_id(&req.user_id))?;
         // RFC 8017 §9.2 steps 1-2: the wire value is the DER `DigestInfo`, not the bare digest.
         let hash_b64 = STANDARD.encode(ccmovel_sign_hash(&req.hash)?);
-        let envelope = soap::ccmovel_sign_envelope(
-            &self.application_id_b64(),
+        let body = wire::scmd_sign_body(
+            &self.application_id,
             &req.doc_name,
             &hash_b64,
             &pin_field,
             &user_field,
-        );
-        let response = self.transport.call(soap::ACTION_CCMOVEL_SIGN, &envelope)?;
-        if let Some(fault) = soap::fault_message(&response) {
-            return Err(CmdError::SoapFault(fault));
+        )?;
+        let response = self.transport.call(wire::OP_SCMD_SIGN, &body)?;
+        let outcome = wire::parse_scmd_sign(&response)?;
+        if !is_success(&outcome.code) {
+            return Err(CmdError::ServiceStatus {
+                code: outcome.code,
+                message: outcome.message,
+            });
         }
-        let code = soap::require_text(&response, "Code")?;
-        let message = soap::find_text(&response, "Message").unwrap_or_default();
-        if !is_success(&code) {
-            return Err(CmdError::ServiceStatus { code, message });
-        }
-        let process_id = soap::require_text(&response, "ProcessId")?;
+        let process_id = outcome.process_id.ok_or_else(|| {
+            CmdError::ResponseParse("SCMDSign success response missing ProcessId".to_string())
+        })?;
         Ok(ProcessHandle {
             process_id,
             user_id: req.user_id.clone(),
-            code,
-            message,
+            code: outcome.code,
+            message: outcome.message,
         })
     }
 
@@ -264,22 +268,19 @@ impl<T: ScmdTransport> ScmdClient<T> {
         otp: &str,
     ) -> Result<RawSignature, CmdError> {
         let otp_field = Zeroizing::new(self.encryptor.encrypt(rng, otp)?);
-        let envelope =
-            soap::validate_otp_envelope(&self.application_id_b64(), &handle.process_id, &otp_field);
-        let response = self.transport.call(soap::ACTION_VALIDATE_OTP, &envelope)?;
-        if let Some(fault) = soap::fault_message(&response) {
-            return Err(CmdError::SoapFault(fault));
+        let body = wire::validate_otp_body(&self.application_id, &otp_field, &handle.process_id)?;
+        let response = self.transport.call(wire::OP_VALIDATE_OTP, &body)?;
+        let outcome = wire::parse_validate_otp(&response)?;
+        if !is_success(&outcome.code) {
+            return Err(CmdError::OtpRejected {
+                code: outcome.code,
+                message: outcome.message,
+            });
         }
-        let code = soap::require_text(&response, "Code")?;
-        if !is_success(&code) {
-            let message = soap::find_text(&response, "Message").unwrap_or_default();
-            return Err(CmdError::OtpRejected { code, message });
-        }
-        let signature_b64 = soap::require_text(&response, "Signature")?;
-        let signature = STANDARD
-            .decode(signature_b64.trim())
-            .map_err(|e| CmdError::Base64(format!("ValidateOtp Signature: {e}")))?;
-        let chain = self.get_certificate(&handle.user_id)?;
+        let signature = outcome.signature.ok_or_else(|| {
+            CmdError::ResponseParse("ValidateOtp success response missing Signature".to_string())
+        })?;
+        let chain = self.get_certificate(rng, &handle.user_id)?;
         Ok(RawSignature::new(
             SignatureAlgorithm::RsaPkcs1Sha256,
             signature,
@@ -287,6 +288,15 @@ impl<T: ScmdTransport> ScmdClient<T> {
             chain.chain_der,
         ))
     }
+}
+
+/// The plaintext mobile the field encryptor sees: ASCII spaces stripped, the leading `+` kept.
+///
+/// The working reference strips grouping spaces before encrypting (recov-pt
+/// `src/cli/private_input.rs:78`), so the service is given `+3519XXXXXXXX`, never `+351 9XXXXXXXX`.
+/// Operator-entered grouping spaces must not change the encrypted value on the wire.
+fn normalize_user_id(user_id: &str) -> String {
+    user_id.chars().filter(|c| *c != ' ').collect()
 }
 
 /// Parse a PEM certificate bundle (leaf first, then issuers) into a [`CertificateChain`].

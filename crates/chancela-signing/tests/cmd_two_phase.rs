@@ -30,7 +30,7 @@ use x509_cert::name::Name;
 use x509_cert::serial_number::SerialNumber;
 use x509_cert::time::Validity;
 
-use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
+use chancela_cmd::wire::{OP_GET_CERTIFICATE, OP_SCMD_SIGN, OP_VALIDATE_OTP};
 use chancela_cmd::{MockScmdTransport, ScmdClient};
 
 use chancela_cades::{SignedAttrsProfile, signed_attributes_digest};
@@ -101,23 +101,22 @@ impl RsaSigner {
     }
 }
 
-/// Read the value Chancela actually put in the `CCMovelSign` `Hash` element off the recorded
-/// envelope, and constrain its format: 51 raw bytes / 68 base64 characters, the RFC 8017 §9.2
+/// Read the value Chancela actually put in the `SCMDSign` `Hash` member off the recorded JSON
+/// body, and constrain its format: 51 raw bytes / 68 base64 characters, the RFC 8017 §9.2
 /// SHA-256 prefix, then `expected_digest` verbatim.
 ///
 /// Reading the wire rather than re-deriving the value is the point — a double that recomputes what
 /// it expects proves only that the test agrees with itself.
-fn submitted_ccmovel_sign_hash(
+fn submitted_scmd_sign_hash(
     client: &ScmdClient<MockScmdTransport>,
     expected_digest: &[u8; 32],
 ) -> Vec<u8> {
-    let envelope = client
+    let body = client
         .transport()
-        .last_envelope_for(ACTION_CCMOVEL_SIGN)
-        .expect("CCMovelSign was called");
-    let start = envelope.find("<d:Hash>").expect("Hash element") + "<d:Hash>".len();
-    let end = envelope[start..].find("</d:Hash>").expect("Hash close") + start;
-    let hash_b64 = envelope[start..end].trim();
+        .last_envelope_for(OP_SCMD_SIGN)
+        .expect("SCMDSign was called");
+    let value: serde_json::Value = serde_json::from_str(&body).expect("SCMDSign body is JSON");
+    let hash_b64 = value["Hash"].as_str().expect("Hash is a JSON string");
 
     assert_eq!(
         hash_b64.len(),
@@ -128,13 +127,13 @@ fn submitted_ccmovel_sign_hash(
     assert_eq!(
         submitted.len(),
         51,
-        "CCMovelSign Hash must be the 19-byte DigestInfo prefix + 32-byte digest; got {} bytes",
+        "SCMDSign Hash must be the 19-byte DigestInfo prefix + 32-byte digest; got {} bytes",
         submitted.len()
     );
     assert_eq!(
         &submitted[..19],
         &SHA256_DIGEST_INFO_PREFIX,
-        "CCMovelSign Hash must open with the RFC 8017 §9.2 SHA-256 DigestInfo prefix"
+        "SCMDSign Hash must open with the RFC 8017 §9.2 SHA-256 DigestInfo prefix"
     );
     assert_eq!(
         &submitted[19..],
@@ -224,38 +223,22 @@ fn base_pdf() -> Vec<u8> {
     )
 }
 
-// --- Mock SCMD SOAP responses derived from the ephemeral signer -----------------------------------
+// --- Mock SCMD JSON responses derived from the ephemeral signer -----------------------------------
 
 fn get_certificate_response(leaf_pem: &str, issuer_pem: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <GetCertificateResponse xmlns="http://tempuri.org/">
-      <GetCertificateResult>{leaf_pem}{issuer_pem}</GetCertificateResult>
-    </GetCertificateResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+    // The JSON service returns the PEM chain as a `{"d": "<pem>"}` string.
+    serde_json::json!({ "d": format!("{leaf_pem}{issuer_pem}") }).to_string()
 }
 
-fn validate_otp_response(signature_b64: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <ValidateOtpResponse xmlns="http://tempuri.org/">
-      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Signature>{signature_b64}</a:Signature>
-        <a:Status>
-          <a:Code>200</a:Code>
-          <a:Message>Signature completed.</a:Message>
-        </a:Status>
-      </ValidateOtpResult>
-    </ValidateOtpResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+fn validate_otp_response(signature: &[u8]) -> String {
+    // The signature is a JSON array of byte integers, not base64 (recov-pt `cmd_challenge.rs`).
+    serde_json::json!({
+        "d": {
+            "Status": { "Code": "200", "Message": "Signature completed." },
+            "Signature": signature,
+        }
+    })
+    .to_string()
 }
 
 // --- The proof ------------------------------------------------------------------------------------
@@ -283,10 +266,10 @@ fn prepare_initiate_confirm_embed_validate_round_trip() {
     // --- REQUEST 1: initiate (GetCertificate + TSL gate + CCMovelSign) ---
     let init_transport = MockScmdTransport::empty()
         .with_response(
-            ACTION_GET_CERTIFICATE,
+            OP_GET_CERTIFICATE,
             get_certificate_response(&leaf.cert_pem(), &issuer.cert_pem()),
         )
-        .with_response(ACTION_CCMOVEL_SIGN, chancela_cmd::mock::CCMOVEL_SIGN_OK);
+        .with_response(OP_SCMD_SIGN, chancela_cmd::mock::SCMD_SIGN_OK);
     let init_client = ScmdClient::new(init_transport, APP_ID);
 
     let mut policy = StaticTrustPolicy::granted();
@@ -335,20 +318,17 @@ fn prepare_initiate_confirm_embed_validate_round_trip() {
         SignedAttrsProfile::Pades,
     )
     .expect("signed attrs digest");
-    let submitted = submitted_ccmovel_sign_hash(&init_client, &signed_attrs);
+    let submitted = submitted_scmd_sign_hash(&init_client, &signed_attrs);
     let raw_sig = leaf.sign_submitted_digest_info(&submitted);
     assert_eq!(raw_sig.len(), 256, "RSA-2048 signature");
 
     // --- REQUEST 2: confirm (ValidateOtp -> assemble CMS) ---
     let confirm_transport = MockScmdTransport::empty()
         .with_response(
-            ACTION_GET_CERTIFICATE,
+            OP_GET_CERTIFICATE,
             get_certificate_response(&leaf.cert_pem(), &issuer.cert_pem()),
         )
-        .with_response(
-            ACTION_VALIDATE_OTP,
-            validate_otp_response(&STANDARD.encode(&raw_sig)),
-        );
+        .with_response(OP_VALIDATE_OTP, validate_otp_response(&raw_sig));
     let confirm_client = ScmdClient::new(confirm_transport, APP_ID);
 
     let cms = cmd_confirm(&confirm_client, &session, OTP).expect("confirm");
@@ -401,10 +381,10 @@ fn initiate_rejects_untrusted_issuer() {
 
     let transport = MockScmdTransport::empty()
         .with_response(
-            ACTION_GET_CERTIFICATE,
+            OP_GET_CERTIFICATE,
             get_certificate_response(&leaf.cert_pem(), &issuer.cert_pem()),
         )
-        .with_response(ACTION_CCMOVEL_SIGN, chancela_cmd::mock::CCMOVEL_SIGN_OK);
+        .with_response(OP_SCMD_SIGN, chancela_cmd::mock::SCMD_SIGN_OK);
     let client = ScmdClient::new(transport, APP_ID);
 
     let mut policy = StaticTrustPolicy::withdrawn();
@@ -432,6 +412,6 @@ fn initiate_rejects_untrusted_issuer() {
         .transport()
         .calls()
         .iter()
-        .any(|c| c.action == ACTION_CCMOVEL_SIGN);
+        .any(|c| c.action == OP_SCMD_SIGN);
     assert!(!called_sign, "no signature started for an untrusted issuer");
 }

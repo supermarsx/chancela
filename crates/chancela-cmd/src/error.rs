@@ -2,10 +2,10 @@
 
 use thiserror::Error;
 
-/// Errors raised by the Chave Movel Digital (SCMD) SOAP client.
+/// Errors raised by the Chave Movel Digital (SCMD) JSON/REST client.
 ///
-/// Covers transport/HTTP failures, malformed SOAP, service-level status codes
-/// (`CCMovelSign` / `ValidateOtp`), OTP rejection, configuration, and the
+/// Covers transport/HTTP failures, malformed JSON, service-level status codes
+/// (`SCMDSign` / `ValidateOtp`), OTP rejection, configuration, and the
 /// PROD field-encryption hook. Relates to spec 04 SIG-02 (the OTP is a
 /// possession-factor confirmation step, never the signature artifact).
 #[derive(Debug, Error)]
@@ -27,19 +27,21 @@ pub enum CmdError {
         limit: u64,
     },
 
-    /// A SOAP request envelope could not be constructed.
-    #[error("failed to build SOAP request: {0}")]
+    /// A JSON request body could not be constructed.
+    #[error("failed to build SCMD request: {0}")]
     RequestBuild(String),
 
-    /// A SOAP response could not be parsed or a required element was absent.
-    #[error("failed to parse SOAP response: {0}")]
+    /// A JSON response could not be parsed or a required member was absent.
+    #[error("failed to parse SCMD response: {0}")]
     ResponseParse(String),
 
-    /// The service returned a SOAP `Fault` (e.g. invalid `ApplicationId`).
+    /// A SOAP `Fault`. **Legacy:** the JSON `AppSCMDService` never returns one, so the flow no
+    /// longer produces this variant; it is retained because [`error_class`](CmdError) consumers
+    /// (e.g. `chancela-api`'s credential resolver) still classify it.
     #[error("SOAP fault: {0}")]
     SoapFault(String),
 
-    /// `CCMovelSign` returned a non-success `SignStatus` code (signature not started).
+    /// `SCMDSign` returned a non-success `SignStatus` code (signature not started).
     #[error("SCMD service returned status {code}: {message}")]
     ServiceStatus {
         /// The SCMD `Code` field (success is `"200"`).

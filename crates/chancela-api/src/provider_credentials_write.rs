@@ -1536,12 +1536,21 @@ fn probe_cmd(
             true,
             "The stored AMA field-encryption key parsed and the field encryptor was built.",
         ),
+        // Required in EVERY environment. The SCMD `AppSCMDService` service encrypts the phone, PIN
+        // and OTP on the wire and rejects cleartext, so a missing key is a genuine gap, not preprod
+        // leniency — and `http_transport_ready` below fails for exactly this reason. One coherent
+        // story (both checks agree the key is needed), never reassurance and refusal side by side.
         (None, false) => check(
             codes::CHECK_AMA_CERTIFICATE_PARSEABLE,
             codes::CMD_AMA_CERTIFICATE_ABSENT_PREPROD,
-            true,
-            "No AMA field-encryption key is stored; preprod accepts cleartext fields.",
-        ),
+            false,
+            format!(
+                "No AMA field-encryption key is stored. The Chave Móvel Digital integration \
+                 encrypts the phone, PIN and OTP on the wire in every environment, so this key is \
+                 required ({FIELD_AMA_CERT_PEM})."
+            ),
+        )
+        .with_params([("field", FIELD_AMA_CERT_PEM.to_owned())]),
         // Unreachable: prod without a certificate fails assembly above. Kept as a fail-closed arm
         // rather than an `unreachable!()` so a future change in the assembler degrades honestly.
         (None, true) => check(
@@ -3432,12 +3441,20 @@ mod tests {
         let owner = seed_token(&state, OWNER_ROLE_ID).await;
         let reader = seed_token(&state, READER_ROLE_ID).await;
         let create_uri = "/v1/signature/provider-credentials/cmd/_/entries";
+        // A *sound* preprod entry. The SCMD `AppSCMDService` JSON transport encrypts the citizen
+        // fields in every environment, so `validate_http_transport` requires the AMA cert even in
+        // preprod (a cert-less entry is honestly reported as `configuration_incomplete` — see
+        // `probe_cmd_preprod_without_ama_cert_reports_transport_not_ready`). This test's subject is
+        // a fully-configured entry, so the probe reaches the honest `interactive_required`.
         let (status, created) = send_with(
             state.clone(),
             body_req(
                 "POST",
                 create_uri,
-                json!({ "label": "CMD principal", "set": { "application_id": "configured" } }),
+                json!({
+                    "label": "CMD principal",
+                    "set": { "application_id": "configured", "ama_cert_pem": RSA_CERT_PEM },
+                }),
             ),
             Some(&owner),
         )
@@ -3506,6 +3523,87 @@ mod tests {
             .await
             .expect("router responds");
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    /// A preprod CMD entry with no AMA certificate is honestly reported as unable to drive the real
+    /// transport, rather than being waved through to `interactive_required`.
+    ///
+    /// The SCMD `AppSCMDService` JSON service rejects cleartext citizen fields, so field encryption
+    /// is mandatory in **every** environment (`CmdConfig::validate_http_transport`). A cert-less
+    /// preprod entry therefore cannot drive the real HTTP transport, and the probe says so —
+    /// `http_transport_ready = failed`, `configuration_incomplete` — before an operator spends an
+    /// interactive attempt that would fail on the wire. The probe still contacts nothing and performs
+    /// no private-key operation. (This is the tightening from the SOAP→JSON alignment: the old
+    /// cleartext-preprod transport accepted this entry; the real JSON service does not.)
+    #[tokio::test]
+    async fn probe_cmd_preprod_without_ama_cert_reports_transport_not_ready() {
+        let tmp = TempDir::new();
+        let state = state_with_store(&tmp.dir);
+        let owner = seed_token(&state, OWNER_ROLE_ID).await;
+        let create_uri = "/v1/signature/provider-credentials/cmd/_/entries";
+        let (status, created) = send_with(
+            state.clone(),
+            body_req(
+                "POST",
+                create_uri,
+                json!({
+                    "label": "CMD sem certificado",
+                    "set": { "application_id": "configured" },
+                }),
+            ),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "{created}");
+        let entry_id = created["entry"]["entry_id"].as_str().expect("entry id");
+        let probe_uri =
+            format!("/v1/signature/provider-credentials/cmd/_/entries/{entry_id}/probe");
+
+        let (status, body) = send_with(
+            state.clone(),
+            body_req("POST", &probe_uri, json!({})),
+            Some(&owner),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["status"], "failed", "{body}");
+        assert_eq!(body["error"], "configuration_incomplete", "{body}");
+        // The honesty property holds on the failing path too: nothing contacted, nothing signed.
+        assert_eq!(body["provider_contacted"], false, "{body}");
+        assert_eq!(body["private_key_operation_performed"], false, "{body}");
+
+        let checks = body["checks"].as_array().expect("checks");
+        let named = |name: &str| -> &Value {
+            checks
+                .iter()
+                .find(|check| check["name"] == name)
+                .unwrap_or_else(|| panic!("check {name} is reported: {body}"))
+        };
+        let transport = named("http_transport_ready");
+        assert_eq!(transport["status"], "failed", "{body}");
+        assert!(
+            transport["detail"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("cannot drive the real AMA HTTP transport"),
+            "the failing check names the transport-readiness gate: {body}"
+        );
+        // Coherence: the field-encryption check must tell the SAME story, not the old "preprod
+        // accepts cleartext" reassurance that contradicted the transport gate.
+        let cert = named("ama_certificate_parseable");
+        assert_eq!(
+            cert["status"], "failed",
+            "the cert check must agree the key is required, not wave preprod through: {body}"
+        );
+        let cert_detail = cert["detail"].as_str().unwrap_or_default();
+        assert!(
+            !cert_detail.contains("cleartext"),
+            "the cert check must not claim preprod accepts cleartext: {body}"
+        );
+        assert!(
+            cert_detail.contains("every environment"),
+            "the cert check states the key is required in every environment: {body}"
+        );
     }
 
     #[tokio::test]

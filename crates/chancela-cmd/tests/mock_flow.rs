@@ -5,9 +5,10 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
+use serde_json::Value;
 
 use chancela_cmd::rand_core::{CryptoRng, Error, RngCore, impls};
-use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
+use chancela_cmd::wire::{OP_SCMD_SIGN, OP_VALIDATE_OTP};
 use chancela_cmd::{
     CmdConfig, CmdError, MockScmdTransport, ScmdClient, SignRequest, SignatureAlgorithm,
 };
@@ -42,7 +43,10 @@ impl RngCore for TestRng {
 impl CryptoRng for TestRng {}
 
 const APP_ID: &str = "CHANCELA-APP-0001";
+/// Operator-entered form, with grouping spaces. The flow must strip them before encrypting.
 const PHONE: &str = "+351 912345678";
+/// The wire plaintext the field encryptor must see: the phone with spaces removed.
+const PHONE_NORMALIZED: &str = "+351912345678";
 const PROCESS_ID: &str = "b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b";
 
 /// The 19-byte PKCS#1 v1.5 `DigestInfo` prefix for SHA-256, transcribed independently from
@@ -53,17 +57,22 @@ const EXPECTED_SHA256_DIGEST_INFO_PREFIX: [u8; 19] = [
     0x00, 0x04, 0x20,
 ];
 
+/// Parse a recorded JSON request body.
+fn body(json: &str) -> Value {
+    serde_json::from_str(json).expect("recorded request body is JSON")
+}
+
 #[test]
 fn full_request_otp_retrieve_round_trip() {
     let mut rng = TestRng::new();
     let client = ScmdClient::new(MockScmdTransport::preprod_success(), APP_ID);
 
     // 1. GetCertificate returns leaf + one issuer.
-    let chain = client.get_certificate(PHONE).unwrap();
+    let chain = client.get_certificate(&mut rng, PHONE).unwrap();
     assert!(!chain.leaf_der.is_empty());
     assert_eq!(chain.chain_der.len(), 1, "expected exactly one issuer cert");
 
-    // 2. CCMovelSign dispatches the OTP and returns a ProcessId.
+    // 2. SCMDSign dispatches the OTP and returns a ProcessId.
     let req = SignRequest {
         user_id: PHONE.to_string(),
         pin: "1234".to_string(),
@@ -81,43 +90,66 @@ fn full_request_otp_retrieve_round_trip() {
     assert!(!raw.signing_cert_der.is_empty());
     assert_eq!(raw.chain_der.len(), 1);
 
-    // Wire assertions: the flow base64s the ApplicationId and threads the ProcessId + hash.
+    // Wire assertions on the SCMDSign JSON body.
     let mock = client.transport();
-    let sign_env = mock.last_envelope_for(ACTION_CCMOVEL_SIGN).unwrap();
-    assert!(sign_env.contains(&STANDARD.encode(APP_ID.as_bytes())));
-    // The `Hash` element carries the DER `DigestInfo`, not the bare digest (RFC 8017 §9.2 step 2).
+    let sign = body(&mock.last_envelope_for(OP_SCMD_SIGN).unwrap());
+
+    // ApplicationId is the RAW string, never base64-encoded.
+    assert_eq!(sign["ApplicationId"], Value::String(APP_ID.to_string()));
+    let raw_body = mock.last_envelope_for(OP_SCMD_SIGN).unwrap();
+    assert!(
+        !raw_body.contains(&STANDARD.encode(APP_ID.as_bytes())),
+        "the base64 of the ApplicationId must not appear on the wire"
+    );
+
+    // The `Hash` member carries the DER `DigestInfo`, not the bare digest (RFC 8017 §9.2 step 2).
+    let hash_b64 = sign["Hash"].as_str().expect("Hash is a JSON string");
     let mut expected_digest_info = EXPECTED_SHA256_DIGEST_INFO_PREFIX.to_vec();
     expected_digest_info.extend_from_slice(&[0xAB; 32]);
-    assert!(sign_env.contains(&STANDARD.encode(&expected_digest_info)));
-    assert!(
-        !sign_env.contains(&STANDARD.encode([0xAB; 32])),
+    assert_eq!(hash_b64, STANDARD.encode(&expected_digest_info));
+    assert_ne!(
+        hash_b64,
+        STANDARD.encode([0xAB; 32]),
         "the bare 32-byte digest must not appear on the wire"
     );
-    assert!(
-        sign_env.contains("<d:Pin>1234</d:Pin>"),
-        "preprod PIN is cleartext"
-    );
-    let otp_env = mock.last_envelope_for(ACTION_VALIDATE_OTP).unwrap();
-    assert!(
-        otp_env.contains(PROCESS_ID),
-        "ProcessId must be wired into ValidateOtp"
-    );
+
+    // Preprod PIN is cleartext; the mobile is normalized (grouping spaces stripped) before it goes
+    // into the encryptor, so the UserId member carries `+351912345678`, never `+351 912345678`.
+    assert_eq!(sign["Pin"], Value::String("1234".to_string()));
+    assert_eq!(sign["UserId"], Value::String(PHONE_NORMALIZED.to_string()));
+
+    // ValidateOtp carries the ProcessId and `isBiometricValidation:false`.
+    let otp = body(&mock.last_envelope_for(OP_VALIDATE_OTP).unwrap());
+    assert_eq!(otp["ProcessId"], Value::String(PROCESS_ID.to_string()));
+    assert_eq!(otp["isBiometricValidation"], Value::Bool(false));
+
     // GetCertificate was called twice: once by us, once inside confirm_otp.
     let get_cert_calls = mock
         .calls()
         .iter()
-        .filter(|c| c.action == ACTION_GET_CERTIFICATE)
+        .filter(|c| c.action == "GetCertificate")
         .count();
     assert_eq!(get_cert_calls, 2);
+    // The GetCertificate UserId is encrypted/normalized too (cleartext passthrough here).
+    let get_cert = body(
+        &mock
+            .last_envelope_for("GetCertificate")
+            .expect("GetCertificate was called"),
+    );
+    assert_eq!(
+        get_cert["UserId"],
+        Value::String(PHONE_NORMALIZED.to_string())
+    );
+    assert_eq!(get_cert["ApplicationId"], Value::String(APP_ID.to_string()));
 }
 
-/// The value submitted to `CCMovelSign` is the RFC 8017 §9.2 `DigestInfo`: 51 raw bytes / 68
-/// base64 characters, opening with the SHA-256 prefix and closing with the digest verbatim.
+/// The value submitted to `SCMDSign` is the RFC 8017 §9.2 `DigestInfo`: 51 raw bytes / 68 base64
+/// characters, opening with the SHA-256 prefix and closing with the digest verbatim.
 ///
 /// This is the assertion that constrains the wire format. It decodes what the flow actually sent
 /// rather than re-deriving it, so it fails if the prefix is dropped, doubled, or misencoded.
 #[test]
-fn ccmovel_sign_submits_the_der_digest_info_not_the_bare_digest() {
+fn scmd_sign_submits_the_der_digest_info_not_the_bare_digest() {
     let mut rng = TestRng::new();
     let client = ScmdClient::new(MockScmdTransport::preprod_success(), APP_ID);
     let digest = [0x5Au8; 32];
@@ -133,13 +165,13 @@ fn ccmovel_sign_submits_the_der_digest_info_not_the_bare_digest() {
         )
         .unwrap();
 
-    let sign_env = client
-        .transport()
-        .last_envelope_for(ACTION_CCMOVEL_SIGN)
-        .expect("CCMovelSign was called");
-    let start = sign_env.find("<d:Hash>").expect("Hash element") + "<d:Hash>".len();
-    let end = sign_env[start..].find("</d:Hash>").expect("Hash close") + start;
-    let hash_b64 = &sign_env[start..end];
+    let sign = body(
+        &client
+            .transport()
+            .last_envelope_for(OP_SCMD_SIGN)
+            .expect("SCMDSign was called"),
+    );
+    let hash_b64 = sign["Hash"].as_str().expect("Hash is a JSON string");
 
     assert_eq!(
         hash_b64.len(),
@@ -167,7 +199,7 @@ fn ccmovel_sign_submits_the_der_digest_info_not_the_bare_digest() {
 /// A digest that is not 32 bytes is rejected outright rather than padded, truncated, or sent as
 /// is — the wire value that gets signed must never be silently reshaped.
 #[test]
-fn ccmovel_sign_rejects_a_wrong_length_digest() {
+fn scmd_sign_rejects_a_wrong_length_digest() {
     let mut rng = TestRng::new();
     let client = ScmdClient::new(MockScmdTransport::preprod_success(), APP_ID);
     for bad in [vec![0u8; 31], vec![0u8; 33], Vec::new(), vec![0u8; 51]] {
@@ -220,9 +252,9 @@ fn otp_bytes_are_never_the_signature_artifact() {
 }
 
 #[test]
-fn ccmovel_sign_error_maps_to_service_status() {
+fn scmd_sign_error_maps_to_service_status() {
     let mut rng = TestRng::new();
-    let client = ScmdClient::new(MockScmdTransport::ccmovel_sign_error(), APP_ID);
+    let client = ScmdClient::new(MockScmdTransport::scmd_sign_error(), APP_ID);
     let err = client
         .request_signature(
             &mut rng,
@@ -266,23 +298,23 @@ fn otp_rejection_maps_to_error() {
 }
 
 #[test]
-fn soap_fault_surfaces_as_error() {
+fn get_certificate_without_a_pem_payload_is_a_parse_error() {
+    // The JSON `AppSCMDService` returns no SOAP `Fault`; a request that yields no certificate PEM
+    // (here `{"d":null}`) surfaces as a response-parse error, not a silent empty chain.
+    let mut rng = TestRng::new();
     let client = ScmdClient::new(
-        MockScmdTransport::empty()
-            .with_response(ACTION_GET_CERTIFICATE, chancela_cmd::mock::SOAP_FAULT),
+        MockScmdTransport::empty().with_response("GetCertificate", r#"{"d":null}"#),
         APP_ID,
     );
-    let err = client.get_certificate(PHONE).unwrap_err();
-    match err {
-        CmdError::SoapFault(msg) => assert!(msg.contains("ApplicationId")),
-        other => panic!("expected SoapFault, got {other:?}"),
-    }
+    let err = client.get_certificate(&mut rng, PHONE).unwrap_err();
+    assert!(matches!(err, CmdError::ResponseParse(_)), "{err:?}");
 }
 
 #[test]
 fn missing_action_response_is_transport_error() {
+    let mut rng = TestRng::new();
     let client = ScmdClient::new(MockScmdTransport::empty(), APP_ID);
-    let err = client.get_certificate(PHONE).unwrap_err();
+    let err = client.get_certificate(&mut rng, PHONE).unwrap_err();
     assert!(matches!(err, CmdError::Transport(_)));
 }
 

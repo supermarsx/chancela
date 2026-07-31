@@ -173,8 +173,16 @@ fn initiate_core<T: ScmdTransport>(
     prepared: &PreparedSignature,
     policy: Option<&mut dyn TrustPolicy>,
 ) -> Result<RemoteSignSession, SigningError> {
+    // `OsRng` is consumed only by the PROD field-encryption hook (the mobile is encrypted for
+    // GetCertificate and SCMDSign, the PIN for SCMDSign); the cleartext preprod/mock encryptor
+    // ignores it. It is created here so GetCertificate — which now also encrypts the mobile — shares
+    // it with the sign call below.
+    let mut rng = OsRng;
+
     // 1. GetCertificate — the leaf is needed to build the signed attributes and the issuer to gate.
-    let chain = client.get_certificate(user_ref).map_err(provider_err)?;
+    let chain = client
+        .get_certificate(&mut rng, user_ref)
+        .map_err(provider_err)?;
 
     // 2. Trusted-list gate on the issuer (SIG-11/23): a qualified signature must not skip it.
     let trusted_list_status = match policy {
@@ -203,9 +211,7 @@ fn initiate_core<T: ScmdTransport>(
     )
     .map_err(cades_err)?;
 
-    // 4. CCMovelSign — dispatches the OTP. `OsRng` is consumed only by the PROD field-encryption
-    //    hook; cleartext (preprod) ignores it (mirrors `CmdProvider`).
-    let mut rng = OsRng;
+    // 4. SCMDSign — dispatches the OTP. Reuses the `rng` created above.
     let handle = client
         .request_signature(
             &mut rng,

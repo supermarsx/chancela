@@ -17,8 +17,10 @@ fn preprod_get_certificate() {
     let phone = std::env::var("CHANCELA_CMD_TEST_PHONE").expect("CHANCELA_CMD_TEST_PHONE");
     let transport = HttpScmdTransport::from_config(&cfg).expect("build transport");
     let client = ScmdClient::from_config(transport, &cfg).expect("build client");
+    // A real CSPRNG: an encrypting preprod config RSA-encrypts the mobile for GetCertificate.
+    let mut rng = rand_core::OsRng;
     let chain = client
-        .get_certificate(&phone)
+        .get_certificate(&mut rng, &phone)
         .expect("GetCertificate against preprod");
     assert!(!chain.leaf_der.is_empty());
 }

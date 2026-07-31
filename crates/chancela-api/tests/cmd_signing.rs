@@ -35,7 +35,7 @@ use x509_cert::time::Validity;
 use chancela_api::{
     AppState, CmdCredentialFields, CmdEnvSetting, CredentialFieldSet, CredentialMode, router,
 };
-use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
+use chancela_cmd::wire::{OP_GET_CERTIFICATE, OP_SCMD_SIGN, OP_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_core::ActId;
 use chancela_pades::validate_pdf_signature;
@@ -186,7 +186,7 @@ struct SmartCmdTransport {
     captured_hash: Arc<Mutex<Option<Vec<u8>>>>,
     reject_otp: bool,
     fail_action: Option<&'static str>,
-    expected_application_id_b64: Option<String>,
+    expected_application_id: Option<String>,
 }
 
 impl SmartCmdTransport {
@@ -198,7 +198,7 @@ impl SmartCmdTransport {
             captured_hash: Arc::new(Mutex::new(None)),
             reject_otp,
             fail_action: None,
-            expected_application_id_b64: None,
+            expected_application_id: None,
         }
     }
 
@@ -208,114 +208,78 @@ impl SmartCmdTransport {
     }
 
     fn expect_application_id(mut self, application_id: &str) -> Self {
-        self.expected_application_id_b64 = Some(STANDARD.encode(application_id.as_bytes()));
+        // The ApplicationId travels as the RAW string, never base64-encoded.
+        self.expected_application_id = Some(application_id.to_owned());
         self
     }
 
-    fn assert_expected_application_id(&self, soap_body: &str) -> Result<(), CmdError> {
-        if let Some(expected) = &self.expected_application_id_b64
-            && !soap_body.contains(expected)
-        {
-            return Err(CmdError::Transport(
-                "unexpected CMD application id source".to_owned(),
-            ));
+    fn assert_expected_application_id(&self, body: &str) -> Result<(), CmdError> {
+        if let Some(expected) = &self.expected_application_id {
+            let value: serde_json::Value =
+                serde_json::from_str(body).map_err(|e| CmdError::Transport(e.to_string()))?;
+            if value["ApplicationId"] != serde_json::Value::String(expected.clone()) {
+                return Err(CmdError::Transport(
+                    "unexpected CMD application id source".to_owned(),
+                ));
+            }
         }
         Ok(())
     }
 }
 
 impl ScmdTransport for SmartCmdTransport {
-    fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
+    fn call(&self, action: &str, body: &str) -> Result<String, CmdError> {
         if matches!(self.fail_action, Some(fail) if fail == action) {
             return Err(CmdError::Transport(format!(
                 "simulated SCMD outage at {action}"
             )));
         }
-        self.assert_expected_application_id(soap_body)?;
-        if action == ACTION_GET_CERTIFICATE {
+        self.assert_expected_application_id(body)?;
+        if action == OP_GET_CERTIFICATE {
             Ok(get_certificate_response(&self.leaf_pem, &self.issuer_pem))
-        } else if action == ACTION_CCMOVEL_SIGN {
-            let hash_b64 = between(soap_body, "<d:Hash>", "</d:Hash>")
-                .ok_or_else(|| CmdError::Transport("no <d:Hash> in CCMovelSign".into()))?;
+        } else if action == OP_SCMD_SIGN {
+            let value: serde_json::Value =
+                serde_json::from_str(body).map_err(|e| CmdError::Transport(e.to_string()))?;
+            let hash_b64 = value["Hash"]
+                .as_str()
+                .ok_or_else(|| CmdError::Transport("no Hash in SCMDSign".into()))?;
             let hash = STANDARD
-                .decode(hash_b64.trim())
+                .decode(hash_b64)
                 .map_err(|e| CmdError::Base64(e.to_string()))?;
             *self.captured_hash.lock().unwrap() = Some(hash);
-            Ok(CCMOVEL_SIGN_OK.to_string())
-        } else if action == ACTION_VALIDATE_OTP {
+            Ok(SCMD_SIGN_OK.to_string())
+        } else if action == OP_VALIDATE_OTP {
             if self.reject_otp {
                 return Ok(VALIDATE_OTP_REJECTED.to_string());
             }
             let guard = self.captured_hash.lock().unwrap();
-            let hash = guard.as_ref().expect("CCMovelSign captured the hash first");
+            let hash = guard.as_ref().expect("SCMDSign captured the hash first");
             assert_submitted_digest_info(hash);
             let sig = sign_submitted_digest_info(&self.leaf_key, hash);
-            Ok(validate_otp_response(&STANDARD.encode(&sig)))
+            Ok(validate_otp_response(&sig))
         } else {
             Err(CmdError::Transport(format!("unexpected action {action}")))
         }
     }
 }
 
-/// The shallowest substring between `open` and `close` (good enough for the well-formed envelopes).
-fn between<'a>(hay: &'a str, open: &str, close: &str) -> Option<&'a str> {
-    let start = hay.find(open)? + open.len();
-    let end = hay[start..].find(close)? + start;
-    Some(&hay[start..end])
-}
+const SCMD_SIGN_OK: &str = r#"{"d":{"Code":"200","Message":"Confirme com o OTP enviado.","ProcessId":"b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b"}}"#;
 
-const CCMOVEL_SIGN_OK: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <CCMovelSignResponse xmlns="http://tempuri.org/">
-      <CCMovelSignResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Code>200</a:Code>
-        <a:Message>Confirme com o OTP enviado.</a:Message>
-        <a:ProcessId>b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b</a:ProcessId>
-      </CCMovelSignResult>
-    </CCMovelSignResponse>
-  </s:Body>
-</s:Envelope>"#;
-
-const VALIDATE_OTP_REJECTED: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <ValidateOtpResponse xmlns="http://tempuri.org/">
-      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Signature i:nil="true"/>
-        <a:Status><a:Code>402</a:Code><a:Message>OTP inválido ou expirado.</a:Message></a:Status>
-      </ValidateOtpResult>
-    </ValidateOtpResponse>
-  </s:Body>
-</s:Envelope>"#;
+const VALIDATE_OTP_REJECTED: &str =
+    r#"{"d":{"Status":{"Code":"402","Message":"OTP inválido ou expirado."},"Signature":null}}"#;
 
 fn get_certificate_response(leaf_pem: &str, issuer_pem: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <GetCertificateResponse xmlns="http://tempuri.org/">
-      <GetCertificateResult>{leaf_pem}{issuer_pem}</GetCertificateResult>
-    </GetCertificateResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+    serde_json::json!({ "d": format!("{leaf_pem}{issuer_pem}") }).to_string()
 }
 
-fn validate_otp_response(signature_b64: &str) -> String {
-    format!(
-        r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/">
-  <s:Body>
-    <ValidateOtpResponse xmlns="http://tempuri.org/">
-      <ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-        <a:Signature>{signature_b64}</a:Signature>
-        <a:Status><a:Code>200</a:Code><a:Message>Assinatura concluída.</a:Message></a:Status>
-      </ValidateOtpResult>
-    </ValidateOtpResponse>
-  </s:Body>
-</s:Envelope>"#
-    )
+fn validate_otp_response(signature: &[u8]) -> String {
+    serde_json::json!({
+        "d": {
+            "Status": { "Code": "200", "Message": "Assinatura concluída." },
+            "Signature": signature,
+        }
+    })
+    .to_string()
 }
 
 // --- test harness -----------------------------------------------------------------------------
@@ -816,8 +780,8 @@ async fn cmd_partial_stored_record_fails_without_env_mixing() {
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
-    let transport = SmartCmdTransport::new(&leaf, &issuer, false)
-        .with_transport_error_on(ACTION_GET_CERTIFICATE);
+    let transport =
+        SmartCmdTransport::new(&leaf, &issuer, false).with_transport_error_on(OP_GET_CERTIFICATE);
     let state = state_at(&dir.0, transport, true).await;
     state.settings.write().await.signing.cmd.application_id = None;
     seed_partial_stored_cmd_record(&state);
@@ -915,8 +879,8 @@ async fn cmd_malformed_env_fails_closed_without_settings_fallback() {
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
-    let transport = SmartCmdTransport::new(&leaf, &issuer, false)
-        .with_transport_error_on(ACTION_GET_CERTIFICATE);
+    let transport =
+        SmartCmdTransport::new(&leaf, &issuer, false).with_transport_error_on(OP_GET_CERTIFICATE);
     let state = state_at(&dir.0, transport, true).await;
     let (token, _uid) = bootstrap(&state).await;
     let act_id = seal_an_act(&state, &token).await;
@@ -1389,8 +1353,8 @@ async fn cmd_prod_without_ama_certificate_fails_before_scmd_and_leaves_no_signat
     let dir = TempDir::new();
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
-    let transport = SmartCmdTransport::new(&leaf, &issuer, false)
-        .with_transport_error_on(ACTION_GET_CERTIFICATE);
+    let transport =
+        SmartCmdTransport::new(&leaf, &issuer, false).with_transport_error_on(OP_GET_CERTIFICATE);
     let state = state_at(&dir.0, transport, true).await;
     state.settings.write().await.signing.cmd.env = CmdEnvSetting::Prod;
     let (token, _uid) = bootstrap(&state).await;
@@ -1670,7 +1634,7 @@ async fn cmd_confirm_transport_error_maps_to_422_and_leaves_no_signature() {
     let leaf = RsaSigner::new("Amélia Marques (CMD teste)", 1);
     let issuer = RsaSigner::new("Encosto Estratégico — EC Teste", 2);
     let transport =
-        SmartCmdTransport::new(&leaf, &issuer, false).with_transport_error_on(ACTION_VALIDATE_OTP);
+        SmartCmdTransport::new(&leaf, &issuer, false).with_transport_error_on(OP_VALIDATE_OTP);
     let state = state_at(&dir.0, transport, true).await;
     let (token, _uid) = bootstrap(&state).await;
     let act_id = seal_an_act(&state, &token).await;

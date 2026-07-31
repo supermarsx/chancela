@@ -43,7 +43,7 @@ use x509_cert::time::Validity;
 use chancela_api::{
     AppState, CmdCredentialFields, CredentialFieldSet, CredentialMode, CscCredentialFields, router,
 };
-use chancela_cmd::soap::{ACTION_CCMOVEL_SIGN, ACTION_GET_CERTIFICATE, ACTION_VALIDATE_OTP};
+use chancela_cmd::wire::{OP_GET_CERTIFICATE, OP_SCMD_SIGN, OP_VALIDATE_OTP};
 use chancela_cmd::{CmdError, ScmdTransport};
 use chancela_core::ActId;
 use chancela_csc::mock::{
@@ -330,7 +330,7 @@ struct SmartCmdTransport {
     leaf_pem: String,
     issuer_pem: String,
     captured_hash: Arc<Mutex<Option<Vec<u8>>>>,
-    expected_application_id_b64: Option<String>,
+    expected_application_id: Option<String>,
 }
 
 impl SmartCmdTransport {
@@ -340,76 +340,69 @@ impl SmartCmdTransport {
             leaf_pem: leaf.cert_pem(),
             issuer_pem: issuer.cert_pem(),
             captured_hash: Arc::new(Mutex::new(None)),
-            expected_application_id_b64: None,
+            expected_application_id: None,
         }
     }
 
     fn expect_application_id(mut self, application_id: &str) -> Self {
-        self.expected_application_id_b64 = Some(STANDARD.encode(application_id.as_bytes()));
+        // The ApplicationId travels as the RAW string, never base64-encoded.
+        self.expected_application_id = Some(application_id.to_owned());
         self
     }
 
-    fn assert_expected_application_id(&self, soap_body: &str) -> Result<(), CmdError> {
-        if let Some(expected) = &self.expected_application_id_b64
-            && !soap_body.contains(expected)
-        {
-            return Err(CmdError::Transport(
-                "unexpected CMD application id source".to_owned(),
-            ));
+    fn assert_expected_application_id(&self, body: &str) -> Result<(), CmdError> {
+        if let Some(expected) = &self.expected_application_id {
+            let value: serde_json::Value =
+                serde_json::from_str(body).map_err(|e| CmdError::Transport(e.to_string()))?;
+            if value["ApplicationId"] != serde_json::Value::String(expected.clone()) {
+                return Err(CmdError::Transport(
+                    "unexpected CMD application id source".to_owned(),
+                ));
+            }
         }
         Ok(())
     }
 }
 
 impl ScmdTransport for SmartCmdTransport {
-    fn call(&self, action: &str, soap_body: &str) -> Result<String, CmdError> {
-        self.assert_expected_application_id(soap_body)?;
-        if action == ACTION_GET_CERTIFICATE {
-            Ok(format!(
-                r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
-<GetCertificateResponse xmlns="http://tempuri.org/"><GetCertificateResult>{}{}</GetCertificateResult></GetCertificateResponse>
-</s:Body></s:Envelope>"#,
-                self.leaf_pem, self.issuer_pem
-            ))
-        } else if action == ACTION_CCMOVEL_SIGN {
-            let hash_b64 = between(soap_body, "<d:Hash>", "</d:Hash>")
-                .ok_or_else(|| CmdError::Transport("no <d:Hash>".into()))?;
+    fn call(&self, action: &str, body: &str) -> Result<String, CmdError> {
+        self.assert_expected_application_id(body)?;
+        if action == OP_GET_CERTIFICATE {
+            Ok(serde_json::json!({
+                "d": format!("{}{}", self.leaf_pem, self.issuer_pem)
+            })
+            .to_string())
+        } else if action == OP_SCMD_SIGN {
+            let value: serde_json::Value =
+                serde_json::from_str(body).map_err(|e| CmdError::Transport(e.to_string()))?;
+            let hash_b64 = value["Hash"]
+                .as_str()
+                .ok_or_else(|| CmdError::Transport("no Hash".into()))?;
             let hash = STANDARD
-                .decode(hash_b64.trim())
+                .decode(hash_b64)
                 .map_err(|e| CmdError::Base64(e.to_string()))?;
             *self.captured_hash.lock().unwrap() = Some(hash);
-            Ok(CCMOVEL_SIGN_OK.to_string())
-        } else if action == ACTION_VALIDATE_OTP {
+            Ok(SCMD_SIGN_OK.to_string())
+        } else if action == OP_VALIDATE_OTP {
             let guard = self.captured_hash.lock().unwrap();
-            let hash = guard.as_ref().expect("CCMovelSign captured the hash first");
+            let hash = guard.as_ref().expect("SCMDSign captured the hash first");
             assert_submitted_digest_info(hash);
             let sig = sign_submitted_digest_info(&self.leaf_key, hash);
-            Ok(format!(
-                r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
-<ValidateOtpResponse xmlns="http://tempuri.org/"><ValidateOtpResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-<a:Signature>{}</a:Signature><a:Status><a:Code>200</a:Code><a:Message>OK</a:Message></a:Status>
-</ValidateOtpResult></ValidateOtpResponse></s:Body></s:Envelope>"#,
-                STANDARD.encode(&sig)
-            ))
+            Ok(serde_json::json!({
+                "d": {
+                    "Status": { "Code": "200", "Message": "OK" },
+                    "Signature": sig,
+                }
+            })
+            .to_string())
         } else {
             Err(CmdError::Transport(format!("unexpected action {action}")))
         }
     }
 }
 
-const CCMOVEL_SIGN_OK: &str = r#"<?xml version="1.0" encoding="utf-8"?>
-<s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/"><s:Body>
-<CCMovelSignResponse xmlns="http://tempuri.org/"><CCMovelSignResult xmlns:a="http://schemas.datacontract.org/2004/07/Ama.Authentication.Service.Services.CMDService" xmlns:i="http://www.w3.org/2001/XMLSchema-instance">
-<a:Code>200</a:Code><a:Message>OK</a:Message><a:ProcessId>b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b</a:ProcessId>
-</CCMovelSignResult></CCMovelSignResponse></s:Body></s:Envelope>"#;
-
-fn between<'a>(hay: &'a str, open: &str, close: &str) -> Option<&'a str> {
-    let start = hay.find(open)? + open.len();
-    let end = hay[start..].find(close)? + start;
-    Some(&hay[start..end])
-}
+const SCMD_SIGN_OK: &str =
+    r#"{"d":{"Code":"200","Message":"OK","ProcessId":"b3f1c2a4-5d6e-4f80-9a1b-2c3d4e5f6a7b"}}"#;
 
 // --- test harness ----------------------------------------------------------------------------
 

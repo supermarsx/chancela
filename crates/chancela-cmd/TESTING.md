@@ -1,7 +1,7 @@
 # chancela-cmd — testing
 
-Chave Móvel Digital (AMA SCMD) qualified remote-signature SOAP client. Produces a
-`chancela_cades::RawSignature`; CMS/CAdES assembly happens in `chancela-cades` /
+Chave Móvel Digital (AMA SCMD `AppSCMDService`) qualified remote-signature JSON/REST client.
+Produces a `chancela_cades::RawSignature`; CMS/CAdES assembly happens in `chancela-cades` /
 `chancela-signing`.
 
 ## Default (offline, CI) — mock round trip
@@ -10,24 +10,27 @@ Chave Móvel Digital (AMA SCMD) qualified remote-signature SOAP client. Produces
 cargo test -p chancela-cmd
 ```
 
-All default tests run with **no network**, driven by `MockScmdTransport` (canned SOAP
+All default tests run with **no network**, driven by `MockScmdTransport` (canned JSON
 responses in `fixtures/`):
 
 - `tests/mock_flow.rs`
   - `full_request_otp_retrieve_round_trip` — the SIG-02 flow end to end:
-    `GetCertificate` → `CCMovelSign` (dispatches OTP, returns `ProcessId`) → `ValidateOtp`
+    `GetCertificate` → `SCMDSign` (dispatches OTP, returns `ProcessId`) → `ValidateOtp`
     (returns the raw RSA-PKCS#1 v1.5 signature), assembled into a `RawSignature` with the
-    certificate chain. Also asserts the ApplicationId is base64'd, the hash is carried, and
-    the `ProcessId` is threaded into `ValidateOtp`.
+    certificate chain. Also asserts the ApplicationId is sent **raw** (never base64), the
+    mobile is space-stripped before encryption, the hash is the 51-byte DigestInfo, and the
+    `ProcessId` is threaded into `ValidateOtp`.
   - `otp_bytes_are_never_the_signature_artifact` — SIG-02 invariant: the OTP is a
     possession-factor **confirmation step**, never the signature. The artifact is the
     256-byte qualified RSA signature.
-  - `ccmovel_sign_error_maps_to_service_status` — `Code 401` (bad PIN) → `CmdError::ServiceStatus`.
+  - `scmd_sign_error_maps_to_service_status` — `Code 401` (bad PIN) → `CmdError::ServiceStatus`.
   - `otp_rejection_maps_to_error` — `Status.Code 402` (bad OTP) → `CmdError::OtpRejected`.
-  - `soap_fault_surfaces_as_error` — a SOAP `<Fault>` → `CmdError::SoapFault`.
+  - `get_certificate_without_a_pem_payload_is_a_parse_error` — a `{"d":null}` response →
+    `CmdError::ResponseParse` (the JSON service has no SOAP `<Fault>`).
   - `missing_action_response_is_transport_error`, `preprod_config_is_cleartext_prod_requires_cert`.
-- In-module unit tests: SOAP envelope build + local-name response parsing (`src/soap.rs`),
-  field encryption cleartext + RSA-encrypt/decrypt round trip (`src/field_encryption.rs`).
+- In-module unit tests: JSON request build + response parsing incl. the `{"d":...}` unwrap and
+  the integer-array signature (`src/wire.rs`), field encryption cleartext + RSA-encrypt/decrypt
+  round trip (`src/field_encryption.rs`).
 
 Fixtures are checked in and contain **only public** certificates (a self-signed test CA, a
 leaf "CITIZEN SIGNATURE" cert signed by it, and a self-signed AMA field-encryption cert). No
