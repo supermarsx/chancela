@@ -589,8 +589,23 @@ verification needs zero PRF-specific code** — it verifies an ordinary assertio
 
 | Where | What | Crypto? |
 |---|---|---|
-| Web, ~40 lines | Set `extensions: { prf: { eval: { first: salt } } }` on create and get; read `getClientExtensionResults().prf`. The salt is server-supplied, per-credential, stable, and stored on the credential record — **not** the challenge. | None |
-| Web, ~15 lines | Raw PRF output is input keying material, not a key (Yubico is explicit). `HKDF-SHA256(ikm = prf.results.first, salt = <per-credential salt>, info = "chancela-attestation-kek-v1")` → 32 bytes, via `crypto.subtle.deriveBits`. | **One WebCrypto call. Nothing hand-rolled.** |
+| Web, ~40 lines | Set `extensions: { prf: { eval: { first: salt } } }` on create and get; read `getClientExtensionResults().prf`. The salt is a **fixed constant** (a domain-separation string), NOT per-credential and NOT stored on the record — **not** the challenge either. See the correction below. | None |
+| Web, ~15 lines | Raw PRF output is input keying material, not a key (Yubico is explicit). `HKDF-SHA256(ikm = prf.results.first, salt = <constant>, info = "chancela-attestation-kek-v1")` → 32 bytes, via `crypto.subtle.deriveBits`. | **One WebCrypto call. Nothing hand-rolled.** |
+
+> **Correction (t10 implementation): the salt is a constant, not per-credential.** An earlier
+> draft said "per-credential salt, stored on the credential record". That is *impossible* under the
+> discoverable-credentials ruling, and the two rulings are what make it so: in a discoverable
+> sign-in the server does not learn which credential will answer until the assertion comes back —
+> which is precisely the property that removes the user-enumeration oracle — so it cannot select a
+> per-credential salt when it mints the challenge. `evalByCredential` would need a populated
+> `allowCredentials` (username-first, i.e. the oracle back), and a two-ceremony get→learn→get flow
+> costs two biometric prompts. A **constant** salt is not a compromise: CTAP2.1 already keeps the
+> PRF seed per-credential *inside the authenticator* (`CredRandomWithUV`), so the salt only supplies
+> domain separation between uses, which a fixed string does completely. Two credentials of the same
+> user still derive different secrets and so still carry independent wraps of the same scalar — the
+> definition of "a second wrap", so **Invariant 2 is untouched**. Consequence: **do not add a
+> `prf_salt` field to `PasskeyCredential`.** The salt lives as a constant (or a settings value), not
+> per row.
 | Transport | The derived secret is POSTed. `create_session` already receives `req.password` on the same path, so this is architecturally symmetric — but it is a secret in a request body and needs the same redaction and zeroize treatment as `password`. | None |
 | Rust | The base64url of those 32 bytes becomes the `secret: &str` for `AttestationKeyBlob::wrap` / `::unlock`. | **None.** |
 
