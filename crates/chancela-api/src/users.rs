@@ -1580,7 +1580,7 @@ async fn authorize_secret_op_throttled(
 /// Append a user-scoped audit event whose payload is a [`UserView`] (never the full [`User`], so no
 /// argon2 hash, wrapped key, or recovery verifier is ever fed into the ledger). The `actor` is the
 /// honest requester (session user), so a cross-user reset names *who* performed it.
-async fn record_user_event(
+pub(crate) async fn record_user_event(
     state: &AppState,
     user: &User,
     kind: &str,
@@ -1648,7 +1648,7 @@ pub(crate) async fn record_passkey_event_attested(
 }
 
 /// A `user.updated` audit event (the common case for self-service + non-reset mutations).
-async fn record_user_update(
+pub(crate) async fn record_user_update(
     state: &AppState,
     user: &User,
     justification: &str,
@@ -2364,12 +2364,68 @@ pub async fn get_user(
         .ok_or(ApiError::NotFound)
 }
 
+/// Why an account may not be deactivated — the two states from which the instance cannot recover.
+///
+/// Deactivation is the ONLY mechanism by which an account stops being able to sign in (users are
+/// never deleted, so attribution history stays intact), and it is reachable from two surfaces: an
+/// administrator's `PATCH /v1/users/{id}` `{active:false}` and the account holder's own
+/// [`crate::account::suspend_me`]. Both must refuse the same two states, so the *predicate* lives
+/// here once and each caller phrases its own refusal — an administrator deactivating someone else
+/// and a holder locking their own account are different sentences about the same rule.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DeactivationBlock {
+    /// The target is the only remaining ACTIVE user. With none left no session can ever be minted
+    /// again (`create_session` rejects inactive users) and the bootstrap-create only fires at *zero*
+    /// users, so the instance would be permanently bricked for mutations.
+    LastActiveUser,
+    /// The target is the only remaining ACTIVE administrative Owner (Owner\@Global). An inactive
+    /// user confers no authority and cannot sign in to recover, so the instance would be left with
+    /// nobody able to administer it — including nobody able to reverse this very deactivation.
+    LastActiveOwner,
+}
+
+/// Decide whether deactivating `target` would strand the instance (t64 §5).
+///
+/// Call under the SAME write lock that performs the deactivation, so two concurrent deactivations
+/// cannot both pass. `None` ⇒ the deactivation is recoverable and may proceed. An already-inactive
+/// target is never blocked: it confers no authority to lose.
+pub(crate) fn deactivation_block(
+    users: &HashMap<UserId, User>,
+    target: &User,
+) -> Option<DeactivationBlock> {
+    if !target.active {
+        return None;
+    }
+    if users.values().filter(|u| u.active).count() <= 1 {
+        return Some(DeactivationBlock::LastActiveUser);
+    }
+    if target
+        .role_assignments
+        .iter()
+        .any(RoleAssignment::is_owner_admin)
+    {
+        let active_owner_holders =
+            count_owner_admin_holders(users.values().filter(|u| u.active).flat_map(|u| {
+                let uid = AuthzUserId(u.id.0);
+                u.role_assignments.iter().map(move |a| (uid, a))
+            }));
+        if !last_owner_guard(active_owner_holders) {
+            return Some(DeactivationBlock::LastActiveOwner);
+        }
+    }
+    None
+}
+
 /// `PATCH /v1/users/{id}` — rename and/or (de)activate a profile. Appends `user.updated`.
 ///
-/// **Last-active-user guard:** deactivating (`active:false`) the only remaining active user is
-/// refused with `409`. With no active user left, no session can ever be minted again
-/// (`create_session` rejects inactive users) and the bootstrap-create only fires at *zero* users,
-/// so the instance would be permanently bricked for mutations.
+/// **This is the ADMINISTRATIVE surface and stays `user.manage`\@Global.** The self-service
+/// counterpart is [`crate::account`]: a holder edits their own display name, e-mail and language
+/// through `PATCH /v1/me/profile` and suspends their own account through `POST /v1/me/suspend`.
+/// Neither of those touches `active:true` or `two_factor_required` — lifting a suspension and
+/// requiring a second factor are administrative acts and are reachable only through here.
+///
+/// **Last-active-user / last-Owner guards:** see [`deactivation_block`], shared with the
+/// self-suspension path so the two cannot drift.
 ///
 /// The `user.updated` payload is a [`UserView`] (via [`record_user_update`]), never the full
 /// [`User`] — no argon2 hash or wrapped attestation key is fed into the audit event, matching
@@ -2396,36 +2452,24 @@ pub async fn patch_user(
     }
     let user = {
         let mut users = state.users.write().await;
-        // Last-active-user guard: reject deactivating the final active user (checked under the
-        // write lock so two concurrent deactivations can't both pass).
+        // Last-active-user / last-Owner guards: reject a deactivation the instance cannot recover
+        // from (checked under the write lock so two concurrent deactivations can't both pass). The
+        // predicate is `deactivation_block`, shared with the self-suspension path; the wording of
+        // each refusal is this surface's own.
         if req.active == Some(false) {
             let target = users.get(&UserId(id)).ok_or(ApiError::NotFound)?;
-            if target.active && users.values().filter(|u| u.active).count() <= 1 {
-                return Err(ApiError::Conflict(
-                    "não pode desativar o último utilizador ativo".to_owned(),
-                ));
-            }
-            // Last-Owner guard (t64 §5): deactivating the last ACTIVE administrative Owner
-            // (Owner@Global) would strip the instance of any super-user — an inactive user confers
-            // no authority and cannot sign in to recover, so the instance would be permanently
-            // un-administrable. Refuse (mirrors the unassign-Owner guard). Only active Owner holders
-            // count; the target is still active here, so being the sole active holder ⇒ blocked.
-            if target.active
-                && target
-                    .role_assignments
-                    .iter()
-                    .any(RoleAssignment::is_owner_admin)
-            {
-                let active_owner_holders =
-                    count_owner_admin_holders(users.values().filter(|u| u.active).flat_map(|u| {
-                        let uid = AuthzUserId(u.id.0);
-                        u.role_assignments.iter().map(move |a| (uid, a))
-                    }));
-                if !last_owner_guard(active_owner_holders) {
+            match deactivation_block(&users, target) {
+                Some(DeactivationBlock::LastActiveUser) => {
+                    return Err(ApiError::Conflict(
+                        "não pode desativar o último utilizador ativo".to_owned(),
+                    ));
+                }
+                Some(DeactivationBlock::LastActiveOwner) => {
                     return Err(ApiError::Conflict(
                         "não pode desativar o último Proprietário".to_owned(),
                     ));
                 }
+                None => {}
             }
         }
         let user = users.get_mut(&UserId(id)).ok_or(ApiError::NotFound)?;

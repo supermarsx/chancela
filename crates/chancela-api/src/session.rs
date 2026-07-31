@@ -1115,12 +1115,24 @@ pub async fn create_session(
 ///
 /// ## The attestation key
 ///
-/// `unlocked_key` is `None` on this path today, and that is an *already supported* session state
-/// rather than a gap — `mint_session` takes `Option<SigningKey>`, and companion/pairing sessions
-/// are minted this way now. Such a session reads freely and is asked for the password at the moment
-/// it first needs to attest. When the web lane lands PRF, the derived secret arrives in this
-/// request body and unwraps the blob here, exactly as `req.password` does above; nothing else about
-/// this handler changes.
+/// `unlocked_key` is `None` on this path, and that is an *already supported* session state rather
+/// than a gap — `mint_session` takes `Option<SigningKey>`, and companion/pairing sessions are
+/// minted this way now. Such a session reads freely and is asked for the **password** at the moment
+/// it first needs to attest.
+///
+/// **That is the shipped design, by ruling, not a stub awaiting PRF.** The PRF-derived unwrap is
+/// deferred until PRF is verified on real hardware: present, stable across two sign-ins, stable
+/// across a browser restart, with the constant salt. Key custody is the wrong place to spend
+/// unverified evidence, and the design doc's platform matrix still carries two *unverified* rows.
+/// So a passkey sign-in authenticates and does not unlock — which is honest, and which the copy
+/// rules require be said as "a chave de acesso inicia sessão; a palavra-passe é pedida para
+/// assinar", never as "sem palavra-passe".
+///
+/// If and when that verification lands, the derived secret arrives in this request body and unwraps
+/// the blob here exactly as `req.password` does above, and nothing else about this handler changes.
+/// Every credential enrolled meanwhile is already PRF-capable — `hmac-secret` is provisioned at
+/// enrolment, which CTAP2 only permits at creation — so switching it on needs **no re-enrolment**.
+/// See [`crate::passkeys`]'s module header for the full list of what that switch owes.
 pub async fn create_passkey_session(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -1519,6 +1531,39 @@ pub async fn revoke_other_sessions(
         .await
         .retain(|_, p| p.user_id != user_id);
     Ok(Json(RevokedView { revoked }))
+}
+
+/// End **every** live session belonging to `user_id`, including the caller's own, and drop any
+/// in-flight two-step sign-in challenge held for them. Returns how many sessions were revoked.
+///
+/// This is the deliberate difference from [`revoke_other_sessions`], which spares the current one.
+/// It exists for [`crate::account::suspend_me`]: a self-suspension whose premise is "someone else is
+/// holding a session of mine" achieves nothing if it leaves any session alive, and it cannot know
+/// which of the live sessions is the attacker's — the request it is serving may itself be riding the
+/// stolen token. Ending all of them, and requiring an administrator to lift the suspension, is what
+/// makes the operation mean what its name says. The pending-challenge sweep matters for the same
+/// reason it does in [`revoke_other_sessions`]: a challenge held by someone who already has the
+/// password must not outlive the lock-out.
+pub(crate) async fn revoke_all_sessions_for(
+    state: &AppState,
+    user_id: UserId,
+) -> Result<usize, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let digests: Vec<String> = listed_sessions_for(state, user_id, now)
+        .await?
+        .into_iter()
+        .map(|s| s.token_sha256)
+        .collect();
+    let revoked = digests.len();
+    for digest in &digests {
+        revoke_digest_everywhere(state, digest).await;
+    }
+    state
+        .pending_two_factor
+        .write()
+        .await
+        .retain(|_, p| p.user_id != user_id);
+    Ok(revoked)
 }
 
 /// Mint a fresh opaque session token for `uid` and register it across **every** session layer — the

@@ -549,6 +549,15 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // t37 per-user UI preferences (configurable table columns): a valid session that acts only on
     // its own row (handler-enforced via `session_username` → own user id), so `Session`, not a verb.
     ("/v1/me/preferences", RouteClass::Session),
+    // The self-service account surface. `Session` for the same reason as the row above: a valid
+    // interactive session acting only on its OWN record (handler-enforced via `session_username` →
+    // own user id), never a permission verb. The narrow body of `PATCH /v1/me/profile` is the gate
+    // — display name / e-mail / language only, so `active` and `two_factor_required` remain
+    // reachable only through the `user.manage`-gated `PATCH /v1/users/{id}`.
+    ("/v1/me/profile", RouteClass::Session),
+    // Self-suspension is one-way — only `user.manage` sets `active` back — so an attacker holding a
+    // stolen session must not be able to lock the real owner out on the session token alone.
+    ("/v1/me/suspend", RouteClass::Session), // POST self + step-up
     // --- Companion device pairing (wp27-e4) -----------------------------------------------------
     // Mint / list / revoke are operator-authenticated: their handlers gate on `resolve_operator`
     // (an interactive session bound to an active user), not a specific `require_permission` verb —
@@ -1379,6 +1388,7 @@ mod tests {
                 include_str!("passkeys.rs"),
                 "revoke_passkey",
             ),
+            ("/v1/me/suspend", include_str!("account.rs"), "suspend_me"),
         ];
 
         // The annotations live in this file's own source, one trailing comment per entry.
@@ -1440,6 +1450,7 @@ mod tests {
             include_str!("data_status.rs"),
             include_str!("privacy.rs"),
             include_str!("passkeys.rs"),
+            include_str!("account.rs"),
         ]
         .iter()
         .map(|src| src.matches("require_step_up(&state").count())

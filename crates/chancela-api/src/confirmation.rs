@@ -1523,6 +1523,18 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         ),
     ),
     (
+        "/v1/me/profile",
+        RouteGuard::NotGuarded(
+            "Edits the caller's OWN display name, e-mail and interface language, and nothing else — `active` and `two_factor_required` are not fields of the body, so no authority and no account-lifecycle state can be reached from here. Every change appends `user.updated` naming the honest actor, so a wrong value is visible and reversible by an administrator. A confirmation dialog on correcting your own name is friction with nothing behind it.",
+        ),
+    ),
+    (
+        "/v1/me/suspend",
+        RouteGuard::NotGuarded(
+            "Already `require_step_up` in `account::suspend_me`: locking your own account cannot ride a session token alone, because that is exactly what an attacker holding a stolen session would do. Adding a policy confirmation on top would let an operator configuration lower an existing hard-coded gate, and the client already states the three consequences (every session ends, sign-in stops, only `user.manage` can lift it) before the control rather than inside a dialog after it. The two states the instance cannot recover from — sole active user, sole active Owner — are refused outright by `deactivation_block`, which is a fail-closed invariant rather than a prompt.",
+        ),
+    ),
+    (
         "/v1/backup",
         RouteGuard::NotGuarded("Takes a hot backup — additive, destroys nothing."),
     ),
@@ -1776,7 +1788,7 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
     (
         "/v1/users/{id}/passkeys/{credential_id}",
         RouteGuard::NotGuarded(
-            "Removing a passkey already demands step-up re-auth in the handler, and the account-lifecycle guard refuses the removal outright if it would leave the account unable to sign in or unable to be recovered. That is a target-bound credential proof plus a fail-closed invariant — a stricter pair than this policy's actor-bound confirmation, and adding one would be redundant friction on the one screen where a user is already being careful.",
+            "Two methods, and the verdict is the same for opposite reasons. DELETE removes a passkey: it already demands step-up re-auth in the handler, and the account-lifecycle guard refuses the removal outright if it would leave the account unable to sign in or unable to be recovered — a target-bound credential proof plus a fail-closed invariant, a stricter pair than this policy's actor-bound confirmation. PATCH renames one: it changes a display label the server never reads back for a decision, so there is nothing to confirm, and demanding a proof to fix a typo is how operators learn to type their password at prompts that do not need it.",
         ),
     ),
     (

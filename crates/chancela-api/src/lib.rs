@@ -89,6 +89,7 @@
 //! `index.html`, so client-side routes like `/livros` deep-link correctly). API routes keep
 //! priority over the static tree. Pass `None` to run API-only with a friendly landing page.
 
+mod account;
 mod actor;
 mod acts;
 mod apikeys;
@@ -3403,6 +3404,14 @@ pub fn router(state: AppState) -> Router {
             get(user_preferences::get_me_preferences)
                 .put(user_preferences::put_me_preferences),
         )
+        // The self-service account surface (see `account.rs`). Both are Session-class: any valid
+        // interactive session, no permission verb, acting only on the caller's OWN record. They are
+        // separate endpoints rather than a self arm on `PATCH /v1/users/{id}` precisely so that the
+        // administrative fields that endpoint also writes — `active:true` and `two_factor_required`
+        // — stay unreachable from here. Suspension additionally demands step-up: it cannot be
+        // undone without `user.manage`, which is exactly what makes it worth stealing a session for.
+        .route("/v1/me/profile", patch(account::patch_me_profile))
+        .route("/v1/me/suspend", post(account::suspend_me))
         .route("/v1/backup", post(backup::create_backup))
         .route(
             "/v1/settings",
@@ -3531,7 +3540,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/v1/users/{id}/passkeys/{credential_id}",
-            axum::routing::delete(passkeys::revoke_passkey),
+            // Rename is self-only like the other mutations but takes no step-up: the label is
+            // display-only and never read back for a decision, so demanding a password to fix a
+            // typo would only teach operators to type it at prompts that do not need it.
+            axum::routing::delete(passkeys::revoke_passkey).patch(passkeys::rename_passkey),
         )
         // The step-up ceremony. Authenticated, and the challenge it mints is bound to this
         // session's user and to the step-up purpose — it cannot satisfy a sign-in and a sign-in

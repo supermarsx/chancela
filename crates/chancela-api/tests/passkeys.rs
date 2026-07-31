@@ -428,6 +428,15 @@ fn post(uri: &str, body: Value) -> Request<Body> {
         .expect("req")
 }
 
+fn patch(uri: &str, body: Value) -> Request<Body> {
+    Request::builder()
+        .method("PATCH")
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .expect("req")
+}
+
 fn delete(uri: &str, body: Value) -> Request<Body> {
     Request::builder()
         .method("DELETE")
@@ -1291,6 +1300,199 @@ async fn revoking_one_of_several_passkeys_is_allowed() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["passkeys"].as_array().expect("array").len(), 1);
     assert_eq!(body["passkeys"][0]["name"], "Chave de segurança");
+}
+
+// =================================================================================================
+// Rename
+// =================================================================================================
+
+/// Renaming is the whole reason this route exists: without it a credential can be created and
+/// deleted but not relabelled, so "which one is the work laptop?" is answered by revoking it.
+#[tokio::test]
+async fn a_credential_can_be_relabelled_without_being_revoked() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    let authenticator = Authenticator::new();
+    enrol(&state, uid, &token, &authenticator, "Telemóvel").await;
+    let credential_id = B64URL.encode(&authenticator.credential_id);
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch(
+                &format!("/v1/users/{}/passkeys/{credential_id}", uid.0),
+                json!({ "name": "  Portátil do escritório  " }),
+            ),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        body["name"], "Portátil do escritório",
+        "trimmed, not stored raw"
+    );
+    assert_eq!(
+        body["credential_id"], credential_id,
+        "a rename must not mint a new credential"
+    );
+
+    // The credential itself is untouched — same id, and it still signs in.
+    let (status, list) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}/passkeys", uid.0)), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{list}");
+    assert_eq!(list["passkeys"].as_array().expect("array").len(), 1);
+    assert_eq!(list["passkeys"][0]["name"], "Portátil do escritório");
+    assert_eq!(list["passkeys"][0]["credential_id"], credential_id);
+}
+
+/// A blank label is refused, not silently defaulted. Defaulting would show the operator a
+/// credential named something they never typed, on the screen they use to tell two apart.
+#[tokio::test]
+async fn a_rename_to_a_blank_label_is_refused() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    let authenticator = Authenticator::new();
+    enrol(&state, uid, &token, &authenticator, "Telemóvel").await;
+    let credential_id = B64URL.encode(&authenticator.credential_id);
+
+    for blank in ["", "   ", "\t\n"] {
+        let (status, body) = send(
+            state.clone(),
+            with_session(
+                patch(
+                    &format!("/v1/users/{}/passkeys/{credential_id}", uid.0),
+                    json!({ "name": blank }),
+                ),
+                &token,
+            ),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "{blank:?}: {body}"
+        );
+        assert_eq!(body["code"], "passkey_name_empty");
+    }
+
+    let (_, list) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}/passkeys", uid.0)), &token),
+    )
+    .await;
+    assert_eq!(
+        list["passkeys"][0]["name"], "Telemóvel",
+        "a refused rename leaves the label exactly as it was"
+    );
+}
+
+/// Self-only, like every other mutation on this surface. An administrator who could relabel
+/// someone else's credential could make the revocation confirmation name the wrong device.
+#[tokio::test]
+async fn another_user_cannot_rename_this_users_credential() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    let authenticator = Authenticator::new();
+    enrol(&state, uid, &token, &authenticator, "Telemóvel").await;
+    let credential_id = B64URL.encode(&authenticator.credential_id);
+
+    // A second Owner — every permission the instance has, and still refused.
+    let other = UserId(Uuid::new_v4());
+    state.users.write().await.insert(
+        other,
+        User {
+            id: other,
+            username: "bruno.salgado".to_owned(),
+            display_name: "Bruno Salgado".to_owned(),
+            email: None,
+            created_at: OffsetDateTime::now_utc().format(&Rfc3339).expect("stamp"),
+            active: true,
+            password_hash: Some(password_hash()),
+            attestation_key: None,
+            retired_attestation_keys: Vec::new(),
+            secret_source: Default::default(),
+            recovery_hash: Some(password_hash()),
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
+            passkeys: Vec::new(),
+        },
+    );
+    let (status, session) = send(
+        state.clone(),
+        post(
+            "/v1/session",
+            json!({ "username": "bruno.salgado", "password": TEST_PASSWORD }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{session}");
+    let other_token = session["token"].as_str().expect("token").to_owned();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            patch(
+                &format!("/v1/users/{}/passkeys/{credential_id}", uid.0),
+                json!({ "name": "Roubada" }),
+            ),
+            &other_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    // …and the list read they *are* allowed still shows the original label.
+    let (status, list) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}/passkeys", uid.0)), &other_token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "an admin may read the list: {list}");
+    assert_eq!(list["passkeys"][0]["name"], "Telemóvel");
+}
+
+/// Both labels reach the ledger. The other passkey events name a credential by its label alone, so
+/// a rename recording only the new one would orphan every line written before it.
+#[tokio::test]
+async fn a_rename_records_both_labels_in_the_ledger() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    let authenticator = Authenticator::new();
+    enrol(&state, uid, &token, &authenticator, "Telemóvel").await;
+    let credential_id = B64URL.encode(&authenticator.credential_id);
+
+    let (status, _) = send(
+        state.clone(),
+        with_session(
+            patch(
+                &format!("/v1/users/{}/passkeys/{credential_id}", uid.0),
+                json!({ "name": "Portátil" }),
+            ),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let ledger = state.ledger.read().await;
+    let renamed = ledger
+        .events()
+        .iter()
+        .find(|event| event.kind == "user.passkey.renamed")
+        .expect("the rename must be recorded");
+    let justification = renamed
+        .justification
+        .as_deref()
+        .expect("a justification names the credential");
+    assert!(justification.contains("Telemóvel"), "{justification}");
+    assert!(justification.contains("Portátil"), "{justification}");
 }
 
 /// Both credentials of one account share **one** user handle. A per-credential handle would make

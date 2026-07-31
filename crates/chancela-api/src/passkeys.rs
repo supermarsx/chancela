@@ -19,13 +19,56 @@
 //!
 //! ## What this module deliberately does not do
 //!
-//! **It does not implement PRF.** The PRF output is derived in the browser and never reaches the
-//! server as key material; the server's part of a PRF sign-in is verifying an ordinary assertion,
-//! which is what [`verify_authentication`] already does. What is here is the *seam*: enrolment asks
-//! the authenticator to provision an `hmac-secret` ([`registration_extensions`]) and records
-//! whether it did ([`PasskeyCredential::prf_capable`]), because an authenticator that was not asked
-//! at creation time can never be asked later — that one is not deferrable, and a credential
-//! enrolled without it would be permanently PRF-incapable.
+//! **It does not implement PRF, and that is now a ruling rather than a schedule.** The PRF-derived
+//! unwrap is **deferred until PRF is verified on real hardware** — nobody in this codebase has
+//! evaluated a real PRF output against a real authenticator, and the design doc's platform matrix
+//! carries two rows still marked *unverified* (conditional mediation end-to-end in a browser, and
+//! PRF behaviour on real devices). Key custody is the wrong place to spend unverified evidence, so
+//! until one browser session confirms **all** of the following on a PRF-capable platform
+//! authenticator, no PRF-derived KEK goes anywhere near the attestation scalar:
+//!
+//! 1. a PRF output is present at all;
+//! 2. it is stable across two consecutive sign-ins;
+//! 3. it is stable across a browser restart;
+//! 4. all of the above with the **constant** salt (see below).
+//!
+//! Until then the shipped path is the one we can stand behind: the passkey authenticates, and the
+//! attestation key is unlocked by the **password** at the moment the session first needs to attest.
+//!
+//! **What is kept, deliberately and at zero ongoing cost**, is the *capability*: enrolment asks the
+//! authenticator to provision an `hmac-secret` ([`registration_extensions`]) and records whether it
+//! did ([`PasskeyCredential::prf_capable`]). That one is not deferrable — CTAP2 only lets an RP ask
+//! at **creation** time, so a credential enrolled without it is permanently PRF-incapable with no
+//! migration. Because it is asked for now, PRF can later be switched on with **no re-enrolment**.
+//!
+//! **The salt is constant, not per-credential**, and the reason is this module's own discoverable-
+//! credential ruling rather than a preference. A discoverable sign-in does not learn *which*
+//! credential will answer until the assertion comes back — precisely why there is no enumeration
+//! oracle — so the server cannot select that credential's salt when it mints the challenge. The two
+//! escapes each contradict a frozen ruling: `evalByCredential` needs a populated `allowCredentials`
+//! (username-first, i.e. the oracle), and a two-ceremony flow costs two biometric prompts per
+//! sign-in. A constant salt is sound rather than a compromise: CTAP2.1 keeps the per-credential
+//! seed (`CredRandomWithUV`) *inside the authenticator*, so the salt only provides domain
+//! separation between uses. **There is therefore no `prf_salt` on [`PasskeyCredential`]**, and one
+//! must not be added — see `docs/passkeys.md`.
+//!
+//! Two things whoever switches it on owes, and the second is the one that will be forgotten:
+//!
+//! - **The server must request `prf` on the `get()` ceremony**
+//!   (`webauthn_rp::request::auth::Extension::prf`). [`begin_authentication`] does not today, and
+//!   verification runs with `error_on_unsolicited_extensions` at its `true` default — so a client
+//!   that adds `extensions.prf.eval` by itself produces an assertion this server *refuses*. PRF at
+//!   sign-in is not client-addable. `an_unsolicited_extension_at_sign_in_is_refused` pins that.
+//! - **The user-facing copy stops being true, and it lives nowhere near this file.**
+//!   `users.passkeys.signingNote.*` ("a palavra-passe continua a ser pedida para assinar") is shown
+//!   after *every* enrolment, in 14 locales, and is unconditional **because** the wrap is deferred.
+//!   It was previously conditional on `prf_capable`, and that conditionality was itself the
+//!   overclaim: showing it only for non-PRF credentials asserts, by omission, that a PRF-capable
+//!   one signs without a password — which no credential does under this ruling. Switching PRF on
+//!   inverts that: the sentence becomes false for a PRF-capable credential and the conditionality
+//!   has to come back. Nothing in the web lane will fail if it does not, because the copy is not
+//!   wrong *today* — which is exactly why it is recorded here, where a switch-on is read, rather
+//!   than only in `apps/web/src/features/users/PasskeySection.tsx` where it is rendered.
 //!
 //! **It does not add a wrap of the attestation scalar.** [`crate::credentials::WrapRole`] already
 //! declares that a passkey's wrap can never satisfy key custody, and
@@ -85,6 +128,12 @@ use crate::users::{User, UserId};
 pub(crate) const PASSKEY_ENROLLED_KIND: &str = "user.passkey.enrolled";
 /// A passkey was revoked by its holder or an administrator.
 pub(crate) const PASSKEY_REVOKED_KIND: &str = "user.passkey.revoked";
+/// A passkey's display label was changed. The credential itself is untouched.
+///
+/// Recorded even though the label is display-only and never trusted for anything: the label is
+/// what the revocation event names ("chave de acesso «portátil» removida"), so a rename with no
+/// record would make two audit lines about the same credential irreconcilable.
+pub(crate) const PASSKEY_RENAMED_KIND: &str = "user.passkey.renamed";
 /// A passkey completed an authentication ceremony — sign-in or step-up.
 pub(crate) const PASSKEY_USED_KIND: &str = "user.passkey.used";
 /// An assertion's signature counter did not advance when both the stored and returned values were
@@ -106,6 +155,7 @@ pub(crate) const PASSKEY_COUNTER_REGRESSION_KIND: &str = "user.passkey.counter_r
 pub(crate) const ALL_PASSKEY_EVENT_KINDS: &[&str] = &[
     PASSKEY_ENROLLED_KIND,
     PASSKEY_REVOKED_KIND,
+    PASSKEY_RENAMED_KIND,
     PASSKEY_USED_KIND,
     PASSKEY_COUNTER_REGRESSION_KIND,
 ];
@@ -127,6 +177,13 @@ pub(crate) const PASSKEY_ASSERTION_INVALID_CODE: &str = "passkey_assertion_inval
 pub(crate) const PASSKEY_RP_ID_CHANGED_CODE: &str = "passkey_rp_id_changed";
 /// A `public_base_url` host change would strand enrolled credentials and was not confirmed.
 pub(crate) const PASSKEY_DOMAIN_CHANGE_CODE: &str = "passkey_domain_change_unconfirmed";
+/// A rename supplied a label that is empty once trimmed.
+///
+/// Refused rather than silently defaulted to "Chave de acesso". At enrolment a default is the
+/// honest answer to "the user did not name it"; on a rename the user *did* act, and quietly
+/// replacing their input with a generic label would show them a credential named something they
+/// did not type.
+pub(crate) const PASSKEY_NAME_EMPTY_CODE: &str = "passkey_name_empty";
 
 // =================================================================================================
 // The RP ID setting
@@ -583,7 +640,18 @@ pub struct PasskeyView {
     pub credential_id: String,
     pub name: String,
     pub created_at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// RFC 3339 stamp of the last successful assertion, or `null` if it has never been used.
+    ///
+    /// **Always emitted, deliberately — no `skip_serializing_if` here.** It carries one on the
+    /// *stored* [`PasskeyCredential`], where an absent key keeps `users.json` small and nothing
+    /// compares key sets. On the wire it would be a latent defect: `assert_shape` in the contract
+    /// harness does strict **key-set equality** per object, so a field that is present or absent
+    /// depending on the row makes the key set vary *between elements of the same array*. A list
+    /// whose first credential happened to be never-used would fail the contract journey, and a
+    /// list whose first credential happened to be used would pass — which is a test whose verdict
+    /// depends on fixture ordering rather than on the shape.
+    ///
+    /// `contracts/pairing.json`'s `revoked_at` is the in-tree precedent: nullable, always present.
     pub last_used_at: Option<String>,
     pub rp_id: String,
     /// `false` once an operator has moved the instance to a different RP ID. The credential is
@@ -1502,15 +1570,8 @@ pub async fn finish_enrolment(
         ApiError::Internal("passkey public key could not be encoded for storage".to_owned())
     })?;
     let dynamic = verified.dynamic_state();
-    let name = req
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Chave de acesso")
-        .chars()
-        .take(64)
-        .collect::<String>();
+    let name =
+        normalize_credential_name(req.name.as_deref()).unwrap_or_else(default_credential_name);
 
     let credential = PasskeyCredential {
         credential_id: credential_id.clone(),
@@ -1556,6 +1617,105 @@ pub async fn finish_enrolment(
     .await?;
 
     Ok(Json(PasskeyView::of(&credential, Some(&rp.rp_id_str))))
+}
+
+/// The label an unnamed credential gets at enrolment.
+///
+/// Only ever a *default*: the rename path refuses a blank label rather than reaching for this, so
+/// no credential is ever silently renamed to it.
+fn default_credential_name() -> String {
+    "Chave de acesso".to_owned()
+}
+
+/// A user-supplied credential label, trimmed and bounded, or `None` when it is blank.
+///
+/// Bounded in **characters, not bytes**: `take(64)` over `chars()` cannot split a multi-byte
+/// sequence, which a byte truncation of `«Portátil»` would. The label is display-only and never
+/// trusted for anything, so the bound exists to keep a table cell and a ledger justification
+/// legible rather than to make the value safe.
+fn normalize_credential_name(supplied: Option<&str>) -> Option<String> {
+    let trimmed = supplied.map(str::trim).filter(|s| !s.is_empty())?;
+    Some(trimmed.chars().take(64).collect())
+}
+
+/// Body of `PATCH /v1/users/{id}/passkeys/{credential_id}`.
+#[derive(Deserialize)]
+pub struct RenamePasskey {
+    /// The new display label.
+    pub name: String,
+}
+
+/// `PATCH /v1/users/{id}/passkeys/{credential_id}` — relabel one credential.
+///
+/// **Self-only, and deliberately without step-up.** The self-only rule matches every other
+/// mutation here for the same reason: an administrator who could relabel someone else's
+/// credentials could make the revocation confirmation name the wrong device. Step-up is *not*
+/// demanded, and the asymmetry with revocation is the point — revoking removes a way to sign in
+/// and is therefore a credential operation, while a rename changes a string the server never reads
+/// back for any decision. Demanding a password to fix a typo would teach operators to type their
+/// password at prompts that do not need it, which is the habit every step-up gate depends on them
+/// not having.
+///
+/// Without this route a credential can be created and deleted but not relabelled, so with several
+/// enrolled the only remedy for "which one is the work laptop?" is revoke-and-re-enrol — a
+/// destructive act to fix a label.
+pub async fn rename_passkey(
+    State(state): State<AppState>,
+    AxumPath((id, credential_id)): AxumPath<(Uuid, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<RenamePasskey>,
+) -> Result<Json<PasskeyView>, ApiError> {
+    let target = UserId(id);
+    let user = require_self(&state, &actor, target).await?;
+    let Some(name) = normalize_credential_name(Some(req.name.as_str())) else {
+        return Err(ApiError::Unprocessable(
+            "a chave de acesso precisa de um nome — é assim que a distingue das outras quando \
+             tiver de remover uma"
+                .to_owned(),
+        )
+        .with_code(PASSKEY_NAME_EMPTY_CODE));
+    };
+
+    let previous = user
+        .passkeys
+        .iter()
+        .find(|c| c.credential_id == credential_id)
+        .map(|c| c.name.clone())
+        .ok_or(ApiError::NotFound)?;
+
+    let (updated, renamed) = {
+        let mut users = state.users.write().await;
+        let Some(record) = users.get_mut(&target) else {
+            return Err(ApiError::NotFound);
+        };
+        let Some(credential) = record
+            .passkeys
+            .iter_mut()
+            .find(|c| c.credential_id == credential_id)
+        else {
+            return Err(ApiError::NotFound);
+        };
+        credential.name = name.clone();
+        let renamed = credential.clone();
+        (record.clone(), renamed)
+    };
+
+    // Both labels, because the ledger's other passkey lines name a credential by its label alone.
+    // A rename that recorded only the new one would leave an earlier "«portátil» utilizada" with
+    // nothing to attach it to.
+    crate::users::record_passkey_event_attested(
+        &state,
+        &updated,
+        PASSKEY_RENAMED_KIND,
+        &format!("chave de acesso «{previous}» renomeada para «{name}»"),
+        &actor,
+        &attestor,
+    )
+    .await?;
+
+    let rp_id = rp_context(&state).await.ok().map(|c| c.rp_id_str);
+    Ok(Json(PasskeyView::of(&renamed, rp_id.as_deref())))
 }
 
 /// The library's transport set as the stable WebAuthn wire strings the client uses.
@@ -2132,7 +2292,13 @@ mod tests {
         // `apps/web/src/api/labels.test.ts` sweeps the crate sources for kinds and fails if one has
         // no web label. This list is what a reader checks that obligation against, and this test is
         // what stops it drifting from the constants above.
-        assert_eq!(ALL_PASSKEY_EVENT_KINDS.len(), 4);
+        //
+        // **One test, not two.** The web-UI lane briefly added a second copy of this check beside
+        // `normalize_credential_name`'s tests when it landed the rename kind. Two tests over one
+        // list is the exact drift the list exists to prevent: the next kind needs both updated, and
+        // whichever is forgotten still passes. Merged here, where the per-constant membership loop
+        // below already makes forgetting one impossible.
+        assert_eq!(ALL_PASSKEY_EVENT_KINDS.len(), 5);
         for kind in ALL_PASSKEY_EVENT_KINDS {
             assert!(
                 kind.starts_with("user.passkey."),
@@ -2149,6 +2315,7 @@ mod tests {
             PASSKEY_REVOKED_KIND,
             PASSKEY_USED_KIND,
             PASSKEY_COUNTER_REGRESSION_KIND,
+            PASSKEY_RENAMED_KIND,
         ] {
             assert!(
                 ALL_PASSKEY_EVENT_KINDS.contains(&kind),
@@ -2271,4 +2438,43 @@ mod tests {
         assert!(!credential.prf_capable);
         assert!(credential.last_used_at.is_none());
     }
+
+    // ── The credential label ─────────────────────────────────────────────────────────────────
+
+    /// The asymmetry between enrolment and rename, pinned so it cannot be "tidied" into one rule.
+    /// A missing label at enrolment means the user did not name it, and a default is honest. A
+    /// blank label on a rename means the user *acted*, and defaulting would show them a credential
+    /// named something they never typed.
+    #[test]
+    fn a_blank_label_defaults_at_enrolment_and_is_refused_on_a_rename() {
+        for blank in [None, Some(""), Some("   "), Some("\t\n")] {
+            assert_eq!(
+                normalize_credential_name(blank),
+                None,
+                "{blank:?} carries no label"
+            );
+        }
+        // The enrolment path's fallback, and the only place it is ever reached.
+        assert_eq!(
+            normalize_credential_name(None).unwrap_or_else(default_credential_name),
+            "Chave de acesso"
+        );
+    }
+
+    #[test]
+    fn a_label_is_trimmed_and_bounded_without_splitting_a_character() {
+        assert_eq!(
+            normalize_credential_name(Some("  Portátil do escritório  ")).as_deref(),
+            Some("Portátil do escritório")
+        );
+        // 64 *characters*, not bytes: every one of these is two bytes, so a byte bound would cut
+        // one in half and produce a label that is not valid UTF-8 at all.
+        let long = "á".repeat(200);
+        let bounded = normalize_credential_name(Some(&long)).expect("non-empty");
+        assert_eq!(bounded.chars().count(), 64);
+        assert_eq!(bounded, "á".repeat(64));
+    }
+
+    // The kind-list check lives with the other ledger-kind assertions above, in
+    // `every_emitted_kind_is_listed_and_well_formed` — see the note there on why it is one test.
 }
