@@ -4311,6 +4311,7 @@ mod tests {
         state.users.write().await.insert(
             id,
             crate::users::User {
+                passkeys: Vec::new(),
                 id,
                 username: username.to_owned(),
                 display_name: username.to_owned(),

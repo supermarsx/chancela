@@ -3198,6 +3198,11 @@ mod tests {
             reauth: ReAuth {
                 password: Some("operator-password".to_owned()),
                 recovery_phrase: Some("recovery-phrase-secret".to_owned()),
+                // t10's passkey arm carries no secret — an assertion is a signature over a public
+                // challenge — so it is not what this test is about. It is set here only because
+                // the struct grew a field, and `None` keeps the two values that *are* secret as
+                // the only thing the assertion below can be reading.
+                passkey: None,
             },
         };
 

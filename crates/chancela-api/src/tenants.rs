@@ -372,6 +372,7 @@ mod tests {
         state.users.write().await.insert(
             user_id,
             User {
+                passkeys: Vec::new(),
                 id: user_id,
                 username: username.to_owned(),
                 display_name: username.to_owned(),

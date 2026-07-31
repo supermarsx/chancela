@@ -1413,6 +1413,7 @@ mod tests {
         }
         let uid = UserId(Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: format!("amelia.marques.{}", Uuid::new_v4()),
             display_name: "Amélia Marques".to_owned(),
@@ -2272,6 +2273,7 @@ mod tests {
         use time::format_description::well_known::Rfc3339;
         let uid = UserId(uuid::Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: "amelia.marques".to_owned(),
             display_name: "Amélia Marques".to_owned(),

@@ -1672,6 +1672,7 @@ startxref
         state.users.write().await.insert(
             uid,
             User {
+                passkeys: Vec::new(),
                 id: uid,
                 username: format!("user-{}", uid.0),
                 display_name: "PDF Validator User".to_owned(),

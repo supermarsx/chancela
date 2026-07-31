@@ -68,6 +68,15 @@ pub struct ReAuth {
     pub password: Option<String>,
     #[serde(default)]
     pub recovery_phrase: Option<String>,
+    /// A WebAuthn assertion from one of the acting user's own enrolled passkeys (t10).
+    ///
+    /// **The assertion is not self-sufficient and must never be treated as if it were.** It is
+    /// only a proof because it answers a challenge this server issued, spent on the attempt, and
+    /// scoped to step-up — see [`crate::passkeys::verify_step_up_assertion`], which holds all three
+    /// bindings. An assertion answering a *sign-in* challenge is refused here, and that refusal is
+    /// the difference between "signed in with a passkey" and "reset the instance".
+    #[serde(default)]
+    pub passkey: Option<crate::passkeys::PasskeyAssertionProof>,
 }
 
 /// Enforce step-up re-authentication for a destructive server op (§8-F) — **SELF re-auth only**.
@@ -107,10 +116,11 @@ pub(crate) async fn require_step_up(
     let username = actor
         .session_username()
         .ok_or_else(|| ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))?;
-    let (held, password_hash, recovery_hash) = {
+    let (user_id, held, password_hash, recovery_hash) = {
         let users = state.users.read().await;
         match users.values().find(|u| u.username == username) {
             Some(u) => (
+                u.id,
                 HeldCredentials::held_by(u),
                 u.password_hash.clone(),
                 u.recovery_hash.clone(),
@@ -122,11 +132,26 @@ pub(crate) async fn require_step_up(
         }
     };
 
+    // The passkey arm runs here rather than inside `decide_step_up` because verifying an assertion
+    // needs the ceremony store and the acting user's credential list, and `decide_step_up` is kept
+    // pure so the *rule* can be exercised against account shapes no record can express. The
+    // verification is deliberately performed even when a password would also have satisfied the
+    // gate: a supplied challenge must be spent whether or not it was needed, or an unused one stays
+    // replayable.
+    let passkey = crate::passkeys::verify_step_up_assertion(
+        state,
+        user_id,
+        reauth.passkey.as_ref(),
+        OffsetDateTime::now_utc(),
+    )
+    .await;
+
     decide_step_up(
         &held,
         password_hash.as_deref(),
         recovery_hash.as_deref(),
         reauth,
+        passkey,
     )
 }
 
@@ -137,11 +162,16 @@ pub(crate) async fn require_step_up(
 /// `held` is the *membership* the exemption is decided on; `password_hash` / `recovery_hash` are the
 /// verifiers the two implemented proof arms check against. They are separate parameters precisely
 /// because they will stop coinciding: a passkey is held, counts, and has no argon2id verifier here.
+///
+/// `passkey` is the already-resolved outcome of the assertion arm, for the same reason: it is the
+/// one proof whose verification is inherently effectful (it spends a challenge and touches the
+/// credential record), so the decision takes its *result* rather than performing it.
 pub(crate) fn decide_step_up(
     held: &HeldCredentials,
     password_hash: Option<&str>,
     recovery_hash: Option<&str>,
     reauth: &ReAuth,
+    passkey: crate::passkeys::PasskeyStepUp,
 ) -> Result<(), ApiError> {
     // t69: the acting user holds NO credential at all. A valid authenticated self session is the
     // strongest proof they can provide (there is nothing stronger to demand), so it satisfies
@@ -163,9 +193,15 @@ pub(crate) fn decide_step_up(
     {
         return Ok(());
     }
-    // Every other case, including a held credential whose proof arm does not exist yet
-    // (`StepUpRole::ProofPending`), is the same uniform `403`. Fail-closed: an account with
-    // something to prove that cannot prove it is refused, never exempted.
+    // … or a user-verified assertion from one of their own passkeys, answering a step-up-scoped,
+    // single-use, server-issued challenge. This is the arm that makes a passkey-only account able
+    // to satisfy the gate its mere existence made non-vacuous.
+    if passkey.is_verified() {
+        return Ok(());
+    }
+    // Every other case — including an assertion that was supplied and refused — is the same
+    // uniform `403`. Fail-closed, and uniform on purpose: distinguishing "your passkey was wrong"
+    // from "you gave no passkey" tells a caller which proofs the acting account actually holds.
     Err(ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))
 }
 

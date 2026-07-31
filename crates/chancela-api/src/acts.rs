@@ -1888,6 +1888,7 @@ mod tests {
         let uid = UserId(Uuid::new_v4());
         let username = "patch.owner".to_owned();
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.clone(),
             display_name: "Patch Owner".to_owned(),

@@ -1762,6 +1762,30 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         RouteGuard::Actions(&[ConfirmationAction::TwoFactorBackupCodesRegenerate]),
     ),
     (
+        "/v1/users/{id}/passkeys",
+        RouteGuard::NotGuarded(
+            "GET is read-only. POST completes an enrolment the user has just proved by touching their own authenticator, which is the safe direction and is already the strongest proof available — a confirmation dialog on top would add friction without adding assurance.",
+        ),
+    ),
+    (
+        "/v1/users/{id}/passkeys/options",
+        RouteGuard::NotGuarded(
+            "Mints a registration challenge and nothing else: it stores no credential, and the ceremony it begins is worthless without the authenticator.",
+        ),
+    ),
+    (
+        "/v1/users/{id}/passkeys/{credential_id}",
+        RouteGuard::NotGuarded(
+            "Removing a passkey already demands step-up re-auth in the handler, and the account-lifecycle guard refuses the removal outright if it would leave the account unable to sign in or unable to be recovered. That is a target-bound credential proof plus a fail-closed invariant — a stricter pair than this policy's actor-bound confirmation, and adding one would be redundant friction on the one screen where a user is already being careful.",
+        ),
+    ),
+    (
+        "/v1/reauth/passkey/options",
+        RouteGuard::NotGuarded(
+            "Mints a re-authentication challenge. Requiring a confirmation to obtain the means of confirming is a loop; the challenge grants nothing and is redeemable only by the acting user's own credential.",
+        ),
+    ),
+    (
         "/v1/privacy/users/{id}/export",
         RouteGuard::NotGuarded(
             "Read-only: returns data and mutates no state, so there is nothing to confirm.",

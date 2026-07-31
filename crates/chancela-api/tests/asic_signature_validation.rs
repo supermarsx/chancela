@@ -183,6 +183,7 @@ async fn owner_session(state: &AppState) -> String {
     state.users.write().await.insert(
         uid,
         User {
+            passkeys: Vec::new(),
             id: uid,
             username: format!("asic-user-{}", uid.0),
             display_name: "ASiC Inspector".to_owned(),

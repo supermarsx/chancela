@@ -486,6 +486,7 @@ mod clock_tests {
         state.users.write().await.insert(
             uid,
             User {
+                passkeys: Vec::new(),
                 id: uid,
                 username: "amelia.marques".to_owned(),
                 display_name: "Amélia Marques".to_owned(),
@@ -676,6 +677,7 @@ mod clock_tests {
             users.insert(
                 uid,
                 User {
+                    passkeys: Vec::new(),
                     id: uid,
                     username: "amelia.marques".to_owned(),
                     display_name: "Amélia Marques".to_owned(),

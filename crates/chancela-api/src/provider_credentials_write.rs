@@ -3206,6 +3206,7 @@ mod tests {
         }
         let uid = UserId(Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: format!("amelia.marques.{}", Uuid::new_v4()),
             display_name: "Amélia Marques".to_owned(),

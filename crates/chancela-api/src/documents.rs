@@ -12158,6 +12158,7 @@ mod tests {
         let uid = UserId(Uuid::new_v4());
         let username = "document.owner".to_owned();
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.clone(),
             display_name: "Document Owner".to_owned(),
@@ -12191,6 +12192,7 @@ mod tests {
         let uid = UserId(Uuid::new_v4());
         let username = format!("document.no-perms.{}", Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.clone(),
             display_name: "Document No Perms".to_owned(),
@@ -12224,6 +12226,7 @@ mod tests {
         let uid = UserId(Uuid::new_v4());
         let username = format!("document.reader.{}", Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.clone(),
             display_name: "Document Reader".to_owned(),

@@ -85,6 +85,7 @@ fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
 async fn seed_owner(state: &AppState) -> UserId {
     let uid = UserId(Uuid::new_v4());
     let user = User {
+        passkeys: Vec::new(),
         id: uid,
         username: "owner".to_owned(),
         display_name: "Owner".to_owned(),

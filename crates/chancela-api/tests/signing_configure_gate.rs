@@ -89,6 +89,7 @@ async fn seed_session(state: &AppState, username: &str, role_id: RoleId) -> Stri
     state.users.write().await.insert(
         uid,
         User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.to_owned(),
             display_name: username.to_owned(),

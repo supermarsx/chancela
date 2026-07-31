@@ -69,6 +69,7 @@ fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
 async fn seed_user(state: &AppState, username: &str, role_id: RoleId) -> UserId {
     let uid = UserId(Uuid::new_v4());
     let user = User {
+        passkeys: Vec::new(),
         id: uid,
         username: username.to_owned(),
         display_name: username.to_owned(),

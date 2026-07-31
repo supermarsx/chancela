@@ -458,6 +458,7 @@ mod tests {
 
     fn user(username: &str, created_at: &str, active: bool) -> User {
         User {
+            passkeys: Vec::new(),
             id: UserId(Uuid::new_v4()),
             username: username.to_owned(),
             display_name: username.to_owned(),

@@ -1436,6 +1436,7 @@ mod tests {
 
     fn user(id: u128, created_at: &str, assignments: Vec<RoleAssignment>) -> User {
         User {
+            passkeys: Vec::new(),
             id: UserId(Uuid::from_u128(id)),
             username: format!("user{id}"),
             display_name: format!("User {id}"),

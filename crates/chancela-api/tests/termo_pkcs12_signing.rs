@@ -137,6 +137,7 @@ async fn bootstrap(state: &AppState) -> String {
         .format(&Rfc3339)
         .expect("created_at");
     let user = User {
+        passkeys: Vec::new(),
         id: uid,
         username: "amelia.marques".to_owned(),
         display_name: "Amelia Marques".to_owned(),

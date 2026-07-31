@@ -346,6 +346,42 @@ async fn live_responses_match_the_canonical_contracts() {
     assert_eq!(status, 200);
     assert_shape("settings", &settings, &contract("settings.json"));
 
+    // Passkeys (user.passkeys.json). Its own endpoint rather than a `UserView` field, so that a
+    // passkey list costs no movement of the `user.created`/`user.updated` payload digest.
+    //
+    // The RP ID is configured first, and that configuration is itself the assertion worth making
+    // here: `webauthn_rp` performs neither the registrable-suffix check nor a Public Suffix List
+    // check, so both are ours, and the only moment this instance can refuse a wrong value is the
+    // moment an operator writes it. Enrolling a credential needs an authenticator, which
+    // `crates/chancela-api/tests/passkeys.rs` supplies; what this journey pins is the wire shape
+    // and the fact that the RP ID reaches it.
+    let mut settings_with_passkeys = settings.clone();
+    settings_with_passkeys["platform"]["public_base_url"] = json!("https://livros.example.pt");
+    settings_with_passkeys["auth"] = json!({ "passkeys": { "rp_id": "example.pt" } });
+    let (status, saved) = h
+        .put_json_auth("/v1/settings", settings_with_passkeys.clone(), &token)
+        .await;
+    assert_eq!(status, 200, "configure the RP ID: {saved}");
+    // A public suffix is refused, and the browser is the only other thing that would have caught
+    // it — by then every enrolment on the instance is already failing.
+    let mut settings_with_a_bad_rp_id = settings_with_passkeys.clone();
+    settings_with_a_bad_rp_id["auth"] = json!({ "passkeys": { "rp_id": "pt" } });
+    let (status, refusal) = h
+        .put_json_auth("/v1/settings", settings_with_a_bad_rp_id, &token)
+        .await;
+    assert_eq!(
+        status, 422,
+        "a public suffix must never be storable: {refusal}"
+    );
+
+    let (status, passkeys) = h
+        .get_json_auth(&format!("/v1/users/{user_id}/passkeys"), &token)
+        .await;
+    assert_eq!(status, 200, "list passkeys: {passkeys}");
+    assert_shape("user.passkeys", &passkeys, &contract("user.passkeys.json"));
+    assert_eq!(passkeys["rp_id"], "example.pt");
+    assert_eq!(passkeys["enrolment_available"], true);
+
     // A stored registry extract (registry.extract.json).
     let (status, _) = h
         .post_json_auth(

@@ -82,6 +82,7 @@ async fn user_with_permissions(
     });
     let uid = UserId(Uuid::from_u128(id));
     let user = User {
+        passkeys: Vec::new(),
         id: uid,
         username: username.to_owned(),
         display_name: format!("{username} Display"),

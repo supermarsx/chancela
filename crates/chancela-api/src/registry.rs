@@ -1209,6 +1209,7 @@ mod tests {
         }
         let uid = UserId(uuid::Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: "test.actor".to_owned(),
             display_name: "Test Actor".to_owned(),
@@ -1260,6 +1261,7 @@ mod tests {
 
         let uid = UserId(uuid::Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.to_owned(),
             display_name: username.to_owned(),

@@ -96,6 +96,7 @@ async fn owner_session(state: &AppState) -> String {
     state.users.write().await.insert(
         uid,
         User {
+            passkeys: Vec::new(),
             id: uid,
             username: format!("user-{}", uid.0),
             display_name: "SCAP Signer".to_owned(),

@@ -598,6 +598,7 @@ mod tests {
 
     fn sample_user(name: &str) -> User {
         User {
+            passkeys: Vec::new(),
             id: UserId(Uuid::new_v4()),
             username: name.to_owned(),
             display_name: name.to_owned(),

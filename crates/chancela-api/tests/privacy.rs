@@ -157,6 +157,7 @@ async fn open_session(state: &AppState, uid: UserId) -> String {
 
 async fn insert_user(state: &AppState, id: UserId, username: &str, role: RoleAssignment) {
     let user = User {
+        passkeys: Vec::new(),
         id,
         username: username.to_owned(),
         display_name: format!("{username} Display"),

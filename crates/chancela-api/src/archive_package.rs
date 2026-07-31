@@ -3063,6 +3063,7 @@ mod tests {
 
     async fn seed_owner(state: &AppState) {
         let user = User {
+            passkeys: Vec::new(),
             id: UserId(Uuid::new_v4()),
             username: "owner".to_owned(),
             display_name: "Owner".to_owned(),

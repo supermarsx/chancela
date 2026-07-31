@@ -504,6 +504,14 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // t95 P2: completing a two-step sign-in. Unauthenticated like `/v1/session` — no session exists
     // yet; the `challenge_id` is the credential and grants nothing on its own.
     ("/v1/session/challenge", RouteClass::Exempt),
+    // t10 passkey sign-in. Unauthenticated like `/v1/session`, and — the part worth stating —
+    // **neither route takes an identifier**. A username-first passkey flow would need an endpoint
+    // answering "does this account have a passkey?", which is the user-enumeration oracle
+    // `create_session`'s dummy verifier exists to prevent. Discoverable credentials mean the browser
+    // decides what to offer and this server is never asked who exists, so `Exempt` here leaks
+    // nothing rather than leaking a roster.
+    ("/v1/session/passkey", RouteClass::Exempt),
+    ("/v1/session/passkey/options", RouteClass::Exempt),
     // The first-run probe: answers `{onboarding_required}` and NOTHING else (t33-e2). It used to
     // also return every active user's `{id, username, display_name, has_secret}`, which handed any
     // anonymous caller the instance's full valid-account list. Exempt is still correct — the
@@ -996,6 +1004,22 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/users/{id}/two-factor/backup-codes",
         RouteClass::Session,
     ),
+    // t10 passkeys. Same posture as the TOTP routes and for the same reason: a credential is
+    // established by touching an authenticator that is physically present, so "enrol a passkey for
+    // someone else" is not a coherent operation. Enrolment and revocation are self-only
+    // (`passkeys::require_self`); the list is self OR `user.manage`, handler-enforced, exactly like
+    // the two-factor read.
+    ("/v1/users/{id}/passkeys", RouteClass::Session),
+    ("/v1/users/{id}/passkeys/options", RouteClass::Session),
+    (
+        "/v1/users/{id}/passkeys/{credential_id}",
+        RouteClass::Session,
+    ), // self only + step-up: revoking is a credential operation and must not ride a session alone
+    // Minting a re-authentication challenge, no step-up by design: it grants nothing on its own,
+    // and demanding a proof to obtain the means of giving one is a loop. The challenge it returns
+    // is redeemable only by an assertion from the *acting* user's own credential, and whatever
+    // operation that proof then satisfies carries its own gate.
+    ("/v1/reauth/passkey/options", RouteClass::Session),
     ("/v1/privacy/users/{id}/export", RouteClass::Gated), // GET privacy.manage@Global
     ("/v1/privacy/users/{id}/dsr-requests", RouteClass::Gated), // GET/POST privacy.manage@Global
     (
@@ -1350,6 +1374,11 @@ mod tests {
                 include_str!("privacy.rs"),
                 "erasure_execute",
             ),
+            (
+                "/v1/users/{id}/passkeys/{credential_id}",
+                include_str!("passkeys.rs"),
+                "revoke_passkey",
+            ),
         ];
 
         // The annotations live in this file's own source, one trailing comment per entry.
@@ -1410,6 +1439,7 @@ mod tests {
             include_str!("bundles.rs"),
             include_str!("data_status.rs"),
             include_str!("privacy.rs"),
+            include_str!("passkeys.rs"),
         ]
         .iter()
         .map(|src| src.matches("require_step_up(&state").count())

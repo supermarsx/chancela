@@ -3898,6 +3898,127 @@ describe('contract fixtures parse through the real client', () => {
     ).toBe(false);
   });
 
+  it('user.passkeys.json → PasskeyListView (GET /v1/users/{id}/passkeys) (t10 passkeys)', () => {
+    // Its own endpoint, deliberately — and the reason belongs here rather than only in the Rust
+    // doc comment, because this is the file that would have paid for the alternative. `UserView`
+    // is the `user.created`/`user.updated` ledger payload, so a `passkeys` field on it would move
+    // the payload digest of every future user event and sweep the three canonical user fixtures
+    // this suite pins. A separate view costs one fixture and moves no digest.
+    const parsed = JSON.parse(fixture('user.passkeys.json')) as {
+      passkeys: Array<{
+        credential_id: string;
+        name: string;
+        created_at: string;
+        last_used_at: string | null;
+        rp_id: string;
+        usable: boolean;
+        backup: string;
+        attachment: string;
+        transports: string[];
+        prf_capable: boolean;
+        sign_count: number;
+      }>;
+      rp_id: string | null;
+      enrolment_available: boolean;
+    };
+    assertExactKeys<{ passkeys: unknown[]; rp_id: unknown; enrolment_available: unknown }>(
+      parsed,
+      { passkeys: true, rp_id: true, enrolment_available: true },
+      'PasskeyListView',
+    );
+    expect(Array.isArray(parsed.passkeys), 'PasskeyListView.passkeys should be an array').toBe(
+      true,
+    );
+    expect(
+      typeof parsed.enrolment_available,
+      'PasskeyListView.enrolment_available should be a boolean',
+    ).toBe('boolean');
+    expect(
+      parsed.passkeys.length,
+      'the fixture exercises a synced platform credential and a device-bound security key',
+    ).toBeGreaterThanOrEqual(2);
+
+    const BACKUP_STATES = ['not_eligible', 'eligible', 'exists'];
+    const ATTACHMENTS = ['unknown', 'platform', 'cross_platform'];
+    for (const passkey of parsed.passkeys) {
+      assertExactKeys<{
+        credential_id: string;
+        name: string;
+        created_at: string;
+        last_used_at: string | null;
+        rp_id: string;
+        usable: boolean;
+        backup: string;
+        attachment: string;
+        transports: string[];
+        prf_capable: boolean;
+        sign_count: number;
+      }>(
+        passkey,
+        {
+          credential_id: true,
+          name: true,
+          created_at: true,
+          // Nullable: a credential enrolled and never used since has no honest last-used instant,
+          // and inventing one would be a claim about an authentication that did not happen.
+          last_used_at: true,
+          // Per credential, not read from live settings, so that after an operator moves the
+          // instance the UI can say *which* domain the credential belongs to.
+          rp_id: true,
+          usable: true,
+          backup: true,
+          attachment: true,
+          transports: true,
+          prf_capable: true,
+          sign_count: true,
+        },
+        'PasskeyView',
+      );
+      expect(
+        passkey.credential_id,
+        'PasskeyView.credential_id should be non-empty',
+      ).not.toHaveLength(0);
+      expect(passkey.name, 'PasskeyView.name should be non-empty').not.toHaveLength(0);
+      expect(
+        Number.isNaN(Date.parse(passkey.created_at)),
+        'PasskeyView.created_at should be an RFC 3339 timestamp',
+      ).toBe(false);
+      // Three states, not two independent booleans: BE=0/BS=1 ("not eligible for backup, but
+      // backed up") is unrepresentable rather than merely rejected.
+      expect(BACKUP_STATES, 'PasskeyView.backup is a three-state enum').toContain(passkey.backup);
+      expect(ATTACHMENTS, 'PasskeyView.attachment is a three-state enum').toContain(
+        passkey.attachment,
+      );
+      expect(Array.isArray(passkey.transports), 'PasskeyView.transports should be an array').toBe(
+        true,
+      );
+      expect(typeof passkey.usable, 'PasskeyView.usable should be a boolean').toBe('boolean');
+      expect(typeof passkey.prf_capable, 'PasskeyView.prf_capable should be a boolean').toBe(
+        'boolean',
+      );
+      expect(
+        passkey.sign_count,
+        'PasskeyView.sign_count should be a non-negative integer',
+      ).toBeGreaterThanOrEqual(0);
+    }
+
+    // The synced credential reports a **zero** counter, and that is not a placeholder: a passkey
+    // replicated across devices has no single coherent counter to increment, so iCloud Keychain
+    // and Google Password Manager return zero on every assertion forever. The client must never
+    // render it as "never used" or treat it as suspicious.
+    const [synced, deviceBound] = parsed.passkeys;
+    expect(synced.backup, 'the first fixture credential is synced').toBe('exists');
+    expect(synced.sign_count, 'a synced passkey has no counter').toBe(0);
+    expect(synced.last_used_at, 'a used credential carries a timestamp').not.toBeNull();
+    expect(deviceBound.backup, 'the second fixture credential is device-bound').toBe(
+      'not_eligible',
+    );
+    expect(deviceBound.last_used_at, 'a never-used credential carries null').toBeNull();
+    expect(deviceBound.prf_capable, 'the fixture keeps a non-PRF authenticator representable').toBe(
+      false,
+    );
+  });
+
   it('book.json → BookView (POST/GET /v1/books)', async () => {
     stubFetch(fixture('book.json'));
     const book: BookView = await api.getBook('3a2b1c00-0000-4000-8000-000000000002');

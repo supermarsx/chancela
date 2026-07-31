@@ -557,6 +557,9 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'chancela-backup-….zip',
     'Chave AMA legível',
     'Chave atual',
+    'Chave de acesso adicionada',
+    'Chave de acesso removida',
+    'Chave de acesso utilizada',
     'Chave de API criada',
     'Chave de API revogada',
     'Chave de auditoria',
@@ -662,6 +665,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Consultivo',
     'Consultor jurídico',
     'Conta: {username}',
+    'Contador da chave de acesso não avançou',
     'Contenção',
     // t120 — the Administração group label. "Conteúdo" is the ordinary Brazilian word, identical to
     // the European one; a synonym here would make the copy worse, not more translated.
