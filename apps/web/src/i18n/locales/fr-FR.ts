@@ -6877,4 +6877,150 @@ export const frFR: Catalog = {
   'users.language.hint.auto':
     "Suit la langue de l'appareil depuis lequel la personne se connecte. Les messages envoyés par le serveur utilisent la langue par défaut de la plateforme.",
   'users.language.hint.fixed': "Fixe la langue de l'interface et des messages envoyés à ce compte.",
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Clés d’accès',
+  'users.passkeys.intro.self':
+    'Une clé d’accès réside sur votre téléphone, votre ordinateur ou une clé de sécurité et vous évite de saisir votre mot de passe pour vous connecter. Vous confirmez par l’empreinte, le visage ou le code de l’appareil.',
+  'users.passkeys.intro.other':
+    'Les clés d’accès de ce compte. Seul son titulaire peut les créer, les renommer ou les supprimer : il faut avoir l’authentificateur en main.',
+  'users.passkeys.passwordNote':
+    'Le mot de passe ne disparaît pas : c’est lui qui ouvre la clé d’audit avec laquelle ce compte signe. Une clé d’accès vous évite de le saisir pour entrer ; elle ne le remplace pas.',
+  'users.passkeys.count': '{count} en service',
+  'users.passkeys.none': 'Aucune',
+  'users.passkeys.empty': 'Aucune clé d’accès',
+  'users.passkeys.emptyBody':
+    'Ce compte n’a encore aucune clé d’accès. Vous pouvez créer la première ici.',
+  'users.passkeys.emptyBody.other': 'Ce compte n’a encore aucune clé d’accès.',
+  'users.passkeys.caption': 'Clés d’accès de ce compte',
+  'users.passkeys.col.name': 'Nom',
+  'users.passkeys.col.type': 'Où elle réside',
+  'users.passkeys.col.type.help':
+    'Une clé synchronisée est copiée vers le compte du fabricant et survit à la perte de l’appareil. Une clé liée à l’appareil disparaît avec lui : si vous le perdez, il faudra en créer une autre.',
+  'users.passkeys.col.created': 'Créée',
+  'users.passkeys.col.lastUsed': 'Dernière utilisation',
+  'users.passkeys.col.action': 'Actions',
+  'users.passkeys.backup.exists': 'Synchronisée',
+  'users.passkeys.backup.eligible': 'Pas encore synchronisée',
+  'users.passkeys.backup.notEligible': 'Liée à cet appareil',
+  'users.passkeys.neverUsed': 'Jamais utilisée',
+  'users.passkeys.unusable.badge': 'Domaine précédent',
+  'users.passkeys.unusable.hint':
+    'Créée pour {enrolled} ; cette instance répond désormais à {current}. Une clé d’accès ne passe pas d’un domaine à l’autre : supprimez-la et créez-en une autre.',
+  'users.passkeys.signingNote.title': 'Le mot de passe reste demandé au moment de signer',
+  'users.passkeys.signingNote.body':
+    '« {name} » vous connecte désormais à ce compte. La clé d’audit avec laquelle vous signez les documents s’ouvre avec votre mot de passe : il vous sera donc demandé la première fois que vous signerez.',
+  'users.passkeys.rename': 'Renommer',
+  'users.passkeys.renamed': 'Clé d’accès renommée.',
+  'users.passkeys.revoke': 'Supprimer',
+  'users.passkeys.revoke.title': 'Supprimer la clé d’accès',
+  'users.passkeys.revoke.intro':
+    'Cela retire « {name} » du compte. Elle ne servira plus à se connecter et rien ne permet de la rétablir : pour réutiliser cet appareil, il faudra en créer une autre.',
+  'users.passkeys.revoke.consequence':
+    'La clé d’audit n’est pas perdue : elle s’ouvre toujours avec le mot de passe, comme avant.',
+  'users.passkeys.revoke.confirm': 'Supprimer',
+  'users.passkeys.revoke.pending': 'Suppression…',
+  'users.passkeys.revoked': 'Clé d’accès supprimée.',
+  'users.passkeys.name.label': 'Nom de la clé d’accès',
+  'users.passkeys.name.placeholder': 'Portable du bureau',
+  'users.passkeys.name.hint':
+    'Sert uniquement à les distinguer. Choisissez quelque chose que vous reconnaîtrez dans un an : c’est ce nom que vous verrez au moment d’en supprimer une.',
+  'users.passkeys.add': 'Créer une clé d’accès',
+  'users.passkeys.adding': 'Création…',
+  'users.passkeys.addSecond':
+    'Vous n’en avez qu’une. Créez-en une seconde sur un autre appareil : avec une seule, perdre l’appareil revient à perdre l’accès.',
+  'users.passkeys.enrolled': 'Clé d’accès créée.',
+  'users.passkeys.crossUser.note':
+    'Seul le titulaire peut créer, renommer ou supprimer des clés d’accès : il faut avoir l’authentificateur en main.',
+  'users.passkeys.unavailable.desktop':
+    'Les clés d’accès ne fonctionnent que dans un navigateur. Dans cette application, connectez-vous avec votre mot de passe ; pour créer ou gérer des clés d’accès, ouvrez Chancela dans un navigateur.',
+  'users.passkeys.unavailable.browser':
+    'Ce navigateur ne sait pas travailler avec des clés d’accès. Utilisez un navigateur récent ou continuez avec votre mot de passe.',
+  'users.passkeys.unconfigured.title': 'Clés d’accès pas encore disponibles',
+  'users.passkeys.unconfigured.body':
+    'Un administrateur doit encore choisir le domaine auquel les clés d’accès de cette instance seront liées. Ce choix est définitif — une clé créée sur un domaine ne fonctionne jamais sur un autre — et ne peut donc pas être fait automatiquement.',
+  'users.passkeys.error.cancelled': 'Annulé.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Cet authentificateur détient déjà une clé d’accès pour ce compte. Utilisez un autre appareil ou supprimez d’abord celle qui existe.',
+  'users.passkeys.error.rpIdMismatch':
+    'Le domaine configuré pour les clés d’accès ne correspond pas à l’adresse par laquelle vous êtes entré. Prévenez un administrateur : tant que c’est le cas, aucune clé d’accès ne peut être créée ni utilisée.',
+  'users.passkeys.error.unsupported':
+    'Cet authentificateur ne peut pas créer la clé d’accès que Chancela demande. Essayez un autre appareil.',
+  'users.passkeys.error.notUserVerified':
+    'L’appareil n’a pas confirmé que c’est bien vous. Activez l’empreinte, le visage ou le code, puis réessayez : sans cette confirmation, une clé d’accès n’ouvre rien.',
+  'users.passkeys.error.failed': 'L’opération avec la clé d’accès n’a pas pu aboutir.',
+  'signin.passkey.action': 'Se connecter avec une clé d’accès',
+  'signin.passkey.pending': 'En attente de l’appareil…',
+  'signin.passkey.hint': 'Rien à saisir : confirmez sur l’appareil qui détient la clé.',
+  'signin.passkey.hint.autofill':
+    'Vous pouvez aussi choisir la clé d’accès en touchant le champ du nom d’utilisateur ci-dessus.',
+  'signin.passkey.error.rpIdMismatch':
+    'Le domaine configuré pour les clés d’accès ne correspond pas à l’adresse par laquelle vous êtes entré. Prévenez un administrateur et connectez-vous avec votre mot de passe.',
+  'signin.passkey.error.unsupported':
+    'Cet appareil ne peut pas répondre à la demande. Connectez-vous avec votre mot de passe.',
+  'signin.passkey.error.notUserVerified':
+    'L’appareil n’a pas confirmé que c’est bien vous. Activez l’empreinte, le visage ou le code, puis réessayez.',
+  'signin.passkey.error.failed': 'La connexion par clé d’accès a échoué.',
+  'session.picker.passkeyUnsupported':
+    'Ici, on ne change de compte qu’avec un mot de passe. Un compte qui se connecte par clé d’accès s’atteint depuis l’écran de connexion.',
+  'confirm.reauth.passkey': 'Clé d’accès',
+  'confirm.reauth.usePasskey': 'utiliser une clé d’accès',
+  'confirm.reauth.passkey.action': 'Confirmer sur l’appareil',
+  'confirm.reauth.passkey.again': 'Confirmer à nouveau',
+  'confirm.reauth.passkey.pending': 'En attente de l’appareil…',
+  'confirm.reauth.passkey.ready': 'Identité confirmée. Vous pouvez terminer l’opération.',
+  'confirm.reauth.passkey.failed':
+    'La confirmation par clé d’accès a échoué. Réessayez ou utilisez votre mot de passe.',
+  'account.title': 'Mon compte',
+  'account.lede':
+    'Les réglages de votre propre compte : votre profil, vos identifiants et les sessions ouvertes en votre nom.',
+  'account.subnav.aria': 'Sections du compte',
+  'account.subnav.profile': 'Profil',
+  'account.subnav.security': 'Sécurité',
+  'account.subnav.preferences': 'Préférences',
+  'account.picker.link': 'Mon compte',
+  'account.signedOut.title': 'Session non ouverte',
+  'account.signedOut.body':
+    'Connectez-vous pour consulter et modifier les réglages de votre compte.',
+  'account.identity.card': 'Identité',
+  'account.identity.lede':
+    'Ces données vous identifient dans le journal d’audit et dans les messages qui vous sont envoyés.',
+  'account.identity.usernameHint':
+    'Le nom d’utilisateur est immuable : il fixe l’attribution de chaque acte dans le journal d’audit.',
+  'account.identity.save': 'Enregistrer le profil',
+  'account.identity.saved': 'Profil mis à jour.',
+  'account.identity.adminOnly.title': 'Ce que seule l’administration peut modifier',
+  'account.identity.adminOnly.body':
+    'Les rôles attribués, l’état du compte et l’exigence d’un second facteur relèvent de l’administration et ne se modifient pas ici.',
+  'account.export.card': 'Mes données',
+  'account.export.body':
+    'L’export rassemble votre profil, les rôles qui vous sont attribués et les références aux événements du journal d’audit où vous figurez. Il ne contient ni mots de passe, ni phrases de récupération, ni clés privées.',
+  'account.export.download': 'Télécharger l’export',
+  'account.export.pending': 'Préparation de l’export',
+  'account.export.unavailable':
+    'L’export de vos données exige la permission de gestion de la confidentialité, que ce compte ne détient pas. Demandez-la à qui administre l’instance.',
+  'account.security.lede':
+    'Ce que ce compte détient aujourd’hui pour prouver votre identité. Les modifications se font dans les cartes ci-dessous.',
+  'account.security.adminView': 'Voir ce compte dans l’espace d’administration',
+  'account.suspend.card': 'Suspendre mon compte',
+  'account.suspend.body':
+    'Si vous soupçonnez que quelqu’un a obtenu l’accès à votre compte, suspendez-le. C’est le moyen le plus rapide de couper cet accès le temps que la situation soit tirée au clair.',
+  'account.suspend.effect.title': 'Ce que la suspension entraîne',
+  'account.suspend.effect.sessions':
+    'Toutes les sessions ouvertes en votre nom prennent fin immédiatement, y compris celle-ci.',
+  'account.suspend.effect.signin': 'Le compte ne peut plus ouvrir de session.',
+  'account.suspend.effect.lift':
+    'Seule l’administration peut lever la suspension — vous ne pourrez pas le faire vous-même.',
+  'account.suspend.action': 'Suspendre le compte',
+  'account.suspend.pending': 'Suspension du compte en cours',
+  'account.suspend.confirm.title': 'Suspendre mon compte',
+  'account.suspend.confirm.intro':
+    'Le compte perd l’accès immédiatement et toutes les sessions prennent fin. Seule l’administration pourra le réactiver.',
+  'account.suspend.confirm.action': 'Suspendre',
+  'account.suspend.done': 'Compte suspendu. Toutes les sessions ont pris fin.',
+  'account.preferences.lede': 'Vos choix que ce compte conserve d’une session à l’autre.',
+  'account.notices.card': 'Avis masqués',
+  'account.notices.body': 'Avis d’information que vous avez masqués et pouvez réafficher.',
+  'account.notices.empty': 'Aucun avis masqué.',
+  'account.notices.footnote':
+    'Seuls les avis pouvant être rétablis apparaissent ici ; certains avis sont masqués définitivement et ne figurent pas dans cette liste.',
 };

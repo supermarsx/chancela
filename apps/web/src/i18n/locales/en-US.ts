@@ -6755,4 +6755,148 @@ export const enUS = {
     'Follows the language of the device the person signs in on. Messages sent by the server use the platform default.',
   'users.language.hint.fixed':
     'Pins the language of the interface and of messages sent to this account.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Passkeys',
+  'users.passkeys.intro.self':
+    'A passkey lives on your phone, your computer or a security key, and spares you typing your password to sign in. You confirm with the device’s fingerprint, face or PIN.',
+  'users.passkeys.intro.other':
+    'This account’s passkeys. Only the account holder can add, rename or remove them — the authenticator has to be in hand.',
+  'users.passkeys.passwordNote':
+    'The password does not go away: it is what opens the audit key this account signs with. A passkey saves you typing it to sign in; it does not replace it.',
+  'users.passkeys.count': '{count} in use',
+  'users.passkeys.none': 'None',
+  'users.passkeys.empty': 'No passkeys',
+  'users.passkeys.emptyBody': 'This account has no passkeys yet. You can add the first one here.',
+  'users.passkeys.emptyBody.other': 'This account has no passkeys yet.',
+  'users.passkeys.caption': 'Passkeys on this account',
+  'users.passkeys.col.name': 'Name',
+  'users.passkeys.col.type': 'Where it lives',
+  'users.passkeys.col.type.help':
+    'A synced passkey is copied to the vendor’s account and survives losing the device. A device-bound passkey goes with the device — lose it and you have to add another.',
+  'users.passkeys.col.created': 'Added',
+  'users.passkeys.col.lastUsed': 'Last used',
+  'users.passkeys.col.action': 'Actions',
+  'users.passkeys.backup.exists': 'Synced',
+  'users.passkeys.backup.eligible': 'Not synced yet',
+  'users.passkeys.backup.notEligible': 'Bound to this device',
+  'users.passkeys.neverUsed': 'Never used',
+  'users.passkeys.unusable.badge': 'Previous domain',
+  'users.passkeys.unusable.hint':
+    'Created for {enrolled}; this instance now answers at {current}. A passkey cannot move between domains — remove it and add another.',
+  'users.passkeys.signingNote.title': 'Your password is still asked for when you sign',
+  'users.passkeys.signingNote.body':
+    '“{name}” will now sign you in to this account. The audit key you sign documents with opens with your password, so you will be asked for it the first time you sign.',
+  'users.passkeys.rename': 'Rename',
+  'users.passkeys.renamed': 'Passkey renamed.',
+  'users.passkeys.revoke': 'Remove',
+  'users.passkeys.revoke.title': 'Remove the passkey',
+  'users.passkeys.revoke.intro':
+    'This removes “{name}” from the account. It will no longer sign you in and it cannot be restored — to use that device again you have to add a new one.',
+  'users.passkeys.revoke.consequence':
+    'The audit key is not lost: it still opens with your password, exactly as before.',
+  'users.passkeys.revoke.confirm': 'Remove',
+  'users.passkeys.revoke.pending': 'Removing…',
+  'users.passkeys.revoked': 'Passkey removed.',
+  'users.passkeys.name.label': 'Passkey name',
+  'users.passkeys.name.placeholder': 'Office laptop',
+  'users.passkeys.name.hint':
+    'Only there to tell them apart. Pick something you will still recognize in a year — this is the name you will see when you need to remove one.',
+  'users.passkeys.add': 'Add a passkey',
+  'users.passkeys.adding': 'Adding…',
+  'users.passkeys.addSecond':
+    'You only have one. Add a second on another device: with just one, losing the device means losing the way in.',
+  'users.passkeys.enrolled': 'Passkey added.',
+  'users.passkeys.crossUser.note':
+    'Only the account holder can add, rename or remove passkeys — the authenticator has to be in hand.',
+  'users.passkeys.unavailable.desktop':
+    'Passkeys only work in a browser. In this app, sign in with your password; to add or manage passkeys, open Chancela in a browser.',
+  'users.passkeys.unavailable.browser':
+    'This browser cannot work with passkeys. Use a current browser, or carry on with your password.',
+  'users.passkeys.unconfigured.title': 'Passkeys are not available yet',
+  'users.passkeys.unconfigured.body':
+    'An administrator still has to choose the domain this instance’s passkeys will be tied to. The choice is permanent — a passkey created on one domain never works on another — so it cannot be made automatically.',
+  'users.passkeys.error.cancelled': 'Cancelled.',
+  'users.passkeys.error.alreadyEnrolled':
+    'This authenticator already holds a passkey for this account. Use another device, or remove the existing one first.',
+  'users.passkeys.error.rpIdMismatch':
+    'The domain configured for passkeys does not match the address you came in on. Tell an administrator: until it is fixed, no passkey can be created or used.',
+  'users.passkeys.error.unsupported':
+    'This authenticator cannot create the kind of passkey Chancela asks for. Try another device.',
+  'users.passkeys.error.notUserVerified':
+    'The device did not confirm it is really you. Turn on fingerprint, face or PIN and try again — without that confirmation a passkey opens nothing.',
+  'users.passkeys.error.failed': 'The passkey operation could not be completed.',
+  'signin.passkey.action': 'Sign in with a passkey',
+  'signin.passkey.pending': 'Waiting for the device…',
+  'signin.passkey.hint': 'Nothing to type: confirm on the device holding the passkey.',
+  'signin.passkey.hint.autofill':
+    'You can also pick the passkey by tapping the username field above.',
+  'signin.passkey.error.rpIdMismatch':
+    'The domain configured for passkeys does not match the address you came in on. Tell an administrator and sign in with your password.',
+  'signin.passkey.error.unsupported':
+    'This device cannot answer the request. Sign in with your password.',
+  'signin.passkey.error.notUserVerified':
+    'The device did not confirm it is really you. Turn on fingerprint, face or PIN and try again.',
+  'signin.passkey.error.failed': 'Could not sign in with a passkey.',
+  'session.picker.passkeyUnsupported':
+    'Switching accounts here only works with a password. An account that signs in with a passkey is reached from the sign-in screen.',
+  'confirm.reauth.passkey': 'Passkey',
+  'confirm.reauth.usePasskey': 'use a passkey',
+  'confirm.reauth.passkey.action': 'Confirm on the device',
+  'confirm.reauth.passkey.again': 'Confirm again',
+  'confirm.reauth.passkey.pending': 'Waiting for the device…',
+  'confirm.reauth.passkey.ready': 'Identity confirmed. You can complete the action.',
+  'confirm.reauth.passkey.failed':
+    'Could not confirm with the passkey. Try again, or use your password.',
+  'account.title': 'My account',
+  'account.lede':
+    'The settings for your own account: your profile, your credentials, and the sessions open in your name.',
+  'account.subnav.aria': 'Account sections',
+  'account.subnav.profile': 'Profile',
+  'account.subnav.security': 'Security',
+  'account.subnav.preferences': 'Preferences',
+  'account.picker.link': 'My account',
+  'account.signedOut.title': 'Not signed in',
+  'account.signedOut.body': 'Sign in to view and change your account settings.',
+  'account.identity.card': 'Identity',
+  'account.identity.lede':
+    'These details identify you in the audit record and in the messages sent to you.',
+  'account.identity.usernameHint':
+    'The username cannot be changed: it anchors the attribution of every act in the audit record.',
+  'account.identity.save': 'Save profile',
+  'account.identity.saved': 'Profile updated.',
+  'account.identity.adminOnly.title': 'What only an administrator can change',
+  'account.identity.adminOnly.body':
+    'Assigned roles, the state of the account and whether a second factor is required are administrative decisions and are not changed here.',
+  'account.export.card': 'My data',
+  'account.export.body':
+    'The export gathers your profile, the roles assigned to you, and references to the audit-record events you appear in. It contains no passwords, recovery phrases or private keys.',
+  'account.export.download': 'Download the export',
+  'account.export.pending': 'Preparing the export',
+  'account.export.unavailable':
+    'Exporting your data requires the privacy-management permission, which this account does not hold. Ask whoever administers the instance for it.',
+  'account.security.lede':
+    'What this account currently holds to prove who you are. Changes are made in the cards below.',
+  'account.security.adminView': 'View this account in the administration area',
+  'account.suspend.card': 'Suspend my account',
+  'account.suspend.body':
+    'If you suspect that someone has gained access to your account, suspend it. It is the fastest way to cut that access off while the matter is looked into.',
+  'account.suspend.effect.title': 'What suspending does',
+  'account.suspend.effect.sessions':
+    'Every session open in your name ends immediately, including this one.',
+  'account.suspend.effect.signin': 'The account can no longer sign in.',
+  'account.suspend.effect.lift':
+    'Only an administrator can lift the suspension — you will not be able to do it yourself.',
+  'account.suspend.action': 'Suspend the account',
+  'account.suspend.pending': 'Suspending the account',
+  'account.suspend.confirm.title': 'Suspend my account',
+  'account.suspend.confirm.intro':
+    'The account loses access immediately and every session ends. Only an administrator will be able to reactivate it.',
+  'account.suspend.confirm.action': 'Suspend',
+  'account.suspend.done': 'Account suspended. Every session has ended.',
+  'account.preferences.lede': 'Choices of yours that this account keeps between sessions.',
+  'account.notices.card': 'Hidden notices',
+  'account.notices.body': 'Informational notices you have hidden and can show again.',
+  'account.notices.empty': 'No notices are hidden.',
+  'account.notices.footnote':
+    'Only notices that can be restored appear here; some notices are hidden for good and are not listed.',
 };

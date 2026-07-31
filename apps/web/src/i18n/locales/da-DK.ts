@@ -6798,4 +6798,149 @@ export const daDK: Catalog = {
     'Følger sproget på den enhed, personen logger ind fra. Beskeder sendt af serveren bruger platformens standardsprog.',
   'users.language.hint.fixed':
     'Fastlåser sproget for grænsefladen og for beskeder sendt til denne konto.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Adgangsnøgler',
+  'users.passkeys.intro.self':
+    'En adgangsnøgle ligger på din telefon, din computer eller en sikkerhedsnøgle og sparer dig for at taste adgangskoden, når du logger ind. Du bekræfter med fingeraftryk, ansigt eller enhedens pinkode.',
+  'users.passkeys.intro.other':
+    'Denne kontos adgangsnøgler. Kun indehaveren kan oprette, omdøbe eller fjerne dem — det kræver, at autentifikatoren er ved hånden.',
+  'users.passkeys.passwordNote':
+    'Adgangskoden forsvinder ikke: det er den, der åbner den revisionsnøgle, kontoen signerer med. En adgangsnøgle sparer dig for at taste den ved login; den erstatter den ikke.',
+  'users.passkeys.count': '{count} i brug',
+  'users.passkeys.none': 'Ingen',
+  'users.passkeys.empty': 'Ingen adgangsnøgler',
+  'users.passkeys.emptyBody':
+    'Denne konto har endnu ingen adgangsnøgler. Du kan oprette den første her.',
+  'users.passkeys.emptyBody.other': 'Denne konto har endnu ingen adgangsnøgler.',
+  'users.passkeys.caption': 'Adgangsnøgler på denne konto',
+  'users.passkeys.col.name': 'Navn',
+  'users.passkeys.col.type': 'Hvor den ligger',
+  'users.passkeys.col.type.help':
+    'En synkroniseret nøgle kopieres til producentens konto og overlever, at enheden går tabt. En enhedsbundet nøgle forsvinder med enheden — mister du den, må du oprette en ny.',
+  'users.passkeys.col.created': 'Oprettet',
+  'users.passkeys.col.lastUsed': 'Sidst brugt',
+  'users.passkeys.col.action': 'Handlinger',
+  'users.passkeys.backup.exists': 'Synkroniseret',
+  'users.passkeys.backup.eligible': 'Endnu ikke synkroniseret',
+  'users.passkeys.backup.notEligible': 'Bundet til denne enhed',
+  'users.passkeys.neverUsed': 'Aldrig brugt',
+  'users.passkeys.unusable.badge': 'Tidligere domæne',
+  'users.passkeys.unusable.hint':
+    'Oprettet til {enrolled}; denne installation svarer nu på {current}. En adgangsnøgle flytter ikke fra ét domæne til et andet — fjern den og opret en ny.',
+  'users.passkeys.signingNote.title': 'Adgangskoden bliver stadig krævet, når du signerer',
+  'users.passkeys.signingNote.body':
+    'Med „{name}“ logger du fra nu af ind på denne konto. Den revisionsnøgle, du signerer dokumenter med, åbnes med adgangskoden, så du bliver bedt om den første gang du signerer.',
+  'users.passkeys.rename': 'Omdøb',
+  'users.passkeys.renamed': 'Adgangsnøgle omdøbt.',
+  'users.passkeys.revoke': 'Fjern',
+  'users.passkeys.revoke.title': 'Fjern adgangsnøglen',
+  'users.passkeys.revoke.intro':
+    'Dette fjerner „{name}“ fra kontoen. Den logger dig ikke længere ind, og den kan ikke gendannes — vil du bruge den enhed igen, må du oprette en ny.',
+  'users.passkeys.revoke.consequence':
+    'Revisionsnøglen går ikke tabt: den åbnes stadig med adgangskoden, præcis som før.',
+  'users.passkeys.revoke.confirm': 'Fjern',
+  'users.passkeys.revoke.pending': 'Fjerner…',
+  'users.passkeys.revoked': 'Adgangsnøgle fjernet.',
+  'users.passkeys.name.label': 'Adgangsnøglens navn',
+  'users.passkeys.name.placeholder': 'Bærbar på kontoret',
+  'users.passkeys.name.hint':
+    'Kun til at skelne dem fra hinanden. Vælg noget, du stadig genkender om et år — det er dette navn, du ser, når du skal fjerne en.',
+  'users.passkeys.add': 'Opret adgangsnøgle',
+  'users.passkeys.adding': 'Opretter…',
+  'users.passkeys.addSecond':
+    'Du har kun én. Opret en til på en anden enhed: med kun én betyder tabet af enheden, at du er lukket ude.',
+  'users.passkeys.enrolled': 'Adgangsnøgle oprettet.',
+  'users.passkeys.crossUser.note':
+    'Kun indehaveren kan oprette, omdøbe eller fjerne adgangsnøgler — det kræver, at autentifikatoren er ved hånden.',
+  'users.passkeys.unavailable.desktop':
+    'Adgangsnøgler virker kun i en browser. Log ind med adgangskoden i dette program; åbn Chancela i en browser for at oprette eller administrere adgangsnøgler.',
+  'users.passkeys.unavailable.browser':
+    'Denne browser kan ikke arbejde med adgangsnøgler. Brug en aktuel browser, eller fortsæt med adgangskoden.',
+  'users.passkeys.unconfigured.title': 'Adgangsnøgler er endnu ikke tilgængelige',
+  'users.passkeys.unconfigured.body':
+    'En administrator mangler at vælge det domæne, denne installations adgangsnøgler bindes til. Valget er endeligt — en nøgle oprettet på ét domæne virker aldrig på et andet — og kan derfor ikke træffes automatisk.',
+  'users.passkeys.error.cancelled': 'Annulleret.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Denne autentifikator har allerede en adgangsnøgle til kontoen. Brug en anden enhed, eller fjern først den eksisterende.',
+  'users.passkeys.error.rpIdMismatch':
+    'Det domæne, der er konfigureret til adgangsnøgler, passer ikke til den adresse, du kom ind ad. Sig det til en administrator: så længe det er sådan, kan ingen adgangsnøgle oprettes eller bruges.',
+  'users.passkeys.error.unsupported':
+    'Denne autentifikator kan ikke oprette den adgangsnøgle, Chancela beder om. Prøv en anden enhed.',
+  'users.passkeys.error.notUserVerified':
+    'Enheden bekræftede ikke, at det virkelig er dig. Slå fingeraftryk, ansigt eller pinkode til, og prøv igen — uden den bekræftelse åbner en adgangsnøgle ingenting.',
+  'users.passkeys.error.failed': 'Handlingen med adgangsnøglen kunne ikke fuldføres.',
+  'signin.passkey.action': 'Log ind med adgangsnøgle',
+  'signin.passkey.pending': 'Venter på enheden…',
+  'signin.passkey.hint': 'Intet at taste: bekræft på den enhed, der har nøglen.',
+  'signin.passkey.hint.autofill':
+    'Du kan også vælge adgangsnøglen ved at trykke på brugernavnsfeltet ovenfor.',
+  'signin.passkey.error.rpIdMismatch':
+    'Det domæne, der er konfigureret til adgangsnøgler, passer ikke til den adresse, du kom ind ad. Sig det til en administrator, og log ind med adgangskoden.',
+  'signin.passkey.error.unsupported':
+    'Denne enhed kan ikke besvare anmodningen. Log ind med adgangskoden.',
+  'signin.passkey.error.notUserVerified':
+    'Enheden bekræftede ikke, at det virkelig er dig. Slå fingeraftryk, ansigt eller pinkode til, og prøv igen.',
+  'signin.passkey.error.failed': 'Kunne ikke logge ind med adgangsnøgle.',
+  'session.picker.passkeyUnsupported':
+    'Her skifter man kun konto med adgangskode. En konto, der logger ind med adgangsnøgle, nås fra login-skærmen.',
+  'confirm.reauth.passkey': 'Adgangsnøgle',
+  'confirm.reauth.usePasskey': 'brug en adgangsnøgle',
+  'confirm.reauth.passkey.action': 'Bekræft på enheden',
+  'confirm.reauth.passkey.again': 'Bekræft igen',
+  'confirm.reauth.passkey.pending': 'Venter på enheden…',
+  'confirm.reauth.passkey.ready': 'Identitet bekræftet. Du kan fuldføre handlingen.',
+  'confirm.reauth.passkey.failed':
+    'Kunne ikke bekræfte med adgangsnøglen. Prøv igen, eller brug adgangskoden.',
+  'account.title': 'Min konto',
+  'account.lede':
+    'Indstillingerne for din egen konto: din profil, dine legitimationsoplysninger og de sessioner, der er åbne i dit navn.',
+  'account.subnav.aria': 'Kontoafsnit',
+  'account.subnav.profile': 'Profil',
+  'account.subnav.security': 'Sikkerhed',
+  'account.subnav.preferences': 'Præferencer',
+  'account.picker.link': 'Min konto',
+  'account.signedOut.title': 'Ikke logget ind',
+  'account.signedOut.body': 'Log ind for at se og ændre indstillingerne for din konto.',
+  'account.identity.card': 'Identitet',
+  'account.identity.lede':
+    'Disse oplysninger identificerer dig i revisionsloggen og i de beskeder, der sendes til dig.',
+  'account.identity.usernameHint':
+    'Brugernavnet kan ikke ændres: det fastholder tilskrivningen af hver handling i revisionsloggen.',
+  'account.identity.save': 'Gem profil',
+  'account.identity.saved': 'Profilen er opdateret.',
+  'account.identity.adminOnly.title': 'Det, kun administrationen kan ændre',
+  'account.identity.adminOnly.body':
+    'Tildelte roller, kontoens tilstand og kravet om en anden faktor er administrative beslutninger og ændres ikke her.',
+  'account.export.card': 'Mine data',
+  'account.export.body':
+    'Eksporten samler din profil, de roller du er tildelt, og henvisninger til de hændelser i revisionsloggen, du optræder i. Den indeholder hverken adgangskoder, gendannelsessætninger eller private nøgler.',
+  'account.export.download': 'Hent eksporten',
+  'account.export.pending': 'Forbereder eksporten',
+  'account.export.unavailable':
+    'Eksport af dine data kræver tilladelsen til privatlivsstyring, som denne konto ikke har. Bed om den hos den, der administrerer instansen.',
+  'account.security.lede':
+    'Det, denne konto har i dag til at bevise, hvem du er. Ændringer foretages i kortene nedenfor.',
+  'account.security.adminView': 'Se denne konto i administrationsområdet',
+  'account.suspend.card': 'Suspendér min konto',
+  'account.suspend.body':
+    'Hvis du har mistanke om, at nogen har fået adgang til din konto, så suspendér den. Det er den hurtigste måde at afskære adgangen på, mens sagen bliver undersøgt.',
+  'account.suspend.effect.title': 'Hvad en suspendering gør',
+  'account.suspend.effect.sessions':
+    'Alle sessioner, der er åbne i dit navn, ophører straks — også denne.',
+  'account.suspend.effect.signin': 'Kontoen kan ikke længere logge ind.',
+  'account.suspend.effect.lift':
+    'Kun administrationen kan ophæve suspenderingen — du kan ikke selv gøre det.',
+  'account.suspend.action': 'Suspendér kontoen',
+  'account.suspend.pending': 'Suspenderer kontoen',
+  'account.suspend.confirm.title': 'Suspendér min konto',
+  'account.suspend.confirm.intro':
+    'Kontoen mister adgangen straks, og alle sessioner ophører. Kun administrationen kan aktivere den igen.',
+  'account.suspend.confirm.action': 'Suspendér',
+  'account.suspend.done': 'Kontoen er suspenderet. Alle sessioner er ophørt.',
+  'account.preferences.lede': 'Dine valg, som denne konto husker fra session til session.',
+  'account.notices.card': 'Skjulte meddelelser',
+  'account.notices.body': 'Informative meddelelser, du har skjult og kan vise igen.',
+  'account.notices.empty': 'Ingen skjulte meddelelser.',
+  'account.notices.footnote':
+    'Kun meddelelser, der kan gendannes, vises her; nogle meddelelser skjules permanent og står ikke på listen.',
 };

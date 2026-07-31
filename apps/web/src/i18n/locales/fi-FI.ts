@@ -6812,4 +6812,148 @@ export const fiFI: Catalog = {
     'Seuraa sen laitteen kieltä, jolta käyttäjä kirjautuu. Palvelimen lähettämät viestit käyttävät alustan oletuskieltä.',
   'users.language.hint.fixed':
     'Kiinnittää käyttöliittymän ja tälle tilille lähetettävien viestien kielen.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Pääsyavaimet',
+  'users.passkeys.intro.self':
+    'Pääsyavain sijaitsee puhelimessasi, tietokoneellasi tai suojausavaimessa, eikä salasanaa tarvitse kirjoittaa kirjautuessa. Vahvistat sormenjäljellä, kasvoilla tai laitteen PIN-koodilla.',
+  'users.passkeys.intro.other':
+    'Tämän tilin pääsyavaimet. Vain tilin haltija voi luoda, nimetä uudelleen tai poistaa niitä — todentaja on oltava käsillä.',
+  'users.passkeys.passwordNote':
+    'Salasana ei katoa: se avaa tarkastusavaimen, jolla tämä tili allekirjoittaa. Pääsyavain säästää salasanan kirjoittamiselta kirjautuessa; se ei korvaa salasanaa.',
+  'users.passkeys.count': '{count} käytössä',
+  'users.passkeys.none': 'Ei yhtään',
+  'users.passkeys.empty': 'Ei pääsyavaimia',
+  'users.passkeys.emptyBody':
+    'Tällä tilillä ei ole vielä pääsyavaimia. Voit luoda ensimmäisen tässä.',
+  'users.passkeys.emptyBody.other': 'Tällä tilillä ei ole vielä pääsyavaimia.',
+  'users.passkeys.caption': 'Tämän tilin pääsyavaimet',
+  'users.passkeys.col.name': 'Nimi',
+  'users.passkeys.col.type': 'Missä se sijaitsee',
+  'users.passkeys.col.type.help':
+    'Synkronoitu avain kopioidaan valmistajan tilille ja säilyy, vaikka laite katoaisi. Laitteeseen sidottu avain katoaa laitteen mukana — jos menetät sen, joudut luomaan uuden.',
+  'users.passkeys.col.created': 'Luotu',
+  'users.passkeys.col.lastUsed': 'Viimeksi käytetty',
+  'users.passkeys.col.action': 'Toiminnot',
+  'users.passkeys.backup.exists': 'Synkronoitu',
+  'users.passkeys.backup.eligible': 'Ei vielä synkronoitu',
+  'users.passkeys.backup.notEligible': 'Sidottu tähän laitteeseen',
+  'users.passkeys.neverUsed': 'Ei koskaan käytetty',
+  'users.passkeys.unusable.badge': 'Aiempi verkkotunnus',
+  'users.passkeys.unusable.hint':
+    'Luotu verkkotunnukselle {enrolled}; tämä asennus vastaa nyt osoitteessa {current}. Pääsyavain ei siirry verkkotunnukselta toiselle — poista se ja luo uusi.',
+  'users.passkeys.signingNote.title': 'Salasana kysytään edelleen allekirjoitettaessa',
+  'users.passkeys.signingNote.body':
+    'Avaimella ”{name}” kirjaudut tästä lähtien tälle tilille. Tarkastusavain, jolla allekirjoitat asiakirjoja, avautuu salasanalla, joten sitä kysytään ensimmäisellä allekirjoituskerralla.',
+  'users.passkeys.rename': 'Nimeä uudelleen',
+  'users.passkeys.renamed': 'Pääsyavain nimetty uudelleen.',
+  'users.passkeys.revoke': 'Poista',
+  'users.passkeys.revoke.title': 'Poista pääsyavain',
+  'users.passkeys.revoke.intro':
+    'Tämä poistaa avaimen ”{name}” tililtä. Se ei enää kirjaa sinua sisään eikä sitä voi palauttaa — jos haluat käyttää sitä laitetta uudelleen, joudut luomaan uuden.',
+  'users.passkeys.revoke.consequence':
+    'Tarkastusavain ei katoa: se avautuu edelleen salasanalla, aivan kuten ennenkin.',
+  'users.passkeys.revoke.confirm': 'Poista',
+  'users.passkeys.revoke.pending': 'Poistetaan…',
+  'users.passkeys.revoked': 'Pääsyavain poistettu.',
+  'users.passkeys.name.label': 'Pääsyavaimen nimi',
+  'users.passkeys.name.placeholder': 'Toimiston kannettava',
+  'users.passkeys.name.hint':
+    'Vain avainten erottamiseen toisistaan. Valitse jotain, jonka tunnistat vielä vuoden kuluttua — tämä nimi näkyy, kun joudut poistamaan jonkin niistä.',
+  'users.passkeys.add': 'Luo pääsyavain',
+  'users.passkeys.adding': 'Luodaan…',
+  'users.passkeys.addSecond':
+    'Sinulla on vain yksi. Luo toinen toiselle laitteelle: yhdellä avaimella laitteen menettäminen tarkoittaa pääsyn menettämistä.',
+  'users.passkeys.enrolled': 'Pääsyavain luotu.',
+  'users.passkeys.crossUser.note':
+    'Vain tilin haltija voi luoda, nimetä uudelleen tai poistaa pääsyavaimia — todentaja on oltava käsillä.',
+  'users.passkeys.unavailable.desktop':
+    'Pääsyavaimet toimivat vain selaimessa. Kirjaudu tässä sovelluksessa salasanalla; avaa Chancela selaimessa, kun haluat luoda tai hallita pääsyavaimia.',
+  'users.passkeys.unavailable.browser':
+    'Tämä selain ei osaa käsitellä pääsyavaimia. Käytä ajantasaista selainta tai jatka salasanalla.',
+  'users.passkeys.unconfigured.title': 'Pääsyavaimet eivät ole vielä käytettävissä',
+  'users.passkeys.unconfigured.body':
+    'Ylläpitäjän on vielä valittava verkkotunnus, johon tämän asennuksen pääsyavaimet sidotaan. Valinta on lopullinen — yhdelle verkkotunnukselle luotu avain ei koskaan toimi toisella — eikä sitä siksi voi tehdä automaattisesti.',
+  'users.passkeys.error.cancelled': 'Peruutettu.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Tämä todentaja säilyttää jo tämän tilin pääsyavainta. Käytä toista laitetta tai poista ensin olemassa oleva.',
+  'users.passkeys.error.rpIdMismatch':
+    'Pääsyavaimille määritetty verkkotunnus ei vastaa osoitetta, jonka kautta tulit. Kerro ylläpitäjälle: niin kauan kuin tilanne jatkuu, pääsyavaimia ei voi luoda eikä käyttää.',
+  'users.passkeys.error.unsupported':
+    'Tämä todentaja ei pysty luomaan Chancelan pyytämää pääsyavainta. Kokeile toista laitetta.',
+  'users.passkeys.error.notUserVerified':
+    'Laite ei vahvistanut, että kyseessä olet todella sinä. Ota käyttöön sormenjälki, kasvot tai PIN-koodi ja yritä uudelleen — ilman sitä vahvistusta pääsyavain ei avaa mitään.',
+  'users.passkeys.error.failed': 'Pääsyavaimeen liittyvää toimintoa ei voitu viedä loppuun.',
+  'signin.passkey.action': 'Kirjaudu pääsyavaimella',
+  'signin.passkey.pending': 'Odotetaan laitetta…',
+  'signin.passkey.hint': 'Mitään ei tarvitse kirjoittaa: vahvista laitteella, jolla avain on.',
+  'signin.passkey.hint.autofill':
+    'Voit valita pääsyavaimen myös koskettamalla yllä olevaa käyttäjätunnuskenttää.',
+  'signin.passkey.error.rpIdMismatch':
+    'Pääsyavaimille määritetty verkkotunnus ei vastaa osoitetta, jonka kautta tulit. Kerro ylläpitäjälle ja kirjaudu salasanalla.',
+  'signin.passkey.error.unsupported':
+    'Tämä laite ei pysty vastaamaan pyyntöön. Kirjaudu salasanalla.',
+  'signin.passkey.error.notUserVerified':
+    'Laite ei vahvistanut, että kyseessä olet todella sinä. Ota käyttöön sormenjälki, kasvot tai PIN-koodi ja yritä uudelleen.',
+  'signin.passkey.error.failed': 'Pääsyavaimella kirjautuminen ei onnistunut.',
+  'session.picker.passkeyUnsupported':
+    'Täällä tiliä vaihdetaan vain salasanalla. Pääsyavaimella kirjautuvalle tilille pääset kirjautumisnäytöltä.',
+  'confirm.reauth.passkey': 'Pääsyavain',
+  'confirm.reauth.usePasskey': 'käytä pääsyavainta',
+  'confirm.reauth.passkey.action': 'Vahvista laitteella',
+  'confirm.reauth.passkey.again': 'Vahvista uudelleen',
+  'confirm.reauth.passkey.pending': 'Odotetaan laitetta…',
+  'confirm.reauth.passkey.ready': 'Henkilöllisyys vahvistettu. Voit viedä toiminnon loppuun.',
+  'confirm.reauth.passkey.failed':
+    'Vahvistaminen pääsyavaimella ei onnistunut. Yritä uudelleen tai käytä salasanaa.',
+  'account.title': 'Oma tili',
+  'account.lede':
+    'Oman tilisi asetukset: profiilisi, tunnistautumistietosi ja nimissäsi avoinna olevat istunnot.',
+  'account.subnav.aria': 'Tilin osiot',
+  'account.subnav.profile': 'Profiili',
+  'account.subnav.security': 'Suojaus',
+  'account.subnav.preferences': 'Omat valinnat',
+  'account.picker.link': 'Oma tili',
+  'account.signedOut.title': 'Ei kirjautuneena',
+  'account.signedOut.body': 'Kirjaudu sisään, jotta näet ja voit muuttaa tilisi asetuksia.',
+  'account.identity.card': 'Henkilöllisyys',
+  'account.identity.lede':
+    'Nämä tiedot yksilöivät sinut tarkastuslokissa ja sinulle lähetetyissä viesteissä.',
+  'account.identity.usernameHint':
+    'Käyttäjätunnusta ei voi muuttaa: se kiinnittää jokaisen toimen kohdistamisen tarkastuslokissa.',
+  'account.identity.save': 'Tallenna profiili',
+  'account.identity.saved': 'Profiili päivitetty.',
+  'account.identity.adminOnly.title': 'Mitä vain ylläpito voi muuttaa',
+  'account.identity.adminOnly.body':
+    'Myönnetyt roolit, tilin tila ja toisen tekijän vaatimus ovat hallinnollisia päätöksiä, eikä niitä muuteta täällä.',
+  'account.export.card': 'Omat tiedot',
+  'account.export.body':
+    'Vienti kokoaa profiilisi, sinulle myönnetyt roolit ja viittaukset niihin tarkastuslokin tapahtumiin, joissa esiinnyt. Se ei sisällä salasanoja, palautuslauseita eikä yksityisiä avaimia.',
+  'account.export.download': 'Lataa vienti',
+  'account.export.pending': 'Valmistellaan vientiä',
+  'account.export.unavailable':
+    'Tietojesi vienti edellyttää yksityisyydenhallinnan oikeutta, jota tällä tilillä ei ole. Pyydä sitä instanssin ylläpidolta.',
+  'account.security.lede':
+    'Mitä tällä tilillä on tällä hetkellä henkilöllisyytesi todistamiseen. Muutokset tehdään alla olevissa korteissa.',
+  'account.security.adminView': 'Näytä tämä tili hallinta-alueella',
+  'account.suspend.card': 'Jäädytä tilini',
+  'account.suspend.body':
+    'Jos epäilet jonkun päässeen tiliisi, jäädytä se. Se on nopein tapa katkaista pääsy siksi aikaa, kun asia selvitetään.',
+  'account.suspend.effect.title': 'Mitä jäädytys tekee',
+  'account.suspend.effect.sessions':
+    'Kaikki nimissäsi avoinna olevat istunnot päättyvät heti, myös tämä.',
+  'account.suspend.effect.signin': 'Tili ei voi enää kirjautua sisään.',
+  'account.suspend.effect.lift': 'Vain ylläpito voi purkaa jäädytyksen — et voi tehdä sitä itse.',
+  'account.suspend.action': 'Jäädytä tili',
+  'account.suspend.pending': 'Jäädytetään tiliä',
+  'account.suspend.confirm.title': 'Jäädytä tilini',
+  'account.suspend.confirm.intro':
+    'Tili menettää pääsyn välittömästi ja kaikki istunnot päättyvät. Vain ylläpito voi aktivoida sen uudelleen.',
+  'account.suspend.confirm.action': 'Jäädytä',
+  'account.suspend.done': 'Tili jäädytetty. Kaikki istunnot päättyivät.',
+  'account.preferences.lede': 'Omat valintasi, jotka tämä tili säilyttää istuntojen välillä.',
+  'account.notices.card': 'Piilotetut ilmoitukset',
+  'account.notices.body': 'Tiedotusilmoitukset, jotka olet piilottanut ja voit näyttää uudelleen.',
+  'account.notices.empty': 'Ei piilotettuja ilmoituksia.',
+  'account.notices.footnote':
+    'Täällä näkyvät vain palautettavissa olevat ilmoitukset; osa ilmoituksista piilotetaan pysyvästi eivätkä ne ole tässä luettelossa.',
 };

@@ -127,6 +127,21 @@ const SELF_ENGLISH: Record<NoticeKey, NoticeSelfCopy> = {
   },
 };
 
+/**
+ * The notices that can be brought back — a locale-independent FACT about the copy, not a policy.
+ *
+ * Restorability is "somebody wrote the sentence that names this notice", and the two catalogs above
+ * agree on which notices those are (the parity is asserted in the tests, so a locale that gained or
+ * lost a `restore` block fails rather than making a notice restorable in one language only). The
+ * account area's hidden-notice index needs this outside a hook, to decide whether it has anything
+ * to list before it renders a list.
+ */
+export const RESTORABLE_NOTICE_KEYS: ReadonlySet<NoticeKey> = new Set(
+  (Object.entries(SELF_PT_PT) as [NoticeKey, NoticeSelfCopy][])
+    .filter(([, copy]) => copy.restore !== undefined)
+    .map(([notice]) => notice),
+);
+
 /** Every string one dismissable banner needs, already interpolated for its snooze length. */
 export interface NoticeDismissCopy {
   dismissActions: string;

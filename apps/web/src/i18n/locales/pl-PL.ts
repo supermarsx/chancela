@@ -6825,4 +6825,149 @@ export const plPL: Catalog = {
   'users.language.hint.auto':
     'Podąża za językiem urządzenia, z którego następuje logowanie. Wiadomości wysyłane przez serwer używają domyślnego języka platformy.',
   'users.language.hint.fixed': 'Ustala język interfejsu oraz wiadomości wysyłanych na to konto.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Klucze dostępu',
+  'users.passkeys.intro.self':
+    'Klucz dostępu znajduje się w telefonie, w komputerze albo na kluczu bezpieczeństwa i oszczędza wpisywania hasła przy logowaniu. Potwierdzasz odciskiem palca, twarzą lub kodem PIN urządzenia.',
+  'users.passkeys.intro.other':
+    'Klucze dostępu tego konta. Tylko właściciel konta może je tworzyć, zmieniać im nazwy i usuwać — trzeba mieć uwierzytelniacz pod ręką.',
+  'users.passkeys.passwordNote':
+    'Hasło nie znika: to ono otwiera klucz audytu, którym podpisuje to konto. Klucz dostępu oszczędza wpisywania hasła przy logowaniu; nie zastępuje go.',
+  'users.passkeys.count': '{count} w użyciu',
+  'users.passkeys.none': 'Brak',
+  'users.passkeys.empty': 'Brak kluczy dostępu',
+  'users.passkeys.emptyBody':
+    'To konto nie ma jeszcze kluczy dostępu. Pierwszy możesz utworzyć tutaj.',
+  'users.passkeys.emptyBody.other': 'To konto nie ma jeszcze kluczy dostępu.',
+  'users.passkeys.caption': 'Klucze dostępu tego konta',
+  'users.passkeys.col.name': 'Nazwa',
+  'users.passkeys.col.type': 'Gdzie się znajduje',
+  'users.passkeys.col.type.help':
+    'Klucz synchronizowany jest kopiowany na konto producenta i przetrwa utratę urządzenia. Klucz związany z urządzeniem znika razem z nim — jeśli je zgubisz, trzeba utworzyć nowy.',
+  'users.passkeys.col.created': 'Utworzono',
+  'users.passkeys.col.lastUsed': 'Ostatnie użycie',
+  'users.passkeys.col.action': 'Działania',
+  'users.passkeys.backup.exists': 'Synchronizowany',
+  'users.passkeys.backup.eligible': 'Jeszcze niezsynchronizowany',
+  'users.passkeys.backup.notEligible': 'Związany z tym urządzeniem',
+  'users.passkeys.neverUsed': 'Nigdy nieużywany',
+  'users.passkeys.unusable.badge': 'Poprzednia domena',
+  'users.passkeys.unusable.hint':
+    'Utworzony dla {enrolled}; ta instalacja odpowiada teraz pod {current}. Klucz dostępu nie przenosi się między domenami — usuń go i utwórz nowy.',
+  'users.passkeys.signingNote.title': 'Hasło jest nadal wymagane przy podpisywaniu',
+  'users.passkeys.signingNote.body':
+    'Kluczem „{name}” będziesz się od teraz logować na to konto. Klucz audytu, którym podpisujesz dokumenty, otwiera się hasłem, więc zostaniesz o nie poproszony przy pierwszym podpisywaniu.',
+  'users.passkeys.rename': 'Zmień nazwę',
+  'users.passkeys.renamed': 'Nazwa klucza dostępu została zmieniona.',
+  'users.passkeys.revoke': 'Usuń',
+  'users.passkeys.revoke.title': 'Usunięcie klucza dostępu',
+  'users.passkeys.revoke.intro':
+    'To usunie klucz „{name}” z konta. Przestanie służyć do logowania i nie da się go przywrócić — aby znów użyć tamtego urządzenia, trzeba utworzyć nowy.',
+  'users.passkeys.revoke.consequence':
+    'Klucz audytu nie ginie: nadal otwiera się hasłem, dokładnie jak dotąd.',
+  'users.passkeys.revoke.confirm': 'Usuń',
+  'users.passkeys.revoke.pending': 'Usuwanie…',
+  'users.passkeys.revoked': 'Klucz dostępu został usunięty.',
+  'users.passkeys.name.label': 'Nazwa klucza dostępu',
+  'users.passkeys.name.placeholder': 'Laptop biurowy',
+  'users.passkeys.name.hint':
+    'Służy tylko do odróżniania ich od siebie. Wybierz coś, co rozpoznasz za rok — tę nazwę zobaczysz, gdy będzie trzeba któryś usunąć.',
+  'users.passkeys.add': 'Utwórz klucz dostępu',
+  'users.passkeys.adding': 'Tworzenie…',
+  'users.passkeys.addSecond':
+    'Masz tylko jeden. Utwórz drugi na innym urządzeniu: przy jednym utrata urządzenia oznacza utratę wejścia.',
+  'users.passkeys.enrolled': 'Klucz dostępu został utworzony.',
+  'users.passkeys.crossUser.note':
+    'Tylko właściciel konta może tworzyć klucze dostępu, zmieniać im nazwy i je usuwać — trzeba mieć uwierzytelniacz pod ręką.',
+  'users.passkeys.unavailable.desktop':
+    'Klucze dostępu działają tylko w przeglądarce. W tej aplikacji zaloguj się hasłem; aby tworzyć klucze dostępu lub nimi zarządzać, otwórz Chancelę w przeglądarce.',
+  'users.passkeys.unavailable.browser':
+    'Ta przeglądarka nie radzi sobie z kluczami dostępu. Użyj aktualnej przeglądarki albo korzystaj dalej z hasła.',
+  'users.passkeys.unconfigured.title': 'Klucze dostępu nie są jeszcze dostępne',
+  'users.passkeys.unconfigured.body':
+    'Administrator musi jeszcze wybrać domenę, z którą zostaną związane klucze dostępu tej instalacji. Wybór jest ostateczny — klucz utworzony w jednej domenie nigdy nie zadziała w innej — więc nie może zostać dokonany automatycznie.',
+  'users.passkeys.error.cancelled': 'Anulowano.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Ten uwierzytelniacz przechowuje już klucz dostępu do tego konta. Użyj innego urządzenia albo najpierw usuń istniejący.',
+  'users.passkeys.error.rpIdMismatch':
+    'Domena skonfigurowana dla kluczy dostępu nie zgadza się z adresem, pod którym wszedłeś. Powiadom administratora: dopóki tak jest, żadnego klucza dostępu nie da się utworzyć ani użyć.',
+  'users.passkeys.error.unsupported':
+    'Ten uwierzytelniacz nie potrafi utworzyć klucza dostępu, o który prosi Chancela. Spróbuj innego urządzenia.',
+  'users.passkeys.error.notUserVerified':
+    'Urządzenie nie potwierdziło, że to naprawdę ty. Włącz odcisk palca, twarz albo kod PIN i spróbuj ponownie — bez tego potwierdzenia klucz dostępu niczego nie otwiera.',
+  'users.passkeys.error.failed': 'Nie udało się dokończyć działania z kluczem dostępu.',
+  'signin.passkey.action': 'Zaloguj się kluczem dostępu',
+  'signin.passkey.pending': 'Czekanie na urządzenie…',
+  'signin.passkey.hint': 'Nic nie trzeba wpisywać: potwierdź na urządzeniu z kluczem.',
+  'signin.passkey.hint.autofill':
+    'Klucz dostępu możesz też wybrać, dotykając powyższego pola nazwy użytkownika.',
+  'signin.passkey.error.rpIdMismatch':
+    'Domena skonfigurowana dla kluczy dostępu nie zgadza się z adresem, pod którym wszedłeś. Powiadom administratora i zaloguj się hasłem.',
+  'signin.passkey.error.unsupported':
+    'To urządzenie nie może odpowiedzieć na żądanie. Zaloguj się hasłem.',
+  'signin.passkey.error.notUserVerified':
+    'Urządzenie nie potwierdziło, że to naprawdę ty. Włącz odcisk palca, twarz albo kod PIN i spróbuj ponownie.',
+  'signin.passkey.error.failed': 'Nie udało się zalogować kluczem dostępu.',
+  'session.picker.passkeyUnsupported':
+    'Tutaj konto zmienia się tylko hasłem. Do konta logującego się kluczem dostępu dotrzesz z ekranu logowania.',
+  'confirm.reauth.passkey': 'Klucz dostępu',
+  'confirm.reauth.usePasskey': 'użyj klucza dostępu',
+  'confirm.reauth.passkey.action': 'Potwierdź na urządzeniu',
+  'confirm.reauth.passkey.again': 'Potwierdź ponownie',
+  'confirm.reauth.passkey.pending': 'Czekanie na urządzenie…',
+  'confirm.reauth.passkey.ready': 'Tożsamość potwierdzona. Możesz dokończyć działanie.',
+  'confirm.reauth.passkey.failed':
+    'Nie udało się potwierdzić kluczem dostępu. Spróbuj ponownie albo użyj hasła.',
+  'account.title': 'Moje konto',
+  'account.lede':
+    'Ustawienia własnego konta: profil, poświadczenia i sesje otwarte w Twoim imieniu.',
+  'account.subnav.aria': 'Sekcje konta',
+  'account.subnav.profile': 'Profil',
+  'account.subnav.security': 'Bezpieczeństwo',
+  'account.subnav.preferences': 'Preferencje',
+  'account.picker.link': 'Moje konto',
+  'account.signedOut.title': 'Nie zalogowano',
+  'account.signedOut.body': 'Zaloguj się, aby zobaczyć i zmienić ustawienia swojego konta.',
+  'account.identity.card': 'Tożsamość',
+  'account.identity.lede':
+    'Te dane identyfikują Cię w dzienniku audytu oraz w wiadomościach wysyłanych do Ciebie.',
+  'account.identity.usernameHint':
+    'Nazwa użytkownika jest niezmienna: utrwala przypisanie każdej czynności w dzienniku audytu.',
+  'account.identity.save': 'Zapisz profil',
+  'account.identity.saved': 'Profil zaktualizowany.',
+  'account.identity.adminOnly.title': 'Co może zmienić wyłącznie administracja',
+  'account.identity.adminOnly.body':
+    'Przypisane role, stan konta oraz wymóg drugiego składnika to decyzje administracyjne i nie zmienia się ich tutaj.',
+  'account.export.card': 'Moje dane',
+  'account.export.body':
+    'Eksport obejmuje Twój profil, przypisane Ci role oraz odniesienia do zdarzeń dziennika audytu, w których występujesz. Nie zawiera haseł, fraz odzyskiwania ani kluczy prywatnych.',
+  'account.export.download': 'Pobierz eksport',
+  'account.export.pending': 'Przygotowywanie eksportu',
+  'account.export.unavailable':
+    'Eksport Twoich danych wymaga uprawnienia do zarządzania prywatnością, którego to konto nie ma. Poproś o nie osobę administrującą instancją.',
+  'account.security.lede':
+    'Czym to konto dysponuje dziś, aby potwierdzić Twoją tożsamość. Zmian dokonuje się w kartach poniżej.',
+  'account.security.adminView': 'Zobacz to konto w obszarze administracji',
+  'account.suspend.card': 'Zawieś moje konto',
+  'account.suspend.body':
+    'Jeśli podejrzewasz, że ktoś uzyskał dostęp do Twojego konta, zawieś je. To najszybszy sposób odcięcia tego dostępu na czas wyjaśnienia sprawy.',
+  'account.suspend.effect.title': 'Co powoduje zawieszenie',
+  'account.suspend.effect.sessions':
+    'Wszystkie sesje otwarte w Twoim imieniu kończą się natychmiast, łącznie z tą.',
+  'account.suspend.effect.signin': 'Konto nie może już się zalogować.',
+  'account.suspend.effect.lift':
+    'Zawieszenie może zdjąć tylko administracja — samodzielnie tego nie zrobisz.',
+  'account.suspend.action': 'Zawieś konto',
+  'account.suspend.pending': 'Zawieszanie konta',
+  'account.suspend.confirm.title': 'Zawieś moje konto',
+  'account.suspend.confirm.intro':
+    'Konto natychmiast traci dostęp, a wszystkie sesje się kończą. Ponownie aktywować je może tylko administracja.',
+  'account.suspend.confirm.action': 'Zawieś',
+  'account.suspend.done': 'Konto zawieszone. Wszystkie sesje zostały zakończone.',
+  'account.preferences.lede': 'Twoje wybory, które to konto zachowuje między sesjami.',
+  'account.notices.card': 'Ukryte powiadomienia',
+  'account.notices.body': 'Powiadomienia informacyjne, które ukryto i można ponownie pokazać.',
+  'account.notices.empty': 'Brak ukrytych powiadomień.',
+  'account.notices.footnote':
+    'Pojawiają się tu tylko powiadomienia, które można przywrócić; niektóre są ukrywane trwale i nie znajdują się na tej liście.',
 };

@@ -6807,4 +6807,147 @@ export const svFI: Catalog = {
     'Följer språket på den enhet personen loggar in från. Meddelanden som servern skickar använder plattformens förvalda språk.',
   'users.language.hint.fixed':
     'Fastställer språket för gränssnittet och för meddelanden till detta konto.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Nycklar',
+  'users.passkeys.intro.self':
+    'En nyckel finns i din telefon, i datorn eller på en säkerhetsnyckel och besparar dig att skriva lösenordet när du loggar in. Du bekräftar med fingeravtryck, ansikte eller enhetens pinkod.',
+  'users.passkeys.intro.other':
+    'Kontots nycklar. Endast innehavaren kan skapa, byta namn på eller avlägsna dem — det förutsätter att autentiseraren finns till hands.',
+  'users.passkeys.passwordNote':
+    'Lösenordet försvinner inte: det är lösenordet som öppnar den revisionsnyckel kontot undertecknar med. En nyckel besparar dig att skriva det vid inloggningen; den ersätter det inte.',
+  'users.passkeys.count': '{count} i bruk',
+  'users.passkeys.none': 'Inga',
+  'users.passkeys.empty': 'Inga nycklar',
+  'users.passkeys.emptyBody': 'Kontot har ännu inga nycklar. Du kan skapa den första här.',
+  'users.passkeys.emptyBody.other': 'Kontot har ännu inga nycklar.',
+  'users.passkeys.caption': 'Nycklar på detta konto',
+  'users.passkeys.col.name': 'Namn',
+  'users.passkeys.col.type': 'Var den finns',
+  'users.passkeys.col.type.help':
+    'En synkroniserad nyckel kopieras till tillverkarens konto och överlever att enheten går förlorad. En enhetsbunden nyckel försvinner med enheten — om du tappar den måste du skapa en ny.',
+  'users.passkeys.col.created': 'Skapad',
+  'users.passkeys.col.lastUsed': 'Senast använd',
+  'users.passkeys.col.action': 'Åtgärder',
+  'users.passkeys.backup.exists': 'Synkroniserad',
+  'users.passkeys.backup.eligible': 'Ännu inte synkroniserad',
+  'users.passkeys.backup.notEligible': 'Bunden till denna enhet',
+  'users.passkeys.neverUsed': 'Aldrig använd',
+  'users.passkeys.unusable.badge': 'Tidigare domän',
+  'users.passkeys.unusable.hint':
+    'Skapad för {enrolled}; installationen svarar nu på {current}. En nyckel överförs inte från en domän till en annan — avlägsna den och skapa en ny.',
+  'users.passkeys.signingNote.title': 'Lösenordet efterfrågas fortsättningsvis när du undertecknar',
+  'users.passkeys.signingNote.body':
+    'Med ”{name}” loggar du hädanefter in på detta konto. Revisionsnyckeln du undertecknar dokument med öppnas med lösenordet, så du ombeds ange det första gången du undertecknar.',
+  'users.passkeys.rename': 'Byt namn',
+  'users.passkeys.renamed': 'Nyckeln har fått ett nytt namn.',
+  'users.passkeys.revoke': 'Avlägsna',
+  'users.passkeys.revoke.title': 'Avlägsna nyckeln',
+  'users.passkeys.revoke.intro':
+    'Detta avlägsnar ”{name}” från kontot. Den loggar inte längre in dig och kan inte återställas — för att använda den enheten igen måste du skapa en ny.',
+  'users.passkeys.revoke.consequence':
+    'Revisionsnyckeln går inte förlorad: den öppnas fortfarande med lösenordet, precis som förut.',
+  'users.passkeys.revoke.confirm': 'Avlägsna',
+  'users.passkeys.revoke.pending': 'Avlägsnar…',
+  'users.passkeys.revoked': 'Nyckeln har avlägsnats.',
+  'users.passkeys.name.label': 'Nyckelns namn',
+  'users.passkeys.name.placeholder': 'Bärbar dator på kontoret',
+  'users.passkeys.name.hint':
+    'Finns endast för att skilja dem åt. Välj något du känner igen om ett år — det är detta namn du ser när du behöver avlägsna en.',
+  'users.passkeys.add': 'Skapa nyckel',
+  'users.passkeys.adding': 'Skapar…',
+  'users.passkeys.addSecond':
+    'Du har endast en. Skapa en till på en annan enhet: med endast en innebär en förlorad enhet att du blir utelåst.',
+  'users.passkeys.enrolled': 'Nyckeln har skapats.',
+  'users.passkeys.crossUser.note':
+    'Endast innehavaren kan skapa, byta namn på eller avlägsna nycklar — det förutsätter att autentiseraren finns till hands.',
+  'users.passkeys.unavailable.desktop':
+    'Nycklar fungerar endast i en webbläsare. Logga in med lösenordet i detta program; öppna Chancela i en webbläsare för att skapa eller hantera nycklar.',
+  'users.passkeys.unavailable.browser':
+    'Denna webbläsare kan inte arbeta med nycklar. Använd en aktuell webbläsare eller fortsätt med lösenordet.',
+  'users.passkeys.unconfigured.title': 'Nycklar är ännu inte tillgängliga',
+  'users.passkeys.unconfigured.body':
+    'En administratör måste först välja den domän installationens nycklar binds till. Valet är slutgiltigt — en nyckel som skapats på en domän fungerar aldrig på en annan — och kan därför inte göras automatiskt.',
+  'users.passkeys.error.cancelled': 'Avbröts.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Autentiseraren har redan en nyckel för detta konto. Använd en annan enhet eller avlägsna först den befintliga.',
+  'users.passkeys.error.rpIdMismatch':
+    'Domänen som konfigurerats för nycklar motsvarar inte adressen du kom in på. Meddela en administratör: så länge det är så går ingen nyckel att skapa eller använda.',
+  'users.passkeys.error.unsupported':
+    'Autentiseraren kan inte skapa den nyckel Chancela begär. Pröva en annan enhet.',
+  'users.passkeys.error.notUserVerified':
+    'Enheten bekräftade inte att det verkligen är du. Aktivera fingeravtryck, ansikte eller pinkod och försök igen — utan den bekräftelsen öppnar en nyckel ingenting.',
+  'users.passkeys.error.failed': 'Åtgärden med nyckeln kunde inte slutföras.',
+  'signin.passkey.action': 'Logga in med nyckel',
+  'signin.passkey.pending': 'Väntar på enheten…',
+  'signin.passkey.hint': 'Ingenting att skriva: bekräfta på enheten som har nyckeln.',
+  'signin.passkey.hint.autofill':
+    'Du kan även välja nyckeln genom att trycka på fältet för användarnamn ovan.',
+  'signin.passkey.error.rpIdMismatch':
+    'Domänen som konfigurerats för nycklar motsvarar inte adressen du kom in på. Meddela en administratör och logga in med lösenordet.',
+  'signin.passkey.error.unsupported': 'Enheten kan inte besvara begäran. Logga in med lösenordet.',
+  'signin.passkey.error.notUserVerified':
+    'Enheten bekräftade inte att det verkligen är du. Aktivera fingeravtryck, ansikte eller pinkod och försök igen.',
+  'signin.passkey.error.failed': 'Det gick inte att logga in med nyckel.',
+  'session.picker.passkeyUnsupported':
+    'Här byter man konto endast med lösenord. Ett konto som loggar in med nyckel når du från inloggningsskärmen.',
+  'confirm.reauth.passkey': 'Nyckel',
+  'confirm.reauth.usePasskey': 'använd en nyckel',
+  'confirm.reauth.passkey.action': 'Bekräfta på enheten',
+  'confirm.reauth.passkey.again': 'Bekräfta på nytt',
+  'confirm.reauth.passkey.pending': 'Väntar på enheten…',
+  'confirm.reauth.passkey.ready': 'Identiteten är bekräftad. Du kan slutföra åtgärden.',
+  'confirm.reauth.passkey.failed':
+    'Det gick inte att bekräfta med nyckeln. Försök igen eller använd lösenordet.',
+  'account.title': 'Mitt konto',
+  'account.lede':
+    'Inställningarna för ditt eget konto: din profil, dina inloggningsuppgifter och de sessioner som är öppna i ditt namn.',
+  'account.subnav.aria': 'Kontodelar',
+  'account.subnav.profile': 'Profil',
+  'account.subnav.security': 'Säkerhet',
+  'account.subnav.preferences': 'Preferenser',
+  'account.picker.link': 'Mitt konto',
+  'account.signedOut.title': 'Inte inloggad',
+  'account.signedOut.body': 'Logga in för att se och ändra inställningarna för ditt konto.',
+  'account.identity.card': 'Identitet',
+  'account.identity.lede':
+    'De här uppgifterna identifierar dig i granskningsloggen och i de meddelanden som skickas till dig.',
+  'account.identity.usernameHint':
+    'Användarnamnet går inte att ändra: det förankrar tillskrivningen av varje handling i granskningsloggen.',
+  'account.identity.save': 'Spara profilen',
+  'account.identity.saved': 'Profilen har uppdaterats.',
+  'account.identity.adminOnly.title': 'Sådant som bara administrationen kan ändra',
+  'account.identity.adminOnly.body':
+    'Tilldelade roller, kontots status och kravet på en andra faktor är administrativa beslut och ändras inte här.',
+  'account.export.card': 'Mina uppgifter',
+  'account.export.body':
+    'Exporten samlar din profil, de roller du tilldelats och hänvisningar till de händelser i granskningsloggen där du förekommer. Den innehåller varken lösenord, återställningsfraser eller privata nycklar.',
+  'account.export.download': 'Hämta exporten',
+  'account.export.pending': 'Förbereder exporten',
+  'account.export.unavailable':
+    'För att exportera dina uppgifter krävs behörigheten för integritetshantering, som det här kontot inte har. Be om den av den som administrerar instansen.',
+  'account.security.lede':
+    'Vad det här kontot har i dag för att styrka vem du är. Ändringar görs i korten nedan.',
+  'account.security.adminView': 'Visa det här kontot i administrationsdelen',
+  'account.suspend.card': 'Stäng av mitt konto',
+  'account.suspend.body':
+    'Om du misstänker att någon har fått åtkomst till ditt konto, stäng av det. Det är det snabbaste sättet att bryta åtkomsten medan saken utreds.',
+  'account.suspend.effect.title': 'Vad en avstängning innebär',
+  'account.suspend.effect.sessions':
+    'Alla sessioner som är öppna i ditt namn avslutas genast, även den här.',
+  'account.suspend.effect.signin': 'Kontot kan inte längre logga in.',
+  'account.suspend.effect.lift':
+    'Bara administrationen kan häva avstängningen — du kan inte göra det själv.',
+  'account.suspend.action': 'Stäng av kontot',
+  'account.suspend.pending': 'Stänger av kontot',
+  'account.suspend.confirm.title': 'Stäng av mitt konto',
+  'account.suspend.confirm.intro':
+    'Kontot förlorar åtkomsten genast och alla sessioner avslutas. Bara administrationen kan aktivera det igen.',
+  'account.suspend.confirm.action': 'Stäng av',
+  'account.suspend.done': 'Kontot är avstängt. Alla sessioner har avslutats.',
+  'account.preferences.lede': 'Dina val som det här kontot behåller mellan sessioner.',
+  'account.notices.card': 'Dolda meddelanden',
+  'account.notices.body': 'Informationsmeddelanden som du har dolt och kan visa igen.',
+  'account.notices.empty': 'Inga dolda meddelanden.',
+  'account.notices.footnote':
+    'Här visas bara meddelanden som kan återställas; en del meddelanden döljs permanent och står inte i listan.',
 };

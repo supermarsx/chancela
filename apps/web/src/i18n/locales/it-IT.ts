@@ -6859,4 +6859,149 @@ export const itIT: Catalog = {
     'Segue la lingua del dispositivo da cui si accede. I messaggi inviati dal server usano la lingua predefinita della piattaforma.',
   'users.language.hint.fixed':
     "Fissa la lingua dell'interfaccia e dei messaggi inviati a questo account.",
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Passkey',
+  'users.passkeys.intro.self':
+    'Una passkey risiede sul telefono, sul computer o su una chiave di sicurezza e ti evita di digitare la password per entrare. Confermi con l’impronta, il volto o il PIN del dispositivo.',
+  'users.passkeys.intro.other':
+    'Le passkey di questo account. Solo l’intestatario può crearle, rinominarle o rimuoverle: serve avere l’autenticatore a portata di mano.',
+  'users.passkeys.passwordNote':
+    'La password non sparisce: è ciò che apre la chiave di audit con cui questo account firma. Una passkey ti evita di digitarla per entrare; non la sostituisce.',
+  'users.passkeys.count': '{count} in uso',
+  'users.passkeys.none': 'Nessuna',
+  'users.passkeys.empty': 'Nessuna passkey',
+  'users.passkeys.emptyBody': 'Questo account non ha ancora passkey. Puoi crearne una qui.',
+  'users.passkeys.emptyBody.other': 'Questo account non ha ancora passkey.',
+  'users.passkeys.caption': 'Passkey di questo account',
+  'users.passkeys.col.name': 'Nome',
+  'users.passkeys.col.type': 'Dove risiede',
+  'users.passkeys.col.type.help':
+    'Una chiave sincronizzata viene copiata sull’account del produttore e sopravvive alla perdita del dispositivo. Una chiave legata al dispositivo sparisce con esso: se lo perdi, dovrai crearne un’altra.',
+  'users.passkeys.col.created': 'Creata',
+  'users.passkeys.col.lastUsed': 'Ultimo uso',
+  'users.passkeys.col.action': 'Azioni',
+  'users.passkeys.backup.exists': 'Sincronizzata',
+  'users.passkeys.backup.eligible': 'Non ancora sincronizzata',
+  'users.passkeys.backup.notEligible': 'Legata a questo dispositivo',
+  'users.passkeys.neverUsed': 'Mai usata',
+  'users.passkeys.unusable.badge': 'Dominio precedente',
+  'users.passkeys.unusable.hint':
+    'Creata per {enrolled}; questa istanza ora risponde su {current}. Una passkey non passa da un dominio all’altro: rimuovila e creane un’altra.',
+  'users.passkeys.signingNote.title': 'La password viene ancora chiesta al momento di firmare',
+  'users.passkeys.signingNote.body':
+    '«{name}» ti fa ora entrare in questo account. La chiave di audit con cui firmi i documenti si apre con la password, quindi ti verrà chiesta la prima volta che firmerai.',
+  'users.passkeys.rename': 'Rinomina',
+  'users.passkeys.renamed': 'Passkey rinominata.',
+  'users.passkeys.revoke': 'Rimuovi',
+  'users.passkeys.revoke.title': 'Rimuovere la passkey',
+  'users.passkeys.revoke.intro':
+    'Questa operazione toglie «{name}» dall’account. Non servirà più per entrare e non si può ripristinare: per riusare quel dispositivo dovrai crearne un’altra.',
+  'users.passkeys.revoke.consequence':
+    'La chiave di audit non va persa: continua ad aprirsi con la password, come sempre.',
+  'users.passkeys.revoke.confirm': 'Rimuovi',
+  'users.passkeys.revoke.pending': 'Rimozione…',
+  'users.passkeys.revoked': 'Passkey rimossa.',
+  'users.passkeys.name.label': 'Nome della passkey',
+  'users.passkeys.name.placeholder': 'Portatile dell’ufficio',
+  'users.passkeys.name.hint':
+    'Serve solo a distinguerle. Scegli qualcosa che riconoscerai fra un anno: è il nome che vedrai quando dovrai rimuoverne una.',
+  'users.passkeys.add': 'Crea una passkey',
+  'users.passkeys.adding': 'Creazione…',
+  'users.passkeys.addSecond':
+    'Ne hai una sola. Creane una seconda su un altro dispositivo: con una sola, perdere il dispositivo significa restare fuori.',
+  'users.passkeys.enrolled': 'Passkey creata.',
+  'users.passkeys.crossUser.note':
+    'Solo l’intestatario può creare, rinominare o rimuovere passkey: serve avere l’autenticatore a portata di mano.',
+  'users.passkeys.unavailable.desktop':
+    'Le passkey funzionano solo nel browser. In questa applicazione entra con la password; per creare o gestire passkey, apri Chancela nel browser.',
+  'users.passkeys.unavailable.browser':
+    'Questo browser non sa lavorare con le passkey. Usa un browser aggiornato o continua con la password.',
+  'users.passkeys.unconfigured.title': 'Passkey non ancora disponibili',
+  'users.passkeys.unconfigured.body':
+    'Manca ancora che un amministratore scelga il dominio a cui saranno legate le passkey di questa istanza. La scelta è definitiva — una chiave creata su un dominio non funziona mai su un altro — e quindi non può essere fatta automaticamente.',
+  'users.passkeys.error.cancelled': 'Annullato.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Questo autenticatore custodisce già una passkey per questo account. Usa un altro dispositivo o rimuovi prima quella esistente.',
+  'users.passkeys.error.rpIdMismatch':
+    'Il dominio configurato per le passkey non corrisponde all’indirizzo da cui sei entrato. Avvisa un amministratore: finché resta così, nessuna passkey può essere creata o usata.',
+  'users.passkeys.error.unsupported':
+    'Questo autenticatore non riesce a creare la passkey che Chancela richiede. Prova un altro dispositivo.',
+  'users.passkeys.error.notUserVerified':
+    'Il dispositivo non ha confermato che sei davvero tu. Attiva impronta, volto o PIN e riprova: senza quella conferma una passkey non apre nulla.',
+  'users.passkeys.error.failed': 'Non è stato possibile completare l’operazione con la passkey.',
+  'signin.passkey.action': 'Entra con una passkey',
+  'signin.passkey.pending': 'In attesa del dispositivo…',
+  'signin.passkey.hint': 'Niente da digitare: conferma sul dispositivo che custodisce la chiave.',
+  'signin.passkey.hint.autofill':
+    'Puoi anche scegliere la passkey toccando il campo del nome utente qui sopra.',
+  'signin.passkey.error.rpIdMismatch':
+    'Il dominio configurato per le passkey non corrisponde all’indirizzo da cui sei entrato. Avvisa un amministratore ed entra con la password.',
+  'signin.passkey.error.unsupported':
+    'Questo dispositivo non può rispondere alla richiesta. Entra con la password.',
+  'signin.passkey.error.notUserVerified':
+    'Il dispositivo non ha confermato che sei davvero tu. Attiva impronta, volto o PIN e riprova.',
+  'signin.passkey.error.failed': 'Non è stato possibile entrare con una passkey.',
+  'session.picker.passkeyUnsupported':
+    'Qui si cambia account solo con la password. Un account che entra con una passkey si raggiunge dalla schermata di accesso.',
+  'confirm.reauth.passkey': 'Passkey',
+  'confirm.reauth.usePasskey': 'usare una passkey',
+  'confirm.reauth.passkey.action': 'Conferma sul dispositivo',
+  'confirm.reauth.passkey.again': 'Conferma di nuovo',
+  'confirm.reauth.passkey.pending': 'In attesa del dispositivo…',
+  'confirm.reauth.passkey.ready': 'Identità confermata. Puoi completare l’operazione.',
+  'confirm.reauth.passkey.failed':
+    'Non è stato possibile confermare con la passkey. Riprova o usa la password.',
+  'account.title': 'Il mio account',
+  'account.lede':
+    'Le impostazioni del suo account: il suo profilo, le sue credenziali e le sessioni aperte a suo nome.',
+  'account.subnav.aria': 'Sezioni dell’account',
+  'account.subnav.profile': 'Profilo',
+  'account.subnav.security': 'Sicurezza',
+  'account.subnav.preferences': 'Preferenze',
+  'account.picker.link': 'Il mio account',
+  'account.signedOut.title': 'Sessione non avviata',
+  'account.signedOut.body': 'Acceda per vedere e modificare le impostazioni del suo account.',
+  'account.identity.card': 'Identità',
+  'account.identity.lede':
+    'Questi dati la identificano nel registro di audit e nei messaggi che le vengono inviati.',
+  'account.identity.usernameHint':
+    'Il nome utente è immutabile: fissa l’attribuzione di ogni atto nel registro di audit.',
+  'account.identity.save': 'Salva profilo',
+  'account.identity.saved': 'Profilo aggiornato.',
+  'account.identity.adminOnly.title': 'Ciò che solo l’amministrazione può modificare',
+  'account.identity.adminOnly.body':
+    'I ruoli assegnati, lo stato dell’account e l’obbligo di un secondo fattore sono decisioni amministrative e non si modificano qui.',
+  'account.export.card': 'I miei dati',
+  'account.export.body':
+    'L’esportazione raccoglie il suo profilo, i ruoli che le sono assegnati e i riferimenti agli eventi del registro di audit in cui compare. Non contiene password, frasi di recupero né chiavi private.',
+  'account.export.download': 'Scarica l’esportazione',
+  'account.export.pending': 'Preparazione dell’esportazione',
+  'account.export.unavailable':
+    'L’esportazione dei suoi dati richiede il permesso di gestione della privacy, che questo account non possiede. La chieda a chi amministra l’istanza.',
+  'account.security.lede':
+    'Ciò che questo account possiede oggi per provare la sua identità. Le modifiche si fanno nelle schede qui sotto.',
+  'account.security.adminView': 'Vedere questo account nell’area di amministrazione',
+  'account.suspend.card': 'Sospendere il mio account',
+  'account.suspend.body':
+    'Se sospetta che qualcuno abbia ottenuto accesso al suo account, lo sospenda. È il modo più rapido per interrompere quell’accesso mentre il caso viene chiarito.',
+  'account.suspend.effect.title': 'Che cosa comporta la sospensione',
+  'account.suspend.effect.sessions':
+    'Tutte le sessioni aperte a suo nome terminano subito, compresa questa.',
+  'account.suspend.effect.signin': 'L’account non può più accedere.',
+  'account.suspend.effect.lift':
+    'Solo l’amministrazione può revocare la sospensione — non potrà farlo da solo.',
+  'account.suspend.action': 'Sospendi l’account',
+  'account.suspend.pending': 'Sospensione dell’account in corso',
+  'account.suspend.confirm.title': 'Sospendere il mio account',
+  'account.suspend.confirm.intro':
+    'L’account perde subito l’accesso e tutte le sessioni terminano. Solo l’amministrazione potrà riattivarlo.',
+  'account.suspend.confirm.action': 'Sospendi',
+  'account.suspend.done': 'Account sospeso. Tutte le sessioni sono terminate.',
+  'account.preferences.lede':
+    'Le sue scelte che questo account conserva tra una sessione e l’altra.',
+  'account.notices.card': 'Avvisi nascosti',
+  'account.notices.body': 'Avvisi informativi che ha nascosto e può mostrare di nuovo.',
+  'account.notices.empty': 'Nessun avviso nascosto.',
+  'account.notices.footnote':
+    'Qui compaiono solo gli avvisi ripristinabili; alcuni avvisi vengono nascosti definitivamente e non figurano in questo elenco.',
 };

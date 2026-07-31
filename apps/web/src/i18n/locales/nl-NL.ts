@@ -6864,4 +6864,151 @@ export const nlNL: Catalog = {
     'Volgt de taal van het apparaat waarop wordt aangemeld. Door de server verzonden berichten gebruiken de standaardtaal van het platform.',
   'users.language.hint.fixed':
     'Legt de taal van de interface en van berichten aan dit account vast.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Toegangssleutels',
+  'users.passkeys.intro.self':
+    'Een toegangssleutel staat op uw telefoon, uw computer of een beveiligingssleutel en bespaart u het typen van uw wachtwoord bij het aanmelden. U bevestigt met de vingerafdruk, het gezicht of de pincode van het apparaat.',
+  'users.passkeys.intro.other':
+    'De toegangssleutels van dit account. Alleen de houder kan ze aanmaken, hernoemen of verwijderen — daarvoor moet de authenticator bij de hand zijn.',
+  'users.passkeys.passwordNote':
+    'Het wachtwoord verdwijnt niet: het opent de auditsleutel waarmee dit account ondertekent. Een toegangssleutel bespaart u het typen bij het aanmelden; hij vervangt het wachtwoord niet.',
+  'users.passkeys.count': '{count} in gebruik',
+  'users.passkeys.none': 'Geen',
+  'users.passkeys.empty': 'Geen toegangssleutels',
+  'users.passkeys.emptyBody':
+    'Dit account heeft nog geen toegangssleutels. U kunt de eerste hier aanmaken.',
+  'users.passkeys.emptyBody.other': 'Dit account heeft nog geen toegangssleutels.',
+  'users.passkeys.caption': 'Toegangssleutels van dit account',
+  'users.passkeys.col.name': 'Naam',
+  'users.passkeys.col.type': 'Waar hij staat',
+  'users.passkeys.col.type.help':
+    'Een gesynchroniseerde sleutel wordt naar het account van de fabrikant gekopieerd en overleeft het verlies van het apparaat. Een apparaatgebonden sleutel verdwijnt met het apparaat — raakt u het kwijt, dan moet u een nieuwe aanmaken.',
+  'users.passkeys.col.created': 'Aangemaakt',
+  'users.passkeys.col.lastUsed': 'Laatst gebruikt',
+  'users.passkeys.col.action': 'Acties',
+  'users.passkeys.backup.exists': 'Gesynchroniseerd',
+  'users.passkeys.backup.eligible': 'Nog niet gesynchroniseerd',
+  'users.passkeys.backup.notEligible': 'Gebonden aan dit apparaat',
+  'users.passkeys.neverUsed': 'Nooit gebruikt',
+  'users.passkeys.unusable.badge': 'Vorig domein',
+  'users.passkeys.unusable.hint':
+    'Aangemaakt voor {enrolled}; deze installatie antwoordt nu op {current}. Een toegangssleutel gaat niet van het ene domein naar het andere — verwijder hem en maak een nieuwe aan.',
+  'users.passkeys.signingNote.title':
+    'Uw wachtwoord wordt bij het ondertekenen nog steeds gevraagd',
+  'users.passkeys.signingNote.body':
+    'Met „{name}” meldt u zich vanaf nu aan bij dit account. De auditsleutel waarmee u documenten ondertekent, opent met uw wachtwoord — de eerste keer dat u ondertekent wordt daar dus om gevraagd.',
+  'users.passkeys.rename': 'Hernoemen',
+  'users.passkeys.renamed': 'Toegangssleutel hernoemd.',
+  'users.passkeys.revoke': 'Verwijderen',
+  'users.passkeys.revoke.title': 'Toegangssleutel verwijderen',
+  'users.passkeys.revoke.intro':
+    'Hiermee wordt „{name}” uit het account gehaald. Hij meldt u niet meer aan en is niet terug te zetten — om dat apparaat weer te gebruiken moet u een nieuwe aanmaken.',
+  'users.passkeys.revoke.consequence':
+    'De auditsleutel gaat niet verloren: die opent nog steeds met uw wachtwoord, net als altijd.',
+  'users.passkeys.revoke.confirm': 'Verwijderen',
+  'users.passkeys.revoke.pending': 'Bezig met verwijderen…',
+  'users.passkeys.revoked': 'Toegangssleutel verwijderd.',
+  'users.passkeys.name.label': 'Naam van de toegangssleutel',
+  'users.passkeys.name.placeholder': 'Kantoorlaptop',
+  'users.passkeys.name.hint':
+    'Alleen om ze uit elkaar te houden. Kies iets dat u over een jaar nog herkent — dit is de naam die u ziet wanneer u er een moet verwijderen.',
+  'users.passkeys.add': 'Toegangssleutel aanmaken',
+  'users.passkeys.adding': 'Bezig met aanmaken…',
+  'users.passkeys.addSecond':
+    'U hebt er maar één. Maak een tweede aan op een ander apparaat: met slechts één betekent het verlies van het apparaat het verlies van de toegang.',
+  'users.passkeys.enrolled': 'Toegangssleutel aangemaakt.',
+  'users.passkeys.crossUser.note':
+    'Alleen de houder kan toegangssleutels aanmaken, hernoemen of verwijderen — daarvoor moet de authenticator bij de hand zijn.',
+  'users.passkeys.unavailable.desktop':
+    'Toegangssleutels werken alleen in een browser. Meld u in deze toepassing aan met uw wachtwoord; open Chancela in een browser om toegangssleutels aan te maken of te beheren.',
+  'users.passkeys.unavailable.browser':
+    'Deze browser kan niet met toegangssleutels overweg. Gebruik een actuele browser of ga verder met uw wachtwoord.',
+  'users.passkeys.unconfigured.title': 'Toegangssleutels nog niet beschikbaar',
+  'users.passkeys.unconfigured.body':
+    'Een beheerder moet nog het domein kiezen waaraan de toegangssleutels van deze installatie worden gebonden. Die keuze is definitief — een sleutel die op het ene domein is aangemaakt werkt nooit op een ander — en kan dus niet automatisch worden gemaakt.',
+  'users.passkeys.error.cancelled': 'Geannuleerd.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Deze authenticator bewaart al een toegangssleutel voor dit account. Gebruik een ander apparaat of verwijder eerst de bestaande.',
+  'users.passkeys.error.rpIdMismatch':
+    'Het domein dat voor toegangssleutels is ingesteld komt niet overeen met het adres waarlangs u binnenkwam. Waarschuw een beheerder: zolang dat zo is, kan geen enkele toegangssleutel worden aangemaakt of gebruikt.',
+  'users.passkeys.error.unsupported':
+    'Deze authenticator kan de toegangssleutel die Chancela vraagt niet aanmaken. Probeer een ander apparaat.',
+  'users.passkeys.error.notUserVerified':
+    'Het apparaat heeft niet bevestigd dat u het echt bent. Zet vingerafdruk, gezicht of pincode aan en probeer het opnieuw — zonder die bevestiging opent een toegangssleutel niets.',
+  'users.passkeys.error.failed': 'De bewerking met de toegangssleutel kon niet worden voltooid.',
+  'signin.passkey.action': 'Aanmelden met een toegangssleutel',
+  'signin.passkey.pending': 'Wachten op het apparaat…',
+  'signin.passkey.hint': 'Niets te typen: bevestig op het apparaat waarop de sleutel staat.',
+  'signin.passkey.hint.autofill':
+    'U kunt de toegangssleutel ook kiezen door hierboven op het veld voor de gebruikersnaam te tikken.',
+  'signin.passkey.error.rpIdMismatch':
+    'Het domein dat voor toegangssleutels is ingesteld komt niet overeen met het adres waarlangs u binnenkwam. Waarschuw een beheerder en meld u aan met uw wachtwoord.',
+  'signin.passkey.error.unsupported':
+    'Dit apparaat kan het verzoek niet beantwoorden. Meld u aan met uw wachtwoord.',
+  'signin.passkey.error.notUserVerified':
+    'Het apparaat heeft niet bevestigd dat u het echt bent. Zet vingerafdruk, gezicht of pincode aan en probeer het opnieuw.',
+  'signin.passkey.error.failed': 'Aanmelden met een toegangssleutel is mislukt.',
+  'session.picker.passkeyUnsupported':
+    'Hier wisselt u alleen van account met een wachtwoord. Een account dat zich met een toegangssleutel aanmeldt bereikt u via het aanmeldscherm.',
+  'confirm.reauth.passkey': 'Toegangssleutel',
+  'confirm.reauth.usePasskey': 'een toegangssleutel gebruiken',
+  'confirm.reauth.passkey.action': 'Bevestigen op het apparaat',
+  'confirm.reauth.passkey.again': 'Opnieuw bevestigen',
+  'confirm.reauth.passkey.pending': 'Wachten op het apparaat…',
+  'confirm.reauth.passkey.ready': 'Identiteit bevestigd. U kunt de handeling afronden.',
+  'confirm.reauth.passkey.failed':
+    'Bevestigen met de toegangssleutel is mislukt. Probeer het opnieuw of gebruik uw wachtwoord.',
+  'account.title': 'Mijn account',
+  'account.lede':
+    'De instellingen van uw eigen account: uw profiel, uw inloggegevens en de sessies die op uw naam openstaan.',
+  'account.subnav.aria': 'Accountsecties',
+  'account.subnav.profile': 'Profiel',
+  'account.subnav.security': 'Beveiliging',
+  'account.subnav.preferences': 'Voorkeuren',
+  'account.picker.link': 'Mijn account',
+  'account.signedOut.title': 'Niet aangemeld',
+  'account.signedOut.body':
+    'Meld u aan om de instellingen van uw account te bekijken en te wijzigen.',
+  'account.identity.card': 'Identiteit',
+  'account.identity.lede':
+    'Deze gegevens identificeren u in het auditlogboek en in de berichten die naar u worden gestuurd.',
+  'account.identity.usernameHint':
+    'De gebruikersnaam is onveranderlijk: hij verankert de toewijzing van elke handeling in het auditlogboek.',
+  'account.identity.save': 'Profiel opslaan',
+  'account.identity.saved': 'Profiel bijgewerkt.',
+  'account.identity.adminOnly.title': 'Wat alleen het beheer kan wijzigen',
+  'account.identity.adminOnly.body':
+    'Toegewezen rollen, de status van het account en de eis van een tweede factor zijn beheersbeslissingen en worden hier niet gewijzigd.',
+  'account.export.card': 'Mijn gegevens',
+  'account.export.body':
+    'De export bevat uw profiel, de rollen die aan u zijn toegewezen en verwijzingen naar de gebeurtenissen in het auditlogboek waarin u voorkomt. Wachtwoorden, herstelzinnen en privésleutels zitten er niet in.',
+  'account.export.download': 'Export downloaden',
+  'account.export.pending': 'Export wordt voorbereid',
+  'account.export.unavailable':
+    'Het exporteren van uw gegevens vereist het recht op privacybeheer, dat dit account niet heeft. Vraag erom bij wie deze instantie beheert.',
+  'account.security.lede':
+    'Wat dit account nu heeft om uw identiteit te bewijzen. Wijzigen doet u in de kaarten hieronder.',
+  'account.security.adminView': 'Dit account in het beheergedeelte bekijken',
+  'account.suspend.card': 'Mijn account opschorten',
+  'account.suspend.body':
+    'Vermoedt u dat iemand toegang tot uw account heeft gekregen, schort het dan op. Dat is de snelste manier om die toegang af te snijden terwijl de zaak wordt uitgezocht.',
+  'account.suspend.effect.title': 'Wat opschorten doet',
+  'account.suspend.effect.sessions':
+    'Alle sessies die op uw naam openstaan, eindigen onmiddellijk, ook deze.',
+  'account.suspend.effect.signin': 'Het account kan niet meer aanmelden.',
+  'account.suspend.effect.lift':
+    'Alleen het beheer kan de opschorting opheffen — u kunt dat zelf niet.',
+  'account.suspend.action': 'Account opschorten',
+  'account.suspend.pending': 'Account wordt opgeschort',
+  'account.suspend.confirm.title': 'Mijn account opschorten',
+  'account.suspend.confirm.intro':
+    'Het account verliest onmiddellijk toegang en alle sessies eindigen. Alleen het beheer kan het weer activeren.',
+  'account.suspend.confirm.action': 'Opschorten',
+  'account.suspend.done': 'Account opgeschort. Alle sessies zijn beëindigd.',
+  'account.preferences.lede': 'Keuzes van u die dit account tussen sessies bewaart.',
+  'account.notices.card': 'Verborgen meldingen',
+  'account.notices.body': 'Informatieve meldingen die u hebt verborgen en weer kunt tonen.',
+  'account.notices.empty': 'Er zijn geen verborgen meldingen.',
+  'account.notices.footnote':
+    'Hier verschijnen alleen meldingen die hersteld kunnen worden; sommige meldingen worden definitief verborgen en staan niet in deze lijst.',
 };

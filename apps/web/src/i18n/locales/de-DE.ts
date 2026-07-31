@@ -6886,4 +6886,151 @@ export const deDE: Catalog = {
     'Folgt der Sprache des Geräts, von dem aus sich die Person anmeldet. Vom Server versendete Nachrichten verwenden die Standardsprache der Plattform.',
   'users.language.hint.fixed':
     'Legt die Sprache der Oberfläche und der an dieses Konto gesendeten Nachrichten fest.',
+  // --- Chaves de acesso / passkeys (t10) ------------------------------------------
+  'users.passkeys.title': 'Passkeys',
+  'users.passkeys.intro.self':
+    'Ein Passkey liegt auf Ihrem Telefon, Ihrem Rechner oder einem Sicherheitsschlüssel und erspart Ihnen die Eingabe des Passworts bei der Anmeldung. Sie bestätigen mit Fingerabdruck, Gesicht oder der PIN des Geräts.',
+  'users.passkeys.intro.other':
+    'Die Passkeys dieses Kontos. Nur die Inhaberin oder der Inhaber kann sie anlegen, umbenennen oder entfernen — dafür muss der Authentifikator zur Hand sein.',
+  'users.passkeys.passwordNote':
+    'Das Passwort bleibt bestehen: Es öffnet den Prüfschlüssel, mit dem dieses Konto signiert. Ein Passkey erspart die Eingabe bei der Anmeldung; er ersetzt das Passwort nicht.',
+  'users.passkeys.count': '{count} in Verwendung',
+  'users.passkeys.none': 'Keine',
+  'users.passkeys.empty': 'Keine Passkeys',
+  'users.passkeys.emptyBody':
+    'Dieses Konto hat noch keine Passkeys. Den ersten können Sie hier anlegen.',
+  'users.passkeys.emptyBody.other': 'Dieses Konto hat noch keine Passkeys.',
+  'users.passkeys.caption': 'Passkeys dieses Kontos',
+  'users.passkeys.col.name': 'Name',
+  'users.passkeys.col.type': 'Wo er liegt',
+  'users.passkeys.col.type.help':
+    'Ein synchronisierter Passkey wird zum Konto des Herstellers kopiert und übersteht den Verlust des Geräts. Ein gerätegebundener Passkey verschwindet mit dem Gerät — geht es verloren, muss ein neuer angelegt werden.',
+  'users.passkeys.col.created': 'Angelegt',
+  'users.passkeys.col.lastUsed': 'Zuletzt verwendet',
+  'users.passkeys.col.action': 'Aktionen',
+  'users.passkeys.backup.exists': 'Synchronisiert',
+  'users.passkeys.backup.eligible': 'Noch nicht synchronisiert',
+  'users.passkeys.backup.notEligible': 'An dieses Gerät gebunden',
+  'users.passkeys.neverUsed': 'Nie verwendet',
+  'users.passkeys.unusable.badge': 'Frühere Domäne',
+  'users.passkeys.unusable.hint':
+    'Angelegt für {enrolled}; diese Instanz antwortet jetzt unter {current}. Ein Passkey lässt sich nicht auf eine andere Domäne übertragen — entfernen Sie ihn und legen Sie einen neuen an.',
+  'users.passkeys.signingNote.title': 'Das Passwort wird beim Signieren weiterhin abgefragt',
+  'users.passkeys.signingNote.body':
+    'Mit „{name}“ melden Sie sich ab jetzt bei diesem Konto an. Der Prüfschlüssel, mit dem Sie Dokumente signieren, öffnet sich mit Ihrem Passwort — beim ersten Signieren werden Sie also danach gefragt.',
+  'users.passkeys.rename': 'Umbenennen',
+  'users.passkeys.renamed': 'Passkey umbenannt.',
+  'users.passkeys.revoke': 'Entfernen',
+  'users.passkeys.revoke.title': 'Passkey entfernen',
+  'users.passkeys.revoke.intro':
+    'Damit wird „{name}“ aus dem Konto entfernt. Er meldet Sie nicht mehr an und lässt sich nicht wiederherstellen — um dieses Gerät wieder zu nutzen, müssen Sie einen neuen anlegen.',
+  'users.passkeys.revoke.consequence':
+    'Der Prüfschlüssel geht nicht verloren: Er öffnet sich weiterhin mit dem Passwort, genau wie bisher.',
+  'users.passkeys.revoke.confirm': 'Entfernen',
+  'users.passkeys.revoke.pending': 'Wird entfernt…',
+  'users.passkeys.revoked': 'Passkey entfernt.',
+  'users.passkeys.name.label': 'Name des Passkeys',
+  'users.passkeys.name.placeholder': 'Bürolaptop',
+  'users.passkeys.name.hint':
+    'Dient nur der Unterscheidung. Wählen Sie etwas, das Sie in einem Jahr noch erkennen — unter diesem Namen erscheint er, wenn Sie einen entfernen müssen.',
+  'users.passkeys.add': 'Passkey anlegen',
+  'users.passkeys.adding': 'Wird angelegt…',
+  'users.passkeys.addSecond':
+    'Sie haben nur einen. Legen Sie einen zweiten auf einem anderen Gerät an: mit nur einem bedeutet der Verlust des Geräts den Verlust des Zugangs.',
+  'users.passkeys.enrolled': 'Passkey angelegt.',
+  'users.passkeys.crossUser.note':
+    'Nur die Inhaberin oder der Inhaber kann Passkeys anlegen, umbenennen oder entfernen — dafür muss der Authentifikator zur Hand sein.',
+  'users.passkeys.unavailable.desktop':
+    'Passkeys funktionieren nur im Browser. Melden Sie sich in dieser Anwendung mit dem Passwort an; zum Anlegen und Verwalten von Passkeys öffnen Sie Chancela im Browser.',
+  'users.passkeys.unavailable.browser':
+    'Dieser Browser kann nicht mit Passkeys umgehen. Verwenden Sie einen aktuellen Browser oder bleiben Sie beim Passwort.',
+  'users.passkeys.unconfigured.title': 'Passkeys noch nicht verfügbar',
+  'users.passkeys.unconfigured.body':
+    'Eine Administratorin oder ein Administrator muss noch die Domäne wählen, an die die Passkeys dieser Instanz gebunden werden. Die Wahl ist endgültig — ein auf einer Domäne angelegter Passkey funktioniert nie auf einer anderen — und kann deshalb nicht automatisch getroffen werden.',
+  'users.passkeys.error.cancelled': 'Abgebrochen.',
+  'users.passkeys.error.alreadyEnrolled':
+    'Dieser Authentifikator hält bereits einen Passkey für dieses Konto. Verwenden Sie ein anderes Gerät oder entfernen Sie zuerst den vorhandenen.',
+  'users.passkeys.error.rpIdMismatch':
+    'Die für Passkeys konfigurierte Domäne passt nicht zu der Adresse, über die Sie hereingekommen sind. Informieren Sie eine Administratorin oder einen Administrator: solange das so bleibt, lässt sich kein Passkey anlegen oder verwenden.',
+  'users.passkeys.error.unsupported':
+    'Dieser Authentifikator kann den von Chancela verlangten Passkey nicht anlegen. Versuchen Sie ein anderes Gerät.',
+  'users.passkeys.error.notUserVerified':
+    'Das Gerät hat nicht bestätigt, dass Sie es wirklich sind. Aktivieren Sie Fingerabdruck, Gesicht oder PIN und versuchen Sie es erneut — ohne diese Bestätigung öffnet ein Passkey nichts.',
+  'users.passkeys.error.failed': 'Der Vorgang mit dem Passkey konnte nicht abgeschlossen werden.',
+  'signin.passkey.action': 'Mit Passkey anmelden',
+  'signin.passkey.pending': 'Warten auf das Gerät…',
+  'signin.passkey.hint': 'Nichts zu tippen: Bestätigen Sie auf dem Gerät mit dem Passkey.',
+  'signin.passkey.hint.autofill':
+    'Sie können den Passkey auch über das Feld für den Benutzernamen oben auswählen.',
+  'signin.passkey.error.rpIdMismatch':
+    'Die für Passkeys konfigurierte Domäne passt nicht zu der Adresse, über die Sie hereingekommen sind. Informieren Sie eine Administratorin oder einen Administrator und melden Sie sich mit dem Passwort an.',
+  'signin.passkey.error.unsupported':
+    'Dieses Gerät kann die Anfrage nicht beantworten. Melden Sie sich mit dem Passwort an.',
+  'signin.passkey.error.notUserVerified':
+    'Das Gerät hat nicht bestätigt, dass Sie es wirklich sind. Aktivieren Sie Fingerabdruck, Gesicht oder PIN und versuchen Sie es erneut.',
+  'signin.passkey.error.failed': 'Die Anmeldung mit einem Passkey ist fehlgeschlagen.',
+  'session.picker.passkeyUnsupported':
+    'Hier wird das Konto nur mit einem Passwort gewechselt. Ein Konto, das sich mit einem Passkey anmeldet, erreichen Sie über den Anmeldebildschirm.',
+  'confirm.reauth.passkey': 'Passkey',
+  'confirm.reauth.usePasskey': 'einen Passkey verwenden',
+  'confirm.reauth.passkey.action': 'Auf dem Gerät bestätigen',
+  'confirm.reauth.passkey.again': 'Erneut bestätigen',
+  'confirm.reauth.passkey.pending': 'Warten auf das Gerät…',
+  'confirm.reauth.passkey.ready': 'Identität bestätigt. Sie können den Vorgang abschließen.',
+  'confirm.reauth.passkey.failed':
+    'Die Bestätigung mit dem Passkey ist fehlgeschlagen. Versuchen Sie es erneut oder verwenden Sie Ihr Passwort.',
+  'account.title': 'Mein Konto',
+  'account.lede':
+    'Die Einstellungen Ihres eigenen Kontos: Ihr Profil, Ihre Anmeldedaten und die in Ihrem Namen geöffneten Sitzungen.',
+  'account.subnav.aria': 'Kontobereiche',
+  'account.subnav.profile': 'Profil',
+  'account.subnav.security': 'Sicherheit',
+  'account.subnav.preferences': 'Persönliche Einstellungen',
+  'account.picker.link': 'Mein Konto',
+  'account.signedOut.title': 'Nicht angemeldet',
+  'account.signedOut.body':
+    'Melden Sie sich an, um die Einstellungen Ihres Kontos zu sehen und zu ändern.',
+  'account.identity.card': 'Identität',
+  'account.identity.lede':
+    'Diese Angaben weisen Sie im Prüfprotokoll und in den an Sie gesendeten Nachrichten aus.',
+  'account.identity.usernameHint':
+    'Der Benutzername ist unveränderlich: Er verankert die Zuordnung jeder Handlung im Prüfprotokoll.',
+  'account.identity.save': 'Profil speichern',
+  'account.identity.saved': 'Profil aktualisiert.',
+  'account.identity.adminOnly.title': 'Was nur die Verwaltung ändern kann',
+  'account.identity.adminOnly.body':
+    'Zugewiesene Rollen, der Kontostatus und die Pflicht zu einem zweiten Faktor sind Verwaltungsentscheidungen und werden hier nicht geändert.',
+  'account.export.card': 'Meine Daten',
+  'account.export.body':
+    'Der Export umfasst Ihr Profil, die Ihnen zugewiesenen Rollen und Verweise auf die Ereignisse des Prüfprotokolls, in denen Sie vorkommen. Passwörter, Wiederherstellungsphrasen und private Schlüssel sind nicht enthalten.',
+  'account.export.download': 'Export herunterladen',
+  'account.export.pending': 'Export wird vorbereitet',
+  'account.export.unavailable':
+    'Der Export Ihrer Daten erfordert die Berechtigung zur Datenschutzverwaltung, die dieses Konto nicht besitzt. Fragen Sie danach bei der Verwaltung dieser Instanz.',
+  'account.security.lede':
+    'Was dieses Konto derzeit besitzt, um Ihre Identität nachzuweisen. Geändert wird in den Karten darunter.',
+  'account.security.adminView': 'Dieses Konto im Verwaltungsbereich ansehen',
+  'account.suspend.card': 'Mein Konto sperren',
+  'account.suspend.body':
+    'Wenn Sie vermuten, dass jemand Zugriff auf Ihr Konto erlangt hat, sperren Sie es. Das ist der schnellste Weg, diesen Zugriff zu unterbinden, solange der Fall geklärt wird.',
+  'account.suspend.effect.title': 'Was die Sperrung bewirkt',
+  'account.suspend.effect.sessions':
+    'Alle in Ihrem Namen geöffneten Sitzungen enden sofort, auch diese.',
+  'account.suspend.effect.signin': 'Das Konto kann sich nicht mehr anmelden.',
+  'account.suspend.effect.lift':
+    'Nur die Verwaltung kann die Sperrung aufheben — Sie selbst können das nicht.',
+  'account.suspend.action': 'Konto sperren',
+  'account.suspend.pending': 'Konto wird gesperrt',
+  'account.suspend.confirm.title': 'Mein Konto sperren',
+  'account.suspend.confirm.intro':
+    'Das Konto verliert sofort den Zugang und alle Sitzungen enden. Nur die Verwaltung kann es wieder aktivieren.',
+  'account.suspend.confirm.action': 'Sperren',
+  'account.suspend.done': 'Konto gesperrt. Alle Sitzungen wurden beendet.',
+  'account.preferences.lede': 'Ihre Entscheidungen, die dieses Konto über Sitzungen hinweg behält.',
+  'account.notices.card': 'Ausgeblendete Hinweise',
+  'account.notices.body':
+    'Informationshinweise, die Sie ausgeblendet haben und wieder einblenden können.',
+  'account.notices.empty': 'Keine Hinweise ausgeblendet.',
+  'account.notices.footnote':
+    'Hier erscheinen nur Hinweise, die sich wiederherstellen lassen; manche Hinweise werden dauerhaft ausgeblendet und stehen nicht in dieser Liste.',
 };
