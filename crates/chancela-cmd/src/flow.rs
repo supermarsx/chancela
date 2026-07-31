@@ -16,9 +16,7 @@
 
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD;
-use der::Encode;
 use rsa::rand_core::CryptoRngCore;
-use x509_cert::Certificate;
 use zeroize::{Zeroize, Zeroizing};
 
 use chancela_cades::{RawSignature, SignatureAlgorithm};
@@ -300,17 +298,17 @@ fn normalize_user_id(user_id: &str) -> String {
 }
 
 /// Parse a PEM certificate bundle (leaf first, then issuers) into a [`CertificateChain`].
+///
+/// Uses [`crate::certificate_pem::normalize_response_cert_chain`] rather than a strict RFC 7468
+/// reader: a real `GetCertificate` response has been observed carrying a NUL byte in the PEM
+/// preamble, on which `x509-cert`'s `load_pem_chain` refuses the entire chain ("PEM preamble
+/// contains invalid data (NUL byte)"). The normaliser strips that preamble/inter-block junk — safely,
+/// because it cannot change any decoded certificate — and refuses loudly anything that could.
 fn parse_cert_chain(pem: &str) -> Result<CertificateChain, CmdError> {
-    let certs = Certificate::load_pem_chain(pem.as_bytes())
-        .map_err(|e| CmdError::Certificate(format!("invalid certificate PEM chain: {e}")))?;
-    let mut ders: Vec<Vec<u8>> = certs
-        .iter()
-        .map(|c| {
-            c.to_der()
-                .map_err(|e| CmdError::Certificate(format!("cannot DER-encode certificate: {e}")))
-        })
-        .collect::<Result<_, _>>()?;
+    let mut ders = crate::certificate_pem::normalize_response_cert_chain(pem)?;
     if ders.is_empty() {
+        // `normalize_response_cert_chain` already refuses an empty chain by name; kept as a
+        // defence in depth so the `remove(0)` below can never panic.
         return Err(CmdError::Certificate(
             "GetCertificate returned no certificates".to_string(),
         ));

@@ -84,14 +84,15 @@ impl std::fmt::Debug for CmdBasicAuth {
 /// Built from env (`CHANCELA_CMD_ENV`, `CHANCELA_CMD_APPLICATION_ID`,
 /// `CHANCELA_CMD_HTTP_BASIC_USERNAME`, `CHANCELA_CMD_HTTP_BASIC_PASSWORD`,
 /// `CHANCELA_CMD_AMA_CERT_PEM`) or programmatically. The `application_id` is the opaque
-/// AMA-assigned string (sent UTF-8 -> base64 on the wire); `basic_auth` is used only by
-/// the real HTTP transport; `ama_cert_pem` is the PEM text of AMA's field-encryption
-/// certificate when field encryption is used.
+/// AMA-assigned string, sent as the **raw** string on the wire — never base64-encoded (recov-pt
+/// `src/cli/cmd_verify.rs:1097`; conformance vector `tests/conformance_vectors.rs`). `basic_auth`
+/// is used only by the real HTTP transport; `ama_cert_pem` is the PEM text of AMA's
+/// field-encryption certificate when field encryption is used.
 #[derive(Clone)]
 pub struct CmdConfig {
     /// Which AMA environment (preprod/prod) to talk to.
     pub env: CmdEnv,
-    /// Opaque AMA-assigned ApplicationId (base64-encoded on the wire).
+    /// Opaque AMA-assigned ApplicationId, sent as the raw string on the wire (never base64).
     pub application_id: String,
     /// Optional HTTP BasicAuth credentials for [`crate::transport::HttpScmdTransport`].
     pub basic_auth: Option<CmdBasicAuth>,

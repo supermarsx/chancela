@@ -379,7 +379,12 @@ fn hex_sha256(bytes: &[u8]) -> String {
 /// Everything else is refused. Note what is NOT here: a curly quote, an en dash, a Cyrillic letter
 /// that looks like a Latin one. Those are outside the alphabet too, but they sit where a real base64
 /// character was, so removing them would silently shorten the body and decode to different bytes.
-fn is_ignorable_in_body(c: char) -> bool {
+///
+/// `pub(crate)` because the **response** side — [`normalize_response_cert_chain`] — draws the exact
+/// same line: this one predicate is the entire safety argument for stripping preamble and body junk
+/// without ever changing the decoded DER, and the two directions must not disagree about where it
+/// falls.
+pub(crate) fn is_ignorable_in_body(c: char) -> bool {
     c.is_whitespace()
         || c.is_control()
         || matches!(c, '\u{200B}'..='\u{200D}' | '\u{2060}' | '\u{FEFF}')
@@ -597,6 +602,216 @@ fn canonical_pem(label: &str, der: &[u8]) -> String {
     out.push_str(&end_boundary(label));
     out.push('\n');
     out
+}
+
+// --- The response side: GetCertificate's certificate chain ----------------------------------------
+//
+// Everything above governs the *input* an operator pastes into `ama_cert_pem`. What follows governs
+// the *response* AMA's `GetCertificate` returns: a PEM string carrying one or more concatenated
+// `CERTIFICATE` blocks (the citizen's leaf and its issuer chain). It is a different problem — a chain
+// is the expected, correct shape here, not a refusal — but it turns on the same distinction, so it
+// reuses [`is_ignorable_in_body`] rather than a second copy that could drift from it.
+
+/// The exact opening boundary of a response certificate block.
+const BEGIN_CERTIFICATE: &str = "-----BEGIN CERTIFICATE-----";
+/// The exact closing boundary of a response certificate block.
+const END_CERTIFICATE: &str = "-----END CERTIFICATE-----";
+
+/// Why the certificate chain returned by `GetCertificate` could not be read.
+///
+/// Kept separate from [`CertificatePemError`] on purpose. That type governs the operator's pasted
+/// input, where a second block is a mistake to be refused by name; this governs AMA's response,
+/// where several blocks are the whole point. The one thing the two share is the line
+/// [`is_ignorable_in_body`] draws, and each names its own defects because the actions they call for
+/// are different.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[non_exhaustive]
+pub enum CertificateChainError {
+    /// Not a single `-----BEGIN CERTIFICATE-----` block was present.
+    #[error("the GetCertificate response contained no \"-----BEGIN CERTIFICATE-----\" block")]
+    NoCertificates,
+
+    /// A block opened and never closed. The offset locates the unmatched `BEGIN`.
+    #[error(
+        "a \"-----BEGIN CERTIFICATE-----\" at byte offset {offset} has no matching \
+         \"-----END CERTIFICATE-----\""
+    )]
+    UnterminatedBlock {
+        /// Byte offset of the unmatched opening boundary.
+        offset: usize,
+    },
+
+    /// A visible, non-ignorable character sits *outside* any block — before the first, between two,
+    /// or after the last. A NUL, a BOM or stray whitespace there is dropped (it cannot carry or
+    /// change a certificate); anything else is real data this parser cannot account for, so it is
+    /// named and refused rather than skipped past.
+    #[error(
+        "the bytes outside the certificate blocks contain {character} at byte offset {offset}, \
+         which is neither a PEM block nor ignorable whitespace; it was left in place rather than \
+         guessed at"
+    )]
+    JunkOutsideBlocks {
+        /// The offending character in `U+XXXX` notation — never the raw character.
+        character: String,
+        /// Byte offset in the response text.
+        offset: usize,
+    },
+
+    /// A character inside a block's base64 body that is neither base64 nor the RFC 7468 line-wrap
+    /// whitespace. Refused, never stripped: inside `BEGIN`/`END` a NUL, a BOM or a smart quote is
+    /// corruption of the bytes the signing key decodes from, and massaging it away could hand back a
+    /// different key. Only framing *outside* the blocks is safe to strip.
+    #[error(
+        "certificate block {index} contains {character} at byte offset {offset} inside its base64 \
+         body, which is neither base64 nor whitespace; the payload is corrupt and was refused rather \
+         than repaired"
+    )]
+    IllegalCharacterInBody {
+        /// Which block (0-based), so a chain failure names the offending certificate.
+        index: usize,
+        /// The offending character in `U+XXXX` notation.
+        character: String,
+        /// Byte offset in the response text.
+        offset: usize,
+    },
+
+    /// A block's body was all base64 characters and still did not decode. Not re-padded.
+    #[error("certificate block {index} is not valid base64: {detail}")]
+    Base64Invalid {
+        /// Which block (0-based).
+        index: usize,
+        /// The decoder's own message.
+        detail: String,
+    },
+
+    /// A block decoded, and the bytes are not an X.509 certificate.
+    #[error("certificate block {index} did not decode to an X.509 certificate: {detail}")]
+    NotACertificate {
+        /// Which block (0-based).
+        index: usize,
+        /// The DER reader's own message.
+        detail: String,
+    },
+}
+
+impl From<CertificateChainError> for CmdError {
+    fn from(err: CertificateChainError) -> Self {
+        // One message shape for every chain defect, so the stable error code the API attaches
+        // (`cmd_certificate_chain`) covers them all while the specific reason rides in the detail.
+        CmdError::Certificate(format!("invalid certificate PEM chain: {err}"))
+    }
+}
+
+/// Parse the PEM certificate chain a `GetCertificate` response carries into its DER blocks, in order
+/// (leaf first, as AMA sends it), tolerating the transport junk a strict RFC 7468 reader rejects.
+///
+/// # Why a strict reader is the wrong tool here
+///
+/// The chain arrives as a JSON string value, and a real one has been observed carrying a **NUL byte
+/// in the preamble** — the bytes before the first `-----BEGIN CERTIFICATE-----`. `x509-cert`'s
+/// `Certificate::load_pem_chain` refuses the whole chain at that first NUL ("PEM preamble contains
+/// invalid data (NUL byte)"), so a citizen's perfectly good certificate never reaches CMS assembly.
+///
+/// # The invariant: sanitise the framing, never the key bytes
+///
+/// The one thing this must never do is hand back a different key than AMA sent — on a signature
+/// surface that is the worst possible failure, because the signing certificate is *selected out of
+/// this chain* and a shifted byte selects the wrong key or a broken one. So the line is drawn by
+/// **location**, not by character class:
+///
+/// - **Outside the blocks** — the preamble (before the first `BEGIN`), the epilogue (after the last
+///   `END`), and the gaps between concatenated certificates — is armour and framing, not the base64
+///   body. A NUL or other C0 control, a BOM, a CR, stray whitespace there provably cannot change one
+///   bit of any decoded certificate, so it is stripped. A *visible* character out here is
+///   unaccounted-for data, not framing, and is refused by name.
+/// - **Inside a block body** — between `BEGIN` and `END` — the only thing dropped is the RFC 7468
+///   line-wrapping (ASCII whitespace), which carries no base64 value. **Everything else is refused,
+///   loudly.** A NUL, a BOM, a zero-width space or a smart quote *inside the body* is not junk to
+///   strip: it means the payload the key decodes from is corrupt, and corrupt payload must fail, not
+///   be massaged into something that parses. This is deliberately **stricter than the input side**
+///   ([`normalize_ama_key_pem`], which reports and strips ignorable body characters for an operator's
+///   pasted key): a machine response feeding a qualified signature gets no such benefit of the doubt.
+///
+/// This mirrors the working reference `recov-pt`, which splits on the `BEGIN`/`END` boundaries and
+/// strips only whitespace from each body (a body NUL reaches its base64 decoder and fails there);
+/// this refuses the same corruption one step earlier, naming the offending byte.
+///
+/// The proof that the stripping cannot move a key is a test, not a hope: a filthy chain and its clean
+/// twin normalise to byte-identical DER and an identical SubjectPublicKeyInfo fingerprint, per
+/// certificate and in the same order — see the `key_survives_*` tests.
+pub(crate) fn normalize_response_cert_chain(
+    input: &str,
+) -> Result<Vec<Vec<u8>>, CertificateChainError> {
+    let mut ders: Vec<Vec<u8>> = Vec::new();
+    let mut cursor = 0usize;
+
+    loop {
+        let remainder = &input[cursor..];
+        let next_begin = remainder.find(BEGIN_CERTIFICATE);
+        // Everything from the cursor up to the next block (or end of input) is outside any block —
+        // preamble, an inter-block gap, or the epilogue. It is framing: ignorable classes are
+        // stripped, and a visible character here is unaccounted-for data, refused by name.
+        let gap_end = next_begin.unwrap_or(remainder.len());
+        for (offset, c) in remainder[..gap_end].char_indices() {
+            if !is_ignorable_in_body(c) {
+                return Err(CertificateChainError::JunkOutsideBlocks {
+                    character: format!("U+{:04X}", c as u32),
+                    offset: cursor + offset,
+                });
+            }
+        }
+
+        let Some(begin_rel) = next_begin else { break };
+        let begin_at = cursor + begin_rel;
+        let body_start = begin_at + BEGIN_CERTIFICATE.len();
+        let body_len = input[body_start..]
+            .find(END_CERTIFICATE)
+            .ok_or(CertificateChainError::UnterminatedBlock { offset: begin_at })?;
+        let body = &input[body_start..body_start + body_len];
+
+        let index = ders.len();
+        let mut base64_body = String::with_capacity(body.len());
+        for (offset, c) in body.char_indices() {
+            if c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '=') {
+                base64_body.push(c);
+            } else if c.is_ascii_whitespace() {
+                // The ONLY thing dropped inside a body: RFC 7468 line-wrapping (LF, CR, tab, space,
+                // form feed). It carries no base64 value, so the decoded DER cannot move.
+            } else {
+                // Anything else inside the body is corruption of the key's own bytes, never framing
+                // to strip — a NUL, a BOM, a zero-width space, a smart quote. Refuse it, named, so a
+                // corrupt payload can never be quietly reshaped into a different key that parses.
+                return Err(CertificateChainError::IllegalCharacterInBody {
+                    index,
+                    character: format!("U+{:04X}", c as u32),
+                    offset: body_start + offset,
+                });
+            }
+        }
+
+        let der =
+            STANDARD
+                .decode(&base64_body)
+                .map_err(|e| CertificateChainError::Base64Invalid {
+                    index,
+                    detail: e.to_string(),
+                })?;
+        // Validate that the decoded bytes really are an X.509 certificate before accepting them —
+        // the raw decoded DER (what AMA actually sent, and what the signature is over) is kept, not
+        // a re-encoding of it.
+        Certificate::from_der(&der).map_err(|e| CertificateChainError::NotACertificate {
+            index,
+            detail: e.to_string(),
+        })?;
+        ders.push(der);
+
+        cursor = body_start + body_len + END_CERTIFICATE.len();
+    }
+
+    if ders.is_empty() {
+        return Err(CertificateChainError::NoCertificates);
+    }
+    Ok(ders)
 }
 
 #[cfg(test)]
@@ -1167,6 +1382,160 @@ mod tests {
                 assert_eq!(labels.last().map(String::as_str), Some("…"));
             }
             other => panic!("a flood is a multi-block refusal, got {other:?}"),
+        }
+    }
+
+    // --- The response side: GetCertificate's certificate chain ------------------------------------
+
+    /// **Reproduce-then-fix.** The exact failure from the running app: a real chain carrying a NUL
+    /// byte in the PEM preamble (and control/whitespace junk between the blocks). The strict reader
+    /// the flow used before this fix refuses it outright; the tolerant parser recovers every
+    /// certificate, byte-for-byte. Three concatenated copies of the one synthetic fixture stand in
+    /// for the leaf + issuers chain — parsing does not verify issuer relationships, so this exercises
+    /// the multi-block split without three distinct test certs.
+    #[test]
+    fn a_response_chain_with_a_nul_preamble_and_inter_block_junk_parses() {
+        let one = CLEAN.trim_end();
+        // NUL + BOM + spaces before the first block; a NUL, a CR/LF and a BEL between the blocks.
+        let dirty = format!("\u{0}\u{FEFF}  {one}\n\u{0}\n{one}\r\n\u{0007}\n{one}\n\u{0}");
+
+        // GUARD: the strict RFC 7468 reader the flow used before this fix must still reject the
+        // dirty chain — otherwise this test would pass without proving the fix does anything.
+        assert!(
+            Certificate::load_pem_chain(dirty.as_bytes()).is_err(),
+            "the strict reader must reject a NUL in the preamble, or this test proves nothing"
+        );
+
+        let ders = normalize_response_cert_chain(&dirty).expect("the dirty chain must normalise");
+        assert_eq!(
+            ders.len(),
+            3,
+            "all three concatenated certificates must be recovered"
+        );
+        let reference = reference_der();
+        for (i, der) in ders.iter().enumerate() {
+            assert_eq!(
+                der, &reference,
+                "certificate {i} decoded to different bytes"
+            );
+            // And every recovered block really is an X.509 certificate.
+            assert!(
+                Certificate::from_der(der).is_ok(),
+                "certificate {i} is not valid X.509 DER"
+            );
+        }
+    }
+
+    /// A single clean certificate is a one-element chain, and its DER is exactly what a strict reader
+    /// decodes — the tolerant path must not move the bytes of an already-clean response.
+    #[test]
+    fn a_clean_single_certificate_response_is_a_one_element_chain() {
+        let ders = normalize_response_cert_chain(CLEAN).expect("a clean response normalises");
+        assert_eq!(ders.len(), 1);
+        assert_eq!(ders[0], reference_der());
+    }
+
+    /// A NUL, a BOM and whitespace between two blocks must not break the split — the reported
+    /// preamble junk, moved between the certificates.
+    #[test]
+    fn junk_between_two_blocks_does_not_break_the_split() {
+        let one = CLEAN.trim_end();
+        let dirty = format!("{one}\u{0}\u{FEFF}\r\n\t{one}\n");
+        let ders = normalize_response_cert_chain(&dirty).expect("inter-block junk is ignorable");
+        assert_eq!(ders.len(), 2);
+        assert_eq!(ders[0], reference_der());
+        assert_eq!(ders[1], reference_der());
+    }
+
+    /// A response with no certificate block at all is refused by name, not returned empty; and a
+    /// leading visible character is named rather than treated as an absent block.
+    #[test]
+    fn a_response_with_no_block_is_refused_by_name() {
+        assert_eq!(
+            normalize_response_cert_chain("\u{0}\u{FEFF}   \r\n").unwrap_err(),
+            CertificateChainError::NoCertificates
+        );
+        assert_eq!(
+            normalize_response_cert_chain("nothing to see here").unwrap_err(),
+            CertificateChainError::JunkOutsideBlocks {
+                character: "U+006E".to_owned(),
+                offset: 0,
+            },
+        );
+    }
+
+    /// An opening boundary with no matching close is refused, and the offset locates it.
+    #[test]
+    fn an_unterminated_block_is_refused_with_its_offset() {
+        let body = body_of(CLEAN, BEGIN_CERTIFICATE, END_CERTIFICATE);
+        let truncated = format!("{BEGIN_CERTIFICATE}\n{body}\n");
+        assert_eq!(
+            normalize_response_cert_chain(&truncated).unwrap_err(),
+            CertificateChainError::UnterminatedBlock { offset: 0 }
+        );
+    }
+
+    /// A visible, non-ignorable character between blocks is real data this parser will not guess
+    /// away: it is named and the chain is refused, never silently skipped.
+    #[test]
+    fn a_visible_character_outside_the_blocks_is_refused_not_skipped() {
+        let one = CLEAN.trim_end();
+        // A stray 'X' between the two blocks — not whitespace, not a control, not a block.
+        let dirty = format!("{one}\nX\n{one}\n");
+        match normalize_response_cert_chain(&dirty).unwrap_err() {
+            CertificateChainError::JunkOutsideBlocks { character, offset } => {
+                assert_eq!(character, "U+0058");
+                assert_eq!(&dirty[offset..offset + 1], "X");
+            }
+            other => panic!("a visible inter-block character must be named, got {other:?}"),
+        }
+    }
+
+    /// A character inside a body that would change the decoded bytes is refused by name and offset,
+    /// exactly as the input side refuses a smart quote — dropping it would corrupt the certificate.
+    #[test]
+    fn an_illegal_character_in_a_body_is_refused_by_name() {
+        let body = body_of(CLEAN, BEGIN_CERTIFICATE, END_CERTIFICATE);
+        let corrupted = format!(
+            "{BEGIN_CERTIFICATE}\n\u{201C}{}\n{END_CERTIFICATE}\n",
+            &body[1..]
+        );
+        match normalize_response_cert_chain(&corrupted).unwrap_err() {
+            CertificateChainError::IllegalCharacterInBody {
+                index,
+                character,
+                offset,
+            } => {
+                assert_eq!(index, 0);
+                assert_eq!(character, "U+201C");
+                assert_eq!(&corrupted[offset..offset + 3], "\u{201C}");
+            }
+            other => panic!("a smart quote in the body must be named, got {other:?}"),
+        }
+    }
+
+    /// A block whose base64 decodes cleanly but is not an X.509 certificate is refused, naming which
+    /// block — a NUL that got past the preamble must never be mistaken for a valid chain.
+    #[test]
+    fn a_block_that_is_not_a_certificate_is_refused_naming_the_block() {
+        let one = CLEAN.trim_end();
+        let mixed = format!("{one}\n{BEGIN_CERTIFICATE}\nZm9v\n{END_CERTIFICATE}\n");
+        match normalize_response_cert_chain(&mixed).unwrap_err() {
+            CertificateChainError::NotACertificate { index, .. } => assert_eq!(index, 1),
+            other => panic!("the second block is not a certificate, got {other:?}"),
+        }
+    }
+
+    /// A CmdError built from a chain failure keeps the historical "invalid certificate PEM chain:"
+    /// prefix, so the stable code the API attaches covers every chain defect under one sentence.
+    #[test]
+    fn a_chain_error_maps_to_a_cmd_certificate_error_with_the_stable_prefix() {
+        let err: CmdError = CertificateChainError::NoCertificates.into();
+        match err {
+            CmdError::Certificate(msg) => {
+                assert!(msg.starts_with("invalid certificate PEM chain:"), "{msg}");
+            }
+            other => panic!("a chain error must become CmdError::Certificate, got {other:?}"),
         }
     }
 }

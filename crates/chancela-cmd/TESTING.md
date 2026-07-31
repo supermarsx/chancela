@@ -31,6 +31,16 @@ responses in `fixtures/`):
 - In-module unit tests: JSON request build + response parsing incl. the `{"d":...}` unwrap and
   the integer-array signature (`src/wire.rs`), field encryption cleartext + RSA-encrypt/decrypt
   round trip (`src/field_encryption.rs`).
+- `tests/conformance_vectors.rs` — **golden conformance vectors** pinning request construction and
+  response parsing byte-for-byte to the exact bytes recov-pt produces/consumes for the same
+  **synthetic** inputs (all-zero GUID ApplicationId, `+351000000000`, `000000` PIN/OTP, the public
+  empty-string SHA-256 as the signed digest). Each vector cites the recov-pt source line it pins
+  (`GetCertificate` = `cmd_verify.rs:1096-1099`; `SCMDSign` = `cmd_challenge.rs:85-112`;
+  `ValidateOtp` = `cmd_challenge.rs:139-164`) and includes the negative cases recov-pt enforces: a
+  base64 signature rejected, out-of-range signature bytes rejected, a non-"200" `Code` surfaced,
+  the numeric-`Code` rejection, and both `{"d":...}` wrapper forms. **These prove Chancela
+  constructs/parses exactly as recov-pt does; they do NOT prove AMA accepts the bodies end to end —
+  only the live round trip below does.**
 
 Fixtures are checked in and contain **only public** certificates (a self-signed test CA, a
 leaf "CITIZEN SIGNATURE" cert signed by it, and a self-signed AMA field-encryption cert). No
@@ -59,16 +69,43 @@ Prerequisites (see `tests/network.rs`):
   interchangeable; the variable keeps its `_CERT_` name because renaming a documented deployment
   variable would break existing installations.
 
-A full `CCMovelSign` → `ValidateOtp` cannot be fully automated: `ValidateOtp` needs the OTP a
-human receives on the registered device. The provided network test exercises `GetCertificate`
-only.
+Two `#[ignore]`d network tests live in `tests/network.rs`:
+
+- `preprod_get_certificate` — the low-risk probe: `GetCertificate` only. Proves BasicAuth + field
+  encryption + certificate retrieval against the live endpoint. **No signature is produced.**
+- `preprod_full_sign_round_trip` — the ONE call that confirms the round trip end to end:
+  `GetCertificate` → `SCMDSign` → `ValidateOtp` → a real 256-byte RSA signature.
+
+  > ⚠️ **`preprod_full_sign_round_trip` PERFORMS A REAL QUALIFIED SIGNATURE.** Confirming the OTP
+  > makes AMA produce a genuine qualified electronic signature under the citizen's CMD key over the
+  > digest the test submits. Run it only with a preprod **test** citizen and a throwaway digest.
+
+  A full `SCMDSign` → `ValidateOtp` cannot be non-interactive: `ValidateOtp` needs the OTP a human
+  receives on the registered device *after* `SCMDSign`. The test therefore blocks on an interactive
+  OTP read from stdin — which is also why it cannot complete by accident. Run it with a TTY:
+
+  ```
+  export CHANCELA_CMD_ENV=preprod
+  export CHANCELA_CMD_APPLICATION_ID=<AMA-issued ApplicationId>
+  export CHANCELA_CMD_HTTP_BASIC_USERNAME=<...>   # if AMA requires it
+  export CHANCELA_CMD_HTTP_BASIC_PASSWORD=<...>   # if AMA requires it
+  export CHANCELA_CMD_AMA_CERT_PEM=<path to AMA field-encryption key PEM>
+  export CHANCELA_CMD_TEST_PHONE="+351 XXXXXXXXX"  # a preprod-registered CMD phone
+  export CHANCELA_CMD_TEST_PIN=<the citizen's CMD signature PIN>
+  cargo test -p chancela-cmd --features network-tests -- --ignored --nocapture \
+      preprod_full_sign_round_trip
+  ```
+
+  The test calls `GetCertificate`, then `SCMDSign` (AMA dispatches the OTP), then prompts `OTP: `.
+  Type the OTP received on the device. **Success** = a 256-byte RSA-2048 signature and a non-empty
+  leaf certificate (both asserted). None of `CHANCELA_CMD_TEST_PIN` or the OTP is logged.
 
 ## Environment / config (pinned, plan §2.3)
 
 | Var | Meaning | Default |
 |---|---|---|
 | `CHANCELA_CMD_ENV` | `preprod` \| `prod` | `preprod` |
-| `CHANCELA_CMD_APPLICATION_ID` | opaque AMA ApplicationId (base64'd on the wire) | required |
+| `CHANCELA_CMD_APPLICATION_ID` | opaque AMA ApplicationId (sent RAW on the wire, never base64) | required |
 | `CHANCELA_CMD_HTTP_BASIC_USERNAME` | AMA-issued HTTP BasicAuth username for real transport | none (required for PROD) |
 | `CHANCELA_CMD_HTTP_BASIC_PASSWORD` | AMA-issued HTTP BasicAuth password for real transport | none (required for PROD) |
 | `CHANCELA_CMD_AMA_CERT_PEM` | path to AMA field-encryption key PEM (`CERTIFICATE` or `PUBLIC KEY`) | none (cleartext preprod) |
