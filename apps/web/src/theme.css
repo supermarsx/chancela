@@ -8468,6 +8468,18 @@ a.btn--primary {
   font-size: 0.8rem;
 }
 
+/* The two destinations at the foot of the user picker (self-service account, and — for a holder
+   of `user.manage` — the administrative roster). A row so they sit on one line beside the
+   sign-out control; the separator between them is a real character in the markup, not this gap,
+   because a gap is invisible to `textContent` and to find-in-page. */
+.session-picker__links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 /* ==========================================================================
  * Two-column "Dados do registo" (t20) — a neat label/value pair grid instead of
  * the auto-fit flow, with long free-text fields spanning both columns.
@@ -8938,6 +8950,18 @@ a.btn--primary {
 .subnav-wrap > .subnav {
   margin-top: 0;
   min-width: 0;
+}
+
+/* Two strips in a row are one control, not two.
+   `margin-top: 1.1rem` above separates a strip from the CONTENT it labels, and that is the right
+   figure when a strip stands alone. Since the admin surface grew a primary group level (t120) two
+   `<SubNav>`s render back to back, and the second inherited the same 1.1rem — 17.6px of air
+   between a group and its own sub-tabs, which reads as two unrelated controls rather than one
+   two-level navigator. The adjacent pair takes the tighter band instead; a strip that follows
+   anything else is untouched. Zero specificity so a surface wanting its own figure still wins with
+   a plain class. */
+:where(.subnav-wrap + .subnav-wrap) {
+  margin-top: 0.5rem;
 }
 
 .subnav > .tooltip {
