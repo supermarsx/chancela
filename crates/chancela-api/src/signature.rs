@@ -9260,10 +9260,19 @@ pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
         ),
-        // A provider failure is where an OTP rejection surfaces (ValidateOtp non-success). Report it
-        // as 422 (client-actionable: wrong OTP / expired), without echoing the OTP.
+        // A provider failure is where an OTP rejection surfaces (ValidateOtp non-success), and where
+        // a GetCertificate cert-chain parse failure, a transport error, or a relay refusal surface
+        // too. Report it as 422 (client-actionable), without echoing the OTP.
+        //
+        // The `msg` is a `CmdError` flattened to its Display two crates ago
+        // (`SigningError::Provider(e.to_string())`), so its typed variant is gone. Classify it back
+        // to a stable code so the client renders the detail in the operator's language instead of
+        // the raw English that used to trail the Portuguese headline. An unclassifiable message still
+        // gets a translated headline (`cmd_refused`) rather than a bare status tier.
         S::Provider(msg) => {
+            let code = chancela_cmd::CmdError::stable_code_from_display(&msg);
             ApiError::Unprocessable(format!("a Chave Móvel Digital recusou o pedido: {msg}"))
+                .with_code(code)
         }
         S::Cades(msg) | S::Pades(msg) => {
             ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
@@ -9273,8 +9282,13 @@ pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
 }
 
 /// A CMD configuration failure (bad env/ApplicationId/AMA cert) is a client-actionable 422.
+///
+/// The `CmdError` is still typed here (unlike the flattened provider path), so its stable code is
+/// read directly, giving the client a translated headline for the specific failure rather than the
+/// raw English detail that used to trail the Portuguese sentence.
 pub(crate) fn cmd_config_err(e: chancela_cmd::CmdError) -> ApiError {
-    ApiError::Unprocessable(format!("configuração CMD inválida: {e}"))
+    let code = e.stable_code();
+    ApiError::Unprocessable(format!("configuração CMD inválida: {e}")).with_code(code)
 }
 
 /// pt-PT diagnostics for the two trust-anchor faults t61-e2 split out of

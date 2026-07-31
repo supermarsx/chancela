@@ -257,6 +257,32 @@ export const apiErrorPtPT = {
   'apiError.cmd_refused': 'A Chave Móvel Digital recusou o pedido.',
   'apiError.cmd_config_invalid':
     'A configuração da Chave Móvel Digital está incorreta. Corrija-a nas definições antes de assinar.',
+  // The CMD signing-flow error vocabulary (`chancela_cmd::CmdError::stable_code`). Each is the
+  // headline for one class of runtime failure; the server's own English detail rides in the details
+  // block. `apiErrorFallback.test.ts` reads the code list out of `crates/chancela-cmd/src/error.rs`
+  // and proves none of these is left without copy.
+  'apiError.cmd_transport_failed':
+    'Não foi possível contactar a Chave Móvel Digital. Verifique a ligação à rede e tente novamente.',
+  'apiError.cmd_response_too_large':
+    'A Chave Móvel Digital devolveu uma resposta demasiado grande, que foi recusada por segurança. Tente novamente; se persistir, contacte quem administra o sistema.',
+  'apiError.cmd_request_build_failed':
+    'Não foi possível preparar o pedido à Chave Móvel Digital. Contacte quem administra o sistema.',
+  'apiError.cmd_response_unreadable':
+    'A resposta da Chave Móvel Digital não pôde ser interpretada. Tente novamente; se persistir, contacte quem administra o sistema.',
+  'apiError.cmd_soap_fault':
+    'A Chave Móvel Digital devolveu um erro de serviço. Tente novamente dentro de momentos.',
+  'apiError.cmd_service_rejected':
+    'A Chave Móvel Digital recusou iniciar a assinatura. Confirme o número de telemóvel e o PIN de assinatura e tente novamente.',
+  'apiError.cmd_otp_rejected':
+    'O código enviado por mensagem estava incorreto ou já expirou. Peça um novo código e tente novamente.',
+  'apiError.cmd_configuration_invalid':
+    'A configuração da Chave Móvel Digital não está completa ou é inválida. Corrija-a nas definições de assinatura antes de assinar.',
+  'apiError.cmd_field_encryption_failed':
+    'Não foi possível cifrar os dados enviados à Chave Móvel Digital com o certificado configurado. Verifique o certificado de cifra nas definições de assinatura.',
+  'apiError.cmd_certificate_chain_invalid':
+    'Não foi possível ler o certificado que a Chave Móvel Digital devolveu para o signatário. Tente novamente; se persistir, contacte quem administra o sistema.',
+  'apiError.cmd_base64_invalid':
+    'A Chave Móvel Digital devolveu um valor que não pôde ser descodificado. Tente novamente; se persistir, contacte quem administra o sistema.',
   'apiError.tsa_config_invalid':
     'A configuração do serviço de carimbo temporal está incorreta. Corrija-a nas definições.',
   'apiError.timestamp_failed': 'Não foi possível obter o carimbo temporal.',
@@ -586,6 +612,27 @@ export const apiErrorEnglish = {
   'apiError.cmd_refused': 'Chave Móvel Digital refused the request.',
   'apiError.cmd_config_invalid':
     'The Chave Móvel Digital configuration is incorrect. Fix it in settings before signing.',
+  'apiError.cmd_transport_failed':
+    'Chave Móvel Digital could not be reached. Check the network connection and try again.',
+  'apiError.cmd_response_too_large':
+    'Chave Móvel Digital returned an oversized response, which was refused as a safety measure. Try again; if it persists, contact whoever administers the system.',
+  'apiError.cmd_request_build_failed':
+    'The request to Chave Móvel Digital could not be prepared. Contact whoever administers the system.',
+  'apiError.cmd_response_unreadable':
+    'The response from Chave Móvel Digital could not be read. Try again; if it persists, contact whoever administers the system.',
+  'apiError.cmd_soap_fault': 'Chave Móvel Digital returned a service fault. Try again in a moment.',
+  'apiError.cmd_service_rejected':
+    'Chave Móvel Digital refused to start the signature. Check the mobile number and signing PIN and try again.',
+  'apiError.cmd_otp_rejected':
+    'The code sent by SMS was incorrect or has expired. Request a new code and try again.',
+  'apiError.cmd_configuration_invalid':
+    'The Chave Móvel Digital configuration is incomplete or invalid. Fix it in the signing settings before signing.',
+  'apiError.cmd_field_encryption_failed':
+    'The data sent to Chave Móvel Digital could not be encrypted with the configured certificate. Check the field-encryption certificate in the signing settings.',
+  'apiError.cmd_certificate_chain_invalid':
+    'The certificate Chave Móvel Digital returned for the signer could not be read. Try again; if it persists, contact whoever administers the system.',
+  'apiError.cmd_base64_invalid':
+    'Chave Móvel Digital returned a value that could not be decoded. Try again; if it persists, contact whoever administers the system.',
   'apiError.tsa_config_invalid':
     'The timestamping service configuration is incorrect. Fix it in settings.',
   'apiError.timestamp_failed': 'The timestamp could not be obtained.',

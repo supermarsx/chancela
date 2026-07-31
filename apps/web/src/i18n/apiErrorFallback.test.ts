@@ -404,3 +404,88 @@ describe('resolution never drops the server detail and never shows raw English a
     expect(rendered).not.toContain('{seconds}');
   });
 });
+
+/**
+ * The CMD signing-flow recurrence guard.
+ *
+ * A CMD signature error surfaces as `a Chave Móvel Digital recusou o pedido: <English CmdError>` —
+ * a translated headline over an untranslated detail. The server now attaches a stable code
+ * (`chancela_cmd::CmdError::stable_code`) so the client can render a sentence in the operator's
+ * language, and this guard proves the client kept up: it reads the closed code list out of
+ * `crates/chancela-cmd/src/error.rs` and fails loudly if any code the Rust side can emit has no
+ * copy here. Neither `catalogLeakGate` nor `noLiteralUiCopy` can see this — the sentence arrives
+ * over the wire — so, in the spirit of `providerProbeDiagnostics.test.ts`, this file is that eye.
+ */
+describe('CMD signing errors resolve to a translated headline for every code the server can emit', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function emittedCmdErrorCodes(): Promise<{ declared: Set<string>; listed: Set<string> }> {
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    // Tests run with cwd = apps/web; the repo root is two levels up.
+    const source = readFileSync('../../crates/chancela-cmd/src/error.rs', 'utf8');
+
+    // `pub const NAME: &str = "value";` — one code's declaration.
+    const declarations = new Map<string, string>();
+    for (const match of source.matchAll(/pub const ([A-Z0-9_]+): &str = "([a-z0-9_]+)";/g)) {
+      declarations.set(match[1], match[2]);
+    }
+    // The body of `ALL_CMD_ERROR_CODES`, so a constant declared but never listed is caught too.
+    const listBody = /ALL_CMD_ERROR_CODES: &\[&str\] = &\[([\s\S]*?)\];/.exec(source)?.[1] ?? '';
+    const listed = new Set<string>();
+    for (const match of listBody.matchAll(/^\s{4}([A-Z0-9_]+),$/gm)) {
+      const value = declarations.get(match[1]);
+      if (value) listed.add(value);
+    }
+    return { declared: new Set(declarations.values()), listed };
+  }
+
+  const hasCopyInBoth = (code: string): boolean =>
+    Boolean(ptPT[`apiError.${code}`]?.trim()) && Boolean(english[`apiError.${code}`]?.trim());
+
+  it('extracts a non-vacuous code list from the Rust source', async () => {
+    const { declared, listed } = await emittedCmdErrorCodes();
+    expect(declared.size, 'the CmdError code constant scan matched nothing').toBeGreaterThan(0);
+    expect(listed.size, 'the ALL_CMD_ERROR_CODES scan matched nothing').toBeGreaterThan(0);
+    // A floor just under the current count, so a half-broken sweep is caught rather than passing.
+    expect(listed.size).toBeGreaterThanOrEqual(12);
+  });
+
+  it('lists every declared code (none declared but left out of the closed list)', async () => {
+    const { declared, listed } = await emittedCmdErrorCodes();
+    expect([...declared].filter((code) => !listed.has(code)).sort()).toEqual([]);
+  });
+
+  it('gives every emitted CMD error code its own pt-PT and English copy', async () => {
+    const { listed } = await emittedCmdErrorCodes();
+    const unmapped = [...listed].filter((code) => !hasCopyInBoth(code));
+    expect(
+      unmapped.sort(),
+      'a CMD error code the backend can emit has no copy, so it would render the raw English detail under a bare status tier',
+    ).toEqual([]);
+  });
+
+  it('resolves each CMD error code to its dedicated headline, not the status tier', async () => {
+    const { listed } = await emittedCmdErrorCodes();
+    for (const code of listed) {
+      const resolved = resolveApiError({ status: 422, code });
+      expect(resolved.key, `${code} fell back to a tier headline`).toBe(`apiError.${code}`);
+      expect(resolved.unmapped, `${code} was treated as an unwritten-copy gap`).toBe(false);
+    }
+  });
+
+  it('still shows the raw English detail, marked, for a CMD code newer than this bundle', () => {
+    // The unknown-code contract: a server newer than the client emits a code with no copy here. The
+    // headline demotes to the status tier and the English detail is force-opened — never blank,
+    // never silently passed off as localized copy.
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resolved = resolveApiError({ status: 422, code: 'cmd_a_reason_from_the_future' });
+    expect(resolved.key).toBe('apiError.tier.422');
+    expect(resolved.unmapped).toBe(true);
+    expect(resolved.forceDetails).toBe(true);
+  });
+});
