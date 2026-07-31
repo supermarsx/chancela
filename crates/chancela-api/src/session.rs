@@ -599,11 +599,22 @@ pub enum RequiredAction {
 pub fn required_action_for(user: &User) -> Option<RequiredAction> {
     if user.force_password_change {
         Some(RequiredAction::ChangePassword)
-    } else if user.two_factor_required && !user.totp.as_ref().is_some_and(|t| t.confirmed) {
+    } else if user.two_factor_required && !holds_a_second_factor(user) {
         Some(RequiredAction::EnrolTwoFactor)
     } else {
         None
     }
+}
+
+/// Whether the account holds something that satisfies the second-factor requirement.
+///
+/// **A passkey counts** (t10), and leaving it out would be a wall with no door: an account
+/// required to hold a second factor, holding a credential that *is* multi-factor by construction —
+/// possession of the authenticator plus user verification on it — would still be sent to a TOTP
+/// enrolment screen it has no reason to accept. The requirement is "hold a second factor", not
+/// "hold a TOTP secret".
+fn holds_a_second_factor(user: &User) -> bool {
+    user.totp.as_ref().is_some_and(|t| t.confirmed) || !user.passkeys.is_empty()
 }
 
 /// The `POST /v1/session` outcome: either a minted session, or — when the account has a confirmed
@@ -1067,6 +1078,113 @@ pub async fn create_session(
     let origin = crate::session_origin(&state, &headers, peer.0);
     let token = mint_session(&state, uid, unlocked_key, origin).await?;
 
+    Ok(Json(CreateSessionOutcome::Authenticated(SessionCreated {
+        token,
+        required_action: required_action_for(&user),
+        user: UserView::from(&user),
+    })))
+}
+
+/// `POST /v1/session/passkey` — sign in with a passkey.
+///
+/// Lands in the **same** [`CreateSessionOutcome`] union as the password path and respects the same
+/// [`required_action_for`] wall, so nothing downstream has to know which door was used.
+///
+/// ## Why an assertion never raises a two-factor challenge, and why there is no UV fall-through
+///
+/// A passkey assertion with the `UV` bit set is *already* possession plus verification — the
+/// authenticator held the credential and the person in front of it proved themselves to it.
+/// Demanding a TOTP code afterwards is theatre: it adds a step without adding a factor, and users
+/// correctly read it as the product not understanding what it just did. So an assertion satisfies
+/// the second-factor requirement outright, and [`holds_a_second_factor`] counts a passkey.
+///
+/// **The design ruling also describes a UV-less assertion falling through to the TOTP challenge.
+/// That path cannot exist on the frozen constraint set, and building it would be building dead
+/// code.** `userVerification: "required"` is set on *both* ceremonies — Invariant 1, and not a
+/// preference: CTAP2.1 keeps `CredRandomWithUV` and `CredRandomWithoutUV` as separate seeds, so a
+/// UV-less assertion would derive a different PRF secret from the one enrolment used.
+/// `DiscoverableCredentialRequestOptions::passkey` therefore always sets `Required`, with no setter
+/// to loosen it, and the library refuses a UV-clear assertion with `UserNotVerified` **before**
+/// this handler is reached. A UV-less assertion is not degraded here because it never arrives.
+///
+/// The two halves of the ruling are consistent once *user verification* and *PRF capability* are
+/// kept apart, which the "Sessions" section conflated. UV is always performed. What varies per
+/// credential is whether the authenticator provisioned an `hmac-secret`
+/// ([`crate::passkeys::PasskeyCredential::prf_capable`]) — and that, not UV, is what shape C's
+/// "this authenticator will still ask for your password when you sign" degradation keys on.
+///
+/// ## The attestation key
+///
+/// `unlocked_key` is `None` on this path today, and that is an *already supported* session state
+/// rather than a gap — `mint_session` takes `Option<SigningKey>`, and companion/pairing sessions
+/// are minted this way now. Such a session reads freely and is asked for the password at the moment
+/// it first needs to attest. When the web lane lands PRF, the derived secret arrives in this
+/// request body and unwraps the blob here, exactly as `req.password` does above; nothing else about
+/// this handler changes.
+pub async fn create_passkey_session(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    peer: ClientPeer,
+    Json(req): Json<crate::passkeys::PasskeySignIn>,
+) -> Result<Json<CreateSessionOutcome>, ApiError> {
+    let now = OffsetDateTime::now_utc();
+    let verified = crate::passkeys::complete_sign_in(&state, &req.credential, now).await?;
+    let user_id = verified.user_id;
+    let user = state
+        .users
+        .read()
+        .await
+        .get(&user_id)
+        .cloned()
+        .ok_or_else(|| ApiError::Unauthorized("credenciais inválidas".to_owned()))?;
+    // An inactive account must never mint a session, on any path.
+    if !user.active {
+        return Err(ApiError::Unauthorized("credenciais inválidas".to_owned())
+            .with_code("invalid_credentials"));
+    }
+
+    // Fall through to TOTP only when the assertion did not carry user verification — see the note
+    // above on why a UV assertion is already the second factor.
+    if !verified.user_verified && user.totp.as_ref().is_some_and(|t| t.confirmed) {
+        let challenge_id = Uuid::new_v4().to_string();
+        let expires_at = now + Duration::seconds(TWO_FACTOR_CHALLENGE_TTL_SECS);
+        let mut methods = vec!["totp"];
+        if user
+            .totp
+            .as_ref()
+            .is_some_and(|t| !t.backup_code_hashes.is_empty())
+        {
+            methods.push("backup_code");
+        }
+        {
+            let mut pending = state.pending_two_factor.write().await;
+            pending.retain(|_, p| now < p.expires_at);
+            pending.insert(
+                challenge_id.clone(),
+                PendingTwoFactor {
+                    user_id,
+                    // No key to carry: a passkey sign-in unlocks nothing today. `PendingTwoFactor`
+                    // already models this as `Option`, so the PRF-unwrapped scalar will ride here
+                    // exactly as the password-unwrapped one does, with no new mechanism.
+                    unlocked_key: None,
+                    expires_at,
+                    fails: 0,
+                },
+            );
+        }
+        return Ok(Json(CreateSessionOutcome::TwoFactorRequired(
+            TwoFactorChallenge {
+                two_factor_challenge: TwoFactorChallengeDetail {
+                    challenge_id,
+                    methods,
+                    expires_at,
+                },
+            },
+        )));
+    }
+
+    let origin = crate::session_origin(&state, &headers, peer.0);
+    let token = mint_session(&state, user_id, None, origin).await?;
     Ok(Json(CreateSessionOutcome::Authenticated(SessionCreated {
         token,
         required_action: required_action_for(&user),

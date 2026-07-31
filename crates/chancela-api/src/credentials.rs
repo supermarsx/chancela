@@ -42,16 +42,25 @@
 //! `const _` block below, which refuses a kind that can start a session but does not count toward
 //! step-up.
 //!
-//! ## Where the passkey proof arm plugs in
+//! ## Where the passkey proof arm plugged in
 //!
-//! [`CredentialKind::Passkey`] is declared here already, with no storage behind it
-//! ([`is_held_by`](CredentialKind::is_held_by) answers `false` for every user, so **no behaviour
-//! changes today** and `passkey_is_unheld_until_storage_exists` pins that). Its step-up role is
-//! [`StepUpRole::ProofPending`]: it counts toward non-vacuity — so a passkey-only account can never
-//! be exempted on its session alone — while [`crate::data::require_step_up`] still has no arm that
-//! can verify a passkey assertion. That combination is fail-closed and is only admissible while no
-//! user can hold one; the enrolment lane must land the proof arm in the same change that lets a
-//! passkey be enrolled. See [`StepUpRole::ProofPending`] for the exact list of what that arm owes.
+//! [`CredentialKind::Passkey`] was declared here one commit before it had any storage, deliberately:
+//! the rules had to be right *before* an account could hold one, rather than be widened by the lane
+//! that made it possible. Its step-up role was [`StepUpRole::ProofPending`] — counting toward
+//! non-vacuity, so a passkey-only account could never be exempted on its session alone, while
+//! [`crate::data::require_step_up`] had no arm that could verify an assertion. Fail-closed, and
+//! admissible only while nobody could hold one.
+//!
+//! t10 closed it, and the two halves had to land together. [`crate::passkeys`] now stores
+//! credentials on the user record ([`is_held_by`](CredentialKind::is_held_by) reads that list) and
+//! `require_step_up` verifies an assertion bound to a server-issued, single-use, step-up-scoped
+//! challenge — so the role is [`StepUpRole::VerifiedProof`]. Shipping the first half alone would
+//! have locked passkey-only users out of every destructive operation; the second alone is the
+//! widening this module exists to prevent.
+//!
+//! [`StepUpRole::ProofPending`] is kept, with no kind declaring it. It is the shape the *next*
+//! credential kind will pass through, and its documentation is the checklist that got this one
+//! right.
 
 use std::collections::BTreeSet;
 
@@ -93,10 +102,9 @@ credential_kinds! {
     /// A **confirmed** TOTP second factor (`User::totp`). A pending enrolment is not a credential:
     /// it grants nothing and is not counted here.
     TwoFactorTotp,
-    /// A WebAuthn passkey. **No storage exists yet** — [`CredentialKind::is_held_by`] answers
-    /// `false` for every account — so this variant changes nothing today. It is declared now so
-    /// that the rules in this module are already correct when the enrolment lane lands, rather than
-    /// being widened by it.
+    /// A WebAuthn passkey (`User::passkeys`). An account holds *the kind* while it holds at least
+    /// one credential of it; "is this the last one" is a question only the revocation handler
+    /// (`crate::passkeys::revoke_passkey`) has to answer, and it builds the post-state set itself.
     Passkey,
 }
 
@@ -114,25 +122,32 @@ pub(crate) enum StepUpRole {
     /// it yet, so its holder cannot satisfy the gate. Fail-closed, and admissible **only** while no
     /// account can actually hold the kind.
     ///
-    /// **What the passkey proof arm owes, exactly:**
+    /// **No kind declares this today.** It is retained as the state the *next* credential kind
+    /// passes through, and because the list below is the checklist that got the passkey one right.
     ///
-    /// 1. An optional assertion field on [`crate::data::ReAuth`], beside `password` and
+    /// **What a proof arm owes, exactly** — this is what `t10` delivered for
+    /// [`CredentialKind::Passkey`], and what any successor owes too:
+    ///
+    /// 1. An optional proof field on [`crate::data::ReAuth`], beside `password` and
     ///    `recovery_phrase` — **not** a new [`crate::confirmation::ConfirmationStrictness`] rung.
     ///    The ladder answers *how hard*; the user's choice answers *with what*. The existing
     ///    precedent is [`crate::confirmation::PairingConfirmationMethod`]
     ///    (`Password | TotpCode | EmailedCode`), including its deployment-narrowable accepted set.
-    /// 2. A verification arm in `require_step_up` that accepts that assertion for the acting user's
-    ///    own enrolled credentials, and this variant flipped to [`Self::VerifiedProof`].
+    ///    *(The passkey field landed; the narrowable accepted set did not, and is the one item of
+    ///    this list still outstanding — it is additive and changes no default.)*
+    /// 2. A verification arm in `require_step_up` that accepts that proof for the acting user's
+    ///    own enrolled credentials, and the kind flipped to [`Self::VerifiedProof`].
     /// 3. **A server-issued, single-use, short-TTL challenge scoped to step-up.** Not a sign-in
     ///    challenge, and never a client-chosen nonce: without this binding, a passkey assertion
     ///    captured at sign-in replays into a factory reset. This is the one detail that is not
-    ///    optional and not deferrable.
-    /// 4. [`CredentialKind::is_held_by`] reading the real credential list, so a passkey-only
-    ///    account is genuinely non-vacuous rather than non-vacuous in principle.
+    ///    optional and not deferrable. See [`crate::passkeys::CeremonyPurpose`].
+    /// 4. [`CredentialKind::is_held_by`] reading the real credential list, so an account holding
+    ///    only that kind is genuinely non-vacuous rather than non-vacuous in principle.
     ///
-    /// (2) and (4) must land together with the enrolment endpoint: (4) without (2) locks
-    /// passkey-only users out of every destructive operation, and (2) without (4) is the widening
-    /// this module exists to prevent.
+    /// (2) and (4) must land together with whatever endpoint lets the kind be established: (4)
+    /// without (2) locks its holders out of every destructive operation, and (2) without (4) is
+    /// the widening this module exists to prevent.
+    #[cfg_attr(not(test), allow(dead_code))]
     ProofPending,
     /// Not a proof `require_step_up` can demand, and its presence must not make a gate
     /// unsatisfiable for its holder.
@@ -227,8 +242,14 @@ impl CredentialKind {
             // See `StepUpRole::NotAProof`: no arm exists, and none is needed, because TOTP cannot
             // start a session.
             Self::TwoFactorTotp => StepUpRole::NotAProof,
-            // See `StepUpRole::ProofPending` for what the enrolment lane owes here.
-            Self::Passkey => StepUpRole::ProofPending,
+            // t10 landed the arm `StepUpRole::ProofPending` described: `require_step_up` now
+            // verifies a passkey assertion bound to a server-issued, single-use, step-up-scoped
+            // challenge (`crate::passkeys::verify_step_up_assertion`), and `is_held_by` below
+            // reads the real credential list. Those two had to move in the same change as the
+            // enrolment endpoint — the first alone locks passkey-only users out of every
+            // destructive operation, the second alone is the widening this module exists to
+            // prevent.
+            Self::Passkey => StepUpRole::VerifiedProof,
         }
     }
 
@@ -300,9 +321,12 @@ impl CredentialKind {
                 .totp
                 .as_ref()
                 .is_some_and(crate::users::TotpEnrolment::is_active),
-            // No storage exists yet. The enrolment lane replaces this line with a read of the
-            // credential list; until it does, no account holds a passkey and nothing here bites.
-            Self::Passkey => false,
+            // Kind granularity, deliberately: an account holds *the kind* while it holds at least
+            // one credential of it. The revocation handler is what reasons about "the last one"
+            // (`crate::passkeys::revoke_passkey` builds the post-state set), because that is the
+            // only place the difference between revoking one of three and revoking the last one
+            // exists.
+            Self::Passkey => !user.passkeys.is_empty(),
         }
     }
 
@@ -572,6 +596,7 @@ mod tests {
 
     fn user() -> User {
         User {
+            passkeys: Vec::new(),
             id: UserId(uuid::Uuid::new_v4()),
             username: "amelia.marques".to_owned(),
             display_name: "Amélia Marques".to_owned(),
@@ -705,12 +730,18 @@ mod tests {
     }
 
     #[test]
-    fn the_gate_itself_refuses_a_passkey_only_account() {
-        // Runs the real decision `require_step_up` runs, on the account shape the enrolment lane
-        // will make possible: session-capable, no argon2id verifier of either named kind.
+    fn the_gate_itself_refuses_a_passkey_only_account_that_offers_nothing() {
+        // Runs the real decision `require_step_up` runs, on the account shape enrolment makes
+        // possible: session-capable, no argon2id verifier of either named kind, and no assertion
+        // offered. The session token alone must not be enough.
         let held = HeldCredentials::of([CredentialKind::Passkey]);
-        let outcome =
-            crate::data::decide_step_up(&held, None, None, &crate::data::ReAuth::default());
+        let outcome = crate::data::decide_step_up(
+            &held,
+            None,
+            None,
+            &crate::data::ReAuth::default(),
+            crate::passkeys::PasskeyStepUp::NotSupplied,
+        );
         assert!(
             outcome.is_err(),
             "a passkey-only account passed a step-up gate on its session alone"
@@ -718,15 +749,68 @@ mod tests {
     }
 
     #[test]
-    fn passkey_is_unheld_until_storage_exists() {
-        // Nothing above bites today, and this is why: no account can hold a passkey yet, so the
-        // declaration is a statement about the future and not a live behaviour change.
+    fn a_refused_assertion_does_not_satisfy_the_gate() {
+        // The fail-closed direction, and the one an "if a passkey was supplied, trust it" shortcut
+        // would break: offering an assertion that did not verify must land in the same uniform
+        // refusal as offering nothing at all.
+        let held = HeldCredentials::of([CredentialKind::Passkey]);
+        assert!(
+            crate::data::decide_step_up(
+                &held,
+                None,
+                None,
+                &crate::data::ReAuth::default(),
+                crate::passkeys::PasskeyStepUp::Refused,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_verified_assertion_satisfies_the_gate_for_a_passkey_only_account() {
+        // The other half of the pair, and the reason both had to land together: making a
+        // passkey-only account non-vacuous without giving it a way to prove itself would have
+        // locked its holder out of every destructive operation in the product.
+        let held = HeldCredentials::of([CredentialKind::Passkey]);
+        assert!(
+            crate::data::decide_step_up(
+                &held,
+                None,
+                None,
+                &crate::data::ReAuth::default(),
+                crate::passkeys::PasskeyStepUp::Verified,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn holding_a_passkey_is_read_from_the_credential_list() {
+        // `is_held_by` answered `false` for every account until t10 gave it storage to read. That
+        // it now reads the real list is what makes every rule in this module true of a real
+        // account rather than true in principle.
         let mut u = user();
-        u.password_hash = Some("phc".to_owned());
-        u.recovery_hash = Some("phc".to_owned());
-        u.totp = Some(confirmed_totp());
         assert!(!CredentialKind::Passkey.is_held_by(&u));
-        assert!(!HeldCredentials::held_by(&u).any(|k| k == CredentialKind::Passkey));
+        u.passkeys.push(crate::passkeys::PasskeyCredential {
+            credential_id: "Y3JlZC1pZA".to_owned(),
+            user_handle: "aGFuZGxl".to_owned(),
+            static_state: "c3RhdGlj".to_owned(),
+            sign_count: 0,
+            user_verified: true,
+            backup: crate::passkeys::PasskeyBackup::Exists,
+            attachment: crate::passkeys::PasskeyAttachment::Platform,
+            rp_id: "example.pt".to_owned(),
+            transports: 0,
+            name: "Telemóvel".to_owned(),
+            created_at: "2026-07-31T09:00:00Z".to_owned(),
+            last_used_at: None,
+            prf_capable: true,
+        });
+        assert!(CredentialKind::Passkey.is_held_by(&u));
+        assert!(HeldCredentials::held_by(&u).any(|k| k == CredentialKind::Passkey));
+        // And the account is no longer exempt on its session alone — the widening this module
+        // exists to prevent, closed against a record that can now actually express it.
+        assert!(!step_up_is_vacuous(&HeldCredentials::held_by(&u)));
     }
 
     // ── Membership, not the current pair ──────────────────────────────────────────────────────

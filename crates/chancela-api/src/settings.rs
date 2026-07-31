@@ -886,6 +886,10 @@ pub struct AuthSettings {
     /// confirmation is still required. The requirement is not configurable; only the choice of
     /// proof is.
     pub device_pairing: crate::confirmation::PairingConfirmationSettings,
+    /// WebAuthn passkey policy (t10) — in practice the one value the library cannot supply, the
+    /// **RP ID this instance asserts**. Absent from an older settings document and defaulting to
+    /// unset, which means passkeys are simply unavailable rather than available with a guess.
+    pub passkeys: crate::passkeys::PasskeySettings,
 }
 
 /// Who may create an account without an administrator doing it for them.
@@ -2641,6 +2645,18 @@ impl Settings {
                     .to_owned(),
             ));
         }
+        // **The RP ID, refused at configuration time — before a user ever sees it.**
+        //
+        // This has to run here rather than inside `AuthSettings::validate` because the RP ID is
+        // only meaningful relative to `platform.public_base_url`, and the two live in different
+        // slices. Deferring it is not an option: `webauthn_rp` performs neither the
+        // registrable-suffix check nor the Public Suffix List check, so a mis-set RP ID passes
+        // every server-side path and then fails inside the browser with a `SecurityError` that
+        // never reaches this process. The only moment this instance can still say something useful
+        // is the moment an operator writes the value.
+        self.auth
+            .passkeys
+            .validate_against(self.platform.resolved_public_base_url().as_deref())?;
         Ok(())
     }
 }
@@ -3778,6 +3794,14 @@ pub struct SettingsActorQuery {
     /// Actor to attribute the `settings.updated` event to; falls back to the document's
     /// `organization.default_actor` when absent or blank.
     pub actor: Option<String>,
+    /// The typed phrase confirming a `platform.public_base_url` **host** change while passkeys are
+    /// enrolled (t10). See [`crate::passkeys::guard_domain_change`].
+    ///
+    /// A query parameter rather than a field on the document, deliberately: the document is
+    /// persisted and echoed back, and a one-shot confirmation for a single act has no business
+    /// being stored as configuration. It is the same reasoning that keeps
+    /// [`crate::confirmation::ConfirmationProof`] out of the resources it guards.
+    pub passkey_confirm_phrase: Option<String>,
 }
 
 pub(crate) struct SettingsAuditEventSpec {
@@ -4276,6 +4300,24 @@ pub async fn put_settings(
     // stored trimmed, lowercased and de-duplicated rather than compared that way at every signup.
     settings.auth.signup.allowed_domains = settings.auth.signup.normalized_domains();
     settings.validate()?;
+
+    // **Moving this instance to a different host destroys every enrolled passkey, permanently.**
+    //
+    // Not "invalidates" — destroys: a credential is bound to the RP ID it was created under, it
+    // lives in the user's authenticator, and nothing this server does can rebind it. So the
+    // operator writes a phrase and is told the exact number of credentials that stop working. This
+    // runs on a *changed host* only, so an operator saving an unrelated tab is never asked.
+    //
+    // It is deliberately a wall rather than a prohibition. An operator may genuinely need to move
+    // an instance, and refusing outright would leave them editing `settings.json` by hand — with
+    // the same consequence and no record of having been told.
+    crate::passkeys::guard_domain_change(
+        &state,
+        previous.platform.resolved_public_base_url().as_deref(),
+        settings.platform.resolved_public_base_url().as_deref(),
+        query.passkey_confirm_phrase.as_deref(),
+    )
+    .await?;
     // The §2.6 ceiling's catalog-dependent half. It runs here rather than inside `validate()`
     // because the role catalog is state, not part of the document — and it must run on the same
     // request that stores the document, or the ceiling is advisory.

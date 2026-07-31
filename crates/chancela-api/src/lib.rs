@@ -175,6 +175,10 @@ mod observability;
 mod pairing;
 mod paper_import;
 mod password_policy;
+// t10: WebAuthn passkeys — credential storage, both ceremonies, the step-up proof arm and the
+// RP ID setting. `pub` so the adversarial suite can drive the RP ID validator and the ceremony
+// store's purpose scoping directly, without going through a browser.
+pub mod passkeys;
 mod pdf_signature_validation;
 mod pdf_validation_report_document;
 mod platform_logs;
@@ -765,6 +769,14 @@ pub struct AppState {
     /// persisted, never logged, and short-lived — a restart or failover mid-challenge loses it and the
     /// user re-authenticates (fail-closed). Reset on restart, like `sessions`.
     pub pending_two_factor: Arc<RwLock<HashMap<String, session::PendingTwoFactor>>>,
+    /// In-flight WebAuthn ceremonies (t10): a challenge → the ceremony state, its **purpose**, and
+    /// the user it was issued to.
+    ///
+    /// Process-local and never persisted, like `pending_two_factor`: losing one mid-ceremony means
+    /// the user retries, which is the fail-closed direction. The purpose is what stops a sign-in
+    /// assertion being replayed into a destructive operation, so this is not merely a cache — see
+    /// [`passkeys::CeremonyStore`].
+    pub passkey_ceremonies: passkeys::CeremonyStoreHandle,
     /// Digest-only, reload-safe session registry for a durable single-node data directory. Pure
     /// in-memory states keep the explicit no-op default; clustered Postgres uses Redis instead.
     #[doc(hidden)]
@@ -2153,6 +2165,10 @@ impl AppState {
         self.sessions.write().await.clear();
         self.session_issued_at.write().await.clear();
         self.pending_two_factor.write().await.clear();
+        // An outstanding ceremony is a live authentication in progress; a wholesale session
+        // invalidation must take those with it or a factory reset could be completed with a
+        // challenge issued before it.
+        self.passkey_ceremonies.write().await.clear();
         *self.auth_tokens.write().await = auth_token::AuthTokenStore::new();
         self.invite_grants.write().await.clear();
         if let Err(error) = self.durable_sessions.clear().await {
@@ -3501,6 +3517,29 @@ pub fn router(state: AppState) -> Router {
             "/v1/users/{id}/two-factor/backup-codes",
             post(totp::regenerate_backup_codes),
         )
+        // Passkeys (t10). The list is self-or-`user.manage`; everything that changes a credential
+        // is self-only and gates inside the handler, so these classify as `Session` exactly as the
+        // TOTP routes do. Revocation additionally demands step-up: a credential operation must not
+        // ride a session alone.
+        .route(
+            "/v1/users/{id}/passkeys",
+            get(passkeys::list_passkeys).post(passkeys::finish_enrolment),
+        )
+        .route(
+            "/v1/users/{id}/passkeys/options",
+            post(passkeys::begin_enrolment),
+        )
+        .route(
+            "/v1/users/{id}/passkeys/{credential_id}",
+            axum::routing::delete(passkeys::revoke_passkey),
+        )
+        // The step-up ceremony. Authenticated, and the challenge it mints is bound to this
+        // session's user and to the step-up purpose — it cannot satisfy a sign-in and a sign-in
+        // cannot satisfy it.
+        .route(
+            "/v1/reauth/passkey/options",
+            post(passkeys::begin_step_up),
+        )
         .route("/v1/privacy/users/{id}/export", get(privacy::export_user))
         .route(
             "/v1/privacy/users/{id}/dsr-requests",
@@ -3665,6 +3704,15 @@ pub fn router(state: AppState) -> Router {
             "/v1/session/challenge",
             post(session::complete_two_factor_challenge),
         )
+        // Passkey sign-in (t10). Both halves are unauthenticated — no session exists yet — and
+        // **neither takes an identifier**. That is the point of discoverable credentials: a
+        // username-first flow would need an endpoint answering "does this account have a passkey?",
+        // which is the user-enumeration oracle `create_session`'s dummy verifier exists to prevent.
+        .route(
+            "/v1/session/passkey/options",
+            post(passkeys::begin_sign_in),
+        )
+        .route("/v1/session/passkey", post(session::create_passkey_session))
         // Active sign-ins (t95 session backend). Self-scoped: a session sees and revokes only its own
         // owner's sessions. `revoke-others` keeps the current one alive.
         .route("/v1/sessions", get(session::list_sessions))
@@ -3800,9 +3848,13 @@ fn wall_allows(action: session::RequiredAction, method: &axum::http::Method, pat
         session::RequiredAction::ChangePassword => {
             *method == Method::POST && path.starts_with("/v1/users/") && path.ends_with("/secret")
         }
-        // Enrolling the missing second factor: the two-factor endpoints (self-enforced).
+        // Enrolling the missing second factor: the two-factor endpoints, and — since t10 — the
+        // passkey enrolment endpoints, because a passkey satisfies the same requirement
+        // (`session::required_action_for`). Omitting them would leave a walled user staring at a
+        // passkey button that the wall itself refuses.
         session::RequiredAction::EnrolTwoFactor => {
-            path.starts_with("/v1/users/") && path.contains("/two-factor")
+            path.starts_with("/v1/users/")
+                && (path.contains("/two-factor") || path.contains("/passkeys"))
         }
     }
 }
@@ -3883,6 +3935,10 @@ async fn session_wall_gate(
 /// is read-only evidence gathering, a quarantine-import is isolated and never merged into a live
 /// chain, and the session endpoints must work so the operator can authenticate to run any of these.
 /// Every other mutation is blocked with `503` while degraded.
+///
+/// **"Authenticate" includes re-authenticating.** Every entry on the recovery plane is step-up
+/// gated, so whatever mints a step-up proof has to be exempt too, or the gate refuses the proof
+/// while exempting the operation and the operator is locked out of their own repair.
 fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
     use axum::http::Method;
     if matches!(*method, Method::GET | Method::HEAD | Method::OPTIONS) {
@@ -3898,6 +3954,13 @@ fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
         || path == "/v1/books/import/preflight"
         || path == "/v1/books/import"
         || path == "/v1/books/paper-import/validate"
+        // t10: minting a step-up challenge. The recovery plane above is step-up gated, so an
+        // operator whose only credential is a passkey could otherwise reach `/v1/data/reset` and be
+        // unable to prove themselves to it — the gate would refuse the *proof* while exempting the
+        // *operation*, which is a lockout dressed as a policy. It mints an in-memory challenge and
+        // changes no durable state, so it is safe on a broken chain for the same reason the session
+        // endpoints are.
+        || path == "/v1/reauth/passkey/options"
         || path.starts_with("/v1/session")
         || (path.starts_with("/v1/books/") && path.ends_with("/export"))
         || (path.starts_with("/v1/books/") && path.ends_with("/archive/disposal"))
@@ -4561,6 +4624,53 @@ mod tests {
 
     const DEFAULT_TEST_PASSWORD: &str = "Teste-Forte7!X";
     const PROVIDER_CREDENTIAL_STATUS_URI: &str = "/v1/signature/provider-credentials/status";
+
+    /// **A degraded instance must still let an operator prove themselves to its own repair.**
+    ///
+    /// Every entry on the recovery plane is step-up gated. If minting a step-up challenge were
+    /// blocked while the operations it authorises are exempt, an operator whose only credential is
+    /// a passkey could reach `/v1/data/reset` and be unable to satisfy it — a lockout produced by
+    /// two individually-correct rules, which is exactly the shape that survives review.
+    #[test]
+    fn a_degraded_instance_still_mints_step_up_challenges() {
+        let post = axum::http::Method::POST;
+        assert!(degraded_gate_exempt(&post, "/v1/reauth/passkey/options"));
+        assert!(degraded_gate_exempt(&post, "/v1/data/reset"));
+        assert!(degraded_gate_exempt(&post, "/v1/session/passkey"));
+        // The exemption is that one path, not the whole feature: enrolling a *new* credential is an
+        // ordinary mutation and stays blocked while the chain is broken.
+        assert!(!degraded_gate_exempt(
+            &post,
+            "/v1/users/9b1f6c00-0000-4000-8000-0000000000a1/passkeys"
+        ));
+    }
+
+    /// A walled account must be able to reach the enrolment it is walled for. `required_action_for`
+    /// counts a passkey as a second factor, so the wall has to let the passkey routes through or it
+    /// becomes a door the user can see and not open.
+    #[test]
+    fn the_enrol_two_factor_wall_admits_the_passkey_routes() {
+        let action = session::RequiredAction::EnrolTwoFactor;
+        let post = axum::http::Method::POST;
+        let id = "9b1f6c00-0000-4000-8000-0000000000a1";
+        assert!(wall_allows(
+            action,
+            &post,
+            &format!("/v1/users/{id}/passkeys")
+        ));
+        assert!(wall_allows(
+            action,
+            &post,
+            &format!("/v1/users/{id}/passkeys/options")
+        ));
+        assert!(wall_allows(
+            action,
+            &post,
+            &format!("/v1/users/{id}/two-factor/totp/enrol")
+        ));
+        // And nothing else: the wall is still a wall.
+        assert!(!wall_allows(action, &post, "/v1/acts"));
+    }
 
     #[tokio::test]
     async fn settings_commit_tracker_retains_a_wake_before_first_waiter_poll() {
@@ -5764,6 +5874,7 @@ mod tests {
         }
         let uid = UserId(Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: "test.actor".to_owned(),
             display_name: "Test Actor".to_owned(),
@@ -16578,6 +16689,7 @@ mod tests {
         use time::format_description::well_known::Rfc3339;
         let uid = UserId(Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: username.to_owned(),
             display_name: username.to_owned(),
@@ -17717,6 +17829,7 @@ mod tests {
         }
         let uid = UserId(Uuid::new_v4());
         let user = User {
+            passkeys: Vec::new(),
             id: uid,
             username: "no.perms".to_owned(),
             display_name: "No Perms".to_owned(),
@@ -20618,6 +20731,7 @@ mod tests {
         state.users.write().await.insert(
             uid,
             User {
+                passkeys: Vec::new(),
                 id: uid,
                 username: "legacy.user".to_owned(),
                 display_name: "Legacy User".to_owned(),

@@ -1,0 +1,32 @@
+{
+  "passkeys": [
+    {
+      "credential_id": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+      "name": "Telemóvel da Amélia",
+      "created_at": "2026-07-31T10:15:30Z",
+      "last_used_at": "2026-07-31T14:02:11Z",
+      "rp_id": "example.pt",
+      "usable": true,
+      "backup": "exists",
+      "attachment": "platform",
+      "transports": ["internal", "hybrid"],
+      "prf_capable": true,
+      "sign_count": 0
+    },
+    {
+      "credential_id": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-Pw",
+      "name": "Chave de segurança de reserva",
+      "created_at": "2026-07-30T09:00:00Z",
+      "last_used_at": null,
+      "rp_id": "example.pt",
+      "usable": true,
+      "backup": "not_eligible",
+      "attachment": "cross_platform",
+      "transports": ["usb", "nfc"],
+      "prf_capable": false,
+      "sign_count": 12
+    }
+  ],
+  "rp_id": "example.pt",
+  "enrolment_available": true
+}

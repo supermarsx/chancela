@@ -40,6 +40,7 @@ counts, state transitions). Together they pin both shape and semantics.
 | `tsa.status.json`                      | `TsaCatalogView` — `GET /v1/trust/tsa` (offline TSA diagnostics/catalog)                   | spec/04 SIG-22                                                     |
 | `law.manifest.json`                    | `[LawEntryView]` — `GET /v1/law` (law archive manifest + store state)                      | t27 §law-v1 (`t27-e1.md`), spec/09 AI-20..22                       |
 | `user.json`                            | `UserView` — `POST/GET /v1/users`                                                          | t14 §2.8 (`t14-e3.md`)                                             |
+| `user.passkeys.json`                   | `PasskeyListView` — `GET /v1/users/{id}/passkeys`                                          | t10 (`docs/passkeys.md`, "Finding 4")                              |
 | `session.json`                         | `SessionView` (populated) — `GET /v1/session`                                              | t14 §2.8 (`t14-e3.md`)                                             |
 | `session.password-policy.json`         | `PasswordPolicyView` — `GET /v1/session/password-policy`                                   | t68 password policy                                                |
 | `privacy.processors.json`              | `[ProcessorRecordView]` — `GET /v1/privacy/processors`                                     | privacy/compliance registers                                       |

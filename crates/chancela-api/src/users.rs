@@ -223,6 +223,21 @@ pub struct User {
     /// successful change. Additive; defaults `false`.
     #[serde(default, skip_serializing_if = "crate::dto::is_false")]
     pub force_password_change: bool,
+    /// The user's enrolled WebAuthn passkeys (t10), newest last.
+    ///
+    /// **On the user record, not in the credential store.** A WebAuthn public key is not a secret;
+    /// `CredentialMode::TwoFactorTotp` exists because a TOTP shared secret *is* one, and that store
+    /// is write-only with fail-closed reads by design. Routing a public key through it would mean
+    /// every render of the security screen reads through a door built to refuse. This is the same
+    /// kind of thing as `AttestationKeyBlob::public_key_sec1`, already stored here in the clear.
+    ///
+    /// **Additive, and the `#[serde(default)]` is load-bearing rather than tidy.** The store
+    /// *skips rows it cannot parse* rather than failing the load, so a non-defaulted field here
+    /// would not surface as a deserialisation error — it would silently drop every pre-existing
+    /// user from the read model. `skip_serializing_if` keeps it out of `users.json` until an
+    /// account actually enrols one, so an existing file round-trips byte-identically.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub passkeys: Vec<crate::passkeys::PasskeyCredential>,
 }
 
 /// A user's TOTP enrolment envelope (t95 P1-C) — everything about their second factor **except the
@@ -817,6 +832,7 @@ pub async fn create_user(
         // first-run request wins the race.
         let bootstrap = bootstrap_state_for_insert(&users, is_bootstrap, has_authenticated_actor)?;
         let user = User {
+            passkeys: Vec::new(),
             id: UserId(Uuid::new_v4()),
             username,
             display_name,
@@ -997,6 +1013,7 @@ mod tests {
 
     fn stored_user(username: &str) -> User {
         User {
+            passkeys: Vec::new(),
             id: UserId(Uuid::new_v4()),
             username: username.to_owned(),
             display_name: username.to_owned(),
@@ -1581,6 +1598,53 @@ async fn record_user_event(
         .await?;
     state.attest_latest(attestor, &ledger).await;
     Ok(())
+}
+
+/// Persist one user record without appending a ledger event.
+///
+/// The passkey authentication path needs this: a successful assertion advances a signature counter
+/// and a last-used stamp on the credential, and those are **bookkeeping, not an account change**.
+/// Appending a `user.updated` for every sign-in would bury the events that matter — an enrolment, a
+/// revocation, a counter regression — under one row per authentication.
+pub(crate) async fn persist_user(state: &AppState, user: &User) -> Result<(), ApiError> {
+    persist(state, user).await
+}
+
+/// Append a passkey-scoped ledger event with no attestation.
+///
+/// Used from the ceremony paths, which have no [`CurrentAttestor`] to hand: a sign-in assertion is
+/// verified *before* any session exists, so there is no unlocked key that could attest the event it
+/// produces. The event is still chained and still carries a [`UserView`] payload; it simply has no
+/// per-event signature, exactly as a pre-attestation event does.
+pub(crate) async fn record_passkey_event(
+    state: &AppState,
+    user: &User,
+    kind: &str,
+    justification: &str,
+) -> Result<(), ApiError> {
+    persist(state, user).await?;
+    let payload = serde_json::to_vec(&UserView::from(user))?;
+    let mut ledger = state.ledger.write().await;
+    ledger.append("api", "user", kind, Some(justification), &payload);
+    state
+        .persist_write_through(&mut ledger, 1, |_tx| Ok(()))
+        .await?;
+    Ok(())
+}
+
+/// Append a passkey-scoped ledger event attributed to the acting session and attested by it.
+///
+/// The enrolment and revocation paths both run inside an authenticated session, so they get the
+/// full treatment — the honest requester as actor, and the session's unlocked key over the event.
+pub(crate) async fn record_passkey_event_attested(
+    state: &AppState,
+    user: &User,
+    kind: &str,
+    justification: &str,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+) -> Result<(), ApiError> {
+    record_user_event(state, user, kind, justification, actor, attestor).await
 }
 
 /// A `user.updated` audit event (the common case for self-service + non-reset mutations).

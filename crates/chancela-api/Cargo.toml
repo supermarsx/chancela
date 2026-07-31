@@ -93,6 +93,38 @@ unicode-normalization = { workspace = true }
 x509-cert = { workspace = true }
 zip = { workspace = true }
 zeroize = "1"
+# t10 passkeys: server-side WebAuthn Relying Party operations.
+#
+# `webauthn_rp` rather than `webauthn-rs`, and this is a load-bearing choice rather than a
+# preference. `webauthn-rs`'s passkey helper emits `residentKey: "discouraged"` — an active
+# instruction to the browser NOT to create a discoverable credential — and reaching `required`
+# means dropping to `webauthn-rs-core`, which drags in a hard, non-optional `openssl` +
+# `openssl-sys` pair that no feature can switch off. That would reintroduce exactly the dependency
+# `chancela-store/Cargo.toml` records rustls was chosen to avoid. `webauthn_rp`'s `passkey()`
+# helper emits the whole frozen constraint set (`residentKey: "required"`, `requireResidentKey`,
+# `userVerification: "required"`, `attestation: "none"`) with no configuration, and every crypto
+# crate it needs (`p256`, `p384`, `ed25519-dalek`, `rsa`) is already in the lock.
+#
+# Features:
+# - `serde_relaxed` — the browser's `PublicKeyCredential` JSON is deserialised through the crate's
+#   relaxed impls. The strict ones reject conforming-but-not-Level-3 clients (missing `transports`,
+#   unknown members), which is most of the deployed field. This implies `serde`.
+# - `serializable_server_state` — `Encode`/`Decode` for the ceremony states, so a challenge is a
+#   byte string we own rather than a value trapped in one process's `FixedCapHashSet`. That is what
+#   lets `passkeys::ChallengeStore` enforce single-use redemption and step-up scoping itself. It is
+#   NOT a `danger-` feature and buys no relaxation of any check.
+webauthn_rp = { version = "0.3.0", features = [
+    "serde_relaxed",
+    "serializable_server_state",
+] }
+# t10 passkeys: the Public Suffix List, compiled in. `webauthn_rp` performs NEITHER a
+# registrable-suffix check of the RP ID against the origin NOR a PSL check, so an RP ID of `"pt"`
+# for `https://livros.example.pt` is accepted server-side and then fails in every browser with a
+# `SecurityError` the server never sees. Both halves of that validation are ours; this crate is the
+# second half. `psl` (list compiled in) rather than `publicsuffix` (list loaded at runtime): an RP
+# ID is validated at configuration time on a server that may have no network, and a validator that
+# can fail open because a list was not fetched is not a validator. MIT/Apache-2.0.
+psl = "2"
 # wp25 observability: structured logging + Prometheus metrics.
 # `tracing` — request/latency spans and structured events (subscriber is initialised in the
 # server binary). Already in the tree transitively; declared here so the API can emit spans/events.
@@ -187,3 +219,11 @@ path = "tests/search_source_mutation_guards.rs"
 [[test]]
 name = "cmd_test_signature"
 path = "tests/cmd_test_signature.rs"
+
+# t10 passkeys. Its own target rather than a member of `api-auth`: it carries a software
+# authenticator (a P-256 key, a CBOR writer, the `authenticatorData` byte layout) that nothing else
+# in that suite needs, and keeping it separate means a passkey failure names the passkey target
+# instead of reporting as "auth suite red".
+[[test]]
+name = "passkeys"
+path = "tests/passkeys.rs"

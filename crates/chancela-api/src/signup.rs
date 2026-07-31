@@ -484,6 +484,7 @@ impl NewAccount {
             .filter(|d| !d.is_empty())
             .unwrap_or_else(|| username.clone());
         User {
+            passkeys: Vec::new(),
             id,
             username,
             display_name,
@@ -953,6 +954,7 @@ mod tests {
             users.insert(
                 id,
                 User {
+                    passkeys: Vec::new(),
                     id,
                     username: name.to_owned(),
                     display_name: name.to_owned(),
@@ -989,6 +991,7 @@ mod tests {
         users.insert(
             id,
             User {
+                passkeys: Vec::new(),
                 id,
                 username: "amelia.marques".to_owned(),
                 display_name: "Amélia Marques".to_owned(),
