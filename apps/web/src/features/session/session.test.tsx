@@ -20,6 +20,7 @@ import { AuthGate } from './AuthGate';
 import { CurrentUserPicker } from './CurrentUserPicker';
 import { clearSessionToken, setSessionToken } from '../../api/session';
 import { SignIn } from './SignIn';
+import { PASSKEY_USERNAME_AUTOCOMPLETE } from './PasskeySignIn';
 import type { SessionRoster, TwoFactorChallengeView, UserView } from '../../api/types';
 
 const AMELIA: UserView = {
@@ -266,7 +267,13 @@ describe('AuthGate', () => {
     expect(user.tagName).toBe('INPUT');
     expect(user.type).toBe('text');
     expect(user.name).toBe('username');
-    expect(user.getAttribute('autocomplete')).toBe('username');
+    // `username webauthn` (t10), not bare `username`. The `webauthn` token is what tells the
+    // browser to attach the conditional-mediation dropdown to THIS field; without it a passkey
+    // request armed on mount never fires and never says why. Ordinary username autofill is
+    // unaffected — the token is additive, and a browser that does not know it ignores it — so this
+    // assertion still pins the property it was written for.
+    expect(user.getAttribute('autocomplete')).toBe(PASSKEY_USERNAME_AUTOCOMPLETE);
+    expect(PASSKEY_USERNAME_AUTOCOMPLETE.split(' ')).toContain('username');
 
     const pw = screen.getByLabelText('Palavra-passe') as HTMLInputElement;
     expect(pw.type).toBe('password');

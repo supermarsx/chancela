@@ -230,6 +230,13 @@ import type {
   TotpEnrolment,
   TotpConfirmBody,
   BackupCodes,
+  PasskeyView,
+  PasskeyListView,
+  CeremonyOptionsView,
+  FinishPasskeyEnrolmentBody,
+  RenamePasskeyBody,
+  RevokePasskeyBody,
+  PasskeySignInBody,
   SessionListResponse,
   RevokedResponse,
   SearchQueryParams,
@@ -243,6 +250,9 @@ import type {
   EmailTestResult,
   UpdateActBody,
   UpdateUserBody,
+  UpdateMyProfileBody,
+  SuspendMyAccountBody,
+  SuspendedAccountView,
   UserView,
   UserPageParams,
   VerifyAiHumanReviewBody,
@@ -390,9 +400,16 @@ interface ApiErrorBody {
  * switcher, where a token already exists — a mistyped challenge code must reject inline, never sign
  * the operator out of their current session. From the signed-out sign-in path the token store is
  * empty and clearing would be a harmless no-op; tagging it keeps both paths on the inline-reject rule.
+ *
+ * `POST /v1/session/passkey` (t10) is the same case again: a `401` there means the assertion did not
+ * verify, or named a credential this instance does not hold — a rejected proof. A passkey sign-in
+ * can be attempted while a session already exists (someone re-authenticating after a wall, or
+ * trying the wrong authenticator), and cancelling a ceremony must not eject them. The `/options`
+ * half is NOT tagged, and cannot be: the pattern anchors at the end of the path, so
+ * `/v1/session/passkey/options` does not match.
  */
 const CREDENTIAL_PROOF_PATH =
-  /\/v1\/(users\/[^/]+\/(secret|attestation-key|recovery|two-factor\/totp\/confirm)|session\/challenge)(\?|$)/;
+  /\/v1\/(users\/[^/]+\/(secret|attestation-key|recovery|two-factor\/totp\/confirm)|session\/(challenge|passkey))(\?|$)/;
 
 /** Whether a 401 on `path` is a rejected credential proof rather than an expired session. */
 export function isCredentialProofPath(path: string | undefined): boolean {
@@ -1662,6 +1679,13 @@ export const api = {
   getUser: (id: string) => get<UserView>(`/v1/users/${id}`),
   createUser: (body: CreateUserBody) => post<UserView>('/v1/users', body),
   updateUser: (id: string, body: UpdateUserBody) => patch<UserView>(`/v1/users/${id}`, body),
+  // The self-service account surface. Neither takes an id: the acting session IS the subject, so
+  // there is no path parameter an ordinary user could point at somebody else's record. Both are
+  // served for any valid interactive session and need no administrative permission — which is the
+  // whole reason they exist alongside the `user.manage`-gated `updateUser` above.
+  updateMyProfile: (body: UpdateMyProfileBody) => patch<UserView>('/v1/me/profile', body),
+  suspendMyAccount: (body: SuspendMyAccountBody) =>
+    post<SuspendedAccountView>('/v1/me/suspend', body),
   exportUserDsr: (id: string) => get<UserDsrExport>(`/v1/privacy/users/${id}/export`),
   listUserDsrRequests: (id: string) =>
     get<DsrRequestView[]>(`/v1/privacy/users/${id}/dsr-requests`),
@@ -1742,6 +1766,28 @@ export const api = {
   disableTotp: (id: string) => del<UserView>(`/v1/users/${id}/two-factor/totp`),
   regenerateBackupCodes: (id: string) =>
     post<BackupCodes>(`/v1/users/${id}/two-factor/backup-codes`, {}),
+  // Passkeys (t10). The LIST is self-or-`user.manage`; enrol, rename and revoke are self-only and
+  // refused in the handler, so the UI must not offer them cross-user. Every credential id is path
+  // data and is base64url — which contains `-` and `_` but never `/` or `+` — so
+  // `encodeURIComponent` is belt-and-braces rather than load-bearing, and is applied anyway
+  // because "the encoding happens to be path-safe" is not a property to rely on silently.
+  listPasskeys: (id: string) => get<PasskeyListView>(`/v1/users/${id}/passkeys`),
+  beginPasskeyEnrolment: (id: string) =>
+    post<CeremonyOptionsView>(`/v1/users/${id}/passkeys/options`, {}),
+  finishPasskeyEnrolment: (id: string, body: FinishPasskeyEnrolmentBody) =>
+    post<PasskeyView>(`/v1/users/${id}/passkeys`, body),
+  renamePasskey: (id: string, credentialId: string, body: RenamePasskeyBody) =>
+    patch<PasskeyView>(`/v1/users/${id}/passkeys/${encodeURIComponent(credentialId)}`, body),
+  revokePasskey: (id: string, credentialId: string, body: RevokePasskeyBody) =>
+    del<PasskeyListView>(`/v1/users/${id}/passkeys/${encodeURIComponent(credentialId)}`, body),
+  // The step-up ceremony. The challenge it mints is bound to this session's user AND to the
+  // step-up purpose, so it can satisfy a destructive-action gate and nothing else.
+  beginPasskeyStepUp: () => post<CeremonyOptionsView>('/v1/reauth/passkey/options', {}),
+  // Sign-in. Both halves are unauthenticated and **neither takes an identifier** — that is the
+  // point of discoverable credentials. A username-first flow would need an endpoint answering
+  // "does this account have a passkey?", which is the enumeration oracle `createSession`'s dummy
+  // verifier exists to prevent.
+  beginPasskeySignIn: () => post<CeremonyOptionsView>('/v1/session/passkey/options', {}),
   // Active sessions — frozen contract from t107 (t95, funded). SELF-SCOPED: all three act on the
   // caller's OWN sessions regardless of any path parameter, so the UI only surfaces them on one's
   // own account. Only `session_id` (an opaque handle) crosses the wire, never the token/digest.
@@ -1875,6 +1921,11 @@ export const api = {
   // discriminates by which key is present (see `CreateSessionOutcome`); only the token arm is a
   // completed sign-in.
   createSession: (body: CreateSessionBody) => post<CreateSessionOutcome>('/v1/session', body),
+  // A passkey sign-in lands in the SAME union: an assertion with user verification is already
+  // possession plus verification, so it satisfies the second-factor requirement outright and no
+  // challenge is raised. The union is narrowed anyway rather than assumed.
+  createPasskeySession: (body: PasskeySignInBody) =>
+    post<CreateSessionOutcome>('/v1/session/passkey', body),
   // `POST /v1/session/challenge` completes a two-step sign-in. The route is Exempt (the
   // `challenge_id` is the credential); a wrong/spent/expired code is a uniform opaque 401 that
   // `CREDENTIAL_PROOF_PATH` marks so it rejects inline rather than clearing the session.

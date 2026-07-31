@@ -4165,6 +4165,46 @@ export interface UpdateUserBody {
   two_factor_required?: boolean;
 }
 
+/**
+ * `PATCH /v1/me/profile` — the SELF-SERVICE profile edit (the `/account` area).
+ *
+ * Deliberately a narrower type than {@link UpdateUserBody}, mirroring the narrower server body:
+ * `active` and `two_factor_required` are absent because lifting a suspension and requiring a
+ * second factor are administrative acts, reachable only through `PATCH /v1/users/{id}` and its
+ * `user.manage` gate. **Do not "unify" the two types.** The absence of those fields here is the
+ * gate, on both sides of the wire.
+ */
+export interface UpdateMyProfileBody {
+  display_name?: string;
+  /** `null` clears the address; omit to leave it unchanged. */
+  email?: string | null;
+  /** `'auto'` restores "keep detecting"; it does not clear the field. */
+  language?: UserLanguage;
+}
+
+/**
+ * `POST /v1/me/suspend` — the account holder locks their own account.
+ *
+ * The step-up proof is the only field, and it is not optional in spirit: the server refuses a
+ * credentialed caller who supplies none. A session token alone must not suspend an account —
+ * that is exactly what an attacker holding a stolen session would do.
+ */
+export interface SuspendMyAccountBody {
+  reauth: ReAuth;
+}
+
+/** What `POST /v1/me/suspend` answers with. */
+export interface SuspendedAccountView {
+  /** The now-inactive profile. */
+  user: UserView;
+  /**
+   * How many sessions were ended — every one of the account's, INCLUDING the caller's own. The
+   * caller is signed out as a consequence of the suspension, not as a courtesy, and this count is
+   * what lets the UI say so rather than appearing to sign the operator out for no reason.
+   */
+  sessions_revoked: number;
+}
+
 // --- RBAC permissions (§ t64-E3, FROZEN for the E5 web permissions context) ------
 //
 // The web half of the frozen `chancela-api::session` permission DTOs. A grant is one
@@ -4966,6 +5006,115 @@ export interface BackupCodes {
 
 export interface TotpConfirmBody {
   code: string;
+}
+
+// --- Passkeys / WebAuthn (t10; `crates/chancela-api/src/passkeys.rs`) ------------
+//
+// The **list** is self-or-`user.manage`; everything that CHANGES a credential (enrol, rename,
+// revoke) is self-only and refused in the handler. That asymmetry is deliberate and the UI must
+// preserve it: an administrator may see that a colleague holds passkeys, and must never be offered
+// a control to enrol or revoke on their behalf — a passkey is created by touching an authenticator
+// that is physically present, so "enrol one for someone else" is not a coherent operation.
+//
+// Nothing here is a `UserView` field, and that is a decision rather than an omission: `UserView` is
+// the `user.created`/`user.updated` ledger payload, so a field added there moves the payload digest
+// of every future user event. The passkey list gets its own endpoint and pays none of that.
+
+/** Backup eligibility and state as ONE value, so `not eligible but backed up` is unrepresentable. */
+export type PasskeyBackup = 'not_eligible' | 'eligible' | 'exists';
+
+/** Where the credential lives; `unknown` when the client declined to say. */
+export type PasskeyAttachment = 'unknown' | 'platform' | 'cross_platform';
+
+/**
+ * One enrolled credential as the security screen sees it.
+ *
+ * `backup` is the field an operator deciding what to revoke actually needs: `exists` means the
+ * credential is synced and survives losing the device, `not_eligible` means it is device-bound and
+ * does not. `prf_capable` is whether the authenticator provisioned an `hmac-secret` at creation —
+ * a credential without one signs the user in but cannot unwrap their attestation key, so the first
+ * attestation of that session asks for their password.
+ */
+export interface PasskeyView {
+  credential_id: string;
+  name: string;
+  created_at: string;
+  /** RFC 3339 instant of the last successful assertion, or `null` if never used. Always present. */
+  last_used_at: string | null;
+  rp_id: string;
+  /**
+   * `false` once an operator has moved the instance to a different RP ID. The row is still listed —
+   * it is still enrolled and the holder needs to be able to remove it — but it can no longer
+   * authenticate anything, and nothing can migrate it. A credential is permanently bound to the
+   * domain it was created under.
+   */
+  usable: boolean;
+  backup: PasskeyBackup;
+  attachment: PasskeyAttachment;
+  /** WebAuthn transport hints (`usb`, `nfc`, `ble`, `smart-card`, `hybrid`, `internal`). */
+  transports: string[];
+  prf_capable: boolean;
+  sign_count: number;
+}
+
+/** `GET /v1/users/{id}/passkeys`. */
+export interface PasskeyListView {
+  passkeys: PasskeyView[];
+  /** The RP ID this instance currently asserts, or absent while passkeys are unconfigured. */
+  rp_id?: string;
+  /**
+   * Whether enrolment can be started at all right now — i.e. whether `public_base_url` and
+   * `auth.passkeys.rp_id` are both configured. `false` is an instance-configuration fact, never
+   * something the user did wrong, and the UI must say so rather than showing a button that 422s.
+   */
+  enrolment_available: boolean;
+}
+
+/** What a ceremony may be completed for. A sign-in ceremony can never satisfy a step-up. */
+export type PasskeyCeremonyPurpose = 'registration' | 'sign_in' | 'step_up';
+
+/**
+ * A begun ceremony: the `PublicKeyCredential*OptionsJSON` to hand to `navigator.credentials`, plus
+ * what it may be completed for.
+ *
+ * The challenge lives **inside** `public_key` and is deliberately not surfaced beside it — a second
+ * copy is a second thing that can disagree with the one the browser echoes, and the client has no
+ * use for it (the server looks the ceremony up from `clientDataJSON`).
+ */
+export interface CeremonyOptionsView {
+  public_key: Record<string, unknown>;
+  purpose: PasskeyCeremonyPurpose;
+}
+
+/**
+ * The `PublicKeyCredential` a browser produced, in its `toJSON()` form, passed to the server
+ * verbatim.
+ *
+ * Verbatim is load-bearing: the server hands these bytes to the library's own relaxed
+ * deserialiser, which is the thing that knows which members may be absent. Reshaping it here would
+ * make this a second parser of the credential path.
+ */
+export type PasskeyCredentialJson = Record<string, unknown>;
+
+/** `POST /v1/users/{id}/passkeys` — finish enrolment. `name` is display-only and never trusted. */
+export interface FinishPasskeyEnrolmentBody {
+  credential: PasskeyCredentialJson;
+  name?: string;
+}
+
+/** `PATCH /v1/users/{id}/passkeys/{credential_id}` — relabel. Self-only; no step-up (t10 web). */
+export interface RenamePasskeyBody {
+  name: string;
+}
+
+/** `DELETE /v1/users/{id}/passkeys/{credential_id}` — revoke. Demands step-up in the handler. */
+export interface RevokePasskeyBody {
+  reauth: ReAuth;
+}
+
+/** `POST /v1/session/passkey` — finish a sign-in. Unauthenticated, and carries no identifier. */
+export interface PasskeySignInBody {
+  credential: PasskeyCredentialJson;
 }
 
 // --- Active sessions — frozen contract from t107 (t95, funded) -------------------
@@ -9579,6 +9728,16 @@ export interface IntegrityReportView {
 export interface ReAuth {
   password?: string;
   recovery_phrase?: string;
+  /**
+   * An assertion from one of the acting user's OWN enrolled passkeys (t10).
+   *
+   * **Not self-sufficient, and never a captured sign-in assertion.** It counts only because it
+   * answers a challenge this server issued from `POST /v1/reauth/passkey/options`, spent on the
+   * attempt and scoped to step-up; the server holds all three bindings. That scoping is the whole
+   * difference between "signed in with a passkey" and "authorised a factory reset", so the
+   * assertion must come from a *step-up* ceremony started for this action.
+   */
+  passkey?: { credential: PasskeyCredentialJson };
 }
 
 /**

@@ -163,6 +163,7 @@ export const routeModuleLoaders = {
   dashboard: () => import('../features/dashboard/DashboardPage'),
   entities: () => import('../features/entities/EntitiesPage'),
   newEntity: () => import('../features/entities/NewEntityPage'),
+  account: () => import('../features/account/AccountPage'),
   newUser: () => import('../features/users/NewUserPage'),
   editUser: () => import('../features/users/EditUserPage'),
   importEntity: () => import('../features/entities/ImportEntityPage'),
@@ -442,6 +443,17 @@ export const router = createBrowserRouter([
       },
       // `/cae` now redirects into Ferramentas (deep links preserved).
       { path: 'cae', element: lazyRoute(routeModuleLoaders.cae, 'CaePage') },
+      // The SELF-SERVICE account area. A top-level address, not a section of `/settings`, because
+      // Configurações is instance administration and this is the one surface that is about the
+      // person using it — and because it must be reachable with NO administrative permission, while
+      // most of `/settings` is not. Three sections in the path (`profile` is the default and carries
+      // no segment), `navDepth: 1` so switching tab keys the shell on `/account` and does not
+      // remount the screen, discarding the profile form's working copy.
+      {
+        path: 'account/:sec?',
+        handle: { navDepth: 1 },
+        element: lazyRoute(routeModuleLoaders.account, 'AccountPage'),
+      },
       {
         path: 'users',
         element: <LegacyUsersRedirect />,

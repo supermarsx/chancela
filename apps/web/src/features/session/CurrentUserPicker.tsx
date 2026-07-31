@@ -37,6 +37,10 @@ import { Icon, Tooltip, useToast } from '../../ui';
 import { SignOut } from '../../ui/icons';
 import { forgetAccount, readRecentAccounts, rememberAccount } from './recentAccounts';
 import { useAuthWallT } from './authWallCopy';
+import { ACCOUNT_PATH } from '../account/paths';
+import { USERS_LIST_PATH } from '../users/paths';
+import { useCan } from './permissions';
+import { passkeysAvailable } from './webauthn';
 
 /** One row of the menu: an identifier known on this device, or the pinned current user. */
 interface PickerEntry {
@@ -59,6 +63,11 @@ export function CurrentUserPicker() {
   const session = useSession();
   const signIn = useCreateSession();
   const signOut = useDeleteSession();
+  const can = useCan();
+  // The roster is `user.read`@Global and the screens it leads to are `user.manage`; `user.manage`
+  // is the verb that makes the destination useful rather than merely readable, so it is the one
+  // the link is gated on. A non-holder is not shown a door into a 403.
+  const canManageUsers = can('user.manage');
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   const currentUser = session.data?.user ?? null;
@@ -287,6 +296,18 @@ export function CurrentUserPicker() {
                     {t('signin.wrongPassword')}
                   </p>
                 ) : null}
+                {/* The passkey counterpart of the two-factor refusal above (t10), and it has to be
+                    a STANDING note rather than a reaction, because the reaction cannot exist: the
+                    switcher signs in by username, and an account with no password answers with the
+                    same uniform `401` as a wrong one — deliberately, so the response cannot be
+                    used to ask "does this account exist / hold a password?". There is no signal to
+                    branch on without building that oracle. So the limit is stated up front:
+                    switching here is password-only, and a passkey account is reached from the
+                    sign-in screen. Shown only where passkeys could work at all, so a deployment
+                    without them never reads a caveat about a feature it does not have. */}
+                {passkeysAvailable() ? (
+                  <p className="field__hint">{t('session.picker.passkeyUnsupported')}</p>
+                ) : null}
                 <div className="session-picker__pwactions">
                   <button
                     type="button"
@@ -348,6 +369,15 @@ export function CurrentUserPicker() {
               </p>
             ) : null}
 
+            {/* The door into the self-service account area, and the reason it is HERE.
+
+                This menu is the one control in the app that is unambiguously about *you*, and it is
+                on every screen. Before `/account` existed, the only link out of it went to
+                `/settings/users` — the administrative roster — which is `user.read`@Global: an
+                ordinary user followed the only link their own menu offered and was refused. So the
+                account link is rendered for everyone and first, and the roster link is now
+                permission-gated to the people it actually serves. Nothing is hidden that anybody
+                could reach; the two links simply stopped being one link that lied. */}
             <div className="session-picker__foot">
               {currentUser ? (
                 <button
@@ -364,13 +394,30 @@ export function CurrentUserPicker() {
               ) : (
                 <span />
               )}
-              <Link
-                to="/settings/users"
-                className="session-picker__manage"
-                onClick={() => setOpen(false)}
-              >
-                {t('session.manage')}
-              </Link>
+              <span className="session-picker__links">
+                {currentUser ? (
+                  <Link
+                    to={ACCOUNT_PATH}
+                    className="session-picker__manage"
+                    onClick={() => setOpen(false)}
+                  >
+                    {t('account.picker.link')}
+                  </Link>
+                ) : null}
+                {/* A real character between the two links, not a CSS gap: `gap` inserts nothing
+                    into the text, so without it the two names read fused to a screen reader and to
+                    find-in-page. Rendered only when both links are actually present. */}
+                {currentUser && canManageUsers ? ' · ' : null}
+                {canManageUsers ? (
+                  <Link
+                    to={USERS_LIST_PATH}
+                    className="session-picker__manage"
+                    onClick={() => setOpen(false)}
+                  >
+                    {t('session.manage')}
+                  </Link>
+                ) : null}
+              </span>
             </div>
           </div>
         </>

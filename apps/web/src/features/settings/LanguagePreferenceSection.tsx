@@ -38,7 +38,7 @@
  * to right now is shown as a *sentence*, not as the selection. Asserted in the tests, and
  * mutation-checked: injecting either half of that bug fails exactly one test each.
  */
-import { useSession, useSettings, useUpdateUser } from '../../api/hooks';
+import { useSession, useSettings, useUpdateMyProfile } from '../../api/hooks';
 import { DEFAULT_SETTINGS, LANGUAGE_AUTO, LOCALES } from '../../api/types';
 import type { Locale, UserLanguage } from '../../api/types';
 import { localeLabels } from '../../api/labels';
@@ -57,9 +57,14 @@ export function LanguagePreferenceSection() {
   const documentLocale: Locale =
     settings.data?.documents.locale ?? DEFAULT_SETTINGS.documents.locale;
 
-  // `useUpdateUser` needs an id up front. Signed out there is no user to update, and the control
-  // is not rendered at all — the empty id is never reached by a request.
-  const update = useUpdateUser(user?.id ?? '');
+  // The SELF endpoint (`PATCH /v1/me/profile`), not the administrative `PATCH /v1/users/{id}`.
+  //
+  // This card was always self-only — it reads the session user and has no way to address anybody
+  // else — but it wrote through the `user.manage`-gated route, so the ordinary users it exists for
+  // got a 403 from the one control on the page that is explicitly THEIRS. The self endpoint needs
+  // no id (the acting session is the subject), which is also why the `user?.id ?? ''` dance that
+  // used to sit here is gone.
+  const update = useUpdateMyProfile();
 
   if (!user) {
     return (

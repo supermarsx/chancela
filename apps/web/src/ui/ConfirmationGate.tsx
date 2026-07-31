@@ -10,8 +10,18 @@
  *
  *  - **Type-to-confirm phrase** — the operator re-types the EXACT phrase the server expects. The
  *    gate is not `ready` until the typed text matches byte-for-byte; the server re-checks it too.
- *  - **Step-up re-auth** (§8-F) — the acting user re-proves identity with their password OR a
- *    one-time recovery phrase. A valid session token alone is never enough.
+ *  - **Step-up re-auth** (§8-F) — the acting user re-proves identity with their password, a
+ *    one-time recovery phrase, or (t10) an assertion from one of their own passkeys. A valid
+ *    session token alone is never enough.
+ *
+ * The passkey arm exists because without it a **passkey-only account cannot satisfy any gate
+ * without spending its recovery phrase** — which is single-use, so a second destructive action
+ * would find it gone. That is a lockout produced by two individually-correct rules, which is
+ * exactly the shape that survives review. Two properties keep it from being a widening: the
+ * assertion answers a challenge minted by `POST /v1/reauth/passkey/options` and scoped to step-up
+ * (a captured sign-in assertion is not a weaker match, it is not a match), and the server checks
+ * the credential belongs to the acting user — redeeming a challenge proves a ceremony started,
+ * never by whom.
  *
  * This hook owns only the FIELDS and whether they are satisfied. It deliberately does not own the
  * submit, the error state or the 403 → `confirm.reauth.required` mapping: those belong to whatever
@@ -20,8 +30,21 @@
  * lived in `ConfirmActionModal`, so every existing call site and test sees exactly what it saw.
  */
 import { useEffect, useState, type ReactNode } from 'react';
-import type { ReAuth } from '../api/types';
+import type { PasskeyCredentialJson, ReAuth } from '../api/types';
+import { api } from '../api/client';
 import { useT } from '../i18n';
+import {
+  describeCeremonyFailure,
+  passkeysAvailable,
+  runAssertionCeremony,
+} from '../features/session/webauthn';
+
+/**
+ * Which credential the operator is proving with. A set of alternatives, deliberately not a rung on
+ * `ConfirmationStrictness` — that ladder answers *how hard*, and this answers *with what*. Adding a
+ * rung would silently change the strictness every deployment had already chosen.
+ */
+type ProofKind = 'password' | 'recovery' | 'passkey';
 
 export interface ConfirmationGateOptions {
   /**
@@ -36,11 +59,11 @@ export interface ConfirmationGateOptions {
   resetKey: unknown;
   /** The exact type-to-confirm phrase; omit for no phrase gate. */
   phrase?: string;
-  /** Require password / recovery-phrase step-up re-auth. */
+  /** Require step-up re-auth — password, recovery phrase, or a passkey assertion. */
   requireReauth?: boolean;
   /** Unique prefix for the field ids, so two gates can never collide on one page. */
   idPrefix: string;
-  /** Fired when the operator switches between password and recovery phrase (clear a stale error). */
+  /** Fired when the operator switches proof kind, so a caller can clear a stale error. */
   onProofKindChange?: () => void;
 }
 
@@ -62,20 +85,61 @@ export function useConfirmationGate({
 }: ConfirmationGateOptions): ConfirmationGate {
   const t = useT();
   const [typed, setTyped] = useState('');
-  const [useRecovery, setUseRecovery] = useState(false);
+  const [kind, setKind] = useState<ProofKind>('password');
   const [password, setPassword] = useState('');
   const [recovery, setRecovery] = useState('');
+  // The gathered step-up assertion, and any local ceremony failure. Held here rather than
+  // submitted immediately because the gate's job is to *have* a proof when the caller submits —
+  // the assertion answers a challenge issued for step-up and is spent by the operation, not by
+  // being collected.
+  const [assertion, setAssertion] = useState<PasskeyCredentialJson | null>(null);
+  const [ceremony, setCeremony] = useState<'idle' | 'running' | 'failed'>('idle');
 
   useEffect(() => {
     setTyped('');
-    setUseRecovery(false);
+    setKind('password');
     setPassword('');
     setRecovery('');
+    setAssertion(null);
+    setCeremony('idle');
   }, [resetKey]);
 
+  /**
+   * Run a **step-up-scoped** assertion.
+   *
+   * `beginPasskeyStepUp` is `POST /v1/reauth/passkey/options`, and the scoping is the whole
+   * security of this arm: the challenge it mints is bound to this session's user and to the
+   * step-up purpose, so an assertion captured during a sign-in answers nothing here. Reaching for
+   * the sign-in options endpoint instead would compile, work in a happy-path test, and make every
+   * destructive gate satisfiable by a replayed sign-in.
+   */
+  async function collectAssertion() {
+    setCeremony('running');
+    setAssertion(null);
+    try {
+      const options = await api.beginPasskeyStepUp();
+      setAssertion(await runAssertionCeremony(options));
+      setCeremony('idle');
+    } catch (error) {
+      // Cancelling is an ordinary act and leaves the gate exactly as it was, ready to try again.
+      setCeremony(describeCeremonyFailure(error) === 'cancelled' ? 'idle' : 'failed');
+    }
+  }
+
   const phraseOk = phrase === undefined || typed === phrase;
-  const reauthValue = useRecovery ? recovery.trim() : password;
-  const reauthOk = !requireReauth || reauthValue.length > 0;
+  const reauthOk =
+    !requireReauth ||
+    (kind === 'passkey'
+      ? assertion !== null
+      : (kind === 'recovery' ? recovery.trim() : password).length > 0);
+
+  /** Switch proof kind, discarding whatever the previous one had gathered. */
+  function switchTo(next: ProofKind) {
+    setKind(next);
+    setAssertion(null);
+    setCeremony('idle');
+    onProofKindChange?.();
+  }
 
   const fields = (
     <>
@@ -104,10 +168,46 @@ export function useConfirmationGate({
 
       {requireReauth ? (
         <div className="field">
-          <label className="field__label" htmlFor={`${idPrefix}-reauth`}>
-            {useRecovery ? t('confirm.reauth.recovery') : t('confirm.reauth.password')}
-          </label>
-          {useRecovery ? (
+          {/* A `<label for>` for the two text inputs; a plain caption for the passkey arm, where
+              the control is a BUTTON. A button is labelable, so a `<label for>` pointing at it
+              would *replace* its accessible name — the control would read as "Chave de acesso"
+              while visibly saying "Confirmar no aparelho", which is exactly the label-in-name
+              mismatch that makes voice control unable to activate it. */}
+          {kind === 'passkey' ? (
+            <p className="field__label">{t('confirm.reauth.passkey')}</p>
+          ) : (
+            <label className="field__label" htmlFor={`${idPrefix}-reauth`}>
+              {kind === 'recovery' ? t('confirm.reauth.recovery') : t('confirm.reauth.password')}
+            </label>
+          )}
+          {kind === 'passkey' ? (
+            // A button rather than an input: there is nothing to type, so it names itself.
+            <>
+              <button
+                id={`${idPrefix}-reauth`}
+                type="button"
+                className="btn btn--secondary"
+                disabled={ceremony === 'running'}
+                onClick={() => void collectAssertion()}
+              >
+                {ceremony === 'running'
+                  ? t('confirm.reauth.passkey.pending')
+                  : assertion
+                    ? t('confirm.reauth.passkey.again')
+                    : t('confirm.reauth.passkey.action')}
+              </button>
+              {assertion ? (
+                <p className="field__hint" role="status">
+                  {t('confirm.reauth.passkey.ready')}
+                </p>
+              ) : null}
+              {ceremony === 'failed' ? (
+                <p className="field__error" role="alert">
+                  {t('confirm.reauth.passkey.failed')}
+                </p>
+              ) : null}
+            </>
+          ) : kind === 'recovery' ? (
             <input
               id={`${idPrefix}-reauth`}
               className="control"
@@ -128,16 +228,28 @@ export function useConfirmationGate({
           )}
           <p className="field__hint">
             {t('confirm.reauth.hint')}{' '}
-            <button
-              type="button"
-              className="linkish"
-              onClick={() => {
-                setUseRecovery((v) => !v);
-                onProofKindChange?.();
-              }}
-            >
-              {useRecovery ? t('confirm.reauth.usePassword') : t('confirm.reauth.useRecovery')}
-            </button>
+            {kind === 'password' ? (
+              <button type="button" className="linkish" onClick={() => switchTo('recovery')}>
+                {t('confirm.reauth.useRecovery')}
+              </button>
+            ) : (
+              <button type="button" className="linkish" onClick={() => switchTo('password')}>
+                {t('confirm.reauth.usePassword')}
+              </button>
+            )}
+            {/* Offered on browser capability, never on whether this account holds a passkey: the
+                gate has no read for that, and inventing one would answer "does this user have a
+                passkey?" to anyone who can open a dialog. A user without one simply finds the
+                ceremony returns nothing usable. Absent entirely in the desktop shell and in a
+                browser without WebAuthn, where the button could only throw. */}
+            {passkeysAvailable() && kind !== 'passkey' ? (
+              <>
+                {' '}
+                <button type="button" className="linkish" onClick={() => switchTo('passkey')}>
+                  {t('confirm.reauth.usePasskey')}
+                </button>
+              </>
+            ) : null}
           </p>
         </div>
       ) : null}
@@ -147,6 +259,17 @@ export function useConfirmationGate({
   return {
     fields,
     ready: phraseOk && reauthOk,
-    reauth: !requireReauth ? {} : useRecovery ? { recovery_phrase: recovery.trim() } : { password },
+    reauth: !requireReauth
+      ? {}
+      : kind === 'passkey'
+        ? // `assertion` is non-null whenever `ready` is, but the gate cannot compel a caller to
+          // check `ready` first, so an empty proof is sent rather than a malformed one — the
+          // server answers a missing proof with the same uniform 403 as a wrong one.
+          assertion
+          ? { passkey: { credential: assertion } }
+          : {}
+        : kind === 'recovery'
+          ? { recovery_phrase: recovery.trim() }
+          : { password },
   };
 }

@@ -475,6 +475,14 @@ export const ADMIN_COPY_EXCLUDED_PREFIXES: readonly (readonly [
   ['stepper', 'chrome'],
   ['window', 'chrome'],
   // Everything else: product screens, tools, flows and shared vocabulary.
+  //
+  // `account` is the SELF-SERVICE account area (`/account`), and its exclusion is a statement
+  // rather than an oversight: this finder searches instance CONFIGURATION, and the account area is
+  // deliberately the one surface that configures nothing about the instance. Indexing it would
+  // offer an administrator searching for "sessões" a result that navigates them to their own
+  // sign-ins instead of to a setting — and would advertise, inside an admin-permission-gated
+  // finder, a surface whose whole point is that it needs no administrative permission at all.
+  ['account', 'not-a-destination'],
   ['acts', 'not-a-destination'],
   ['books', 'not-a-destination'],
   ['cae', 'not-a-destination'],

@@ -18,8 +18,20 @@ import { keys, useServerEnv, useUpdateServerEnv } from './hooks';
 import { i18nStore } from '../i18n/store';
 import { enUS } from '../i18n/locales/en-US';
 import { ptPT } from '../i18n/locales/pt-PT';
-import { LOCALE_LOADERS, SHIPPED_LOCALES } from '../i18n/registry';
+import { SHIPPED_LOCALES } from '../i18n/registry';
 import type { Catalog, MessageKey } from '../i18n/types';
+import { daDK } from '../i18n/locales/da-DK';
+import { deDE } from '../i18n/locales/de-DE';
+import { enGB } from '../i18n/locales/en-GB';
+import { esES } from '../i18n/locales/es-ES';
+import { fiFI } from '../i18n/locales/fi-FI';
+import { frFR } from '../i18n/locales/fr-FR';
+import { itIT } from '../i18n/locales/it-IT';
+import { nlNL } from '../i18n/locales/nl-NL';
+import { plPL } from '../i18n/locales/pl-PL';
+import { ptBR } from '../i18n/locales/pt-BR';
+import { svFI } from '../i18n/locales/sv-FI';
+import { svSE } from '../i18n/locales/sv-SE';
 
 afterEach(() => {
   cleanup();
@@ -129,6 +141,39 @@ function serverEnvKeys(catalog: Record<string, string>): string[] {
     .sort();
 }
 
+/**
+ * Every shipped catalog, imported STATICALLY.
+ *
+ * These three specs used to resolve the 12 code-split locales at run time through
+ * `LOCALE_LOADERS`, and that made a correctness gate into a load-dependent flake: the first of
+ * them spent ~6s of its 15s budget with a warm cache and nothing else running, so under the full
+ * suite — 250-odd files competing for transform and import — it timed out. `api/labels.test.ts`
+ * and `i18n/catalogLeakGate.test.ts` hit exactly this and solved it exactly this way; the comment
+ * in `labels.test.ts` is the record of it ("passed in isolation and timed out at 5s under the full
+ * suite, which made a correctness gate into a load-dependent flake"). Static imports make these
+ * synchronous, deterministic and effectively free, and the `15_000` budgets go with them.
+ *
+ * The `SHIPPED_LOCALES` cross-check below is what the loader map gave for free and must not be
+ * lost: a locale added to the registry without a line here fails loudly instead of being silently
+ * skipped by a loop that never visits it.
+ */
+const CATALOGS: Record<string, Catalog> = {
+  'pt-PT': ptPT,
+  'en-US': enUS,
+  'en-GB': enGB,
+  'pt-BR': ptBR,
+  'da-DK': daDK,
+  'de-DE': deDE,
+  'es-ES': esES,
+  'fi-FI': fiFI,
+  'fr-FR': frFR,
+  'it-IT': itIT,
+  'nl-NL': nlNL,
+  'pl-PL': plPL,
+  'sv-FI': svFI,
+  'sv-SE': svSE,
+};
+
 describe('server-env pane copy', () => {
   const sourceKeys = serverEnvKeys(enUS);
 
@@ -136,15 +181,19 @@ describe('server-env pane copy', () => {
     expect(sourceKeys.length).toBeGreaterThan(60);
   });
 
-  it('carries the identical key set in every shipped locale', async () => {
-    for (const locale of SHIPPED_LOCALES) {
-      const catalog: Catalog =
-        locale === 'en-US' ? enUS : locale === 'pt-PT' ? ptPT : await LOCALE_LOADERS[locale]!();
-      expect(serverEnvKeys(catalog), `${locale} key set`).toEqual(sourceKeys);
-    }
-  }, 15_000);
+  it('covers every shipped locale, so none is silently skipped', () => {
+    // Non-vacuity for the three loops below: they iterate `SHIPPED_LOCALES` and read `CATALOGS`,
+    // so a registry entry with no static import here would look up `undefined` rather than fail.
+    expect(Object.keys(CATALOGS).sort()).toEqual([...SHIPPED_LOCALES].sort());
+  });
 
-  it('never falls back to the English strings in a non-English locale', async () => {
+  it('carries the identical key set in every shipped locale', () => {
+    for (const locale of SHIPPED_LOCALES) {
+      expect(serverEnvKeys(CATALOGS[locale]!), `${locale} key set`).toEqual(sourceKeys);
+    }
+  });
+
+  it('never falls back to the English strings in a non-English locale', () => {
     // The bug this replaced: the pane resolved pt-PT or English and nothing else, so eleven
     // locales rendered it in English. Assert the *variance*, never a specific translated string.
     const probes = [
@@ -158,18 +207,18 @@ describe('server-env pane copy', () => {
 
     for (const locale of SHIPPED_LOCALES) {
       if (locale === 'en-US' || locale === 'en-GB') continue;
-      const catalog: Catalog = locale === 'pt-PT' ? ptPT : await LOCALE_LOADERS[locale]!();
+      const catalog = CATALOGS[locale]!;
       for (const key of probes) {
         expect(catalog[key], `${locale} ${key} is untranslated English`).not.toBe(enUS[key]);
       }
     }
-  }, 15_000);
+  });
 
-  it('keeps the {path} placeholder in every locale', async () => {
+  it('keeps the {path} placeholder in every locale', () => {
     for (const locale of SHIPPED_LOCALES) {
-      const catalog: Catalog =
-        locale === 'en-US' ? enUS : locale === 'pt-PT' ? ptPT : await LOCALE_LOADERS[locale]!();
-      expect(catalog['settings.serverEnv.overridesPath'], `${locale}`).toContain('{path}');
+      expect(CATALOGS[locale]!['settings.serverEnv.overridesPath'], `${locale}`).toContain(
+        '{path}',
+      );
     }
-  }, 15_000);
+  });
 });

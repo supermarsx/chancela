@@ -116,10 +116,14 @@ import type {
   AttestationKeyBody,
   IssueRecoveryBody,
   TotpConfirmBody,
+  FinishPasskeyEnrolmentBody,
+  ReAuth,
   UpdateActBody,
   UpdateBookBody,
   UpdateEntityBody,
   UpdateUserBody,
+  UpdateMyProfileBody,
+  SuspendMyAccountBody,
   VerifyAiHumanReviewBody,
   ActState,
   DataCleanupBody,
@@ -300,6 +304,7 @@ export const keys = {
   user: (id: string) => ['users', id] as const,
   userDsrRequests: (id: string) => ['users', id, 'dsr-requests'] as const,
   userTwoFactor: (id: string) => ['users', id, 'two-factor'] as const,
+  userPasskeys: (id: string) => ['users', id, 'passkeys'] as const,
   sessions: ['sessions'] as const,
   session: ['session'] as const,
   passwordPolicy: ['session', 'password-policy'] as const,
@@ -2858,6 +2863,10 @@ export function useSetUserSecret(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
       void qc.invalidateQueries({ queryKey: keys.roster });
+      // `keys.session` too: on the self-service `/account` surface the current user's `UserView`
+      // comes from `GET /v1/session` (an ordinary user cannot read `GET /v1/users/{id}`), so this
+      // is what flips `has_secret` there. Harmless on the admin surface, which reads the roster.
+      void qc.invalidateQueries({ queryKey: keys.session });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -2875,6 +2884,8 @@ export function useRemoveUserSecret(id: string) {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
       void qc.invalidateQueries({ queryKey: keys.roster });
+      // Self-service on `/account` reads the current user off `GET /v1/session`.
+      void qc.invalidateQueries({ queryKey: keys.session });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -2892,6 +2903,8 @@ export function useCreateAttestationKey(id: string) {
     mutationFn: (body: AttestationKeyBody) => api.createAttestationKey(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
+      // Self-service on `/account` reads the current user off `GET /v1/session`.
+      void qc.invalidateQueries({ queryKey: keys.session });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -2904,6 +2917,8 @@ export function useRemoveAttestationKey(id: string) {
     mutationFn: (body: AttestationKeyBody) => api.removeAttestationKey(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
+      // Self-service on `/account` reads the current user off `GET /v1/session`.
+      void qc.invalidateQueries({ queryKey: keys.session });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -2923,6 +2938,8 @@ export function useIssueRecovery(id: string) {
     mutationFn: (body: IssueRecoveryBody) => api.issueRecovery(id, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.users });
+      // Self-service on `/account` reads the current user off `GET /v1/session`.
+      void qc.invalidateQueries({ queryKey: keys.session });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
@@ -2969,6 +2986,11 @@ export function useConfirmTotp(id: string) {
   return useMutation({
     mutationFn: (body: TotpConfirmBody) => api.confirmTotp(id, body),
     onSuccess: () => {
+      // NOT `keys.session`, deliberately. The second-factor WALL (`RequiredActionGate`) re-reads
+      // the session only once the operator has dismissed the once-shown backup codes — invalidating
+      // it here lifts the wall the instant the code is confirmed and destroys the codes before they
+      // can be copied, which is unrecoverable. Consumers that need the flipped state read
+      // `keys.userTwoFactor` below, which is the live, authoritative answer anyway.
       void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
       void qc.invalidateQueries({ queryKey: keys.users });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
@@ -2998,6 +3020,94 @@ export function useRegenerateBackupCodes(id: string) {
     mutationFn: () => api.regenerateBackupCodes(id),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
+    },
+  });
+}
+
+// --- Passkeys (t10) -------------------------------------------------------------
+//
+// The LIST is self-or-`user.manage`; enrol, rename and revoke are self-only and the handler
+// refuses otherwise. The hooks do not re-derive that rule — the server owns it — but the screen
+// must not offer cross-user mutations, or an administrator gets three buttons that can only 403.
+//
+// Every mutation invalidates `['ledger']` alongside the list: enrol, rename and revoke each append
+// a `user.passkey.*` event, so an Arquivo view open in another tab would otherwise show a stale
+// history of the change the operator just made.
+
+/**
+ * One account's enrolled passkeys (`GET /v1/users/{id}/passkeys`).
+ *
+ * `retry: false` so a `403` on someone else's list surfaces as a refusal instead of hammering.
+ * The response carries `enrolment_available` and the instance's current `rp_id` alongside the
+ * rows, because a row is not interpretable without them: a credential enrolled under a previous
+ * domain comes back `usable: false`, and only the current RP ID explains why.
+ */
+export function usePasskeys(id: string) {
+  return useQuery({
+    queryKey: keys.userPasskeys(id),
+    queryFn: () => api.listPasskeys(id),
+    enabled: !!id,
+    retry: false,
+  });
+}
+
+/**
+ * Begin enrolment (`POST …/passkeys/options`). Mints a registration-scoped challenge and returns
+ * the creation options; nothing is enrolled until {@link useFinishPasskeyEnrolment}.
+ *
+ * Refused `422` with `passkeys_rp_id_unset` / `passkeys_public_base_url_unset` when the instance
+ * has not made the one-way RP ID choice — an instance-configuration state, not a user error.
+ */
+export function useBeginPasskeyEnrolment(id: string) {
+  return useMutation({ mutationFn: () => api.beginPasskeyEnrolment(id) });
+}
+
+/** Finish enrolment (`POST …/passkeys`) with the credential the browser produced plus its label. */
+export function useFinishPasskeyEnrolment(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: FinishPasskeyEnrolmentBody) => api.finishPasskeyEnrolment(id, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userPasskeys(id) });
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Relabel one credential (`PATCH …/passkeys/{credential_id}`). Self-only, no step-up — the label
+ * is display-only. A blank name is refused `422 passkey_name_empty` rather than defaulted.
+ */
+export function useRenamePasskey(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ credentialId, name }: { credentialId: string; name: string }) =>
+      api.renamePasskey(id, credentialId, { name }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userPasskeys(id) });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Revoke one credential (`DELETE …/passkeys/{credential_id}`), with the step-up the server demands.
+ *
+ * The server also refuses — `409`, in the handler — when revoking would leave the account with no
+ * way to sign in or no way back. That refusal is surfaced, never pre-empted with a disabled
+ * button: the predicate is over every credential kind the account holds, and a client that
+ * re-derived it would be a second implementation of the lockout rule.
+ */
+export function useRevokePasskey(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ credentialId, reauth }: { credentialId: string; reauth: ReAuth }) =>
+      api.revokePasskey(id, credentialId, { reauth }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.userPasskeys(id) });
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
     },
   });
 }
@@ -3091,6 +3201,68 @@ export function useUpdateUser(id: string) {
       void qc.invalidateQueries({ queryKey: keys.users });
       void qc.invalidateQueries({ queryKey: keys.session });
       void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+// --- The self-service account surface (`/account`) -------------------------------
+//
+// These are the SELF counterparts of the administrative user mutations above, and they take no id:
+// the acting session is the subject. They exist because an ordinary user holds neither `user.read`
+// nor `user.manage`, so `GET`/`PATCH /v1/users/{id}` are closed to them — including for their own
+// record. The current user's `UserView` therefore comes from `GET /v1/session`
+// ({@link useSession}), which every signed-in principal may read, and every mutation here
+// invalidates `keys.session` so that read is what refreshes.
+//
+// `keys.users` is invalidated too, deliberately: an ADMINISTRATOR editing their own profile from
+// `/account` has the roster mounted elsewhere in their session, and it must not go stale. For a
+// user who cannot read the roster the query is simply not mounted, so the invalidation is a no-op
+// and never provokes a 403.
+
+/**
+ * Edit your own display name, contact e-mail and interface language
+ * (`PATCH /v1/me/profile`). No administrative permission; the body cannot carry `active` or
+ * `two_factor_required` (see {@link UpdateMyProfileBody} — the narrowness IS the gate).
+ */
+export function useUpdateMyProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: UpdateMyProfileBody) => api.updateMyProfile(body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: keys.session });
+      void qc.invalidateQueries({ queryKey: keys.users });
+      void qc.invalidateQueries({ queryKey: ['ledger'] });
+    },
+  });
+}
+
+/**
+ * Suspend your own account (`POST /v1/me/suspend`) — step-up re-auth required.
+ *
+ * **This signs the caller out, by design.** The server ends every session of the account,
+ * including the one that made the request, because a suspension whose premise is "someone else is
+ * holding a session of mine" achieves nothing if it leaves any session alive, and neither side can
+ * tell which live session is the attacker's. So there is no cache to keep coherent afterwards —
+ * the session token is dead and the next request would 401. The caller clears the local token and
+ * resets the client cache instead, which drops the signed-in UI to the sign-in wall immediately
+ * rather than after a failed request.
+ *
+ * Lifting it is `PATCH /v1/users/{id}` `{active:true}` — `user.manage`. There is deliberately no
+ * hook for un-suspending yourself, because there is no endpoint for it.
+ */
+export function useSuspendMyAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SuspendMyAccountBody) => api.suspendMyAccount(body),
+    onSuccess: () => {
+      // Exactly what {@link useDeleteSession} does on sign-out, and for the same reason: the token
+      // is dead server-side, so the local one must go and the session query must read signed-out
+      // at once rather than after a failed request. Scoped to `keys.session` deliberately — a
+      // blanket invalidation would refetch every mounted query with no token and produce a burst of
+      // 401s behind an auth wall that is already up.
+      clearSessionToken();
+      qc.setQueryData(keys.session, { user: null, permissions: [] });
+      void qc.invalidateQueries({ queryKey: keys.session });
     },
   });
 }

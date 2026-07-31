@@ -58,7 +58,10 @@ function stubFetch(opts: { user?: UserView | null } = {}): { fn: typeof fetch; c
     calls.push({ url, method, body: (init?.body as string) ?? null });
     if (url.includes('/v1/session'))
       return Promise.resolve(json({ user: sessionUser, permissions: [] }));
-    if (url.includes('/v1/users/')) {
+    // The SELF profile endpoint. The card has no id to address and never had — it reads the
+    // session user — so it writes through `PATCH /v1/me/profile`, which needs no administrative
+    // permission. The stub matches that address rather than `/v1/users/{id}`.
+    if (url.includes('/v1/me/profile')) {
       const patched = JSON.parse((init?.body as string) ?? '{}') as { language?: UserLanguage };
       return Promise.resolve(json({ ...sessionUser, ...patched }));
     }
@@ -119,7 +122,11 @@ describe('LanguagePreferenceSection', () => {
     await waitFor(() => {
       const patch = stub.calls.find((c) => c.method === 'PATCH');
       expect(patch, 'a language PATCH was issued').toBeTruthy();
-      expect(patch!.url).toContain('/v1/users/u-1');
+      // The self endpoint, not the `user.manage`-gated `PATCH /v1/users/{id}`: this card is the
+      // one control on the Aparência tab that is explicitly the signed-in user's own, and routing
+      // it through the administrative endpoint 403'd exactly the ordinary users it exists for.
+      expect(patch!.url).toContain('/v1/me/profile');
+      expect(patch!.url).not.toContain('/v1/users/');
       const body = JSON.parse(patch!.body ?? '{}') as { language?: string };
       expect(body.language).toBe(LANGUAGE_AUTO);
       expect(body.language).not.toBe('de-DE');

@@ -56,6 +56,7 @@ import { UserCreateForm } from '../users/UserCreateForm';
 import { forgetAccount, readRecentAccounts, rememberAccount } from './recentAccounts';
 import { useAuthWallT } from './authWallCopy';
 import { TwoFactorChallengeForm } from './TwoFactorChallengeForm';
+import { PasskeySignIn, PASSKEY_USERNAME_AUTOCOMPLETE } from './PasskeySignIn';
 
 /**
  * `form` — the typed sign-in form (default); `create` — the bootstrap create form (empty
@@ -301,7 +302,12 @@ export function SignIn() {
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder={t('signin.username.placeholder')}
-                  autoComplete="username"
+                  // `username webauthn`, not `username`. The `webauthn` token is what tells the
+                  // browser to decorate THIS field with the conditional-mediation dropdown; an
+                  // armed request with no marked field never fires and never says why. It is
+                  // harmless where passkeys are unsupported — an unknown token is ignored and
+                  // ordinary username autofill is unaffected.
+                  autoComplete={PASSKEY_USERNAME_AUTOCOMPLETE}
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
@@ -348,6 +354,25 @@ export function SignIn() {
                 </div>
               )}
             </form>
+
+            {/* Passkey sign-in. Offered on browser capability alone and never on account state:
+                an endpoint answering "does this username hold a passkey?" would rebuild the
+                enumeration oracle the typed identifier and the dummy verifier exist to prevent.
+                The component renders nothing where passkeys cannot work — the desktop shell, or a
+                browser without WebAuthn — rather than showing a control that throws. */}
+            <PasskeySignIn
+              disabled={busy}
+              onSignedIn={(user) => {
+                // Same rule as the password path: only a COMPLETED sign-in is remembered, so the
+                // recents list never becomes an "is this a real username" oracle.
+                if (remember) {
+                  setRecents(
+                    rememberAccount({ username: user.username, displayName: user.display_name }),
+                  );
+                }
+                toast.success(t('toast.signin.success'));
+              }}
+            />
 
             {recents.length > 0 ? (
               // Device-local shortcuts, NOT the instance roster: only accounts that have
