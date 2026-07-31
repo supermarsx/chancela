@@ -1,82 +1,44 @@
 /**
- * WebAuthn PRF → attestation-key unwrap secret (t10, `docs/passkeys.md` "PRF stability").
+ * WebAuthn PRF → attestation-key unwrap secret (t10, `docs/passkeys.md` "PRF stability"), **wired**.
  *
- * ## Read this before wiring anything to it: THE PRF WRAP IS DEFERRED BY RULING
+ * A passkey with a working PRF extension unlocks the attestation key with no password at sign-in.
+ * This module is the client-side crypto for that: it turns a credential's PRF output into the secret
+ * that opens the credential's server-side wrap. It is one `crypto.subtle.deriveBits` HKDF call and
+ * two constants; nothing here is hand-rolled and nothing could become so.
  *
- * **This is a decision, not a gap in the schedule** (`docs/passkeys.md`, amended at `7c84183b`).
- * No PRF-derived KEK goes near the attestation scalar until one browser session on a real
- * PRF-capable platform authenticator has confirmed all four of:
+ * ## The client adds `prf`; the server does not
  *
- * - the PRF output is present at all;
- * - it is **stable across two consecutive sign-ins**;
- * - it is **stable across a browser restart**;
- * - all of the above **with the constant salt** this module derives against.
+ * `docs/passkeys.md` said the server would request `prf` on the `get()` ceremony. **That is
+ * impossible with `webauthn_rp`:** the library rejects an assertion from a *non*-PRF credential when
+ * the ceremony requested `prf`, and a discoverable sign-in cannot know in advance which credential
+ * will answer — so requesting `prf` would break sign-in for every non-PRF authenticator. Instead the
+ * **browser** adds `extensions.prf.eval.first = {@link PRF_EVAL_SALT}` (see `./webauthn`), the server
+ * verifies those paths with `error_on_unsolicited_extensions: false`, and the raw output is stripped
+ * ({@link stripPrfResults}) so only the derived KEK — never the PRF output — leaves the browser. The
+ * Rust module header records this correction to the doc.
  *
- * Nobody in this codebase has yet evaluated a real PRF output against real hardware, and
- * conditional mediation is unverified for the same reason. Key custody is the wrong place to spend
- * an unverified assumption — the iOS 18.0→18.4 incident is what happens when that assumption is
- * spent and turns out to be wrong.
+ * ## Two constant salts, and why constant is correct
  *
- * **What ships instead:** enrolment provisions a PRF-capable credential, sign-in authenticates,
- * and the attestation key is unlocked by the **password** at first attestation. Do not build the
- * passwordless-unwrap path into the ceremony ahead of that verification.
+ * - {@link PRF_EVAL_SALT} is the `first` input fed to the authenticator. Constant, not
+ *   per-credential: a discoverable sign-in does not learn which credential answers until the
+ *   assertion returns (the property that removes the enumeration oracle), so a per-credential salt is
+ *   impossible; and CTAP2.1 already keeps the per-credential seed (`CredRandomWithUV`) *inside* the
+ *   authenticator, so this only supplies domain separation between relying parties. Two credentials
+ *   of one user still derive **different** outputs, so each still carries its own wrap — Invariant 2
+ *   is untouched. There is deliberately **no `prf_salt` on `PasskeyCredential`**.
+ * - {@link ATTESTATION_KEK_SALT} is the HKDF salt. Raw PRF output is **input keying material, not a
+ *   key** (Yubico is explicit): uniform, but the same value for every relying-party use of the
+ *   credential. One HKDF-SHA256 extraction with this salt and the versioned {@link ATTESTATION_KEK_INFO}
+ *   label binds it to this product and this purpose.
  *
- * Three things would also have to change server-side, and they are listed here so that a reader
- * who does get the hardware confirmation knows the shape of the work rather than rediscovering it.
- * They are **not** a checklist that, once ticked, releases the ruling above:
+ * ## Stability is the residual risk, and the password wrap is the safety net
  *
- * 1. **`POST /v1/session/passkey` takes only `{ credential }`.** `PasskeySignIn` has no field for a
- *    derived secret, and serde ignores unknown members — so a secret sent today would travel over
- *    the wire, be dropped on the floor, and unlock nothing. Transmitting key material to be
- *    discarded is strictly worse than not deriving it.
- * 2. **There is no salt setting.** Nothing server-side publishes the stable value the derivation
- *    needs, and a locally-invented one derives a different key on every device and every reload.
- * 3. **The server never *asks* for `prf` on the sign-in ceremony, and a client cannot add it.**
- *    This is the one that would waste a day. `begin_authentication` builds
- *    `DiscoverableCredentialRequestOptions::passkey(&rp.rp_id)` with default extensions, and
- *    verification runs with `webauthn_rp`'s `error_on_unsolicited_extensions` at its `true`
- *    default — so an assertion carrying an `extensions.prf.eval` the server did not request is
- *    **refused**, not ignored. PRF at sign-in is not client-addable; it needs
- *    `webauthn_rp::request::auth::Extension::prf` set server-side.
- *    `an_unsolicited_extension_at_sign_in_is_refused` in `crates/chancela-api/tests/passkeys.rs`
- *    pins exactly this.
- *
- * So this module is **the derivation and nothing else**, verified against published vectors rather
- * than against a caller. It has no production call site and deliberately fabricates none — which is
- * the shape the ruling asks for. {@link stripPrfResults} in `./webauthn` is the only PRF-related
- * behaviour that ships.
- *
- * ## The salt is a CONSTANT — per-credential is ruled out, not merely unimplemented
- *
- * `docs/passkeys.md` previously said the salt was *"server-supplied, per-credential, stable"*. The
- * ruling closes that: a **constant** salt, and explicitly **no `prf_salt` on `PasskeyCredential`**.
- *
- * The reason is the discoverable-credential constraint, not a preference. A discoverable sign-in
- * does not learn which credential will answer until the assertion comes back — that is the entire
- * point of dropping the username, and the reason this product has no enumeration oracle — so the
- * server cannot pick that credential's salt when it mints the challenge. Both escapes break a
- * frozen ruling rather than merely costing something:
- *
- * - `evalByCredential` (`webauthn_rp`'s `CredentialSpecificExtension::prf`) needs a populated
- *   `allowCredentials`, i.e. a username-first flow — the oracle itself;
- * - splitting into two ceremonies costs **two biometric prompts per sign-in**.
- *
- * A constant is sound rather than a compromise: CTAP2.1 keeps the per-credential seed
- * (`CredRandomWithUV`) inside the authenticator, so the salt only does domain separation — binding
- * the output to this product rather than to another relying party using the same passkey. Two
- * credentials of one user therefore still derive **different** secrets, so each still carries its
- * own wrap and Invariant 2 is untouched.
- *
- * ## What the derivation is, and why it is not just the PRF output
- *
- * Raw PRF output is **input keying material, not a key** — Yubico is explicit about this, and the
- * reason is structural: the authenticator produces it by HMAC over its per-credential seed, so it
- * is uniform, but it is also the *same* value for every relying-party use of that credential. One
- * HKDF-SHA256 extraction with a salt and a versioned `info` label binds it to this product and this
- * purpose, so the same passkey used for something else derives something else.
- *
- * One `crypto.subtle.deriveBits` call. Nothing hand-rolled, and nothing that could become
- * hand-rolled: HKDF is a WebCrypto primitive here, not an implementation.
+ * A PRF output that moves (the iOS 18.0→18.4 incident) makes the derived KEK stop opening the wrap.
+ * That is survivable **only because the wrap is never the only wrap**: the attestation key keeps its
+ * password wrap on the server, so a moved output degrades to the password prompt, never to key loss.
+ * Real-hardware PRF stability (across sign-ins, across a browser restart) remains the one external
+ * confirmation this wiring does not itself prove — a software authenticator proves the plumbing, not
+ * the hardware.
  */
 
 /**
@@ -88,6 +50,28 @@
  * shipping data. A new scheme takes a new label and a migration, never an edit to this string.
  */
 export const ATTESTATION_KEK_INFO = 'chancela-attestation-kek-v1';
+
+/**
+ * The `first` input the authenticator evaluates its PRF against (`extensions.prf.eval.first`).
+ *
+ * A fixed, instance-independent constant — the browser injects it into every sign-in and PRF-wrap
+ * `get()`, and the same bytes must reappear at enrolment and at sign-in or the derived KEK would
+ * differ and open nothing. Its exact value is arbitrary (it is domain separation, not a secret); the
+ * versioned string keeps it self-documenting. Changing it re-derives every PRF output and orphans
+ * every wrap, so a new scheme takes a new value, never an edit to this one.
+ */
+export const PRF_EVAL_SALT: Uint8Array = new TextEncoder().encode(
+  'chancela.attestation.passkey.prf.eval.v1',
+);
+
+/**
+ * The HKDF salt mixed into {@link deriveAttestationKek}. Constant and versioned for the same reason
+ * as {@link ATTESTATION_KEK_INFO}: it is part of the derivation's identity, so moving it would strand
+ * every attestation key already wrapped under the old value.
+ */
+export const ATTESTATION_KEK_SALT: Uint8Array = new TextEncoder().encode(
+  'chancela.attestation.passkey.kek.salt.v1',
+);
 
 /** Length of the derived secret, in bits — 256, matching the XChaCha20-Poly1305 KEK input. */
 const DERIVED_BITS = 256;

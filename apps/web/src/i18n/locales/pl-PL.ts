@@ -6857,6 +6857,10 @@ export const plPL: Catalog = {
   'users.passkeys.signingNote.title': 'Hasło jest nadal wymagane przy podpisywaniu',
   'users.passkeys.signingNote.body':
     'Kluczem „{name}” będziesz się od teraz logować na to konto. Klucz audytu, którym podpisujesz dokumenty, otwiera się hasłem, więc zostaniesz o nie poproszony przy pierwszym podpisywaniu.',
+  'users.passkeys.passwordlessNote.title': 'Tym kluczem dostępu zalogujesz się bez hasła',
+  'users.passkeys.passwordlessNote.body':
+    'Kluczem „{name}” będziesz się od teraz logować na to konto i otworzysz klucz audytu, więc nie zostaniesz poproszony o hasło przy podpisywaniu.',
+  'users.passkeys.passwordless.badge': 'Bez hasła',
   'users.passkeys.rename': 'Zmień nazwę',
   'users.passkeys.renamed': 'Nazwa klucza dostępu została zmieniona.',
   'users.passkeys.revoke': 'Usuń',
@@ -6940,11 +6944,11 @@ export const plPL: Catalog = {
     'Przypisane role, stan konta oraz wymóg drugiego składnika to decyzje administracyjne i nie zmienia się ich tutaj.',
   'account.export.card': 'Moje dane',
   'account.export.body':
-    'Eksport obejmuje Twój profil, przypisane Ci role oraz odniesienia do zdarzeń dziennika audytu, w których występujesz. Nie zawiera haseł, fraz odzyskiwania ani kluczy prywatnych.',
+    'Pobierz kopię danych osobowych, które ta instancja przechowuje na temat Twojego konta: Twój profil, preferencję języka i stan konta oraz zestawienie tego, jakie poświadczenia logowania posiadasz. Nie zawiera haseł, fraz odzyskiwania, sekretów kodów jednorazowych ani kluczy.',
+  'account.export.scope':
+    'Obejmuje wyłącznie dane Twojego konta: przypisane role i odwołania do dziennika audytu są przechowywane na potrzeby rozliczalności i nie stanowią jego części.',
   'account.export.download': 'Pobierz eksport',
   'account.export.pending': 'Przygotowywanie eksportu',
-  'account.export.unavailable':
-    'Eksport Twoich danych wymaga uprawnienia do zarządzania prywatnością, którego to konto nie ma. Poproś o nie osobę administrującą instancją.',
   'account.security.lede':
     'Czym to konto dysponuje dziś, aby potwierdzić Twoją tożsamość. Zmian dokonuje się w kartach poniżej.',
   'account.security.adminView': 'Zobacz to konto w obszarze administracji',

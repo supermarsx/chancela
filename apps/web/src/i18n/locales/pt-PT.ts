@@ -6861,6 +6861,10 @@ export const ptPT: Catalog = {
   'users.passkeys.unusable.badge': 'Domínio anterior',
   'users.passkeys.unusable.hint':
     'Criada para {enrolled}; esta instância responde agora em {current}. Uma chave de acesso não se transfere entre domínios — remova-a e crie outra.',
+  'users.passkeys.passwordlessNote.title': 'Esta chave de acesso inicia sessão sem palavra-passe',
+  'users.passkeys.passwordlessNote.body':
+    '«{name}» passa a iniciar sessão nesta conta e abre a chave de auditoria, por isso não lhe será pedida a palavra-passe para assinar.',
+  'users.passkeys.passwordless.badge': 'Sem palavra-passe',
   'users.passkeys.signingNote.title': 'A palavra-passe continua a ser pedida para assinar',
   'users.passkeys.signingNote.body':
     '«{name}» passa a iniciar sessão nesta conta. A chave de auditoria com que assina documentos abre-se com a palavra-passe, por isso ser-lhe-á pedida na primeira vez que assinar.',
@@ -6947,11 +6951,11 @@ export const ptPT: Catalog = {
     'As funções atribuídas, o estado da conta e a exigência de segundo fator são decisões de administração e não se alteram aqui.',
   'account.export.card': 'Os meus dados',
   'account.export.body':
-    'A exportação reúne o seu perfil, as funções que lhe estão atribuídas e as referências aos eventos do registo de auditoria em que consta. Não inclui palavras-passe, frases de recuperação nem chaves privadas.',
+    'Descarregue uma cópia dos dados pessoais que esta instância guarda sobre a sua conta: o seu perfil, a preferência de idioma e o estado da conta, e um registo das credenciais de início de sessão que possui. Não inclui palavras-passe, frases de recuperação, segredos de códigos de uso único nem chaves.',
+  'account.export.scope':
+    'Abrange apenas os dados da sua conta: as funções atribuídas e as referências ao registo de auditoria são conservadas para efeitos de responsabilização e não fazem parte deste ficheiro.',
   'account.export.download': 'Descarregar a exportação',
   'account.export.pending': 'A preparar a exportação',
-  'account.export.unavailable':
-    'A exportação dos seus dados exige a permissão de gestão de privacidade, que esta conta não tem. Peça-a a quem administra a instância.',
   'account.security.lede':
     'O que esta conta tem hoje para provar a sua identidade. As alterações fazem-se nos cartões abaixo.',
   'account.security.adminView': 'Ver esta conta na área de administração',

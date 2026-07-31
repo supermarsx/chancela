@@ -43,6 +43,7 @@ function passkey(overrides: Partial<PasskeyView> = {}): PasskeyView {
     attachment: 'platform',
     transports: ['internal'],
     prf_capable: true,
+    unlocks_without_password: false,
     sign_count: 0,
   };
   // `Object.assign` rather than a second spread: spreading `Partial<PasskeyView>` over a *required*
@@ -165,30 +166,35 @@ describe('PasskeySection', () => {
     expect(screen.getByRole('button', { name: ptPT['users.passkeys.revoke'] })).toBeTruthy();
   });
 
-  it('draws no per-row distinction on prf_capable, because there is none to draw', async () => {
-    // This test used to assert the opposite — a marker on non-PRF rows only — and that was right
-    // while a PRF wrap was expected to ship. The wrap is deferred by ruling until it is verified
-    // on real hardware, so NO credential unwraps the attestation key and every one of them asks
-    // for the password at signing. A badge on some rows would read as a promise about the
-    // deferred path, so the two rows below must be indistinguishable.
+  it('marks the passwordless row and only it, keying on the wrap not the capability', async () => {
+    // The per-row badge follows `unlocks_without_password` — the wrap that exists — never
+    // `prf_capable`, the capability that might have. The first row below is capable AND wrapped
+    // (badge); the second is capable but not wrapped, e.g. its wrap ceremony never completed (no
+    // badge). Keying on `prf_capable` would promise a passwordless path the second row lacks.
     enableWebAuthn();
     mockList({
       passkeys: [
-        passkey({ credential_id: 'cHJm', name: 'Telemóvel', prf_capable: true }),
-        passkey({ credential_id: 'bm9wcmY', name: 'Chave de segurança', prf_capable: false }),
+        passkey({
+          credential_id: 'cHJm',
+          name: 'Telemóvel',
+          prf_capable: true,
+          unlocks_without_password: true,
+        }),
+        passkey({
+          credential_id: 'bm9wcmY',
+          name: 'Chave de segurança',
+          prf_capable: true,
+          unlocks_without_password: false,
+        }),
       ],
     });
     renderWithProviders(<PasskeySection user={USER} isSelf />);
 
-    const capable = (await screen.findByText('Telemóvel')).closest('tr');
-    const incapable = screen.getByText('Chave de segurança').closest('tr');
-    // Same controls, same shape — the only textual difference between the rows is the label.
-    expect(capable?.querySelectorAll('button').length).toBe(
-      incapable?.querySelectorAll('button').length,
-    );
-    expect(capable?.textContent?.replace('Telemóvel', '')).toBe(
-      incapable?.textContent?.replace('Chave de segurança', ''),
-    );
+    const wrapped = (await screen.findByText('Telemóvel')).closest('tr');
+    const fallback = screen.getByText('Chave de segurança').closest('tr');
+    const badge = ptPT['users.passkeys.passwordless.badge'];
+    expect(wrapped?.textContent).toContain(badge);
+    expect(fallback?.textContent).not.toContain(badge);
   });
 
   it('states once, for every credential, that the password still opens the audit key', async () => {
@@ -294,6 +300,79 @@ describe('PasskeySection — enrolment and rename', () => {
     });
   }
 
+  /**
+   * An authenticator whose `create` enrols and whose `get` answers the PRF-wrap ceremony with a
+   * user-verified assertion carrying a PRF output — so the enrol → wrap flow completes end to end.
+   */
+  function stubPrfCapableAuthenticator(): void {
+    vi.stubGlobal('PublicKeyCredential', function PublicKeyCredential() {});
+    const authData = new Uint8Array(37);
+    authData[32] = 0x05; // UP | UV
+    Object.defineProperty(navigator, 'credentials', {
+      configurable: true,
+      value: {
+        create: vi.fn(async () => ({
+          id: 'bmV3',
+          rawId: new Uint8Array([7, 7]).buffer,
+          type: 'public-key',
+          authenticatorAttachment: 'platform',
+          getClientExtensionResults: () => ({ prf: { enabled: true } }),
+          response: {
+            clientDataJSON: new Uint8Array([1]).buffer,
+            attestationObject: new Uint8Array([2]).buffer,
+            getTransports: () => ['internal'],
+          },
+        })),
+        get: vi.fn(async () => ({
+          id: 'bmV3',
+          rawId: new Uint8Array([7, 7]).buffer,
+          type: 'public-key',
+          authenticatorAttachment: 'platform',
+          getClientExtensionResults: () => ({
+            prf: { results: { first: new Uint8Array(32).fill(9).buffer } },
+          }),
+          response: {
+            clientDataJSON: new Uint8Array([1]).buffer,
+            authenticatorData: authData.buffer,
+            signature: new Uint8Array([4]).buffer,
+            userHandle: new Uint8Array([5]).buffer,
+          },
+        })),
+      },
+    });
+  }
+
+  /** Like {@link stubServer}, plus the two PRF-wrap endpoints, so the wrap actually seals. */
+  function stubServerWithPrfWrap(enrolled: PasskeyView, wrapped: PasskeyView) {
+    const json = (body: unknown) =>
+      new Response(JSON.stringify(body), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      const method = init?.method ?? 'GET';
+      if (url.endsWith('/prf/options')) {
+        return Promise.resolve(json({ public_key: { challenge: 'AAAA' }, purpose: 'prf_wrap' }));
+      }
+      if (method === 'POST' && url.endsWith('/prf')) return Promise.resolve(json(wrapped));
+      if (url.endsWith('/passkeys/options')) {
+        return Promise.resolve(
+          json({
+            public_key: { challenge: 'AAAA', user: { id: 'BBBB' } },
+            purpose: 'registration',
+          }),
+        );
+      }
+      if (method === 'POST' && url.endsWith('/passkeys')) return Promise.resolve(json(enrolled));
+      return Promise.resolve(
+        json({ passkeys: [wrapped], rp_id: 'example.pt', enrolment_available: true }),
+      );
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  }
+
   /** An authenticator whose `create` rejects with a named DOM exception. */
   function stubFailingAuthenticator(name: string): void {
     const error = new Error(name);
@@ -376,8 +455,10 @@ describe('PasskeySection — enrolment and rename', () => {
     expect(credential.clientExtensionResults).toEqual({ prf: { enabled: true } });
   });
 
-  it('says at enrolment that the password is still asked for at signing — for a non-PRF credential', async () => {
-    // The support incident this prevents is meeting it mid-attestation, at signing time.
+  it('says at enrolment that the password is still asked when no wrap is sealed', async () => {
+    // The support incident this prevents is meeting it mid-attestation, at signing time. Here the
+    // PRF-wrap ceremony does not complete (the stub authenticator's `get` returns nothing), so the
+    // credential falls back and the note is the honest one — the password is still asked.
     stubAuthenticator();
     stubServer(passkey({ credential_id: 'bmV3', name: 'Chave de segurança', prf_capable: false }));
     renderWithProviders(<PasskeySection user={USER} isSelf />);
@@ -387,12 +468,11 @@ describe('PasskeySection — enrolment and rename', () => {
     expect(screen.getByText(/Chave de segurança/u)).toBeTruthy();
   });
 
-  it('says exactly the same thing for a PRF-capable credential', async () => {
-    // **The assertion this file most needs.** It used to assert the opposite — no notice when
-    // `prf_capable` — which encoded "a PRF-capable passkey signs without a password". The wrap
-    // that would have made that true is deferred by ruling until real hardware confirms the PRF
-    // output is present and stable, so today the two cases are identical and the copy must not
-    // imply a passwordless signing path for either.
+  it('says the same fallback thing for a PRF-capable credential whose wrap did not complete', async () => {
+    // Capability is not a wrap. A credential whose authenticator *could* provision PRF but whose
+    // wrap ceremony did not finish falls back exactly like a non-PRF one — the copy follows the
+    // wrap that exists, never the capability that might have. Keying it on `prf_capable` would
+    // promise a passwordless signing path this credential does not have.
     stubAuthenticator();
     stubServer(passkey({ credential_id: 'bmV3', name: 'Telemóvel', prf_capable: true }));
     renderWithProviders(<PasskeySection user={USER} isSelf />);
@@ -400,6 +480,27 @@ describe('PasskeySection — enrolment and rename', () => {
     fireEvent.click(await screen.findByRole('button', { name: ptPT['users.passkeys.add'] }));
     await screen.findByText(ptPT['users.passkeys.signingNote.title']);
     expect(screen.getByText(/Telemóvel/u)).toBeTruthy();
+  });
+
+  it('says «sem palavra-passe» when the PRF wrap completes at enrolment', async () => {
+    // The passwordless path end to end: create() enrols, a second get() yields a PRF output, the
+    // wrap seals, and the returned view reports `unlocks_without_password`. Only then is the
+    // passwordless note true, and only then is it shown.
+    stubPrfCapableAuthenticator();
+    stubServerWithPrfWrap(
+      passkey({ credential_id: 'bmV3', name: 'Telemóvel', prf_capable: true }),
+      passkey({
+        credential_id: 'bmV3',
+        name: 'Telemóvel',
+        prf_capable: true,
+        unlocks_without_password: true,
+      }),
+    );
+    renderWithProviders(<PasskeySection user={USER} isSelf />);
+
+    fireEvent.click(await screen.findByRole('button', { name: ptPT['users.passkeys.add'] }));
+    await screen.findByText(ptPT['users.passkeys.passwordlessNote.title']);
+    expect(screen.queryByText(ptPT['users.passkeys.signingNote.title'])).toBeNull();
   });
 
   it('names the credential the server stored, not the text that was typed', async () => {

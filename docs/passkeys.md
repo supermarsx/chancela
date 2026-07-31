@@ -1,6 +1,34 @@
 # Passkeys / WebAuthn (design ruling)
 
-> **Status.** Nothing is implemented. `grep -rli "webauthn\|passkey\|fido"` over the tree at `b7f7a8c3`
+> **Status update (PRF wiring landed).** The passkey backend, UI, credential-lifecycle predicate and
+> step-up arm are implemented, and — as of this change — **the PRF-derived passwordless unwrap is
+> wired**: enrolment seals a second wrap of the attestation scalar under a PRF-derived KEK
+> (`crates/chancela-api/src/passkeys.rs`, `finish_prf_wrap`), and a PRF sign-in unlocks the key with
+> no password, degrading to the password when the output is absent or moved. Two claims in the ruling
+> below turned out **wrong against `webauthn_rp` 0.3.0** and are corrected in place — search for
+> **[CORRECTION]**:
+>
+> 1. *The deferred implementation assumed the server would request `prf` on the `get()` ceremony (and
+>    this section's "zero server-side PRF code" implied no server change was needed).* The server
+>    **cannot** request `prf`: `webauthn_rp` refuses an assertion from a non-PRF credential when `prf`
+>    was requested (`HmacSecretForPrfIncapableCred`), and a discoverable sign-in cannot know which
+>    credential will answer. So the **client** adds `extensions.prf.eval` and the server verifies with
+>    `error_on_unsolicited_extensions: false` on the sign-in and PRF-wrap paths. The old test
+>    `an_unsolicited_extension_at_sign_in_is_refused` is now `a_malformed_hmac_secret_at_sign_in_is_refused`
+>    (+ `an_hmac_secret_from_a_non_prf_credential_is_refused`).
+> 2. *"PRF at `create()` is usually available."* Not with this library: its registration options
+>    serialise `prf` as an empty map, so **no** PRF output ever comes back from `create()`. The wrap is
+>    therefore **always** added by a second, `get()`-based ceremony (`CeremonyPurpose::PrfWrap`), never
+>    the "minority path" the ruling expected.
+>
+> **The honest boundary:** all of this was proven with a **software authenticator** producing a
+> deterministic PRF output — that verifies the *wiring* end to end (enrol adds the wrap; sign-in
+> derives the KEK and unlocks; a changed output degrades to the password and does not lose the key). It
+> does **not** verify real-hardware PRF behaviour (iCloud Keychain, Windows Hello) or conditional
+> mediation, which remain the outstanding external confirmations — the same two rows this document
+> already marks **unverified**.
+
+> **Original status.** Nothing is implemented. `grep -rli "webauthn\|passkey\|fido"` over the tree at `b7f7a8c3`
 > matches only `chancela-zk`, where WebAuthn PRF is named as a *client-side* key-wrapping scheme for
 > zero-knowledge repositories — unrelated to sign-in and not reused here.
 >
@@ -58,6 +86,7 @@ PRF output; no password is typed, and the signed act is still attributable to th
 - **Cost 2 — a lost passkey loses that wrap, but a *restored* one does not.** These are different events and the doc previously conflated them. **Re-creating** a credential — even for the same account on the same authenticator — yields a different secret; there is no "re-create my PRF". **Restoring** a synced credential (iCloud Keychain, Google Password Manager) to a new device preserves it: the PRF seed travels with the credential. For a device-bound authenticator (Windows Hello, a security key) the question does not arise, because the whole credential is lost, not merely the wrap — which is the ordinary lost-passkey case in Finding 3. See the PRF-stability invariant below for the evidence and its confidence.
 - **Cost 3 — no Rust library models `prf`, and the reason matters.** This holds for **both** candidates and so is not a library-selection criterion. Correcting an earlier claim that `webauthn-rs` 0.5.5 "documents no PRF/`hmac-secret` support": it *does* model CTAP2 `hmac-secret` (`hmac_create_secret`, `hmac_get_secret`, `HmacGetSecretInput`/`Output`), and its own doc comment on `hmac_get_secret` reads *"⚠️ Browsers do not support this!"*. What does not exist is **`prf`** — proven for `webauthn-rs` by exhaustively destructuring both extension structs, which compiles; `webauthn_rp` likewise carries no `prf` member. `hmac-secret` is the authenticator-facing CTAP2 extension; `prf` is the browser-facing WebAuthn extension, and only the latter is reachable from a web page. So the conclusion holds — **PRF handling is ours whichever library we pick** — but the reason is that these crates speak to the wrong layer, not that they are silent. A future reader will otherwise re-derive this.
 - **Cost 4 — PRF at `create()` is usually available, and the fallback is the minority path.** Synced providers (iCloud Keychain, Google Password Manager) return the first PRF value at `create()`. Windows Hello does too, from Chrome 147 (`WEBAUTHN_API_VERSION_8`) and Firefox 147+; Chrome/Edge 146 is authentication-only. Older security keys may only generate an hmac-secret if asked for it at creation. Enrolment must still be *prepared* to do `create()` then an immediate `get()`, but that is now the exception rather than the designed flow.
+  > **[CORRECTION] (PRF wiring).** Irrelevant with `webauthn_rp` 0.3.0, which cannot evaluate PRF at `create()` at all: `PublicKeyCredentialCreationOptions` serialises `prf` as an empty map (`request/register/ser.rs`: "CTAP 2.2 does not allow PRF evaluation at creation time"). So the browser *never* returns a PRF output from enrolment on any platform, and the `create()`-then-`get()` flow is the **only** path, not the exception. Enrolment does a real second `get()` ceremony (`CeremonyPurpose::PrfWrap`).
 
 #### B — Passkey authenticates, password still unwraps
 
@@ -586,6 +615,16 @@ them:
 **The PRF handling is ours, and it is smaller than this document previously feared.** Because PRF is
 evaluated client-side and the derived bytes are returned to JS, the **server-side WebAuthn
 verification needs zero PRF-specific code** — it verifies an ordinary assertion. First-party work is:
+
+> **[CORRECTION] (PRF wiring): "zero server-side PRF code" is not quite true — one line, and it is
+> the opposite of what the code first assumed.** The client's `prf` produces an `hmac-secret` output
+> in `authData`, and `webauthn_rp` verifies with `error_on_unsolicited_extensions: true` by default —
+> which **refuses** that output. The fix is *not* to request `prf` server-side (that refuses every
+> non-PRF credential, `HmacSecretForPrfIncapableCred`, and a discoverable sign-in cannot know which
+> credential answers). It is to verify the sign-in and PRF-wrap paths with
+> `error_on_unsolicited_extensions: false`, which accepts a PRF-capable credential's output and a
+> non-PRF credential's absence alike. Step-up stays strict. Also: the table row below says "on create
+> and get", but `create` cannot evaluate PRF here — see the correction under Cost 4.
 
 | Where | What | Crypto? |
 |---|---|---|

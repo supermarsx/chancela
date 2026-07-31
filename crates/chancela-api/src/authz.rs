@@ -1024,12 +1024,25 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
         "/v1/users/{id}/passkeys/{credential_id}",
         RouteClass::Session,
     ), // self only + step-up: revoking is a credential operation and must not ride a session alone
+    // The PRF-wrap ceremony (passwordless enablement), no step-up by design. Self-only
+    // (`passkeys::require_self`); the finish step additionally needs the session's unlocked
+    // attestation key. It only *adds* a wrap, never removes one, and the password wrap stays
+    // regardless — so there is nothing destructive here to re-authenticate for.
+    (
+        "/v1/users/{id}/passkeys/{credential_id}/prf/options",
+        RouteClass::Session,
+    ),
+    (
+        "/v1/users/{id}/passkeys/{credential_id}/prf",
+        RouteClass::Session,
+    ),
     // Minting a re-authentication challenge, no step-up by design: it grants nothing on its own,
     // and demanding a proof to obtain the means of giving one is a loop. The challenge it returns
     // is redeemable only by an assertion from the *acting* user's own credential, and whatever
     // operation that proof then satisfies carries its own gate.
     ("/v1/reauth/passkey/options", RouteClass::Session),
     ("/v1/privacy/users/{id}/export", RouteClass::Gated), // GET privacy.manage@Global
+    ("/v1/privacy/users/{id}/data-export", RouteClass::Gated), // GET self OR privacy.manage@Global
     ("/v1/privacy/users/{id}/dsr-requests", RouteClass::Gated), // GET/POST privacy.manage@Global
     (
         "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/complete",

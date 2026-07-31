@@ -17,64 +17,62 @@
 //!    credential that simply cannot unwrap anything.
 //! 4. **A signature-counter regression is recorded, never fatal** — [`SIGN_COUNTER_REGRESSION_KIND`].
 //!
-//! ## What this module deliberately does not do
+//! ## The PRF-derived unwrap (t10 follow-up, wired)
 //!
-//! **It does not implement PRF, and that is now a ruling rather than a schedule.** The PRF-derived
-//! unwrap is **deferred until PRF is verified on real hardware** — nobody in this codebase has
-//! evaluated a real PRF output against a real authenticator, and the design doc's platform matrix
-//! carries two rows still marked *unverified* (conditional mediation end-to-end in a browser, and
-//! PRF behaviour on real devices). Key custody is the wrong place to spend unverified evidence, so
-//! until one browser session confirms **all** of the following on a PRF-capable platform
-//! authenticator, no PRF-derived KEK goes anywhere near the attestation scalar:
+//! A passkey with a working PRF extension unlocks the attestation key **without a password** at
+//! sign-in. This is the true-passwordless path of `docs/passkeys.md` shape A, and it holds the four
+//! invariants that made the deferral safe to lift:
 //!
-//! 1. a PRF output is present at all;
-//! 2. it is stable across two consecutive sign-ins;
-//! 3. it is stable across a browser restart;
-//! 4. all of the above with the **constant** salt (see below).
+//! 1. **A PRF wrap is NEVER the only wrap.** [`PasskeyCredential::prf_wrap`] is an *additional* wrap
+//!    of the same attestation scalar; the password wrap on the user record always survives it (the
+//!    key-custody clause of [`crate::credentials::ensure_removal_leaves_account_usable`] refuses to
+//!    remove the password while a key exists). A PRF output a vendor moves out from under us (iOS
+//!    18.4) therefore degrades to **the password prompt**, never to key loss.
+//! 2. **Constant salt** ([`PRF_EVAL_SALT`]), not per-credential — the discoverable-sign-in ruling,
+//!    not a preference.
+//! 3. **UV required.** A UV-less assertion derives a *different* PRF secret (CTAP2.1's
+//!    `CredRandomWithoutUV`), so it can never unlock. [`verify_authentication`] treats a UV-absent
+//!    assertion as usable for authentication but **not** for the unwrap, and the ceremony already
+//!    forces `userVerification: "required"`, so a UV-less assertion is refused before it arrives.
+//! 4. **No hand-rolled crypto.** The web side is one `crypto.subtle.deriveBits` HKDF call; the Rust
+//!    side reuses [`AttestationKeyBlob::wrap_key`]/[`AttestationKeyBlob::unlock`] with the derived
+//!    bytes as the secret. Nothing new in the crypto layer.
 //!
-//! Until then the shipped path is the one we can stand behind: the passkey authenticates, and the
-//! attestation key is unlocked by the **password** at the moment the session first needs to attest.
+//! ### Where the derived KEK comes from, and why enrolment needs a second ceremony
 //!
-//! **What is kept, deliberately and at zero ongoing cost**, is the *capability*: enrolment asks the
-//! authenticator to provision an `hmac-secret` ([`registration_extensions`]) and records whether it
-//! did ([`PasskeyCredential::prf_capable`]). That one is not deferrable — CTAP2 only lets an RP ask
-//! at **creation** time, so a credential enrolled without it is permanently PRF-incapable with no
-//! migration. Because it is asked for now, PRF can later be switched on with **no re-enrolment**.
+//! `webauthn_rp` cannot evaluate PRF at `create()` — its registration options serialise `prf` as an
+//! empty map, so a browser never returns a PRF output from enrolment (`docs/passkeys.md` claimed
+//! `create()`-time PRF was "usually available"; with this library it is *never* available, and that
+//! correction is recorded there). So the wrap is added through a **second, `get()`-based ceremony**
+//! bound to [`CeremonyPurpose::PrfWrap`]: after `create()` stores the credential, the browser runs a
+//! `get()`, **adds `prf` itself** (see the module-top note on why the server cannot), reads
+//! `prf.results.first`, derives the KEK client-side, and posts it to [`finish_prf_wrap`], which seals
+//! the session's *already-unlocked* attestation scalar (the [`CurrentAttestor`]) under it. The server
+//! never sees the PRF output — only the derived KEK — exactly as it only ever sees the password.
 //!
-//! **The salt is constant, not per-credential**, and the reason is this module's own discoverable-
-//! credential ruling rather than a preference. A discoverable sign-in does not learn *which*
-//! credential will answer until the assertion comes back — precisely why there is no enumeration
-//! oracle — so the server cannot select that credential's salt when it mints the challenge. The two
-//! escapes each contradict a frozen ruling: `evalByCredential` needs a populated `allowCredentials`
-//! (username-first, i.e. the oracle), and a two-ceremony flow costs two biometric prompts per
-//! sign-in. A constant salt is sound rather than a compromise: CTAP2.1 keeps the per-credential
-//! seed (`CredRandomWithUV`) *inside the authenticator*, so the salt only provides domain
-//! separation between uses. **There is therefore no `prf_salt` on [`PasskeyCredential`]**, and one
-//! must not be added — see `docs/passkeys.md`.
+//! Sign-in ([`begin_sign_in`]/[`complete_sign_in`]) works the same way: the browser adds `prf`, and a
+//! usable (present, UV) PRF output derives the KEK, which opens [`PasskeyCredential::prf_wrap`] and
+//! the session is minted with the unlocked key — no password. If the output is absent, UV is clear,
+//! or the wrap does not open, the sign-in still succeeds but unlocks nothing, and the session is
+//! asked for the **password** at first attestation. Step-up ([`begin_step_up`]) neither unlocks a key
+//! nor accepts a `prf` extension: it verifies strictly (`error_on_unsolicited_extensions: true`).
 //!
-//! Two things whoever switches it on owes, and the second is the one that will be forgotten:
+//! On the sign-in and PRF-wrap paths the server verifies with `error_on_unsolicited_extensions:
+//! false`, so a PRF-capable credential's client-solicited `hmac-secret` output is accepted while a
+//! non-PRF credential's empty output is too — the property that keeps shape-C credentials signing in.
 //!
-//! - **The server must request `prf` on the `get()` ceremony**
-//!   (`webauthn_rp::request::auth::Extension::prf`). [`begin_authentication`] does not today, and
-//!   verification runs with `error_on_unsolicited_extensions` at its `true` default — so a client
-//!   that adds `extensions.prf.eval` by itself produces an assertion this server *refuses*. PRF at
-//!   sign-in is not client-addable. `an_unsolicited_extension_at_sign_in_is_refused` pins that.
-//! - **The user-facing copy stops being true, and it lives nowhere near this file.**
-//!   `users.passkeys.signingNote.*` ("a palavra-passe continua a ser pedida para assinar") is shown
-//!   after *every* enrolment, in 14 locales, and is unconditional **because** the wrap is deferred.
-//!   It was previously conditional on `prf_capable`, and that conditionality was itself the
-//!   overclaim: showing it only for non-PRF credentials asserts, by omission, that a PRF-capable
-//!   one signs without a password — which no credential does under this ruling. Switching PRF on
-//!   inverts that: the sentence becomes false for a PRF-capable credential and the conditionality
-//!   has to come back. Nothing in the web lane will fail if it does not, because the copy is not
-//!   wrong *today* — which is exactly why it is recorded here, where a switch-on is read, rather
-//!   than only in `apps/web/src/features/users/PasskeySection.tsx` where it is rendered.
+//! ### The capability is provisioned at enrolment and cannot be added later
 //!
-//! **It does not add a wrap of the attestation scalar.** [`crate::credentials::WrapRole`] already
-//! declares that a passkey's wrap can never satisfy key custody, and
+//! Enrolment asks the authenticator to provision an `hmac-secret` ([`registration_extensions`]) and
+//! records whether it did ([`PasskeyCredential::prf_capable`]). CTAP2 only lets an RP ask at
+//! **creation** time, so a credential enrolled without it is permanently PRF-incapable with no
+//! migration — which is why the request is unconditional even for the degraded (shape-C) path.
+//!
+//! **The password wrap is not built here.** [`crate::credentials::WrapRole`] already declares that a
+//! passkey's PRF wrap can never satisfy key custody, and
 //! [`crate::credentials::ensure_removal_leaves_account_usable`] already refuses to remove the
-//! password while an attestation key exists. That guard exists; this module uses it and does not
-//! build a second one.
+//! password while an attestation key exists. This module adds a wrap; it never removes one, and it
+//! leans on that guard rather than building a second.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -111,11 +109,32 @@ use webauthn_rp::{
 use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
+use p256::ecdsa::SigningKey;
+
+use crate::attestation::AttestationKeyBlob;
 use crate::credentials::{
     AttestationKeyState, CredentialKind, HeldCredentials, ensure_removal_leaves_account_usable,
 };
 use crate::error::ApiError;
 use crate::users::{User, UserId};
+
+// ── Why the server does NOT request `prf`, and the client adds it instead ────────────────────────
+//
+// `docs/passkeys.md` says "the server must request `prf` on the `get()` ceremony
+// (`webauthn_rp::request::auth::Extension::prf`)". **That is wrong for this library, and the reason
+// is structural, not a bug we can route around.** `webauthn_rp`'s verify refuses an assertion from a
+// credential that is *not* PRF-capable when the ceremony requested `prf`
+// (`ServerPrfInfo::validate` → `HmacSecretForPrfIncapableCred`), and it does so unconditionally — no
+// verification flag relaxes it. In a discoverable sign-in the server cannot know which credential
+// will answer, so requesting `prf` globally would break sign-in for every non-PRF authenticator —
+// exactly the shape-C credentials that must keep working. So this instance requests nothing, and the
+// **client** adds `extensions.prf.eval.first = <constant salt>` (a web constant — the salt is domain
+// separation only, per the discoverable-credential ruling, so a fixed value is sound and there is no
+// `prf_salt` on [`PasskeyCredential`]). The server then verifies with
+// `error_on_unsolicited_extensions: false` on the paths that expect a PRF output, so a PRF-capable
+// credential's solicited-by-the-client `hmac-secret` output is accepted while a non-PRF credential's
+// empty output is too. The server never sees the PRF output — only the derived KEK the client posts.
+// This is reported back to the doc's author as a correction.
 
 // =================================================================================================
 // Ledger event kinds
@@ -177,6 +196,13 @@ pub(crate) const PASSKEY_ASSERTION_INVALID_CODE: &str = "passkey_assertion_inval
 pub(crate) const PASSKEY_RP_ID_CHANGED_CODE: &str = "passkey_rp_id_changed";
 /// A `public_base_url` host change would strand enrolled credentials and was not confirmed.
 pub(crate) const PASSKEY_DOMAIN_CHANGE_CODE: &str = "passkey_domain_change_unconfirmed";
+/// A PRF wrap was requested but the session holds no unlocked attestation key to seal — the
+/// operator must re-authenticate with their password so the scalar is in memory to be wrapped.
+pub(crate) const PASSKEY_PRF_NO_UNLOCKED_KEY_CODE: &str = "passkey_prf_no_unlocked_key";
+/// The base64url the client posted as the PRF-derived KEK was unreadable, so nothing could be
+/// wrapped. A malformed derivation is refused rather than silently producing a wrap no sign-in can
+/// ever open.
+pub(crate) const PASSKEY_PRF_SECRET_INVALID_CODE: &str = "passkey_prf_secret_invalid";
 /// A rename supplied a label that is empty once trimmed.
 ///
 /// Refused rather than silently defaulted to "Chave de acesso". At enrolment a default is the
@@ -521,11 +547,27 @@ pub struct PasskeyCredential {
     /// credential could ever carry a PRF wrap.
     ///
     /// Recorded at enrolment because it can only be *asked for* at enrolment: an authenticator that
-    /// was not asked to create the secret cannot be asked later. No PRF wrap exists yet — see the
-    /// module header — but a credential enrolled without this would be permanently incapable of
-    /// holding one.
+    /// was not asked to create the secret cannot be asked later. A credential enrolled without this
+    /// is permanently incapable of holding a [`prf_wrap`](Self::prf_wrap).
     #[serde(default)]
     pub prf_capable: bool,
+    /// A **second wrap of the account's attestation scalar**, sealed under the KEK derived from this
+    /// credential's PRF output — the thing that makes a passwordless sign-in able to attest.
+    ///
+    /// `None` for a credential that never completed the PRF-wrap ceremony ([`finish_prf_wrap`]): a
+    /// non-PRF authenticator, an account with no attestation key to wrap, or one enrolled before this
+    /// path shipped. Such a credential signs the user in and the session is asked for the password at
+    /// first attestation — shape C's degraded arm.
+    ///
+    /// **It is an *additional* wrap and never the only one** (`docs/passkeys.md`, Invariant 2). The
+    /// user record keeps its password wrap regardless, so if this credential's PRF output ever
+    /// changes — a lost device, a revoked credential, an OS update that moves the output (iOS 18.4) —
+    /// the unlock here simply fails and the sign-in degrades to the password. Stored as a full
+    /// [`AttestationKeyBlob`] so the same fingerprint proves it wraps the same scalar; the KEK is
+    /// derived from the PRF output client-side and never stored. `#[serde(default)]` like every field
+    /// here, because the store skips rows it cannot parse (memory: `store-skips-unparseable-rows`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prf_wrap: Option<AttestationKeyBlob>,
 }
 
 /// Backup eligibility and state as one value.
@@ -662,6 +704,14 @@ pub struct PasskeyView {
     pub attachment: PasskeyAttachment,
     pub transports: Vec<String>,
     pub prf_capable: bool,
+    /// **Whether this credential actually signs in without a password**, i.e. whether it holds a PRF
+    /// wrap of the attestation scalar. This — not [`prf_capable`](Self::prf_capable) — is what the
+    /// security screen keys the signing-note copy on: a credential that can attest passwordless says
+    /// «sem palavra-passe», one that falls back says the password is still asked. `prf_capable`
+    /// records only that the *authenticator* could provision the secret; a capable authenticator
+    /// whose PRF-wrap ceremony never completed still falls back, and the copy must reflect the wrap
+    /// that exists, not the capability that might have.
+    pub unlocks_without_password: bool,
     pub sign_count: u32,
 }
 
@@ -678,6 +728,7 @@ impl PasskeyView {
             attachment: credential.attachment,
             transports: transport_names(credential.transport_set()),
             prf_capable: credential.prf_capable,
+            unlocks_without_password: credential.prf_wrap.is_some(),
             sign_count: credential.sign_count,
         }
     }
@@ -718,6 +769,10 @@ pub(crate) enum CeremonyPurpose {
     SignIn,
     /// Re-authenticating for a destructive operation. **Never satisfied by a sign-in challenge.**
     StepUp,
+    /// Obtaining a PRF output to seal a *second* wrap of the attestation scalar, immediately after
+    /// enrolment. A `get()` because `webauthn_rp` cannot evaluate PRF at `create()`; bound to the
+    /// session's user and never able to mint a session, so it is not a sign-in by another door.
+    PrfWrap,
 }
 
 impl CeremonyPurpose {
@@ -726,6 +781,7 @@ impl CeremonyPurpose {
             CeremonyPurpose::Registration => "registration",
             CeremonyPurpose::SignIn => "sign_in",
             CeremonyPurpose::StepUp => "step_up",
+            CeremonyPurpose::PrfWrap => "prf_wrap",
         }
     }
 }
@@ -934,6 +990,14 @@ pub(crate) struct VerifiedAssertion {
     ///   correct response is "ask for the password", never "wrong credential" — the latter is a
     ///   diagnostic dead end in which the user is told their credential is bad when it was fine.
     pub(crate) user_verified: bool,
+    /// **The attestation signing key, unlocked from this credential's PRF wrap** — `Some` only when a
+    /// usable PRF output was supplied (present, UV set) *and* it opened
+    /// [`PasskeyCredential::prf_wrap`]. `None` — no PRF output, UV clear, no wrap, or an output that
+    /// did not open the wrap — is the shape-C degradation: the assertion still authenticates, and the
+    /// session it mints is asked for the password at first attestation. A failed unlock **never**
+    /// fails the sign-in; it just declines to hand back a key, which is the whole point of keeping
+    /// the password wrap alongside (Invariant 2).
+    pub(crate) unlocked_key: Option<SigningKey>,
 }
 
 /// Verify a discoverable authentication assertion against this instance's enrolled credentials.
@@ -946,6 +1010,8 @@ async fn verify_authentication(
     ceremony: DiscoverableAuthenticationServerState,
     assertion: &DiscoverableAuthentication64,
     rp: &RpContext,
+    prf_secret: Option<&str>,
+    allow_prf_extension: bool,
     now: OffsetDateTime,
 ) -> Result<VerifiedAssertion, ApiError> {
     let raw_id = assertion.raw_id();
@@ -1005,6 +1071,12 @@ async fn verify_authentication(
         // origin check would discard the phishing binding that is the whole point of the ceremony,
         // so that setting is deliberately not consulted.
         allowed_origins: &rp.allowed_origins,
+        // On the paths that expect a PRF output (sign-in, PRF-wrap) the client adds `prf` and a
+        // PRF-capable authenticator answers with a solicited-by-the-client `hmac-secret` output. The
+        // library would otherwise refuse it as unsolicited, so those paths pass `true` here; step-up
+        // adds no extension and stays strict (`false`). A non-PRF credential returns no output and is
+        // accepted either way — see the module header for why the server cannot request `prf` itself.
+        error_on_unsolicited_extensions: !allow_prf_extension,
         sig_counter_enforcement: SignatureCounterEnforcement::Ignore,
         update_uv: true,
         ..Default::default()
@@ -1044,10 +1116,33 @@ async fn verify_authentication(
     )
     .await;
 
+    // The PRF-derived unwrap. Only attempted for a **user-verified** assertion — a UV-less one
+    // derives a different PRF secret (CTAP2.1's `CredRandomWithoutUV`), so the KEK would not open the
+    // wrap and the failure would be indistinguishable from a wrong output. A missing wrap, a missing
+    // secret, or an output that does not open the wrap all land in the same place: `None`, a sign-in
+    // that authenticated but did not unlock, degrading to the password at first attestation. **A
+    // failed unlock is never a failed sign-in** — that is the whole reason the password wrap is kept.
+    let unlocked_key = match (prf_secret, user_verified, &stored.prf_wrap) {
+        (Some(secret), true, Some(prf_wrap)) => match prf_wrap.unlock(secret) {
+            Ok(key) => Some(key),
+            Err(error) => {
+                tracing::warn!(
+                    target: "chancela::passkeys",
+                    error = %error,
+                    "a PRF output did not open the stored wrap; degrading this sign-in to the \
+                     password at first attestation"
+                );
+                None
+            }
+        },
+        _ => None,
+    };
+
     Ok(VerifiedAssertion {
         user_id,
         name,
         user_verified,
+        unlocked_key,
     })
 }
 
@@ -1225,7 +1320,10 @@ async fn verify_step_up_inner(
     let CeremonyState::Authentication(ceremony) = record.state else {
         return Ok(false);
     };
-    let verified = verify_authentication(state, ceremony, &assertion, &rp, now).await?;
+    // No PRF secret and no PRF extension on the step-up path — a re-auth unlocks no key, so it stays
+    // strict (`allow_prf_extension: false`). `unlocked_key` on the result is always `None` here.
+    let verified =
+        verify_authentication(state, ceremony, &assertion, &rp, None, false, now).await?;
     if verified.user_id != acting_user {
         return Ok(false);
     }
@@ -1587,6 +1685,9 @@ pub async fn finish_enrolment(
         created_at: now.format(&Rfc3339).unwrap_or_default(),
         last_used_at: None,
         prf_capable,
+        // The wrap is sealed by a later `get()` (`finish_prf_wrap`) because PRF cannot be evaluated
+        // at `create()`; a freshly-enrolled credential holds none yet.
+        prf_wrap: None,
     };
 
     let updated = {
@@ -1617,6 +1718,175 @@ pub async fn finish_enrolment(
     .await?;
 
     Ok(Json(PasskeyView::of(&credential, Some(&rp.rp_id_str))))
+}
+
+// =================================================================================================
+// The PRF wrap (passwordless enablement)
+// =================================================================================================
+
+/// `POST /v1/users/{id}/passkeys/{credential_id}/prf/options` — begin the `get()` that yields the
+/// PRF output used to seal a second wrap of the attestation scalar.
+///
+/// It is a **`get()` and not part of `create()`** because `webauthn_rp` cannot evaluate PRF at
+/// creation time (its registration options carry an empty `prf` map), so no PRF output ever comes
+/// back from enrolment. The ceremony is bound to [`CeremonyPurpose::PrfWrap`] and to this session's
+/// user, and can never mint a session — it is not a sign-in reached by another door.
+pub async fn begin_prf_wrap(
+    State(state): State<AppState>,
+    AxumPath((id, _credential_id)): AxumPath<(Uuid, String)>,
+    actor: CurrentActor,
+) -> Result<Json<CeremonyOptionsView>, ApiError> {
+    let target = UserId(id);
+    let user = require_self(&state, &actor, target).await?;
+    begin_authentication(&state, CeremonyPurpose::PrfWrap, Some(user.id)).await
+}
+
+/// Body of `POST /v1/users/{id}/passkeys/{credential_id}/prf`.
+#[derive(Deserialize)]
+pub struct FinishPrfWrap {
+    /// The `PublicKeyCredential` the browser produced for the PRF-wrap `get()`, verbatim.
+    pub credential: serde_json::Value,
+    /// The base64url of the PRF-derived KEK the browser computed from `prf.results.first`.
+    pub prf_secret: String,
+}
+
+/// `POST /v1/users/{id}/passkeys/{credential_id}/prf` — seal a PRF wrap of the attestation scalar.
+///
+/// Self-only, and it needs the session to hold the **unlocked attestation key** ([`CurrentAttestor`]):
+/// the scalar is sealed a *second* time under the PRF-derived KEK, so it must already be in memory —
+/// which it is right after a password sign-in, when enrolment happens. The password wrap on the user
+/// record is untouched (Invariant 2), so this only ever *adds* the ability to sign in without a
+/// password; it never removes the password's hold on the key.
+///
+/// The assertion is verified under a [`CeremonyPurpose::PrfWrap`]-scoped, single-use challenge bound
+/// to the acting user and resolving to the credential named in the path, and it must be
+/// user-verified — the same seed discipline the unlock depends on. The posted `prf_secret` is then
+/// used verbatim as the wrap secret; the server never sees the raw PRF output it was derived from.
+pub async fn finish_prf_wrap(
+    State(state): State<AppState>,
+    AxumPath((id, credential_id)): AxumPath<(Uuid, String)>,
+    actor: CurrentActor,
+    attestor: CurrentAttestor,
+    Json(req): Json<FinishPrfWrap>,
+) -> Result<Json<PasskeyView>, ApiError> {
+    let target = UserId(id);
+    let user = require_self(&state, &actor, target).await?;
+    let rp = rp_context(&state).await?;
+    let now = OffsetDateTime::now_utc();
+
+    let Some(existing) = user
+        .passkeys
+        .iter()
+        .find(|c| c.credential_id == credential_id)
+        .cloned()
+    else {
+        return Err(ApiError::NotFound);
+    };
+
+    // An account with no attestation key has nothing to wrap. Not an error — some accounts hold no
+    // key — so the ceremony is simply a no-op and the credential comes back exactly as it was.
+    let Some(account_key) = user.attestation_key.clone() else {
+        return Ok(Json(PasskeyView::of(&existing, Some(&rp.rp_id_str))));
+    };
+
+    // The scalar to seal is the session's unlocked key — the same scalar the password wrap holds. A
+    // session that read but never unlocked (no password this sign-in) cannot supply it.
+    let Some((_, signing_key)) = attestor.signer() else {
+        return Err(ApiError::Forbidden(
+            "para ativar o início de sessão sem palavra-passe nesta chave de acesso, volte a \
+             autenticar-se com a palavra-passe: a chave de atestação tem de estar aberta na sessão \
+             para poder ser protegida também pela chave de acesso"
+                .to_owned(),
+        )
+        .with_code(PASSKEY_PRF_NO_UNLOCKED_KEY_CODE));
+    };
+    // The unlocked key must be *this account's* key, or the wrap would be of a different scalar than
+    // the one every existing attestation was signed under. It always is (the session unlocked this
+    // user's key); the check is defensive because this is key custody.
+    if crate::attestation::key_fingerprint(signing_key) != account_key.fingerprint {
+        return Err(ApiError::Internal(
+            "the session's unlocked key does not match this account's attestation key".to_owned(),
+        ));
+    }
+
+    verify_prf_wrap_assertion(&state, target, &credential_id, &req.credential, &rp, now).await?;
+
+    let secret = req.prf_secret.trim();
+    if secret.is_empty() {
+        return Err(ApiError::Unprocessable(
+            "a chave derivada da chave de acesso está vazia".to_owned(),
+        )
+        .with_code(PASSKEY_PRF_SECRET_INVALID_CODE));
+    }
+    let prf_wrap = AttestationKeyBlob::wrap_key(secret, signing_key)
+        .map_err(|e| ApiError::Internal(format!("could not seal the PRF wrap: {e}")))?;
+
+    // The users write lock is taken and released before `persist_user`, which reads users itself —
+    // holding it across that await would re-enter the lock and deadlock (as `persist_assertion` is
+    // careful to do too).
+    let (updated_user, updated_credential) = {
+        let mut users = state.users.write().await;
+        let Some(record) = users.get_mut(&target) else {
+            return Err(ApiError::NotFound);
+        };
+        let Some(credential) = record
+            .passkeys
+            .iter_mut()
+            .find(|c| c.credential_id == credential_id)
+        else {
+            return Err(ApiError::NotFound);
+        };
+        credential.prf_wrap = Some(prf_wrap);
+        let updated_credential = credential.clone();
+        (record.clone(), updated_credential)
+    };
+    crate::users::persist_user(&state, &updated_user).await?;
+
+    Ok(Json(PasskeyView::of(
+        &updated_credential,
+        Some(&rp.rp_id_str),
+    )))
+}
+
+/// Verify the PRF-wrap `get()` assertion: purpose-scoped, single-use, bound to the acting user, and
+/// resolving to the credential named in the path, user-verified. Mirrors [`verify_step_up_inner`].
+async fn verify_prf_wrap_assertion(
+    state: &AppState,
+    acting_user: UserId,
+    credential_id: &str,
+    credential: &serde_json::Value,
+    rp: &RpContext,
+    now: OffsetDateTime,
+) -> Result<(), ApiError> {
+    let bytes = serde_json::to_vec(credential)?;
+    let assertion = DiscoverableAuthentication64::from_json_relaxed(bytes.as_slice())
+        .map_err(|_| assertion_invalid())?;
+    let challenge = assertion
+        .challenge_relaxed()
+        .map_err(|_| ceremony_invalid())?;
+    let key = challenge.0;
+    let record = {
+        let mut store = state.passkey_ceremonies.write().await;
+        store.take(key, CeremonyPurpose::PrfWrap, now)?
+    };
+    if record.user_id != Some(acting_user) {
+        return Err(assertion_invalid());
+    }
+    let CeremonyState::Authentication(ceremony) = record.state else {
+        return Err(ceremony_invalid());
+    };
+    // The credential that answered must be the one being wrapped, or a user with two passkeys could
+    // seal credential A's slot with credential B's PRF output — which would then never open at
+    // sign-in with A.
+    if B64URL.encode(assertion.raw_id().as_ref()) != credential_id {
+        return Err(assertion_invalid());
+    }
+    // The PRF-wrap `get()` carries a client-added `prf` extension, so its output is expected here.
+    let verified = verify_authentication(state, ceremony, &assertion, rp, None, true, now).await?;
+    if verified.user_id != acting_user || !verified.user_verified {
+        return Err(assertion_invalid());
+    }
+    Ok(())
 }
 
 /// The label an unnamed credential gets at enrolment.
@@ -1855,6 +2125,9 @@ async fn begin_authentication(
 ) -> Result<Json<CeremonyOptionsView>, ApiError> {
     let rp = rp_context(state).await?;
     let now = OffsetDateTime::now_utc();
+    // The server requests no extensions — see the note at the top of this module on why `prf` is
+    // added by the client, not here. The browser adds `extensions.prf.eval` for the sign-in and
+    // PRF-wrap ceremonies; step-up adds nothing.
     let (server_state, client_state) = DiscoverableCredentialRequestOptions::passkey(&rp.rp_id)
         .start_ceremony()
         .map_err(|e| ApiError::Internal(format!("passkey ceremony could not start: {e}")))?;
@@ -1878,6 +2151,14 @@ async fn begin_authentication(
 pub struct PasskeySignIn {
     /// The `PublicKeyCredential` the browser produced, verbatim.
     pub credential: serde_json::Value,
+    /// The base64url of the **PRF-derived KEK** (`HKDF-SHA256(prf.results.first, …)`), when the
+    /// browser obtained a PRF output for this assertion. Absent for a credential that carries no PRF
+    /// output — the shape-C fallback. It is a secret in a request body and gets the same redaction
+    /// and zeroize treatment as `password`; the server uses it only to open a credential's
+    /// [`PasskeyCredential::prf_wrap`] and never stores it. A UV-less assertion's secret would derive
+    /// from the wrong seed, so it is never trusted (see [`VerifiedAssertion::unlocked_key`]).
+    #[serde(default)]
+    pub prf_secret: Option<String>,
 }
 
 /// Complete a passkey sign-in, returning what the caller needs to mint a session.
@@ -1887,6 +2168,7 @@ pub struct PasskeySignIn {
 pub(crate) async fn complete_sign_in(
     state: &AppState,
     credential: &serde_json::Value,
+    prf_secret: Option<&str>,
     now: OffsetDateTime,
 ) -> Result<VerifiedAssertion, ApiError> {
     let rp = rp_context(state).await?;
@@ -1906,7 +2188,8 @@ pub(crate) async fn complete_sign_in(
     let CeremonyState::Authentication(ceremony) = record.state else {
         return Err(ceremony_invalid());
     };
-    let verified = verify_authentication(state, ceremony, &assertion, &rp, now).await?;
+    let verified =
+        verify_authentication(state, ceremony, &assertion, &rp, prf_secret, true, now).await?;
     // Same reason as in `verify_step_up_inner`: never hold the `users` guard across a ledger write.
     let user = state.users.read().await.get(&verified.user_id).cloned();
     if let Some(user) = user {
@@ -2341,6 +2624,7 @@ mod tests {
             created_at: "2026-07-31T09:00:00Z".to_owned(),
             last_used_at: None,
             prf_capable: true,
+            prf_wrap: None,
         }
     }
 

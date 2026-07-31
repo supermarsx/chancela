@@ -1115,24 +1115,19 @@ pub async fn create_session(
 ///
 /// ## The attestation key
 ///
-/// `unlocked_key` is `None` on this path, and that is an *already supported* session state rather
-/// than a gap — `mint_session` takes `Option<SigningKey>`, and companion/pairing sessions are
-/// minted this way now. Such a session reads freely and is asked for the **password** at the moment
-/// it first needs to attest.
+/// `unlocked_key` is `Some` exactly when the assertion carried a **usable PRF output** — present and
+/// user-verified — that opened the credential's PRF wrap (`crate::passkeys::VerifiedAssertion`). Then
+/// the session is minted with the key in memory and can attest **without a password**: the true
+/// passwordless path. When it is `None` — no PRF output, UV clear, no wrap, or an output that did not
+/// open the wrap — the assertion still authenticates, `mint_session` takes the `None` exactly as
+/// companion/pairing sessions do today, and the session is asked for the **password** at first
+/// attestation. That fallback is shape C, and the copy rules require it be said as "a palavra-passe é
+/// pedida para assinar", never as "sem palavra-passe" — the passwordless claim holds only where the
+/// unlock actually happened.
 ///
-/// **That is the shipped design, by ruling, not a stub awaiting PRF.** The PRF-derived unwrap is
-/// deferred until PRF is verified on real hardware: present, stable across two sign-ins, stable
-/// across a browser restart, with the constant salt. Key custody is the wrong place to spend
-/// unverified evidence, and the design doc's platform matrix still carries two *unverified* rows.
-/// So a passkey sign-in authenticates and does not unlock — which is honest, and which the copy
-/// rules require be said as "a chave de acesso inicia sessão; a palavra-passe é pedida para
-/// assinar", never as "sem palavra-passe".
-///
-/// If and when that verification lands, the derived secret arrives in this request body and unwraps
-/// the blob here exactly as `req.password` does above, and nothing else about this handler changes.
-/// Every credential enrolled meanwhile is already PRF-capable — `hmac-secret` is provisioned at
-/// enrolment, which CTAP2 only permits at creation — so switching it on needs **no re-enrolment**.
-/// See [`crate::passkeys`]'s module header for the full list of what that switch owes.
+/// The derived secret arrives in `req.prf_secret` and unwraps the blob exactly as `req.password` does
+/// on the password path; a failed unwrap **degrades to this fallback, never to key loss**, because the
+/// password wrap on the user record is never removed while a key exists (Invariant 2).
 pub async fn create_passkey_session(
     State(state): State<AppState>,
     headers: axum::http::HeaderMap,
@@ -1140,8 +1135,12 @@ pub async fn create_passkey_session(
     Json(req): Json<crate::passkeys::PasskeySignIn>,
 ) -> Result<Json<CreateSessionOutcome>, ApiError> {
     let now = OffsetDateTime::now_utc();
-    let verified = crate::passkeys::complete_sign_in(&state, &req.credential, now).await?;
+    let verified =
+        crate::passkeys::complete_sign_in(&state, &req.credential, req.prf_secret.as_deref(), now)
+            .await?;
     let user_id = verified.user_id;
+    let user_verified = verified.user_verified;
+    let unlocked_key = verified.unlocked_key;
     let user = state
         .users
         .read()
@@ -1157,7 +1156,7 @@ pub async fn create_passkey_session(
 
     // Fall through to TOTP only when the assertion did not carry user verification — see the note
     // above on why a UV assertion is already the second factor.
-    if !verified.user_verified && user.totp.as_ref().is_some_and(|t| t.confirmed) {
+    if !user_verified && user.totp.as_ref().is_some_and(|t| t.confirmed) {
         let challenge_id = Uuid::new_v4().to_string();
         let expires_at = now + Duration::seconds(TWO_FACTOR_CHALLENGE_TTL_SECS);
         let mut methods = vec!["totp"];
@@ -1175,10 +1174,11 @@ pub async fn create_passkey_session(
                 challenge_id.clone(),
                 PendingTwoFactor {
                     user_id,
-                    // No key to carry: a passkey sign-in unlocks nothing today. `PendingTwoFactor`
-                    // already models this as `Option`, so the PRF-unwrapped scalar will ride here
-                    // exactly as the password-unwrapped one does, with no new mechanism.
-                    unlocked_key: None,
+                    // The PRF-unwrapped scalar rides across the challenge exactly as the
+                    // password-unwrapped one does — no new mechanism. It is `None` in practice on
+                    // this branch (a UV-less assertion derives the wrong PRF seed, so nothing
+                    // unlocked), but threading it keeps the two sign-in paths identical.
+                    unlocked_key,
                     expires_at,
                     fails: 0,
                 },
@@ -1196,7 +1196,7 @@ pub async fn create_passkey_session(
     }
 
     let origin = crate::session_origin(&state, &headers, peer.0);
-    let token = mint_session(&state, user_id, None, origin).await?;
+    let token = mint_session(&state, user_id, unlocked_key, origin).await?;
     Ok(Json(CreateSessionOutcome::Authenticated(SessionCreated {
         token,
         required_action: required_action_for(&user),

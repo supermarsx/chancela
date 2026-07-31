@@ -6847,6 +6847,10 @@ export const ptBR: Catalog = {
   'users.passkeys.unusable.badge': 'Domínio anterior',
   'users.passkeys.unusable.hint':
     'Criada para {enrolled}; esta instância agora responde em {current}. Uma chave de acesso não passa de um domínio para outro — remova e crie outra.',
+  'users.passkeys.passwordlessNote.title': 'Esta chave de acesso inicia a sessão sem senha',
+  'users.passkeys.passwordlessNote.body':
+    '«{name}» passa a entrar nesta conta e abre a chave de auditoria, então a senha não será pedida para assinar.',
+  'users.passkeys.passwordless.badge': 'Sem senha',
   'users.passkeys.signingNote.title': 'A senha continua sendo pedida na hora de assinar',
   'users.passkeys.signingNote.body':
     '«{name}» passa a entrar nesta conta. A chave de auditoria com que você assina documentos abre com a senha, então ela será pedida na primeira vez que você assinar.',
@@ -6933,11 +6937,11 @@ export const ptBR: Catalog = {
     'As funções atribuídas, o estado da conta e a exigência de segundo fator são decisões de administração e não são alteradas aqui.',
   'account.export.card': 'Meus dados',
   'account.export.body':
-    'A exportação reúne seu perfil, as funções atribuídas a você e as referências aos eventos do registro de auditoria em que você aparece. Não inclui senhas, frases de recuperação nem chaves privadas.',
+    'Baixe uma cópia dos dados pessoais que esta instância guarda sobre sua conta: seu perfil, a preferência de idioma e o status da conta, e um registro das credenciais de início de sessão que você possui. Não inclui senhas, frases de recuperação, segredos de códigos de uso único nem chaves.',
+  'account.export.scope':
+    'Abrange apenas os dados da sua conta: as funções atribuídas e as referências ao registro de auditoria são mantidas para fins de responsabilização e não fazem parte deste arquivo.',
   'account.export.download': 'Baixar a exportação',
   'account.export.pending': 'Preparando a exportação',
-  'account.export.unavailable':
-    'A exportação dos seus dados exige a permissão de gestão de privacidade, que esta conta não tem. Peça a quem administra a instância.',
   'account.security.lede':
     'O que esta conta tem hoje para provar sua identidade. As alterações são feitas nos cartões abaixo.',
   'account.security.adminView': 'Ver esta conta na área de administração',

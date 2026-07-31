@@ -290,6 +290,11 @@ import {
   type UserDsrExport,
   type UserDsrExportUser,
   type UserDsrRoleAssignment,
+  type UserPersonalDataExport,
+  type PersonalDataSubject,
+  type PersonalDataCredentials,
+  type PersonalDataTwoFactor,
+  type PersonalDataPasskey,
   type UserView,
   type WorkflowReminderSettings,
   type WorkflowReminderSourceSettings,
@@ -3952,6 +3957,7 @@ describe('contract fixtures parse through the real client', () => {
         attachment: string;
         transports: string[];
         prf_capable: boolean;
+        unlocks_without_password: boolean;
         sign_count: number;
       }>(
         passkey,
@@ -3970,6 +3976,9 @@ describe('contract fixtures parse through the real client', () => {
           attachment: true,
           transports: true,
           prf_capable: true,
+          // Whether this credential actually signs in without a password (holds a PRF wrap) — the
+          // thing the copy keys on, distinct from `prf_capable` (the authenticator's capability).
+          unlocks_without_password: true,
           sign_count: true,
         },
         'PasskeyView',
@@ -7366,6 +7375,103 @@ describe('contract fixtures parse through the real client', () => {
     }
   });
 
+  it('user.personal-data-export.json → UserPersonalDataExport (GET /v1/privacy/users/{id}/data-export)', async () => {
+    stubFetch(fixture('user.personal-data-export.json'));
+    const exported: UserPersonalDataExport = await api.exportPersonalData(
+      '6d5e4f00-0000-4000-8000-000000000005',
+    );
+    assertExactKeys<UserPersonalDataExport>(
+      exported,
+      {
+        exported_at: true,
+        scope: true,
+        format_version: true,
+        notes: true,
+        exclusions: true,
+        subject: true,
+      },
+      'UserPersonalDataExport',
+    );
+    assertTimestamp(exported.exported_at, 'UserPersonalDataExport.exported_at');
+    expect(exported.scope).toMatch(/^user:/);
+    expect(exported.format_version).toBeGreaterThanOrEqual(1);
+    // The export states its own scope honestly and names what it withholds.
+    expect(exported.notes.length).toBeGreaterThan(0);
+    expect(exported.exclusions).toContain('password_hash');
+
+    // Structural, instance-level fields the admin export carries must NOT appear here.
+    expect(exported).not.toHaveProperty('user');
+    expect(exported).not.toHaveProperty('ledger_event_refs');
+
+    const subject = assertExactKeys<PersonalDataSubject>(
+      exported.subject,
+      {
+        id: true,
+        username: true,
+        display_name: true,
+        email: true,
+        language: true,
+        active: true,
+        created_at: true,
+        credentials: true,
+      },
+      'UserPersonalDataExport.subject',
+    );
+    assertTimestamp(subject.created_at, 'UserPersonalDataExport.subject.created_at');
+    // No structural authorization context on the subject: roles are instance information.
+    expect(subject).not.toHaveProperty('role_assignments');
+    // No secret material or its `has_*` roster booleans leak through.
+    expect(subject).not.toHaveProperty('password_hash');
+    expect(subject).not.toHaveProperty('has_secret');
+    expect(subject).not.toHaveProperty('attestation_key_fingerprint');
+
+    const credentials = assertExactKeys<PersonalDataCredentials>(
+      subject.credentials,
+      {
+        password_set: true,
+        recovery_phrase_set: true,
+        two_factor_required: true,
+        two_factor: true,
+        passkeys: true,
+      },
+      'UserPersonalDataExport.subject.credentials',
+    );
+    expect(typeof credentials.password_set).toBe('boolean');
+    // metadata only — never the hash, seed, or key material.
+    expect(credentials).not.toHaveProperty('password_hash');
+    expect(credentials).not.toHaveProperty('totp_secret');
+
+    if (credentials.two_factor !== null) {
+      const twoFactor = assertExactKeys<PersonalDataTwoFactor>(
+        credentials.two_factor,
+        { method: true, confirmed_at: true, backup_codes_remaining: true },
+        'UserPersonalDataExport.subject.credentials.two_factor',
+      );
+      expect(twoFactor.method.length).toBeGreaterThan(0);
+      expect(twoFactor.backup_codes_remaining).toBeGreaterThanOrEqual(0);
+      // A count, never the codes; and never the shared secret.
+      expect(twoFactor).not.toHaveProperty('secret');
+      expect(twoFactor).not.toHaveProperty('backup_codes');
+    }
+
+    expect(Array.isArray(credentials.passkeys)).toBe(true);
+    for (const passkey of credentials.passkeys) {
+      const p = assertExactKeys<PersonalDataPasskey>(
+        passkey,
+        { name: true, created_at: true, last_used_at: true },
+        'UserPersonalDataExport.subject.credentials.passkeys[]',
+      );
+      assertTimestamp(
+        p.created_at,
+        'UserPersonalDataExport.subject.credentials.passkeys[].created_at',
+      );
+      // Names and dates only — no credential id, key material, RP id, transports or counters.
+      expect(p).not.toHaveProperty('credential_id');
+      expect(p).not.toHaveProperty('static_state');
+      expect(p).not.toHaveProperty('public_key');
+    }
+  });
+
   it('user.dsr-requests.json → DsrRequestView[] (GET /v1/privacy/users/{id}/dsr-requests)', async () => {
     stubFetch(fixture('user.dsr-requests.json'));
     const requests: DsrRequestView[] = await api.listUserDsrRequests(
@@ -7845,6 +7951,7 @@ describe('contract fixtures — cross-cutting guarantees', () => {
       'session.roster.json',
       'session.password-policy.json',
       'user.dsr-export.json',
+      'user.personal-data-export.json',
       'user.dsr-requests.json',
       'privacy.processors.json',
       'privacy.dpias.json',

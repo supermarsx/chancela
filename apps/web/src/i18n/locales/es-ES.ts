@@ -6883,6 +6883,10 @@ export const esES: Catalog = {
   'users.passkeys.signingNote.title': 'La contraseña se sigue pidiendo al firmar',
   'users.passkeys.signingNote.body':
     '«{name}» ya entra en esta cuenta. La clave de auditoría con la que firmas documentos se abre con la contraseña, así que se te pedirá la primera vez que firmes.',
+  'users.passkeys.passwordlessNote.title': 'Esta clave de acceso te hace entrar sin contraseña',
+  'users.passkeys.passwordlessNote.body':
+    '«{name}» ya entra en esta cuenta y abre la clave de auditoría, así que no se te pedirá la contraseña para firmar.',
+  'users.passkeys.passwordless.badge': 'Sin contraseña',
   'users.passkeys.rename': 'Renombrar',
   'users.passkeys.renamed': 'Clave de acceso renombrada.',
   'users.passkeys.revoke': 'Quitar',
@@ -6966,11 +6970,11 @@ export const esES: Catalog = {
     'Los roles asignados, el estado de la cuenta y la exigencia de un segundo factor son decisiones de administración y no se cambian aquí.',
   'account.export.card': 'Mis datos',
   'account.export.body':
-    'La exportación reúne su perfil, los roles que tiene asignados y las referencias a los eventos del registro de auditoría en los que aparece. No incluye contraseñas, frases de recuperación ni claves privadas.',
+    'Descargue una copia de los datos personales que esta instancia guarda sobre su cuenta: su perfil, la preferencia de idioma y el estado de la cuenta, y un registro de qué credenciales de inicio de sesión posee. No incluye contraseñas, frases de recuperación, secretos de códigos de un solo uso ni claves.',
+  'account.export.scope':
+    'Abarca únicamente los datos de su cuenta: las funciones asignadas y las referencias al registro de auditoría se conservan con fines de rendición de cuentas y no forman parte de él.',
   'account.export.download': 'Descargar la exportación',
   'account.export.pending': 'Preparando la exportación',
-  'account.export.unavailable':
-    'Exportar sus datos requiere el permiso de gestión de privacidad, que esta cuenta no tiene. Pídalo a quien administra la instancia.',
   'account.security.lede':
     'Lo que esta cuenta tiene hoy para probar su identidad. Los cambios se hacen en las tarjetas de abajo.',
   'account.security.adminView': 'Ver esta cuenta en el área de administración',

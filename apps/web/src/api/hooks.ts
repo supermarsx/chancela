@@ -2949,6 +2949,12 @@ export function useExportUserDsr(id: string) {
   return useMutation({ mutationFn: () => api.exportUserDsr(id) });
 }
 
+/** The subject's own personal-data export (RGPD art. 15/20). Self-service — the server admits any
+ *  interactive session exporting its own `id` with no administrative permission. */
+export function useExportPersonalData(id: string) {
+  return useMutation({ mutationFn: () => api.exportPersonalData(id) });
+}
+
 // --- Two-factor (TOTP), t103 against t107's frozen contract ----------------------
 //
 // The enrolment secret, provisioning URI and backup codes are shown ONCE by the caller and

@@ -71,9 +71,11 @@ import {
 } from '../../ui';
 import { ConfirmActionModal } from '../../ui/ConfirmActionModal';
 import { isPermissionError, PermissionDeniedNote } from '../session/permissions';
+import { api } from '../../api/client';
 import {
   describeCeremonyFailure,
   passkeySupport,
+  runAssertionCeremonyWithPrf,
   runEnrolmentCeremony,
   type CeremonyFailure,
 } from '../session/webauthn';
@@ -178,11 +180,12 @@ export function PasskeySection({ user, isSelf }: { user: UserView; isSelf: boole
   const [name, setName] = useState('');
   const [renaming, setRenaming] = useState<string | null>(null);
   const [revoking, setRevoking] = useState<PasskeyView | null>(null);
-  // The credential that just enrolled, so the signing note can name it. Held in state rather than
-  // derived from the list, because it is a notice about an action just taken — showing it on every
-  // render would make it wallpaper, and the card's standing `passwordNote` already carries the
-  // permanent version of the same fact.
-  const [justEnrolled, setJustEnrolled] = useState<string | null>(null);
+  // The credential that just enrolled, so the note can name it and say whether it ended up
+  // passwordless. Held in state rather than derived from the list, because it is a notice about an
+  // action just taken — showing it on every render would make it wallpaper.
+  const [justEnrolled, setJustEnrolled] = useState<{ name: string; passwordless: boolean } | null>(
+    null,
+  );
 
   const unavailable = passkeySupport();
   const passkeys = list.data?.passkeys ?? [];
@@ -201,24 +204,31 @@ export function PasskeySection({ user, isSelf }: { user: UserView; isSelf: boole
       });
       setName('');
       toast.success(t('users.passkeys.enrolled'));
-      // **Unconditional, and it used to be keyed on `!enrolled.prf_capable`.** That was correct
-      // only while a PRF wrap was expected to ship: it said "this *particular* authenticator will
-      // ask for your password", which implies the others will not. The PRF wrap is deferred by
-      // ruling until it is verified on real hardware, so **no** passkey unwraps the attestation
-      // key today and every one of them asks. Keying this on `prf_capable` would now promise a
-      // passwordless signing path that does not exist.
-      //
-      // ── TURNING PRF ON REVERSES THIS, AND NOTHING HERE WILL FAIL WHEN IT DOES ──
-      //
-      // `signingNote` is true *because* the wrap is deferred. The moment a PRF-capable credential
-      // can unwrap the attestation key, this sentence becomes false for exactly those credentials
-      // and the conditionality deleted above has to come back — here, at the row site below, and
-      // across `users.passkeys.signingNote.*` in all 14 locales. No test can catch it: the copy is
-      // not wrong today, and it stops being right for a reason that lives in Rust
-      // (`Extension::prf` at `get()`, the wrap, the constant salt), in a different lane from the
-      // 14 files that render it. `crates/chancela-api/src/passkeys.rs`'s module header carries the
-      // same note on the switch-on side, which is where it will actually be read.
-      setJustEnrolled(enrolled.name);
+
+      // **The PRF wrap — a second `get()` right after `create()`.** `webauthn_rp` cannot evaluate
+      // PRF at creation, so a separate ceremony reads this credential's PRF output and seals a wrap
+      // of the attestation key under it. Best-effort: a browser without PRF, a cancelled second
+      // prompt, or a session whose key is not unlocked all degrade to the password fallback — the
+      // credential is already enrolled and works either way. The copy below then follows the wrap
+      // that actually exists (`unlocks_without_password`), never the capability that might have.
+      let passwordless = enrolled.unlocks_without_password;
+      try {
+        const prfOptions = await api.beginPasskeyPrfWrap(user.id, enrolled.credential_id);
+        const { credential: prfCredential, prfSecret } =
+          await runAssertionCeremonyWithPrf(prfOptions);
+        if (prfSecret) {
+          const wrapped = await api.finishPasskeyPrfWrap(user.id, enrolled.credential_id, {
+            credential: prfCredential,
+            prf_secret: prfSecret,
+          });
+          passwordless = wrapped.unlocks_without_password;
+        }
+      } catch {
+        // Degrade silently: enrolment succeeded; this credential simply asks for the password.
+      }
+      // The wrap changed the row after the enrolment hook's own invalidation, so refresh the list.
+      void list.refetch();
+      setJustEnrolled({ name: enrolled.name, passwordless });
     } catch (error) {
       // A ceremony that never reached the server (cancelled, wrong RP ID, an authenticator that
       // could not comply) is a DOM exception the server has no opinion about, so it is translated
@@ -311,17 +321,20 @@ export function PasskeySection({ user, isSelf }: { user: UserView; isSelf: boole
                           </span>
                         </span>
                       )}
-                      {/* No `prf_capable` marker here, deliberately. It would draw a per-row
-                          distinction with nothing behind it: the PRF wrap is deferred by ruling
-                          until it is verified on real hardware, so every credential — PRF-capable
-                          or not — leaves the attestation key to be unlocked by the password. A
-                          badge on some rows and not others would read as a promise about the
-                          deferred path. The card's `passwordNote` states the fact once, for all
-                          of them.
-
-                          Turning PRF on reverses this and the marker has to return — see the
-                          note beside `setJustEnrolled` in `enrol()` for why nothing will fail
-                          when that day comes. */}
+                      {/* The passwordless marker keys on `unlocks_without_password` — the wrap that
+                          exists — never on `prf_capable`, the capability that might have. A capable
+                          authenticator whose wrap ceremony never completed falls back like any
+                          other, and a badge on it would promise a passwordless path it does not
+                          have. An explicit space, never a CSS gap, for the same screen-reader
+                          reason as the domain badge above. */}
+                      {passkey.unlocks_without_password ? (
+                        <span>
+                          {' '}
+                          <Badge tone="ok" wrap>
+                            {t('users.passkeys.passwordless.badge')}
+                          </Badge>
+                        </span>
+                      ) : null}
                     </span>
                   )}
                 </td>
@@ -371,13 +384,22 @@ export function PasskeySection({ user, isSelf }: { user: UserView; isSelf: boole
         )}
 
         {justEnrolled ? (
-          // Said at enrolment, which is the entire point: meeting it mid-attestation, at signing
-          // time, is a support incident. `info` rather than `warn` — nothing went wrong and the
-          // credential does exactly what it was enrolled to do; the password is simply still the
-          // thing that opens the audit key.
-          <InlineWarning tone="info" title={t('users.passkeys.signingNote.title')}>
-            <p>{t('users.passkeys.signingNote.body', { name: justEnrolled })}</p>
-          </InlineWarning>
+          justEnrolled.passwordless ? (
+            // The wrap sealed: this credential signs in and attests with no password. Said only now
+            // it is genuinely true — «sem palavra-passe» is a claim about the wrap that exists, not
+            // the capability that might have.
+            <InlineWarning tone="info" title={t('users.passkeys.passwordlessNote.title')}>
+              <p>{t('users.passkeys.passwordlessNote.body', { name: justEnrolled.name })}</p>
+            </InlineWarning>
+          ) : (
+            // Said at enrolment, which is the entire point: meeting it mid-attestation, at signing
+            // time, is a support incident. `info` rather than `warn` — nothing went wrong and the
+            // credential does exactly what it was enrolled to do; the password is simply still the
+            // thing that opens the audit key.
+            <InlineWarning tone="info" title={t('users.passkeys.signingNote.title')}>
+              <p>{t('users.passkeys.signingNote.body', { name: justEnrolled.name })}</p>
+            </InlineWarning>
+          )
         ) : null}
 
         {!isSelf ? (

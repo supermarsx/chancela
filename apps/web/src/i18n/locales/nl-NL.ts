@@ -6897,6 +6897,11 @@ export const nlNL: Catalog = {
     'Uw wachtwoord wordt bij het ondertekenen nog steeds gevraagd',
   'users.passkeys.signingNote.body':
     'Met „{name}” meldt u zich vanaf nu aan bij dit account. De auditsleutel waarmee u documenten ondertekent, opent met uw wachtwoord — de eerste keer dat u ondertekent wordt daar dus om gevraagd.',
+  'users.passkeys.passwordlessNote.title':
+    'Met deze toegangssleutel meldt u zich aan zonder wachtwoord',
+  'users.passkeys.passwordlessNote.body':
+    'Met „{name}” meldt u zich vanaf nu aan bij dit account en opent u de auditsleutel, zodat u bij het ondertekenen niet om uw wachtwoord wordt gevraagd.',
+  'users.passkeys.passwordless.badge': 'Geen wachtwoord',
   'users.passkeys.rename': 'Hernoemen',
   'users.passkeys.renamed': 'Toegangssleutel hernoemd.',
   'users.passkeys.revoke': 'Verwijderen',
@@ -6981,11 +6986,11 @@ export const nlNL: Catalog = {
     'Toegewezen rollen, de status van het account en de eis van een tweede factor zijn beheersbeslissingen en worden hier niet gewijzigd.',
   'account.export.card': 'Mijn gegevens',
   'account.export.body':
-    'De export bevat uw profiel, de rollen die aan u zijn toegewezen en verwijzingen naar de gebeurtenissen in het auditlogboek waarin u voorkomt. Wachtwoorden, herstelzinnen en privésleutels zitten er niet in.',
+    'Download een kopie van de persoonsgegevens die deze instantie over uw account bewaart: uw profiel, de taalvoorkeur en de accountstatus, en een overzicht van welke aanmeldgegevens u hebt. Het bevat geen wachtwoorden, herstelzinnen, geheimen van eenmalige codes of sleutels.',
+  'account.export.scope':
+    'Het omvat alleen uw accountgegevens: toegewezen rollen en verwijzingen naar het auditlogboek worden voor verantwoording bewaard en maken er geen deel van uit.',
   'account.export.download': 'Export downloaden',
   'account.export.pending': 'Export wordt voorbereid',
-  'account.export.unavailable':
-    'Het exporteren van uw gegevens vereist het recht op privacybeheer, dat dit account niet heeft. Vraag erom bij wie deze instantie beheert.',
   'account.security.lede':
     'Wat dit account nu heeft om uw identiteit te bewijzen. Wijzigen doet u in de kaarten hieronder.',
   'account.security.adminView': 'Dit account in het beheergedeelte bekijken',

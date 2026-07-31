@@ -805,6 +805,7 @@ mod tests {
             created_at: "2026-07-31T09:00:00Z".to_owned(),
             last_used_at: None,
             prf_capable: true,
+            prf_wrap: None,
         });
         assert!(CredentialKind::Passkey.is_held_by(&u));
         assert!(HeldCredentials::held_by(&u).any(|k| k == CredentialKind::Passkey));

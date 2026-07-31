@@ -93,6 +93,34 @@ function accountServer(
       return Promise.resolve(json({ user: current, sessions_revoked: 2 }));
     }
     if (url.includes('/v1/me/preferences')) return Promise.resolve(json(preferences));
+    // The self subject-access export (RGPD art. 15/20). Self-service: no administrative permission.
+    if (url.includes('/data-export')) {
+      return Promise.resolve(
+        json({
+          exported_at: '2026-07-08T12:00:00Z',
+          scope: `user:${current.id}`,
+          format_version: 1,
+          notes: [],
+          exclusions: [],
+          subject: {
+            id: current.id,
+            username: current.username,
+            display_name: current.display_name,
+            email: current.email ?? null,
+            language: current.language,
+            active: current.active,
+            created_at: current.created_at,
+            credentials: {
+              password_set: current.has_secret,
+              recovery_phrase_set: current.has_recovery_phrase,
+              two_factor_required: current.two_factor_required,
+              two_factor: null,
+              passkeys: [],
+            },
+          },
+        }),
+      );
+    }
     if (url.includes('/v1/sessions')) return Promise.resolve(json({ sessions: [] }));
     // Self-service too: the list is self-or-`user.manage`, and everything that changes a
     // credential is self-only in the handler.
@@ -227,33 +255,39 @@ describe('AccountPage — Perfil', () => {
     expect(patched[0]).toEqual({ email: null });
   });
 
-  it('says the data export is unavailable rather than offering a control that would 403', async () => {
+  it('offers the personal-data export to an account with no administrative permission', async () => {
+    // The deny-all context: `renderAccount` grants nothing, so a working download here is the proof
+    // that the export is genuinely self-service and no longer gated on `privacy.manage`.
     const { fn, calls } = accountServer();
     vi.stubGlobal('fetch', fn);
     renderAccount();
 
-    expect(await screen.findByText(ptPT['account.export.unavailable'])).toBeTruthy();
-    expect(screen.queryByRole('button', { name: ptPT['account.export.download'] })).toBeNull();
-    await settle();
-    expect(calls.some((c) => c.url.includes('/privacy/'))).toBe(false);
-  });
-
-  it('offers the export to a holder of privacy.manage, because for them it really works', async () => {
-    const { fn } = accountServer();
-    vi.stubGlobal('fetch', fn);
-    renderWithProviders(
-      <StaticPermissionsProvider value={permissionsValue((p) => p === 'privacy.manage')}>
-        <Routes>
-          <Route path="/account/:sec?" element={<AccountPage />} />
-        </Routes>
-      </StaticPermissionsProvider>,
-      [ACCOUNT_PATH],
-    );
-
     expect(
       await screen.findByRole('button', { name: ptPT['account.export.download'] }),
     ).toBeTruthy();
-    expect(screen.queryByText(ptPT['account.export.unavailable'])).toBeNull();
+    // The honest scope note the card always shows, in place of the old "unavailable" refusal.
+    expect(screen.getByText(ptPT['account.export.scope'])).toBeTruthy();
+    await settle();
+    // Rendering the card touches no administrative or privacy endpoint; the export is fetched on
+    // click, through the self arm.
+    expect(administrativeCalls(calls)).toEqual([]);
+    expect(calls.some((c) => c.url.includes('/privacy/'))).toBe(false);
+  });
+
+  it('downloads through the self subject-access endpoint, never the administrative export', async () => {
+    const { fn, calls } = accountServer();
+    vi.stubGlobal('fetch', fn);
+    renderAccount();
+
+    fireEvent.click(await screen.findByRole('button', { name: ptPT['account.export.download'] }));
+    await settle();
+
+    const exportCalls = calls.filter((c) => c.url.includes('/v1/privacy/users/'));
+    expect(exportCalls.length).toBe(1);
+    // The self subject-access payload (`…/data-export`), not the structural admin export (`…/export`).
+    expect(exportCalls[0].url).toContain('/data-export');
+    expect(exportCalls[0].url.endsWith('/export')).toBe(false);
+    expect(administrativeCalls(calls)).toEqual([]);
   });
 });
 

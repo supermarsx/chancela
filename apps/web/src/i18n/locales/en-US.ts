@@ -6786,6 +6786,10 @@ export const enUS = {
   'users.passkeys.signingNote.title': 'Your password is still asked for when you sign',
   'users.passkeys.signingNote.body':
     '“{name}” will now sign you in to this account. The audit key you sign documents with opens with your password, so you will be asked for it the first time you sign.',
+  'users.passkeys.passwordlessNote.title': 'This passkey signs you in without a password',
+  'users.passkeys.passwordlessNote.body':
+    '“{name}” now signs you in to this account and opens the audit key, so you will not be asked for your password to sign.',
+  'users.passkeys.passwordless.badge': 'No password',
   'users.passkeys.rename': 'Rename',
   'users.passkeys.renamed': 'Passkey renamed.',
   'users.passkeys.revoke': 'Remove',
@@ -6869,11 +6873,11 @@ export const enUS = {
     'Assigned roles, the state of the account and whether a second factor is required are administrative decisions and are not changed here.',
   'account.export.card': 'My data',
   'account.export.body':
-    'The export gathers your profile, the roles assigned to you, and references to the audit-record events you appear in. It contains no passwords, recovery phrases or private keys.',
+    'Download a copy of the personal data this instance holds about your account: your profile, language preference, and account status, and a record of which sign-in credentials you hold. It contains no passwords, recovery phrases, one-time-code secrets, or keys.',
+  'account.export.scope':
+    'It covers your account data only: assigned roles and audit-record references are kept for accountability and are not part of it.',
   'account.export.download': 'Download the export',
   'account.export.pending': 'Preparing the export',
-  'account.export.unavailable':
-    'Exporting your data requires the privacy-management permission, which this account does not hold. Ask whoever administers the instance for it.',
   'account.security.lede':
     'What this account currently holds to prove who you are. Changes are made in the cards below.',
   'account.security.adminView': 'View this account in the administration area',

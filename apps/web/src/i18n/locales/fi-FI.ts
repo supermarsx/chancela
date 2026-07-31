@@ -6844,6 +6844,10 @@ export const fiFI: Catalog = {
   'users.passkeys.signingNote.title': 'Salasana kysytään edelleen allekirjoitettaessa',
   'users.passkeys.signingNote.body':
     'Avaimella ”{name}” kirjaudut tästä lähtien tälle tilille. Tarkastusavain, jolla allekirjoitat asiakirjoja, avautuu salasanalla, joten sitä kysytään ensimmäisellä allekirjoituskerralla.',
+  'users.passkeys.passwordlessNote.title': 'Tällä pääsyavaimella kirjaudut sisään ilman salasanaa',
+  'users.passkeys.passwordlessNote.body':
+    'Avaimella ”{name}” kirjaudut tästä lähtien tälle tilille ja avaat tarkastusavaimen, joten sinulta ei kysytä salasanaa allekirjoittamiseen.',
+  'users.passkeys.passwordless.badge': 'Ei salasanaa',
   'users.passkeys.rename': 'Nimeä uudelleen',
   'users.passkeys.renamed': 'Pääsyavain nimetty uudelleen.',
   'users.passkeys.revoke': 'Poista',
@@ -6927,11 +6931,11 @@ export const fiFI: Catalog = {
     'Myönnetyt roolit, tilin tila ja toisen tekijän vaatimus ovat hallinnollisia päätöksiä, eikä niitä muuteta täällä.',
   'account.export.card': 'Omat tiedot',
   'account.export.body':
-    'Vienti kokoaa profiilisi, sinulle myönnetyt roolit ja viittaukset niihin tarkastuslokin tapahtumiin, joissa esiinnyt. Se ei sisällä salasanoja, palautuslauseita eikä yksityisiä avaimia.',
+    'Lataa kopio henkilötiedoista, joita tämä instanssi säilyttää tilistäsi: profiilisi, kieliasetuksesi ja tilin tila sekä luettelo siitä, mitä kirjautumistunnuksia sinulla on. Se ei sisällä salasanoja, palautuslauseita, kertakäyttökoodien salaisuuksia eikä avaimia.',
+  'account.export.scope':
+    'Se kattaa vain tilisi tiedot: määritetyt roolit ja viittaukset tarkastuslokiin säilytetään vastuuvelvollisuutta varten eivätkä ne kuulu siihen.',
   'account.export.download': 'Lataa vienti',
   'account.export.pending': 'Valmistellaan vientiä',
-  'account.export.unavailable':
-    'Tietojesi vienti edellyttää yksityisyydenhallinnan oikeutta, jota tällä tilillä ei ole. Pyydä sitä instanssin ylläpidolta.',
   'account.security.lede':
     'Mitä tällä tilillä on tällä hetkellä henkilöllisyytesi todistamiseen. Muutokset tehdään alla olevissa korteissa.',
   'account.security.adminView': 'Näytä tämä tili hallinta-alueella',

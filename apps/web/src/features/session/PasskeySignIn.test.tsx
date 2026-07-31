@@ -18,15 +18,15 @@ import { ptPT } from '../../i18n/locales/pt-PT';
 import { PasskeySignIn } from './PasskeySignIn';
 import { toBase64Url } from './webauthn';
 
-/** A user-verified assertion — flags byte 0x05 is UP | UV. */
-function assertion() {
+/** A user-verified assertion — flags byte 0x05 is UP | UV. `prfFirst` models a PRF output. */
+function assertion(prfFirst?: ArrayBuffer) {
   const authenticatorData = new Uint8Array(37);
   authenticatorData[32] = 0x05;
   return {
     id: 'Y3JlZA',
     rawId: new Uint8Array([1, 2]).buffer,
     type: 'public-key',
-    getClientExtensionResults: () => ({}),
+    getClientExtensionResults: () => (prfFirst ? { prf: { results: { first: prfFirst } } } : {}),
     response: {
       clientDataJSON: new Uint8Array([3]).buffer,
       authenticatorData: authenticatorData.buffer,
@@ -51,8 +51,14 @@ function harness({
   conditional = true,
   optionsStatus = 200,
   pendingGet = false,
-}: { conditional?: boolean; optionsStatus?: number; pendingGet?: boolean } = {}): Harness {
-  const credential = assertion();
+  prfFirst,
+}: {
+  conditional?: boolean;
+  optionsStatus?: number;
+  pendingGet?: boolean;
+  prfFirst?: ArrayBuffer;
+} = {}): Harness {
+  const credential = assertion(prfFirst);
   // A conditional request stays pending until the operator picks a credential; `pendingGet` models
   // that, so a test can prove the modal path aborts it rather than racing it.
   const get = vi.fn(() => (pendingGet ? new Promise(() => {}) : Promise.resolve(credential)));
@@ -175,6 +181,29 @@ describe('PasskeySignIn', () => {
     const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/session/passkey'));
     const body = JSON.parse(String((post?.[1] as RequestInit | undefined)?.body ?? '{}'));
     expect(Object.keys(body)).toEqual(['credential']);
+  });
+
+  it('posts the PRF-derived secret when the credential produced a PRF output', async () => {
+    // The passwordless path: the browser adds `prf`, the authenticator returns an output, and the
+    // client derives the KEK and posts it so the server can unlock the attestation key with no
+    // password. A credential with no output posts no `prf_secret` — the fallback the test above pins.
+    const onSignedIn = vi.fn();
+    const { fetchMock } = harness({
+      conditional: false,
+      prfFirst: new Uint8Array(32).fill(7).buffer,
+    });
+    renderWithProviders(<PasskeySignIn onSignedIn={onSignedIn} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: ptPT['signin.passkey.action'] }));
+    await waitFor(() => expect(onSignedIn).toHaveBeenCalled());
+
+    const post = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/session/passkey'));
+    const body = JSON.parse(String((post?.[1] as RequestInit | undefined)?.body ?? '{}'));
+    expect(Object.keys(body).sort()).toEqual(['credential', 'prf_secret']);
+    expect(typeof body.prf_secret).toBe('string');
+    expect(body.prf_secret.length).toBeGreaterThan(0);
+    // The raw PRF output never leaves the browser — only the derived KEK does.
+    expect(JSON.stringify(body.credential)).not.toContain('results');
   });
 
   it('aborts the pending conditional request before opening the modal', async () => {

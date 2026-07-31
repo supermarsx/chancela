@@ -6890,6 +6890,10 @@ export const itIT: Catalog = {
   'users.passkeys.signingNote.title': 'La password viene ancora chiesta al momento di firmare',
   'users.passkeys.signingNote.body':
     '«{name}» ti fa ora entrare in questo account. La chiave di audit con cui firmi i documenti si apre con la password, quindi ti verrà chiesta la prima volta che firmerai.',
+  'users.passkeys.passwordlessNote.title': 'Questa passkey ti fa entrare senza password',
+  'users.passkeys.passwordlessNote.body':
+    '«{name}» ti fa ora entrare in questo account e apre la chiave di audit, quindi non ti verrà chiesta la password per firmare.',
+  'users.passkeys.passwordless.badge': 'Nessuna password',
   'users.passkeys.rename': 'Rinomina',
   'users.passkeys.renamed': 'Passkey rinominata.',
   'users.passkeys.revoke': 'Rimuovi',
@@ -6973,11 +6977,11 @@ export const itIT: Catalog = {
     'I ruoli assegnati, lo stato dell’account e l’obbligo di un secondo fattore sono decisioni amministrative e non si modificano qui.',
   'account.export.card': 'I miei dati',
   'account.export.body':
-    'L’esportazione raccoglie il suo profilo, i ruoli che le sono assegnati e i riferimenti agli eventi del registro di audit in cui compare. Non contiene password, frasi di recupero né chiavi private.',
+    'Scarichi una copia dei dati personali che questa istanza conserva sul suo account: il suo profilo, la preferenza di lingua e lo stato dell’account, e un elenco delle credenziali di accesso che possiede. Non contiene password, frasi di recupero, segreti di codici monouso né chiavi.',
+  'account.export.scope':
+    'Riguarda solo i dati del suo account: i ruoli assegnati e i riferimenti al registro di audit sono conservati a fini di responsabilità e non ne fanno parte.',
   'account.export.download': 'Scarica l’esportazione',
   'account.export.pending': 'Preparazione dell’esportazione',
-  'account.export.unavailable':
-    'L’esportazione dei suoi dati richiede il permesso di gestione della privacy, che questo account non possiede. La chieda a chi amministra l’istanza.',
   'account.security.lede':
     'Ciò che questo account possiede oggi per provare la sua identità. Le modifiche si fanno nelle schede qui sotto.',
   'account.security.adminView': 'Vedere questo account nell’area di amministrazione',

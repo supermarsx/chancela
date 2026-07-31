@@ -9,5 +9,7 @@ mod archive_package_order;
 mod archive_package_signatures;
 #[path = "backup_recovery_drill.rs"]
 mod backup_recovery_drill;
+#[path = "personal_data_export.rs"]
+mod personal_data_export;
 #[path = "privacy.rs"]
 mod privacy;

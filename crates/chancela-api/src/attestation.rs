@@ -610,6 +610,23 @@ impl AttestationKeyBlob {
         )
     }
 
+    /// Wrap an **already-unlocked** signing key under an independent `secret`, preserving the public
+    /// key and fingerprint. This is the mechanism behind a *second* wrap of the same attestation
+    /// scalar (t10 PRF): the caller holds the scalar in memory (from the session's unlocked key) and
+    /// seals it a second time under a different secret — a PRF-derived KEK — without ever needing the
+    /// original password. The resulting blob has the same [`fingerprint`](Self::fingerprint) as the
+    /// key it wraps, so a signature produced after unlocking through it verifies against the same
+    /// public key, and the two wraps are provably of one scalar.
+    ///
+    /// **A PRF wrap is only ever an *additional* wrap** (`docs/passkeys.md`, Invariant 2): the caller
+    /// keeps the password wrap on the user record alongside whatever this produces, so a PRF output
+    /// that a vendor later moves (iOS 18.4) degrades to the password, never to key loss.
+    pub fn wrap_key(secret: &str, key: &SigningKey) -> Result<Self, AttestationError> {
+        let sec1 = sec1_bytes(key.verifying_key());
+        let fingerprint = fingerprint(&sec1);
+        Self::wrap(secret, &sec1, &fingerprint, key.to_bytes().as_slice())
+    }
+
     /// The raw SEC1 public-key bytes, or `None` if the stored base64 is corrupt.
     pub fn public_key_bytes(&self) -> Option<Vec<u8>> {
         B64.decode(&self.public_key_sec1).ok()
@@ -847,6 +864,30 @@ mod tests {
         // Flip the recorded hash: the signature no longer matches.
         att.event_hash = crate::hex::hex(&[2u8; 32]);
         assert!(!verify_signature(&att, &blob.public_key_bytes().unwrap()));
+    }
+
+    #[test]
+    fn wrap_key_adds_a_second_wrap_of_the_same_scalar() {
+        // The PRF-wrap mechanism: one scalar, two independent wraps under two independent secrets.
+        // Both must unlock to the *same* fingerprint, or the second wrap would be of a different key
+        // and the "two wraps of one scalar" invariant would be a lie.
+        let password_wrap = AttestationKeyBlob::generate("password").unwrap();
+        let key = password_wrap.unlock("password").unwrap();
+
+        let prf_wrap = AttestationKeyBlob::wrap_key("prf-derived-kek-bytes", &key).unwrap();
+        assert_eq!(prf_wrap.fingerprint, password_wrap.fingerprint);
+        assert_eq!(prf_wrap.public_key_sec1, password_wrap.public_key_sec1);
+        // The salt/nonce/ciphertext are independent — a second wrap is not a copy of the first.
+        assert_ne!(prf_wrap.ciphertext, password_wrap.ciphertext);
+
+        // The PRF secret opens the PRF wrap; the password does not, and vice versa.
+        assert!(prf_wrap.unlock("password").is_err());
+        let via_prf = prf_wrap.unlock("prf-derived-kek-bytes").unwrap();
+        assert_eq!(key_fingerprint(&via_prf), password_wrap.fingerprint);
+
+        // A *changed* PRF output (the iOS-18.4 case) cannot open the wrap — which is precisely why
+        // the password wrap must survive: this failure degrades to the password, never to key loss.
+        assert!(prf_wrap.unlock("a-different-prf-output").is_err());
     }
 
     #[test]

@@ -11,6 +11,7 @@
       "attachment": "platform",
       "transports": ["internal", "hybrid"],
       "prf_capable": true,
+      "unlocks_without_password": true,
       "sign_count": 0
     },
     {
@@ -24,6 +25,7 @@
       "attachment": "cross_platform",
       "transports": ["usb", "nfc"],
       "prf_capable": false,
+      "unlocks_without_password": false,
       "sign_count": 12
     }
   ],

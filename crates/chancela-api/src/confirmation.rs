@@ -1792,6 +1792,18 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         ),
     ),
     (
+        "/v1/users/{id}/passkeys/{credential_id}/prf/options",
+        RouteGuard::NotGuarded(
+            "Mints a PRF-eval challenge for the caller's own credential and stores nothing. Self-only, and the challenge is worthless without the authenticator that answers it — the same safe direction as the enrolment and re-auth challenge routes.",
+        ),
+    ),
+    (
+        "/v1/users/{id}/passkeys/{credential_id}/prf",
+        RouteGuard::NotGuarded(
+            "Seals a *second* wrap of the attestation key under the credential's PRF output — an additive step of an enrolment the user has just proved by touching their own authenticator, self-only and needing the session's already-unlocked key. It removes nothing: the password wrap is untouched (the account-lifecycle guard refuses to remove it while a key exists), so a confirmation on top would add friction without adding assurance, exactly as for finishing the enrolment itself.",
+        ),
+    ),
+    (
         "/v1/reauth/passkey/options",
         RouteGuard::NotGuarded(
             "Mints a re-authentication challenge. Requiring a confirmation to obtain the means of confirming is a loop; the challenge grants nothing and is redeemable only by the acting user's own credential.",
@@ -1801,6 +1813,12 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         "/v1/privacy/users/{id}/export",
         RouteGuard::NotGuarded(
             "Read-only: returns data and mutates no state, so there is nothing to confirm.",
+        ),
+    ),
+    (
+        "/v1/privacy/users/{id}/data-export",
+        RouteGuard::NotGuarded(
+            "Read-only subject-access export: returns the subject's own personal data and mutates no state, so there is nothing to confirm.",
         ),
     ),
     (

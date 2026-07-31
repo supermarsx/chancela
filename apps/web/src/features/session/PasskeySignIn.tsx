@@ -46,7 +46,8 @@ import {
   conditionalMediationAvailable,
   describeCeremonyFailure,
   passkeysAvailable,
-  runAssertionCeremony,
+  runAssertionCeremonyWithPrf,
+  type AssertionWithPrf,
   type CeremonyFailure,
 } from './webauthn';
 
@@ -91,8 +92,13 @@ export function PasskeySignIn({ onSignedIn, disabled }: PasskeySignInProps) {
    * component's to make.
    */
   const complete = useCallback(
-    async (credential: Awaited<ReturnType<typeof runAssertionCeremony>>) => {
-      const outcome = await api.createPasskeySession({ credential });
+    async ({ credential, prfSecret }: AssertionWithPrf) => {
+      // `prf_secret` is sent only when the credential produced a PRF output; its presence is what
+      // lets the server mint a passwordless session, its absence is the honest password fallback.
+      const outcome = await api.createPasskeySession({
+        credential,
+        ...(prfSecret ? { prf_secret: prfSecret } : {}),
+      });
       if ('two_factor_challenge' in outcome) {
         throw new Error('a passkey assertion unexpectedly raised a two-factor challenge');
       }
@@ -136,12 +142,12 @@ export function PasskeySignIn({ onSignedIn, disabled }: PasskeySignInProps) {
       if (cancelled) return;
       setAvailable(true);
       try {
-        const credential = await runAssertionCeremony(options, {
+        const assertion = await runAssertionCeremonyWithPrf(options, {
           mediation: 'conditional',
           signal: controller.signal,
         });
         if (cancelled) return;
-        await complete(credential);
+        await complete(assertion);
       } catch (error) {
         // An abort is this component unmounting or the operator taking the modal path instead —
         // both ordinary, neither worth a message.
@@ -171,7 +177,7 @@ export function PasskeySignIn({ onSignedIn, disabled }: PasskeySignInProps) {
     setPending(true);
     try {
       const options = await api.beginPasskeySignIn();
-      await complete(await runAssertionCeremony(options));
+      await complete(await runAssertionCeremonyWithPrf(options));
     } catch (error) {
       report(error);
     } finally {

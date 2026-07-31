@@ -261,7 +261,7 @@ use tokio::sync::{Mutex, RwLock};
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use actor::{CurrentActor, CurrentAttestor};
-pub use attestation::VerifierSeed;
+pub use attestation::{AttestationKeyBlob, VerifierSeed};
 pub use authz::{
     Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
     scope_of_book, scope_of_entity, scope_of_template_library,
@@ -325,7 +325,7 @@ pub use template_preview_samples::TemplatePreviewSampleSettings;
 pub use trust::{LocalTrustUrlTestAllowance, allow_local_trust_url_for_tests};
 #[doc(hidden)]
 pub use users::UserCreateKdfGate;
-pub use users::{User, UserId};
+pub use users::{TotpEnrolment, User, UserId};
 
 #[cfg(feature = "e2e")]
 #[derive(serde::Deserialize)]
@@ -3545,6 +3545,18 @@ pub fn router(state: AppState) -> Router {
             // typo would only teach operators to type it at prompts that do not need it.
             axum::routing::delete(passkeys::revoke_passkey).patch(passkeys::rename_passkey),
         )
+        // The PRF-wrap ceremony (t10 passwordless): a `get()` after enrolment that yields the PRF
+        // output used to seal a second wrap of the attestation scalar. Self-only; the finish step
+        // needs the session's unlocked key. A `get()` because `webauthn_rp` cannot evaluate PRF at
+        // `create()`.
+        .route(
+            "/v1/users/{id}/passkeys/{credential_id}/prf/options",
+            post(passkeys::begin_prf_wrap),
+        )
+        .route(
+            "/v1/users/{id}/passkeys/{credential_id}/prf",
+            post(passkeys::finish_prf_wrap),
+        )
         // The step-up ceremony. Authenticated, and the challenge it mints is bound to this
         // session's user and to the step-up purpose — it cannot satisfy a sign-in and a sign-in
         // cannot satisfy it.
@@ -3553,6 +3565,10 @@ pub fn router(state: AppState) -> Router {
             post(passkeys::begin_step_up),
         )
         .route("/v1/privacy/users/{id}/export", get(privacy::export_user))
+        .route(
+            "/v1/privacy/users/{id}/data-export",
+            get(privacy::export_personal_data),
+        )
         .route(
             "/v1/privacy/users/{id}/dsr-requests",
             get(privacy::list_dsr_requests_for_user).post(privacy::create_dsr_request),

@@ -6838,6 +6838,10 @@ export const svFI: Catalog = {
   'users.passkeys.signingNote.title': 'Lösenordet efterfrågas fortsättningsvis när du undertecknar',
   'users.passkeys.signingNote.body':
     'Med ”{name}” loggar du hädanefter in på detta konto. Revisionsnyckeln du undertecknar dokument med öppnas med lösenordet, så du ombeds ange det första gången du undertecknar.',
+  'users.passkeys.passwordlessNote.title': 'Med den här nyckeln loggar du in utan lösenord',
+  'users.passkeys.passwordlessNote.body':
+    'Med ”{name}” loggar du hädanefter in på detta konto och öppnar revisionsnyckeln, så du ombeds inte ange ditt lösenord för att underteckna.',
+  'users.passkeys.passwordless.badge': 'Inget lösenord',
   'users.passkeys.rename': 'Byt namn',
   'users.passkeys.renamed': 'Nyckeln har fått ett nytt namn.',
   'users.passkeys.revoke': 'Avlägsna',
@@ -6920,11 +6924,11 @@ export const svFI: Catalog = {
     'Tilldelade roller, kontots status och kravet på en andra faktor är administrativa beslut och ändras inte här.',
   'account.export.card': 'Mina uppgifter',
   'account.export.body':
-    'Exporten samlar din profil, de roller du tilldelats och hänvisningar till de händelser i granskningsloggen där du förekommer. Den innehåller varken lösenord, återställningsfraser eller privata nycklar.',
+    'Ladda ner en kopia av de personuppgifter som den här instansen lagrar om ditt konto: din profil, språkinställningen och kontostatusen samt en förteckning över vilka inloggningsuppgifter du har. Den innehåller inga lösenord, återställningsfraser, hemligheter för engångskoder eller nycklar.',
+  'account.export.scope':
+    'Den omfattar endast dina kontouppgifter: tilldelade roller och hänvisningar till granskningsloggen sparas för ansvarsskyldighet och ingår inte i den.',
   'account.export.download': 'Hämta exporten',
   'account.export.pending': 'Förbereder exporten',
-  'account.export.unavailable':
-    'För att exportera dina uppgifter krävs behörigheten för integritetshantering, som det här kontot inte har. Be om den av den som administrerar instansen.',
   'account.security.lede':
     'Vad det här kontot har i dag för att styrka vem du är. Ändringar görs i korten nedan.',
   'account.security.adminView': 'Visa det här kontot i administrationsdelen',

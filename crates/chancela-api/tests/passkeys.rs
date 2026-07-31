@@ -23,7 +23,7 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
-use chancela_api::{AppState, User, UserId, router};
+use chancela_api::{AppState, AttestationKeyBlob, User, UserId, router};
 use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
 use p256::ecdsa::signature::hazmat::PrehashSigner;
 use p256::ecdsa::{Signature, SigningKey};
@@ -122,17 +122,26 @@ struct Authenticator {
     /// Backup eligibility / state, as the BE and BS flag pair.
     backup_eligible: bool,
     backed_up: bool,
+    /// The **browser-derived KEK** a real client would compute from this credential's PRF output and
+    /// post beside the assertion. Deterministic so enrolment and sign-in agree; the server treats it
+    /// verbatim as the wrap secret, so its exact value is arbitrary. Mutate it to simulate a PRF
+    /// output that moved out from under the wrap (the iOS-18.4 case).
+    prf_secret: String,
 }
 
 impl Authenticator {
     fn new() -> Self {
+        let credential_id: Vec<u8> = (0u8..32)
+            .map(|i| i.wrapping_mul(7).wrapping_add(3))
+            .collect();
         Authenticator {
             key: SigningKey::random(&mut p256::elliptic_curve::rand_core::OsRng),
+            // A deterministic per-credential derived secret. A real client HKDFs `prf.results.first`;
+            // this stands in for that, stable across a credential's enrolment and its sign-ins.
+            prf_secret: B64URL.encode(Sha256::digest(&credential_id)),
             // 32 bytes: comfortably inside the spec's 16–1023 range, and the length a real platform
             // authenticator tends to mint.
-            credential_id: (0u8..32)
-                .map(|i| i.wrapping_mul(7).wrapping_add(3))
-                .collect(),
+            credential_id,
             aaguid: [0x11; 16],
             sign_count: 0,
             hmac_secret: false,
@@ -201,15 +210,16 @@ impl Authenticator {
         flags
     }
 
-    /// The `hmac-secret` extension output.
+    /// The `hmac-secret` extension output for the **non-PRF** ceremonies — present at registration,
+    /// absent at a plain assertion.
     ///
-    /// **Present at registration and absent at assertion, and that asymmetry is the point.** The
-    /// server asks for `prf` at *enrolment* (so the authenticator provisions the secret, which it
-    /// can only ever be asked to do then) and asks for nothing at *sign-in*, because PRF evaluation
-    /// is a later lane. An authenticator returns an extension output only for an extension the RP
-    /// requested, so an assertion here carries none — and if it did, the server would refuse it as
-    /// unsolicited, which is the correct fail-closed behaviour and is pinned by
-    /// `an_unsolicited_extension_at_sign_in_is_refused`.
+    /// At registration the authenticator reports that it provisioned the secret. A plain `assert`
+    /// (no PRF requested by the client) carries none, which the sign-in path accepts. The PRF path is
+    /// modelled separately by [`Authenticator::assert_with_prf`], which emits the solicited
+    /// `hmac-secret` output the client's `prf` extension elicits — the server accepts that under
+    /// `error_on_unsolicited_extensions: false`, while a wrong-length or non-PRF-credential output is
+    /// still refused (`a_malformed_hmac_secret_at_sign_in_is_refused`,
+    /// `an_hmac_secret_from_a_non_prf_credential_is_refused`).
     fn extension_output(&self, registration: bool) -> Vec<u8> {
         if !self.hmac_secret || !registration {
             return Vec::new();
@@ -340,6 +350,40 @@ impl Authenticator {
         let client_data = self.client_data_json("webauthn.get", challenge, origin);
         let auth_data = self.authenticator_data(rp_id, user_verified, false);
         self.sign_assertion(client_data, auth_data, user_handle)
+    }
+
+    /// An assertion carrying a **client-solicited `hmac-secret` output** (48 bytes = `HmacSecret::One`,
+    /// the encrypted length a real authenticator returns) and the browser-derived KEK to post beside
+    /// it. This is what a sign-in or PRF-wrap `get()` produces once the client adds `prf` — the server
+    /// verifies these paths with `error_on_unsolicited_extensions: false`, so the output is accepted.
+    ///
+    /// `user_verified` is a parameter because the UV bit is exactly what decides whether the derived
+    /// secret is even considered for the unwrap (CTAP2.1 keeps a separate seed without UV).
+    fn assert_with_prf(
+        &mut self,
+        options: &Value,
+        origin: &str,
+        rp_id: &str,
+        user_handle: &[u8],
+        user_verified: bool,
+    ) -> (Value, String) {
+        let challenge = options["challenge"].as_str().expect("challenge in options");
+        self.sign_count = self.sign_count.saturating_add(1);
+        let client_data = self.client_data_json("webauthn.get", challenge, origin);
+        let mut auth_data = Vec::new();
+        auth_data.extend_from_slice(&Sha256::digest(rp_id.as_bytes()));
+        auth_data.push(self.flags(user_verified, false) | flag::ED);
+        auth_data.extend_from_slice(&self.sign_count.to_be_bytes());
+        // A 48-byte encrypted `hmac-secret` output: `ONE_SECRET_LEN`, which the library parses as
+        // `HmacSecret::One`. The bytes are opaque to the server — it never decrypts them; the real
+        // PRF output travels only to the browser, which is why the derived KEK is a separate return.
+        let mut ext = Vec::new();
+        cbor::map(1, &mut ext);
+        cbor::text("hmac-secret", &mut ext);
+        cbor::bytes(&[0x5a_u8; 48], &mut ext);
+        auth_data.extend_from_slice(&ext);
+        let credential = self.sign_assertion(client_data, auth_data, user_handle);
+        (credential, self.prf_secret.clone())
     }
 
     /// Sign `auth_data` and assemble the `PublicKeyCredential` JSON a browser would produce.
@@ -525,6 +569,100 @@ async fn enrol(
     .await;
     assert_eq!(status, StatusCode::OK, "finish enrolment: {view}");
     handle
+}
+
+/// Like [`harness`], but the account holds an **attestation key wrapped under the password**, and the
+/// session it returns has that key unlocked in memory (a password sign-in did it). This is the shape
+/// the PRF-wrap path needs: a second wrap can only be sealed while the scalar is already open.
+async fn harness_with_attestation_key(dir: &TempDir) -> (AppState, UserId, String) {
+    let state = AppState::with_data_dir(&dir.0);
+    let uid = UserId(Uuid::new_v4());
+    let attestation_key = AttestationKeyBlob::generate(TEST_PASSWORD).expect("attestation key");
+    state.users.write().await.insert(
+        uid,
+        User {
+            id: uid,
+            username: "amelia.marques".to_owned(),
+            display_name: "Amélia Marques".to_owned(),
+            email: None,
+            created_at: OffsetDateTime::now_utc().format(&Rfc3339).expect("stamp"),
+            active: true,
+            password_hash: Some(password_hash()),
+            attestation_key: Some(attestation_key),
+            retired_attestation_keys: Vec::new(),
+            secret_source: Default::default(),
+            recovery_hash: Some(password_hash()),
+            role_assignments: vec![RoleAssignment::new(OWNER_ROLE_ID, Scope::Global)],
+            language: Default::default(),
+            totp: None,
+            two_factor_required: false,
+            force_password_change: false,
+            passkeys: Vec::new(),
+        },
+    );
+    {
+        let mut settings = state.settings.write().await;
+        settings.platform.public_base_url = Some(BASE_URL.to_owned());
+        settings.auth.passkeys.rp_id = Some(RP_ID.to_owned());
+    }
+    let (status, session) = send(
+        state.clone(),
+        post(
+            "/v1/session",
+            json!({ "username": "amelia.marques", "password": TEST_PASSWORD }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sign in: {session}");
+    let token = session["token"].as_str().expect("token").to_owned();
+    (state, uid, token)
+}
+
+/// Enrol a credential and then complete the PRF-wrap `get()` that seals a second wrap of the
+/// attestation scalar. Returns the assertion-time user handle and the deterministic PRF secret this
+/// credential will re-derive at sign-in.
+async fn enrol_and_wrap(
+    state: &AppState,
+    uid: UserId,
+    token: &str,
+    authenticator: &mut Authenticator,
+    name: &str,
+) -> (Vec<u8>, String) {
+    let handle = enrol(state, uid, token, authenticator, name).await;
+    let credential_id = B64URL.encode(&authenticator.credential_id);
+
+    let (status, options) = send(
+        state.clone(),
+        with_session(
+            post(
+                &format!("/v1/users/{}/passkeys/{credential_id}/prf/options", uid.0),
+                json!({}),
+            ),
+            token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "begin prf wrap: {options}");
+    assert_eq!(options["purpose"], "prf_wrap");
+    let (credential, prf_secret) =
+        authenticator.assert_with_prf(&options["public_key"], ORIGIN, RP_ID, &handle, true);
+    let (status, view) = send(
+        state.clone(),
+        with_session(
+            post(
+                &format!("/v1/users/{}/passkeys/{credential_id}/prf", uid.0),
+                json!({ "credential": credential, "prf_secret": prf_secret }),
+            ),
+            token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "finish prf wrap: {view}");
+    assert_eq!(
+        view["unlocks_without_password"], true,
+        "the credential must now report a PRF wrap: {view}"
+    );
+    (handle, prf_secret)
 }
 
 // =================================================================================================
@@ -858,16 +996,16 @@ async fn an_assertion_from_a_sibling_origin_is_refused() {
     );
 }
 
-/// **The constraint the PRF lane must respect, pinned now so it is discovered here and not there.**
+/// **A malformed `hmac-secret` output is refused even though the sign-in path now expects one.**
 ///
-/// The server asks for `prf` at enrolment and for nothing at sign-in, and it verifies with
-/// `error_on_unsolicited_extensions` on. So an authenticator that returns an `hmac-secret` output
-/// at sign-in is refused — which means **PRF at sign-in cannot be added from the browser alone**.
-/// A client that sets `extensions.prf.eval` on its own produces exactly this shape, and it will
-/// fail. Requesting it is the server's job (`webauthn_rp::request::auth::Extension::prf`), and that
-/// is a deliberate follow-up, not an oversight.
+/// The PRF lane made the client add `extensions.prf.eval` and the server verify sign-in with
+/// `error_on_unsolicited_extensions: false` (the server cannot request `prf` itself without breaking
+/// non-PRF credentials — see the module header). So a well-formed `hmac-secret` output is now
+/// accepted. This authenticator returns one of the *wrong length* — 64 bytes, neither of the two
+/// encrypted sizes the spec allows — and the library refuses it at parse time regardless of the
+/// `error_on_unsolicited_extensions` setting.
 #[tokio::test]
-async fn an_unsolicited_extension_at_sign_in_is_refused() {
+async fn a_malformed_hmac_secret_at_sign_in_is_refused() {
     let dir = TempDir::new();
     let (state, uid, token) = harness(&dir).await;
     let authenticator = Authenticator::new().with_hmac_secret();
@@ -891,7 +1029,40 @@ async fn an_unsolicited_extension_at_sign_in_is_refused() {
     assert_eq!(
         status,
         StatusCode::UNAUTHORIZED,
-        "an extension the server never requested must not be accepted: {body}"
+        "a malformed hmac-secret output must not be accepted: {body}"
+    );
+}
+
+/// **An `hmac-secret` output from a credential that was never registered PRF-capable is refused.**
+///
+/// This is the exact library constraint that forces the client-adds-`prf` design: `webauthn_rp`
+/// rejects an assertion carrying `hmac-secret` from a non-PRF credential
+/// (`HmacSecretForPrfIncapableCred`) unconditionally. The credential here enrolled with no
+/// `hmac-secret`, so a (forged) `hmac-secret` at sign-in is a lie about its capability and is
+/// refused — not accepted and quietly ignored.
+#[tokio::test]
+async fn an_hmac_secret_from_a_non_prf_credential_is_refused() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    let mut authenticator = Authenticator::new(); // no `with_hmac_secret`: not PRF-capable
+    let handle = enrol(&state, uid, &token, &authenticator, "Telemóvel").await;
+
+    let (_, options) = send(
+        state.clone(),
+        post("/v1/session/passkey/options", json!({})),
+    )
+    .await;
+    let (assertion, _) =
+        authenticator.assert_with_prf(&options["public_key"], ORIGIN, RP_ID, &handle, true);
+    let (status, body) = send(
+        state.clone(),
+        post("/v1/session/passkey", json!({ "credential": assertion })),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "an hmac-secret from a non-PRF-capable credential must be refused: {body}"
     );
 }
 
@@ -1637,6 +1808,248 @@ fn urlencode(value: &str) -> String {
             _ => format!("%{byte:02X}"),
         })
         .collect()
+}
+
+// =================================================================================================
+// The PRF-derived unwrap (passwordless)
+// =================================================================================================
+
+/// **Enrol adds a PRF wrap alongside the password wrap, and both unlock the same scalar.** Two wraps
+/// of one attestation key: the password's, and the credential's PRF wrap. Neither is the other's
+/// copy — different salts, nonces and ciphertexts — yet both open to the same secret scalar, which
+/// is what "a *second* wrap of the same key" means.
+#[tokio::test]
+async fn enrol_adds_a_prf_wrap_and_both_wraps_open_the_same_scalar() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness_with_attestation_key(&dir).await;
+    let mut authenticator = Authenticator::new().with_hmac_secret();
+    let (_handle, prf_secret) =
+        enrol_and_wrap(&state, uid, &token, &mut authenticator, "Telemóvel").await;
+
+    let users = state.users.read().await;
+    let user = users.get(&uid).expect("user");
+    let account_key = user.attestation_key.as_ref().expect("attestation key");
+    let prf_wrap = user.passkeys[0]
+        .prf_wrap
+        .as_ref()
+        .expect("the enrol-and-wrap flow must have sealed a PRF wrap");
+
+    // Same fingerprint — the PRF wrap is of *this* account's key, not some other scalar.
+    assert_eq!(prf_wrap.fingerprint, account_key.fingerprint);
+    assert_ne!(
+        prf_wrap.ciphertext, account_key.ciphertext,
+        "an additional wrap is not a copy of the password wrap"
+    );
+
+    // Both open, and to the identical scalar: the password opens one, the PRF secret the other.
+    let via_password = account_key
+        .unlock(TEST_PASSWORD)
+        .expect("password opens the key");
+    let via_prf = prf_wrap
+        .unlock(&prf_secret)
+        .expect("the PRF secret opens the wrap");
+    assert_eq!(
+        via_password.to_bytes(),
+        via_prf.to_bytes(),
+        "the two wraps must reconstruct the same signing key"
+    );
+}
+
+/// **A PRF sign-in with UV unlocks the attestation key with no password.** The session is minted and
+/// carries the unlocked key in memory — it can attest immediately, having typed nothing.
+#[tokio::test]
+async fn a_prf_sign_in_with_uv_unlocks_with_no_password() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness_with_attestation_key(&dir).await;
+    let mut authenticator = Authenticator::new().with_hmac_secret();
+    let (handle, _) = enrol_and_wrap(&state, uid, &token, &mut authenticator, "Telemóvel").await;
+
+    let (_, options) = send(
+        state.clone(),
+        post("/v1/session/passkey/options", json!({})),
+    )
+    .await;
+    let (credential, prf_secret) =
+        authenticator.assert_with_prf(&options["public_key"], ORIGIN, RP_ID, &handle, true);
+    let (status, session) = send(
+        state.clone(),
+        post(
+            "/v1/session/passkey",
+            json!({ "credential": credential, "prf_secret": prf_secret }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "passkey sign-in: {session}");
+    let new_token = session["token"].as_str().expect("a session was minted");
+
+    let unlocked = {
+        let sessions = state.sessions.read().await;
+        sessions
+            .get(new_token)
+            .expect("the minted session is in the registry")
+            .unlocked_key
+            .is_some()
+    };
+    assert!(
+        unlocked,
+        "a UV PRF sign-in must leave the attestation key unlocked on the session — no password typed"
+    );
+}
+
+/// **The invariant-1 test, and the whole point of the design.** The same credential signs in with a
+/// *different* PRF output (the iOS-18.4 case: an OS update moved the value). The wrap does not open,
+/// so the sign-in **degrades to the password path** — it still succeeds, the session simply carries
+/// no unlocked key — and the attestation key is **not lost**: the password wrap still opens it.
+///
+/// This is also the confirmation that the fallback is load-bearing: a naive implementation that
+/// treated a failed PRF unlock as a failed sign-in would return `401` here instead of `200`, and a
+/// user whose vendor moved their PRF output would be locked out with a working password in hand.
+#[tokio::test]
+async fn a_changed_prf_output_degrades_to_password_and_does_not_lose_the_key() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness_with_attestation_key(&dir).await;
+    let mut authenticator = Authenticator::new().with_hmac_secret();
+    let (handle, _) = enrol_and_wrap(&state, uid, &token, &mut authenticator, "Telemóvel").await;
+
+    // The OS update moves the PRF output out from under the wrap: the very next assertion derives a
+    // different secret from the one enrolment sealed.
+    authenticator.prf_secret = B64URL.encode([0xFF_u8; 32]);
+
+    let (_, options) = send(
+        state.clone(),
+        post("/v1/session/passkey/options", json!({})),
+    )
+    .await;
+    let (credential, moved_secret) =
+        authenticator.assert_with_prf(&options["public_key"], ORIGIN, RP_ID, &handle, true);
+    let (status, session) = send(
+        state.clone(),
+        post(
+            "/v1/session/passkey",
+            json!({ "credential": credential, "prf_secret": moved_secret }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "a moved PRF output must degrade to the password, not fail the sign-in: {session}"
+    );
+    let new_token = session["token"]
+        .as_str()
+        .expect("a session was still minted");
+    let unlocked = {
+        let sessions = state.sessions.read().await;
+        sessions
+            .get(new_token)
+            .expect("session in registry")
+            .unlocked_key
+            .is_some()
+    };
+    assert!(
+        !unlocked,
+        "the wrap did not open, so the session must carry no unlocked key — it will ask for the \
+         password at first attestation"
+    );
+
+    // The key is NOT lost: the password wrap still opens it, exactly as before the PRF output moved.
+    {
+        let users = state.users.read().await;
+        let account_key = users
+            .get(&uid)
+            .expect("user")
+            .attestation_key
+            .as_ref()
+            .expect("the attestation key still exists");
+        assert!(
+            account_key.unlock(TEST_PASSWORD).is_ok(),
+            "the password wrap must still open the key — a moved PRF output costs the user nothing"
+        );
+    }
+}
+
+/// **A UV-less assertion is never used for the unwrap** — because the ceremony refuses it outright.
+/// CTAP2.1 derives a different secret without user verification, so a UV-less PRF output could never
+/// open the wrap; the passkey ceremony requires UV, so such an assertion never even reaches the
+/// unlock. The unlock's own `user_verified` guard is therefore belt-and-braces, and this pins that
+/// the door in front of it is shut.
+#[tokio::test]
+async fn a_uv_less_prf_assertion_is_refused_and_never_unlocks() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness_with_attestation_key(&dir).await;
+    let mut authenticator = Authenticator::new().with_hmac_secret();
+    let (handle, _) = enrol_and_wrap(&state, uid, &token, &mut authenticator, "Telemóvel").await;
+
+    let (_, options) = send(
+        state.clone(),
+        post("/v1/session/passkey/options", json!({})),
+    )
+    .await;
+    // user_verified = false: the assertion is real and signed, but the UV bit is clear.
+    let (credential, prf_secret) =
+        authenticator.assert_with_prf(&options["public_key"], ORIGIN, RP_ID, &handle, false);
+    let (status, body) = send(
+        state.clone(),
+        post(
+            "/v1/session/passkey",
+            json!({ "credential": credential, "prf_secret": prf_secret }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "a UV-less assertion must be refused, so its (wrong-seed) secret is never tried: {body}"
+    );
+}
+
+/// **A credential with no PRF wrap signs in via the password fallback.** An old credential (enrolled
+/// before the wrap path, or on a non-PRF authenticator) has no wrap, so even a posted secret unlocks
+/// nothing — the sign-in succeeds and the session is asked for the password at first attestation.
+#[tokio::test]
+async fn an_un_wrapped_credential_signs_in_and_falls_back_to_password() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness_with_attestation_key(&dir).await;
+    // Enrol WITHOUT the wrap step, on a PRF-capable authenticator — the credential can produce a PRF
+    // output, but no wrap was ever sealed for it.
+    let mut authenticator = Authenticator::new().with_hmac_secret();
+    let handle = enrol(&state, uid, &token, &authenticator, "Telemóvel").await;
+    assert!(
+        state.users.read().await.get(&uid).expect("user").passkeys[0]
+            .prf_wrap
+            .is_none(),
+        "no wrap was sealed"
+    );
+
+    let (_, options) = send(
+        state.clone(),
+        post("/v1/session/passkey/options", json!({})),
+    )
+    .await;
+    let (credential, prf_secret) =
+        authenticator.assert_with_prf(&options["public_key"], ORIGIN, RP_ID, &handle, true);
+    let (status, session) = send(
+        state.clone(),
+        post(
+            "/v1/session/passkey",
+            json!({ "credential": credential, "prf_secret": prf_secret }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "sign-in still succeeds: {session}");
+    let new_token = session["token"].as_str().expect("token");
+    let unlocked = {
+        let sessions = state.sessions.read().await;
+        sessions
+            .get(new_token)
+            .expect("session")
+            .unlocked_key
+            .is_some()
+    };
+    assert!(
+        !unlocked,
+        "with no wrap to open, the session carries no key and falls back to the password"
+    );
 }
 
 // =================================================================================================

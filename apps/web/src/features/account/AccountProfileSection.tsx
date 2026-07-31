@@ -11,31 +11,29 @@
  *    renders, imported rather than reimplemented. It was already self-only by construction (it
  *    reads the session user), and it now writes through the self endpoint, which also means it
  *    finally works for the ordinary users it was always written for.
- * 3. **Os meus dados** — the RGPD subject-access export, and the one honest refusal on this
- *    surface.
+ * 3. **Os meus dados** — the RGPD subject-access export, self-service for everyone.
  *
- * ## The export, and why it is not self-service
+ * ## The export: a purpose-built self-service payload
  *
- * `GET /v1/privacy/users/{id}/export` is gated `privacy.manage`\@Global with **no self arm**. An
- * ordinary user therefore cannot export their own record, which is a real gap in the
- * subject-access story of a product that keeps a privacy register.
+ * `GET /v1/privacy/users/{id}/data-export` is the subject-access export (RGPD art. 15 / 20), gated
+ * **self OR `privacy.manage`**. It is a deliberately different payload from the administrative
+ * `…/export`: it carries only the subject's own personal data — profile and credential *metadata*
+ * (which credentials they hold, with names and dates, never any secret material) — and omits the
+ * role assignments and ledger event references that make the admin export structural, instance-level
+ * information. Those omissions are what let it be self-service.
  *
- * That gap is stated rather than closed here. Widening the verb — or adding a self arm — is a
- * privacy-model ruling, not a screen-wiring detail: the export carries the subject's role
- * assignments and their ledger event references, and "every user may read that about themselves"
- * is a decision with consequences beyond this card. So a holder of `privacy.manage` gets a working
- * download of their own record (there is nothing new to authorize — they may already export
- * anyone's), and everybody else is told, in a sentence, that the export exists and who to ask.
- * Silently hiding the card would leave a subject-access right invisible; a dead button would be a
- * lie about what pressing it does.
+ * So this card is the same for every account: a working download, with no permission check, calling
+ * the endpoint with the session user's own id. The server's self arm admits it; passing anyone
+ * else's id would be refused, but this surface never does. The earlier version of this card gated
+ * the button on `privacy.manage` and told everyone else the export was unavailable — that gap is now
+ * closed, so both the gate and the "unavailable" message are gone.
  */
 import { useEffect, useState } from 'react';
-import { useExportUserDsr, useUpdateMyProfile } from '../../api/hooks';
+import { useExportPersonalData, useUpdateMyProfile } from '../../api/hooks';
 import type { UserView } from '../../api/types';
 import { saveBlobAs, saveBlobResultMessage, type SaveBlobResult } from '../../desktop/saveFile';
 import { useT } from '../../i18n';
 import { Button, Card, Field, Icon, InlineWarning, Input, useToast } from '../../ui';
-import { useCan } from '../session/permissions';
 import { LanguagePreferenceSection } from '../settings/LanguagePreferenceSection';
 
 const EXPORT_CONTENT_TYPE = 'application/json';
@@ -132,13 +130,10 @@ function IdentityCard({ user }: { user: UserView }) {
 function MyDataCard({ user }: { user: UserView }) {
   const t = useT();
   const toast = useToast();
-  const can = useCan();
-  const dsrExport = useExportUserDsr(user.id);
-
-  // `privacy.manage` at Global is exactly what `GET /v1/privacy/users/{id}/export` requires. Read
-  // rather than gated-button: a holder gets a working control, and a non-holder gets a sentence
-  // that tells them the export exists and how to obtain it — which a disabled button cannot.
-  const mayExport = can('privacy.manage');
+  // The subject's own personal-data export, self-service for every account. `user.id` is the
+  // session user's own id (this surface only ever renders for the signed-in user), so the server's
+  // self arm authorizes it with no administrative permission.
+  const personalExport = useExportPersonalData(user.id);
 
   function showSaveResult(result: SaveBlobResult) {
     if (result.kind === 'cancelled') toast.info(saveBlobResultMessage(result));
@@ -146,13 +141,13 @@ function MyDataCard({ user }: { user: UserView }) {
   }
 
   function download() {
-    dsrExport.mutate(undefined, {
+    personalExport.mutate(undefined, {
       onSuccess: async (data) => {
         try {
           showSaveResult(
             await saveBlobAs({
               blob: new Blob([JSON.stringify(data, null, 2)], { type: EXPORT_CONTENT_TYPE }),
-              filename: `chancela-dsr-user-${safeFilenamePart(user.username)}.json`,
+              filename: `chancela-personal-data-${safeFilenamePart(user.username)}.json`,
               contentType: EXPORT_CONTENT_TYPE,
               filters: EXPORT_FILTERS,
               preferBrowserSavePicker: true,
@@ -170,21 +165,18 @@ function MyDataCard({ user }: { user: UserView }) {
     <Card title={t('account.export.card')}>
       <div className="stack">
         <p className="field__hint">{t('account.export.body')}</p>
-        {mayExport ? (
-          <div className="form__actions">
-            <Button
-              type="button"
-              variant="secondary"
-              icon={<Icon.FileText />}
-              disabled={dsrExport.isPending}
-              onClick={download}
-            >
-              {dsrExport.isPending ? t('account.export.pending') : t('account.export.download')}
-            </Button>
-          </div>
-        ) : (
-          <InlineWarning tone="info">{t('account.export.unavailable')}</InlineWarning>
-        )}
+        <InlineWarning tone="info">{t('account.export.scope')}</InlineWarning>
+        <div className="form__actions">
+          <Button
+            type="button"
+            variant="secondary"
+            icon={<Icon.FileText />}
+            disabled={personalExport.isPending}
+            onClick={download}
+          >
+            {personalExport.isPending ? t('account.export.pending') : t('account.export.download')}
+          </Button>
+        </div>
       </div>
     </Card>
   );

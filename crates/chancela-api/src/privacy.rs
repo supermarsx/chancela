@@ -38,6 +38,33 @@ use chancela_ledger::{
 };
 
 const FORMAT_VERSION: u32 = 1;
+/// Format version of the self-service subject-access export ([`PersonalDataExport`]). Independent of
+/// [`FORMAT_VERSION`] on purpose: the two payloads have different shapes and audiences, so a change
+/// to one must not silently bump the other.
+const PERSONAL_DATA_FORMAT_VERSION: u32 = 1;
+/// The stored secret material a personal-data export never serialises. None of these is a field of
+/// the output type — the guarantee is structural, not a redaction pass — but naming them lets the
+/// export state what it withheld instead of leaving "no secrets" implicit. `passkey_credential_key`
+/// covers the stored public key/credential state; a passkey has **no** server-side private key.
+const PERSONAL_DATA_EXCLUSIONS: &[&str] = &[
+    "password_hash",
+    "recovery_hash",
+    "totp_secret",
+    "totp_backup_codes",
+    "passkey_credential_key",
+    "attestation_key",
+];
+/// Honest, locale-agnostic scope statements the export carries about itself. Server-rendered English
+/// like the DSR export's `redaction_notes`: a subject-access export is a copy of stored data, so it
+/// says plainly what it is and — importantly — which categories of the subject's data it does NOT
+/// reach, rather than implying completeness. It makes no legal claim about the copy.
+const PERSONAL_DATA_NOTES: &[&str] = &[
+    "This file is a copy of the personal data this instance holds about your account, as of the export time. It is stored data, not a legal certificate or an attestation of anything.",
+    "Role assignments and audit-record (ledger) references are accountability records about the instance, not your personal profile, and are deliberately not included here.",
+    "Your live sign-in sessions are not part of this file; you can view and end them at any time in the account security area.",
+    "Records you have authored — books, minutes and documents — are instance records attributed to you for accountability, not account profile data, and are not part of this export.",
+    "No secret material is ever included: passwords, recovery phrases, one-time-code secrets and their backup codes, and credential keys never leave the server.",
+];
 const DSR_CREATED_KIND: &str = "privacy.dsr.request.created";
 const DSR_COMPLETED_KIND: &str = "privacy.dsr.request.completed";
 const PROCESSOR_CREATED_KIND: &str = "privacy.processor.created";
@@ -134,6 +161,137 @@ pub struct RoleAssignmentExport {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role_name: Option<String>,
     pub permissions: Vec<String>,
+}
+
+/// The self-service **subject-access** export (RGPD art. 15 / 20): the subject's OWN personal data,
+/// and nothing structural about the instance.
+///
+/// This is a **different payload** from [`PrivacyExport`], not the admin export with a gate dropped.
+/// [`PrivacyExport`] carries role assignments and ledger event references — accountability records
+/// about the instance — which is why it stays `privacy.manage`. This carries only what a data
+/// subject may access about themselves: their profile, and metadata about which credentials they
+/// hold (never any secret material). Optional fields are emitted **present-and-null** rather than
+/// skipped, so the shape is fixed across subjects for the contract harness's key-set equality.
+#[derive(Serialize)]
+pub struct PersonalDataExport {
+    pub exported_at: String,
+    /// `"user:{id}"`, matching the DSR export's scope idiom.
+    pub scope: String,
+    pub format_version: u32,
+    /// Honest, locale-agnostic statements about what this file is and what it does not reach.
+    pub notes: Vec<&'static str>,
+    /// The secret material categories that are never present.
+    pub exclusions: Vec<&'static str>,
+    pub subject: PersonalDataSubject,
+}
+
+/// The data subject's own account facts.
+#[derive(Serialize)]
+pub struct PersonalDataSubject {
+    pub id: String,
+    pub username: String,
+    pub display_name: String,
+    /// Present-and-null when no contact e-mail is set.
+    pub email: Option<String>,
+    /// The stored language-preference tag (`"auto"` or a BCP-47 locale), verbatim as stored.
+    pub language: String,
+    pub active: bool,
+    /// RFC 3339 enrolment stamp.
+    pub created_at: String,
+    pub credentials: PersonalDataCredentials,
+}
+
+/// Which credentials the subject holds — **metadata only**. Whether a password/recovery phrase/TOTP
+/// exists, and the non-secret descriptors of their passkeys. No hash, seed, backup code, key or
+/// other secret is representable here.
+#[derive(Serialize)]
+pub struct PersonalDataCredentials {
+    /// Whether a sign-in password is set. The hash is never included.
+    pub password_set: bool,
+    /// Whether a recovery phrase is established. The phrase and its verifier are never included.
+    pub recovery_phrase_set: bool,
+    /// Whether an administrator requires this account to hold a second factor.
+    pub two_factor_required: bool,
+    /// The subject's **confirmed** second factor, or null. A pending (unconfirmed) enrolment is not
+    /// a factor and reads as null.
+    pub two_factor: Option<PersonalDataTwoFactor>,
+    /// The subject's enrolled passkeys, newest last — names and dates only.
+    pub passkeys: Vec<PersonalDataPasskey>,
+}
+
+/// The subject's confirmed second factor. The TOTP secret and the backup codes live in the
+/// credential store and never appear here; only that a factor exists and its non-secret envelope.
+#[derive(Serialize)]
+pub struct PersonalDataTwoFactor {
+    /// The factor kind. Only `"totp"` exists today.
+    pub method: &'static str,
+    /// RFC 3339 confirmation stamp, or null if a legacy enrolment recorded none.
+    pub confirmed_at: Option<String>,
+    /// How many single-use backup codes remain unspent — a count, never the codes.
+    pub backup_codes_remaining: usize,
+}
+
+/// One enrolled passkey — the label the subject chose and its dates. Deliberately **not** the
+/// credential id, public key, RP id, transports or counters: those are technical/operational, not
+/// the subject's personal data, and a passkey has no server-side private key to disclose.
+#[derive(Serialize)]
+pub struct PersonalDataPasskey {
+    pub name: String,
+    pub created_at: String,
+    /// RFC 3339 stamp of the last successful use, or null if never used. Present-and-null (never
+    /// skipped) so every element of the array has the same key set.
+    pub last_used_at: Option<String>,
+}
+
+impl PersonalDataExport {
+    /// Build the export from a user record. Pure and synchronous: it reads only the durable [`User`]
+    /// and touches no session store, so a subject-access export is always producible and can never
+    /// fail on a transient session-service outage.
+    fn of(user: &User) -> Self {
+        let two_factor = user
+            .totp
+            .as_ref()
+            .filter(|enrolment| enrolment.is_active())
+            .map(|enrolment| PersonalDataTwoFactor {
+                method: "totp",
+                confirmed_at: enrolment.confirmed_at.clone(),
+                backup_codes_remaining: enrolment.backup_codes_remaining(),
+            });
+        let passkeys = user
+            .passkeys
+            .iter()
+            .map(|credential| PersonalDataPasskey {
+                name: credential.name.clone(),
+                created_at: credential.created_at.clone(),
+                last_used_at: credential.last_used_at.clone(),
+            })
+            .collect();
+        PersonalDataExport {
+            exported_at: OffsetDateTime::now_utc()
+                .format(&Rfc3339)
+                .unwrap_or_default(),
+            scope: format!("user:{}", user.id),
+            format_version: PERSONAL_DATA_FORMAT_VERSION,
+            notes: PERSONAL_DATA_NOTES.to_vec(),
+            exclusions: PERSONAL_DATA_EXCLUSIONS.to_vec(),
+            subject: PersonalDataSubject {
+                id: user.id.to_string(),
+                username: user.username.clone(),
+                display_name: user.display_name.clone(),
+                email: user.email.clone(),
+                language: user.language.as_str().to_owned(),
+                active: user.active,
+                created_at: user.created_at.clone(),
+                credentials: PersonalDataCredentials {
+                    password_set: user.password_hash.is_some(),
+                    recovery_phrase_set: user.recovery_hash.is_some(),
+                    two_factor_required: user.two_factor_required,
+                    two_factor,
+                    passkeys,
+                },
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -3790,6 +3948,50 @@ pub async fn export_user(
         },
         ledger_event_refs,
     }))
+}
+
+/// `GET /v1/privacy/users/{id}/data-export` — the subject's OWN personal data (RGPD art. 15 / 20).
+///
+/// Deliberately a **separate endpoint and payload** from [`export_user`], not that admin export with
+/// its gate widened. [`export_user`] carries role assignments and ledger event references —
+/// structural, accountability information about the *instance* — which is precisely why it was never
+/// widened to self. This one carries only the subject's own personal data: their profile and
+/// metadata about which credentials they hold (never any secret material). Because it is purely the
+/// subject's own data, it can be genuinely self-service.
+///
+/// ## Gate — self OR `privacy.manage`@Global
+///
+/// The self arm is genuinely self-only: it compares the acting session's own resolved principal id
+/// against the target id. A user who passes **another** user's id is not self, so the request falls
+/// through to the `privacy.manage` gate — an ordinary user is then refused with the generic 403 and
+/// learns nothing about that other subject (the user is not even looked up before the gate). A
+/// privacy officer, or an API-key principal that holds the verb, may export anyone's personal-data
+/// view through this same route; that is the clean copy to hand a data subject, so it is preferred
+/// over the structural admin export for fulfilling an access request on someone's behalf.
+///
+/// Ordering matters: authorization runs before the target is read, so the 403 for a non-self,
+/// non-privileged caller never depends on whether the id exists.
+pub async fn export_personal_data(
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    actor: CurrentActor,
+) -> Result<Json<PersonalDataExport>, ApiError> {
+    let target = UserId(id);
+
+    // Self arm first, then the privacy-officer arm. `principal()` is `Err` for an API key (no
+    // interactive self), so an API key is never "self" and must clear `privacy.manage` like any
+    // other non-self caller.
+    let authz = crate::authz::authorizer(&state, &actor).await?;
+    if authz.principal().ok() != Some(target) {
+        authz.require(Permission::PrivacyManage, Scope::Global)?;
+    }
+
+    let user = {
+        let users = state.users.read().await;
+        users.get(&target).cloned().ok_or(ApiError::NotFound)?
+    };
+
+    Ok(Json(PersonalDataExport::of(&user)))
 }
 
 /// `POST /v1/privacy/users/{id}/dsr-requests` — create a tracked DSR request for a user.

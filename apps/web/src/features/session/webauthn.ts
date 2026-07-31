@@ -34,6 +34,7 @@
  */
 import { isTauri } from '../../desktop/tauri';
 import type { CeremonyOptionsView, PasskeyCredentialJson } from '../../api/types';
+import { ATTESTATION_KEK_SALT, PRF_EVAL_SALT, deriveAttestationKek, zeroize } from './passkeyPrf';
 
 // =================================================================================================
 // base64url
@@ -419,4 +420,71 @@ export async function runAssertionCeremony(
     throw new PasskeyCeremonyError('not_user_verified');
   }
   return credentialToJson(credential);
+}
+
+/** An assertion plus the PRF-derived KEK, when the credential produced a PRF output. */
+export interface AssertionWithPrf {
+  credential: PasskeyCredentialJson;
+  /**
+   * The base64url of the PRF-derived KEK, or `undefined` when the authenticator returned no PRF
+   * output (a non-PRF credential, or a platform that declined). Post it beside the credential; the
+   * server opens the credential's wrap with it and mints a passwordless session. Its absence is the
+   * password fallback — an honest degradation, not an error.
+   */
+  prfSecret?: string;
+}
+
+/**
+ * Run an assertion ceremony that **also evaluates PRF**, for sign-in and the PRF-wrap step.
+ *
+ * The client adds `extensions.prf.eval.first` here rather than the server (see {@link PRF_EVAL_SALT}
+ * and `passkeyPrf.ts`): `webauthn_rp` cannot request `prf` on a discoverable ceremony without
+ * breaking non-PRF credentials, so the server verifies these paths with
+ * `error_on_unsolicited_extensions: false` and the browser is what solicits the output. The raw
+ * output never leaves this function — it is HKDF'd into a KEK and stripped from the credential
+ * ({@link stripPrfResults}) before either is used.
+ *
+ * A UV-less assertion is refused locally, exactly as {@link runAssertionCeremony} does, because
+ * without user verification the PRF seed differs and the derived secret could not open the wrap.
+ */
+export async function runAssertionCeremonyWithPrf(
+  options: CeremonyOptionsView,
+  { mediation, signal }: AssertionCeremonyOptions = {},
+): Promise<AssertionWithPrf> {
+  const requestOptions = toRequestOptions(options.public_key);
+  (requestOptions as { extensions?: Record<string, unknown> }).extensions = {
+    ...(requestOptions.extensions as Record<string, unknown> | undefined),
+    prf: { eval: { first: PRF_EVAL_SALT as BufferSource } },
+  };
+  const credential = (await navigator.credentials.get({
+    publicKey: requestOptions,
+    ...(mediation ? { mediation } : {}),
+    ...(signal ? { signal } : {}),
+  })) as PublicKeyCredential | null;
+  if (!credential) throw new PasskeyCeremonyError('cancelled');
+  const response = credential.response as unknown as CredentialResponseParts;
+  if (response.authenticatorData && !assertionWasUserVerified(response.authenticatorData)) {
+    throw new PasskeyCeremonyError('not_user_verified');
+  }
+  const prfSecret = await derivePrfSecret(credential);
+  return { credential: credentialToJson(credential), prfSecret };
+}
+
+/**
+ * Read `getClientExtensionResults().prf.results.first` and HKDF it into the attestation-key KEK.
+ * `undefined` when there is no output — the fallback path. The derived bytes are base64url'd for
+ * transport; the intermediate key material is zeroized as soon as it is consumed.
+ */
+async function derivePrfSecret(credential: PublicKeyCredential): Promise<string | undefined> {
+  const ext = credential.getClientExtensionResults() as unknown as {
+    prf?: { results?: { first?: ArrayBuffer | Uint8Array } };
+  };
+  const first = ext.prf?.results?.first;
+  if (!first) return undefined;
+  const ikm = first instanceof Uint8Array ? new Uint8Array(first) : new Uint8Array(first);
+  const kek = await deriveAttestationKek(ikm, ATTESTATION_KEK_SALT);
+  const secret = toBase64Url(kek);
+  zeroize(kek);
+  zeroize(ikm);
+  return secret;
 }

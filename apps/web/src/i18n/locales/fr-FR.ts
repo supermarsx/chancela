@@ -6909,6 +6909,10 @@ export const frFR: Catalog = {
   'users.passkeys.signingNote.title': 'Le mot de passe reste demandé au moment de signer',
   'users.passkeys.signingNote.body':
     '« {name} » vous connecte désormais à ce compte. La clé d’audit avec laquelle vous signez les documents s’ouvre avec votre mot de passe : il vous sera donc demandé la première fois que vous signerez.',
+  'users.passkeys.passwordlessNote.title': 'Cette clé d’accès vous connecte sans mot de passe',
+  'users.passkeys.passwordlessNote.body':
+    '« {name} » vous connecte désormais à ce compte et ouvre la clé d’audit, si bien que votre mot de passe ne vous sera pas demandé pour signer.',
+  'users.passkeys.passwordless.badge': 'Sans mot de passe',
   'users.passkeys.rename': 'Renommer',
   'users.passkeys.renamed': 'Clé d’accès renommée.',
   'users.passkeys.revoke': 'Supprimer',
@@ -6993,11 +6997,11 @@ export const frFR: Catalog = {
     'Les rôles attribués, l’état du compte et l’exigence d’un second facteur relèvent de l’administration et ne se modifient pas ici.',
   'account.export.card': 'Mes données',
   'account.export.body':
-    'L’export rassemble votre profil, les rôles qui vous sont attribués et les références aux événements du journal d’audit où vous figurez. Il ne contient ni mots de passe, ni phrases de récupération, ni clés privées.',
+    'Téléchargez une copie des données personnelles que cette instance conserve sur votre compte : votre profil, la préférence de langue et l’état du compte, ainsi qu’un relevé des identifiants de connexion que vous détenez. Elle ne contient aucun mot de passe, phrase de récupération, secret de code à usage unique ni clé.',
+  'account.export.scope':
+    'Elle ne couvre que les données de votre compte : les rôles attribués et les références au journal d’audit sont conservés à des fins de responsabilité et n’en font pas partie.',
   'account.export.download': 'Télécharger l’export',
   'account.export.pending': 'Préparation de l’export',
-  'account.export.unavailable':
-    'L’export de vos données exige la permission de gestion de la confidentialité, que ce compte ne détient pas. Demandez-la à qui administre l’instance.',
   'account.security.lede':
     'Ce que ce compte détient aujourd’hui pour prouver votre identité. Les modifications se font dans les cartes ci-dessous.',
   'account.security.adminView': 'Voir ce compte dans l’espace d’administration',

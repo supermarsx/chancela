@@ -6830,6 +6830,10 @@ export const daDK: Catalog = {
   'users.passkeys.signingNote.title': 'Adgangskoden bliver stadig krævet, når du signerer',
   'users.passkeys.signingNote.body':
     'Med „{name}“ logger du fra nu af ind på denne konto. Den revisionsnøgle, du signerer dokumenter med, åbnes med adgangskoden, så du bliver bedt om den første gang du signerer.',
+  'users.passkeys.passwordlessNote.title': 'Denne adgangsnøgle logger dig ind uden adgangskode',
+  'users.passkeys.passwordlessNote.body':
+    'Med „{name}“ logger du fra nu af ind på denne konto og åbner revisionsnøglen, så du ikke bliver bedt om din adgangskode for at signere.',
+  'users.passkeys.passwordless.badge': 'Ingen adgangskode',
   'users.passkeys.rename': 'Omdøb',
   'users.passkeys.renamed': 'Adgangsnøgle omdøbt.',
   'users.passkeys.revoke': 'Fjern',
@@ -6913,11 +6917,11 @@ export const daDK: Catalog = {
     'Tildelte roller, kontoens tilstand og kravet om en anden faktor er administrative beslutninger og ændres ikke her.',
   'account.export.card': 'Mine data',
   'account.export.body':
-    'Eksporten samler din profil, de roller du er tildelt, og henvisninger til de hændelser i revisionsloggen, du optræder i. Den indeholder hverken adgangskoder, gendannelsessætninger eller private nøgler.',
+    'Hent en kopi af de personoplysninger, som denne instans opbevarer om din konto: din profil, sprogindstillingen og kontostatus samt en oversigt over, hvilke loginoplysninger du har. Den indeholder ingen adgangskoder, gendannelsessætninger, hemmeligheder til engangskoder eller nøgler.',
+  'account.export.scope':
+    'Den omfatter kun dine kontooplysninger: tildelte roller og henvisninger til revisionsloggen opbevares af hensyn til ansvarlighed og er ikke en del af den.',
   'account.export.download': 'Hent eksporten',
   'account.export.pending': 'Forbereder eksporten',
-  'account.export.unavailable':
-    'Eksport af dine data kræver tilladelsen til privatlivsstyring, som denne konto ikke har. Bed om den hos den, der administrerer instansen.',
   'account.security.lede':
     'Det, denne konto har i dag til at bevise, hvem du er. Ændringer foretages i kortene nedenfor.',
   'account.security.adminView': 'Se denne konto i administrationsområdet',

@@ -234,6 +234,7 @@ import type {
   PasskeyListView,
   CeremonyOptionsView,
   FinishPasskeyEnrolmentBody,
+  FinishPrfWrapBody,
   RenamePasskeyBody,
   RevokePasskeyBody,
   PasskeySignInBody,
@@ -321,6 +322,7 @@ import type {
   StartOverInstanceView,
   SetBookLegalHoldBody,
   UserDsrExport,
+  UserPersonalDataExport,
   AppendGroupTemplateLibraryRevisionBody,
   CompanyGroupView,
   ConnectorJobListView,
@@ -1687,6 +1689,12 @@ export const api = {
   suspendMyAccount: (body: SuspendMyAccountBody) =>
     post<SuspendedAccountView>('/v1/me/suspend', body),
   exportUserDsr: (id: string) => get<UserDsrExport>(`/v1/privacy/users/${id}/export`),
+  // The subject's OWN personal data (RGPD art. 15/20). Self-service: the server's self arm admits
+  // any interactive session for its own `id` with no administrative permission, and refuses another
+  // subject's `id` unless the caller holds `privacy.manage`. A different, narrower payload than
+  // `exportUserDsr` — no roles, no ledger references, no secret material.
+  exportPersonalData: (id: string) =>
+    get<UserPersonalDataExport>(`/v1/privacy/users/${id}/data-export`),
   listUserDsrRequests: (id: string) =>
     get<DsrRequestView[]>(`/v1/privacy/users/${id}/dsr-requests`),
   createUserDsrRequest: (id: string, body: CreateDsrRequestBody) =>
@@ -1778,6 +1786,16 @@ export const api = {
     post<PasskeyView>(`/v1/users/${id}/passkeys`, body),
   renamePasskey: (id: string, credentialId: string, body: RenamePasskeyBody) =>
     patch<PasskeyView>(`/v1/users/${id}/passkeys/${encodeURIComponent(credentialId)}`, body),
+  // The PRF-wrap ceremony (t10 passwordless): a `get()` after enrolment whose PRF output seals a
+  // second wrap of the attestation scalar, so this credential can later sign in without a password.
+  // Self-only; the finish step needs the session's unlocked attestation key.
+  beginPasskeyPrfWrap: (id: string, credentialId: string) =>
+    post<CeremonyOptionsView>(
+      `/v1/users/${id}/passkeys/${encodeURIComponent(credentialId)}/prf/options`,
+      {},
+    ),
+  finishPasskeyPrfWrap: (id: string, credentialId: string, body: FinishPrfWrapBody) =>
+    post<PasskeyView>(`/v1/users/${id}/passkeys/${encodeURIComponent(credentialId)}/prf`, body),
   revokePasskey: (id: string, credentialId: string, body: RevokePasskeyBody) =>
     del<PasskeyListView>(`/v1/users/${id}/passkeys/${encodeURIComponent(credentialId)}`, body),
   // The step-up ceremony. The challenge it mints is bound to this session's user AND to the

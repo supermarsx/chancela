@@ -24,9 +24,10 @@
  * | active sign-ins | `/v1/sessions*` | session, caller-scoped |
  * | suspend my account | `POST /v1/me/suspend` | session, self + step-up |
  *
- * The one capability that is NOT self-service is data export: `GET /v1/privacy/users/{id}/export`
- * is `privacy.manage`\@Global with no self arm. That is surfaced honestly rather than papered over
- * — see {@link AccountProfileSection}.
+ * Data export is self-service too, through a purpose-built subject-access endpoint:
+ * `GET /v1/privacy/users/{id}/data-export` is gated self OR `privacy.manage`, and carries only the
+ * subject's own personal data (not the role assignments and ledger references the administrative
+ * `…/export` adds) — see {@link AccountProfileSection}.
  *
  * ## Information architecture: three sections, English slugs, in the PATH
  *

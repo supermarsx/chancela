@@ -6918,6 +6918,10 @@ export const deDE: Catalog = {
   'users.passkeys.signingNote.title': 'Das Passwort wird beim Signieren weiterhin abgefragt',
   'users.passkeys.signingNote.body':
     'Mit „{name}“ melden Sie sich ab jetzt bei diesem Konto an. Der Prüfschlüssel, mit dem Sie Dokumente signieren, öffnet sich mit Ihrem Passwort — beim ersten Signieren werden Sie also danach gefragt.',
+  'users.passkeys.passwordlessNote.title': 'Dieser Passkey meldet Sie ohne Passwort an',
+  'users.passkeys.passwordlessNote.body':
+    'Mit „{name}“ melden Sie sich ab jetzt bei diesem Konto an und öffnen den Prüfschlüssel, sodass Sie beim Signieren nicht nach Ihrem Passwort gefragt werden.',
+  'users.passkeys.passwordless.badge': 'Kein Passwort',
   'users.passkeys.rename': 'Umbenennen',
   'users.passkeys.renamed': 'Passkey umbenannt.',
   'users.passkeys.revoke': 'Entfernen',
@@ -7002,11 +7006,11 @@ export const deDE: Catalog = {
     'Zugewiesene Rollen, der Kontostatus und die Pflicht zu einem zweiten Faktor sind Verwaltungsentscheidungen und werden hier nicht geändert.',
   'account.export.card': 'Meine Daten',
   'account.export.body':
-    'Der Export umfasst Ihr Profil, die Ihnen zugewiesenen Rollen und Verweise auf die Ereignisse des Prüfprotokolls, in denen Sie vorkommen. Passwörter, Wiederherstellungsphrasen und private Schlüssel sind nicht enthalten.',
+    'Laden Sie eine Kopie der personenbezogenen Daten herunter, die diese Instanz zu Ihrem Konto speichert: Ihr Profil, die Spracheinstellung und den Kontostatus sowie eine Aufstellung darüber, welche Anmeldedaten Sie besitzen. Sie enthält keine Passwörter, Wiederherstellungsphrasen, Einmalcode-Geheimnisse oder Schlüssel.',
+  'account.export.scope':
+    'Sie umfasst nur Ihre Kontodaten: zugewiesene Rollen und Verweise auf das Prüfprotokoll werden zur Nachvollziehbarkeit aufbewahrt und sind nicht Teil der Datei.',
   'account.export.download': 'Export herunterladen',
   'account.export.pending': 'Export wird vorbereitet',
-  'account.export.unavailable':
-    'Der Export Ihrer Daten erfordert die Berechtigung zur Datenschutzverwaltung, die dieses Konto nicht besitzt. Fragen Sie danach bei der Verwaltung dieser Instanz.',
   'account.security.lede':
     'Was dieses Konto derzeit besitzt, um Ihre Identität nachzuweisen. Geändert wird in den Karten darunter.',
   'account.security.adminView': 'Dieses Konto im Verwaltungsbereich ansehen',

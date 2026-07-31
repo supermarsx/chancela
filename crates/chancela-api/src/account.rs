@@ -27,11 +27,14 @@
 //!   holder may not clear that requirement. (The holder still enrols the factor itself — the secret
 //!   has to reach their own authenticator — see [`crate::totp`].)
 //! - **Roles.** Authority is granted, never self-claimed.
-//! - **Self data export.** `GET /v1/privacy/users/{id}/export` is `privacy.manage`\@Global with no
-//!   self arm, so an ordinary user cannot export their own record. That is a genuine gap in the
-//!   subject-access story and is deliberately left as one rather than papered over by widening the
-//!   verb here: the export carries role assignments and ledger references, and deciding that every
-//!   user may read those about themselves is a privacy-model ruling, not a screen-wiring detail.
+//! - **Self data export.** Now served, but NOT by widening `patch_user` or the admin export here.
+//!   The administrative `GET /v1/privacy/users/{id}/export` stays `privacy.manage`\@Global because
+//!   it carries role assignments and ledger references — structural, instance-level information. The
+//!   subject-access right is served instead by a purpose-built sibling,
+//!   `GET /v1/privacy/users/{id}/data-export` ([`crate::privacy::export_personal_data`]), gated self
+//!   OR `privacy.manage`, carrying only the subject's own personal data and credential *metadata*
+//!   (never any secret material). Its self arm is genuinely self-only — another subject's id falls
+//!   through to the `privacy.manage` gate.
 //!
 //! ## Step-up on the suspension, and only on it
 //!

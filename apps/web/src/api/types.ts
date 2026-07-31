@@ -5054,6 +5054,15 @@ export interface PasskeyView {
   /** WebAuthn transport hints (`usb`, `nfc`, `ble`, `smart-card`, `hybrid`, `internal`). */
   transports: string[];
   prf_capable: boolean;
+  /**
+   * Whether this credential actually signs in **without a password** — i.e. whether it holds a PRF
+   * wrap of the attestation key. This, not {@link prf_capable}, is what the security screen keys its
+   * copy on: a credential that can attest passwordless says «sem palavra-passe», one that falls back
+   * says the password is still asked. `prf_capable` only records that the *authenticator* could
+   * provision the secret; a capable authenticator whose PRF-wrap ceremony never completed still
+   * falls back, so the copy must follow the wrap that exists, not the capability that might have.
+   */
+  unlocks_without_password: boolean;
   sign_count: number;
 }
 
@@ -5071,7 +5080,7 @@ export interface PasskeyListView {
 }
 
 /** What a ceremony may be completed for. A sign-in ceremony can never satisfy a step-up. */
-export type PasskeyCeremonyPurpose = 'registration' | 'sign_in' | 'step_up';
+export type PasskeyCeremonyPurpose = 'registration' | 'sign_in' | 'step_up' | 'prf_wrap';
 
 /**
  * A begun ceremony: the `PublicKeyCredential*OptionsJSON` to hand to `navigator.credentials`, plus
@@ -5115,6 +5124,25 @@ export interface RevokePasskeyBody {
 /** `POST /v1/session/passkey` — finish a sign-in. Unauthenticated, and carries no identifier. */
 export interface PasskeySignInBody {
   credential: PasskeyCredentialJson;
+  /**
+   * The base64url of the **PRF-derived KEK** when the browser obtained a PRF output for this
+   * assertion (HKDF over `getClientExtensionResults().prf.results.first`). Absent for a credential
+   * that produced no output — the password fallback. It is a secret in a request body and is
+   * zeroized as soon as it is sent, exactly like `password`; the server uses it only to open the
+   * credential's PRF wrap and never stores it.
+   */
+  prf_secret?: string;
+}
+
+/**
+ * `POST /v1/users/{id}/passkeys/{credential_id}/prf` — seal the PRF wrap that enables passwordless
+ * sign-in for this credential. The `credential` is the assertion from the PRF-wrap `get()`; the
+ * `prf_secret` is the KEK derived from its PRF output. Self-only, and the session must hold the
+ * unlocked attestation key.
+ */
+export interface FinishPrfWrapBody {
+  credential: PasskeyCredentialJson;
+  prf_secret: string;
 }
 
 // --- Active sessions — frozen contract from t107 (t95, funded) -------------------
@@ -6078,6 +6106,70 @@ export interface UserDsrExport {
   exclusions: string[];
   user: UserDsrExportUser;
   ledger_event_refs: LedgerEventView[];
+}
+
+/** The subject's confirmed second factor in a {@link UserPersonalDataExport} — non-secret envelope
+ *  only. The TOTP secret and backup codes never leave the server; this reports that a factor exists,
+ *  when it was confirmed, and how many backup codes remain. */
+export interface PersonalDataTwoFactor {
+  /** The factor kind; only `"totp"` exists today. */
+  method: string;
+  /** RFC 3339 confirmation stamp, or `null` for a legacy enrolment that recorded none. */
+  confirmed_at: string | null;
+  backup_codes_remaining: number;
+}
+
+/** One enrolled passkey in a {@link UserPersonalDataExport} — the subject's chosen label and dates
+ *  only, never the credential id, key material, RP id, transports or counters. */
+export interface PersonalDataPasskey {
+  name: string;
+  created_at: string;
+  /** RFC 3339 stamp of last use, or `null` if never used. Always present (never omitted). */
+  last_used_at: string | null;
+}
+
+/** Which credentials the subject holds — metadata only, no secret material. */
+export interface PersonalDataCredentials {
+  password_set: boolean;
+  recovery_phrase_set: boolean;
+  two_factor_required: boolean;
+  /** The confirmed second factor, or `null` when none is confirmed. */
+  two_factor: PersonalDataTwoFactor | null;
+  passkeys: PersonalDataPasskey[];
+}
+
+/** The data subject's own account facts in a {@link UserPersonalDataExport}. */
+export interface PersonalDataSubject {
+  id: string;
+  username: string;
+  display_name: string;
+  /** The contact e-mail, or `null` when none is set. Always present (never omitted). */
+  email: string | null;
+  /** The stored language-preference tag (`"auto"` or a BCP-47 locale). */
+  language: string;
+  active: boolean;
+  created_at: string;
+  credentials: PersonalDataCredentials;
+}
+
+/**
+ * The self-service **subject-access** export (RGPD art. 15 / 20) returned by
+ * `GET /v1/privacy/users/{id}/data-export`: the subject's OWN personal data, and nothing structural
+ * about the instance.
+ *
+ * A different payload from {@link UserDsrExport}, not the admin export with its gate dropped. The
+ * admin export carries role assignments and ledger event references — accountability records about
+ * the instance — and stays `privacy.manage`. This carries only the subject's profile and credential
+ * metadata (never any secret material), so an ordinary user may download their own with no
+ * administrative permission. `notes` states what the file is and which categories it does not reach.
+ */
+export interface UserPersonalDataExport {
+  exported_at: string;
+  scope: string;
+  format_version: number;
+  notes: string[];
+  exclusions: string[];
+  subject: PersonalDataSubject;
 }
 
 /** `GET /v1/ledger/attestations/{seq}` — a server-verified attestation, or 404. */
