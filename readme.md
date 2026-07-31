@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>Self-hostable, ledger-backed <em>livro de atas</em> for Portuguese collective entities.</strong><br>
-  A records, signing and archive tool — not a guarantee of legal validity.
+  A records, signing and archive tool.
 </p>
 
 <p align="center">
