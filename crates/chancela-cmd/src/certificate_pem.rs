@@ -1538,4 +1538,175 @@ mod tests {
             other => panic!("a chain error must become CmdError::Certificate, got {other:?}"),
         }
     }
+
+    // --- Key integrity: sanitise the framing, never the key -----------------------------------------
+
+    /// A SECOND, distinct synthetic self-signed certificate — a different RSA-2048 key from [`CLEAN`],
+    /// so a chain built from the two has a leaf and an issuer told apart by their key. Generated with
+    /// `openssl req -x509 -newkey rsa:2048` (CN=CMD Test Issuer, O=Encosto Estratégico Lda); no real
+    /// AMA material. Its whole purpose is the leaf-selection proof: if sanitisation could shift a
+    /// byte, the wrong certificate would present as the leaf and the signature would verify against
+    /// nothing.
+    const DISTINCT_ISSUER_CERT: &str = r"-----BEGIN CERTIFICATE-----
+MIIDczCCAlugAwIBAgIUMfqjQfNHZyWjGCBrrvkbShuP2p0wDQYJKoZIhvcNAQEL
+BQAwSTELMAkGA1UEBhMCUFQxIDAeBgNVBAoMF0VuY29zdG8gRXN0cmF0ZWdpY28g
+TGRhMRgwFgYDVQQDDA9DTUQgVGVzdCBJc3N1ZXIwHhcNMjYwNzMxMTcwMjI5WhcN
+MzYwNzI4MTcwMjI5WjBJMQswCQYDVQQGEwJQVDEgMB4GA1UECgwXRW5jb3N0byBF
+c3RyYXRlZ2ljbyBMZGExGDAWBgNVBAMMD0NNRCBUZXN0IElzc3VlcjCCASIwDQYJ
+KoZIhvcNAQEBBQADggEPADCCAQoCggEBAMqYz5cpHnm50BzFmnvAz0koggQiU/qx
+GMK94T9BuMmRh21KvJ3FlsPymqvdWa+4Mno/7QhUKKSCDZxdFL0i3xfK62XHrnps
+dXqc9MeVbegD7AYxXRO9u38qayx0C+8GkxZotEdgRciklFb9j58xOZwthdMbObYa
+JyuKC/U6KLkwskhLB3DEbHIC1HniSQCLZAFxGN/LglizA+Xx4RrWsa9p9UZCBcz8
+QKRk7Lh4DNjgD9Y+4+1P8Yl3EN8XJ49LLEe59e50VvL5dA2oBC7rJgbvg3xbzG8A
+CycQSUQnlAiUJN2rhZr0MeEQa5INdaQgAyPOirhRRHB68xLJwwGqjdMCAwEAAaNT
+MFEwHQYDVR0OBBYEFN7cz0K0w8Wa0eQIQ7BXM3lrdr+qMB8GA1UdIwQYMBaAFN7c
+z0K0w8Wa0eQIQ7BXM3lrdr+qMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQEL
+BQADggEBAHXy4atfD7lp2ogzhWR5Bq3wBpT0Jz/G+Uv4jIMxrcQGIGXrhazPLlKV
+fnXnx5Z3WGiYW1ozj/ZjB8rAKptSBUqgrlQbgM7JRPoMXHmOA0rwCBqPsH3zzgwm
+yaP4z+U/Xgsa9ilsnspLlJDI3zhUqWi4xzVqTsOtW5eAzMaIN1MrQCslkSijyGJK
+usydaCbOvB9YBdWlDVlDBYjnY7wklFhLHTWenOl7O40h9qNCypzeDwX23/jXsMKr
+T9qeDRk3lSowd3xvYfbCUK7O6PvrbI+zoljKHuuEURgq6/vZu+SGd522nn1zQrGe
+vDFQV1saFhFNm2jzZw6GkbIGqSVYaoU=
+-----END CERTIFICATE-----
+";
+
+    /// The SHA-256 fingerprint of a decoded certificate's `SubjectPublicKeyInfo` — the public key
+    /// inside it, independent of the framing around it. Computed the same way the input side's
+    /// [`NormalizedAmaKeyPem::public_key_sha256_fingerprint`] is, so a certificate and its bare key
+    /// fingerprint alike.
+    fn spki_fingerprint_of(cert_der: &[u8]) -> String {
+        let cert = Certificate::from_der(cert_der).expect("a decoded chain cert is valid X.509");
+        let spki = cert
+            .tbs_certificate
+            .subject_public_key_info
+            .to_der()
+            .expect("its SubjectPublicKeyInfo re-encodes");
+        hex_sha256(&spki)
+    }
+
+    /// A filthy copy of a two-cert chain: NUL+BOM+spaces preamble, NUL/CRLF/BEL between the blocks,
+    /// and BOM+NUL epilogue — every byte of it outside the base64 bodies.
+    fn filthy_two_cert_chain(leaf: &str, issuer: &str) -> String {
+        format!(
+            "\u{0}\u{FEFF}  {}\r\n\u{0}\u{0007}\n{}\n\u{FEFF}\u{0}",
+            leaf.trim_end(),
+            issuer.trim_end(),
+        )
+    }
+
+    /// **The key-integrity proof, single certificate.** A filthy copy and its clean twin normalise to
+    /// byte-identical DER *and* an identical public-key fingerprint. This is the same guarantee the
+    /// input side makes for a pasted key, made here for the response path because the signing key is
+    /// selected out of this chain.
+    #[test]
+    fn key_survives_sanitisation_byte_for_byte_for_one_certificate() {
+        let clean = normalize_response_cert_chain(CLEAN).unwrap();
+        let filthy_src = format!("\u{0}\u{FEFF}\r\n{}\n\u{0}", CLEAN.trim_end());
+        let filthy = normalize_response_cert_chain(&filthy_src).unwrap();
+
+        assert_eq!(clean.len(), 1);
+        assert_eq!(filthy.len(), 1);
+        // The decoded DER — the bytes the signature is over — did not move.
+        assert_eq!(filthy[0], clean[0]);
+        assert_eq!(filthy[0], reference_der());
+        // Nor did the public key inside it, checked against the module's independent SPKI reference.
+        assert_eq!(
+            spki_fingerprint_of(&filthy[0]),
+            spki_fingerprint_of(&clean[0])
+        );
+        assert_eq!(
+            spki_fingerprint_of(&filthy[0]),
+            hex_sha256(&reference_spki_der())
+        );
+    }
+
+    /// **The key-integrity proof, and leaf selection, across a DISTINCT chain.** The leaf and issuer
+    /// carry different keys, so this can prove the thing that matters most: sanitising the framing
+    /// neither changes which certificate is the leaf nor the key it carries. If normalisation could
+    /// shift a byte, the leaf's fingerprint would move — and `flow.rs` selects index 0 as the signing
+    /// certificate, so a shifted leaf is a signature that verifies against nothing.
+    #[test]
+    fn key_survives_and_leaf_selection_holds_across_a_distinct_chain() {
+        let clean = normalize_response_cert_chain(&format!(
+            "{}\n{}\n",
+            CLEAN.trim_end(),
+            DISTINCT_ISSUER_CERT.trim_end()
+        ))
+        .unwrap();
+        assert_eq!(clean.len(), 2);
+        let clean_leaf_fp = spki_fingerprint_of(&clean[0]);
+        let clean_issuer_fp = spki_fingerprint_of(&clean[1]);
+        // The two certs genuinely carry different keys, or the leaf-selection proof below is vacuous.
+        assert_ne!(
+            clean_leaf_fp, clean_issuer_fp,
+            "the leaf and issuer must have distinct keys for this proof to mean anything"
+        );
+        assert_eq!(
+            clean_leaf_fp,
+            hex_sha256(&reference_spki_der()),
+            "the leaf is the CLEAN fixture's key"
+        );
+
+        let filthy =
+            normalize_response_cert_chain(&filthy_two_cert_chain(CLEAN, DISTINCT_ISSUER_CERT))
+                .unwrap();
+        assert_eq!(
+            filthy.len(),
+            2,
+            "sanitising the framing must not drop or add a certificate"
+        );
+        // Order preserved, bytes preserved, keys preserved — position by position.
+        assert_eq!(filthy[0], clean[0]);
+        assert_eq!(filthy[1], clean[1]);
+        assert_eq!(spki_fingerprint_of(&filthy[0]), clean_leaf_fp);
+        assert_eq!(spki_fingerprint_of(&filthy[1]), clean_issuer_fp);
+        // The direction the sharpening is about: after sanitisation the LEAF still carries the leaf's
+        // key, never the issuer's. `flow.rs::parse_cert_chain` takes `ders.remove(0)` as the signing
+        // certificate, so this is exactly the key the signature is built against.
+        assert_ne!(
+            spki_fingerprint_of(&filthy[0]),
+            clean_issuer_fp,
+            "sanitisation must never let the issuer present as the leaf"
+        );
+    }
+
+    /// A control byte, a BOM or a zero-width space **inside a body** is corruption of the key's own
+    /// bytes, and is refused — never stripped like the preamble framing. This is the line the
+    /// sharpening draws: outside the blocks such bytes are armour and are removed; inside them they
+    /// mean the payload is wrong, and a signature surface fails rather than massages it into a
+    /// different key that parses.
+    #[test]
+    fn a_control_byte_inside_a_body_is_refused_not_stripped() {
+        let body = body_of(CLEAN, BEGIN_CERTIFICATE, END_CERTIFICATE);
+        let corrupt = format!(
+            "{BEGIN_CERTIFICATE}\n{}\u{0}{}\n{END_CERTIFICATE}\n",
+            &body[..8],
+            &body[8..]
+        );
+        match normalize_response_cert_chain(&corrupt).unwrap_err() {
+            CertificateChainError::IllegalCharacterInBody {
+                index, character, ..
+            } => {
+                assert_eq!(index, 0);
+                assert_eq!(character, "U+0000");
+            }
+            other => panic!("a NUL inside the body must be refused, not stripped, got {other:?}"),
+        }
+        // A BOM and a zero-width space inside the body are refused the same way — the input side
+        // would strip these, but the response body must not be touched.
+        for junk in ['\u{FEFF}', '\u{200B}'] {
+            let corrupt = format!(
+                "{BEGIN_CERTIFICATE}\n{}{junk}{}\n{END_CERTIFICATE}\n",
+                &body[..8],
+                &body[8..]
+            );
+            assert!(
+                matches!(
+                    normalize_response_cert_chain(&corrupt),
+                    Err(CertificateChainError::IllegalCharacterInBody { .. })
+                ),
+                "a {junk:?} inside the body must be refused, not stripped"
+            );
+        }
+    }
 }
