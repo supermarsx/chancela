@@ -11137,6 +11137,15 @@ input[type='radio']:disabled {
   gap: 0.5rem;
 }
 
+/* The passkey action is one tidy button, then its hint below. `align-items: center` on the column
+   already sizes it to its content rather than the full card width; `white-space: nowrap` keeps the
+   uppercase label + icon on a single line so it reads as a button, not a wrapped block, and
+   `max-width: 100%` lets it shrink gracefully on a very narrow card instead of overflowing. */
+.signin__alt > .btn {
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* --- Recently used identifiers on THIS device (t33) ------------------------
    The sign-in identifier is typed; this block is the convenience list of accounts that
    have successfully signed in in this browser. Each row pairs a "fill the field" button
