@@ -3215,8 +3215,23 @@ export const svFI: Catalog = {
   'signing.start': 'Signera med Chave Móvel Digital',
   'signing.credentials.intro':
     'Ange det mobilnummer som är kopplat till Chave Móvel Digital och signerings-PIN-koden. PIN-koden används endast för denna begäran och sparas aldrig.',
+  'signing.phone.forget.action': 'Ta bort nummer',
+  'signing.phone.forget.intro':
+    'Bekräfta din identitet för att ta bort det sparade numret. Det fylls inte längre i automatiskt och du måste skriva det vid varje underskrift.',
+  'signing.phone.forget.title': 'Ta bort det sparade numret',
   'signing.phone.label': 'Mobilnummer',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Spara nummer',
+  'signing.phone.remember.hint':
+    'Numret krypteras med dina egna inloggningsuppgifter och kan bara läsas i dina sessioner. Du kan ta bort det när du vill.',
+  'signing.phone.remember.intro':
+    'Bekräfta din identitet för att spara det här numret på ditt konto. Det fylls i automatiskt vid dina nästa underskrifter med Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Spara det här numret på mitt konto',
+  'signing.phone.remember.locked.body':
+    'Ett nummer är sparat som den här sessionen inte kan dekryptera. Om du loggade in utan lösenord, logga in igen med det; om kontots attesteringsnyckel har bytts ut sedan dess, avmarkera rutan och spara numret på nytt.',
+  'signing.phone.remember.locked.title': 'Sparat nummer är inte tillgängligt i den här sessionen',
+  'signing.phone.remember.pending': 'Sparar…',
+  'signing.phone.remember.title': 'Spara mobilnumret',
   'signing.pin.label': 'CMD-signerings-PIN',
   'signing.pin.hint': 'Används endast för denna begäran; sparas aldrig.',
   'signing.initiate': 'Skicka SMS-kod',
@@ -3735,6 +3750,8 @@ export const svFI: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Den här platsen kan inte påbörjas ännu eftersom det sekventiella kuvertet har en tidigare obligatorisk plats som är öppen. Skapa först inbjudan för den föregående platsen eller lämna den här inbjudan endast som spårning.',
   'toast.signing.otpSent': 'SMS-kod skickad.',
+  'toast.signing.phoneForgotten': 'Numret har tagits bort.',
+  'toast.signing.phoneSaved': 'Numret har sparats.',
   'toast.signing.signed': 'Protokoll signerat.',
   'toast.signing.ccBatchSigned': 'CC-signeringsbatch slutförd.',
   'toast.signing.remoteBatchInitiated': 'Fjärrsessioner initierade.',

@@ -3216,8 +3216,23 @@ export const plPL: Catalog = {
   'signing.start': 'Podpisz za pomocą Chave Móvel Digital',
   'signing.credentials.intro':
     'Wprowadź numer telefonu powiązany z Chave Móvel Digital oraz PIN podpisu. PIN jest używany wyłącznie do tego żądania i nigdy nie jest przechowywany.',
+  'signing.phone.forget.action': 'Usuń numer',
+  'signing.phone.forget.intro':
+    'Potwierdź swoją tożsamość, aby usunąć zapisany numer. Nie będzie już wypełniany automatycznie i trzeba będzie wpisywać go przy każdym podpisie.',
+  'signing.phone.forget.title': 'Usuń zapisany numer',
   'signing.phone.label': 'Numer telefonu komórkowego',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Zapisz numer',
+  'signing.phone.remember.hint':
+    'Numer jest szyfrowany Twoimi własnymi poświadczeniami i można go odczytać wyłącznie w Twoich sesjach. Możesz go usunąć w dowolnej chwili.',
+  'signing.phone.remember.intro':
+    'Potwierdź swoją tożsamość, aby zapisać ten numer na swoim koncie. Będzie wypełniany automatycznie przy kolejnych podpisach Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Zapisz ten numer na moim koncie',
+  'signing.phone.remember.locked.body':
+    'Zapisany jest numer, którego ta sesja nie może odszyfrować. Jeśli zalogowano się bez hasła, zaloguj się ponownie przy jego użyciu; jeśli klucz atestacji konta został od tego czasu wymieniony, odznacz pole i zapisz numer ponownie.',
+  'signing.phone.remember.locked.title': 'Zapisany numer jest niedostępny w tej sesji',
+  'signing.phone.remember.pending': 'Zapisywanie…',
+  'signing.phone.remember.title': 'Zapisz numer telefonu komórkowego',
   'signing.pin.label': 'PIN podpisu CMD',
   'signing.pin.hint': 'Używany tylko do tego żądania; nigdy nie jest przechowywany.',
   'signing.initiate': 'Wyślij kod SMS',
@@ -3731,6 +3746,8 @@ export const plPL: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Tego slotu nie można jeszcze rozpocząć, ponieważ w kopercie sekwencyjnej wcześniejszy slot wymagany pozostaje otwarty. Utwórz najpierw zaproszenie dla poprzedniego slotu lub pozostaw to zaproszenie tylko w trybie śledzenia.',
   'toast.signing.otpSent': 'Kod SMS wysłany.',
+  'toast.signing.phoneForgotten': 'Numer usunięty.',
+  'toast.signing.phoneSaved': 'Numer zapisany.',
   'toast.signing.signed': 'Protokół podpisany.',
   'toast.signing.ccBatchSigned': 'Wsadowe podpisywanie Kartą obywatela zakończone.',
   'toast.signing.remoteBatchInitiated': 'Sesje zdalne rozpoczęte.',

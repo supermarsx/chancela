@@ -3228,8 +3228,23 @@ export const itIT: Catalog = {
   'signing.start': 'Firma con Chave Móvel Digital',
   'signing.credentials.intro':
     'Inserisci il numero di cellulare associato alla Chave Móvel Digital e il PIN di firma. Il PIN è usato solo per questa richiesta e non viene mai memorizzato.',
+  'signing.phone.forget.action': 'Rimuovi numero',
+  'signing.phone.forget.intro':
+    'Conferma la tua identità per rimuovere il numero salvato. Non verrà più precompilato e dovrai digitarlo a ogni firma.',
+  'signing.phone.forget.title': 'Rimuovere il numero salvato',
   'signing.phone.label': 'Numero di cellulare',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Salva numero',
+  'signing.phone.remember.hint':
+    'Il numero è cifrato con le tue credenziali ed è leggibile solo nelle tue sessioni. Puoi rimuoverlo quando vuoi.',
+  'signing.phone.remember.intro':
+    'Conferma la tua identità per salvare questo numero nel tuo account. Verrà precompilato nelle prossime firme con Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Salva questo numero nel mio account',
+  'signing.phone.remember.locked.body':
+    'È salvato un numero che questa sessione non riesce a decifrare. Se hai effettuato l’accesso senza password, accedi di nuovo con essa; se la chiave di attestazione dell’account è stata nel frattempo sostituita, deseleziona la casella e salva di nuovo il numero.',
+  'signing.phone.remember.locked.title': 'Numero salvato non disponibile in questa sessione',
+  'signing.phone.remember.pending': 'Salvataggio…',
+  'signing.phone.remember.title': 'Salvare il numero di cellulare',
   'signing.pin.label': 'PIN di firma CMD',
   'signing.pin.hint': 'Usato solo per questa richiesta; mai memorizzato.',
   'signing.initiate': 'Invia codice SMS',
@@ -3746,6 +3761,8 @@ export const itIT: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Questo slot non può ancora essere avviato perché la busta sequenziale ha uno slot obbligatorio precedente ancora aperto. Crea prima l’invito per lo slot precedente oppure lascia questo invito solo in monitoraggio.',
   'toast.signing.otpSent': 'Codice SMS inviato.',
+  'toast.signing.phoneForgotten': 'Numero rimosso.',
+  'toast.signing.phoneSaved': 'Numero salvato.',
   'toast.signing.signed': 'Verbale firmato.',
   'toast.signing.ccBatchSigned': 'Blocco di firma CC completato.',
   'toast.signing.remoteBatchInitiated': 'Sessioni remote avviate.',

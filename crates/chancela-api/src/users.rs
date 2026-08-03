@@ -1802,6 +1802,15 @@ pub async fn set_secret(
         user.clone()
     };
 
+    // A dropped key takes the saved CMD number with it: that number is sealed to the attestation
+    // scalar, so once the blob is retired no wrap can ever open it again. Discard the row rather than
+    // keep a record that claims to hold a number nobody can read. The re-wrap arms preserve the same
+    // scalar, so a saved number survives an ordinary password change untouched — which is exactly the
+    // point of sealing to the scalar rather than to the password.
+    if drop_key {
+        crate::cmd_phone::clear_for_user_id(&state, uid).await?;
+    }
+
     match proof {
         Some(kind) => {
             let justification = format!("sign-in secret reset {}", kind.describe());
@@ -1952,6 +1961,10 @@ pub async fn generate_attestation_key(
         user.attestation_key = Some(new_key);
         user.clone()
     };
+    // The scalar was *replaced*, not re-wrapped, so any saved CMD number sealed to the previous one
+    // is now unopenable. Discard it here rather than leave a row `open_saved_phone` could only ever
+    // report as unreadable.
+    crate::cmd_phone::clear_for_user_id(&state, uid).await?;
     let justification = if cross_user {
         "attestation key generated (cross-user, via known password)"
     } else {
@@ -2026,6 +2039,9 @@ pub async fn remove_attestation_key(
         }
         user.clone()
     };
+    // Removing the key removes the only custody the saved CMD number had; discard it in the same
+    // breath so no unopenable ciphertext outlives the key it was sealed to.
+    crate::cmd_phone::clear_for_user_id(&state, uid).await?;
     let justification = match decision {
         SecretAuthz::CrossUser(kind) => {
             format!("attestation key removed (cross-user, {})", kind.describe())

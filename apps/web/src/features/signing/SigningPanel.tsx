@@ -65,6 +65,7 @@ import type {
   LocalSignatureLevel,
   OfficialSignatureImportGuardrail,
   PendingSignatureInfo,
+  SavedCmdPhoneView,
   SealAppearanceBody,
   Settings,
   SignatureEvidenceStatus,
@@ -110,6 +111,8 @@ import {
   useRemoteConfirmSignature,
   useRemoteInitiateSignature,
   useRevokeExternalSignerInvite,
+  useSaveCmdPhone,
+  useSavedCmdPhone,
   useSignatureProviders,
   useUpdateExternalSigningEnvelope,
   useXadesSign,
@@ -122,6 +125,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmActionModal,
   DateTime,
   Digest,
   EmptyState,
@@ -1280,6 +1284,104 @@ function StatusSummary({
         <div className="signing-status__copy">{children}</div>
       </div>
     </section>
+  );
+}
+
+/**
+ * «Guardar este número na minha conta» — the opt-in control on the CMD phone-entry step.
+ *
+ * ## Opt-in, and visibly so
+ *
+ * The box starts unticked for a user who has saved nothing, and ticking it is the *only* path that
+ * stores a number. Submitting a signature never captures the number as a side effect: a user who
+ * types their number and signs has stored nothing, which is the behaviour they get today and the
+ * behaviour they must keep getting unless they ask otherwise.
+ *
+ * ## Why toggling opens a step-up dialog instead of just writing
+ *
+ * The saved number is prefilled into this very form, and CMD sends its confirmation SMS to whatever
+ * this form submits. A stolen session that could quietly swap the stored number would be redirecting
+ * the second factor of a qualified signature to its own handset, and the only cue would be a
+ * prefilled field the user has been trained to accept. So both directions — save and forget — gather
+ * a real credential through the shared {@link ConfirmActionModal}, exactly as self-suspension does,
+ * and the server enforces the same gate independently.
+ *
+ * The dialog is also why the toggle is not optimistic: it can legitimately be refused, and a box
+ * that ticked itself before the server agreed would tell the user their number is stored when it is
+ * not. The checkbox reflects the server's answer and nothing else.
+ */
+function SavedCmdPhoneControl({
+  value,
+  saved,
+  disabled,
+}: {
+  /** What is currently typed in the phone field — what "save" would store. */
+  value: string;
+  /** The server's answer, or `undefined` while it loads / when the read failed. */
+  saved: SavedCmdPhoneView | undefined;
+  disabled: boolean;
+}) {
+  const t = useT();
+  const toast = useToast();
+  const save = useSaveCmdPhone();
+  const [intent, setIntent] = useState<'save' | 'forget' | null>(null);
+
+  const isSaved = saved?.saved ?? false;
+  // A number is stored but this session cannot decrypt it: signed in without unlocking the
+  // attestation key, or the key was replaced since. Said out loud, because an empty field with a
+  // ticked box would otherwise read as "we lost your number".
+  const locked = isSaved && !saved?.readable;
+  const forgetting = intent === 'forget';
+
+  return (
+    <div className="stack--tight">
+      <label className="checkline">
+        <input
+          type="checkbox"
+          id="sign-remember-phone"
+          checked={isSaved}
+          // Nothing to save until something is typed; nothing to forget until something is stored.
+          disabled={disabled || save.isPending || (!isSaved && value.trim() === '')}
+          onChange={(e) => setIntent(e.target.checked ? 'save' : 'forget')}
+        />
+        {t('signing.phone.remember.label')}
+      </label>
+      <p className="field__hint">{t('signing.phone.remember.hint')}</p>
+      {locked ? (
+        <InlineWarning tone="warn" title={t('signing.phone.remember.locked.title')}>
+          {t('signing.phone.remember.locked.body')}
+        </InlineWarning>
+      ) : null}
+
+      {/* This control lives INSIDE the signing panel's own `<form>`, and the dialog below renders
+          through a portal to `document.body`. A portal escapes the DOM tree but NOT the React tree:
+          React propagates synthetic events along the component hierarchy, so the dialog's `submit`
+          would reach the signing form's `onSubmit` and fire the CMD initiate — saving the number
+          would silently start a signature. `preventDefault` inside the dialog does not help; the
+          outer handler runs anyway. Stopping propagation at this boundary is the fix, and it is
+          scoped to exactly the event that crosses. */}
+      <div onSubmit={(e) => e.stopPropagation()}>
+        <ConfirmActionModal
+          open={intent !== null}
+          onClose={() => setIntent(null)}
+          danger={forgetting}
+          requireReauth
+          title={forgetting ? t('signing.phone.forget.title') : t('signing.phone.remember.title')}
+          intro={forgetting ? t('signing.phone.forget.intro') : t('signing.phone.remember.intro')}
+          confirmLabel={
+            forgetting ? t('signing.phone.forget.action') : t('signing.phone.remember.action')
+          }
+          pendingLabel={t('signing.phone.remember.pending')}
+          pending={save.isPending}
+          onConfirm={async ({ reauth }) => {
+            await save.mutateAsync({ phone: forgetting ? null : value.trim(), reauth });
+            toast.success(
+              forgetting ? t('toast.signing.phoneForgotten') : t('toast.signing.phoneSaved'),
+            );
+          }}
+        />
+      </div>
+    </div>
   );
 }
 
@@ -2447,6 +2549,11 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
   const bookScope = scopeBook(act.book_id);
 
   const [step, setStep] = useState<Step>({ kind: 'view' });
+  // The saved CMD number. Read ONLY while the CMD phone-entry step is open: fetching it decrypts
+  // personal data, so a session that never signs with CMD never causes that to happen.
+  const cmdPhoneStep = step.kind === 'credentials' && step.provider.kind === 'cmd';
+  const savedCmdPhone = useSavedCmdPhone(cmdPhoneStep);
+  const [cmdPhonePrefilled, setCmdPhonePrefilled] = useState(false);
   // The two-phase secrets are transient: they live here only while the form is filled and are
   // cleared the instant they are sent. `identifier` is the CMD phone / CSC user_ref; `secret` the
   // CMD PIN / CSC credential; `activation` the CMD OTP / CSC OTP-SAD. Nothing persists them (no
@@ -2529,6 +2636,24 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
       });
     }
   }, [data, providers.data, signingOpen, step.kind]);
+
+  // Prefill the number the user chose to save — once per entry into the CMD step, and only into a
+  // field they have not typed into. Prefilling over a value someone is mid-way through entering
+  // would replace their input with a different phone number, which is the one mistake this whole
+  // convenience must never make.
+  useEffect(() => {
+    if (!cmdPhoneStep) {
+      if (cmdPhonePrefilled) setCmdPhonePrefilled(false);
+      return;
+    }
+    if (cmdPhonePrefilled) return;
+    const saved = savedCmdPhone.data;
+    if (saved?.readable && saved.phone) {
+      const number = saved.phone;
+      setIdentifier((current) => (current.trim() === '' ? number : current));
+      setCmdPhonePrefilled(true);
+    }
+  }, [cmdPhoneStep, cmdPhonePrefilled, savedCmdPhone.data]);
 
   if (!signatureAvailable) return null;
 
@@ -3123,6 +3248,13 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
                     onChange={(e) => setIdentifier(e.target.value)}
                   />
                 </Field>
+                {isCmd ? (
+                  <SavedCmdPhoneControl
+                    value={identifier}
+                    saved={savedCmdPhone.data}
+                    disabled={initiating}
+                  />
+                ) : null}
                 <Field
                   label={isCmd ? t('signing.pin.label') : t('signing.csc.credential.label')}
                   htmlFor="sign-secret"

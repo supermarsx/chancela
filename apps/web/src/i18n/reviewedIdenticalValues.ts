@@ -2370,6 +2370,11 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Grupo',
     'Guardado',
     'Guardar JSON',
+    // Same cognate collision as «Guardar perfil» just below: "guardar" and "número" are the
+    // ordinary Spanish words, so the CMD save-number button label coincides exactly. Reviewed as a
+    // cognate, not an untranslated gap — the surrounding Spanish copy for this control («Guardar
+    // este número en mi cuenta», «Eliminar el número guardado») is genuinely Spanish throughout.
+    'Guardar número',
     'Guardar PDF',
     // "guardar" and "perfil" are the same words in Spanish and Portuguese, so the two-word
     // button label coincides exactly. A synonym chosen to break the tie would be worse copy.
@@ -2415,6 +2420,9 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'NIPC validado',
     'Notas',
     'Numerador',
+    // The CMD save-number toast. Past participle and noun are identical in both languages; forcing
+    // a Spanish synonym here would make the confirmation read less naturally than the coincidence.
+    'Número guardado.',
     'Objeto',
     'OCSP',
     'Ocultar código',

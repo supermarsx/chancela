@@ -407,6 +407,18 @@ impl CurrentAttestor {
     pub fn signer(&self) -> Option<(&str, &p256::ecdsa::SigningKey)> {
         self.signer.as_ref().map(|(u, k)| (u.as_str(), k))
     }
+
+    /// Construct the extractor directly, standing in for a session that unlocked `key` at sign-in.
+    ///
+    /// Test-only: the production path is the [`FromRequestParts`] impl below, which reads the key
+    /// out of the live session registry and can therefore never be handed a key the presenting
+    /// session did not unlock. Exposing this outside `cfg(test)` would be exactly that hole.
+    #[cfg(test)]
+    pub(crate) fn from_signer(username: String, key: p256::ecdsa::SigningKey) -> Self {
+        CurrentAttestor {
+            signer: Some((username, key)),
+        }
+    }
 }
 
 impl FromRequestParts<AppState> for CurrentAttestor {

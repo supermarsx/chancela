@@ -6150,6 +6150,25 @@ export interface PersonalDataSubject {
   active: boolean;
   created_at: string;
   credentials: PersonalDataCredentials;
+  /** The subject's saved CMD signing number. Always present, even when nothing is saved. */
+  cmd_signing_phone: PersonalDataCmdPhone;
+}
+
+/**
+ * The subject's saved Chave Móvel Digital number as far as an export can honestly reach it.
+ *
+ * It is the subject's own personal data, so it is deliberately NOT in `exclusions` — it is not
+ * secret material the server withholds by policy. But it is stored sealed to the subject's own
+ * attestation key, so only an export produced by the subject's own unlocked session can carry the
+ * plaintext. Every other case still reports `saved: true` and explains itself in `note`, rather than
+ * emitting a bare `null` that would read as "no number is stored".
+ */
+export interface PersonalDataCmdPhone {
+  saved: boolean;
+  saved_at: string | null;
+  phone: string | null;
+  /** Why `phone` is null despite `saved`. Null when there is nothing to explain. */
+  note: string | null;
 }
 
 /**
@@ -9041,6 +9060,33 @@ export interface UserPreferences {
    * every pre-existing row) means "no preference" — the password arm first, today's behaviour.
    */
   step_up_method?: StepUpMethodPreference;
+}
+
+/**
+ * The acting user's saved Chave Móvel Digital mobile number (`GET|PUT /v1/me/cmd-phone`).
+ *
+ * Self-scoped and opt-in: nothing is stored until the user ticks "remember this number". At rest the
+ * number is sealed to that user's attestation scalar — the same custody the attestation key has, so
+ * the password can always open it and a passkey's PRF output can additionally, but neither the
+ * server nor another user can without one.
+ *
+ * The three states are distinguishable on purpose. `saved: false` means nothing is stored.
+ * `saved: true, readable: true` carries the number in `phone`. `saved: true, readable: false` means
+ * a number IS stored but this session cannot decrypt it (signed in without unlocking the attestation
+ * key, or the key was since replaced) — the UI must say so rather than show an empty field that
+ * looks like "nothing saved".
+ */
+export interface SavedCmdPhoneView {
+  saved: boolean;
+  saved_at: string | null;
+  phone: string | null;
+  readable: boolean;
+}
+
+/** `PUT /v1/me/cmd-phone` request. `phone: null` clears the saved number. Step-up proof required. */
+export interface SaveCmdPhoneBody {
+  phone: string | null;
+  reauth: ReAuth;
 }
 
 /**

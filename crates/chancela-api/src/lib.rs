@@ -139,6 +139,7 @@ mod cluster_watchdog;
 // resilience suite (test-only; live multi-node scenarios `#[ignore]` requiring DATABASE_URL).
 #[cfg(test)]
 mod cluster_chaos_tests;
+mod cmd_phone;
 mod cmd_test_signature;
 #[allow(dead_code)]
 mod credential_resolve;
@@ -737,6 +738,14 @@ pub struct AppState {
     pub user_preferences: Arc<RwLock<user_preferences::UserPreferencesStore>>,
     /// Where `user_preferences.json` is persisted, or `None` for in-memory preferences.
     pub user_preferences_path: Option<Arc<PathBuf>>,
+    /// Per-user **sealed CMD mobile numbers** (see [`cmd_phone`]). Keyed by user id, self-scoped
+    /// through `GET|PUT /v1/me/cmd-phone`, never enumerated over the wire. Each row holds ciphertext
+    /// only, keyed to that user's attestation scalar — so it is readable exactly by the wraps the
+    /// attestation key already has (password always, a passkey's PRF additionally) and by nothing
+    /// else, this process included, without one of them. Outside the ledger and outside `UserView`.
+    pub saved_cmd_phones: Arc<RwLock<cmd_phone::SavedCmdPhoneStore>>,
+    /// Where `cmd-saved-phones.json` is persisted, or `None` for in-memory numbers.
+    pub saved_cmd_phones_path: Option<Arc<PathBuf>>,
     /// Where `users.json` is persisted, or `None` for in-memory profiles. Mirrors `persist_path`.
     pub users_path: Option<Arc<PathBuf>>,
     /// App-level seed material for hardened password/recovery verifiers. File-backed states load or
@@ -1277,6 +1286,9 @@ impl AppState {
         let user_preferences_path = dir.join(user_preferences::USER_PREFERENCES_FILE);
         let loaded_user_preferences =
             user_preferences::load_user_preferences(&user_preferences_path).unwrap_or_default();
+        let saved_cmd_phones_path = dir.join(cmd_phone::CMD_SAVED_PHONES_FILE);
+        let loaded_saved_cmd_phones =
+            cmd_phone::load_saved_cmd_phones(&saved_cmd_phones_path).unwrap_or_default();
         let api_keys_path = dir.join(apikeys::API_KEYS_FILE);
         let loaded_api_keys = apikeys::load_api_keys(&api_keys_path).unwrap_or_default();
         let external_signing_envelopes_path =
@@ -1344,6 +1356,8 @@ impl AppState {
             notification_triage_path: Some(Arc::new(notification_triage_path)),
             user_preferences: Arc::new(RwLock::new(loaded_user_preferences)),
             user_preferences_path: Some(Arc::new(user_preferences_path)),
+            saved_cmd_phones: Arc::new(RwLock::new(loaded_saved_cmd_phones)),
+            saved_cmd_phones_path: Some(Arc::new(saved_cmd_phones_path)),
             api_keys: Arc::new(RwLock::new(loaded_api_keys)),
             api_keys_path: Some(Arc::new(api_keys_path)),
             external_signing_envelopes: Arc::new(RwLock::new(loaded_external_signing_envelopes)),
@@ -1900,6 +1914,7 @@ impl AppState {
                     dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
                     dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
                     dir.join(crate::user_preferences::USER_PREFERENCES_FILE),
+                    dir.join(crate::cmd_phone::CMD_SAVED_PHONES_FILE),
                     dir.join(crate::apikeys::API_KEYS_FILE),
                     dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
                     dir.join(crate::connector_jobs::CONNECTOR_TARGETS_FILE),
@@ -2058,6 +2073,9 @@ impl AppState {
                 &dir.join(user_preferences::USER_PREFERENCES_FILE),
             )
             .unwrap_or_default();
+            *self.saved_cmd_phones.write().await =
+                cmd_phone::load_saved_cmd_phones(&dir.join(cmd_phone::CMD_SAVED_PHONES_FILE))
+                    .unwrap_or_default();
             *self.api_keys.write().await =
                 apikeys::load_api_keys(&dir.join(apikeys::API_KEYS_FILE)).unwrap_or_default();
             *self.external_signing_envelopes.write().await = external_signing::load_envelopes(
@@ -2247,6 +2265,7 @@ impl AppState {
         self.backup_recovery_drill_receipts.write().await.clear();
         self.notification_triage.write().await.clear();
         *self.user_preferences.write().await = user_preferences::UserPreferencesStore::default();
+        *self.saved_cmd_phones.write().await = cmd_phone::SavedCmdPhoneStore::default();
         self.sessions.write().await.clear();
         self.session_issued_at.write().await.clear();
         if let Err(error) = self.durable_sessions.clear().await {
@@ -3403,6 +3422,14 @@ pub fn router(state: AppState) -> Router {
             "/v1/me/preferences",
             get(user_preferences::get_me_preferences)
                 .put(user_preferences::put_me_preferences),
+        )
+        // The self-scoped saved CMD mobile number (see `cmd_phone.rs`). Session-class for the same
+        // reason as the row above — the acting session reads/writes only its own row — but the write
+        // additionally carries `require_step_up`, because a swapped number redirects a qualified
+        // signature's SMS confirmation.
+        .route(
+            "/v1/me/cmd-phone",
+            get(cmd_phone::get_me_cmd_phone).put(cmd_phone::put_me_cmd_phone),
         )
         // The self-service account surface (see `account.rs`). Both are Session-class: any valid
         // interactive session, no permission verb, acting only on the caller's OWN record. They are

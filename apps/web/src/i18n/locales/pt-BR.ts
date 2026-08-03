@@ -3217,8 +3217,23 @@ export const ptBR: Catalog = {
   'signing.start': 'Assine com chave móvel digital',
   'signing.credentials.intro':
     'Informe o número de celular associado à Chave Móvel Digital e o PIN de assinatura. O PIN é usado apenas para esta solicitação e nunca é armazenado.',
+  'signing.phone.forget.action': 'Excluir número',
+  'signing.phone.forget.intro':
+    'Confirme sua identidade para excluir o número salvo. Ele deixará de ser preenchido automaticamente e você terá de digitá-lo a cada assinatura.',
+  'signing.phone.forget.title': 'Excluir o número salvo',
   'signing.phone.label': 'Número de celular',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Salvar número',
+  'signing.phone.remember.hint':
+    'O número é criptografado com suas credenciais e só pode ser lido nas suas sessões. Você pode excluí-lo quando quiser.',
+  'signing.phone.remember.intro':
+    'Confirme sua identidade para salvar este número na sua conta. Ele passará a ser preenchido nas próximas assinaturas com Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Salvar este número na minha conta',
+  'signing.phone.remember.locked.body':
+    'Há um número salvo que esta sessão não consegue descriptografar. Se você entrou sem senha, entre novamente com ela; se a chave de atestação da conta foi substituída, desmarque a opção e salve o número de novo.',
+  'signing.phone.remember.locked.title': 'Número salvo indisponível nesta sessão',
+  'signing.phone.remember.pending': 'Salvando…',
+  'signing.phone.remember.title': 'Salvar o número de celular',
   'signing.pin.label': 'PIN de assinatura do CMD',
   'signing.pin.hint': 'Usado apenas para esta solicitação; nunca é armazenado.',
   'signing.initiate': 'Enviar código por SMS',
@@ -3734,6 +3749,8 @@ export const ptBR: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Este slot ainda não pode ser iniciado porque o envelope sequencial possui um slot obrigatório anterior aberto. Crie primeiro o convite para a vaga anterior ou deixe este convite como acompanhamento.',
   'toast.signing.otpSent': 'Código SMS enviado.',
+  'toast.signing.phoneForgotten': 'Número excluído.',
+  'toast.signing.phoneSaved': 'Número salvo.',
   'toast.signing.signed': 'Ata assinada.',
   'toast.signing.ccBatchSigned': 'Lote de assinatura CC concluído.',
   'toast.signing.remoteBatchInitiated': 'Sessões remotas iniciadas.',

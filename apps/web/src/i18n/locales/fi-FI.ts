@@ -3214,8 +3214,23 @@ export const fiFI: Catalog = {
   'signing.start': 'Allekirjoita Chave Móvel Digitalilla',
   'signing.credentials.intro':
     'Anna Chave Móvel Digitaliin liitetty matkapuhelinnumero ja allekirjoituksen PIN-koodi. PIN-koodia käytetään vain tähän pyyntöön, eikä sitä koskaan tallenneta.',
+  'signing.phone.forget.action': 'Poista numero',
+  'signing.phone.forget.intro':
+    'Vahvista henkilöllisyytesi poistaaksesi tallennetun numeron. Sitä ei enää täytetä valmiiksi, ja se on kirjoitettava jokaisen allekirjoituksen yhteydessä.',
+  'signing.phone.forget.title': 'Poista tallennettu numero',
   'signing.phone.label': 'Matkapuhelinnumero',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Tallenna numero',
+  'signing.phone.remember.hint':
+    'Numero salataan omilla tunnuksillasi, ja se on luettavissa vain sinun istunnoissasi. Voit poistaa sen milloin tahansa.',
+  'signing.phone.remember.intro':
+    'Vahvista henkilöllisyytesi tallentaaksesi tämän numeron tilillesi. Se täytetään valmiiksi seuraavissa Chave Móvel Digital -allekirjoituksissasi.',
+  'signing.phone.remember.label': 'Tallenna tämä numero tililleni',
+  'signing.phone.remember.locked.body':
+    'Tallennettua numeroa ei voi purkaa tässä istunnossa. Jos kirjauduit sisään ilman salasanaa, kirjaudu uudelleen sillä; jos tilin vahvistusavain on sen jälkeen vaihdettu, poista valinta ja tallenna numero uudelleen.',
+  'signing.phone.remember.locked.title': 'Tallennettu numero ei ole käytettävissä tässä istunnossa',
+  'signing.phone.remember.pending': 'Tallennetaan…',
+  'signing.phone.remember.title': 'Tallenna matkapuhelinnumero',
   'signing.pin.label': 'CMD-allekirjoituksen PIN',
   'signing.pin.hint': 'Käytetään vain tähän pyyntöön; ei koskaan tallenneta.',
   'signing.initiate': 'Lähetä tekstiviestikoodi',
@@ -3738,6 +3753,8 @@ export const fiFI: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Tätä paikkaa ei voi vielä aloittaa, koska peräkkäisessä kuoressa on avoin aiempi pakollinen paikka. Luo ensin kutsu edelliselle paikalle tai jätä tämä kutsu vain seurantaan.',
   'toast.signing.otpSent': 'Tekstiviestikoodi lähetetty.',
+  'toast.signing.phoneForgotten': 'Numero poistettu.',
+  'toast.signing.phoneSaved': 'Numero tallennettu.',
   'toast.signing.signed': 'Pöytäkirja allekirjoitettu.',
   'toast.signing.ccBatchSigned': 'CC-allekirjoituserä valmis.',
   'toast.signing.remoteBatchInitiated': 'Etäistunnot aloitettu.',

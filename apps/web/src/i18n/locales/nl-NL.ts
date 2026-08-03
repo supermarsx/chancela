@@ -3228,8 +3228,23 @@ export const nlNL: Catalog = {
   'signing.start': 'Ondertekenen met Chave Móvel Digital',
   'signing.credentials.intro':
     'Voer het mobiele nummer in dat aan de Chave Móvel Digital is gekoppeld en de ondertekenings-PIN. De PIN wordt alleen voor dit verzoek gebruikt en nooit opgeslagen.',
+  'signing.phone.forget.action': 'Nummer verwijderen',
+  'signing.phone.forget.intro':
+    'Bevestig uw identiteit om het opgeslagen nummer te verwijderen. Het wordt niet meer vooringevuld en u moet het bij elke ondertekening opnieuw typen.',
+  'signing.phone.forget.title': 'Opgeslagen nummer verwijderen',
   'signing.phone.label': 'Mobiel nummer',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Nummer opslaan',
+  'signing.phone.remember.hint':
+    'Het nummer wordt versleuteld met uw eigen inloggegevens en is alleen leesbaar in uw sessies. U kunt het altijd verwijderen.',
+  'signing.phone.remember.intro':
+    'Bevestig uw identiteit om dit nummer in uw account op te slaan. Het wordt vooringevuld bij uw volgende ondertekeningen met Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Dit nummer in mijn account opslaan',
+  'signing.phone.remember.locked.body':
+    'Er is een nummer opgeslagen dat deze sessie niet kan ontsleutelen. Hebt u zich zonder wachtwoord aangemeld, meld u dan opnieuw aan met uw wachtwoord; is de attestatiesleutel van het account inmiddels vervangen, schakel dan het selectievakje uit en sla het nummer opnieuw op.',
+  'signing.phone.remember.locked.title': 'Opgeslagen nummer niet beschikbaar in deze sessie',
+  'signing.phone.remember.pending': 'Bezig met opslaan…',
+  'signing.phone.remember.title': 'Mobiel nummer opslaan',
   'signing.pin.label': 'CMD-ondertekenings-PIN',
   'signing.pin.hint': 'Alleen voor dit verzoek gebruikt; nooit opgeslagen.',
   'signing.initiate': 'Sms-code verzenden',
@@ -3755,6 +3770,8 @@ export const nlNL: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Dit slot kan nog niet worden gestart omdat de sequentiële envelop een eerder verplicht slot heeft dat nog openstaat. Maak eerst de uitnodiging voor het vorige slot aan of laat deze uitnodiging alleen volgend.',
   'toast.signing.otpSent': 'Sms-code verzonden.',
+  'toast.signing.phoneForgotten': 'Nummer verwijderd.',
+  'toast.signing.phoneSaved': 'Nummer opgeslagen.',
   'toast.signing.signed': 'Notulen ondertekend.',
   'toast.signing.ccBatchSigned': 'CC-ondertekeningsbatch voltooid.',
   'toast.signing.remoteBatchInitiated': 'Remote sessies gestart.',

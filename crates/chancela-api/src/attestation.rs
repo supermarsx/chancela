@@ -643,6 +643,65 @@ impl AttestationKeyBlob {
     }
 }
 
+// --- A sealed short secret, under the same primitive ----------------------------------------
+//
+/// A short byte string sealed with **exactly the primitive [`AttestationKeyBlob`] uses** — argon2id
+/// [`derive_kek`] over a per-seal 16-byte salt, then XChaCha20-Poly1305 with a 24-byte random nonce.
+///
+/// It exists because [`AttestationKeyBlob`] is specialised to the 32-byte P-256 scalar: it parses
+/// what it decrypts back into a [`SigningKey`] and carries a public key and fingerprint, none of
+/// which a plain secret has. Everything security-relevant — KDF, cipher, salt/nonce sizes, the
+/// randomness source — is the *same code path*, deliberately: this is not a second crypto scheme,
+/// it is the same one with the P-256 parsing removed.
+///
+/// A caller with a plaintext this seals is responsible for the custody of `secret`. The one caller
+/// today ([`crate::cmd_phone`]) derives `secret` from the session's **unlocked attestation scalar**,
+/// which is why a sealed value inherits the attestation key's custody exactly: password wrap always,
+/// PRF wrap additionally, PRF never alone.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SealedSecret {
+    /// Base64 of the per-seal argon2 KEK salt (16 random bytes).
+    pub kdf_salt: String,
+    /// Base64 of the 24-byte XChaCha20-Poly1305 nonce.
+    pub nonce: String,
+    /// Base64 of the AEAD ciphertext.
+    pub ciphertext: String,
+}
+
+impl SealedSecret {
+    /// Seal `plaintext` under `secret`. Every call draws a fresh salt and nonce, so sealing the same
+    /// bytes twice yields two unrelated ciphertexts.
+    pub fn seal(secret: &str, plaintext: &[u8]) -> Result<Self, AttestationError> {
+        let mut salt = [0u8; 16];
+        OsRng.fill_bytes(&mut salt);
+        let kek = derive_kek(secret, &salt)?;
+        let cipher = XChaCha20Poly1305::new_from_slice(&kek).map_err(crypto)?;
+        let mut nonce_bytes = [0u8; 24];
+        OsRng.fill_bytes(&mut nonce_bytes);
+        let nonce = XNonce::from(nonce_bytes);
+        let ciphertext = cipher.encrypt(&nonce, plaintext).map_err(crypto)?;
+        Ok(SealedSecret {
+            kdf_salt: B64.encode(salt),
+            nonce: B64.encode(nonce_bytes),
+            ciphertext: B64.encode(ciphertext),
+        })
+    }
+
+    /// Open the seal with `secret`. Any failure — a wrong secret, a corrupt blob, a truncated nonce
+    /// — is one opaque error: the caller must not be able to tell "wrong key" from "damaged bytes",
+    /// and neither the plaintext nor the secret ever appears in it.
+    pub fn open(&self, secret: &str) -> Result<Vec<u8>, AttestationError> {
+        let salt = B64.decode(&self.kdf_salt).map_err(crypto)?;
+        let kek = derive_kek(secret, &salt)?;
+        let cipher = XChaCha20Poly1305::new_from_slice(&kek).map_err(crypto)?;
+        let nonce_bytes = B64.decode(&self.nonce).map_err(crypto)?;
+        let nonce = <&XNonce>::try_from(nonce_bytes.as_slice())
+            .map_err(|_| AttestationError("stored nonce is not 24 bytes".to_owned()))?;
+        let ciphertext = B64.decode(&self.ciphertext).map_err(crypto)?;
+        cipher.decrypt(nonce, ciphertext.as_slice()).map_err(crypto)
+    }
+}
+
 /// The **public half only** of a superseded attestation key, retained so a rotation or a removal
 /// stops destroying the account's attestation history (t92).
 ///
@@ -888,6 +947,35 @@ mod tests {
         // A *changed* PRF output (the iOS-18.4 case) cannot open the wrap — which is precisely why
         // the password wrap must survive: this failure degrades to the password, never to key loss.
         assert!(prf_wrap.unlock("a-different-prf-output").is_err());
+    }
+
+    #[test]
+    fn sealed_secret_round_trips_and_is_opaque_to_a_wrong_secret() {
+        // A clearly-synthetic number, in the shape the CMD lane accepts.
+        let plaintext = b"+351900000000";
+        let sealed = SealedSecret::seal("custody-secret", plaintext).unwrap();
+
+        // The plaintext is nowhere in the stored blob.
+        let stored = serde_json::to_string(&sealed).unwrap();
+        assert!(!stored.contains("900000000"));
+        assert!(!stored.contains("custody-secret"));
+
+        assert_eq!(sealed.open("custody-secret").unwrap(), plaintext);
+        assert!(sealed.open("a-different-custody-secret").is_err());
+
+        // Two seals of the same bytes under the same secret share no salt, nonce or ciphertext.
+        let again = SealedSecret::seal("custody-secret", plaintext).unwrap();
+        assert_ne!(sealed.kdf_salt, again.kdf_salt);
+        assert_ne!(sealed.nonce, again.nonce);
+        assert_ne!(sealed.ciphertext, again.ciphertext);
+        assert_eq!(again.open("custody-secret").unwrap(), plaintext);
+
+        // A flipped ciphertext byte is caught by the AEAD tag rather than yielding garbage.
+        let mut tampered = sealed.clone();
+        let mut raw = B64.decode(&tampered.ciphertext).unwrap();
+        raw[0] ^= 0x01;
+        tampered.ciphertext = B64.encode(&raw);
+        assert!(tampered.open("custody-secret").is_err());
     }
 
     #[test]

@@ -3207,8 +3207,23 @@ export const daDK: Catalog = {
   'signing.start': 'Signer med Chave Móvel Digital',
   'signing.credentials.intro':
     'Indtast det mobilnummer, der er knyttet til Chave Móvel Digital, og signerings-PIN-koden. PIN-koden bruges kun til denne anmodning og gemmes aldrig.',
+  'signing.phone.forget.action': 'Fjern nummer',
+  'signing.phone.forget.intro':
+    'Bekræft din identitet for at fjerne det gemte nummer. Det bliver ikke længere udfyldt på forhånd, og du skal indtaste det ved hver underskrift.',
+  'signing.phone.forget.title': 'Fjern det gemte nummer',
   'signing.phone.label': 'Mobilnummer',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Gem nummer',
+  'signing.phone.remember.hint':
+    'Nummeret krypteres med dine egne loginoplysninger og kan kun læses i dine sessioner. Du kan fjerne det når som helst.',
+  'signing.phone.remember.intro':
+    'Bekræft din identitet for at gemme dette nummer på din konto. Det bliver udfyldt på forhånd ved dine næste underskrifter med Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Gem dette nummer på min konto',
+  'signing.phone.remember.locked.body':
+    'Der er gemt et nummer, som denne session ikke kan dekryptere. Hvis du loggede ind uden adgangskode, så log ind igen med den; hvis kontoens attestationsnøgle siden er blevet udskiftet, så fjern fluebenet og gem nummeret igen.',
+  'signing.phone.remember.locked.title': 'Gemt nummer er ikke tilgængeligt i denne session',
+  'signing.phone.remember.pending': 'Gemmer…',
+  'signing.phone.remember.title': 'Gem mobilnummeret',
   'signing.pin.label': 'CMD-signerings-PIN',
   'signing.pin.hint': 'Bruges kun til denne anmodning; gemmes aldrig.',
   'signing.initiate': 'Send SMS-kode',
@@ -3725,6 +3740,8 @@ export const daDK: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Dette slot kan endnu ikke påbegyndes, fordi den sekventielle kuvert har et tidligere obligatorisk slot, der stadig er åbent. Opret først invitationen til det forrige slot, eller lad denne invitation forblive kun til opfølgning.',
   'toast.signing.otpSent': 'SMS-kode sendt.',
+  'toast.signing.phoneForgotten': 'Nummeret er fjernet.',
+  'toast.signing.phoneSaved': 'Nummeret er gemt.',
   'toast.signing.signed': 'Protokol signeret.',
   'toast.signing.ccBatchSigned': 'CC-signeringsbatch fuldført.',
   'toast.signing.remoteBatchInitiated': 'Fjernsessioner startet.',

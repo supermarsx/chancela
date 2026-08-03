@@ -106,6 +106,7 @@ import type {
   SearchStatusResponse,
   Settings,
   UserPreferences,
+  SaveCmdPhoneBody,
   StepUpMethodPreference,
   NoticeDismissal,
   NoticeKey,
@@ -264,6 +265,7 @@ export const keys = {
   searchSettings: ['search', 'settings'] as const,
   settings: ['settings'] as const,
   mePreferences: ['me', 'preferences'] as const,
+  meCmdPhone: ['me', 'cmd-phone'] as const,
   emailStatus: ['settings', 'email', 'status'] as const,
   emailDeliveries: ['settings', 'email', 'deliveries'] as const,
   platformServices: ['platform', 'services'] as const,
@@ -4271,6 +4273,51 @@ export function useUpdateStepUpMethod() {
     },
     onSettled: () => {
       void qc.invalidateQueries({ queryKey: keys.mePreferences });
+    },
+  });
+}
+
+// --- The saved CMD mobile number ------------------------------------------------------------
+
+/**
+ * The acting user's saved Chave Móvel Digital number (`GET /v1/me/cmd-phone`).
+ *
+ * `staleTime: 0` and no background refetch, deliberately: this is decrypted personal data, so it is
+ * fetched when a signing form actually needs it and not kept warm across the app. `enabled` lets the
+ * signing panel hold the request until the CMD step is open — a user who never signs with CMD never
+ * causes their number to be decrypted at all.
+ *
+ * `retry: false`: an API-key session is answered `403` (the endpoint is interactive-only), which must
+ * surface at once. Consumers treat any failure as "no saved number", which degrades to today's
+ * behaviour — an empty field the user types into.
+ */
+export function useSavedCmdPhone(enabled = true) {
+  return useQuery({
+    queryKey: keys.meCmdPhone,
+    queryFn: () => api.getMeCmdPhone(),
+    enabled,
+    staleTime: 0,
+    retry: false,
+  });
+}
+
+/**
+ * Save or clear the acting user's CMD number (`PUT /v1/me/cmd-phone`). `phone: null` clears it.
+ *
+ * **Not optimistic**, unlike the preference mutations next to it. Those move a cosmetic default and
+ * roll back invisibly if the server disagrees; this one carries a step-up proof that can legitimately
+ * be refused, and showing "saved" before the server agreed would tell the user their number is stored
+ * when it is not. The cache is written only from the server's echoed document.
+ */
+export function useSaveCmdPhone() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SaveCmdPhoneBody) => api.putMeCmdPhone(body),
+    onSuccess: (stored) => {
+      qc.setQueryData(keys.meCmdPhone, stored);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.meCmdPhone });
     },
   });
 }

@@ -1523,6 +1523,12 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         ),
     ),
     (
+        "/v1/me/cmd-phone",
+        RouteGuard::NotGuarded(
+            "Already `require_step_up` in `cmd_phone::put_me_cmd_phone`: the saved CMD number is prefilled into the signing form, and CMD sends its confirmation SMS to whatever that form submits, so swapping it redirects the second factor of a qualified signature — which is exactly what a stolen session would do. Adding a policy confirmation on top would let an operator configuration lower an existing hard-coded gate. The GET is read-only, and the number it returns is decryptable only by a session that unlocked that user's own attestation key.",
+        ),
+    ),
+    (
         "/v1/me/profile",
         RouteGuard::NotGuarded(
             "Edits the caller's OWN display name, e-mail and interface language, and nothing else — `active` and `two_factor_required` are not fields of the body, so no authority and no account-lifecycle state can be reached from here. Every change appends `user.updated` naming the honest actor, so a wrong value is visible and reversible by an administrator. A confirmation dialog on correcting your own name is friction with nothing behind it.",

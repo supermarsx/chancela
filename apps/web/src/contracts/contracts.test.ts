@@ -292,6 +292,7 @@ import {
   type UserDsrRoleAssignment,
   type UserPersonalDataExport,
   type PersonalDataSubject,
+  type PersonalDataCmdPhone,
   type PersonalDataCredentials,
   type PersonalDataTwoFactor,
   type PersonalDataPasskey,
@@ -7418,6 +7419,7 @@ describe('contract fixtures parse through the real client', () => {
         active: true,
         created_at: true,
         credentials: true,
+        cmd_signing_phone: true,
       },
       'UserPersonalDataExport.subject',
     );
@@ -7444,6 +7446,26 @@ describe('contract fixtures parse through the real client', () => {
     // metadata only — never the hash, seed, or key material.
     expect(credentials).not.toHaveProperty('password_hash');
     expect(credentials).not.toHaveProperty('totp_secret');
+
+    // The saved CMD number is the subject's own data, so it is carried rather than excluded — but
+    // it is sealed at rest, so the section must be able to say "stored, and here is why you are not
+    // seeing it" without ever collapsing that into an absence.
+    const cmdPhone = assertExactKeys<PersonalDataCmdPhone>(
+      subject.cmd_signing_phone,
+      { saved: true, saved_at: true, phone: true, note: true },
+      'UserPersonalDataExport.subject.cmd_signing_phone',
+    );
+    expect(typeof cmdPhone.saved).toBe('boolean');
+    // It is not secret material the export declines to carry, so it must not be listed as withheld.
+    expect(exported.exclusions.some((entry) => entry.includes('cmd'))).toBe(false);
+    // A withheld number always explains itself; a present one has nothing to explain.
+    if (cmdPhone.saved && cmdPhone.phone === null) {
+      expect(cmdPhone.note?.length ?? 0).toBeGreaterThan(0);
+    }
+    if (cmdPhone.phone !== null) {
+      expect(cmdPhone.saved).toBe(true);
+      expect(cmdPhone.note).toBeNull();
+    }
 
     if (credentials.two_factor !== null) {
       const twoFactor = assertExactKeys<PersonalDataTwoFactor>(

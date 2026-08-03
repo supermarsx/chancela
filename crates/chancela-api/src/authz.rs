@@ -549,6 +549,13 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // t37 per-user UI preferences (configurable table columns): a valid session that acts only on
     // its own row (handler-enforced via `session_username` → own user id), so `Session`, not a verb.
     ("/v1/me/preferences", RouteClass::Session),
+    // The saved CMD mobile number. `Session` for the same reason as the row above — a valid
+    // interactive session acting only on its OWN row, never a permission verb, and no administrative
+    // path to anyone else's number exists. The `PUT` additionally carries `require_step_up` in
+    // `cmd_phone::put_me_cmd_phone`: the stored number is prefilled into the CMD signing form, and
+    // CMD sends its confirmation SMS to whatever that form submits, so a session-only attacker who
+    // could swap it would be redirecting the second factor of a qualified signature.
+    ("/v1/me/cmd-phone", RouteClass::Session), // GET self; PUT self + step-up
     // The self-service account surface. `Session` for the same reason as the row above: a valid
     // interactive session acting only on its OWN record (handler-enforced via `session_username` →
     // own user id), never a permission verb. The narrow body of `PATCH /v1/me/profile` is the gate
@@ -1402,6 +1409,11 @@ mod tests {
                 "revoke_passkey",
             ),
             ("/v1/me/suspend", include_str!("account.rs"), "suspend_me"),
+            (
+                "/v1/me/cmd-phone",
+                include_str!("cmd_phone.rs"),
+                "put_me_cmd_phone",
+            ),
         ];
 
         // The annotations live in this file's own source, one trailing comment per entry.
@@ -1464,6 +1476,7 @@ mod tests {
             include_str!("privacy.rs"),
             include_str!("passkeys.rs"),
             include_str!("account.rs"),
+            include_str!("cmd_phone.rs"),
         ]
         .iter()
         .map(|src| src.matches("require_step_up(&state").count())

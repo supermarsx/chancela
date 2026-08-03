@@ -41,6 +41,12 @@
           "last_used_at": null
         }
       ]
+    },
+    "cmd_signing_phone": {
+      "saved": true,
+      "saved_at": "2026-07-07T11:05:00Z",
+      "phone": "+351 900 000 000",
+      "note": null
     }
   }
 }

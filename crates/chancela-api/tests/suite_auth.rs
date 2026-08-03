@@ -15,6 +15,8 @@ mod first_admin_bootstrap;
 mod permission_enforcement_parity;
 #[path = "recovery_rbac.rs"]
 mod recovery_rbac;
+#[path = "saved_cmd_phone.rs"]
+mod saved_cmd_phone;
 #[path = "self_service_account.rs"]
 mod self_service_account;
 #[path = "signup_and_invites.rs"]

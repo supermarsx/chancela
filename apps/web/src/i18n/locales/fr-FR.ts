@@ -3242,8 +3242,23 @@ export const frFR: Catalog = {
   'signing.start': 'Signer avec Chave Móvel Digital',
   'signing.credentials.intro':
     'Saisissez le numéro de mobile associé à la Chave Móvel Digital et le code PIN de signature. Le PIN n’est utilisé que pour cette demande et n’est jamais conservé.',
+  'signing.phone.forget.action': 'Supprimer le numéro',
+  'signing.phone.forget.intro':
+    'Confirmez votre identité pour supprimer le numéro enregistré. Il ne sera plus prérempli et vous devrez le saisir à chaque signature.',
+  'signing.phone.forget.title': 'Supprimer le numéro enregistré',
   'signing.phone.label': 'Numéro de mobile',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Enregistrer le numéro',
+  'signing.phone.remember.hint':
+    'Le numéro est chiffré avec vos propres identifiants et n’est lisible que dans vos sessions. Vous pouvez le supprimer à tout moment.',
+  'signing.phone.remember.intro':
+    'Confirmez votre identité pour enregistrer ce numéro dans votre compte. Il sera prérempli lors de vos prochaines signatures Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Enregistrer ce numéro dans mon compte',
+  'signing.phone.remember.locked.body':
+    'Un numéro est enregistré que cette session ne peut pas déchiffrer. Si vous vous êtes connecté sans mot de passe, reconnectez-vous avec celui-ci ; si la clé d’attestation du compte a depuis été remplacée, décochez la case et enregistrez de nouveau le numéro.',
+  'signing.phone.remember.locked.title': 'Numéro enregistré indisponible dans cette session',
+  'signing.phone.remember.pending': 'Enregistrement…',
+  'signing.phone.remember.title': 'Enregistrer le numéro de mobile',
   'signing.pin.label': 'PIN de signature CMD',
   'signing.pin.hint': 'Utilisé uniquement pour cette demande ; jamais conservé.',
   'signing.initiate': 'Envoyer le code SMS',
@@ -3766,6 +3781,8 @@ export const frFR: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Cet emplacement ne peut pas encore être initié car l’enveloppe séquentielle comporte un emplacement obligatoire précédent encore ouvert. Créez d’abord l’invitation pour l’emplacement précédent ou laissez cette invitation en suivi uniquement.',
   'toast.signing.otpSent': 'Code SMS envoyé.',
+  'toast.signing.phoneForgotten': 'Numéro supprimé.',
+  'toast.signing.phoneSaved': 'Numéro enregistré.',
   'toast.signing.signed': 'Procès-verbal signé.',
   'toast.signing.ccBatchSigned': 'Lot de signature CC terminé.',
   'toast.signing.remoteBatchInitiated': 'Sessions distantes démarrées.',

@@ -447,6 +447,15 @@ export const apiErrorPtPT = {
   'apiError.cmd_test_session_expired':
     'O código da assinatura de teste expirou antes de ser confirmado e nada foi assinado. Inicie um teste novo para receber outro código.',
 
+  // The saved CMD number (`/v1/me/cmd-phone`). Deliberate refusals, not hiccups: each says what
+  // would have to change, because repeating the same request would land in the same place.
+  'apiError.cmd_phone_no_unlocked_key':
+    'Para guardar o número é preciso iniciar sessão com a palavra-passe: o número é cifrado com a sua chave de atestação, que tem de estar aberta na sessão. Repetir nesta sessão não altera o resultado.',
+  'apiError.cmd_phone_invalid':
+    'O número indicado não tem o formato de um número de telemóvel. Escreva-o em formato internacional, por exemplo +351 900 000 000.',
+  'apiError.cmd_phone_unreadable':
+    'O número guardado foi cifrado com uma chave de atestação que esta conta já não tem, pelo que não pode ser lido por ninguém. Guarde o número de novo para substituir o registo ilegível.',
+
   // ═══ THE TECHNICAL-DETAILS BLOCK (consumed by t58-e6's ErrorNote) ═════════════════════════
   'apiError.details.summary': 'Detalhes técnicos',
   'apiError.details.code': 'Código',
@@ -768,6 +777,13 @@ export const apiErrorEnglish = {
     'The confirmation was refused: only whoever started the test signature may confirm it. Repeating it changes nothing.',
   'apiError.cmd_test_session_expired':
     'The test-signature code expired before it was confirmed, and nothing was signed. Start a new test to receive another code.',
+
+  'apiError.cmd_phone_no_unlocked_key':
+    'Saving the number requires signing in with your password: the number is encrypted with your attestation key, which has to be unlocked in the session. Repeating this in the current session changes nothing.',
+  'apiError.cmd_phone_invalid':
+    'The number given is not shaped like a mobile number. Write it in international form, for example +351 900 000 000.',
+  'apiError.cmd_phone_unreadable':
+    'The saved number was encrypted with an attestation key this account no longer has, so nobody can read it. Save the number again to replace the unreadable record.',
 
   'apiError.details.summary': 'Technical details',
   'apiError.details.code': 'Code',

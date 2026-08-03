@@ -54,6 +54,18 @@ const PERSONAL_DATA_EXCLUSIONS: &[&str] = &[
     "passkey_credential_key",
     "attestation_key",
 ];
+/// What the export says about a saved CMD number it could not decrypt.
+///
+/// A note, not a silent omission. The number IS the subject's personal data and the export must
+/// account for it; what the server cannot do is *produce* it for a caller who is not the subject in
+/// a session that unlocked their own attestation key — the plaintext exists nowhere the server can
+/// reach without one. Saying so plainly is the honest answer; emitting `saved_cmd_phone: null` with
+/// no explanation would read as "no number is stored", which would be false.
+const PERSONAL_DATA_CMD_PHONE_SEALED_NOTE: &str = "A Chave Móvel Digital mobile number is saved on this account. It is stored encrypted under your own credentials and cannot be included here: only a session signed in as you, with your attestation key unlocked, can decrypt it. Sign in as yourself and export again, or read it in the signing area, to obtain the number itself.";
+/// What the export says about a saved number whose key is gone. Separate from the note above because
+/// that one's advice — sign in as yourself and try again — would be false here: no sign-in recovers
+/// it. Stating the wrong remedy is its own kind of dishonesty.
+const PERSONAL_DATA_CMD_PHONE_STALE_NOTE: &str = "A Chave Móvel Digital mobile number is saved on this account, but the attestation key it was encrypted under has since been replaced or removed, so it can no longer be decrypted by anyone, including this instance. Saving the number again in the signing area replaces this unreadable record.";
 /// Honest, locale-agnostic scope statements the export carries about itself. Server-rendered English
 /// like the DSR export's `redaction_notes`: a subject-access export is a copy of stored data, so it
 /// says plainly what it is and — importantly — which categories of the subject's data it does NOT
@@ -199,6 +211,44 @@ pub struct PersonalDataSubject {
     /// RFC 3339 enrolment stamp.
     pub created_at: String,
     pub credentials: PersonalDataCredentials,
+    /// The subject's saved Chave Móvel Digital signing number. Always present as an object (never
+    /// skipped) so the key set is identical across subjects, including subjects who saved nothing.
+    pub cmd_signing_phone: PersonalDataCmdPhone,
+}
+
+/// The subject's saved CMD mobile number, as far as this export can honestly reach it.
+///
+/// The number is the subject's own personal data and belongs in a subject-access export, so it is
+/// **not** in [`PERSONAL_DATA_EXCLUSIONS`] — it is not secret material the server withholds by
+/// policy, it is the subject's data the server holds. But it is stored sealed to the subject's own
+/// attestation scalar (see [`crate::cmd_phone`]), so the server cannot produce the plaintext for a
+/// caller who is not the subject in a session that unlocked that scalar. Rather than drop the fact
+/// or emit a bare `null` that would read as "nothing saved", this states which of the three cases
+/// applies and, when it cannot show the number, says why in [`note`](Self::note).
+#[derive(Serialize)]
+pub struct PersonalDataCmdPhone {
+    /// Whether a number is stored at all. True even when it cannot be decrypted here.
+    pub saved: bool,
+    /// RFC 3339 instant it was saved. Present-and-null when nothing is saved.
+    pub saved_at: Option<String>,
+    /// The number itself. Present only when this export was produced by the subject's own session
+    /// with their attestation key unlocked; present-and-null otherwise.
+    pub phone: Option<String>,
+    /// Why `phone` is null despite `saved` being true. Present-and-null when there is nothing to
+    /// explain — nothing saved, or the number is right there.
+    pub note: Option<&'static str>,
+}
+
+impl PersonalDataCmdPhone {
+    /// Nothing saved for this subject.
+    fn none_saved() -> Self {
+        PersonalDataCmdPhone {
+            saved: false,
+            saved_at: None,
+            phone: None,
+            note: None,
+        }
+    }
 }
 
 /// Which credentials the subject holds — **metadata only**. Whether a password/recovery phrase/TOTP
@@ -244,10 +294,13 @@ pub struct PersonalDataPasskey {
 }
 
 impl PersonalDataExport {
-    /// Build the export from a user record. Pure and synchronous: it reads only the durable [`User`]
-    /// and touches no session store, so a subject-access export is always producible and can never
-    /// fail on a transient session-service outage.
-    fn of(user: &User) -> Self {
+    /// Build the export from a user record and the already-resolved saved-CMD-number state.
+    ///
+    /// Still pure and synchronous: it touches no session store, so a subject-access export is always
+    /// producible and can never fail on a transient session-service outage. `cmd_signing_phone` is
+    /// resolved by the caller because opening the seal needs the acting session's unlocked
+    /// attestation key, which is a request-scoped fact and not a property of the [`User`] record.
+    fn of(user: &User, cmd_signing_phone: PersonalDataCmdPhone) -> Self {
         let two_factor = user
             .totp
             .as_ref()
@@ -289,6 +342,7 @@ impl PersonalDataExport {
                     two_factor,
                     passkeys,
                 },
+                cmd_signing_phone,
             },
         }
     }
@@ -3975,6 +4029,7 @@ pub async fn export_personal_data(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
     actor: CurrentActor,
+    attestor: CurrentAttestor,
 ) -> Result<Json<PersonalDataExport>, ApiError> {
     let target = UserId(id);
 
@@ -3982,7 +4037,8 @@ pub async fn export_personal_data(
     // interactive self), so an API key is never "self" and must clear `privacy.manage` like any
     // other non-self caller.
     let authz = crate::authz::authorizer(&state, &actor).await?;
-    if authz.principal().ok() != Some(target) {
+    let is_self = authz.principal().ok() == Some(target);
+    if !is_self {
         authz.require(Permission::PrivacyManage, Scope::Global)?;
     }
 
@@ -3991,7 +4047,52 @@ pub async fn export_personal_data(
         users.get(&target).cloned().ok_or(ApiError::NotFound)?
     };
 
-    Ok(Json(PersonalDataExport::of(&user)))
+    let cmd_signing_phone = resolve_export_cmd_phone(&state, target, is_self, &attestor).await;
+    Ok(Json(PersonalDataExport::of(&user, cmd_signing_phone)))
+}
+
+/// Resolve the saved-CMD-number section of a subject-access export.
+///
+/// The plaintext is produced only for the subject's **own** session holding their **own** unlocked
+/// attestation key — the `is_self` check is what stops a privacy officer's session key from being
+/// tried against another subject's seal (it would fail on the fingerprint anyway, but the intent
+/// should not depend on that). Every other case still reports that a number exists and says why it
+/// is not shown: the fact is never dropped, and a `null` never stands in for "nothing saved".
+async fn resolve_export_cmd_phone(
+    state: &AppState,
+    target: UserId,
+    is_self: bool,
+    attestor: &CurrentAttestor,
+) -> PersonalDataCmdPhone {
+    let saved_at = {
+        let store = state.saved_cmd_phones.read().await;
+        match store.get(target) {
+            Some(saved) => saved.saved_at.clone(),
+            None => return PersonalDataCmdPhone::none_saved(),
+        }
+    };
+    let sealed = |note| PersonalDataCmdPhone {
+        saved: true,
+        saved_at: Some(saved_at.clone()),
+        phone: None,
+        note: Some(note),
+    };
+    let Some((_, key)) = attestor.signer().filter(|_| is_self) else {
+        return sealed(PERSONAL_DATA_CMD_PHONE_SEALED_NOTE);
+    };
+    match crate::cmd_phone::open_saved_phone(state, target, key).await {
+        Ok(Some(phone)) => PersonalDataCmdPhone {
+            saved: true,
+            saved_at: Some(saved_at),
+            phone: Some(phone),
+            note: None,
+        },
+        // The row vanished between the two reads — treat it as the absence it now is.
+        Ok(None) => PersonalDataCmdPhone::none_saved(),
+        // A seal keyed to a replaced/removed attestation key. Reported with its own remedy, never
+        // collapsed into "nothing saved".
+        Err(_) => sealed(PERSONAL_DATA_CMD_PHONE_STALE_NOTE),
+    }
 }
 
 /// `POST /v1/privacy/users/{id}/dsr-requests` — create a tracked DSR request for a user.

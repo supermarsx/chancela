@@ -246,6 +246,8 @@ import type {
   SearchStatusResponse,
   Settings,
   UserPreferences,
+  SavedCmdPhoneView,
+  SaveCmdPhoneBody,
   EmailDeliveryView,
   EmailStatusView,
   EmailTestResult,
@@ -971,6 +973,11 @@ export const api = {
   // the caller's entire `table_columns`; a table omitted from the body clears its override.
   getMePreferences: () => get<UserPreferences>('/v1/me/preferences'),
   putMePreferences: (body: UserPreferences) => put<UserPreferences>('/v1/me/preferences', body),
+
+  // The saved CMD mobile number — self-scoped, opt-in, sealed at rest to the caller's attestation
+  // key. `phone: null` clears it. Both directions of the PUT carry a step-up proof.
+  getMeCmdPhone: () => get<SavedCmdPhoneView>('/v1/me/cmd-phone'),
+  putMeCmdPhone: (body: SaveCmdPhoneBody) => put<SavedCmdPhoneView>('/v1/me/cmd-phone', body),
 
   // Outbound email (t23). The non-secret configuration rides `putSettings` with the rest of the
   // document; these three cover what cannot — the write-only relay password, the status that

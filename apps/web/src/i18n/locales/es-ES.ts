@@ -3227,8 +3227,23 @@ export const esES: Catalog = {
   'signing.start': 'Firmar con Chave Móvel Digital',
   'signing.credentials.intro':
     'Introduzca el número de móvil asociado a la Chave Móvel Digital y el PIN de firma. El PIN se usa solo para esta solicitud y nunca se almacena.',
+  'signing.phone.forget.action': 'Eliminar número',
+  'signing.phone.forget.intro':
+    'Confirme su identidad para eliminar el número guardado. Dejará de rellenarse automáticamente y tendrá que escribirlo en cada firma.',
+  'signing.phone.forget.title': 'Eliminar el número guardado',
   'signing.phone.label': 'Número de móvil',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Guardar número',
+  'signing.phone.remember.hint':
+    'El número se cifra con sus propias credenciales y solo puede leerse en sus sesiones. Puede eliminarlo cuando quiera.',
+  'signing.phone.remember.intro':
+    'Confirme su identidad para guardar este número en su cuenta. Se rellenará en sus próximas firmas con Chave Móvel Digital.',
+  'signing.phone.remember.label': 'Guardar este número en mi cuenta',
+  'signing.phone.remember.locked.body':
+    'Hay un número guardado que esta sesión no puede descifrar. Si inició sesión sin contraseña, vuelva a iniciarla con ella; si la clave de atestación de la cuenta se ha sustituido, desmarque la casilla y guarde el número de nuevo.',
+  'signing.phone.remember.locked.title': 'Número guardado no disponible en esta sesión',
+  'signing.phone.remember.pending': 'Guardando…',
+  'signing.phone.remember.title': 'Guardar el número de móvil',
   'signing.pin.label': 'PIN de firma de CMD',
   'signing.pin.hint': 'Se usa solo para esta solicitud; nunca se almacena.',
   'signing.initiate': 'Enviar código por SMS',
@@ -3748,6 +3763,8 @@ export const esES: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Este slot aún no puede iniciarse porque el sobre secuencial tiene un slot obligatorio anterior abierto. Cree primero la invitación para el slot anterior o deje esta invitación solo en seguimiento.',
   'toast.signing.otpSent': 'Código SMS enviado.',
+  'toast.signing.phoneForgotten': 'Número eliminado.',
+  'toast.signing.phoneSaved': 'Número guardado.',
   'toast.signing.signed': 'Acta firmada.',
   'toast.signing.ccBatchSigned': 'Lote de firma con TC completado.',
   'toast.signing.remoteBatchInitiated': 'Sesiones remotas iniciadas.',

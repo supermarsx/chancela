@@ -3250,8 +3250,23 @@ export const deDE: Catalog = {
   'signing.start': 'Mit Chave Móvel Digital signieren',
   'signing.credentials.intro':
     'Geben Sie die mit der Chave Móvel Digital verknüpfte Mobilnummer und die Signatur-PIN ein. Die PIN wird nur für diese Anfrage verwendet und niemals gespeichert.',
+  'signing.phone.forget.action': 'Nummer entfernen',
+  'signing.phone.forget.intro':
+    'Bestätigen Sie Ihre Identität, um die gespeicherte Nummer zu entfernen. Sie wird nicht mehr vorausgefüllt und muss bei jeder Signatur erneut eingegeben werden.',
+  'signing.phone.forget.title': 'Gespeicherte Nummer entfernen',
   'signing.phone.label': 'Mobilnummer',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Nummer speichern',
+  'signing.phone.remember.hint':
+    'Die Nummer wird mit Ihren eigenen Anmeldedaten verschlüsselt und ist nur in Ihren Sitzungen lesbar. Sie können sie jederzeit entfernen.',
+  'signing.phone.remember.intro':
+    'Bestätigen Sie Ihre Identität, um diese Nummer in Ihrem Konto zu speichern. Sie wird bei Ihren nächsten Signaturen mit Chave Móvel Digital vorausgefüllt.',
+  'signing.phone.remember.label': 'Diese Nummer in meinem Konto speichern',
+  'signing.phone.remember.locked.body':
+    'Es ist eine Nummer gespeichert, die diese Sitzung nicht entschlüsseln kann. Wenn Sie sich ohne Passwort angemeldet haben, melden Sie sich erneut damit an; wurde der Attestierungsschlüssel des Kontos inzwischen ersetzt, entfernen Sie den Haken und speichern Sie die Nummer erneut.',
+  'signing.phone.remember.locked.title': 'Gespeicherte Nummer in dieser Sitzung nicht verfügbar',
+  'signing.phone.remember.pending': 'Wird gespeichert…',
+  'signing.phone.remember.title': 'Mobilnummer speichern',
   'signing.pin.label': 'CMD-Signatur-PIN',
   'signing.pin.hint': 'Nur für diese Anfrage verwendet; niemals gespeichert.',
   'signing.initiate': 'SMS-Code senden',
@@ -3777,6 +3792,8 @@ export const deDE: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'Dieser Slot kann noch nicht begonnen werden, da der sequenzielle Umschlag einen vorherigen Pflicht-Slot offen hat. Erstellen Sie zuerst die Einladung für den vorherigen Slot oder belassen Sie diese Einladung nur zur Nachverfolgung.',
   'toast.signing.otpSent': 'SMS-Code gesendet.',
+  'toast.signing.phoneForgotten': 'Nummer entfernt.',
+  'toast.signing.phoneSaved': 'Nummer gespeichert.',
   'toast.signing.signed': 'Protokoll signiert.',
   'toast.signing.ccBatchSigned': 'Stapelsignatur mit der Bürgerkarte abgeschlossen.',
   'toast.signing.remoteBatchInitiated': 'Remote-Sitzungen gestartet.',

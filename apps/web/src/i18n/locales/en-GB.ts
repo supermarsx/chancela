@@ -3183,8 +3183,23 @@ export const enGB: Catalog = {
   'signing.start': 'Sign with Chave Móvel Digital',
   'signing.credentials.intro':
     'Enter the mobile number tied to the Chave Móvel Digital and the signing PIN. The PIN is used only for this request and is never stored.',
+  'signing.phone.forget.action': 'Remove number',
+  'signing.phone.forget.intro':
+    'Confirm your identity to remove the saved number. It will no longer be filled in for you, and you will have to type it for each signature.',
+  'signing.phone.forget.title': 'Remove the saved number',
   'signing.phone.label': 'Mobile number',
   'signing.phone.placeholder': '+351 912345678',
+  'signing.phone.remember.action': 'Save number',
+  'signing.phone.remember.hint':
+    'The number is encrypted with your own credentials and readable only in your sessions. You can remove it at any time.',
+  'signing.phone.remember.intro':
+    'Confirm your identity to save this number to your account. It will be filled in for your next Chave Móvel Digital signatures.',
+  'signing.phone.remember.label': 'Save this number to my account',
+  'signing.phone.remember.locked.body':
+    'A number is saved that this session cannot decrypt. If you signed in without your password, sign in again with it; if the account’s attestation key has since been replaced, untick the box and save the number again.',
+  'signing.phone.remember.locked.title': 'Saved number unavailable in this session',
+  'signing.phone.remember.pending': 'Saving…',
+  'signing.phone.remember.title': 'Save the mobile number',
   'signing.pin.label': 'CMD signing PIN',
   'signing.pin.hint': 'Used only for this request; never stored.',
   'signing.initiate': 'Send SMS code',
@@ -3694,6 +3709,8 @@ export const enGB: Catalog = {
   'signing.invites.slot.sequentialConflict':
     'This slot cannot be initiated yet because the sequential envelope still has an earlier required slot open. Create the invite for the earlier slot first, or leave this invite tracking-only.',
   'toast.signing.otpSent': 'SMS code sent.',
+  'toast.signing.phoneForgotten': 'Number removed.',
+  'toast.signing.phoneSaved': 'Number saved.',
   'toast.signing.signed': 'Minutes signed.',
   'toast.signing.ccBatchSigned': 'CC signing batch completed.',
   'toast.signing.remoteBatchInitiated': 'Remote sessions initiated.',
