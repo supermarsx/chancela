@@ -5352,6 +5352,8 @@ export const frFR: Catalog = {
   'settings.providerCredentials.entry.edit': 'Modifier',
   'settings.providerCredentials.entry.noFields': 'Aucun champ configuré',
   'settings.providerCredentials.entry.configured': 'configuré',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'pas ok',
   'settings.providerCredentials.entry.deleteConfirm.title': "Supprimer l'entrée",
   'settings.providerCredentials.entry.deleteConfirm.intro':
     "Vous allez supprimer l'entrée « {label} ». Cette action est irréversible.",

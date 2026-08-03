@@ -5374,6 +5374,8 @@ export const ptPT: Catalog = {
   'settings.providerCredentials.entry.edit': 'Editar',
   'settings.providerCredentials.entry.noFields': 'Sem campos configurados',
   'settings.providerCredentials.entry.configured': 'configurado',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'não ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Remover entrada',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Vai remover a entrada «{label}». Esta ação não pode ser anulada.',

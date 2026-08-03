@@ -5357,6 +5357,8 @@ export const deDE: Catalog = {
   'settings.providerCredentials.entry.edit': 'Bearbeiten',
   'settings.providerCredentials.entry.noFields': 'Keine konfigurierten Felder',
   'settings.providerCredentials.entry.configured': 'konfiguriert',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'nicht ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Eintrag entfernen',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Sie entfernen den Eintrag „{label}“. Diese Aktion kann nicht rückgängig gemacht werden.',

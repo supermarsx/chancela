@@ -724,4 +724,74 @@ describe('ProviderCredentialsSection', () => {
     const request = stub.calls.find((call) => call.url.endsWith('/reorder'));
     expect(JSON.parse(request?.body ?? '{}').order).toEqual(['entry-b', 'entry/a']);
   });
+
+  // The CMD `Campos` column abbreviates its four long field names to PEM/APPID/PWD/USER — a
+  // verbatim identifier (never translated) — beside a short, translated ok / não ok state. Every
+  // assertion is on the identifier or on a catalog value, never on a hardcoded translation.
+  it('abbreviates the four CMD field badges and keeps a full accessible name', async () => {
+    const cmdView: ProviderCredentialsListView = {
+      strict: false,
+      protection_level: 'confidential',
+      can_store: true,
+      providers: [
+        {
+          mode: 'cmd',
+          provider_id: '',
+          entries: [
+            {
+              entry_id: 'cmd-1',
+              label: 'CMD produção',
+              priority: 0,
+              enabled: true,
+              selectors: { env: 'prod' },
+              fields: [
+                { field_name: 'ama_cert_pem', configured: true },
+                { field_name: 'application_id', configured: true },
+                { field_name: 'http_basic_password', configured: false },
+                { field_name: 'http_basic_username', configured: false },
+              ],
+              created_at: '2026-07-01T10:00:00Z',
+              updated_at: '2026-07-01T10:00:00Z',
+            },
+          ],
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', stubFetch(cmdView).fn);
+    renderSection();
+
+    const row = (await screen.findByText('CMD produção')).closest('tr') as HTMLElement;
+    // The raw stored field names are gone from the CMD row; the compact identifiers stand in.
+    for (const raw of [
+      'ama_cert_pem',
+      'application_id',
+      'http_basic_username',
+      'http_basic_password',
+    ]) {
+      expect(row.textContent).not.toContain(raw);
+    }
+
+    const configured = ptPT['settings.providerCredentials.entry.configured'];
+    const notConfigured = ptPT['settings.providerCredentials.entry.notConfigured'];
+    const ok = ptPT['settings.providerCredentials.entry.ok'];
+    const notOk = ptPT['settings.providerCredentials.entry.notOk'];
+
+    const cases = [
+      { abbr: 'PEM', isConfigured: true },
+      { abbr: 'APPID', isConfigured: true },
+      { abbr: 'PWD', isConfigured: false },
+      { abbr: 'USER', isConfigured: false },
+    ];
+    for (const { abbr, isConfigured } of cases) {
+      // The accessible name is the full statement: abbreviation + the same configured / por
+      // configurar wording the rest of the app uses, carried on an sr-only span.
+      const accessibleName = `${abbr}: ${isConfigured ? configured : notConfigured}`;
+      const badge = within(row).getByText(accessibleName).closest('.badge') as HTMLElement;
+      expect(badge).toBeTruthy();
+      // Configured → positive tone; not configured → muted/neutral tone.
+      expect(badge.className).toContain(isConfigured ? 'badge--ok' : 'badge--neutral');
+      // The compact visible text is the abbreviation plus a short, translated ok / não ok.
+      expect(within(badge).getByText(`${abbr} · ${isConfigured ? ok : notOk}`)).toBeTruthy();
+    }
+  });
 });

@@ -5305,6 +5305,8 @@ export const plPL: Catalog = {
   'settings.providerCredentials.entry.edit': 'Edytuj',
   'settings.providerCredentials.entry.noFields': 'Brak skonfigurowanych pól',
   'settings.providerCredentials.entry.configured': 'skonfigurowano',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'nie ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Usuń wpis',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Zamierzasz usunąć wpis „{label}”. Tej operacji nie można cofnąć.',

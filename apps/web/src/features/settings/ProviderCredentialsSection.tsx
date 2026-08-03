@@ -329,6 +329,28 @@ const SECRET_FIELDS: Record<CredentialMode, SecretFieldSpec[]> = {
   ],
 };
 
+/**
+ * Compact per-field labels for the CMD `Campos` column badges.
+ *
+ * The shared fields column renders each field's stored name verbatim (`client_secret`,
+ * `ama_cert_pem`, …). For CMD that meant four long snake_case tokens an operator has to read in full
+ * to scan a row; these give the four CMD fields a short, machine-ish label instead. They are
+ * identifiers, not copy — the SAME in every locale, like the `CHANCELA_*` environment variables and
+ * the no-claims flags the app renders verbatim — so they live here rather than in the translation
+ * catalog. Only the ok / não-ok STATE beside them, and the badge's full accessible name, are
+ * translated.
+ *
+ * Scoped to CMD deliberately: CSC/SCAP/PKCS#12 keep their descriptive field names, which are short
+ * enough to read and would only turn cryptic if abbreviated. A CMD field not listed here (an unknown
+ * future one) falls back to its verbatim name, so nothing is silently dropped.
+ */
+const CMD_FIELD_ABBREVIATIONS: Record<string, string> = {
+  ama_cert_pem: 'PEM',
+  application_id: 'APPID',
+  http_basic_password: 'PWD',
+  http_basic_username: 'USER',
+};
+
 /** Per-mode NON-secret selectors, persisted plainly and returned in responses. */
 const SELECTOR_FIELDS: Record<CredentialMode, SelectorFieldSpec[]> = {
   // CMD's environment is decided HERE and nowhere else. The settings card used to carry a
@@ -1814,14 +1836,36 @@ function EntryRow({
           {entry.fields.length === 0 ? (
             <span className="muted">{t('settings.providerCredentials.entry.noFields')}</span>
           ) : (
-            entry.fields.map((f) => (
-              <Badge key={f.field_name} tone={f.configured ? 'ok' : 'neutral'}>
-                {f.field_name} ·{' '}
-                {f.configured
-                  ? t('settings.providerCredentials.entry.configured')
-                  : t('settings.providerCredentials.entry.notConfigured')}
-              </Badge>
-            ))
+            entry.fields.map((f) => {
+              const stateWord = f.configured
+                ? t('settings.providerCredentials.entry.configured')
+                : t('settings.providerCredentials.entry.notConfigured');
+              // CMD fields carry a compact `LABEL · ok / não ok` badge. The abbreviation is a
+              // verbatim identifier (the same token in every locale), so only the state word is
+              // translated. The visible text stays terse; the badge's accessible name spells the
+              // field and its state out in full so a screen reader and a colour-blind operator both
+              // get more than a colour and a four-letter token. Other modes keep the descriptive
+              // field name unchanged.
+              const abbr = group.mode === 'cmd' ? CMD_FIELD_ABBREVIATIONS[f.field_name] : undefined;
+              if (abbr) {
+                return (
+                  <Badge key={f.field_name} tone={f.configured ? 'ok' : 'neutral'}>
+                    <span aria-hidden="true">
+                      {abbr} ·{' '}
+                      {f.configured
+                        ? t('settings.providerCredentials.entry.ok')
+                        : t('settings.providerCredentials.entry.notOk')}
+                    </span>
+                    <span className="sr-only">{`${abbr}: ${stateWord}`}</span>
+                  </Badge>
+                );
+              }
+              return (
+                <Badge key={f.field_name} tone={f.configured ? 'ok' : 'neutral'}>
+                  {f.field_name} · {stateWord}
+                </Badge>
+              );
+            })
           )}
         </span>
       </td>

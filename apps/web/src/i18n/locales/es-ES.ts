@@ -5329,6 +5329,8 @@ export const esES: Catalog = {
   'settings.providerCredentials.entry.edit': 'Editar',
   'settings.providerCredentials.entry.noFields': 'Sin campos configurados',
   'settings.providerCredentials.entry.configured': 'configurado',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'no ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Eliminar entrada',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Va a eliminar la entrada «{label}». Esta acción no se puede deshacer.',

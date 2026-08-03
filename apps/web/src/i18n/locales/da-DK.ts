@@ -5288,6 +5288,8 @@ export const daDK: Catalog = {
   'settings.providerCredentials.entry.edit': 'Rediger',
   'settings.providerCredentials.entry.noFields': 'Ingen konfigurerede felter',
   'settings.providerCredentials.entry.configured': 'konfigureret',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'ikke ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Fjern post',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Du er ved at fjerne posten “{label}”. Denne handling kan ikke fortrydes.',

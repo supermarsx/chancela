@@ -5308,6 +5308,8 @@ export const fiFI: Catalog = {
   'settings.providerCredentials.entry.edit': 'Muokkaa',
   'settings.providerCredentials.entry.noFields': 'Ei määritettyjä kenttiä',
   'settings.providerCredentials.entry.configured': 'määritetty',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'ei ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Poista merkintä',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Olet poistamassa merkintää ”{label}”. Tätä toimintoa ei voi kumota.',

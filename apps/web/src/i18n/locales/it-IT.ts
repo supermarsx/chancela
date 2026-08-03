@@ -5332,6 +5332,8 @@ export const itIT: Catalog = {
   'settings.providerCredentials.entry.edit': 'Modifica',
   'settings.providerCredentials.entry.noFields': 'Nessun campo configurato',
   'settings.providerCredentials.entry.configured': 'configurato',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'non ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Rimuovi voce',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Stai per rimuovere la voce «{label}». Questa azione non può essere annullata.',

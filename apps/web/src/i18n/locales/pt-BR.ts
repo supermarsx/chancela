@@ -5300,6 +5300,8 @@ export const ptBR: Catalog = {
   'settings.providerCredentials.entry.edit': 'Editar',
   'settings.providerCredentials.entry.noFields': 'Nenhum campo configurado',
   'settings.providerCredentials.entry.configured': 'configurado',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'não ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Remover entrada',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Você vai remover a entrada «{label}». Esta ação não pode ser desfeita.',

@@ -5263,6 +5263,8 @@ export const enUS = {
   'settings.providerCredentials.entry.edit': 'Edit',
   'settings.providerCredentials.entry.noFields': 'No configured fields',
   'settings.providerCredentials.entry.configured': 'configured',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'not ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Remove entry',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'You are about to remove the entry “{label}”. This action cannot be undone.',

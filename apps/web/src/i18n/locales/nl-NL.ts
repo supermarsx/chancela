@@ -5340,6 +5340,8 @@ export const nlNL: Catalog = {
   'settings.providerCredentials.entry.edit': 'Bewerken',
   'settings.providerCredentials.entry.noFields': 'Geen geconfigureerde velden',
   'settings.providerCredentials.entry.configured': 'geconfigureerd',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'niet ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Vermelding verwijderen',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'U staat op het punt de vermelding “{label}” te verwijderen. Deze actie kan niet ongedaan worden gemaakt.',

@@ -5299,6 +5299,8 @@ export const svSE: Catalog = {
   'settings.providerCredentials.entry.edit': 'Redigera',
   'settings.providerCredentials.entry.noFields': 'Inga konfigurerade fält',
   'settings.providerCredentials.entry.configured': 'konfigurerad',
+  'settings.providerCredentials.entry.ok': 'ok',
+  'settings.providerCredentials.entry.notOk': 'inte ok',
   'settings.providerCredentials.entry.deleteConfirm.title': 'Ta bort post',
   'settings.providerCredentials.entry.deleteConfirm.intro':
     'Du håller på att ta bort posten ”{label}”. Denna åtgärd kan inte ångras.',
