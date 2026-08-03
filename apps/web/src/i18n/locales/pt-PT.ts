@@ -4752,6 +4752,33 @@ export const ptPT: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Adicione uma fonte para o backend poder importar ou resolver uma lista de confiança.',
   'settings.signing.tslSources.enabled': 'Fonte TSL ativa',
+
+  // --- Âncoras de confiança da Lista de Confiança (TSL) --------------------------
+  // A distinção fonte/âncora é o texto que existe para corrigir o erro de configuração
+  // que originou este ecrã: o operador configurava uma fonte e concluía que a confiança
+  // estava configurada. Não se afirma aqui qualquer efeito jurídico da assinatura.
+  'settings.signing.tslAnchors.title': 'Âncoras de confiança da Lista de Confiança',
+  'settings.signing.tslAnchors.hint':
+    'Uma fonte diz onde a Lista de Confiança é obtida; uma âncora diz quem a pode ter assinado. São coisas distintas: configurar apenas a fonte não autentica nada. Sem âncora, nenhuma lista é autenticada e a assinatura qualificada é recusada.',
+  'settings.signing.tslAnchors.provenance':
+    'A âncora é o certificado com que a própria lista vai assinada, publicado pela entidade que gere o esquema de confiança. Indique-o como certificado ou apenas pela impressão digital SHA-256. Em alternativa, as variáveis de ambiente CHANCELA_TSL_TRUST_ANCHOR e CHANCELA_TSL_TRUST_ANCHOR_SHA256 continuam a servir; o servidor reúne as âncoras das duas origens.',
+  'settings.signing.tslAnchors.empty.title': 'Sem âncora de confiança nestas definições',
+  'settings.signing.tslAnchors.empty.body':
+    'Não há nenhuma âncora configurada aqui. Se também não houver nenhuma definida no ambiente, nenhuma Lista de Confiança pode ser autenticada e qualquer assinatura qualificada é recusada. Acrescente abaixo um certificado ou uma impressão digital.',
+  'settings.signing.tslAnchors.certs.hint': 'Certificados da âncora, em PEM ou DER.',
+  'settings.signing.tslAnchors.certs.add': 'Adicionar certificado',
+  'settings.signing.tslAnchors.certs.none': 'Nenhum certificado de âncora configurado.',
+  'settings.signing.tslAnchors.certs.label': 'Certificado de âncora {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Remover o certificado de âncora {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Cole aqui o certificado, começando por -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'Impressões digitais SHA-256 dos certificados da âncora, em hexadecimal (64 caracteres).',
+  'settings.signing.tslAnchors.digests.add': 'Adicionar impressão digital',
+  'settings.signing.tslAnchors.digests.none': 'Nenhuma impressão digital de âncora configurada.',
+  'settings.signing.tslAnchors.digests.label': 'Impressão digital de âncora {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Remover a impressão digital de âncora {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 caracteres hexadecimais',
   'settings.signing.tsaProviders.title': 'Prestadores TSA',
   'settings.signing.tsaProviders.hint':
     'Configure autoridades de selo temporal RFC 3161. Quando existir algum prestador ativo, exatamente um deve ser predefinido.',

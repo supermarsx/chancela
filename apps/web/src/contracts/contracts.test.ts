@@ -5063,6 +5063,10 @@ describe('contract fixtures parse through the real client', () => {
         providers: true,
       },
       'Settings.signing',
+      // Optional on the wire: the server skips serializing both anchor lists when they are empty,
+      // so an install that has provisioned no anchor omits them entirely. That absence is the
+      // fail-closed default, not a missing field — allowed, but never required.
+      ['tsl_trust_anchor_certs', 'tsl_trust_anchor_sha256'],
     );
     inEnum(SIGNATURE_FAMILIES, signing.preferred_family, 'signing.preferred_family');
     expect(typeof signing.require_qualified_for_seal).toBe('boolean');

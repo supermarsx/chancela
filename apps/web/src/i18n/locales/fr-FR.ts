@@ -4629,6 +4629,33 @@ export const frFR: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Ajoutez une source afin que le backend puisse importer ou résoudre une liste de confiance.',
   'settings.signing.tslSources.enabled': 'Source TSL activée',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Ancres de confiance de la liste TSL',
+  'settings.signing.tslAnchors.hint':
+    'Une source indique où la liste de confiance est récupérée ; une ancre indique qui était autorisé à la signer. Ce sont deux choses différentes : configurer une source seule n’authentifie rien. Sans ancre, aucune liste n’est authentifiée et la signature qualifiée est refusée.',
+  'settings.signing.tslAnchors.provenance':
+    'L’ancre est le certificat avec lequel la liste elle-même est signée, publié par l’organisme qui exploite le schéma de confiance. Indiquez-la sous forme de certificat, ou uniquement par son empreinte SHA-256. Les variables d’environnement CHANCELA_TSL_TRUST_ANCHOR et CHANCELA_TSL_TRUST_ANCHOR_SHA256 restent une alternative ; le serveur réunit les ancres des deux origines.',
+  'settings.signing.tslAnchors.empty.title': 'Aucune ancre de confiance dans ces paramètres',
+  'settings.signing.tslAnchors.empty.body':
+    'Aucune ancre n’est configurée ici. Si aucune n’est définie non plus dans l’environnement, aucune liste de confiance ne peut être authentifiée et toute signature qualifiée est refusée. Ajoutez ci-dessous un certificat ou une empreinte.',
+  'settings.signing.tslAnchors.certs.hint': 'Certificats d’ancre, en PEM ou DER.',
+  'settings.signing.tslAnchors.certs.add': 'Ajouter un certificat',
+  'settings.signing.tslAnchors.certs.none': 'Aucun certificat d’ancre configuré.',
+  'settings.signing.tslAnchors.certs.label': 'Certificat d’ancre {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Supprimer le certificat d’ancre {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Collez ici le certificat, en commençant par -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'Empreintes SHA-256 des certificats d’ancre, en hexadécimal (64 caractères).',
+  'settings.signing.tslAnchors.digests.add': 'Ajouter une empreinte',
+  'settings.signing.tslAnchors.digests.none': 'Aucune empreinte d’ancre configurée.',
+  'settings.signing.tslAnchors.digests.label': 'Empreinte d’ancre {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Supprimer l’empreinte d’ancre {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 caractères hexadécimaux',
   'settings.signing.tsaProviders.title': 'Prestataires TSA',
   'settings.signing.tsaProviders.hint':
     'Configurez des autorités d’horodatage RFC 3161. Lorsqu’un prestataire est activé, un seul doit être défini par défaut.',

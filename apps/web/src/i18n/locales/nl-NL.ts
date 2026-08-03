@@ -4613,6 +4613,33 @@ export const nlNL: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Voeg een bron toe zodat de backend een vertrouwenslijst kan importeren of oplossen.',
   'settings.signing.tslSources.enabled': 'TSL-bron ingeschakeld',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Vertrouwensankers van de vertrouwenslijst',
+  'settings.signing.tslAnchors.hint':
+    'Een bron geeft aan waar de vertrouwenslijst wordt opgehaald; een anker geeft aan wie die mocht ondertekenen. Dat zijn verschillende dingen: alleen een bron instellen authenticeert niets. Zonder anker wordt geen enkele lijst geauthenticeerd en wordt gekwalificeerd ondertekenen geweigerd.',
+  'settings.signing.tslAnchors.provenance':
+    'Het anker is het certificaat waarmee de lijst zelf is ondertekend, gepubliceerd door de instantie die het vertrouwensschema beheert. Geef het op als certificaat of alleen met de SHA-256-vingerafdruk ervan. De omgevingsvariabelen CHANCELA_TSL_TRUST_ANCHOR en CHANCELA_TSL_TRUST_ANCHOR_SHA256 blijven een alternatief; de server voegt de ankers uit beide herkomsten samen.',
+  'settings.signing.tslAnchors.empty.title': 'Geen vertrouwensanker in deze instellingen',
+  'settings.signing.tslAnchors.empty.body':
+    'Hier is geen anker ingesteld. Als er ook in de omgeving geen is ingesteld, kan geen enkele vertrouwenslijst worden geauthenticeerd en wordt elke gekwalificeerde handtekening geweigerd. Voeg hieronder een certificaat of een vingerafdruk toe.',
+  'settings.signing.tslAnchors.certs.hint': 'Ankercertificaten, in PEM of DER.',
+  'settings.signing.tslAnchors.certs.add': 'Certificaat toevoegen',
+  'settings.signing.tslAnchors.certs.none': 'Geen ankercertificaat ingesteld.',
+  'settings.signing.tslAnchors.certs.label': 'Ankercertificaat {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Ankercertificaat {position} verwijderen',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Plak het certificaat hier, beginnend met -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'SHA-256-vingerafdrukken van de ankercertificaten, hexadecimaal (64 tekens).',
+  'settings.signing.tslAnchors.digests.add': 'Vingerafdruk toevoegen',
+  'settings.signing.tslAnchors.digests.none': 'Geen ankervingerafdruk ingesteld.',
+  'settings.signing.tslAnchors.digests.label': 'Ankervingerafdruk {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Ankervingerafdruk {position} verwijderen',
+  'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimale tekens',
   'settings.signing.tsaProviders.title': 'TSA-aanbieders',
   'settings.signing.tsaProviders.hint':
     'Configureer RFC 3161-tijdstempelautoriteiten. Als er aanbieders zijn ingeschakeld, moet precies één standaard zijn.',

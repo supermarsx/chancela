@@ -176,6 +176,7 @@ import {
   SkeletonRegion,
   SubNav,
   Table,
+  TextArea,
   Toggle,
   TooltipText,
 } from '../../ui';
@@ -339,6 +340,23 @@ function normalizeTslSource(source: TslSourceSettings): TslSourceSettings {
   };
 }
 
+/**
+ * Normalize a Trusted-List trust-anchor list for the wire.
+ *
+ * Trims each entry and drops the ones that are **entirely blank**. A blank row is not an anchor —
+ * it is the placeholder this page inserts when the operator presses "add" and has not typed yet,
+ * and the server rejects an empty string with a 422 that would otherwise wedge autosave on every
+ * keystroke of a half-typed certificate.
+ *
+ * Everything else is sent **verbatim**. A malformed PEM or a bad fingerprint is deliberately NOT
+ * repaired, re-encoded or filtered out here: the server's `validate_tsl_trust_anchors` must be the
+ * one to refuse it, loudly, with the field path. Silently dropping an anchor the operator believes
+ * they configured is precisely the fail-open this whole change exists to remove.
+ */
+function normalizeTrustAnchors(anchors: readonly string[] | undefined): string[] {
+  return (anchors ?? []).map((anchor) => anchor.trim()).filter((anchor) => anchor.length > 0);
+}
+
 function normalizeTsaProvider(provider: TsaProviderSettings): TsaProviderSettings {
   return {
     ...provider,
@@ -478,6 +496,11 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       tsl_sources: settings.signing.tsl_sources ?? DEFAULT_SETTINGS.signing.tsl_sources,
       tsa_providers: settings.signing.tsa_providers ?? DEFAULT_SETTINGS.signing.tsa_providers,
       providers: settings.signing.providers ?? DEFAULT_SETTINGS.signing.providers,
+      // Absent on the wire when empty (the server skips serializing empty anchor lists), and that
+      // absence is the fail-closed default — no anchor, so no list is authenticated. Hydrate to []
+      // so the editor has an array to render; never to a bundled anchor.
+      tsl_trust_anchor_certs: settings.signing.tsl_trust_anchor_certs ?? [],
+      tsl_trust_anchor_sha256: settings.signing.tsl_trust_anchor_sha256 ?? [],
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
     ui: {
@@ -593,6 +616,8 @@ function toWireBody(draft: Settings): Settings {
       tsa_providers: ensureOneEnabledDefaultProvider(
         draft.signing.tsa_providers.map(normalizeTsaProvider),
       ),
+      tsl_trust_anchor_certs: normalizeTrustAnchors(draft.signing.tsl_trust_anchor_certs),
+      tsl_trust_anchor_sha256: normalizeTrustAnchors(draft.signing.tsl_trust_anchor_sha256),
     },
     ai: {
       enabled: draft.ai.enabled === true,
@@ -2054,6 +2079,49 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           }
         : d,
     );
+  /**
+   * Edit one of the two Trusted-List trust-anchor lists. Both are plain `string[]` on the settings
+   * document (PEM certificates / hex SHA-256 fingerprints), so one setter keyed by field serves
+   * both rather than duplicating the add-update-remove trio per list.
+   */
+  const setTrustAnchors = (
+    field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256',
+    updater: (anchors: string[]) => string[],
+  ) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              [field]: updater(d.signing[field] ?? []),
+            },
+          }
+        : d,
+    );
+  const addTrustAnchor = (field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256') =>
+    setTrustAnchors(field, (anchors) => [...anchors, '']);
+  const updateTrustAnchor = (
+    field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256',
+    index: number,
+    value: string,
+  ) =>
+    setTrustAnchors(field, (anchors) => anchors.map((anchor, i) => (i === index ? value : anchor)));
+  const removeTrustAnchor = (
+    field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256',
+    index: number,
+  ) => setTrustAnchors(field, (anchors) => anchors.filter((_, i) => i !== index));
+  // Both lists are optional on the wire (absent when empty), so read them through a `?? []` here
+  // once rather than at each of the several render sites that count or map them.
+  const trustAnchorCerts = draft.signing.tsl_trust_anchor_certs ?? [];
+  const trustAnchorFingerprints = draft.signing.tsl_trust_anchor_sha256 ?? [];
+  // The unanchored warning counts what would actually be SAVED, not what is on screen. Pressing
+  // "add" inserts a blank row, and `normalizeTrustAnchors` drops blank rows at the wire boundary —
+  // so counting rendered rows would clear the warning the instant the operator pressed add, while
+  // the deployment was still, in fact, unanchored.
+  const configuredTrustAnchorCount =
+    normalizeTrustAnchors(trustAnchorCerts).length +
+    normalizeTrustAnchors(trustAnchorFingerprints).length;
   const setTsaProviders = (updater: (providers: TsaProviderSettings[]) => TsaProviderSettings[]) =>
     setDraft((d) =>
       d
@@ -2746,6 +2814,120 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                           );
                         })}
                       </Table>
+                    )}
+                  </div>
+                </Card>
+              ) : null}
+
+              {/* The trust anchors sit in the SAME sub-tab as the sources they authenticate. A
+                  source says where a Trusted List is fetched from; an anchor says who was allowed
+                  to sign it. Operators reliably conflate the two — configuring only a source and
+                  concluding that trust was configured — so the two controls are deliberately
+                  adjacent rather than a tab apart. Editing is gated by the enclosing signing
+                  section's `signing.configure` fieldset, not `settings.manage`. */}
+              {sub === 'tsl' ? (
+                <Card title={t('settings.signing.tslAnchors.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.tslAnchors.hint')}</p>
+                    <p className="field__hint">{t('settings.signing.tslAnchors.provenance')}</p>
+
+                    {/* Fail-closed, so it must be legible here rather than discovered as a 422 at
+                        signing time. Worded as a conditional: this page can only see the settings
+                        document, never the CHANCELA_TSL_TRUST_ANCHOR* environment variables, so it
+                        must not assert the deployment is unanchored — only that these fields are
+                        empty, and what follows if the environment is empty too. No `notice` key:
+                        a fail-closed warning is not dismissible. */}
+                    {configuredTrustAnchorCount === 0 ? (
+                      <InlineWarning
+                        tone="warn"
+                        title={t('settings.signing.tslAnchors.empty.title')}
+                      >
+                        {t('settings.signing.tslAnchors.empty.body')}
+                      </InlineWarning>
+                    ) : null}
+
+                    <div className="section-head">
+                      <p className="field__hint">{t('settings.signing.tslAnchors.certs.hint')}</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Plus />}
+                        onClick={() => addTrustAnchor('tsl_trust_anchor_certs')}
+                      >
+                        {t('settings.signing.tslAnchors.certs.add')}
+                      </Button>
+                    </div>
+
+                    {trustAnchorCerts.length === 0 ? (
+                      <p className="field__hint">{t('settings.signing.tslAnchors.certs.none')}</p>
+                    ) : (
+                      trustAnchorCerts.map((cert, index) => (
+                        <div className="input-reset" key={`tsl-anchor-cert-${index}`}>
+                          <TextArea
+                            aria-label={t('settings.signing.tslAnchors.certs.label', {
+                              position: index + 1,
+                            })}
+                            value={cert}
+                            rows={4}
+                            spellCheck={false}
+                            placeholder={t('settings.signing.tslAnchors.certs.placeholder')}
+                            onChange={(e) =>
+                              updateTrustAnchor('tsl_trust_anchor_certs', index, e.target.value)
+                            }
+                          />
+                          <IconButton
+                            type="button"
+                            variant="ghost"
+                            icon={<Icon.Trash />}
+                            label={t('settings.signing.tslAnchors.certs.remove', {
+                              position: index + 1,
+                            })}
+                            onClick={() => removeTrustAnchor('tsl_trust_anchor_certs', index)}
+                          />
+                        </div>
+                      ))
+                    )}
+
+                    <div className="section-head">
+                      <p className="field__hint">{t('settings.signing.tslAnchors.digests.hint')}</p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Plus />}
+                        onClick={() => addTrustAnchor('tsl_trust_anchor_sha256')}
+                      >
+                        {t('settings.signing.tslAnchors.digests.add')}
+                      </Button>
+                    </div>
+
+                    {trustAnchorFingerprints.length === 0 ? (
+                      <p className="field__hint">{t('settings.signing.tslAnchors.digests.none')}</p>
+                    ) : (
+                      trustAnchorFingerprints.map((fingerprint, index) => (
+                        <div className="input-reset" key={`tsl-anchor-digest-${index}`}>
+                          <Input
+                            aria-label={t('settings.signing.tslAnchors.digests.label', {
+                              position: index + 1,
+                            })}
+                            className="mono"
+                            value={fingerprint}
+                            spellCheck={false}
+                            placeholder={t('settings.signing.tslAnchors.digests.placeholder')}
+                            onChange={(e) =>
+                              updateTrustAnchor('tsl_trust_anchor_sha256', index, e.target.value)
+                            }
+                          />
+                          <IconButton
+                            type="button"
+                            variant="ghost"
+                            icon={<Icon.Trash />}
+                            label={t('settings.signing.tslAnchors.digests.remove', {
+                              position: index + 1,
+                            })}
+                            onClick={() => removeTrustAnchor('tsl_trust_anchor_sha256', index)}
+                          />
+                        </div>
+                      ))
                     )}
                   </div>
                 </Card>

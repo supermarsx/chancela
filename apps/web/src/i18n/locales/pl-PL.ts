@@ -4593,6 +4593,33 @@ export const plPL: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Dodaj źródło, aby backend mógł zaimportować lub rozpoznać listę zaufania.',
   'settings.signing.tslSources.enabled': 'Źródło TSL włączone',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Kotwice zaufania listy TSL',
+  'settings.signing.tslAnchors.hint':
+    'Źródło mówi, skąd pobierana jest lista zaufania; kotwica mówi, kto mógł ją podpisać. To dwie różne rzeczy: samo skonfigurowanie źródła niczego nie uwierzytelnia. Bez kotwicy żadna lista nie jest uwierzytelniana, a podpis kwalifikowany zostaje odrzucony.',
+  'settings.signing.tslAnchors.provenance':
+    'Kotwica to certyfikat, którym podpisana jest sama lista, publikowany przez podmiot prowadzący schemat zaufania. Podaj ją jako certyfikat albo wyłącznie przez jej odcisk SHA-256. Zmienne środowiskowe CHANCELA_TSL_TRUST_ANCHOR i CHANCELA_TSL_TRUST_ANCHOR_SHA256 pozostają alternatywą; serwer łączy kotwice z obu miejsc.',
+  'settings.signing.tslAnchors.empty.title': 'Brak kotwicy zaufania w tych ustawieniach',
+  'settings.signing.tslAnchors.empty.body':
+    'Nie skonfigurowano tutaj żadnej kotwicy. Jeśli żadnej nie ustawiono również w środowisku, żadna lista zaufania nie może zostać uwierzytelniona, a każdy podpis kwalifikowany zostaje odrzucony. Dodaj poniżej certyfikat lub odcisk.',
+  'settings.signing.tslAnchors.certs.hint': 'Certyfikaty kotwicy, w formacie PEM lub DER.',
+  'settings.signing.tslAnchors.certs.add': 'Dodaj certyfikat',
+  'settings.signing.tslAnchors.certs.none': 'Nie skonfigurowano certyfikatu kotwicy.',
+  'settings.signing.tslAnchors.certs.label': 'Certyfikat kotwicy {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Usuń certyfikat kotwicy {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Wklej tutaj certyfikat, zaczynając od -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'Odciski SHA-256 certyfikatów kotwicy, szesnastkowo (64 znaki).',
+  'settings.signing.tslAnchors.digests.add': 'Dodaj odcisk',
+  'settings.signing.tslAnchors.digests.none': 'Nie skonfigurowano odcisku kotwicy.',
+  'settings.signing.tslAnchors.digests.label': 'Odcisk kotwicy {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Usuń odcisk kotwicy {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 znaki szesnastkowe',
   'settings.signing.tsaProviders.title': 'Dostawcy TSA',
   'settings.signing.tsaProviders.hint':
     'Skonfiguruj urzędy znaczników czasu RFC 3161. Gdy dostawcy są włączeni, dokładnie jeden musi być domyślny.',

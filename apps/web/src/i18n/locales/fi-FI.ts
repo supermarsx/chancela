@@ -4592,6 +4592,33 @@ export const fiFI: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Lisää lähde, jotta taustapalvelu voi tuoda tai selvittää luottamuslistan.',
   'settings.signing.tslSources.enabled': 'TSL-lähde käytössä',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Luottamuslistan luottamusankkurit',
+  'settings.signing.tslAnchors.hint':
+    'Lähde kertoo, mistä luottamuslista haetaan; ankkuri kertoo, kuka on saanut allekirjoittaa sen. Ne ovat eri asioita: pelkän lähteen määrittäminen ei todenna mitään. Ilman ankkuria mitään listaa ei todenneta ja hyväksytystä allekirjoituksesta kieltäydytään.',
+  'settings.signing.tslAnchors.provenance':
+    'Ankkuri on varmenne, jolla itse lista on allekirjoitettu, ja sen julkaisee luottamusjärjestelmää ylläpitävä taho. Anna se varmenteena tai pelkkänä SHA-256-sormenjälkenä. Ympäristömuuttujat CHANCELA_TSL_TRUST_ANCHOR ja CHANCELA_TSL_TRUST_ANCHOR_SHA256 kelpaavat edelleen vaihtoehtona; palvelin kokoaa ankkurit kummastakin paikasta.',
+  'settings.signing.tslAnchors.empty.title': 'Näissä asetuksissa ei ole luottamusankkuria',
+  'settings.signing.tslAnchors.empty.body':
+    'Tänne ei ole määritetty ankkuria. Jos sellaista ei ole asetettu myöskään ympäristöön, mitään luottamuslistaa ei voida todentaa ja jokaisesta hyväksytystä allekirjoituksesta kieltäydytään. Lisää alle varmenne tai sormenjälki.',
+  'settings.signing.tslAnchors.certs.hint': 'Ankkurivarmenteet PEM- tai DER-muodossa.',
+  'settings.signing.tslAnchors.certs.add': 'Lisää varmenne',
+  'settings.signing.tslAnchors.certs.none': 'Ankkurivarmennetta ei ole määritetty.',
+  'settings.signing.tslAnchors.certs.label': 'Ankkurivarmenne {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Poista ankkurivarmenne {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Liitä varmenne tähän alkaen rivistä -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'Ankkurivarmenteiden SHA-256-sormenjäljet heksadesimaalimuodossa (64 merkkiä).',
+  'settings.signing.tslAnchors.digests.add': 'Lisää sormenjälki',
+  'settings.signing.tslAnchors.digests.none': 'Ankkurin sormenjälkeä ei ole määritetty.',
+  'settings.signing.tslAnchors.digests.label': 'Ankkurin sormenjälki {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Poista ankkurin sormenjälki {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 heksadesimaalimerkkiä',
   'settings.signing.tsaProviders.title': 'TSA-palveluntarjoajat',
   'settings.signing.tsaProviders.hint':
     'Määritä RFC 3161 -aikaleimaviranomaiset. Kun palveluntarjoajia on käytössä, täsmälleen yhden on oltava oletus.',

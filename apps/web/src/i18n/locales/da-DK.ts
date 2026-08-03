@@ -4576,6 +4576,33 @@ export const daDK: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Tilføj en kilde, så serveren kan importere eller slå en tillidsliste op.',
   'settings.signing.tslSources.enabled': 'TSL-kilde aktiveret',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Tillidsankre for tillidslisten',
+  'settings.signing.tslAnchors.hint':
+    'En kilde angiver, hvor tillidslisten hentes fra; et anker angiver, hvem der måtte signere den. Det er to forskellige ting: konfigurerer man kun en kilde, autentificeres intet. Uden et anker autentificeres ingen liste, og kvalificeret signering afvises.',
+  'settings.signing.tslAnchors.provenance':
+    'Ankeret er det certifikat, som listen selv er signeret med, udgivet af den instans, der driver tillidsordningen. Angiv det som certifikat eller alene ved dets SHA-256-fingeraftryk. Miljøvariablerne CHANCELA_TSL_TRUST_ANCHOR og CHANCELA_TSL_TRUST_ANCHOR_SHA256 er fortsat et alternativ; serveren samler ankrene fra begge steder.',
+  'settings.signing.tslAnchors.empty.title': 'Intet tillidsanker i disse indstillinger',
+  'settings.signing.tslAnchors.empty.body':
+    'Der er ikke konfigureret noget anker her. Hvis der heller ikke er sat et i miljøet, kan ingen tillidsliste autentificeres, og enhver kvalificeret signatur afvises. Tilføj et certifikat eller et fingeraftryk nedenfor.',
+  'settings.signing.tslAnchors.certs.hint': 'Ankercertifikater, i PEM eller DER.',
+  'settings.signing.tslAnchors.certs.add': 'Tilføj certifikat',
+  'settings.signing.tslAnchors.certs.none': 'Intet ankercertifikat konfigureret.',
+  'settings.signing.tslAnchors.certs.label': 'Ankercertifikat {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Fjern ankercertifikat {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Indsæt certifikatet her, begyndende med -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'SHA-256-fingeraftryk af ankercertifikaterne, i hexadecimal (64 tegn).',
+  'settings.signing.tslAnchors.digests.add': 'Tilføj fingeraftryk',
+  'settings.signing.tslAnchors.digests.none': 'Intet ankerfingeraftryk konfigureret.',
+  'settings.signing.tslAnchors.digests.label': 'Ankerfingeraftryk {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Fjern ankerfingeraftryk {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimale tegn',
   'settings.signing.tsaProviders.title': 'TSA-udbydere',
   'settings.signing.tsaProviders.hint':
     'Konfigurer RFC 3161-tidsstempelmyndigheder. Når en udbyder er aktiveret, skal præcis én være standard.',

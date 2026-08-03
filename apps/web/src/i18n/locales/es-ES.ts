@@ -4610,6 +4610,33 @@ export const esES: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Añada una fuente para que el backend pueda importar o resolver una lista de confianza.',
   'settings.signing.tslSources.enabled': 'Fuente TSL activada',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Anclas de confianza de la Lista de Confianza',
+  'settings.signing.tslAnchors.hint':
+    'Una fuente indica de dónde se obtiene la Lista de Confianza; un ancla indica quién podía firmarla. Son cosas distintas: configurar solo una fuente no autentica nada. Sin ancla no se autentica ninguna lista y la firma cualificada se rechaza.',
+  'settings.signing.tslAnchors.provenance':
+    'El ancla es el certificado con el que se firma la propia lista, publicado por el organismo que gestiona el esquema de confianza. Indíquela como certificado o solo mediante su huella digital SHA-256. Las variables de entorno CHANCELA_TSL_TRUST_ANCHOR y CHANCELA_TSL_TRUST_ANCHOR_SHA256 siguen siendo una alternativa; el servidor reúne las anclas de ambos orígenes.',
+  'settings.signing.tslAnchors.empty.title': 'Sin ancla de confianza en esta configuración',
+  'settings.signing.tslAnchors.empty.body':
+    'Aquí no hay ningún ancla configurada. Si tampoco hay ninguna definida en el entorno, no se puede autenticar ninguna Lista de Confianza y se rechaza cualquier firma cualificada. Añada abajo un certificado o una huella digital.',
+  'settings.signing.tslAnchors.certs.hint': 'Certificados del ancla, en PEM o DER.',
+  'settings.signing.tslAnchors.certs.add': 'Añadir certificado',
+  'settings.signing.tslAnchors.certs.none': 'Ningún certificado de ancla configurado.',
+  'settings.signing.tslAnchors.certs.label': 'Certificado de ancla {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Eliminar el certificado de ancla {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Pegue aquí el certificado, empezando por -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'Huellas digitales SHA-256 de los certificados del ancla, en hexadecimal (64 caracteres).',
+  'settings.signing.tslAnchors.digests.add': 'Añadir huella digital',
+  'settings.signing.tslAnchors.digests.none': 'Ninguna huella digital de ancla configurada.',
+  'settings.signing.tslAnchors.digests.label': 'Huella digital de ancla {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Eliminar la huella digital de ancla {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 caracteres hexadecimales',
   'settings.signing.tsaProviders.title': 'Proveedores TSA',
   'settings.signing.tsaProviders.hint':
     'Configure autoridades de sellado de tiempo RFC 3161. Si hay proveedores activos, exactamente uno debe ser el predeterminado.',

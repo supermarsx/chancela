@@ -4637,6 +4637,33 @@ export const deDE: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Fügen Sie eine Quelle hinzu, damit das Backend eine Vertrauensliste importieren oder auflösen kann.',
   'settings.signing.tslSources.enabled': 'TSL-Quelle aktiviert',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Vertrauensanker der Vertrauensliste',
+  'settings.signing.tslAnchors.hint':
+    'Eine Quelle gibt an, woher die Vertrauensliste bezogen wird; ein Anker gibt an, wer sie signieren durfte. Das sind verschiedene Dinge: Wird nur eine Quelle konfiguriert, ist damit nichts authentifiziert. Ohne Anker wird keine Liste authentifiziert und eine qualifizierte Signatur verweigert.',
+  'settings.signing.tslAnchors.provenance':
+    'Der Anker ist das Zertifikat, mit dem die Liste selbst signiert ist, veröffentlicht von der Stelle, die das Vertrauensschema betreibt. Geben Sie ihn als Zertifikat an oder allein über seinen SHA-256-Fingerabdruck. Die Umgebungsvariablen CHANCELA_TSL_TRUST_ANCHOR und CHANCELA_TSL_TRUST_ANCHOR_SHA256 bleiben als Alternative bestehen; der Server führt die Anker aus beiden Herkünften zusammen.',
+  'settings.signing.tslAnchors.empty.title': 'Kein Vertrauensanker in diesen Einstellungen',
+  'settings.signing.tslAnchors.empty.body':
+    'Hier ist kein Anker konfiguriert. Ist auch in der Umgebung keiner gesetzt, kann keine Vertrauensliste authentifiziert werden und jede qualifizierte Signatur wird verweigert. Fügen Sie unten ein Zertifikat oder einen Fingerabdruck hinzu.',
+  'settings.signing.tslAnchors.certs.hint': 'Ankerzertifikate, in PEM oder DER.',
+  'settings.signing.tslAnchors.certs.add': 'Zertifikat hinzufügen',
+  'settings.signing.tslAnchors.certs.none': 'Kein Ankerzertifikat konfiguriert.',
+  'settings.signing.tslAnchors.certs.label': 'Ankerzertifikat {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Ankerzertifikat {position} entfernen',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Fügen Sie das Zertifikat hier ein, beginnend mit -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'SHA-256-Fingerabdrücke der Ankerzertifikate, hexadezimal (64 Zeichen).',
+  'settings.signing.tslAnchors.digests.add': 'Fingerabdruck hinzufügen',
+  'settings.signing.tslAnchors.digests.none': 'Kein Ankerfingerabdruck konfiguriert.',
+  'settings.signing.tslAnchors.digests.label': 'Ankerfingerabdruck {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Ankerfingerabdruck {position} entfernen',
+  'settings.signing.tslAnchors.digests.placeholder': '64 hexadezimale Zeichen',
   'settings.signing.tsaProviders.title': 'TSA-Anbieter',
   'settings.signing.tsaProviders.hint':
     'Konfigurieren Sie RFC-3161-Zeitstempelstellen. Wenn Anbieter aktiviert sind, muss genau einer Standard sein.',

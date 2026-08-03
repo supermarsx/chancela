@@ -4542,6 +4542,33 @@ export const enGB: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Add a source so the backend can import or resolve a trust list.',
   'settings.signing.tslSources.enabled': 'TSL source enabled',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Trusted List trust anchors',
+  'settings.signing.tslAnchors.hint':
+    'A source says where the Trusted List is fetched from; an anchor says who was allowed to sign it. They are different things: configuring only a source authenticates nothing. Without an anchor no list is authenticated and qualified signing is refused.',
+  'settings.signing.tslAnchors.provenance':
+    'The anchor is the certificate the list itself is signed with, published by the body that operates the trust scheme. Give it as a certificate, or by its SHA-256 fingerprint alone. The CHANCELA_TSL_TRUST_ANCHOR and CHANCELA_TSL_TRUST_ANCHOR_SHA256 environment variables remain an alternative; the server combines the anchors from both origins.',
+  'settings.signing.tslAnchors.empty.title': 'No trust anchor in these settings',
+  'settings.signing.tslAnchors.empty.body':
+    'No anchor is configured here. If none is set in the environment either, no Trusted List can be authenticated and any qualified signature is refused. Add a certificate or a fingerprint below.',
+  'settings.signing.tslAnchors.certs.hint': 'Anchor certificates, in PEM or DER.',
+  'settings.signing.tslAnchors.certs.add': 'Add certificate',
+  'settings.signing.tslAnchors.certs.none': 'No anchor certificate configured.',
+  'settings.signing.tslAnchors.certs.label': 'Anchor certificate {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Remove anchor certificate {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Paste the certificate here, starting with -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'SHA-256 fingerprints of the anchor certificates, in hexadecimal (64 characters).',
+  'settings.signing.tslAnchors.digests.add': 'Add fingerprint',
+  'settings.signing.tslAnchors.digests.none': 'No anchor fingerprint configured.',
+  'settings.signing.tslAnchors.digests.label': 'Anchor fingerprint {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Remove anchor fingerprint {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimal characters',
   'settings.signing.tsaProviders.title': 'TSA providers',
   'settings.signing.tsaProviders.hint':
     'Configure RFC 3161 timestamp authorities. When any provider is enabled, exactly one must be the default.',

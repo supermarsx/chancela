@@ -4587,6 +4587,33 @@ export const svSE: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Lägg till en källa så att servern kan importera eller slå upp en betrodd lista.',
   'settings.signing.tslSources.enabled': 'TSL-källa aktiverad',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Tillitsankare för den betrodda listan',
+  'settings.signing.tslAnchors.hint':
+    'En källa anger var den betrodda listan hämtas; ett ankare anger vem som fick signera den. Det är olika saker: att bara konfigurera en källa autentiserar ingenting. Utan ett ankare autentiseras ingen lista och kvalificerad signering vägras.',
+  'settings.signing.tslAnchors.provenance':
+    'Ankaret är det certifikat som listan själv är signerad med, utgivet av det organ som driver tillitsordningen. Ange det som certifikat eller enbart med dess SHA-256-fingeravtryck. Miljövariablerna CHANCELA_TSL_TRUST_ANCHOR och CHANCELA_TSL_TRUST_ANCHOR_SHA256 kvarstår som alternativ; servern slår samman ankarna från båda hållen.',
+  'settings.signing.tslAnchors.empty.title': 'Inget tillitsankare i dessa inställningar',
+  'settings.signing.tslAnchors.empty.body':
+    'Här är inget ankare konfigurerat. Om inget heller är satt i miljön kan ingen betrodd lista autentiseras, och varje kvalificerad signatur vägras. Lägg till ett certifikat eller ett fingeravtryck nedan.',
+  'settings.signing.tslAnchors.certs.hint': 'Ankarcertifikat, i PEM eller DER.',
+  'settings.signing.tslAnchors.certs.add': 'Lägg till certifikat',
+  'settings.signing.tslAnchors.certs.none': 'Inget ankarcertifikat konfigurerat.',
+  'settings.signing.tslAnchors.certs.label': 'Ankarcertifikat {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Ta bort ankarcertifikat {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Klistra in certifikatet här, med början på -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'SHA-256-fingeravtryck för ankarcertifikaten, i hexadecimal form (64 tecken).',
+  'settings.signing.tslAnchors.digests.add': 'Lägg till fingeravtryck',
+  'settings.signing.tslAnchors.digests.none': 'Inget ankarfingeravtryck konfigurerat.',
+  'settings.signing.tslAnchors.digests.label': 'Ankarfingeravtryck {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Ta bort ankarfingeravtryck {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimala tecken',
   'settings.signing.tsaProviders.title': 'TSA-leverantörer',
   'settings.signing.tsaProviders.hint':
     'Konfigurera RFC 3161-tidsstämpelutfärdare. När leverantörer är aktiverade måste exakt en vara standard.',

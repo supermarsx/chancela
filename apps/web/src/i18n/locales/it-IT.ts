@@ -4610,6 +4610,33 @@ export const itIT: Catalog = {
   'settings.signing.tslSources.empty.body':
     'Aggiungi una fonte affinché il backend possa importare o risolvere una lista di fiducia.',
   'settings.signing.tslSources.enabled': 'Fonte TSL attiva',
+
+  // --- Trusted List trust anchors -------------------------------------------------
+  // The source-versus-anchor distinction is the copy that exists to correct the
+  // misconfiguration this screen was built for: operators configured a source and
+  // concluded trust was configured. No claim is made here about legal effect.
+  'settings.signing.tslAnchors.title': 'Ancore di fiducia della lista TSL',
+  'settings.signing.tslAnchors.hint':
+    'Una fonte indica da dove viene scaricata la lista di fiducia; un’ancora indica chi era autorizzato a firmarla. Sono cose diverse: configurare soltanto una fonte non autentica nulla. Senza un’ancora nessuna lista viene autenticata e la firma qualificata viene rifiutata.',
+  'settings.signing.tslAnchors.provenance':
+    'L’ancora è il certificato con cui la lista stessa è firmata, pubblicato dall’ente che gestisce lo schema di fiducia. Indicala come certificato oppure soltanto con la sua impronta SHA-256. Le variabili d’ambiente CHANCELA_TSL_TRUST_ANCHOR e CHANCELA_TSL_TRUST_ANCHOR_SHA256 restano un’alternativa; il server unisce le ancore di entrambe le origini.',
+  'settings.signing.tslAnchors.empty.title': 'Nessuna ancora di fiducia in queste impostazioni',
+  'settings.signing.tslAnchors.empty.body':
+    'Qui non è configurata alcuna ancora. Se non ne è impostata nessuna neppure nell’ambiente, nessuna lista di fiducia può essere autenticata e ogni firma qualificata viene rifiutata. Aggiungi sotto un certificato o un’impronta.',
+  'settings.signing.tslAnchors.certs.hint': 'Certificati dell’ancora, in PEM o DER.',
+  'settings.signing.tslAnchors.certs.add': 'Aggiungi certificato',
+  'settings.signing.tslAnchors.certs.none': 'Nessun certificato di ancora configurato.',
+  'settings.signing.tslAnchors.certs.label': 'Certificato di ancora {position}',
+  'settings.signing.tslAnchors.certs.remove': 'Rimuovi il certificato di ancora {position}',
+  'settings.signing.tslAnchors.certs.placeholder':
+    'Incolla qui il certificato, iniziando da -----BEGIN CERTIFICATE-----',
+  'settings.signing.tslAnchors.digests.hint':
+    'Impronte SHA-256 dei certificati dell’ancora, in esadecimale (64 caratteri).',
+  'settings.signing.tslAnchors.digests.add': 'Aggiungi impronta',
+  'settings.signing.tslAnchors.digests.none': 'Nessuna impronta di ancora configurata.',
+  'settings.signing.tslAnchors.digests.label': 'Impronta di ancora {position}',
+  'settings.signing.tslAnchors.digests.remove': 'Rimuovi l’impronta di ancora {position}',
+  'settings.signing.tslAnchors.digests.placeholder': '64 caratteri esadecimali',
   'settings.signing.tsaProviders.title': 'Provider TSA',
   'settings.signing.tsaProviders.hint':
     'Configura autorità di marcatura temporale RFC 3161. Quando esiste un provider attivo, esattamente uno deve essere predefinito.',

@@ -7413,6 +7413,22 @@ export interface SigningSettings {
   tsl_url: string | null;
   tsl_sources: TslSourceSettings[];
   tsa_providers: TsaProviderSettings[];
+  /**
+   * Trust anchors that authenticate a Trusted List's own XML-DSig signature — PEM/DER certificates
+   * and hex SHA-256 fingerprints of them. A TSL *source* only says where the list is fetched from;
+   * these say who is allowed to have signed it, and without them no list is authentic and qualified
+   * signing refuses fail-closed.
+   *
+   * Optional on the wire: the backend serializes both with `skip_serializing_if = "Vec::is_empty"`
+   * (`settings.rs` `SigningSettings`), so an install that has provisioned none omits the keys
+   * entirely. That absence IS the fail-closed default — read them as `?? []`, never as "unset means
+   * trust everything". The server unions whatever is here with the `CHANCELA_TSL_TRUST_ANCHOR[_SHA256]`
+   * environment anchors, so an empty list here does not by itself mean the deployment is unanchored.
+   *
+   * Writing them is gated on `signing.configure`, not `settings.manage`.
+   */
+  tsl_trust_anchor_certs?: string[];
+  tsl_trust_anchor_sha256?: string[];
   require_qualified_for_seal: boolean;
   cmd: SigningCmdSettings;
   providers: SigningProviderMetadata[];
