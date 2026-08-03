@@ -28,6 +28,15 @@
 > mediation, which remain the outstanding external confirmations — the same two rows this document
 > already marks **unverified**.
 
+> **Status update (RP-ID auto-detect landed).** Finding 1's ruling is **revised, not reversed**: the
+> RP ID is no longer required to be an explicit operator setting before passkeys work. An instance
+> that configured neither `platform.public_base_url` nor `auth.passkeys.rp_id` now **detects the RP ID
+> once, at the first authenticated enrolment, and pins it** (detect-once-and-pin). The four load-bearing
+> constraints do not move — one instance-wide RP ID, a stable pinned value, never an IP, and the
+> PSL/registrable-parent validation runs on the detected value exactly as on a typed one — and
+> `public_base_url` stays operator-only so no request-derived value ever becomes an email/link origin.
+> See Finding 1's *"Detect-once-and-pin"* section for the full flow and its honest limits.
+
 > **Original status.** Nothing is implemented. `grep -rli "webauthn\|passkey\|fido"` over the tree at `b7f7a8c3`
 > matches only `chancela-zk`, where WebAuthn PRF is named as a *client-side* key-wrapping scheme for
 > zero-knowledge repositories — unrelated to sign-in and not reused here.
@@ -254,12 +263,25 @@ the stack will catch a mis-set RP ID before it reaches users.**
 
 **The ruling — required, not recommended:**
 
-- **The RP ID is an explicit operator setting**, not a derived value. **Never derive it by stripping a label from `public_base_url`.**
-- It must be **validated against `public_base_url`** — it has to be the host or a registrable suffix of it — **and checked against the Public Suffix List** so a public suffix is refused at configuration time with a named error. Use a PSL crate (`psl` or `publicsuffix`; both are permissively licensed). Neither of these checks is optional and neither is provided by the library.
-- Where the operator supplies nothing, offering `public_base_url`'s **host** as the default is safe. Offering a label-stripped parent as a default is not, for the reason above — the parent must be a deliberate, confirmed operator choice.
-- **Never** take the RP ID from the `Origin` or `Host` header — a request-derived RP ID is an attacker-chosen RP ID.
-- Passkey enrolment must be **refused with a clear error when `public_base_url` is unset**, exactly as `an_invitation_cannot_be_issued_without_a_configured_public_base_url` already refuses invitations (`crates/chancela-api/tests/signup_and_invites.rs`). It defaults to `None`; most instances will not have set it.
-- The **expected origin** passed to verification (`WebauthnBuilder::new(rp_id, &rp_origin)`) must be the full `public_base_url` origin, and it must **not** be widened by `CHANCELA_CORS_ALLOWED_ORIGINS` (`crates/chancela-api/src/cors.rs`). Companion origins may call the API; they must not be able to satisfy a WebAuthn origin check.
+- The RP ID is either an **explicit operator setting** or **auto-detected once and pinned** (see *"Detect-once-and-pin"* below). It is **never** re-derived per request, and **never** derived by silently stripping a label into a config default that no one validated.
+- Whichever way it arrives, it must be **validated against an origin** — the host or a registrable suffix of it — **and checked against the Public Suffix List** so a public suffix is refused with a named error. Use a PSL crate (`psl` or `publicsuffix`; both are permissively licensed). Neither check is optional and neither is provided by the library. A **detected** value runs through the *identical* validation as a typed one; that is what makes detection safe (`PasskeySettings::validate_against`, re-run inside `pin_passkey_binding`).
+- **Never** take the RP ID from the `Origin` or `Host` header **per request** — a per-request RP ID is an attacker-chosen RP ID, and it would strand every credential the moment the host varied. Detect-once-and-pin is the *opposite*: it reads the request **once**, on an authenticated endpoint, validates hard, and freezes a single instance-wide value that every later ceremony reads from storage.
+- The **expected origin** passed to verification must be the instance origin — `public_base_url` when set, else the auto-detected passkey origin pinned beside the RP ID (`PasskeySettings::origin`) — and it must **not** be widened by `CHANCELA_CORS_ALLOWED_ORIGINS` (`crates/chancela-api/src/cors.rs`). Companion origins may call the API; they must not be able to satisfy a WebAuthn origin check.
+- An instance reached by a **bare IP** genuinely cannot use passkeys (WebAuthn forbids an IP RP ID). Auto-detect fails honestly there with a named error and pins nothing; it does not invent a domain.
+
+### Detect-once-and-pin (implemented)
+
+An instance that has configured **neither** `platform.public_base_url` **nor** `auth.passkeys.rp_id` no longer refuses passkeys outright — which was the friction this feature removes. Instead, `begin_enrolment` bootstraps the binding (`crates/chancela-api/src/passkeys.rs::bootstrap_rp_binding` → `crate::settings::pin_passkey_binding`):
+
+- **The candidate.** When `public_base_url` is set, the RP ID is derived from **its** host's registrable parent, with no request involved at all, and only the RP ID is pinned (the origin keeps coming from `public_base_url`, so the email/link origin stays the single operator-owned value — see Finding 1's `public_base_url` note and the settings doc's *"there must never be [a request-derived link origin]"*). When `public_base_url` is unset, the host and scheme come from the **request**, and both the RP ID *and* a dedicated passkey origin (`PasskeySettings::origin`, used only for the WebAuthn `allowed_origins`, never as a link origin) are pinned. A WebAuthn expected origin has no out-of-band delivery hazard — it is only ever compared against a signed assertion in the same flow — which is exactly why it is safe to request-derive while `public_base_url` is not.
+- **Trusted-proxy aware.** The request host/scheme reuse the **same** trust boundary the sessions lane uses (`CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR`): with it off, the direct `Host` and an https assumption are used and a forged `X-Forwarded-Host` is ignored entirely; with it on, a declared proxy's `X-Forwarded-Host`/`-Proto` win. It is not a second `X-Forwarded-For` parser — a host is a different datum — but it is gated on the identical flag so the two can never disagree about whether a proxy is trusted.
+- **Validated hard.** The candidate must reduce to a real registrable domain via the PSL (`livros.example.pt` → `example.pt`), not a public suffix, not an IP, not a bare label. `localhost` (and `*.localhost`) is carved out as browsers special-case it. The full `Settings::validate` — including `validate_against` — re-runs on the value about to be pinned.
+- **Pinned first-writer-wins.** The pin runs under the settings transaction gate, so two concurrent first-enrolments cannot pin two different values; the loser sees the RP ID already set and commits nothing. After pinning it is an ordinary stored setting — durable across restart, visible on the settings surface, and overridable — and every later ceremony (enrol **and** discoverable sign-in) reads the stored value.
+- **Authenticated only.** `begin_enrolment` is self + attestor, so only a logged-in user can trigger the bootstrap — never an anonymous attacker aiming a `Host` header at it. The worst a malicious first-enroller can do is strand their *own* future credentials on a bad-but-valid RP ID, which is self-inflicted.
+
+**Honest limits, stated in the copy and here.** (1) An IP-accessed instance still cannot use passkeys; the refusal stays, with a clear message (`passkeys_autodetect_unavailable`). (2) A multi-hostname / aliased deployment should still set the value **explicitly** so every credential shares one RP ID — auto-detect is a convenience for the common single-domain case, and it pins whichever host reached the first enrolment.
+
+- Passkey enrolment is still **refused with a clear error** when nothing is configured and nothing can be detected (no `public_base_url`, no `Host`), the same shape as `an_invitation_cannot_be_issued_without_a_configured_public_base_url` (`crates/chancela-api/tests/signup_and_invites.rs`).
 
 **The hazard, said out loud.** If an operator moves the instance from `livros.example.pt` to
 `atas.example.pt`, **every enrolled passkey stops working, permanently, and no migration is

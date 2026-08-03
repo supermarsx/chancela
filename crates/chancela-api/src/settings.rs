@@ -3896,6 +3896,62 @@ pub(crate) async fn commit_settings_update(
     })?
 }
 
+/// Auto-detect bootstrap: pin the passkey RP ID (and, when there is no `public_base_url`, its origin)
+/// the first time an authenticated enrolment reaches an instance that configured neither.
+///
+/// **First-writer-wins under the settings transaction gate.** Two concurrent first-enrolments cannot
+/// pin two different values: the gate serialises them, and the loser re-reads the published document,
+/// finds the RP ID already set, and commits nothing. The value is validated by the full
+/// [`Settings::validate`] — the same Public-Suffix-List / registrable-parent guard a typed value
+/// passes ([`crate::passkeys::PasskeySettings::validate_against`], which now checks a detected RP ID
+/// against the passkey origin) — so a detected value earns no exemption. The change is recorded as an
+/// ordinary `settings.updated` event and persisted durably, exactly as if an operator had typed it,
+/// so a restart keeps it and an operator can see and override it (the credential-stranding
+/// [`crate::passkeys::guard_domain_change`] still guards a later host change).
+pub(crate) async fn pin_passkey_binding(
+    state: &AppState,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+    rp_id: String,
+    origin: Option<String>,
+) -> Result<(), ApiError> {
+    let settings_update_guard = state.settings_update_gate.clone().lock_owned().await;
+    reconcile_pending_settings_audit(state).await?;
+    let previous = state.settings.read().await.clone();
+    // First-writer-wins: an operator's explicit value — or a peer's concurrent bootstrap that landed
+    // while this one waited on the gate — is never overwritten.
+    if previous.auth.passkeys.rp_id.is_some() {
+        return Ok(());
+    }
+    let mut next = previous.clone();
+    next.auth.passkeys.rp_id = Some(rp_id);
+    next.auth.passkeys.origin = origin;
+    // Re-run the whole document's validation on the value about to be pinned, so a public suffix or a
+    // host that does not match its origin is refused here, before it is stored — never pinned and
+    // then discovered at a user's browser.
+    next.validate()?;
+    let payload = serde_json::to_vec(&next)?;
+    let event_actor = actor.resolve("api");
+    commit_settings_update(
+        state.clone(),
+        settings_update_guard,
+        previous,
+        next,
+        SettingsCommitOptions::single(SettingsAuditEventSpec::new(
+            event_actor,
+            "settings",
+            "settings.updated",
+            Some(
+                "RP ID de chave de acesso detetado automaticamente e fixado na primeira inscrição"
+                    .to_owned(),
+            ),
+            payload,
+        )),
+        attestor.clone(),
+    )
+    .await
+}
+
 async fn commit_settings_update_owned(
     state: &AppState,
     settings_update_guard: tokio::sync::OwnedMutexGuard<()>,

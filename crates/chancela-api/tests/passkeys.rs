@@ -455,6 +455,15 @@ fn with_session(mut req: Request<Body>, token: &str) -> Request<Body> {
     req
 }
 
+/// Set the `Host` header, so a request exercises the request-derived auto-detect path. The in-process
+/// `post`/`get` builders leave it unset (path-only URIs), which is why detection is inert in the
+/// tests that do not call this.
+fn with_host(mut req: Request<Body>, host: &str) -> Request<Body> {
+    req.headers_mut()
+        .insert(header::HOST, host.parse().expect("host header"));
+    req
+}
+
 fn get(uri: &str) -> Request<Body> {
     Request::builder()
         .method("GET")
@@ -740,14 +749,15 @@ async fn the_host_and_its_registrable_parent_are_both_accepted() {
     }
 }
 
-/// Enrolment refuses by name when the instance has no configured origin — exactly as invitations
-/// already refuse. Discovering this at a user's first enrolment instead would be too late.
+/// **Detect-once-and-pin, from `public_base_url`.** With `public_base_url` set but no RP ID, the
+/// first authenticated enrolment pins the RP ID from the configured origin's registrable parent
+/// rather than refusing. No passkey origin is stored — `public_base_url` supplies the origin.
 #[tokio::test]
-async fn enrolment_is_refused_when_the_rp_id_or_base_url_is_unset() {
+async fn enrolment_auto_pins_the_rp_id_from_the_public_base_url() {
     let dir = TempDir::new();
     let (state, uid, token) = harness(&dir).await;
-
     state.settings.write().await.auth.passkeys.rp_id = None;
+
     let (status, body) = send(
         state.clone(),
         with_session(
@@ -756,9 +766,61 @@ async fn enrolment_is_refused_when_the_rp_id_or_base_url_is_unset() {
         ),
     )
     .await;
-    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
-    assert_eq!(body["code"], "passkeys_rp_id_unset");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "enrolment should proceed via auto-detect: {body}"
+    );
+    let settings = state.settings.read().await;
+    assert_eq!(settings.auth.passkeys.rp_id.as_deref(), Some("example.pt"));
+    assert_eq!(
+        settings.auth.passkeys.origin, None,
+        "public_base_url supplies the origin; no passkey origin is stored"
+    );
+}
 
+/// **Detect-once-and-pin, from the request.** With neither `public_base_url` nor an RP ID configured,
+/// a request arriving with a valid domain `Host` pins both the registrable-parent RP ID and the exact
+/// origin, then proceeds. A later ceremony reads the pinned pair.
+#[tokio::test]
+async fn enrolment_auto_pins_the_rp_id_and_origin_from_the_request_host() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    {
+        let mut settings = state.settings.write().await;
+        settings.platform.public_base_url = None;
+        settings.auth.passkeys.rp_id = None;
+    }
+    let (status, body) = send(
+        state.clone(),
+        with_host(
+            with_session(
+                post(&format!("/v1/users/{}/passkeys/options", uid.0), json!({})),
+                &token,
+            ),
+            "livros.example.pt",
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "request-derived enrolment should proceed: {body}"
+    );
+    let settings = state.settings.read().await;
+    assert_eq!(settings.auth.passkeys.rp_id.as_deref(), Some("example.pt"));
+    assert_eq!(
+        settings.auth.passkeys.origin.as_deref(),
+        Some("https://livros.example.pt")
+    );
+}
+
+/// With nothing configured **and** no `Host` to detect from, enrolment still refuses by name — there
+/// is genuinely nothing to derive an origin from — and pins nothing.
+#[tokio::test]
+async fn enrolment_is_refused_when_nothing_is_configured_and_no_host_is_present() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
     {
         let mut settings = state.settings.write().await;
         settings.platform.public_base_url = None;
@@ -774,6 +836,132 @@ async fn enrolment_is_refused_when_the_rp_id_or_base_url_is_unset() {
     .await;
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
     assert_eq!(body["code"], "passkeys_public_base_url_unset");
+    assert_eq!(
+        state.settings.read().await.auth.passkeys.rp_id,
+        None,
+        "nothing is pinned"
+    );
+}
+
+/// A bare-IP instance cannot use passkeys (WebAuthn forbids an IP RP ID): the bootstrap refuses by
+/// name and pins nothing, rather than inventing a domain.
+#[tokio::test]
+async fn enrolment_is_refused_and_pins_nothing_for_an_ip_host() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    {
+        let mut settings = state.settings.write().await;
+        settings.platform.public_base_url = None;
+        settings.auth.passkeys.rp_id = None;
+    }
+    let (status, body) = send(
+        state.clone(),
+        with_host(
+            with_session(
+                post(&format!("/v1/users/{}/passkeys/options", uid.0), json!({})),
+                &token,
+            ),
+            "203.0.113.9",
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "passkeys_autodetect_unavailable");
+    assert_eq!(state.settings.read().await.auth.passkeys.rp_id, None);
+}
+
+/// A host with no registrable domain (a public suffix, a bare label) is refused by the same guard and
+/// pins nothing — the PSL check runs on the detected value exactly as on a typed one.
+#[tokio::test]
+async fn enrolment_is_refused_and_pins_nothing_for_a_host_with_no_registrable_domain() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    {
+        let mut settings = state.settings.write().await;
+        settings.platform.public_base_url = None;
+        settings.auth.passkeys.rp_id = None;
+    }
+    let (status, body) = send(
+        state.clone(),
+        with_host(
+            with_session(
+                post(&format!("/v1/users/{}/passkeys/options", uid.0), json!({})),
+                &token,
+            ),
+            "co.uk",
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+    assert_eq!(body["code"], "passkeys_autodetect_unavailable");
+    assert_eq!(state.settings.read().await.auth.passkeys.rp_id, None);
+}
+
+/// An explicitly configured RP ID is never overwritten by a later request from a different host —
+/// the fast-path no-op — and a forged `X-Forwarded-Host` with the trust flag off (the default) is
+/// ignored: the derived value comes from the direct `Host`, never the forwarded one.
+#[tokio::test]
+async fn an_explicit_rp_id_is_not_overwritten_and_a_forged_forwarded_host_is_ignored() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await; // public_base_url + rp_id = example.pt
+    let mut req = with_host(
+        with_session(
+            post(&format!("/v1/users/{}/passkeys/options", uid.0), json!({})),
+            &token,
+        ),
+        "evil.example.com",
+    );
+    req.headers_mut()
+        .insert("x-forwarded-host", "attacker.example".parse().unwrap());
+    let (status, body) = send(state.clone(), req).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(
+        state.settings.read().await.auth.passkeys.rp_id.as_deref(),
+        Some("example.pt"),
+        "an already-configured RP ID is immutable to auto-detect"
+    );
+}
+
+/// **First-writer-wins.** Two concurrent first-enrolments from different hosts pin exactly ONE value
+/// — the settings transaction gate serialises them — and both requests succeed, the loser reading the
+/// winner's pinned value rather than pinning a second.
+#[tokio::test]
+async fn concurrent_bootstraps_pin_a_single_value() {
+    let dir = TempDir::new();
+    let (state, uid, token) = harness(&dir).await;
+    {
+        let mut settings = state.settings.write().await;
+        settings.platform.public_base_url = None;
+        settings.auth.passkeys.rp_id = None;
+    }
+    let a = send(
+        state.clone(),
+        with_host(
+            with_session(
+                post(&format!("/v1/users/{}/passkeys/options", uid.0), json!({})),
+                &token,
+            ),
+            "livros.example.pt",
+        ),
+    );
+    let b = send(
+        state.clone(),
+        with_host(
+            with_session(
+                post(&format!("/v1/users/{}/passkeys/options", uid.0), json!({})),
+                &token,
+            ),
+            "atas.example.com",
+        ),
+    );
+    let ((status_a, body_a), (status_b, body_b)) = tokio::join!(a, b);
+    assert_eq!(status_a, StatusCode::OK, "{body_a}");
+    assert_eq!(status_b, StatusCode::OK, "{body_b}");
+    let rp_id = state.settings.read().await.auth.passkeys.rp_id.clone();
+    assert!(
+        matches!(rp_id.as_deref(), Some("example.pt") | Some("example.com")),
+        "exactly one stable value is pinned, not two: {rp_id:?}"
+    );
 }
 
 async fn put_rp_id(state: &AppState, token: &str, rp_id: &str) -> (StatusCode, Value) {

@@ -4,10 +4,12 @@
 //! shape; this module implements it, and the four decisions it is easiest to undo by accident are
 //! called out where they live rather than only here:
 //!
-//! 1. **The RP ID is an operator setting, validated against `public_base_url` *and* the Public
-//!    Suffix List, at configuration time** — [`PasskeySettings::validate_against`]. Neither check
-//!    is provided by the library, and the failure mode of getting it wrong is invisible
-//!    server-side, so this is load-bearing rather than defence in depth.
+//! 1. **The RP ID is validated against an origin *and* the Public Suffix List** —
+//!    [`PasskeySettings::validate_against`]. Neither check is provided by the library, and the
+//!    failure mode of getting it wrong is invisible server-side, so this is load-bearing rather than
+//!    defence in depth. It may be an operator setting **or** auto-detected once from the first
+//!    authenticated enrolment and pinned (detect-once-and-pin, [`bootstrap_rp_binding`]); a detected
+//!    value runs through the identical validation, so the check is what makes auto-detection safe.
 //! 2. **A ceremony challenge is purpose-scoped and single-use** — [`CeremonyStore`]. A sign-in
 //!    assertion must not be replayable into a factory reset, and the only thing standing between
 //!    those two is that the purposes do not match.
@@ -75,10 +77,12 @@
 //! leans on that guard rather than building a second.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::sync::Arc;
 
 use axum::Json;
 use axum::extract::{Path as AxumPath, State};
+use axum::http::HeaderMap;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use serde::{Deserialize, Serialize};
@@ -187,6 +191,11 @@ pub(crate) const ALL_PASSKEY_EVENT_KINDS: &[&str] = &[
 pub(crate) const PASSKEYS_NO_PUBLIC_BASE_URL_CODE: &str = "passkeys_public_base_url_unset";
 /// The instance has a `public_base_url` but no operator-chosen `auth.passkeys.rp_id`.
 pub(crate) const PASSKEYS_NO_RP_ID_CODE: &str = "passkeys_rp_id_unset";
+/// Auto-detection could not derive a usable RP ID from how this instance is being reached — the
+/// instance is accessed by a bare IP address (WebAuthn forbids an IP RP ID) or by a name with no
+/// registrable domain. Nothing is pinned; passkeys genuinely cannot work here until the instance is
+/// reached by a domain name, or an operator configures `platform.public_base_url`/`auth.passkeys.rp_id`.
+pub(crate) const PASSKEYS_AUTODETECT_UNAVAILABLE_CODE: &str = "passkeys_autodetect_unavailable";
 /// A ceremony could not be completed: unknown, expired, already spent, or issued for a different
 /// purpose. Deliberately one code for all four — see [`CeremonyStore::take`].
 pub(crate) const PASSKEY_CEREMONY_INVALID_CODE: &str = "passkey_ceremony_invalid";
@@ -225,10 +234,11 @@ pub const DOMAIN_CHANGE_PHRASE: &str = "PERDER CHAVES";
 
 /// Passkey policy for this deployment.
 ///
-/// One field, and it is the one the library cannot supply: **which RP ID this instance asserts**.
-/// Everything else about the ceremony is frozen by the ruling and emitted by
-/// `PublicKeyCredentialCreationOptions::passkey` with no configuration, so there is nothing else
-/// here for an operator to get wrong.
+/// Two fields, both the ones the library cannot supply: **which RP ID this instance asserts** and —
+/// only when `platform.public_base_url` is unset — **the origin** it asserts it against. Everything
+/// else about the ceremony is frozen by the ruling and emitted by
+/// `PublicKeyCredentialCreationOptions::passkey` with no configuration, so there is nothing else here
+/// for an operator to get wrong. Both may be typed by an operator or auto-detected once and pinned.
 ///
 /// Additive and serde-defaulted, and `is_default` keeps the whole `auth` slice off the wire while
 /// nothing is configured — so `contracts/settings.json` is unchanged by this feature's arrival.
@@ -253,7 +263,28 @@ pub struct PasskeySettings {
     /// (`livros.example.pt`) is what lets a later subdomain move survive; choosing the host and
     /// widening later invalidates everything already enrolled. Neither this module nor anything
     /// else can rebind a credential — the credentials live in users' authenticators.
+    ///
+    /// ## It may be chosen OR auto-detected once, and pinned
+    ///
+    /// An operator can still type it, but an instance that has set neither this nor
+    /// `platform.public_base_url` no longer refuses passkeys outright: the **first, authenticated**
+    /// enrolment detects a candidate from the request, validates it exactly as a typed value, and
+    /// pins it here (first-writer-wins). After that this is an ordinary stored setting, read by every
+    /// later ceremony. See [`crate::settings::pin_passkey_binding`] and [`detect_bootstrap_candidate`].
     pub rp_id: Option<String>,
+    /// **The exact WebAuthn expected origin** (`https://host[:port]`, or `http://localhost[:port]`),
+    /// used as the ceremony's `allowed_origins` **only when `platform.public_base_url` is unset**.
+    ///
+    /// This is deliberately *not* `public_base_url`. `public_base_url` is the source of email/link
+    /// origins, and its doc comment forbids any request-derived variant, because an attacker-chosen
+    /// `Host` on an unauthenticated recovery request would aim a live reset link at their own domain.
+    /// A WebAuthn expected origin has no such delivery hazard — it is only ever compared against a
+    /// signed assertion in the same flow — so it is safe to auto-detect and pin here while
+    /// `public_base_url` stays operator-only. Set together with [`rp_id`](Self::rp_id) at the first
+    /// enrolment, or left `None` when an operator configured `public_base_url` (which then supplies
+    /// the origin). Never used as a link origin: nothing in the mail path reads it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 impl PasskeySettings {
@@ -277,8 +308,13 @@ impl PasskeySettings {
     /// - an RP ID that **is** a public suffix (`pt`, `co.uk`, `com`), which no browser will accept;
     /// - an RP ID carrying a scheme, port, path, or uppercase — the browser compares an
     ///   already-canonicalised effective domain, so these never match rather than nearly matching;
-    /// - an RP ID configured while `public_base_url` is unset, because there is then nothing to
-    ///   validate it against and the pair could only be checked once users were already failing.
+    /// - an RP ID configured while neither `public_base_url` **nor** the auto-detected passkey
+    ///   [`origin`](Self::origin) is set, because there is then nothing to validate it against and
+    ///   the pair could only be checked once users were already failing.
+    ///
+    /// **An auto-detected RP ID is validated by exactly this path**, against the passkey
+    /// [`origin`](Self::origin) it was pinned beside — it earns no exemption from the Public Suffix
+    /// List check for having been detected rather than typed.
     pub(crate) fn validate_against(&self, public_base_url: Option<&str>) -> Result<(), ApiError> {
         let Some(rp_id) = self
             .rp_id
@@ -290,19 +326,22 @@ impl PasskeySettings {
         };
         let refuse = |why: String| {
             Err(ApiError::Unprocessable(format!(
-                "auth.passkeys.rp_id must be the host of platform.public_base_url or a registrable \
+                "auth.passkeys.rp_id must be the host of the instance origin or a registrable \
                  parent of it, because a passkey is permanently bound to the RP ID it was created \
                  under and a wrong value fails inside the browser where this server never sees it: \
                  {why} (got {rp_id:?})"
             )))
         };
 
-        let Some(base) = public_base_url else {
+        // The origin to validate against is `public_base_url` when an operator set one, else the
+        // auto-detected passkey origin pinned beside this RP ID. Only when neither exists is there
+        // nothing to check the RP ID against.
+        let Some(base) = public_base_url.or(self.origin.as_deref()) else {
             return Err(ApiError::Unprocessable(
-                "auth.passkeys.rp_id cannot be set while platform.public_base_url is unset: the \
-                 RP ID is only meaningful relative to the origin this instance is served from, and \
-                 validating it against nothing would defer the error to every user's first \
-                 enrolment"
+                "auth.passkeys.rp_id cannot be set while the instance has no origin (neither \
+                 platform.public_base_url nor an auto-detected passkey origin): the RP ID is only \
+                 meaningful relative to the origin this instance is served from, and validating it \
+                 against nothing would defer the error to every user's first enrolment"
                     .to_owned(),
             )
             .with_code(PASSKEYS_NO_PUBLIC_BASE_URL_CODE));
@@ -320,9 +359,9 @@ impl PasskeySettings {
                 "it carries a scheme, port or path — an RP ID is a bare domain".to_owned(),
             );
         }
-        let Some(host) = host_of(base) else {
+        let Some(host) = host_of_any(base) else {
             return refuse(format!(
-                "platform.public_base_url {base:?} has no host to validate it against"
+                "the instance origin {base:?} has no host to validate it against"
             ));
         };
 
@@ -381,6 +420,26 @@ fn host_of(base_url: &str) -> Option<String> {
     }
 }
 
+/// The host of an `https://…` **or** `http://…` origin, lowercased and without its port.
+///
+/// Distinct from [`host_of`] because the auto-detected passkey [`PasskeySettings::origin`] may be an
+/// `http://localhost…` dev origin, which browsers treat as a secure context and which `host_of`
+/// (https-only, matching `public_base_url`) would reject. `public_base_url` never carries `http`, so
+/// [`host_of`] stays strict for the paths that only ever see it.
+fn host_of_any(origin: &str) -> Option<String> {
+    let trimmed = origin.trim();
+    let rest = trimmed
+        .strip_prefix("https://")
+        .or_else(|| trimmed.strip_prefix("http://"))?;
+    let authority = rest.split('/').next().unwrap_or(rest);
+    let host = authority.rsplit_once(':').map_or(authority, |(h, _)| h);
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_lowercase())
+    }
+}
+
 /// The RP ID and expected origin this instance will run a ceremony with, or a named refusal.
 ///
 /// **The origin is `public_base_url`'s and is never widened by CORS.** `CHANCELA_CORS_ALLOWED_ORIGINS`
@@ -408,26 +467,36 @@ pub(crate) struct RpContext {
 
 /// Resolve the ceremony context from live settings, refusing by name when it is not configured.
 pub(crate) async fn rp_context(state: &AppState) -> Result<RpContext, ApiError> {
-    let (rp_id, base) = {
+    let (rp_id, origin) = {
         let settings = state.settings.read().await;
-        (
-            settings.auth.passkeys.rp_id.clone(),
-            settings.platform.resolved_public_base_url(),
-        )
+        // The expected origin comes from `public_base_url` when an operator set one; otherwise from
+        // the passkey origin auto-detected and pinned at the first enrolment. The passkey origin is
+        // stored already-canonical (exactly what a browser reports), so it is used verbatim, while
+        // `public_base_url` still goes through `origin_of` to strip any path/default port.
+        let origin = settings
+            .platform
+            .resolved_public_base_url()
+            .as_deref()
+            .and_then(origin_of)
+            .or_else(|| settings.auth.passkeys.origin.clone());
+        (settings.auth.passkeys.rp_id.clone(), origin)
     };
-    let Some(origin) = base.as_deref().and_then(origin_of) else {
+    let Some(origin) = origin else {
         return Err(ApiError::Unprocessable(
-            "as chaves de acesso exigem que o endereço público desta instância esteja configurado \
-             (platform.public_base_url)"
+            "as chaves de acesso ainda não estão disponíveis nesta instância: são configuradas \
+             automaticamente na primeira inscrição (a partir do endereço em que a instância é \
+             acedida), ou um administrador pode defini-las explicitamente \
+             (platform.public_base_url / auth.passkeys.rp_id)."
                 .to_owned(),
         )
         .with_code(PASSKEYS_NO_PUBLIC_BASE_URL_CODE));
     };
     let Some(rp_id) = rp_id.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty()) else {
         return Err(ApiError::Unprocessable(
-            "as chaves de acesso exigem que um administrador escolha o domínio a que ficarão \
-             associadas (auth.passkeys.rp_id). Esta escolha é definitiva: uma chave de acesso não \
-             pode ser transferida para outro domínio."
+            "as chaves de acesso exigem o domínio a que ficarão associadas (auth.passkeys.rp_id). \
+             É detetado automaticamente na primeira inscrição, ou um administrador pode defini-lo. \
+             Esta escolha é definitiva: uma chave de acesso não pode ser transferida para outro \
+             domínio."
                 .to_owned(),
         )
         .with_code(PASSKEYS_NO_RP_ID_CODE));
@@ -472,6 +541,238 @@ fn origin_of(base_url: &str) -> Option<String> {
         Some("443") | None => format!("https://{}", host.to_lowercase()),
         Some(port) => format!("https://{}:{port}", host.to_lowercase()),
     })
+}
+
+// =================================================================================================
+// Auto-detection of the RP ID / origin (detect-once-and-pin)
+// =================================================================================================
+//
+// An instance that has configured neither `platform.public_base_url` nor `auth.passkeys.rp_id` used
+// to refuse passkeys outright. It now bootstraps itself: the **first, authenticated** enrolment
+// derives a candidate RP ID (and, when there is no `public_base_url`, a passkey origin) from how the
+// request reached the server, validates it exactly as a typed value would be, and pins it
+// first-writer-wins (`crate::settings::pin_passkey_binding`). Four things make that safe, and none of
+// them move:
+//
+//  1. **The RP ID resolves to ONE instance-wide value.** Discoverable sign-in picks the RP ID before
+//     it knows which credential will answer, so every credential must share it. Auto-detect resolves
+//     to a single stored value, never a per-request one.
+//  2. **Detected once, then pinned.** A credential is bound to its RP ID forever, so the value must be
+//     stable. After the first pin every later ceremony reads the stored value; a host that later
+//     varies (a new alias, a second proxy) does not re-derive and cannot strand what is enrolled.
+//  3. **Never an IP, never a public suffix.** WebAuthn forbids an IP RP ID, and `webauthn_rp` would
+//     accept `rp_id="pt"`; the same Public-Suffix-List / registrable-parent validation that guards a
+//     typed value runs on the detected one ([`PasskeySettings::validate_against`], re-run inside the
+//     pin). An IP-reached instance fails honestly rather than inventing a domain.
+//  4. **Only a logged-in user can trigger it.** `begin_enrolment` is authenticated (self + attestor),
+//     so the bootstrap is never reachable by an anonymous attacker aiming a `Host` header at it — and
+//     the value they could pin only strands their own future credentials, which is self-inflicted.
+
+/// A detected RP ID / origin pair, ready to pin.
+struct BootstrapCandidate {
+    /// The RP ID to pin — the registrable parent of the detected host (or `localhost`).
+    rp_id: String,
+    /// The canonical passkey origin to pin, or `None` when the candidate was derived from
+    /// `public_base_url` (which then supplies the origin and stays the operator-owned link origin).
+    origin: Option<String>,
+}
+
+/// The registrable-domain RP ID for a host: its Public-Suffix-List registrable parent
+/// (`livros.example.pt` → `example.pt`, `chancela.pt` → `chancela.pt`), or `None` for anything that
+/// cannot be one — an IP literal, a bare public suffix, a name with no known suffix.
+///
+/// `localhost` (and `*.localhost`) is carved out to `localhost`, exactly as
+/// [`PasskeySettings::validate_against`] does: browsers special-case it as a secure, valid RP ID, yet
+/// the PSL lists it as a suffix so [`psl::domain_str`] would return `None`.
+fn registrable_rp_id(host: &str) -> Option<String> {
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty() {
+        return None;
+    }
+    if host == "localhost" || host.ends_with(".localhost") {
+        return Some("localhost".to_owned());
+    }
+    if host.parse::<IpAddr>().is_ok() {
+        return None;
+    }
+    psl::domain_str(&host).map(str::to_owned)
+}
+
+/// The `(authority, scheme)` this request was served on, honouring the **same** trusted-proxy flag
+/// the sessions lane uses (`CHANCELA_RATE_LIMIT_TRUST_FORWARDED_FOR`, read here as
+/// `state.rate_limit.trust_forwarded_for`).
+///
+/// With the flag **off**, forwarded headers are ignored entirely — the direct `Host` header and an
+/// https assumption are used — so a client-forged `X-Forwarded-Host` can never move the pinned RP ID.
+/// With it **on**, a declared trusted proxy's `X-Forwarded-Host` / `X-Forwarded-Proto` win. This is
+/// the sessions lane's trust boundary reused rather than a second one invented: it is not a second
+/// parser of `X-Forwarded-For` (that stays the sole IP resolver in `lib.rs`) — a host is a different
+/// datum — but it is gated on the identical flag so the two can never disagree about whether a proxy
+/// is trusted. `None` when there is no `Host` to read at all (an in-process request without one).
+///
+/// Takes the trust flag by value rather than reading it off `state`, so the forwarded-vs-direct
+/// decision can be unit-tested without standing up an `AppState`.
+fn request_authority(trust: bool, headers: &HeaderMap) -> Option<(String, String)> {
+    let header = |name: &str| headers.get(name).and_then(|v| v.to_str().ok());
+    // A forwarding header may carry a comma list; the LEFT-most entry is the original client-facing
+    // value the first proxy recorded.
+    let forwarded_first = |name: &str| {
+        header(name)
+            .and_then(|v| v.split(',').next())
+            .map(str::trim)
+    };
+
+    let host = if trust {
+        forwarded_first("x-forwarded-host")
+            .filter(|h| !h.is_empty())
+            .or_else(|| header("host"))
+    } else {
+        header("host")
+    }?;
+    let host = host.trim();
+    if host.is_empty() {
+        return None;
+    }
+    let scheme = if trust {
+        forwarded_first("x-forwarded-proto")
+            .filter(|p| !p.is_empty())
+            .map(|p| p.to_ascii_lowercase())
+            .unwrap_or_else(|| "https".to_owned())
+    } else {
+        "https".to_owned()
+    };
+    Some((host.to_owned(), scheme))
+}
+
+/// Split an authority (`host`, `host:port`, `[v6]`, `[v6]:port`) into (bare host, optional port).
+fn split_authority(authority: &str) -> (String, Option<String>) {
+    if let Some(rest) = authority.strip_prefix('[') {
+        // A bracketed IPv6 literal: the host is between the brackets, an optional port follows `]:`.
+        if let Some((host, after)) = rest.split_once(']') {
+            let port = after
+                .strip_prefix(':')
+                .filter(|p| !p.is_empty())
+                .map(str::to_owned);
+            return (host.to_ascii_lowercase(), port);
+        }
+        return (rest.to_ascii_lowercase(), None);
+    }
+    match authority.rsplit_once(':') {
+        Some((host, port)) if !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()) => {
+            (host.to_ascii_lowercase(), Some(port.to_owned()))
+        }
+        _ => (authority.to_ascii_lowercase(), None),
+    }
+}
+
+/// Build the canonical origin string a browser reports: `scheme://host`, keeping only a non-default
+/// port. The stored passkey origin must equal this byte-for-byte, since the ceremony compares origins
+/// by equality.
+fn canonical_origin(scheme: &str, host: &str, port: Option<&str>) -> String {
+    let default_port = matches!(
+        (scheme, port),
+        ("https", Some("443")) | ("http", Some("80"))
+    );
+    match port {
+        Some(p) if !default_port => format!("{scheme}://{host}:{p}"),
+        _ => format!("{scheme}://{host}"),
+    }
+}
+
+/// Detect a candidate RP ID / origin to bootstrap this instance's passkey configuration.
+///
+/// `public_base_url` first: when an operator set one, the RP ID is derived from **its** host with no
+/// request involved at all — the safest source — and only the RP ID is pinned (the origin keeps
+/// coming from `public_base_url`, so the email-link origin stays the single operator-owned value).
+/// Otherwise the host/scheme come from the request, trusted-proxy-aware, and both the RP ID and a
+/// passkey origin are pinned.
+///
+/// - `Ok(Some(_))` — a valid candidate to pin.
+/// - `Ok(None)` — nothing to detect from (no `public_base_url` and no `Host` header); the caller
+///   falls through to the ordinary "not configured" refusal.
+/// - `Err(_)` — a host was found but cannot be an RP ID (a bare IP, a non-secure scheme, a name with
+///   no registrable domain); nothing is pinned and the refusal says why.
+async fn detect_bootstrap_candidate(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<Option<BootstrapCandidate>, ApiError> {
+    let public_base = state
+        .settings
+        .read()
+        .await
+        .platform
+        .resolved_public_base_url();
+    if let Some(base) = public_base {
+        let host = host_of(&base).ok_or_else(|| autodetect_unavailable(&base))?;
+        let rp_id = registrable_rp_id(&host).ok_or_else(|| autodetect_unavailable(&host))?;
+        return Ok(Some(BootstrapCandidate {
+            rp_id,
+            origin: None,
+        }));
+    }
+
+    let Some((authority, scheme)) =
+        request_authority(state.rate_limit.trust_forwarded_for, headers)
+    else {
+        return Ok(None);
+    };
+    let (host, port) = split_authority(&authority);
+    if host.is_empty() {
+        return Ok(None);
+    }
+    if host.parse::<IpAddr>().is_ok() {
+        return Err(autodetect_unavailable(&host));
+    }
+    let is_local = host == "localhost" || host.ends_with(".localhost");
+    if scheme != "https" && !(scheme == "http" && is_local) {
+        return Err(autodetect_unavailable(&host));
+    }
+    let rp_id = registrable_rp_id(&host).ok_or_else(|| autodetect_unavailable(&host))?;
+    let origin = canonical_origin(&scheme, &host, port.as_deref());
+    Ok(Some(BootstrapCandidate {
+        rp_id,
+        origin: Some(origin),
+    }))
+}
+
+/// The honest refusal when auto-detection cannot produce a usable RP ID. Nothing is pinned.
+fn autodetect_unavailable(host: &str) -> ApiError {
+    ApiError::Unprocessable(format!(
+        "as chaves de acesso não podem ser configuradas automaticamente porque esta instância está \
+         a ser acedida por {host:?}, que não serve como domínio de uma chave de acesso (um endereço \
+         IP nunca pode sê-lo). Aceda à instância por um nome de domínio, ou peça a um administrador \
+         para definir platform.public_base_url ou auth.passkeys.rp_id."
+    ))
+    .with_code(PASSKEYS_AUTODETECT_UNAVAILABLE_CODE)
+}
+
+/// Auto-detect and pin the RP ID / origin when the instance has configured neither, best-effort.
+///
+/// A no-op the moment an RP ID is already set (the common case after the first enrolment, and the
+/// case for every operator who configured one). Otherwise it detects a candidate and hands it to
+/// [`crate::settings::pin_passkey_binding`], which does the first-writer-wins durable pin. A detection
+/// error (bare-IP instance) propagates so the honest refusal reaches the caller; `Ok(None)` — nothing
+/// to detect from — leaves the configuration untouched and the ordinary refusal to `rp_context`.
+async fn bootstrap_rp_binding(
+    state: &AppState,
+    actor: &CurrentActor,
+    attestor: &CurrentAttestor,
+    headers: &HeaderMap,
+) -> Result<(), ApiError> {
+    if state.settings.read().await.auth.passkeys.rp_id.is_some() {
+        return Ok(());
+    }
+    if let Some(candidate) = detect_bootstrap_candidate(state, headers).await? {
+        crate::settings::pin_passkey_binding(
+            state,
+            actor,
+            attestor,
+            candidate.rp_id,
+            candidate.origin,
+        )
+        .await?;
+    }
+    Ok(())
 }
 
 // =================================================================================================
@@ -1454,18 +1755,29 @@ pub async fn list_passkeys(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
     actor: CurrentActor,
+    headers: HeaderMap,
 ) -> Result<Json<PasskeyListView>, ApiError> {
     let target = UserId(id);
     let user = read_self_or_manage(&state, &actor, target).await?;
     let rp = rp_context(&state).await.ok();
     let rp_id = rp.as_ref().map(|c| c.rp_id_str.clone());
+    // Enrolment is available when the instance is already configured (`rp_id` present) **or** when a
+    // first enrolment could auto-detect a usable RP ID from how this request reached the server, so
+    // the enrol affordance shows and the bootstrap can happen. A bare-IP instance reports it as
+    // unavailable — honestly, since passkeys genuinely cannot work there. This mirrors what
+    // `begin_enrolment` would actually do, so the button never promises an enrolment that then refuses.
+    let enrolment_available = rp_id.is_some()
+        || matches!(
+            detect_bootstrap_candidate(&state, &headers).await,
+            Ok(Some(_))
+        );
     Ok(Json(PasskeyListView {
         passkeys: user
             .passkeys
             .iter()
             .map(|c| PasskeyView::of(c, rp_id.as_deref()))
             .collect(),
-        enrolment_available: rp_id.is_some(),
+        enrolment_available,
         rp_id,
     }))
 }
@@ -1502,9 +1814,16 @@ pub async fn begin_enrolment(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
     actor: CurrentActor,
+    attestor: CurrentAttestor,
+    headers: HeaderMap,
 ) -> Result<Json<CeremonyOptionsView>, ApiError> {
     let target = UserId(id);
     let user = require_self(&state, &actor, target).await?;
+    // **Detect-once-and-pin.** An instance that configured neither `public_base_url` nor
+    // `auth.passkeys.rp_id` bootstraps here, at the first authenticated enrolment, rather than
+    // refusing. A no-op once configured; a first-writer-wins pin otherwise; an honest refusal when
+    // the instance is reached by a bare IP. See the module's auto-detection section.
+    bootstrap_rp_binding(&state, &actor, &attestor, &headers).await?;
     let rp = rp_context(&state).await?;
     let now = OffsetDateTime::now_utc();
 
@@ -2212,6 +2531,16 @@ mod tests {
     fn settings(rp_id: Option<&str>) -> PasskeySettings {
         PasskeySettings {
             rp_id: rp_id.map(str::to_owned),
+            origin: None,
+        }
+    }
+
+    /// A settings slice with an auto-detected passkey `origin` but no `public_base_url` — the state
+    /// after a request-derived bootstrap, where the RP ID is validated against the pinned origin.
+    fn settings_with_origin(rp_id: Option<&str>, origin: &str) -> PasskeySettings {
+        PasskeySettings {
+            rp_id: rp_id.map(str::to_owned),
+            origin: Some(origin.to_owned()),
         }
     }
 
@@ -2342,6 +2671,161 @@ mod tests {
         settings(Some("pt"))
             .validate_against(Some("https://livros.example.pt"))
             .expect_err("no other public suffix is exempted");
+    }
+
+    // ── Auto-detected RP ID / origin (detect-once-and-pin) ────────────────────────────────────────
+
+    /// With no `public_base_url`, the RP ID is validated against the pinned passkey origin instead —
+    /// a detected value gets the same check a typed one does, not a weaker one.
+    #[test]
+    fn an_auto_detected_rp_id_validates_against_the_pinned_origin() {
+        // The registrable parent of the origin host is accepted.
+        settings_with_origin(Some("example.pt"), "https://livros.example.pt")
+            .validate_against(None)
+            .expect("the registrable parent of the pinned origin is valid");
+        // The exact host is accepted too.
+        settings_with_origin(Some("livros.example.pt"), "https://livros.example.pt")
+            .validate_against(None)
+            .expect("the host of the pinned origin is valid");
+        // A public suffix is still refused — the guard runs on the detected value unchanged.
+        settings_with_origin(Some("pt"), "https://livros.example.pt")
+            .validate_against(None)
+            .expect_err("a public suffix is never a valid RP ID, detected or typed");
+        // A host that is not a parent of the origin is refused.
+        settings_with_origin(Some("example.com"), "https://livros.example.pt")
+            .validate_against(None)
+            .expect_err("an RP ID unrelated to the pinned origin is refused");
+    }
+
+    /// `public_base_url` still wins when both it and the passkey origin are present — the operator's
+    /// explicit origin is authoritative, and the passkey origin is only a fallback.
+    #[test]
+    fn public_base_url_takes_precedence_over_the_pinned_origin() {
+        // rp_id must match `public_base_url`'s host, not the (here contradictory) passkey origin.
+        settings_with_origin(Some("example.pt"), "https://other.example.com")
+            .validate_against(Some("https://livros.example.pt"))
+            .expect("validated against public_base_url, which the rp_id is a parent of");
+    }
+
+    /// The registrable parent the bootstrap would pin for a given host.
+    #[test]
+    fn registrable_rp_id_reduces_to_the_registrable_parent() {
+        assert_eq!(
+            registrable_rp_id("livros.example.pt").as_deref(),
+            Some("example.pt")
+        );
+        assert_eq!(
+            registrable_rp_id("deep.livros.example.pt").as_deref(),
+            Some("example.pt")
+        );
+        assert_eq!(
+            registrable_rp_id("chancela.pt").as_deref(),
+            Some("chancela.pt")
+        );
+        assert_eq!(
+            registrable_rp_id("livros.example.co.uk").as_deref(),
+            Some("example.co.uk")
+        );
+        // localhost (and subdomains) is the browser-special-cased value, not a PSL lookup.
+        assert_eq!(registrable_rp_id("localhost").as_deref(), Some("localhost"));
+        assert_eq!(
+            registrable_rp_id("api.localhost").as_deref(),
+            Some("localhost")
+        );
+        // Anything that cannot be an RP ID yields None: an IP literal, a bare suffix, a bare label.
+        assert_eq!(registrable_rp_id("192.168.1.10"), None);
+        assert_eq!(registrable_rp_id("[2001:db8::1]"), None); // brackets are stripped by the caller
+        assert_eq!(registrable_rp_id("pt"), None);
+        assert_eq!(registrable_rp_id("co.uk"), None);
+        assert_eq!(registrable_rp_id("intranet"), None);
+    }
+
+    #[test]
+    fn split_authority_separates_host_and_port() {
+        assert_eq!(
+            split_authority("livros.example.pt"),
+            ("livros.example.pt".to_owned(), None)
+        );
+        assert_eq!(
+            split_authority("livros.example.pt:8443"),
+            ("livros.example.pt".to_owned(), Some("8443".to_owned()))
+        );
+        assert_eq!(
+            split_authority("LIVROS.Example.PT"),
+            ("livros.example.pt".to_owned(), None)
+        );
+        assert_eq!(
+            split_authority("[2001:db8::1]:4711"),
+            ("2001:db8::1".to_owned(), Some("4711".to_owned()))
+        );
+    }
+
+    #[test]
+    fn canonical_origin_drops_only_the_default_port() {
+        assert_eq!(
+            canonical_origin("https", "livros.example.pt", None),
+            "https://livros.example.pt"
+        );
+        assert_eq!(
+            canonical_origin("https", "livros.example.pt", Some("443")),
+            "https://livros.example.pt"
+        );
+        assert_eq!(
+            canonical_origin("https", "livros.example.pt", Some("8443")),
+            "https://livros.example.pt:8443"
+        );
+        assert_eq!(
+            canonical_origin("http", "localhost", Some("5173")),
+            "http://localhost:5173"
+        );
+        assert_eq!(
+            canonical_origin("http", "localhost", Some("80")),
+            "http://localhost"
+        );
+    }
+
+    /// **The trusted-proxy boundary is the sessions lane's, reused.** With the flag off the direct
+    /// `Host` is used and a forged `X-Forwarded-Host` is ignored entirely; with it on, a declared
+    /// proxy's forwarded host and proto win.
+    #[test]
+    fn request_authority_honours_the_trusted_proxy_flag() {
+        let mut headers = HeaderMap::new();
+        headers.insert("host", "livros.example.pt".parse().unwrap());
+        headers.insert("x-forwarded-host", "evil.example.com".parse().unwrap());
+        headers.insert("x-forwarded-proto", "http".parse().unwrap());
+
+        // Flag OFF: the forged forwarded headers are not read at all.
+        assert_eq!(
+            request_authority(false, &headers),
+            Some(("livros.example.pt".to_owned(), "https".to_owned())),
+            "an untrusted forwarded host must never move the derived origin"
+        );
+
+        // Flag ON: a declared trusted proxy's forwarded host/proto win.
+        assert_eq!(
+            request_authority(true, &headers),
+            Some(("evil.example.com".to_owned(), "http".to_owned())),
+            "behind a declared trusted proxy the forwarded values are authoritative"
+        );
+
+        // No host at all → nothing to derive.
+        assert_eq!(request_authority(false, &HeaderMap::new()), None);
+    }
+
+    /// A forwarding header may carry a comma list; the left-most (original client-facing) entry wins.
+    #[test]
+    fn request_authority_takes_the_first_forwarded_entry() {
+        let mut headers = HeaderMap::new();
+        headers.insert("host", "internal".parse().unwrap());
+        headers.insert(
+            "x-forwarded-host",
+            "livros.example.pt, proxy.internal".parse().unwrap(),
+        );
+        headers.insert("x-forwarded-proto", "https, http".parse().unwrap());
+        assert_eq!(
+            request_authority(true, &headers),
+            Some(("livros.example.pt".to_owned(), "https".to_owned()))
+        );
     }
 
     #[test]
