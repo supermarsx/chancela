@@ -1906,6 +1906,7 @@ export const deDE: Catalog = {
   'session.empty': 'Keine aktiven Benutzer.',
   'session.error.generic': 'Konnte nicht abgeschlossen werden.',
   'session.signOut': 'Abmelden',
+  'session.switchAccount': 'Konto wechseln',
   'session.manage': 'Benutzer verwalten',
 
   // --- Settings ------------------------------------------------------------------

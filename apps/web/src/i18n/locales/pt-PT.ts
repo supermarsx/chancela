@@ -1909,6 +1909,7 @@ export const ptPT: Catalog = {
   'session.empty': 'Sem utilizadores ativos.',
   'session.error.generic': 'Não foi possível concluir.',
   'session.signOut': 'Terminar sessão',
+  'session.switchAccount': 'Trocar de conta',
   'session.manage': 'Gerir utilizadores',
 
   // --- Settings (Configurações) --------------------------------------------------

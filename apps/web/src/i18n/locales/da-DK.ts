@@ -1883,6 +1883,7 @@ export const daDK: Catalog = {
   'session.empty': 'Ingen aktive brugere.',
   'session.error.generic': 'Kunne ikke gennemføre.',
   'session.signOut': 'Log ud',
+  'session.switchAccount': 'Skift konto',
   'session.manage': 'Administrér brugere',
 
   // --- Settings (Configurações) --------------------------------------------------

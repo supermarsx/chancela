@@ -1893,6 +1893,7 @@ export const nlNL: Catalog = {
   'session.empty': 'Geen actieve gebruikers.',
   'session.error.generic': 'Kon niet voltooien.',
   'session.signOut': 'Afmelden',
+  'session.switchAccount': 'Van account wisselen',
   'session.manage': 'Gebruikers beheren',
 
   // --- Settings ------------------------------------------------------------------

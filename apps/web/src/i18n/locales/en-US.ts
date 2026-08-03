@@ -1880,6 +1880,7 @@ export const enUS = {
   'session.empty': 'No active users.',
   'session.error.generic': 'Could not complete.',
   'session.signOut': 'Sign out',
+  'session.switchAccount': 'Switch account',
   'session.manage': 'Manage users',
 
   // --- Settings ------------------------------------------------------------------

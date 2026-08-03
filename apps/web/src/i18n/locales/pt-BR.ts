@@ -1888,6 +1888,7 @@ export const ptBR: Catalog = {
   'session.empty': 'Sem usuários ativos.',
   'session.error.generic': 'Não foi possível concluir.',
   'session.signOut': 'Encerrar sessão',
+  'session.switchAccount': 'Trocar de conta',
   'session.manage': 'Gerenciar usuários',
 
   // --- Settings (Configurações) --------------------------------------------------

@@ -1887,6 +1887,7 @@ export const plPL: Catalog = {
   'session.empty': 'Brak aktywnych użytkowników.',
   'session.error.generic': 'Nie udało się ukończyć.',
   'session.signOut': 'Wyloguj się',
+  'session.switchAccount': 'Przełącz konto',
   'session.manage': 'Zarządzaj użytkownikami',
 
   // --- Settings (Configurações) --------------------------------------------------

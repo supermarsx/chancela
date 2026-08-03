@@ -1883,6 +1883,7 @@ export const fiFI: Catalog = {
   'session.empty': 'Ei aktiivisia käyttäjiä.',
   'session.error.generic': 'Toimintoa ei voitu suorittaa.',
   'session.signOut': 'Kirjaudu ulos',
+  'session.switchAccount': 'Vaihda tiliä',
   'session.manage': 'Hallitse käyttäjiä',
 
   // --- Settings (Configurações) --------------------------------------------------

@@ -2003,6 +2003,10 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Transporte de simulação (declarado)',
     'Transporte pronto',
     'Tratamento do titular restringido',
+    // t94 follow-up — `session.switchAccount`, the picker's switch-account region label. "Trocar
+    // de conta" is the ordinary phrase in both European and Brazilian Portuguese; a synonym to
+    // dodge the gate would make the copy worse. A cognate, not an untranslated gap.
+    'Trocar de conta',
     'TSA/QTST',
     'TSL ao vivo',
     'TSL confiável',

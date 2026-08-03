@@ -97,6 +97,11 @@ export function CurrentUserPicker() {
       })),
   ];
 
+  // Whether the switch-account list actually offers somewhere to go: signed in, with at least
+  // one OTHER remembered identity to switch into. Drives the "Trocar de conta" region label —
+  // naming a list that holds only your own row "switch account" would be a lie.
+  const hasSwitchTarget = currentUser != null && entries.some((e) => !e.isCurrent);
+
   // Another tab (or the sign-in screen before this one mounted) may have changed the stored
   // list, so re-read it each time the menu opens rather than trusting mount-time state.
   useEffect(() => {
@@ -329,38 +334,57 @@ export function CurrentUserPicker() {
             ) : (
               // No fetch backs this list: it is the current identity plus what this browser
               // remembers, so there is nothing to wait for and no skeleton to show.
-              <div className="session-picker__list">
-                {entries.length === 0 ? (
-                  <p className="muted session-picker__empty">{t('session.empty')}</p>
-                ) : (
-                  entries.map((entry) => (
-                    <div key={entry.username} className="session-picker__row">
-                      <button
-                        type="button"
-                        role="menuitemradio"
-                        aria-checked={entry.isCurrent}
-                        className={`menu-item session-picker__item${entry.isCurrent ? ' is-current' : ''}`}
-                        disabled={busy}
-                        onClick={() => pick(entry)}
-                      >
-                        <span className="session-picker__item-name">{entry.displayName}</span>
-                        <code className="mono session-picker__item-user">{entry.username}</code>
-                      </button>
-                      {entry.isCurrent ? null : (
+              <>
+                {/* The account list IS the change-user affordance (t94): each row switches you
+                    into another remembered account — password-only, no server lookup (see the
+                    class header). It was already here but unlabelled, so switching read as an
+                    unexplained list rather than a deliberate choice beside ending the session;
+                    naming the region "Trocar de conta" makes that explicit. Shown only when there
+                    is genuinely another account to switch into. A `role="group"` inside the
+                    `role="menu"`, named by this heading, binds the label to the switch rows
+                    WITHOUT disturbing their `menuitemradio` semantics. */}
+                {hasSwitchTarget ? (
+                  <p className="session-picker__grouphead" id="session-picker-switch">
+                    {t('session.switchAccount')}
+                  </p>
+                ) : null}
+                <div
+                  className="session-picker__list"
+                  role={hasSwitchTarget ? 'group' : undefined}
+                  aria-labelledby={hasSwitchTarget ? 'session-picker-switch' : undefined}
+                >
+                  {entries.length === 0 ? (
+                    <p className="muted session-picker__empty">{t('session.empty')}</p>
+                  ) : (
+                    entries.map((entry) => (
+                      <div key={entry.username} className="session-picker__row">
                         <button
                           type="button"
-                          className="session-picker__forget"
-                          aria-label={t('signin.recent.remove', { username: entry.username })}
+                          role="menuitemradio"
+                          aria-checked={entry.isCurrent}
+                          className={`menu-item session-picker__item${entry.isCurrent ? ' is-current' : ''}`}
                           disabled={busy}
-                          onClick={() => setRecents(forgetAccount(entry.username))}
+                          onClick={() => pick(entry)}
                         >
-                          <Icon.Close />
+                          <span className="session-picker__item-name">{entry.displayName}</span>
+                          <code className="mono session-picker__item-user">{entry.username}</code>
                         </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
+                        {entry.isCurrent ? null : (
+                          <button
+                            type="button"
+                            className="session-picker__forget"
+                            aria-label={t('signin.recent.remove', { username: entry.username })}
+                            disabled={busy}
+                            onClick={() => setRecents(forgetAccount(entry.username))}
+                          >
+                            <Icon.Close />
+                          </button>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
             )}
 
             {actionError ? (
@@ -369,56 +393,67 @@ export function CurrentUserPicker() {
               </p>
             ) : null}
 
-            {/* The door into the self-service account area, and the reason it is HERE.
+            {/* The foot is TWO distinct groups, not one mixed row (user request): a navigation
+                group of links to pages, and — below its own hairline — the session actions. A link
+                to a page and the act of ending your session are different kinds of thing, so they
+                live in separate containers rather than one run of controls: the split stays obvious
+                to a sighted user, and a screen reader meets two blocks instead of one. */}
+            {currentUser || canManageUsers ? (
+              <div className="session-picker__foot">
+                {/* Navigation group — links to pages, and the reason they are HERE.
 
-                This menu is the one control in the app that is unambiguously about *you*, and it is
-                on every screen. Before `/account` existed, the only link out of it went to
-                `/settings/users` — the administrative roster — which is `user.read`@Global: an
-                ordinary user followed the only link their own menu offered and was refused. So the
-                account link is rendered for everyone and first, and the roster link is now
-                permission-gated to the people it actually serves. Nothing is hidden that anybody
-                could reach; the two links simply stopped being one link that lied. */}
-            <div className="session-picker__foot">
-              {currentUser ? (
-                <button
-                  type="button"
-                  className="session-picker__signout"
-                  disabled={busy}
-                  onClick={out}
-                >
-                  <span className="btn__icon">
-                    <SignOut />
-                  </span>
-                  {t('session.signOut')}
-                </button>
-              ) : (
-                <span />
-              )}
-              <span className="session-picker__links">
+                    This menu is the one control in the app that is unambiguously about *you*, and it
+                    is on every screen. Before `/account` existed, the only link out of it went to
+                    `/settings/users` — the administrative roster — which is `user.read`@Global: an
+                    ordinary user followed the only link their own menu offered and was refused. So
+                    the account link is rendered for everyone and first, and the roster link is now
+                    permission-gated to the people it actually serves. Nothing is hidden that anybody
+                    could reach; the two links simply stopped being one link that lied. */}
+                <div className="session-picker__nav">
+                  {currentUser ? (
+                    <Link
+                      to={ACCOUNT_PATH}
+                      className="session-picker__manage"
+                      onClick={() => setOpen(false)}
+                    >
+                      {t('account.picker.link')}
+                    </Link>
+                  ) : null}
+                  {/* A real character between the two links, not a CSS gap: `gap` inserts nothing
+                      into the text, so without it the two names read fused to a screen reader and to
+                      find-in-page. Rendered only when both links are actually present. */}
+                  {currentUser && canManageUsers ? ' · ' : null}
+                  {canManageUsers ? (
+                    <Link
+                      to={USERS_LIST_PATH}
+                      className="session-picker__manage"
+                      onClick={() => setOpen(false)}
+                    >
+                      {t('session.manage')}
+                    </Link>
+                  ) : null}
+                </div>
+
+                {/* Session-actions group, set off by its own divider so ending the session never
+                    reads as just another navigation link. Switching accounts is offered above, in
+                    the labelled switch-account list; this group holds the one destructive action. */}
                 {currentUser ? (
-                  <Link
-                    to={ACCOUNT_PATH}
-                    className="session-picker__manage"
-                    onClick={() => setOpen(false)}
-                  >
-                    {t('account.picker.link')}
-                  </Link>
+                  <div className="session-picker__actions">
+                    <button
+                      type="button"
+                      className="session-picker__signout"
+                      disabled={busy}
+                      onClick={out}
+                    >
+                      <span className="btn__icon">
+                        <SignOut />
+                      </span>
+                      {t('session.signOut')}
+                    </button>
+                  </div>
                 ) : null}
-                {/* A real character between the two links, not a CSS gap: `gap` inserts nothing
-                    into the text, so without it the two names read fused to a screen reader and to
-                    find-in-page. Rendered only when both links are actually present. */}
-                {currentUser && canManageUsers ? ' · ' : null}
-                {canManageUsers ? (
-                  <Link
-                    to={USERS_LIST_PATH}
-                    className="session-picker__manage"
-                    onClick={() => setOpen(false)}
-                  >
-                    {t('session.manage')}
-                  </Link>
-                ) : null}
-              </span>
-            </div>
+              </div>
+            ) : null}
           </div>
         </>
       ) : null}

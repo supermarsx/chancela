@@ -1892,6 +1892,7 @@ export const esES: Catalog = {
   'session.empty': 'Sin usuarios activos.',
   'session.error.generic': 'No se ha podido completar.',
   'session.signOut': 'Cerrar sesión',
+  'session.switchAccount': 'Cambiar de cuenta',
   'session.manage': 'Gestionar usuarios',
 
   // --- Configuración -------------------------------------------------------------

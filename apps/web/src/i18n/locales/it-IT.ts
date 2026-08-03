@@ -1893,6 +1893,7 @@ export const itIT: Catalog = {
   'session.empty': 'Nessun utente attivo.',
   'session.error.generic': 'Impossibile completare.',
   'session.signOut': 'Termina la sessione',
+  'session.switchAccount': 'Cambia account',
   'session.manage': 'Gestisci gli utenti',
 
   // --- Settings ------------------------------------------------------------------

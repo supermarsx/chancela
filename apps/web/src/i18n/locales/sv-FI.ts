@@ -1889,6 +1889,7 @@ export const svFI: Catalog = {
   'session.empty': 'Inga aktiva användare.',
   'session.error.generic': 'Det gick inte att slutföra.',
   'session.signOut': 'Logga ut',
+  'session.switchAccount': 'Byt konto',
   'session.manage': 'Hantera användare',
 
   // --- Settings (Configurações) --------------------------------------------------

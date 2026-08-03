@@ -1904,6 +1904,7 @@ export const frFR: Catalog = {
   'session.empty': 'Aucun utilisateur actif.',
   'session.error.generic': 'Impossible de terminer.',
   'session.signOut': 'Se déconnecter',
+  'session.switchAccount': 'Changer de compte',
   'session.manage': 'Gérer les utilisateurs',
 
   // --- Settings ------------------------------------------------------------------

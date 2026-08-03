@@ -21,6 +21,8 @@ import { CurrentUserPicker } from './CurrentUserPicker';
 import { clearSessionToken, setSessionToken } from '../../api/session';
 import { SignIn } from './SignIn';
 import { PASSKEY_USERNAME_AUTOCOMPLETE } from './PasskeySignIn';
+import { ACCOUNT_PATH } from '../account/paths';
+import { USERS_LIST_PATH } from '../users/paths';
 import type { SessionRoster, TwoFactorChallengeView, UserView } from '../../api/types';
 
 const AMELIA: UserView = {
@@ -887,5 +889,119 @@ describe('SignIn — two-step-verification challenge (Screen A)', () => {
     expect(await screen.findByText('APP CHROME')).toBeTruthy();
     const post = calls.find((c) => c.url.includes('/v1/session/challenge') && c.method === 'POST');
     expect(post?.body).toEqual({ challenge_id: 'ch-backup', code: 'ABCD-EFGH-1234' });
+  });
+});
+
+/**
+ * Layout guards for the picker-foot restructure (t94 follow-up). These pin three user-visible
+ * properties that a rendered assertion cannot see or that a className drop would silently revert:
+ *   1. the end-session button is one neat line (`white-space: nowrap`) — jsdom applies no
+ *      stylesheet to `getComputedStyle`, so only the source proves it;
+ *   2. the foot is TWO distinct groups (navigation links, session actions) in separate containers
+ *      with a divider, not one mixed row — the user's "separate group … about the end session";
+ *   3. the account list is labelled as the change-user ("Trocar de conta") region, its rows stay
+ *      `menuitemradio`, and the account link is present-and-first for an ordinary user (the t94
+ *      no-403 property). The CSS half reads theme.css source; the structure half reads
+ *      roles/classes/hrefs, never translated copy.
+ */
+async function readTheme(): Promise<string> {
+  // The app project ships no `@types/node`, so this indirection (mirrors `bannerMarginGuards`) is
+  // how the suite reads a real file from a test without a bare `import … from 'node:fs'`.
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  return readFileSync('src/theme.css', 'utf8').replace(/\r\n/gu, '\n');
+}
+
+/** The declaration body of the first `selector { … }` rule in the sheet (rules never nest here). */
+function ruleBody(css: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+  const match = new RegExp(`${escaped}\\s*\\{([^}]*)\\}`, 'u').exec(css);
+  return match ? match[1] : '';
+}
+
+describe('CurrentUserPicker — foot layout guards', () => {
+  function renderOpenSignedIn() {
+    setSessionToken('tok-0');
+    seedRecents([{ username: BRUNO.username, displayName: BRUNO.display_name, lastUsedAt: 20 }]);
+    const { fn } = serverStub({
+      roster: { onboarding_required: false },
+      users: [AMELIA, BRUNO],
+      startSignedIn: true,
+    });
+    vi.stubGlobal('fetch', fn);
+    return renderWithProviders(<CurrentUserPicker />);
+  }
+
+  it('keeps the end-session button on a single line in the stylesheet', async () => {
+    const theme = await readTheme();
+    const signout = ruleBody(theme, '.session-picker__signout');
+    expect(signout, '.session-picker__signout rule not found — the walk mis-tokenised').not.toBe(
+      '',
+    );
+    // The single-line fix the user asked for. A revert passes every rendered test, because jsdom
+    // never applies this rule — this source assertion is the only thing that goes red. Match the
+    // DECLARATION (semicolon-terminated), not the phrase: the rule's own comment names the property
+    // too, so a bare-phrase match would still pass after the declaration was removed.
+    const NOWRAP = /white-space:\s*nowrap\s*;/u;
+    expect(signout).toMatch(NOWRAP);
+    expect(signout).toMatch(/max-width:\s*100%\s*;/u);
+
+    // Non-vacuity: with the declaration taken back out, the predicate reports its absence (the
+    // prose mention in the comment is not a declaration and does not keep it green).
+    const reverted = signout.replace(NOWRAP, '');
+    expect(NOWRAP.test(reverted)).toBe(false);
+  });
+
+  it('stacks the foot as two groups with the actions set off by a divider', async () => {
+    const theme = await readTheme();
+    // A column, so navigation and actions are stacked blocks rather than one space-between row…
+    expect(ruleBody(theme, '.session-picker__foot')).toMatch(/flex-direction:\s*column/u);
+    // …and the session-actions group carries its own hairline — the seam that makes ending the
+    // session read as a different kind of thing from a navigation link.
+    expect(ruleBody(theme, '.session-picker__actions')).toMatch(/border-top:/u);
+  });
+
+  it('renders navigation links and session actions as separate containers', async () => {
+    const { container } = renderOpenSignedIn();
+    fireEvent.click(await screen.findByTestId('session-trigger'));
+    await screen.findByRole('menuitemradio', { name: /Amélia/ });
+
+    const nav = container.querySelector('.session-picker__nav');
+    const actions = container.querySelector('.session-picker__actions');
+    expect(nav, 'navigation group missing').toBeTruthy();
+    expect(actions, 'session-actions group missing').toBeTruthy();
+
+    // Genuinely separate: the sign-out lives in the actions group and NEVER in the navigation
+    // group — the mixed row the user asked us to split.
+    expect(actions?.querySelector('.session-picker__signout')).toBeTruthy();
+    expect(nav?.querySelector('.session-picker__signout')).toBeNull();
+
+    // The account link is present AND first (the t94 no-403 property: an ordinary user reaches
+    // their own account from here). ALLOW_ALL grants user.manage, so the roster link follows it.
+    const hrefs = nav
+      ? Array.from(nav.querySelectorAll('a')).map((a) => a.getAttribute('href'))
+      : [];
+    expect(hrefs).toEqual([ACCOUNT_PATH, USERS_LIST_PATH]);
+    // The separator between the two names is a real character in the text, not a CSS gap (a gap is
+    // invisible to a screen reader and to find-in-page).
+    expect(nav?.textContent).toContain('·');
+  });
+
+  it('labels the account list as the switch-account group without flattening the radio rows', async () => {
+    const { container } = renderOpenSignedIn();
+    fireEvent.click(await screen.findByTestId('session-trigger'));
+    await screen.findByRole('menuitemradio', { name: /Amélia/ });
+
+    // The switch-account region is an ARIA group whose name comes from the visible heading…
+    const heading = container.querySelector('.session-picker__grouphead');
+    const list = container.querySelector('.session-picker__list');
+    expect(heading?.id).toBeTruthy();
+    expect(list?.getAttribute('role')).toBe('group');
+    expect(list?.getAttribute('aria-labelledby')).toBe(heading?.id);
+
+    // …and the rows inside it stay `menuitemradio`: the switcher's semantics are not flattened.
+    expect(list?.querySelectorAll('[role="menuitemradio"]').length).toBe(2);
   });
 });

@@ -8432,14 +8432,26 @@ a.btn--primary {
   color: var(--error);
 }
 
+/* The picker foot is now TWO stacked groups, not one mixed row: a navigation group (links to
+   pages) and a session-actions group (end the session). A column, so each group is its own block;
+   the actions group carries its own hairline (below) to read as a distinct region rather than a
+   continuation of the links. */
 .session-picker__foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
+  flex-direction: column;
+  gap: 0.55rem;
   padding-top: 0.55rem;
   border-top: 1px solid var(--border);
   font-size: 0.8rem;
+}
+
+/* The session-actions group: its own block below the navigation links, set off by a hairline so
+   ending the session never reads as just another link. */
+.session-picker__actions {
+  display: flex;
+  align-items: center;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
 }
 
 .session-picker__signout {
@@ -8453,6 +8465,11 @@ a.btn--primary {
   font-family: var(--font-sans);
   font-size: 0.8rem;
   cursor: pointer;
+  /* One neat line: the icon + "Terminar sessão" must not wrap to a second row (mirrors the passkey
+     sign-in button, `.signin__alt > .btn`). `white-space: nowrap` holds the label on a single line;
+     `max-width: 100%` lets it shrink gracefully inside a narrow menu instead of overflowing. */
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .session-picker__signout:hover:not(:disabled) {
@@ -8468,16 +8485,26 @@ a.btn--primary {
   font-size: 0.8rem;
 }
 
-/* The two destinations at the foot of the user picker (self-service account, and — for a holder
-   of `user.manage` — the administrative roster). A row so they sit on one line beside the
-   sign-out control; the separator between them is a real character in the markup, not this gap,
-   because a gap is invisible to `textContent` and to find-in-page. */
-.session-picker__links {
+/* The navigation group at the foot of the user picker (self-service account, and — for a holder
+   of `user.manage` — the administrative roster). A left-aligned row so the two links sit on one
+   line; the separator between them is a real character in the markup, not this gap, because a gap
+   is invisible to `textContent` and to find-in-page. */
+.session-picker__nav {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
   flex-wrap: wrap;
-  justify-content: flex-end;
+}
+
+/* The switch-account region label ("Trocar de conta") above the account list — a small heading
+   that names the list as the change-user affordance and is the accessible name of its ARIA group. */
+.session-picker__grouphead {
+  margin: 0.35rem 0 0.1rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
 }
 
 /* ==========================================================================
