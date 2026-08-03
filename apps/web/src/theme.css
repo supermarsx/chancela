@@ -11128,7 +11128,13 @@ input[type='radio']:disabled {
   padding-top: 1rem;
   border-top: 1px solid var(--border);
   display: flex;
-  justify-content: center;
+  /* Column, not the flex default row: the passkey button and its hint are a stacked pair — the
+     action, then the sentence explaining it. As a row they sat side by side in two columns, the
+     button crushed against wrapping hint text. Centre the cross axis so the button keeps its
+     natural width under the centred hint rather than stretching full-bleed. */
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 /* --- Recently used identifiers on THIS device (t33) ------------------------
