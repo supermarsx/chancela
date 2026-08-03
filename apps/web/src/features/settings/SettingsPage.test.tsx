@@ -6585,6 +6585,140 @@ describe('SettingsPage', () => {
     );
   });
 
+  /**
+   * The bug this screen exists for: a Trusted List **source** had a full settings UI and a trust
+   * **anchor** had none, so the only ways to provision one were two environment variables or a
+   * hand-written `PUT /v1/settings`. An operator configured a source, reasonably concluded trust
+   * was configured, and got `trust_anchor_not_configured` (422) at signing time — "configured but
+   * doesn't work at all".
+   *
+   * This asserts the anchor now reaches the settings document from the UI, in BOTH accepted forms.
+   * The assertion is on the wire body, not on copy: what matters is that
+   * `signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256` are what the server
+   * receives, since those are the fields `runtime_tsl_selection` carries onto `RuntimeTslSource`
+   * and `build_trust_policy` folds into the signing-time anchor union.
+   */
+  it('provisions a Trusted-List trust anchor through the settings document', async () => {
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    // The anchor editor sits in the SAME sub-tab as the sources, which is the whole point: the
+    // relationship between "where the list comes from" and "who may have signed it" is only
+    // legible if the two controls are adjacent.
+    expect(
+      await screen.findByRole('heading', { name: 'Âncoras de confiança da Lista de Confiança' }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar certificado' }));
+    // Wholly synthetic. Never put a real trust anchor, or any real certificate, in a fixture.
+    const anchorPem =
+      '-----BEGIN CERTIFICATE-----\nc3ludGhldGljIHRlc3QgYW5jaG9y\n-----END CERTIFICATE-----';
+    fireEvent.change(screen.getByLabelText('Certificado de âncora 1'), {
+      target: { value: anchorPem },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar impressão digital' }));
+    const anchorFingerprint = 'a'.repeat(64);
+    fireEvent.change(screen.getByLabelText('Impressão digital de âncora 1'), {
+      target: { value: anchorFingerprint },
+    });
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tsl_trust_anchor_sha256).toEqual([anchorFingerprint]);
+      },
+      { timeout: 3000 },
+    );
+
+    const sent = JSON.parse(
+      calls.filter((c) => c.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    // Verbatim, not re-encoded or re-wrapped: an anchor the server cannot parse must be refused by
+    // `validate_tsl_trust_anchors` with the field path, never quietly repaired or dropped here.
+    expect(sent.signing.tsl_trust_anchor_certs).toEqual([anchorPem]);
+    // Provisioning an anchor must not disturb the sources it authenticates.
+    expect(sent.signing.tsl_sources.some((source) => source.id === 'operator-cache')).toBe(true);
+  });
+
+  it('warns that no trust anchor is configured until a non-blank one is entered', async () => {
+    const { fn } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    // The fixture configures TSL *sources* and no anchor — exactly the state that produced the
+    // 422. It has to be legible here rather than discovered at signing time.
+    const warning = await screen.findByText('Sem âncora de confiança nestas definições');
+    expect(warning).toBeTruthy();
+    // Fail-closed warnings are not dismissible, so no notice key is registered on it.
+    expect(warning.closest('.inline-warning')?.hasAttribute('data-notice')).toBe(false);
+
+    // Pressing "add" inserts a BLANK row. A blank row is not an anchor and is dropped at the wire
+    // boundary, so the warning must survive it — otherwise the UI would report the deployment
+    // anchored while it was still refusing every qualified signature.
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar certificado' }));
+    expect(screen.getByText('Sem âncora de confiança nestas definições')).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Certificado de âncora 1'), {
+      target: { value: '-----BEGIN CERTIFICATE-----\nc3ludGhldGlj\n-----END CERTIFICATE-----' },
+    });
+    await waitFor(() =>
+      expect(screen.queryByText('Sem âncora de confiança nestas definições')).toBeNull(),
+    );
+  });
+
+  it('gates the trust-anchor editor on signing.configure, not settings.manage', async () => {
+    // A trust anchor is a trust ROOT — matching it is what makes a Trusted List authentic, and an
+    // authentic list is what makes a certificate qualified. It must therefore sit behind the same
+    // verb the server enforces on the signing slice (`signing_policy_changed`), and fail closed
+    // for a `settings.manage` holder who lacks it.
+    vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((p) => p === 'settings.manage')}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/signing/tsl'],
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Âncoras de confiança da Lista de Confiança' }),
+    ).toBeTruthy();
+    expect(screen.getByText('Sem permissão')).toBeTruthy();
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.disabled).toBe(true);
+    // The anchor controls specifically — not merely some control on the page — are inside it.
+    expect(fieldset.contains(screen.getByRole('button', { name: 'Adicionar certificado' }))).toBe(
+      true,
+    );
+    expect(
+      fieldset.contains(screen.getByRole('button', { name: 'Adicionar impressão digital' })),
+    ).toBe(true);
+
+    cleanup();
+
+    // …and the holder of the right verb alone may edit it.
+    vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((p) => p === 'signing.configure')}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/signing/tsl'],
+    );
+    expect(
+      await screen.findByRole('heading', { name: 'Âncoras de confiança da Lista de Confiança' }),
+    ).toBeTruthy();
+    expect((document.querySelector('.settings-fieldset') as HTMLFieldSetElement).disabled).toBe(
+      false,
+    );
+  });
+
   it('keeps exactly one enabled default TSA provider when the operator changes it', async () => {
     const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);

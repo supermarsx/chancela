@@ -366,6 +366,9 @@ export const ADMIN_COPY_DESTINATION_PREFIXES: readonly (readonly [
   ['settings.signing.officialHint', ['policy']],
   ['settings.signing.tslSources', ['tsl']],
   ['settings.signing.tslUrl', ['tsl']],
+  // The trust anchors live in the same destination as the sources they authenticate, so an
+  // operator searching for "âncora" lands on the pane that holds both.
+  ['settings.signing.tslAnchors', ['tsl']],
   ['settings.signing.tsaProviders', ['tsa']],
   ['settings.signing.tsaUrl', ['tsa']],
   ['settings.signing.providers', ['trust-services']],

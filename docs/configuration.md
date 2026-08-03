@@ -277,9 +277,12 @@ configured certificate or fingerprint is anchored):
 - **Settings** (`signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256`): the same
   anchors as application config — a list of PEM certificate strings and a list of 64-character
   sha256 hex fingerprints. Invalid PEM or a malformed fingerprint is rejected on save with `422`.
-  At runtime the settings anchors are **unioned with** the environment anchors (settings-first,
-  environment as fallback) — on **both** trust paths: the operator-triggered LOTL bootstrap
-  (`POST /v1/trust/refresh`) and the trusted-list policy consulted at **signing time**.
+  Editable in the admin UI under **Assinaturas → Fontes TSL**, alongside the sources the anchors
+  authenticate; the environment variables above remain an equivalent alternative. At runtime the
+  settings anchors are **unioned with** the environment anchors (settings-first, environment as
+  fallback) — on **every** trust path: the operator-triggered LOTL bootstrap
+  (`POST /v1/trust/refresh`), the trusted-list policy consulted at **signing time**, and the QTST
+  timestamp-trust report attached to a timestamped signature.
 
 > **Trust surface.** A settings-provisioned anchor is a **trust root**: matching it is what makes a
 > Trusted List authentic, and an authentic list is what reports a certificate as qualified. Whoever
