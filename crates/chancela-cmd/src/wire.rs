@@ -126,28 +126,81 @@ pub(crate) struct OtpOutcome {
     pub(crate) signature: Option<Vec<u8>>,
 }
 
+/// The most JSON-string framing layers [`get_certificate_pem`] will peel before it refuses.
+///
+/// AMA has been observed **double-encoding** the certificate: the `{"d": ...}` envelope carries a
+/// value that is itself a JSON-string-encoded PEM, so one unwrap leaves a literal leading `"`
+/// (U+0022) on the payload — which the chain sanitiser correctly refuses as junk outside the PEM
+/// blocks. One extra parse peels that layer. The bound exists only so a pathological, deeply nested
+/// input cannot loop: two layers is what the real service produces; eight is generous headroom that
+/// still terminates.
+const MAX_JSON_STRING_LAYERS: usize = 8;
+
 /// Extract the certificate PEM from a `GetCertificate` JSON response.
 ///
 /// The payload is a PEM string, either bare, `{"d":"<pem>"}`-wrapped, or under a
-/// `GetCertificateResult` member (recov-pt `src/cli/cmd_verify.rs:1145-1166`).
+/// `GetCertificateResult` member (recov-pt `src/cli/cmd_verify.rs:1617-1638`,
+/// `decode_certificate_response`). recov-pt unwraps that one envelope and feeds the string straight
+/// to its chain decoder; this does the same, then additionally peels any residual JSON-string
+/// framing (see [`unwrap_json_string_layers`]) so a double-encoded `d` — a genuine, observed AMA
+/// shape recov-pt does *not* itself handle — reaches the sanitiser as bare PEM rather than as a
+/// quote-prefixed string it would reject at byte offset 0.
+///
+/// The framing is peeled by *parsing* the JSON string, never by stripping the `"` bytes: parsing
+/// removes exactly one genuine JSON-string transport layer and errors on anything that is not one,
+/// so a `"` that legitimately sat inside content could never be corrupted. The certificate bytes
+/// that reach the chain sanitiser are exactly what AMA put inside the innermost string.
 pub(crate) fn get_certificate_pem(body: &str) -> Result<String, CmdError> {
-    if body.trim_start().starts_with('{') {
+    let payload = if body.trim_start().starts_with('{') {
         let value: Value = serde_json::from_str(body).map_err(|e| {
             CmdError::ResponseParse(format!("GetCertificate response is not JSON: {e}"))
         })?;
-        let payload = value
+        match value
             .get("d")
             .or_else(|| value.get("GetCertificateResult"))
-            .unwrap_or(&value);
-        return match payload {
-            Value::String(pem) => Ok(pem.clone()),
-            _ => Err(CmdError::ResponseParse(
-                "GetCertificate response carried no certificate PEM string".to_string(),
-            )),
-        };
+            .unwrap_or(&value)
+        {
+            Value::String(pem) => pem.clone(),
+            _ => {
+                return Err(CmdError::ResponseParse(
+                    "GetCertificate response carried no certificate PEM string".to_string(),
+                ));
+            }
+        }
+    } else {
+        // A bare PEM body (not JSON-wrapped) — but it may still be a JSON-string-framed PEM.
+        body.to_string()
+    };
+    unwrap_json_string_layers(payload)
+}
+
+/// Peel any JSON-string framing off an extracted certificate payload, leaving the bare PEM.
+///
+/// A payload whose first byte is `"` is a JSON-string layer (a bare PEM begins with `-----BEGIN`,
+/// never a quote), so it is re-parsed as a JSON string and the check repeats. A payload that does
+/// not begin with `"` is handed back untouched — the chain sanitiser, not this function, is the
+/// guard on the actual certificate bytes. A leading `"` that does **not** parse as a JSON string is
+/// refused loudly rather than guessed at: the transport layer only ever removes a genuine JSON
+/// string, never a `"` that belongs to the content.
+fn unwrap_json_string_layers(mut payload: String) -> Result<String, CmdError> {
+    for _ in 0..MAX_JSON_STRING_LAYERS {
+        if !payload.starts_with('"') {
+            return Ok(payload);
+        }
+        payload = serde_json::from_str::<String>(&payload).map_err(|e| {
+            CmdError::ResponseParse(format!(
+                "GetCertificate certificate payload began with a quote but was not a \
+                 JSON-encoded string: {e}"
+            ))
+        })?;
     }
-    // A bare PEM body (not JSON-wrapped).
-    Ok(body.to_string())
+    if payload.starts_with('"') {
+        return Err(CmdError::ResponseParse(format!(
+            "GetCertificate certificate payload was still JSON-string-wrapped after \
+             {MAX_JSON_STRING_LAYERS} unwrapping passes"
+        )));
+    }
+    Ok(payload)
 }
 
 /// Parse an `SCMDSign` response, unwrapping the `{"d": ...}` envelope if present.
@@ -380,5 +433,58 @@ mod tests {
         assert_eq!(get_certificate_pem(&result).unwrap(), pem);
 
         assert!(get_certificate_pem(r#"{"d":null}"#).is_err());
+    }
+
+    /// The live-blocking failure: AMA double-encodes the certificate, so `d` holds a value that is
+    /// itself a JSON-string-encoded PEM. One unwrap leaves a literal leading `"` (U+0022 at offset
+    /// 0), which the chain sanitiser correctly refuses. `get_certificate_pem` must peel the extra
+    /// layer and hand back the bare PEM.
+    ///
+    /// Reproduce-then-fix: before the peel, the extracted value was the quoted inner string and this
+    /// asserts the fix yields the bare PEM instead. The PEM here is a fixture, not a real AMA
+    /// certificate — this function unwraps framing; the certificate bytes are validated downstream by
+    /// the chain sanitiser.
+    #[test]
+    fn get_certificate_pem_peels_a_double_encoded_payload() {
+        let pem = "-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n";
+
+        // The inner layer AMA wraps around the PEM: the PEM rendered AS a JSON string, so its text
+        // begins with a `"`. serde builds it correctly (quotes added, `\n` escaped).
+        let inner_json_string = serde_json::to_string(pem).unwrap();
+        assert!(
+            inner_json_string.starts_with('"'),
+            "the inner layer must be a JSON-string-framed PEM"
+        );
+
+        // The outer `{"d": ...}` envelope carrying that JSON-string TEXT as its value — the wire
+        // shape that reaches the transport double-encoded.
+        let double = serde_json::json!({ "d": inner_json_string }).to_string();
+
+        // The value the OLD code would have returned is the still-quoted inner string, which the
+        // chain sanitiser rejects at byte offset 0. Pin that this is exactly what was reaching it.
+        let singly_unwrapped: Value = serde_json::from_str(&double).unwrap();
+        assert_eq!(
+            singly_unwrapped.get("d").and_then(Value::as_str),
+            Some(inner_json_string.as_str()),
+            "a single unwrap leaves the JSON-string-framed PEM, quote and all"
+        );
+        assert!(inner_json_string.starts_with('"'));
+
+        // After the fix the payload is fully unwrapped to the bare PEM, quote gone.
+        let unwrapped = get_certificate_pem(&double).unwrap();
+        assert_eq!(unwrapped, pem);
+        assert!(!unwrapped.starts_with('"'));
+
+        // The bare-string form of the same double-encoding (no `{"d": ...}` envelope) is peeled too.
+        assert_eq!(get_certificate_pem(&inner_json_string).unwrap(), pem);
+    }
+
+    /// A leading `"` that is not a valid JSON string is refused, never byte-stripped: the transport
+    /// layer only removes a genuine JSON-string frame, and anything else fails loudly.
+    #[test]
+    fn get_certificate_pem_refuses_a_bare_quote_that_is_not_a_json_string() {
+        // A lone quote, and a quote followed by non-JSON text, are both corruption, not framing.
+        assert!(get_certificate_pem("\"").is_err());
+        assert!(get_certificate_pem("\"-----BEGIN CERTIFICATE-----").is_err());
     }
 }
