@@ -27,9 +27,22 @@
 #
 # Postgres durability backend plus Redis cache service. The explicit
 # acknowledgement is mandatory because the projector role closes PUBLIC ACLs
-# at database scope; use only a database dedicated to Chancela:
-#   CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+# at database scope; use only a database dedicated to Chancela (this profile
+# creates its own dedicated `chancela` database, so here it is the expected
+# answer). Set it in ONE of these ways — the `.env` form is the only one that
+# is identical on every platform:
+#
+#   .env (uncomment the line already present there)
+#     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+#
+#   PowerShell — a SEPARATE statement. PowerShell has no inline
+#   `VAR=value command` prefix, so the bash form below leaves it unset:
+#     $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
 #     docker compose --profile postgres up --build
+#
+#   bash / zsh
+#     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+#       docker compose --profile postgres up --build
 #
 # Either backend plus the durable sync/backup worker (safe local targets by
 # default). The worker mounts the app's data volume, which differs per backend,

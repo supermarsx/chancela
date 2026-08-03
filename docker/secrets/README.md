@@ -7,6 +7,17 @@ Postgres, signing-key, and restricted-projector credentials in named volumes
 populated by `secrets-init`, so a fresh clone needs nothing here. The hardened
 Compose file uses these host-backed secret files directly.
 
+Acknowledge the dedicated database, then start. Uncomment
+`CHANCELA_PROJECTOR_DEDICATED_DATABASE=true` in the `.env` beside the compose
+file (works on every platform), or set it for the shell — in PowerShell as a
+**separate statement**, since PowerShell has no inline `VAR=value command`
+prefix and would otherwise leave it unset:
+
+```powershell
+$env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+docker compose --profile postgres up -d
+```
+
 ```sh
 CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
   docker compose --profile postgres up -d

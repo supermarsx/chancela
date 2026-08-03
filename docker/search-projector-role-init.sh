@@ -30,6 +30,28 @@ case "$dedicated_database_ack" in
 ERROR: the restricted projector role requires database-global PUBLIC ACL
        revocations. Set CHANCELA_PROJECTOR_DEDICATED_DATABASE=true only after
        confirming that this PostgreSQL database is dedicated to Chancela.
+
+       The revocations are CONNECT, CREATE and TEMPORARY on the database and
+       CREATE on schema public. On a database SHARED with another application
+       they would break that application -- that is the case this gate guards.
+       The bundled `postgres` Compose profile creates its OWN dedicated
+       `chancela` database, so for that topology the acknowledgement is simply
+       the expected answer.
+
+       Set it in ONE of these ways, then start the stack again:
+
+         .env beside the compose file (works on every platform)
+           CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+
+         PowerShell (a separate statement -- PowerShell has no inline
+         `VAR=value command` prefix form, so the bash line below silently
+         leaves the variable unset)
+           $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+           docker compose --profile postgres up --build
+
+         bash / zsh
+           CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+             docker compose --profile postgres up --build
 EOF
     exit 1
     ;;

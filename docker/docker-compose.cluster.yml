@@ -6,13 +6,28 @@
 # does not select. Use it together with the base compose so the shared
 # `postgres`, `redis`, secrets, and network still exist:
 #
-#   CHANCELA_PROJECTOR_DEDICATED_DATABASE=true docker compose \
+#   docker compose \
 #     -f docker/docker-compose.yml -f docker/docker-compose.cluster.yml \
 #     --profile postgres --profile cluster up --build
 #
 # Set CHANCELA_PROJECTOR_DEDICATED_DATABASE=true only after confirming the
 # target database is dedicated to Chancela; the projector initializer revokes
-# database-global PUBLIC ACLs.
+# database-global PUBLIC ACLs and refuses to run until it is set. Use ONE of
+# these — the `.env` form is the only one identical on every platform. Compose
+# takes `.env` from the directory of the FIRST `-f` file, so here that is
+# docker/.env:
+#
+#   .env (uncomment the line already present in docker/.env)
+#     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+#
+#   PowerShell — a SEPARATE statement. PowerShell has no inline
+#   `VAR=value command` prefix, so the bash form below leaves it unset:
+#     $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+#
+#   bash / zsh — prefix the command:
+#     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true docker compose \
+#       -f docker/docker-compose.yml -f docker/docker-compose.cluster.yml \
+#       --profile postgres --profile cluster up --build
 #
 # The N replicas point at ONE Postgres. Exactly one is elected the writer via the advisory lock
 # (`CHANCELA_NODE_ROLE=auto`); the rest serve reads and 307-redirect writes to the leader. This is the

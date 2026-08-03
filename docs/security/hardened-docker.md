@@ -91,6 +91,17 @@ CHANCELA_HOST_PORT=18080 docker compose -f docker-compose.hardened.yml --profile
 
 2. Confirm the target database is dedicated to Chancela, then start:
 
+   Acknowledge it by uncommenting `CHANCELA_PROJECTOR_DEDICATED_DATABASE=true`
+   in the repo-root `.env` (identical on every platform), or by setting it for
+   the shell. In PowerShell this must be a **separate statement** — PowerShell
+   has no inline `VAR=value command` prefix, so the bash form below would leave
+   the acknowledgement unset and the initializer would refuse to run:
+
+   ```powershell
+   $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+   docker compose -f docker-compose.hardened.yml --profile postgres up --build
+   ```
+
    ```sh
    CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
      docker compose -f docker-compose.hardened.yml --profile postgres up --build

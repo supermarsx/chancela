@@ -7,9 +7,25 @@
 #   Single node (SQLite API + isolated search projector, no external DB):
 #     docker compose -f docker-compose.hardened.yml --profile single-node up --build
 #
-#   Self-hosted Postgres durability backend + Redis cache-aside + projector:
+#   Self-hosted Postgres durability backend + Redis cache-aside + projector.
+#   The projector role initializer revokes database-global PUBLIC ACLs, so it
+#   refuses to run until you acknowledge the database is dedicated to Chancela.
+#   Set that acknowledgement in ONE of these ways — the `.env` form is the only
+#   one that is identical on every platform:
+#
 #     # Generate internally consistent, non-placeholder host secret files:
 #     sh docker/preflight-secrets.sh --generate
+#
+#     # .env in the repo root (uncomment the line already present there)
+#     #   CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+#     docker compose -f docker-compose.hardened.yml --profile postgres up --build
+#
+#     # PowerShell — a SEPARATE statement. PowerShell has no inline
+#     # `VAR=value command` prefix, so the bash form below leaves it unset:
+#     $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+#     docker compose -f docker-compose.hardened.yml --profile postgres up --build
+#
+#     # bash / zsh
 #     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
 #       docker compose -f docker-compose.hardened.yml --profile postgres up --build
 #

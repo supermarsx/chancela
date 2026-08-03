@@ -4,10 +4,15 @@
 # The profile no longer needs this. Runtime secrets live in named volumes,
 # which the `secrets-init` compose service
 # fills before postgres or the app start, so a fresh clone needs only the
-# explicit acknowledgement that the local Compose database is dedicated:
+# explicit acknowledgement that the local Compose database is dedicated. Set it
+# in the `.env` beside the compose file (identical on every platform), or for
+# the shell -- in PowerShell as a SEPARATE statement, since PowerShell has no
+# inline `VAR=value command` prefix form:
 #
-#   CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
-#     docker compose --profile postgres up -d
+#   .env:        CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+#   PowerShell:  $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+#   bash/zsh:    CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+#                  docker compose --profile postgres up -d
 #
 # This script remains for operators who would rather own the values on the host
 # (to back them up, to reuse an existing database, or to rotate deliberately).
@@ -555,10 +560,15 @@ Either complete the set here, consistently and only once:
 
   sh docker/preflight-secrets.sh --generate
 
-or empty docker/secrets/ entirely and let the stack manage them:
+or empty docker/secrets/ entirely and let the stack manage them, after
+acknowledging that the database is dedicated to Chancela -- uncomment it in the
+.env beside the compose file (any platform), or set it for the shell:
 
-  CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
-    docker compose --profile postgres up -d
+  PowerShell:  $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+               docker compose --profile postgres up -d
+
+  bash/zsh:    CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+                 docker compose --profile postgres up -d
 
 See docker/secrets/README.md and docs/deployment.md.
 EOF

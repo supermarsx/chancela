@@ -185,17 +185,45 @@ initializer and Postgres projector are backend-only.
 On a fresh clone this is the whole procedure — there is **no host-side secret
 step**:
 
-```sh
-CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
-  docker compose --profile postgres up -d --build
-```
+=== "`.env` (any platform)"
+
+    Uncomment the line that already ships, commented out, in the `.env` next to
+    the compose file:
+
+    ```ini
+    CHANCELA_PROJECTOR_DEDICATED_DATABASE=true
+    ```
+
+    ```sh
+    docker compose --profile postgres up -d --build
+    ```
+
+=== "PowerShell"
+
+    PowerShell has **no** inline `VAR=value command` prefix form, so the bash
+    line in the next tab is not an environment assignment there and leaves the
+    acknowledgement unset. Use a separate statement:
+
+    ```powershell
+    $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+    docker compose --profile postgres up -d --build
+    ```
+
+=== "bash / zsh"
+
+    ```sh
+    CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
+      docker compose --profile postgres up -d --build
+    ```
 
 The acknowledgement is mandatory and must be set only when the selected
 PostgreSQL **database is dedicated to Chancela**. The projector initializer
 revokes database-global `PUBLIC CONNECT`, `CREATE`, and `TEMPORARY`,
 public-schema `CREATE`, and current/default public routine `EXECUTE`.
 Applying that policy to a database shared with another application would break
-that application and is unsupported.
+that application and is unsupported. This profile creates its **own** dedicated
+`chancela` database, so for this topology the acknowledgement is the expected
+answer.
 
 No `-f` and no wrapper script: the repo-root `docker-compose.yml` `include`s
 `docker/docker-compose.yml`, so this starts one Postgres API, its restricted
@@ -480,6 +508,19 @@ base compose.
 
     ```sh
     sh docker/preflight-secrets.sh --generate
+    ```
+
+    Then acknowledge the dedicated database and start. Uncomment
+    `CHANCELA_PROJECTOR_DEDICATED_DATABASE=true` in the repo-root `.env` (works
+    on every platform), or set it for the shell — in PowerShell as a **separate
+    statement**, because PowerShell has no inline `VAR=value command` prefix:
+
+    ```powershell
+    $env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+    docker compose -f docker-compose.hardened.yml --profile postgres up --build
+    ```
+
+    ```sh
     CHANCELA_PROJECTOR_DEDICATED_DATABASE=true \
       docker compose -f docker-compose.hardened.yml --profile postgres up --build
     ```
@@ -496,6 +537,17 @@ Exactly one instance is elected writer via a PostgreSQL **session-level advisory
 lock** (`CHANCELA_NODE_ROLE=auto`); the rest serve reads and `307`-redirect
 writes to the leader. This is safe to scale because only one _instance_ ever
 writes.
+
+Acknowledge the dedicated database first — uncomment
+`CHANCELA_PROJECTOR_DEDICATED_DATABASE=true` in `docker/.env` (Compose reads
+`.env` from the directory of the first `-f` file), or set it for the shell:
+
+```powershell
+$env:CHANCELA_PROJECTOR_DEDICATED_DATABASE = "true"
+docker compose `
+  -f docker/docker-compose.yml -f docker/docker-compose.cluster.yml `
+  --profile postgres --profile cluster up --build --scale chancela-cluster=3
+```
 
 ```sh
 CHANCELA_PROJECTOR_DEDICATED_DATABASE=true docker compose \
