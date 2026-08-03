@@ -4131,6 +4131,18 @@ export const frFR: Catalog = {
   'confirm.reauth.hint': 'Confirmez votre identité pour continuer.',
   'confirm.reauth.usePassword': 'Utiliser le mot de passe',
   'confirm.reauth.useRecovery': 'Utiliser la phrase de récupération',
+  'confirm.reauth.totp': 'Code de vérification',
+  'confirm.reauth.useTotp': 'utiliser un code de vérification',
+  'account.stepup.title': 'Comment vous prouvez à nouveau votre identité',
+  'account.stepup.lede':
+    'Lorsqu’une action protégée vous demande de prouver à nouveau votre identité, c’est la méthode proposée en premier. Toutes les méthodes que vous détenez restent disponibles comme solution de repli, et cela ne modifie aucun paramètre de sécurité — seulement celle qui apparaît en premier.',
+  'account.stepup.label': 'Méthode préférée',
+  'account.stepup.hint':
+    'Vous ne pouvez sélectionner que les méthodes dont votre compte dispose actuellement. Les autres restent disponibles dans la demande.',
+  'account.stepup.opt.default': 'Aucune préférence (mot de passe en premier)',
+  'account.stepup.opt.password': 'Mot de passe',
+  'account.stepup.opt.totp': 'Code de vérification (deuxième facteur)',
+  'account.stepup.opt.passkey': 'Clé d’accès',
   'confirm.reauth.required':
     'Authentification renforcée requise. Vérifiez votre mot de passe ou votre phrase de récupération.',
   'confirm.exportFirst.label': 'Exporter avant de supprimer (recommandé)',

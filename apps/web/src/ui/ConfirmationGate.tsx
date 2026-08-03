@@ -29,9 +29,10 @@
  * a step body). The rendered markup, the label copy and the field ids are unchanged from when this
  * lived in `ConfirmActionModal`, so every existing call site and test sees exactly what it saw.
  */
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { PasskeyCredentialJson, ReAuth } from '../api/types';
 import { api } from '../api/client';
+import { useSession, useUserPreferences } from '../api/hooks';
 import { useT } from '../i18n';
 import {
   describeCeremonyFailure,
@@ -43,8 +44,15 @@ import {
  * Which credential the operator is proving with. A set of alternatives, deliberately not a rung on
  * `ConfirmationStrictness` — that ladder answers *how hard*, and this answers *with what*. Adding a
  * rung would silently change the strictness every deployment had already chosen.
+ *
+ * `totp` is a live code from the acting user's own confirmed second factor — an equal-strength
+ * alternative to the password for what step-up defends against (a session-only attacker holds
+ * neither). It is offered only when the account actually holds a confirmed factor (`has_totp`); the
+ * passkey arm stays offered on browser capability alone, because — unlike TOTP, whose held-state
+ * `UserView` already publishes — asking "does this account hold a passkey?" would build the very
+ * enumeration oracle the sign-in surface removed.
  */
-type ProofKind = 'password' | 'recovery' | 'passkey';
+type ProofKind = 'password' | 'recovery' | 'passkey' | 'totp';
 
 export interface ConfirmationGateOptions {
   /**
@@ -84,10 +92,38 @@ export function useConfirmationGate({
   onProofKindChange,
 }: ConfirmationGateOptions): ConfirmationGate {
   const t = useT();
+  // The acting user's held methods and their preferred default, read from the caches the app has
+  // already primed. `has_totp` gates the TOTP arm; the step-up preference picks which arm opens
+  // first. Both are read-only hints — the server verifies whatever proof is actually presented — so
+  // an absent/stale value simply falls back to the password arm, today's behaviour.
+  const session = useSession();
+  const preferences = useUserPreferences();
+  const hasTotp = session.data?.user?.has_totp ?? false;
+  const passkeyAvailable = passkeysAvailable();
+  const preferred = preferences.data?.step_up_method;
+
+  // The arm to open on: the user's preference when they can actually satisfy it, else the password.
+  // Recovery is never a default (it is single-use break-glass), so it is never resolved here.
+  const defaultKind: ProofKind =
+    preferred === 'totp_code' && hasTotp
+      ? 'totp'
+      : preferred === 'passkey' && passkeyAvailable
+        ? 'passkey'
+        : 'password';
+  // Read at reset time via a ref so a preference that finishes loading AFTER the gate opened still
+  // seeds the next reset, without a mid-dialog preference refetch wiping a proof the operator has
+  // already started entering.
+  const defaultKindRef = useRef(defaultKind);
+  defaultKindRef.current = defaultKind;
+  // Whether the operator has taken over the proof kind — by switching arms or entering a proof. Once
+  // they have, a preference that only now finishes loading must not yank them onto a different arm.
+  const touchedRef = useRef(false);
+
   const [typed, setTyped] = useState('');
-  const [kind, setKind] = useState<ProofKind>('password');
+  const [kind, setKind] = useState<ProofKind>(defaultKind);
   const [password, setPassword] = useState('');
   const [recovery, setRecovery] = useState('');
+  const [totp, setTotp] = useState('');
   // The gathered step-up assertion, and any local ceremony failure. Held here rather than
   // submitted immediately because the gate's job is to *have* a proof when the caller submits —
   // the assertion answers a challenge issued for step-up and is spent by the operation, not by
@@ -97,12 +133,22 @@ export function useConfirmationGate({
 
   useEffect(() => {
     setTyped('');
-    setKind('password');
+    setKind(defaultKindRef.current);
     setPassword('');
     setRecovery('');
+    setTotp('');
     setAssertion(null);
     setCeremony('idle');
+    touchedRef.current = false;
   }, [resetKey]);
+
+  // Apply the preferred arm once the preference (and the `has_totp` it is gated on) finishes
+  // loading, but only while the operator has not taken over — so a dialog opened before the caches
+  // were warm still lands on the user's chosen method, without ever overriding a manual switch or a
+  // proof already being entered.
+  useEffect(() => {
+    if (!touchedRef.current) setKind(defaultKind);
+  }, [defaultKind]);
 
   /**
    * Run a **step-up-scoped** assertion.
@@ -114,6 +160,7 @@ export function useConfirmationGate({
    * destructive gate satisfiable by a replayed sign-in.
    */
   async function collectAssertion() {
+    touchedRef.current = true;
     setCeremony('running');
     setAssertion(null);
     try {
@@ -131,15 +178,41 @@ export function useConfirmationGate({
     !requireReauth ||
     (kind === 'passkey'
       ? assertion !== null
-      : (kind === 'recovery' ? recovery.trim() : password).length > 0);
+      : kind === 'totp'
+        ? totp.trim().length > 0
+        : (kind === 'recovery' ? recovery.trim() : password).length > 0);
 
   /** Switch proof kind, discarding whatever the previous one had gathered. */
   function switchTo(next: ProofKind) {
+    touchedRef.current = true;
     setKind(next);
     setAssertion(null);
     setCeremony('idle');
     onProofKindChange?.();
   }
+
+  // Every method the operator may switch TO from the current arm, in a stable order. Password and
+  // recovery are always offerable; the passkey arm on browser capability alone (see the note on
+  // `ProofKind`); the TOTP arm only when the account holds a confirmed factor. The current arm is
+  // excluded — you do not switch to where you already are.
+  const otherMethods = (
+    [
+      ['password', true],
+      ['recovery', true],
+      ['totp', hasTotp],
+      ['passkey', passkeyAvailable],
+    ] as const
+  )
+    .filter(([method, available]) => available && method !== kind)
+    .map(([method]) => method);
+
+  /** The switch-link copy key for a method offered as an alternative to the current arm. */
+  const switchLabel: Record<Exclude<ProofKind, 'recovery'> | 'recovery', string> = {
+    password: t('confirm.reauth.usePassword'),
+    recovery: t('confirm.reauth.useRecovery'),
+    passkey: t('confirm.reauth.usePasskey'),
+    totp: t('confirm.reauth.useTotp'),
+  };
 
   const fields = (
     <>
@@ -177,7 +250,11 @@ export function useConfirmationGate({
             <p className="field__label">{t('confirm.reauth.passkey')}</p>
           ) : (
             <label className="field__label" htmlFor={`${idPrefix}-reauth`}>
-              {kind === 'recovery' ? t('confirm.reauth.recovery') : t('confirm.reauth.password')}
+              {kind === 'recovery'
+                ? t('confirm.reauth.recovery')
+                : kind === 'totp'
+                  ? t('confirm.reauth.totp')
+                  : t('confirm.reauth.password')}
             </label>
           )}
           {kind === 'passkey' ? (
@@ -214,7 +291,26 @@ export function useConfirmationGate({
               type="text"
               value={recovery}
               autoComplete="off"
-              onChange={(e) => setRecovery(e.target.value)}
+              onChange={(e) => {
+                touchedRef.current = true;
+                setRecovery(e.target.value);
+              }}
+            />
+          ) : kind === 'totp' ? (
+            <input
+              id={`${idPrefix}-reauth`}
+              className="control mono"
+              type="text"
+              value={totp}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoCapitalize="off"
+              spellCheck={false}
+              maxLength={6}
+              onChange={(e) => {
+                touchedRef.current = true;
+                setTotp(e.target.value);
+              }}
             />
           ) : (
             <input
@@ -223,33 +319,28 @@ export function useConfirmationGate({
               type="password"
               value={password}
               autoComplete="current-password"
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                touchedRef.current = true;
+                setPassword(e.target.value);
+              }}
             />
           )}
+          {/* One "prove it another way" line offering every method the operator holds but the
+              current arm. The password and recovery-phrase links are always present; the TOTP link
+              only when the account holds a confirmed factor (`has_totp`); the passkey link on
+              browser capability alone — the gate deliberately never asks whether THIS account holds
+              a passkey, because that answer is an enumeration oracle (see the note on `ProofKind`).
+              A user without one simply finds the ceremony returns nothing usable. */}
           <p className="field__hint">
-            {t('confirm.reauth.hint')}{' '}
-            {kind === 'password' ? (
-              <button type="button" className="linkish" onClick={() => switchTo('recovery')}>
-                {t('confirm.reauth.useRecovery')}
-              </button>
-            ) : (
-              <button type="button" className="linkish" onClick={() => switchTo('password')}>
-                {t('confirm.reauth.usePassword')}
-              </button>
-            )}
-            {/* Offered on browser capability, never on whether this account holds a passkey: the
-                gate has no read for that, and inventing one would answer "does this user have a
-                passkey?" to anyone who can open a dialog. A user without one simply finds the
-                ceremony returns nothing usable. Absent entirely in the desktop shell and in a
-                browser without WebAuthn, where the button could only throw. */}
-            {passkeysAvailable() && kind !== 'passkey' ? (
-              <>
+            {t('confirm.reauth.hint')}
+            {otherMethods.map((method) => (
+              <span key={method}>
                 {' '}
-                <button type="button" className="linkish" onClick={() => switchTo('passkey')}>
-                  {t('confirm.reauth.usePasskey')}
+                <button type="button" className="linkish" onClick={() => switchTo(method)}>
+                  {switchLabel[method]}
                 </button>
-              </>
-            ) : null}
+              </span>
+            ))}
           </p>
         </div>
       ) : null}
@@ -268,8 +359,10 @@ export function useConfirmationGate({
           assertion
           ? { passkey: { credential: assertion } }
           : {}
-        : kind === 'recovery'
-          ? { recovery_phrase: recovery.trim() }
-          : { password },
+        : kind === 'totp'
+          ? { totp_code: totp.trim() }
+          : kind === 'recovery'
+            ? { recovery_phrase: recovery.trim() }
+            : { password },
   };
 }

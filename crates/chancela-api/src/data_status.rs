@@ -3203,6 +3203,7 @@ mod tests {
                 // the struct grew a field, and `None` keeps the two values that *are* secret as
                 // the only thing the assertion below can be reading.
                 passkey: None,
+                totp_code: None,
             },
         };
 

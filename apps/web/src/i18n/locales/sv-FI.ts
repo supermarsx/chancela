@@ -4097,6 +4097,18 @@ export const svFI: Catalog = {
   'confirm.reauth.hint': 'Bekräfta din identitet för att fortsätta.',
   'confirm.reauth.usePassword': 'Använd lösenord',
   'confirm.reauth.useRecovery': 'Använd återställningsfras',
+  'confirm.reauth.totp': 'Verifieringskod',
+  'confirm.reauth.useTotp': 'använd en verifieringskod',
+  'account.stepup.title': 'Så här styrker du din identitet igen',
+  'account.stepup.lede':
+    'När en skyddad åtgärd ber dig att styrka din identitet igen är detta den metod som erbjuds först. Alla metoder du har förblir tillgängliga som alternativ, och detta ändrar ingen säkerhetsinställning — bara vilken som visas först.',
+  'account.stepup.label': 'Föredragen metod',
+  'account.stepup.hint':
+    'Du kan bara välja metoder som ditt konto har för närvarande. Övriga förblir tillgängliga i förfrågan.',
+  'account.stepup.opt.default': 'Ingen preferens (lösenord först)',
+  'account.stepup.opt.password': 'Lösenord',
+  'account.stepup.opt.totp': 'Verifieringskod (andra faktor)',
+  'account.stepup.opt.passkey': 'Nyckel',
   'confirm.reauth.required':
     'Förstärkt autentisering krävs. Kontrollera ditt lösenord eller din återställningsfras.',
   'confirm.exportFirst.label': 'Exportera före radering (rekommenderas)',

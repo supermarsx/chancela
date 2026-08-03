@@ -106,6 +106,7 @@ import type {
   SearchStatusResponse,
   Settings,
   UserPreferences,
+  StepUpMethodPreference,
   NoticeDismissal,
   NoticeKey,
   TableColumnPreferences,
@@ -4229,6 +4230,49 @@ export function useUpdateNoticeDismissal(notice: NoticeKey) {
 /** Compatibility wrapper for existing External Signatures callers. */
 export function useUpdateExternalSignatureNoticeDismissal() {
   return useUpdateNoticeDismissal('external_signing');
+}
+
+/**
+ * Persist the acting user's preferred step-up re-auth method through the whole-document
+ * `PUT /v1/me/preferences`, preserving every other preference (the spread carries table columns and
+ * notice dismissals). `null` clears the preference — back to "no preference", the password arm
+ * first. Optimistic, like the sibling preference mutations: the cache moves at once, rolls back on
+ * error, and reconciles with the server's echoed document on settle.
+ *
+ * A default-selector only, so it needs no re-auth of its own: it changes which arm the confirmation
+ * gate opens on, never which proofs the server accepts.
+ */
+export function useUpdateStepUpMethod() {
+  const qc = useQueryClient();
+  const merge = (
+    current: UserPreferences | undefined,
+    method: StepUpMethodPreference | null,
+  ): UserPreferences => ({
+    ...current,
+    table_columns: current?.table_columns ?? {},
+    step_up_method: method ?? undefined,
+  });
+  return useMutation({
+    mutationFn: (method: StepUpMethodPreference | null) => {
+      const current = qc.getQueryData<UserPreferences>(keys.mePreferences);
+      return api.putMePreferences(merge(current, method));
+    },
+    onMutate: async (method) => {
+      await qc.cancelQueries({ queryKey: keys.mePreferences });
+      const previous = qc.getQueryData<UserPreferences>(keys.mePreferences);
+      qc.setQueryData<UserPreferences>(keys.mePreferences, merge(previous, method));
+      return { previous };
+    },
+    onError: (_error, _variables, context) => {
+      if (context?.previous) qc.setQueryData(keys.mePreferences, context.previous);
+    },
+    onSuccess: (stored) => {
+      qc.setQueryData(keys.mePreferences, stored);
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: keys.mePreferences });
+    },
+  });
 }
 
 /** Outbound-email status (`GET /v1/settings/email/status`): whether a relay password is stored and

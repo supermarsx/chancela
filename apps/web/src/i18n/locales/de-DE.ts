@@ -4140,6 +4140,18 @@ export const deDE: Catalog = {
   'confirm.reauth.hint': 'Bestätigen Sie Ihre Identität, um fortzufahren.',
   'confirm.reauth.usePassword': 'Passwort verwenden',
   'confirm.reauth.useRecovery': 'Wiederherstellungsphrase verwenden',
+  'confirm.reauth.totp': 'Bestätigungscode',
+  'confirm.reauth.useTotp': 'einen Bestätigungscode verwenden',
+  'account.stepup.title': 'Wie Sie sich erneut ausweisen',
+  'account.stepup.lede':
+    'Wenn eine geschützte Aktion verlangt, dass Sie sich erneut ausweisen, ist dies die zuerst angebotene Methode. Alle Methoden, die Sie besitzen, bleiben als Ausweichoption verfügbar, und dies ändert keine Sicherheitseinstellung — nur, welche zuerst erscheint.',
+  'account.stepup.label': 'Bevorzugte Methode',
+  'account.stepup.hint':
+    'Es können nur Methoden ausgewählt werden, die Ihr Konto derzeit besitzt. Die übrigen bleiben in der Abfrage verfügbar.',
+  'account.stepup.opt.default': 'Keine Präferenz (Passwort zuerst)',
+  'account.stepup.opt.password': 'Passwort',
+  'account.stepup.opt.totp': 'Bestätigungscode (zweiter Faktor)',
+  'account.stepup.opt.passkey': 'Passkey',
   'confirm.reauth.required':
     'Verstärkte Authentifizierung erforderlich. Prüfen Sie Ihr Passwort oder Ihre Wiederherstellungsphrase.',
   'confirm.exportFirst.label': 'Vor dem Löschen exportieren (empfohlen)',

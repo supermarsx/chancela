@@ -4112,6 +4112,18 @@ export const itIT: Catalog = {
   'confirm.reauth.hint': 'Conferma la tua identità per procedere.',
   'confirm.reauth.usePassword': 'Usa la password',
   'confirm.reauth.useRecovery': 'Usa la frase di recupero',
+  'confirm.reauth.totp': 'Codice di verifica',
+  'confirm.reauth.useTotp': 'usare un codice di verifica',
+  'account.stepup.title': 'Come confermi di nuovo la tua identità',
+  'account.stepup.lede':
+    'Quando un’azione protetta ti chiede di confermare di nuovo la tua identità, questo è il metodo proposto per primo. Tutti i metodi che possiedi restano disponibili come alternativa, e questo non modifica alcuna impostazione di sicurezza, solo quale compare per primo.',
+  'account.stepup.label': 'Metodo preferito',
+  'account.stepup.hint':
+    'Puoi selezionare solo i metodi che il tuo account possiede attualmente. Gli altri restano disponibili nella richiesta.',
+  'account.stepup.opt.default': 'Nessuna preferenza (prima la password)',
+  'account.stepup.opt.password': 'Password',
+  'account.stepup.opt.totp': 'Codice di verifica (secondo fattore)',
+  'account.stepup.opt.passkey': 'Passkey',
   'confirm.reauth.required':
     'Autenticazione rafforzata richiesta. Controlla la tua password o la tua frase di recupero.',
   'confirm.exportFirst.label': 'Esporta prima di eliminare (consigliato)',

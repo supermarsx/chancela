@@ -4052,6 +4052,18 @@ export const enGB: Catalog = {
   'confirm.reauth.hint': 'Confirm your identity to proceed.',
   'confirm.reauth.usePassword': 'Use password instead',
   'confirm.reauth.useRecovery': 'Use recovery phrase instead',
+  'confirm.reauth.totp': 'Verification code',
+  'confirm.reauth.useTotp': 'Use a verification code',
+  'account.stepup.title': 'How you re-prove yourself',
+  'account.stepup.lede':
+    'When a guarded action asks you to re-prove your identity, this is the method its prompt offers first. Every method you hold stays available there as a fallback, and this changes no security setting — only which one appears first.',
+  'account.stepup.label': 'Preferred method',
+  'account.stepup.hint':
+    'Only methods your account currently holds can be selected. The others stay available in the prompt.',
+  'account.stepup.opt.default': 'No preference (password first)',
+  'account.stepup.opt.password': 'Password',
+  'account.stepup.opt.totp': 'Verification code (second factor)',
+  'account.stepup.opt.passkey': 'Passkey',
   'confirm.reauth.required':
     'Step-up authentication required. Check your password or recovery phrase.',
   'confirm.exportFirst.label': 'Export before deleting (recommended)',

@@ -18,9 +18,13 @@
  *     fixed true. Its fork mirrors the server's split: the list is self-or-`user.manage`, but
  *     enrol, rename and revoke are self-only, so the constant is what turns the administrator's
  *     read-only list into the full self-service block.
- *  4. **What is signed in as you** — {@link SessionsSection}, self-scoped by the shape of
+ *  4. **How you re-prove yourself** — {@link StepUpMethodCard}: the default method a guarded action's
+ *     step-up gate opens on. A convenience default only — every method you hold stays available in
+ *     the gate, and the server verifies whatever proof is presented. Only the methods this account
+ *     actually holds are selectable.
+ *  5. **What is signed in as you** — {@link SessionsSection}, self-scoped by the shape of
  *     `GET /v1/sessions`.
- *  5. **Lock the account** — {@link AccountSuspendCard}, step-up gated and one-way.
+ *  6. **Lock the account** — {@link AccountSuspendCard}, step-up gated and one-way.
  *
  * ## Nothing here needs an administrative permission
  *
@@ -39,6 +43,7 @@ import { editUserSectionPath } from '../users/paths';
 import { useCan } from '../session/permissions';
 import { SessionsSection } from './SessionsSection';
 import { TwoFactorSection } from './TwoFactorSection';
+import { StepUpMethodCard } from './StepUpMethodCard';
 import { AccountSuspendCard } from './AccountSuspendCard';
 
 /**
@@ -115,6 +120,11 @@ export function AccountSecuritySection({ user }: { user: UserView }) {
           are self-only), so passing the constant is what turns it into the full self-service block
           rather than the administrator's read-only list. */}
       <PasskeySection user={user} isSelf />
+
+      {/* The default step-up method a guarded action's re-auth gate opens on. A convenience default:
+          the gate still offers every method held as a fallback and the server verifies whatever
+          proof is presented, so this changes no security posture — only which arm shows first. */}
+      <StepUpMethodCard />
 
       <SessionsSection />
 

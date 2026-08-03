@@ -4118,6 +4118,18 @@ export const nlNL: Catalog = {
   'confirm.reauth.hint': 'Bevestig uw identiteit om door te gaan.',
   'confirm.reauth.usePassword': 'Wachtwoord gebruiken',
   'confirm.reauth.useRecovery': 'Herstelzin gebruiken',
+  'confirm.reauth.totp': 'Verificatiecode',
+  'confirm.reauth.useTotp': 'een verificatiecode gebruiken',
+  'account.stepup.title': 'Hoe u zich opnieuw identificeert',
+  'account.stepup.lede':
+    'Wanneer een beveiligde actie u vraagt om uw identiteit opnieuw te bevestigen, is dit de methode die als eerste wordt aangeboden. Alle methoden die u heeft blijven daar beschikbaar als alternatief, en dit wijzigt geen enkele beveiligingsinstelling — alleen welke als eerste verschijnt.',
+  'account.stepup.label': 'Voorkeursmethode',
+  'account.stepup.hint':
+    'U kunt alleen methoden selecteren die uw account momenteel heeft. De andere blijven beschikbaar in de vraag.',
+  'account.stepup.opt.default': 'Geen voorkeur (wachtwoord eerst)',
+  'account.stepup.opt.password': 'Wachtwoord',
+  'account.stepup.opt.totp': 'Verificatiecode (tweede factor)',
+  'account.stepup.opt.passkey': 'Toegangssleutel',
   'confirm.reauth.required':
     'Verhoogde authenticatie vereist. Controleer uw wachtwoord of uw herstelzin.',
   'confirm.exportFirst.label': 'Exporteren vóór verwijderen (aanbevolen)',

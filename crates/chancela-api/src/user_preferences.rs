@@ -147,6 +147,33 @@ pub struct UserPreferences {
     /// `notice_dismissals.external_signing` so deployed clients keep receiving their dismissal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub external_signature_notice_dismissal: Option<NoticeDismissal>,
+    /// Which step-up re-auth method this user would rather be offered first when a guarded action
+    /// asks them to re-prove identity (a `ConfirmWithReauth`/`…AndPhrase` gate).
+    ///
+    /// **A UI default-selector, never an authorization input.** It only chooses which arm the
+    /// confirmation gate shows first; the gate offers every method the user actually holds as a
+    /// fallback (a passkey can fail, an authenticator can be lost), and the server's
+    /// [`crate::data::decide_step_up`] verifies whichever proof is presented regardless of what is
+    /// stored here. So an unrepresentative value — a preference for a method the account no longer
+    /// holds — is harmless: the gate simply falls back to the password. `None` (the default, and the
+    /// value for every existing row) means "no preference", which the client resolves to today's
+    /// behaviour — the password arm first. Deliberately lives HERE, in the non-ledger sidecar, and
+    /// not on [`UserView`](crate::users), which is a ledger payload: a cosmetic default must not move
+    /// the digest of every future user event.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_up_method: Option<StepUpMethodPreference>,
+}
+
+/// A step-up re-auth method a user may prefer to be offered first. The wire identifiers match the
+/// proofs [`crate::data::ReAuth`] carries: `password`, `totp_code`, `passkey`. Recovery phrase is
+/// deliberately absent — it is a single-use break-glass credential, not a routine re-auth a user
+/// would set as their default.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StepUpMethodPreference {
+    Password,
+    TotpCode,
+    Passkey,
 }
 
 impl UserPreferences {
@@ -186,6 +213,10 @@ impl UserPreferences {
             table_columns: self.table_columns.sanitized(),
             notice_dismissals,
             external_signature_notice_dismissal,
+            // A Copy enum with a closed value set — serde already rejected anything else — so it
+            // carries through a load unchanged. Folding to "no override" is only meaningful for the
+            // column lists.
+            step_up_method: self.step_up_method,
         }
     }
 }
@@ -614,6 +645,7 @@ mod tests {
             },
             notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
+            step_up_method: None,
         }
     }
 
@@ -704,6 +736,7 @@ mod tests {
             },
             notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
+            step_up_method: None,
         };
         assert!(over.validate().is_err());
         let _ = many;
@@ -731,6 +764,7 @@ mod tests {
             },
             notice_dismissals: BTreeMap::new(),
             external_signature_notice_dismissal: None,
+            step_up_method: None,
         };
         let clean = raw.sanitized();
         assert_eq!(
@@ -1160,6 +1194,39 @@ mod tests {
             Some(&NoticeDismissal::Permanent),
             "restoring the legacy notice must not affect an independent notice"
         );
+    }
+
+    /// The step-up method preference is serde-defaulted: a row written before it existed (no
+    /// `step_up_method` key) loads as `None`, i.e. "no preference" — today's behaviour — so no
+    /// existing row changes. And each value round-trips by its snake_case wire name.
+    #[test]
+    fn step_up_method_preference_defaults_and_round_trips() {
+        // A pre-feature row carries no `step_up_method` key at all.
+        let legacy: UserPreferences = serde_json::from_value(serde_json::json!({
+            "table_columns": { "entities": ["Name"] }
+        }))
+        .expect("legacy row loads");
+        assert_eq!(legacy.step_up_method, None);
+        assert!(legacy.validate().is_ok());
+
+        for (wire, value) in [
+            ("password", StepUpMethodPreference::Password),
+            ("totp_code", StepUpMethodPreference::TotpCode),
+            ("passkey", StepUpMethodPreference::Passkey),
+        ] {
+            assert_eq!(
+                serde_json::to_value(value).unwrap(),
+                serde_json::Value::String(wire.to_owned()),
+                "{value:?} must serialise as {wire}"
+            );
+            let parsed: UserPreferences = serde_json::from_value(serde_json::json!({
+                "step_up_method": wire
+            }))
+            .expect("value parses");
+            assert_eq!(parsed.step_up_method, Some(value));
+            // A stored preference must survive a load-time sanitise unchanged.
+            assert_eq!(parsed.sanitized().step_up_method, Some(value));
+        }
     }
 
     #[test]

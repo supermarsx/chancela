@@ -4116,6 +4116,18 @@ export const esES: Catalog = {
   'confirm.reauth.hint': 'Confirme su identidad para continuar.',
   'confirm.reauth.usePassword': 'Usar contraseña',
   'confirm.reauth.useRecovery': 'Usar frase de recuperación',
+  'confirm.reauth.totp': 'Código de verificación',
+  'confirm.reauth.useTotp': 'Usar código de verificación',
+  'account.stepup.title': 'Cómo vuelve a confirmar su identidad',
+  'account.stepup.lede':
+    'Cuando una acción protegida le pide que vuelva a confirmar su identidad, este es el método que se ofrece primero. Todos los métodos que posee siguen disponibles como alternativa, y esto no cambia ningún ajuste de seguridad, solo cuál aparece primero.',
+  'account.stepup.label': 'Método preferido',
+  'account.stepup.hint':
+    'Solo puede seleccionar métodos que su cuenta posee actualmente. Los demás siguen disponibles en la solicitud.',
+  'account.stepup.opt.default': 'Sin preferencia (contraseña primero)',
+  'account.stepup.opt.password': 'Contraseña',
+  'account.stepup.opt.totp': 'Código de verificación (segundo factor)',
+  'account.stepup.opt.passkey': 'Clave de acceso',
   'confirm.reauth.required':
     'Se requiere autenticación reforzada. Compruebe su contraseña o su frase de recuperación.',
   'confirm.exportFirst.label': 'Exportar antes de borrar (recomendado)',

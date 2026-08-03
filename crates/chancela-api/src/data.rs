@@ -77,6 +77,19 @@ pub struct ReAuth {
     /// the difference between "signed in with a passkey" and "reset the instance".
     #[serde(default)]
     pub passkey: Option<crate::passkeys::PasskeyAssertionProof>,
+    /// A live code from the acting user's **confirmed** TOTP second factor.
+    ///
+    /// A third alternative on the "with what" axis, added alongside the password and passkey arms
+    /// because the acting user has already authenticated and is *re-proving* — the surface where
+    /// "any one of the methods you hold" genuinely applies. It is an **equal-strength** proof for
+    /// what step-up defends against: a session-only attacker (a stolen token, an unattended signed-in
+    /// browser) holds neither the password nor the authenticator that mints this code. Verification
+    /// goes through the single TOTP path [`crate::totp::verify_totp_for_user`], which reads the
+    /// secret from the credential store and advances the replay guard so a code cannot be spent
+    /// twice — the same path the device-pairing gate uses. A code from a *pending* (unconfirmed)
+    /// enrolment is not a factor and does not satisfy the gate.
+    #[serde(default)]
+    pub totp_code: Option<String>,
 }
 
 /// Enforce step-up re-authentication for a destructive server op (§8-F) — **SELF re-auth only**.
@@ -116,11 +129,11 @@ pub(crate) async fn require_step_up(
     let username = actor
         .session_username()
         .ok_or_else(|| ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))?;
-    let (user_id, held, password_hash, recovery_hash) = {
+    let (user, held, password_hash, recovery_hash) = {
         let users = state.users.read().await;
         match users.values().find(|u| u.username == username) {
             Some(u) => (
-                u.id,
+                u.clone(),
                 HeldCredentials::held_by(u),
                 u.password_hash.clone(),
                 u.recovery_hash.clone(),
@@ -131,6 +144,8 @@ pub(crate) async fn require_step_up(
             None => return Err(ApiError::Forbidden(STEP_UP_REQUIRED.to_owned())),
         }
     };
+    let user_id = user.id;
+    let now = OffsetDateTime::now_utc();
 
     // The passkey arm runs here rather than inside `decide_step_up` because verifying an assertion
     // needs the ceremony store and the acting user's credential list, and `decide_step_up` is kept
@@ -138,13 +153,18 @@ pub(crate) async fn require_step_up(
     // verification is deliberately performed even when a password would also have satisfied the
     // gate: a supplied challenge must be spent whether or not it was needed, or an unused one stays
     // replayable.
-    let passkey = crate::passkeys::verify_step_up_assertion(
-        state,
-        user_id,
-        reauth.passkey.as_ref(),
-        OffsetDateTime::now_utc(),
-    )
-    .await;
+    let passkey =
+        crate::passkeys::verify_step_up_assertion(state, user_id, reauth.passkey.as_ref(), now)
+            .await;
+
+    // The TOTP arm is likewise effectful — `verify_totp_for_user` advances `last_accepted_step` so a
+    // code cannot be replayed — so it is resolved here and its *result* handed to the pure decision,
+    // exactly as the passkey arm is. Only attempted when a code was actually supplied; a wrong or
+    // pending-enrolment code resolves to `false` and lands in the same uniform `403`.
+    let totp = match reauth.totp_code.as_deref() {
+        Some(code) => crate::totp::verify_totp_for_user(state, &user, code, now).await?,
+        None => false,
+    };
 
     decide_step_up(
         &held,
@@ -152,6 +172,7 @@ pub(crate) async fn require_step_up(
         recovery_hash.as_deref(),
         reauth,
         passkey,
+        totp,
     )
 }
 
@@ -165,13 +186,16 @@ pub(crate) async fn require_step_up(
 ///
 /// `passkey` is the already-resolved outcome of the assertion arm, for the same reason: it is the
 /// one proof whose verification is inherently effectful (it spends a challenge and touches the
-/// credential record), so the decision takes its *result* rather than performing it.
+/// credential record), so the decision takes its *result* rather than performing it. `totp` is the
+/// already-resolved outcome of the TOTP arm, effectful for the same reason (it advances the replay
+/// guard), so it too is a `bool` passed in rather than performed here.
 pub(crate) fn decide_step_up(
     held: &HeldCredentials,
     password_hash: Option<&str>,
     recovery_hash: Option<&str>,
     reauth: &ReAuth,
     passkey: crate::passkeys::PasskeyStepUp,
+    totp: bool,
 ) -> Result<(), ApiError> {
     // t69: the acting user holds NO credential at all. A valid authenticated self session is the
     // strongest proof they can provide (there is nothing stronger to demand), so it satisfies
@@ -199,9 +223,16 @@ pub(crate) fn decide_step_up(
     if passkey.is_verified() {
         return Ok(());
     }
-    // Every other case — including an assertion that was supplied and refused — is the same
-    // uniform `403`. Fail-closed, and uniform on purpose: distinguishing "your passkey was wrong"
-    // from "you gave no passkey" tells a caller which proofs the acting account actually holds.
+    // … or a live code from their own confirmed TOTP second factor. Equal-strength for what step-up
+    // defends against — a session-only attacker holds neither the password nor the authenticator —
+    // and already consumed by the resolution above so it cannot be replayed.
+    if totp {
+        return Ok(());
+    }
+    // Every other case — including an assertion or a code that was supplied and refused — is the
+    // same uniform `403`. Fail-closed, and uniform on purpose: distinguishing "your passkey was
+    // wrong" from "you gave no passkey" tells a caller which proofs the acting account actually
+    // holds.
     Err(ApiError::Forbidden(STEP_UP_REQUIRED.to_owned()))
 }
 

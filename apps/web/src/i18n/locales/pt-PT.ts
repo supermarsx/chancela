@@ -4250,6 +4250,18 @@ export const ptPT: Catalog = {
   'confirm.reauth.hint': 'Confirme a sua identidade para prosseguir.',
   'confirm.reauth.usePassword': 'Usar palavra-passe',
   'confirm.reauth.useRecovery': 'Usar frase de recuperação',
+  'confirm.reauth.totp': 'Código de verificação',
+  'confirm.reauth.useTotp': 'Usar código de verificação',
+  'account.stepup.title': 'Como reconfirma a sua identidade',
+  'account.stepup.lede':
+    'Quando uma ação protegida lhe pede para reconfirmar a sua identidade, este é o método que o pedido apresenta primeiro. Todos os métodos que possui continuam disponíveis aí como alternativa, e isto não altera qualquer definição de segurança — apenas qual aparece primeiro.',
+  'account.stepup.label': 'Método preferido',
+  'account.stepup.hint':
+    'Só pode escolher métodos que a sua conta possui atualmente. Os restantes continuam disponíveis no pedido.',
+  'account.stepup.opt.default': 'Sem preferência (palavra-passe primeiro)',
+  'account.stepup.opt.password': 'Palavra-passe',
+  'account.stepup.opt.totp': 'Código de verificação (segundo fator)',
+  'account.stepup.opt.passkey': 'Chave de acesso',
   'confirm.reauth.required':
     'É necessária autenticação reforçada. Verifique a palavra-passe ou a frase de recuperação.',
   'confirm.exportFirst.label': 'Exportar antes de apagar (recomendado)',

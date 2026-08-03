@@ -4096,6 +4096,18 @@ export const plPL: Catalog = {
   'confirm.reauth.hint': 'Potwierdź swoją tożsamość, aby kontynuować.',
   'confirm.reauth.usePassword': 'Użyj hasła',
   'confirm.reauth.useRecovery': 'Użyj frazy odzyskiwania',
+  'confirm.reauth.totp': 'Kod weryfikacyjny',
+  'confirm.reauth.useTotp': 'użyj kodu weryfikacyjnego',
+  'account.stepup.title': 'Jak ponownie potwierdzasz tożsamość',
+  'account.stepup.lede':
+    'Gdy chroniona operacja prosi o ponowne potwierdzenie tożsamości, ta metoda jest proponowana jako pierwsza. Wszystkie metody, które posiadasz, pozostają dostępne jako alternatywa i nie zmienia to żadnego ustawienia zabezpieczeń — jedynie to, która pojawia się pierwsza.',
+  'account.stepup.label': 'Preferowana metoda',
+  'account.stepup.hint':
+    'Można wybrać tylko metody, które Twoje konto obecnie posiada. Pozostałe pozostają dostępne w monicie.',
+  'account.stepup.opt.default': 'Bez preferencji (najpierw hasło)',
+  'account.stepup.opt.password': 'Hasło',
+  'account.stepup.opt.totp': 'Kod weryfikacyjny (drugi składnik)',
+  'account.stepup.opt.passkey': 'Klucz dostępu',
   'confirm.reauth.required':
     'Wymagane wzmocnione uwierzytelnienie. Sprawdź swoje hasło lub frazę odzyskiwania.',
   'confirm.exportFirst.label': 'Eksportuj przed usunięciem (zalecane)',

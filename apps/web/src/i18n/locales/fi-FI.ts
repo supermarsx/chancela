@@ -4100,6 +4100,18 @@ export const fiFI: Catalog = {
   'confirm.reauth.hint': 'Vahvista henkilöllisyytesi jatkaaksesi.',
   'confirm.reauth.usePassword': 'Käytä salasanaa',
   'confirm.reauth.useRecovery': 'Käytä palautuslausetta',
+  'confirm.reauth.totp': 'Vahvistuskoodi',
+  'confirm.reauth.useTotp': 'käytä vahvistuskoodia',
+  'account.stepup.title': 'Näin todistat henkilöllisyytesi uudelleen',
+  'account.stepup.lede':
+    'Kun suojattu toiminto pyytää sinua todistamaan henkilöllisyytesi uudelleen, tämä menetelmä tarjotaan ensimmäisenä. Kaikki hallussasi olevat menetelmät pysyvät käytettävissä vaihtoehtona, eikä tämä muuta mitään suojausasetusta — vain sen, mikä näkyy ensin.',
+  'account.stepup.label': 'Ensisijainen menetelmä',
+  'account.stepup.hint':
+    'Voit valita vain menetelmiä, jotka tililläsi on tällä hetkellä. Muut pysyvät käytettävissä kyselyssä.',
+  'account.stepup.opt.default': 'Ei mieltymystä (salasana ensin)',
+  'account.stepup.opt.password': 'Salasana',
+  'account.stepup.opt.totp': 'Vahvistuskoodi (toinen vaihe)',
+  'account.stepup.opt.passkey': 'Pääsyavain',
   'confirm.reauth.required':
     'Vahvistettu tunnistautuminen vaaditaan. Tarkista salasanasi tai palautuslauseesi.',
   'confirm.exportFirst.label': 'Vie ennen poistamista (suositeltu)',

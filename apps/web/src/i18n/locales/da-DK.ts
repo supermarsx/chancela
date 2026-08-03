@@ -4085,6 +4085,18 @@ export const daDK: Catalog = {
   'confirm.reauth.hint': 'Bekræft din identitet for at fortsætte.',
   'confirm.reauth.usePassword': 'Brug adgangskode',
   'confirm.reauth.useRecovery': 'Brug gendannelsessætning',
+  'confirm.reauth.totp': 'Bekræftelseskode',
+  'confirm.reauth.useTotp': 'brug en bekræftelseskode',
+  'account.stepup.title': 'Sådan bekræfter du din identitet igen',
+  'account.stepup.lede':
+    'Når en beskyttet handling beder dig bekræfte din identitet igen, er dette den metode, der tilbydes først. Alle de metoder, du har, forbliver tilgængelige som alternativ, og det ændrer ingen sikkerhedsindstilling — kun hvilken der vises først.',
+  'account.stepup.label': 'Foretrukken metode',
+  'account.stepup.hint':
+    'Du kan kun vælge metoder, som din konto har i øjeblikket. De øvrige forbliver tilgængelige i anmodningen.',
+  'account.stepup.opt.default': 'Ingen præference (adgangskode først)',
+  'account.stepup.opt.password': 'Adgangskode',
+  'account.stepup.opt.totp': 'Bekræftelseskode (anden faktor)',
+  'account.stepup.opt.passkey': 'Adgangsnøgle',
   'confirm.reauth.required':
     'Forstærket godkendelse påkrævet. Tjek din adgangskode eller din gendannelsessætning.',
   'confirm.exportFirst.label': 'Eksportér før sletning (anbefales)',

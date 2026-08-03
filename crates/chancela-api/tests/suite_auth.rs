@@ -19,6 +19,8 @@ mod recovery_rbac;
 mod self_service_account;
 #[path = "signup_and_invites.rs"]
 mod signup_and_invites;
+#[path = "step_up_totp.rs"]
+mod step_up_totp;
 #[path = "totp_and_account_policy.rs"]
 mod totp_and_account_policy;
 #[path = "two_step_signin.rs"]

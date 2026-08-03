@@ -741,6 +741,7 @@ mod tests {
             None,
             &crate::data::ReAuth::default(),
             crate::passkeys::PasskeyStepUp::NotSupplied,
+            false,
         );
         assert!(
             outcome.is_err(),
@@ -761,6 +762,7 @@ mod tests {
                 None,
                 &crate::data::ReAuth::default(),
                 crate::passkeys::PasskeyStepUp::Refused,
+                false,
             )
             .is_err()
         );
@@ -779,6 +781,7 @@ mod tests {
                 None,
                 &crate::data::ReAuth::default(),
                 crate::passkeys::PasskeyStepUp::Verified,
+                false,
             )
             .is_ok()
         );

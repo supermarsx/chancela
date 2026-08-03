@@ -9004,11 +9004,27 @@ export type NoticeKey =
   | 'termo_signing_legend'
   | 'book_open_guidance';
 
+/**
+ * A step-up re-auth method a user prefers to be offered first when a guarded action asks them to
+ * re-prove identity. Wire values match the proofs {@link ReAuth} carries. Recovery phrase is
+ * deliberately not offerable as a default — it is a single-use break-glass credential, not a
+ * routine re-auth.
+ */
+export const STEP_UP_METHOD_PREFERENCES = ['password', 'totp_code', 'passkey'] as const;
+export type StepUpMethodPreference = (typeof STEP_UP_METHOD_PREFERENCES)[number];
+
 export interface UserPreferences {
   table_columns: TableColumnPreferences;
   notice_dismissals?: Partial<Record<NoticeKey, NoticeDismissal>>;
   /** Compatibility with preference documents stored before the keyed registry. */
   external_signature_notice_dismissal?: NoticeDismissal | null;
+  /**
+   * Which step-up re-auth method the confirmation gate offers first. A UI default-selector only,
+   * never an authorization input: the gate still offers every method the user holds as a fallback,
+   * and the server verifies whichever proof is presented. Absent (the default, and the value for
+   * every pre-existing row) means "no preference" — the password arm first, today's behaviour.
+   */
+  step_up_method?: StepUpMethodPreference;
 }
 
 /**
@@ -9838,6 +9854,16 @@ export interface ReAuth {
    * assertion must come from a *step-up* ceremony started for this action.
    */
   passkey?: { credential: PasskeyCredentialJson };
+  /**
+   * A live code from the acting user's OWN confirmed TOTP second factor (t10 follow-on).
+   *
+   * An equal-strength alternative to the password on the "with what" axis: the acting user has
+   * already authenticated and is re-proving, and a session-only attacker holds neither the password
+   * nor the authenticator that mints this code. The server verifies it through the single TOTP path
+   * and advances the replay guard, so a code cannot be spent twice. A code from a pending
+   * (unconfirmed) enrolment does not satisfy the gate.
+   */
+  totp_code?: string;
 }
 
 /**
