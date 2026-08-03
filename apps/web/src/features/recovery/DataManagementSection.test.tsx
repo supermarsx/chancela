@@ -16,6 +16,20 @@ const saveFileMock = vi.hoisted(() => ({
 
 vi.mock('../../desktop/saveFile', () => saveFileMock);
 
+// The shared ConfirmActionModal's step-up gate now reads the acting user's held methods and step-up
+// preference (to offer TOTP only to a holder, per t10 follow-on). This suite drives the real hooks
+// against its own fetch recorder and does not stub `/v1/session` or `/v1/me/preferences`; a partial
+// mock overrides ONLY those two so the gate behaves exactly as before (no TOTP arm, password arm
+// first) while every real data-management hook the section relies on is left untouched.
+vi.mock('../../api/hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../api/hooks')>()),
+  useSession: () => ({
+    data: { user: { has_totp: false, has_secret: true }, permissions: [] },
+    isLoading: false,
+  }),
+  useUserPreferences: () => ({ data: { table_columns: {} }, isLoading: false }),
+}));
+
 import { DataManagementSection } from './DataManagementSection';
 
 function jsonResponse(body: unknown, status = 200): Response {

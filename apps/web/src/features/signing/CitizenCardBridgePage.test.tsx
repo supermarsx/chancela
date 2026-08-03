@@ -16,6 +16,16 @@ const hookMocks = vi.hoisted(() => ({
 vi.mock('../../api/hooks', () => ({
   useCitizenCardBridgeStatus: hookMocks.status,
   useTestCitizenCardBridge: hookMocks.probe,
+  // The shared ConfirmActionModal's step-up gate now reads the acting user's held methods and
+  // step-up preference from these two hooks (to offer TOTP only to a holder, per t10 follow-on).
+  // This suite fully mocks the hooks module, so both must be present or every render of the
+  // private-key confirmation throws. Benign defaults reproduce today's behaviour: no confirmed
+  // TOTP factor (so no TOTP arm) and no preference (so the gate opens on the password arm).
+  useSession: () => ({
+    data: { user: { has_totp: false, has_secret: true }, permissions: [] },
+    isLoading: false,
+  }),
+  useUserPreferences: () => ({ data: { table_columns: {} }, isLoading: false }),
 }));
 
 const readyStatus: CitizenCardBridgeStatus = {
