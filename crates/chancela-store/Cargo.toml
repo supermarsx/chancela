@@ -61,7 +61,7 @@ zip = { workspace = true }
 # connection that mirrors today's mutex-guarded SQLite connection. These are pulled in ONLY when the
 # `postgres` feature is enabled, so the default SQLite build is unaffected.
 postgres = { version = "0.19", optional = true }
-fallible-iterator = { version = "0.2", optional = true }
+fallible-iterator = { version = "0.3", optional = true }
 r2d2 = { version = "0.8", optional = true }
 r2d2_postgres = { version = "0.18", optional = true }
 # TLS for the synchronous Postgres connection (wp25). A rustls `MakeTlsConnect` is implemented over
