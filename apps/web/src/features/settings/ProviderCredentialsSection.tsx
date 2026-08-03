@@ -1795,15 +1795,31 @@ function EntryRow({
 
   return (
     <tr role="group" aria-label={entry.label || entry.entry_id}>
-      <td data-label={t('settings.providerCredentials.table.entry')}>
+      {/* The id is clipped to a fixed character count by CSS, never sliced: the full GUID stays in
+          the DOM (selectable, copyable, findable by find-in-page, announced whole by a screen
+          reader) while the row stops being dominated by it. `TooltipText` auto-detects that the
+          label merely repeats the rendered string, so it reveals the full value on hover exactly
+          when the cap engages and renders bare when it does not. */}
+      <td
+        className="provider-entries-table__cell--id"
+        data-label={t('settings.providerCredentials.table.entry')}
+      >
         <p className="card__label">{label}</p>
-        <TooltipText label={entry.entry_id} as="code" className="field__hint mono">
+        <TooltipText label={entry.entry_id} as="code" className="field__hint mono truncate">
           {entry.entry_id}
         </TooltipText>
       </td>
+      {/* The badge shows the bare rank: the column header and the responsive `data-label` both
+          already say "prioridade", so repeating the word inside every badge of the column was
+          duplication that cost the row width and said nothing. The full statement stays in the
+          accessibility tree — same split as the CMD field badges below, because a badge read as a
+          context-free "1" out of the column's visual context is worse than a long one. */}
       <td data-label={t('settings.providerCredentials.table.priority')}>
         <Badge tone="neutral">
-          {t('settings.providerCredentials.entry.priority', { priority: entry.priority })}
+          <span aria-hidden="true">{entry.priority}</span>
+          <span className="sr-only">
+            {t('settings.providerCredentials.entry.priority', { priority: entry.priority })}
+          </span>
         </Badge>
       </td>
       <td data-label={t('settings.providerCredentials.table.state')}>

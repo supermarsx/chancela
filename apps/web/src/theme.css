@@ -2253,6 +2253,25 @@ a.btn.btn--iconOnly {
   min-width: 0;
 }
 
+/* The provider-entry id is a 36-char GUID that dominated the row it belongs to. The LABEL above
+   it is what names the entry; the id only has to be recognisable at a glance, so it is capped to
+   a fixed number of monospace characters and ellipsised — the same idiom as
+   `.entities-table__cell--truncate > .truncate`.
+
+   Truncated by CSS rather than sliced in the component, because an operator correlating a row
+   against an API call or a log line needs the WHOLE id: clipping keeps every character in the
+   DOM, so it stays selectable, copyable and findable by browser find-in-page, and a screen
+   reader still announces it in full. Slicing would put the hidden half out of reach of all four.
+   The cell's `TooltipText` reveals the full value on hover once this cap engages.
+
+   `ch` against the mono font makes the visible portion a predictable hex-character count instead
+   of a pixel width. This table scrolls horizontally inside `.table-wrap` rather than restacking
+   into cards, so the cap reads identically at every viewport and can never collapse to nothing —
+   it is a maximum, not a percentage of a column that narrows. */
+.provider-entries-table__cell--id > .truncate {
+  max-width: 14ch;
+}
+
 .seal-designer {
   min-width: 0;
   padding: 0.95rem;
