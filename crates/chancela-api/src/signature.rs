@@ -8816,12 +8816,35 @@ fn timestamp_pdf_with_trust_report(
     Ok((stamped, timestamp, report_json))
 }
 
+/// Build the QTST timestamp-trust report by matching the TSA certificate against the configured
+/// Trusted List.
+///
+/// The list is authenticated against the **same** anchor union [`build_trust_policy`] uses —
+/// settings anchors ∪ environment anchors — rather than the environment alone. Before this the
+/// client was built with a bare [`TslClient::new`], which resolves anchors from the environment on
+/// every refresh, so an install whose anchors live in `signing.tsl_trust_anchor_certs` /
+/// `signing.tsl_trust_anchor_sha256` authenticated no list here: the report silently downgraded a
+/// genuinely-qualified timestamp to unrecognised, on the same "settings are inert" fault that kept
+/// those fields from reaching the signing trust policy.
+///
+/// Best-effort by contract (`Option`): every failure yields **no report** rather than a report
+/// asserting distrust. Unparseable anchors take that same path deliberately — emitting a
+/// "not qualified" verdict computed against an anchor set that failed to load would be a false
+/// negative presented as a finding. Such anchors cannot normally reach here anyway: they are
+/// rejected at save time by `validate_tsl_trust_anchors`, and on the qualified path
+/// [`build_trust_policy`] refuses with a 422 first.
 fn timestamp_trust_report_json(
     timestamp: &chancela_tsa::Timestamp,
     tsl_source: Option<RuntimeTslSource>,
 ) -> Option<String> {
     let tsa_cert = timestamp.tsa_certificate_der.as_deref()?;
-    let mut tsl = TslClient::new(tsl_source?);
+    let source = tsl_source?;
+    let anchors = crate::trust::resolve_lotl_trust_anchors(
+        &source.trust_anchor_certs,
+        &source.trust_anchor_sha256,
+    )
+    .ok()?;
+    let mut tsl = TslClient::new(source).with_anchors(anchors);
     let qtst = tsl.qtst_match_details(tsa_cert, timestamp.gen_time).ok()?;
     let report =
         timestamp_trust_evidence_status(timestamp, &qtst, &TimestampTrustPolicy::default());
@@ -10529,36 +10552,12 @@ mod tests {
     /// e-signatures, carrying a real enveloped XML-DSig signature over the whole document
     /// (`URI=""`, exclusive C14N, RSA-SHA256). Returns the signed XML and the DER of the
     /// certificate that signed it — the anchor a correctly-configured operator would provision.
-    fn test_signed_tsl(issuer_cert_der: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    /// Envelope `unsigned` in an ephemeral XML-DSig signature and return `(xml, signer_cert_der)`.
+    /// The returned certificate is the anchor a well-configured deployment would provision for
+    /// this list — pinning it, in either form, is what makes the list authentic.
+    fn test_sign_tsl_document(unsigned: &str) -> (Vec<u8>, Vec<u8>) {
         let (signer_key, signer_cert_der) =
             test_self_signed_rsa("Chancela TSL XML-DSig Test Signer", 21);
-        let unsigned = format!(
-            concat!(
-                r#"<?xml version="1.0" encoding="UTF-8"?>"#,
-                r#"<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">"#,
-                "<SchemeInformation>",
-                "<SchemeTerritory>PT</SchemeTerritory>",
-                "<ListIssueDateTime>2026-01-15T00:00:00Z</ListIssueDateTime>",
-                "<NextUpdate><dateTime>2099-01-01T00:00:00Z</dateTime></NextUpdate>",
-                "</SchemeInformation>",
-                "<TrustServiceProviderList><TrustServiceProvider><TSPInformation>",
-                r#"<TSPName><Name xml:lang="en">Chancela Test QTSP</Name></TSPName>"#,
-                "</TSPInformation><TSPServices><TSPService><ServiceInformation>",
-                "<ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>",
-                r#"<ServiceName><Name xml:lang="en">Chancela Test CA</Name></ServiceName>"#,
-                "<ServiceDigitalIdentity><DigitalId><X509Certificate>{}</X509Certificate></DigitalId></ServiceDigitalIdentity>",
-                "<ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>",
-                "<StatusStartingTime>2020-01-01T00:00:00Z</StatusStartingTime>",
-                r#"<ServiceInformationExtensions><Extension Critical="false"><AdditionalServiceInformation>"#,
-                r#"<URI xml:lang="en">http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSignatures</URI>"#,
-                "</AdditionalServiceInformation></Extension></ServiceInformationExtensions>",
-                "</ServiceInformation></TSPService></TSPServices>",
-                "</TrustServiceProvider></TrustServiceProviderList>",
-                "</TrustServiceStatusList>",
-            ),
-            B64.encode(issuer_cert_der)
-        );
-
         let signed_info = format!(
             concat!(
                 r#"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/>"#,
@@ -10590,6 +10589,66 @@ mod tests {
             &unsigned[insert_at..]
         );
         (xml.into_bytes(), signer_cert_der)
+    }
+
+    /// A signed Trusted List carrying one **granted QTST** (qualified timestamp) service whose
+    /// digital identity is `tsa_cert_der`, so `qtst_match_details` matches that TSA certificate.
+    /// Used to observe whether the QTST trust report authenticated the list at all.
+    fn test_signed_qtst_tsl(tsa_cert_der: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let unsigned = format!(
+            concat!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+                r#"<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">"#,
+                "<SchemeInformation>",
+                "<SchemeTerritory>PT</SchemeTerritory>",
+                "<ListIssueDateTime>2026-01-15T00:00:00Z</ListIssueDateTime>",
+                "<NextUpdate><dateTime>2099-01-01T00:00:00Z</dateTime></NextUpdate>",
+                "</SchemeInformation>",
+                "<TrustServiceProviderList><TrustServiceProvider><TSPInformation>",
+                r#"<TSPName><Name xml:lang="en">Chancela Test QTSP</Name></TSPName>"#,
+                "</TSPInformation><TSPServices><TSPService><ServiceInformation>",
+                "<ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/TSA/QTST</ServiceTypeIdentifier>",
+                r#"<ServiceName><Name xml:lang="en">Chancela Test QTST</Name></ServiceName>"#,
+                "<ServiceDigitalIdentity><DigitalId><X509Certificate>{}</X509Certificate></DigitalId></ServiceDigitalIdentity>",
+                "<ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>",
+                "<StatusStartingTime>2020-01-01T00:00:00Z</StatusStartingTime>",
+                "</ServiceInformation></TSPService></TSPServices>",
+                "</TrustServiceProvider></TrustServiceProviderList>",
+                "</TrustServiceStatusList>",
+            ),
+            B64.encode(tsa_cert_der)
+        );
+        test_sign_tsl_document(&unsigned)
+    }
+
+    fn test_signed_tsl(issuer_cert_der: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let unsigned = format!(
+            concat!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>"#,
+                r#"<TrustServiceStatusList xmlns="http://uri.etsi.org/02231/v2#" xmlns:ds="http://www.w3.org/2000/09/xmldsig#">"#,
+                "<SchemeInformation>",
+                "<SchemeTerritory>PT</SchemeTerritory>",
+                "<ListIssueDateTime>2026-01-15T00:00:00Z</ListIssueDateTime>",
+                "<NextUpdate><dateTime>2099-01-01T00:00:00Z</dateTime></NextUpdate>",
+                "</SchemeInformation>",
+                "<TrustServiceProviderList><TrustServiceProvider><TSPInformation>",
+                r#"<TSPName><Name xml:lang="en">Chancela Test QTSP</Name></TSPName>"#,
+                "</TSPInformation><TSPServices><TSPService><ServiceInformation>",
+                "<ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>",
+                r#"<ServiceName><Name xml:lang="en">Chancela Test CA</Name></ServiceName>"#,
+                "<ServiceDigitalIdentity><DigitalId><X509Certificate>{}</X509Certificate></DigitalId></ServiceDigitalIdentity>",
+                "<ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>",
+                "<StatusStartingTime>2020-01-01T00:00:00Z</StatusStartingTime>",
+                r#"<ServiceInformationExtensions><Extension Critical="false"><AdditionalServiceInformation>"#,
+                r#"<URI xml:lang="en">http://uri.etsi.org/TrstSvc/TrustedList/SvcInfoExt/ForeSignatures</URI>"#,
+                "</AdditionalServiceInformation></Extension></ServiceInformationExtensions>",
+                "</ServiceInformation></TSPService></TSPServices>",
+                "</TrustServiceProvider></TrustServiceProviderList>",
+                "</TrustServiceStatusList>",
+            ),
+            B64.encode(issuer_cert_der)
+        );
+        test_sign_tsl_document(&unsigned)
     }
 
     fn test_pem_cert(der: &[u8]) -> String {
@@ -10626,6 +10685,84 @@ mod tests {
             trust_anchor_certs,
             trust_anchor_sha256,
         }
+    }
+
+    /// The QTST timestamp-trust report must authenticate the Trusted List against the **same**
+    /// anchor union the signing trust policy uses — settings anchors ∪ environment anchors — not
+    /// the environment alone.
+    ///
+    /// [`timestamp_trust_report_json`] used to build a bare `TslClient::new(source)`, which
+    /// resolves anchors from the environment on every refresh and therefore ignored
+    /// `signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256` entirely. On an install
+    /// whose anchors live in settings the list authenticated against nothing, so `qtst_match_details`
+    /// downgraded `Granted → Unknown` and the report asserted that a genuinely-qualified timestamp
+    /// was unrecognised. Same "settings are inert" fault as t61-e1, one surface further along.
+    ///
+    /// The two halves are the proof: the identical list and the identical timestamp differ ONLY in
+    /// whether the anchor was provisioned through settings. Asserting the anchored half alone would
+    /// pass against the old code whenever the runner happened to have an environment anchor.
+    #[test]
+    fn settings_provisioned_anchor_authenticates_the_qtst_timestamp_trust_report() {
+        // As in the sibling bridge test: the resolved set is `settings ∪ env`, and an ambient env
+        // anchor cannot match this test's ephemeral signer, so both halves hold regardless of the
+        // runner's environment. A malformed env anchor would fail resolution outright — surface
+        // that plainly rather than letting it masquerade as a regression here.
+        chancela_tsl::TslTrustAnchors::from_env()
+            .expect("CHANCELA_TSL_TRUST_ANCHOR[_SHA256] in this environment must parse");
+
+        let (_tsa_key, tsa_cert_der) = test_self_signed_rsa("Chancela Test QTST TSA", 23);
+        let (tsl_xml, signer_cert_der) = test_signed_qtst_tsl(&tsa_cert_der);
+
+        let tmp = TempDir::new();
+        let path = tmp.0.join("qtst-anchored-tsl.xml");
+        std::fs::write(&path, &tsl_xml).expect("write signed QTST TSL");
+
+        let timestamp = chancela_tsa::Timestamp {
+            token_der: b"token".to_vec(),
+            gen_time: OffsetDateTime::now_utc(),
+            serial_number: vec![7],
+            policy: "1.2.3.4".to_owned(),
+            tsa_certificate_der: Some(tsa_cert_der.clone()),
+            embedded_certificate_ders: vec![tsa_cert_der.clone()],
+        };
+
+        let report_of = |certs: Vec<String>, digests: Vec<String>| -> serde_json::Value {
+            let json = timestamp_trust_report_json(
+                &timestamp,
+                Some(test_anchored_tsl_source(&path, certs, digests)),
+            )
+            .expect("the QTST trust report is produced");
+            serde_json::from_str(&json).expect("the report is JSON")
+        };
+
+        // 1. Anchor provisioned through settings alone: the list authenticates, so the granted
+        //    QTST service survives as granted.
+        let anchored = report_of(vec![test_pem_cert(&signer_cert_der)], Vec::new());
+        assert_eq!(
+            anchored["qtst_authenticated"],
+            serde_json::Value::Bool(true),
+            "a settings-provisioned anchor must authenticate the list for the QTST report"
+        );
+        assert_eq!(anchored["qtst_status"], serde_json::json!("granted"));
+
+        // 2. The fingerprint form of the same anchor, also from settings alone.
+        let by_digest = report_of(Vec::new(), vec![test_hex_sha256(&signer_cert_der)]);
+        assert_eq!(
+            by_digest["qtst_authenticated"],
+            serde_json::Value::Bool(true)
+        );
+        assert_eq!(by_digest["qtst_status"], serde_json::json!("granted"));
+
+        // 3. The discriminator. Identical list, identical timestamp, no settings anchor: nothing
+        //    vouches for the signer, so the report reports the list as unauthenticated and the
+        //    status downgrades. This half is what the old environment-only code produced for BOTH.
+        let unanchored = report_of(Vec::new(), Vec::new());
+        assert_eq!(
+            unanchored["qtst_authenticated"],
+            serde_json::Value::Bool(false),
+            "with no anchor anywhere the list must NOT be reported as authenticated"
+        );
+        assert_eq!(unanchored["qtst_status"], serde_json::json!("unknown"));
     }
 
     /// t61-e1 — the settings→signing-time trust-anchor bridge, end to end.
