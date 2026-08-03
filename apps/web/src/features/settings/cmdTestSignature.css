@@ -92,6 +92,25 @@
   }
 }
 
+/* The PIN-accepted checkpoint. A confirmed positive step — the operator asked whether the PIN
+   works, and this states that it did — so it reads in the "ok" tone rather than the warning tone
+   the wait state uses. */
+.cmd-test-pin-accepted {
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--ok);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.cmd-test-pin-accepted p {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 /* A phase that expired, said as its own fact rather than as a generic failure: the previous
    code aged out, nothing was signed, and the flow is back at the first step on purpose. */
 .cmd-test-expired {

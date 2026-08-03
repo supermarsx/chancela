@@ -58,6 +58,7 @@ import { useProviderCredentialsT } from '../../i18n/providerCredentialsFallback'
 import {
   Badge,
   Button,
+  ErrorNote,
   Field,
   Icon,
   IconButton,
@@ -322,7 +323,14 @@ function CmdTestSignatureFlowModal({
   const [phone, setPhone] = useState('');
   const [pin, setPin] = useState('');
   const [otp, setOtp] = useState('');
-  const [error, setError] = useState<string | null>(null);
+  // Two shapes of failure, kept distinct rather than flattened to one string. A `reauth` refusal is
+  // deliberately generic (the server refuses to say which proof was wrong); a `request` failure
+  // carries the server's own `ApiError`, which `ErrorNote` resolves to a translated, per-code
+  // headline — so a PIN/credential rejection (`cmd_service_rejected`) reads as "the PIN was
+  // rejected" rather than the same generic line an untrusted anchor or a transport error would show.
+  const [error, setError] = useState<
+    { kind: 'reauth' } | { kind: 'request'; error: unknown } | null
+  >(null);
 
   const bodyRef = useRef<HTMLFormElement>(null);
   const titleId = useRef(`cmd-test-${Math.random().toString(36).slice(2)}`).current;
@@ -430,16 +438,22 @@ function CmdTestSignatureFlowModal({
     } catch (err) {
       // A 410 is the single-use session ageing out (5 minutes), not a failure of the test: drop
       // the session so the flow falls back to a fresh initiate rather than re-offering a confirm
-      // that can only 410 again, and label it as a phase that expired. The server's own words
-      // still ride along, inside that note rather than instead of it.
-      if (err instanceof ApiError && err.status === 410) onExpired();
+      // that can only 410 again, and label it as a phase that expired. It is not an error surface —
+      // the expired note carries the meaning — so clear any stale error and stop here.
+      if (err instanceof ApiError && err.status === 410) {
+        setError(null);
+        onExpired();
+        return;
+      }
       if (err instanceof ApiError && err.status === 403) {
         // Deliberately generic, exactly as every other reauth-gated action renders it: saying
         // which proof was wrong would answer a question the server refuses to answer.
-        setError(t('confirm.reauth.required'));
+        setError({ kind: 'reauth' });
       } else {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
+        // The server's own diagnostic, resolved to a per-code headline by `ErrorNote`: a PIN
+        // rejection (`cmd_service_rejected`), a preprod refusal, an untrusted anchor and a transport
+        // error each get their own sentence, with the server's English detail demoted, not dropped.
+        setError({ kind: 'request', error: err });
         toast.error(err);
       }
     }
@@ -536,6 +550,28 @@ function CmdTestSignatureFlowModal({
 
           {step === 'authorisation' && session ? (
             <div className="cmd-test-step" data-testid="cmd-test-step-authorisation">
+              {/* The PIN-accepted checkpoint. The operator asked to check that the PIN works; this
+                  is where the answer is made explicit — a confirmed step, not something inferred
+                  from the flow advancing. Rendered only when the server states it as a value, so an
+                  older server without the field shows no checkpoint rather than a claimed one. The
+                  ceremony note keeps it honest: reaching here is not a free probe. */}
+              {session.pin_accepted ? (
+                <div
+                  className="cmd-test-pin-accepted"
+                  role="status"
+                  data-testid="cmd-test-pin-accepted"
+                >
+                  <Badge tone="ok">{pt('providerCredentials.cmdTest.pinAccepted')}</Badge>
+                  <p>
+                    {pt('providerCredentials.cmdTest.pinAcceptedBody', {
+                      phone: session.masked_phone,
+                    })}
+                  </p>
+                  <p className="cmd-test-gate-note">
+                    {pt('providerCredentials.cmdTest.pinAcceptedCeremony')}
+                  </p>
+                </div>
+              ) : null}
               {/* The long step, and the only one where nothing is happening on either side of
                   the wire: the product is waiting on the PERSON. It says so, rather than
                   animating something that would imply work in progress. */}
@@ -596,12 +632,17 @@ function CmdTestSignatureFlowModal({
             <CmdTestSignatureResultPanel result={result} pt={pt} />
           ) : null}
 
-          {/* The server's own diagnostic text, in the step it happened in. Never summarised,
-              never narrowed — an untrusted trust anchor and a wrong PIN do not read alike. */}
-          {error ? (
+          {/* The server's own diagnostic, in the step it happened in. Never summarised, never
+              narrowed — an untrusted trust anchor and a wrong PIN do not read alike. A reauth
+              refusal stays generic; every other failure is routed through `ErrorNote`, which turns
+              the stable `code` into a translated, per-fault headline (a PIN rejection names the
+              signing PIN) and keeps the server's English detail in the technical-details block. */}
+          {error?.kind === 'reauth' ? (
             <p className="field__error" role="alert">
-              {error}
+              {t('confirm.reauth.required')}
             </p>
+          ) : error?.kind === 'request' ? (
+            <ErrorNote error={error.error} />
           ) : null}
 
           <div className="modal__foot">

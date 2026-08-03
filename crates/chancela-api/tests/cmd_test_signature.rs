@@ -848,6 +848,61 @@ async fn the_retained_document_route_rejects_unknown_and_malformed_ids() {
     }
 }
 
+/// A wrong PIN is a **distinct, legible** outcome, not a generic failure.
+///
+/// The flow cannot reach AMA in a test, but the contract it relies on to make a PIN rejection legible
+/// is public and network-free. A wrong signing PIN makes `SCMDSign` (`CCMovelSign`) return a
+/// non-success status, which is `CmdError::ServiceStatus`. The signing layer flattens that error to
+/// its `Display` string (`SigningError::Provider(e.to_string())`), and `chancela-api` recovers the
+/// stable code back from that string — so a PIN rejection reaches the operator as
+/// `cmd_service_rejected`, the code whose translated copy names the mobile number and the signing
+/// PIN. This pins that it stays SEPARATE from a transport error, a configuration error and an
+/// OTP-stage rejection, which an operator asking "is the PIN actually working?" must be able to tell
+/// apart. The happy half of that same question — a PIN that *was* accepted — is the initiate
+/// response's `pin_accepted` value, covered by the module's own unit tests.
+#[test]
+fn a_scmd_sign_pin_rejection_is_a_distinct_stable_code_separate_from_the_other_failure_classes() {
+    use chancela_cmd::error::{
+        CMD_CONFIGURATION_INVALID, CMD_OTP_REJECTED, CMD_SERVICE_REJECTED, CMD_TRANSPORT_FAILED,
+    };
+
+    // A wrong PIN: SCMDSign refuses to start the signature.
+    let pin_rejected = CmdError::ServiceStatus {
+        code: "401".to_owned(),
+        message: "PIN invalido".to_owned(),
+    };
+    // The typed code and the one recovered from the flattened `Display` agree — and the recovered
+    // one is what the operator actually sees, because the flow surfaces the provider error by its
+    // `Display`, its typed variant long gone by the time the API classifies it.
+    assert_eq!(pin_rejected.stable_code(), CMD_SERVICE_REJECTED);
+    assert_eq!(
+        CmdError::stable_code_from_display(&pin_rejected.to_string()),
+        CMD_SERVICE_REJECTED,
+        "a PIN rejection must classify as cmd_service_rejected via the exact path the flow uses"
+    );
+
+    // The neighbouring failure classes an operator must not confuse it with, each its own code.
+    let otp = CmdError::OtpRejected {
+        code: "402".to_owned(),
+        message: "OTP invalido".to_owned(),
+    };
+    let transport = CmdError::Transport("connection refused".to_owned());
+    let config = CmdError::Config("missing application id".to_owned());
+    assert_eq!(otp.stable_code(), CMD_OTP_REJECTED);
+    assert_eq!(transport.stable_code(), CMD_TRANSPORT_FAILED);
+    assert_eq!(config.stable_code(), CMD_CONFIGURATION_INVALID);
+    for other in [
+        CMD_OTP_REJECTED,
+        CMD_TRANSPORT_FAILED,
+        CMD_CONFIGURATION_INVALID,
+    ] {
+        assert_ne!(
+            CMD_SERVICE_REJECTED, other,
+            "a PIN rejection must not collapse into {other}"
+        );
+    }
+}
+
 /// The CMD test-signature module's source with every comment line removed.
 ///
 /// The structural assertions below are about what the module can *do*, so they must read code and

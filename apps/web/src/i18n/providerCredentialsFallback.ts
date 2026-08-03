@@ -109,6 +109,14 @@ export const providerCredentialsPtPT = {
     'Esta fase é confirmada com a frase exata e com uma prova de identidade.',
   'providerCredentials.cmdTest.gateNoteConfirm':
     'Esta fase é confirmada de novo: o servidor não aceita a confirmação da fase anterior, por isso a frase e a prova de identidade voltam a ser pedidas.',
+  // The PIN-accepted checkpoint (t113-e2): the operator asked to «check the PIN», and this is where
+  // the answer becomes legible — an explicit confirmed step, not something inferred from the flow
+  // advancing. The ceremony note keeps it honest: reaching here is NOT a free PIN check.
+  'providerCredentials.cmdTest.pinAccepted': 'PIN aceite',
+  'providerCredentials.cmdTest.pinAcceptedBody':
+    'A Chave Móvel Digital aceitou o PIN de assinatura: o PIN está a funcionar. Foi enviado um código por SMS para «{phone}».',
+  'providerCredentials.cmdTest.pinAcceptedCeremony':
+    'Chegar aqui não é uma verificação gratuita do PIN: a Chave Móvel Digital já iniciou uma assinatura real. O código que recebeu é a primeira metade de uma assinatura eletrónica qualificada real — se o confirmar abaixo, a folha de teste fica assinada.',
   'providerCredentials.cmdTest.waitingTitle': 'A aguardar a sua confirmação',
   'providerCredentials.cmdTest.waitingNote':
     'A aplicação está à espera de si, não do servidor: nada avança enquanto o código não for introduzido aqui.',
@@ -250,6 +258,11 @@ export const providerCredentialsEnglish = {
     'This phase is confirmed with the exact phrase and a proof of identity.',
   'providerCredentials.cmdTest.gateNoteConfirm':
     "This phase is confirmed again: the server does not accept the previous phase's confirmation, so the phrase and the proof of identity are asked for once more.",
+  'providerCredentials.cmdTest.pinAccepted': 'PIN accepted',
+  'providerCredentials.cmdTest.pinAcceptedBody':
+    'Chave Móvel Digital accepted the signing PIN: the PIN is working. A code was sent by SMS to "{phone}".',
+  'providerCredentials.cmdTest.pinAcceptedCeremony':
+    'Reaching this point is not a free PIN check: Chave Móvel Digital has already begun a real signature. The code you received is the first half of a real qualified electronic signature — confirming it below signs the test sheet.',
   'providerCredentials.cmdTest.waitingTitle': 'Waiting for you to confirm',
   'providerCredentials.cmdTest.waitingNote':
     'The application is waiting for you, not for the server: nothing moves until the code is entered here.',

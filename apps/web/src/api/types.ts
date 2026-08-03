@@ -8012,6 +8012,14 @@ export interface CmdTestSignatureInitiateResult {
   entry_label?: string;
   environment: string;
   expires_at: string;
+  /**
+   * The PIN-accepted checkpoint, as a value. `true` whenever an initiate succeeds: reaching it means
+   * `CCMovelSign` accepted the signing PIN and dispatched the OTP, so the UI can state "the PIN was
+   * accepted" as its own confirmed step. A rejected PIN is a `cmd_service_rejected` error, never an
+   * initiate result with this `false`. Optional so an older server without the field renders no
+   * checkpoint rather than a wrong one.
+   */
+  pin_accepted?: boolean;
   provider_contacted: boolean;
   signer_authorization_requested: boolean;
   document_signed: boolean;

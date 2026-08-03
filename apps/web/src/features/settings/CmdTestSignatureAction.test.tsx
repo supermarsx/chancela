@@ -33,6 +33,7 @@ import type {
 } from '../../api/types';
 import { renderWithProviders } from '../../test/utils';
 import { providerCredentialsPtPT as copy } from '../../i18n/providerCredentialsFallback';
+import { apiErrorPtPT } from '../../i18n/apiErrorFallback';
 
 const CONFIRM_PHRASE = 'ASSINAR TESTE';
 const PHRASE_LABEL = `Escreva ${CONFIRM_PHRASE} para confirmar`;
@@ -95,6 +96,7 @@ const initiateResult: CmdTestSignatureInitiateResult = {
   entry_label: 'CMD principal',
   environment: 'prod',
   expires_at: '2026-07-28T10:05:00Z',
+  pin_accepted: true,
   provider_contacted: true,
   signer_authorization_requested: true,
   document_signed: false,
@@ -469,6 +471,95 @@ describe('CmdTestSignatureAction', () => {
     expect((await screen.findAllByText(/pré-produção/)).length).toBeGreaterThan(0);
     expect(screen.getByTestId('cmd-test-step-credentials')).toBeTruthy();
     expect(screen.queryByTestId('cmd-test-step-authorisation')).toBeNull();
+    expect(confirmCalls(stub.calls).length).toBe(0);
+  });
+
+  /**
+   * The operator asked to CHECK THE PIN. There is no free PIN probe in this protocol — a checkable
+   * "PIN accepted" state only exists because `CCMovelSign` accepted it and dispatched the OTP — so
+   * the flow makes that checkpoint explicit rather than leaving it inferred from the step advancing.
+   * And the copy stays honest that reaching it is the first half of a real ceremony, not a probe.
+   */
+  it('states the PIN was accepted as its own confirmed checkpoint on the authorisation step', async () => {
+    const stub = stubFetch(cmdList);
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+
+    const dialog = await openFlow();
+    fireEvent.change(
+      within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']),
+      { target: { value: '+351 912345678' } },
+    );
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
+      target: { value: '271828' },
+    });
+    fillConfirmationProof(dialog);
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.initiateConfirm'],
+      }),
+    );
+
+    const checkpoint = await screen.findByTestId('cmd-test-pin-accepted');
+    // The PIN result is a confirmed step of its own, not inferred from the flow advancing.
+    expect(
+      within(checkpoint).getByText(copy['providerCredentials.cmdTest.pinAccepted']),
+    ).toBeTruthy();
+    // It names the phone the code was sent to…
+    expect(
+      within(checkpoint).getByText(
+        copy['providerCredentials.cmdTest.pinAcceptedBody'].replace('{phone}', '+351 9*****678'),
+      ),
+    ).toBeTruthy();
+    // …and stays honest that reaching here is a real ceremony, not a free probe.
+    expect(
+      within(checkpoint).getByText(copy['providerCredentials.cmdTest.pinAcceptedCeremony']),
+    ).toBeTruthy();
+    // Nothing is signed at this checkpoint — it is the OTP step, not the result.
+    expect(screen.queryByTestId('cmd-test-signature-result')).toBeNull();
+  });
+
+  /**
+   * A PIN rejection is a specific outcome, not a generic failure. `SCMDSign` refusing the PIN
+   * surfaces as `cmd_service_rejected`, which `ErrorNote` resolves to a headline naming the signing
+   * PIN — distinct from the bare status tier, and distinct from what a transport, config or OTP-stage
+   * failure would show. Nothing advances and nothing is signed.
+   */
+  it('surfaces a PIN rejection as its own translated outcome, keeps the code, and never signs', async () => {
+    const stub = stubFetch(cmdList, {
+      initiateStatus: 422,
+      initiateBody: {
+        error:
+          'a Chave Móvel Digital recusou o pedido: SCMD service returned status 401: PIN invalido',
+        code: 'cmd_service_rejected',
+      },
+    });
+    vi.stubGlobal('fetch', stub.fn);
+    renderSection();
+
+    const dialog = await openFlow();
+    fireEvent.change(
+      within(dialog).getByLabelText(copy['providerCredentials.cmdTest.phoneLabel']),
+      { target: { value: '+351 912345678' } },
+    );
+    fireEvent.change(within(dialog).getByLabelText(copy['providerCredentials.cmdTest.pinLabel']), {
+      target: { value: '000000' },
+    });
+    fillConfirmationProof(dialog);
+    fireEvent.click(
+      within(dialog).getByRole('button', {
+        name: copy['providerCredentials.cmdTest.initiateConfirm'],
+      }),
+    );
+
+    // The PIN-specific headline, not the generic 422 tier sentence.
+    expect(await screen.findByText(apiErrorPtPT['apiError.cmd_service_rejected'])).toBeTruthy();
+    expect(screen.queryByText(apiErrorPtPT['apiError.tier.422'])).toBeNull();
+    // The machine code survives, in the technical-details block, for a bug report.
+    expect(screen.getByText('cmd_service_rejected')).toBeTruthy();
+    // Nothing advanced and nothing was signed: still on credentials, no checkpoint, no confirm call.
+    expect(screen.getByTestId('cmd-test-step-credentials')).toBeTruthy();
+    expect(screen.queryByTestId('cmd-test-pin-accepted')).toBeNull();
     expect(confirmCalls(stub.calls).length).toBe(0);
   });
 

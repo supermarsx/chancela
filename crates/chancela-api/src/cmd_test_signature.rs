@@ -215,6 +215,17 @@ pub struct CmdTestSignatureInitiateResponse {
     pub entry_label: Option<String>,
     pub environment: &'static str,
     pub expires_at: String,
+    /// **The PIN-accepted checkpoint, stated as a value.** Always `true` here: reaching a successful
+    /// initiate means `CCMovelSign` accepted the citizen's signing PIN at AMA and dispatched the OTP,
+    /// so the operator can read "the PIN was accepted" as its own confirmed step rather than
+    /// inferring it from the flow having advanced. A rejected PIN never produces this response — it
+    /// is an `Err` (a `cmd_service_rejected` refusal), not an `Ok` with `pin_accepted: false`.
+    ///
+    /// It is a **value, not an omission**, for the same reason the other markers below are: a client
+    /// must not read a silence as a claim. And it is not a free probe — reaching this checkpoint ran
+    /// `CCMovelSign`, which is the first half of a real qualified signature (the module docs explain
+    /// why there is no cheaper PIN check in this protocol).
+    pub pin_accepted: bool,
     /// Fixed honest markers: an OTP has been dispatched to a real device, and nothing is signed yet.
     pub provider_contacted: bool,
     pub signer_authorization_requested: bool,
@@ -530,6 +541,7 @@ pub async fn initiate_cmd_test_signature(
             "outcome": "otp_pending",
             "credential_source": credential_source,
             "entry_id": entry_id,
+            "pin_accepted": true,
             "otp_dispatched": true,
             "document_signed": false,
         }),
@@ -545,6 +557,7 @@ pub async fn initiate_cmd_test_signature(
         entry_label,
         environment: "prod",
         expires_at: rfc3339(expires_at),
+        pin_accepted: true,
         provider_contacted: true,
         signer_authorization_requested: true,
         document_signed: false,
@@ -1257,6 +1270,43 @@ mod tests {
         assert_eq!(json["signature_verifies"], serde_json::json!(false));
         assert_eq!(json["covers_rendered_document"], serde_json::json!(false));
         assert_eq!(json["coverage"], serde_json::json!("unavailable"));
+    }
+
+    /// The initiate response states the **PIN-accepted checkpoint as a value**, alongside the
+    /// unchanged honesty flags.
+    ///
+    /// The initiate happy path cannot be reached offline — it contacts AMA — so the response *shape*
+    /// is what is pinned here: `pin_accepted` is a boolean a client can read, not an omission it must
+    /// infer from the flow having advanced. It coexists with the safety markers being exactly what
+    /// they were: the provider was contacted and an OTP dispatched, and NOTHING is signed at the
+    /// initiate phase. Making the PIN result legible does not add a way to sign.
+    #[test]
+    fn the_initiate_response_states_pin_accepted_as_a_value_with_the_honesty_flags_intact() {
+        let resp = CmdTestSignatureInitiateResponse {
+            session_id: "sess".to_owned(),
+            status: "otp_pending",
+            masked_phone: "+351 9*****678".to_owned(),
+            credential_source: "stored_entry",
+            entry_id: Some("cmd-entry-1".to_owned()),
+            entry_label: Some("CMD principal".to_owned()),
+            environment: "prod",
+            expires_at: "2026-07-27T10:20:00Z".to_owned(),
+            pin_accepted: true,
+            provider_contacted: true,
+            signer_authorization_requested: true,
+            document_signed: false,
+        };
+        let json = serde_json::to_value(&resp).expect("the initiate response serializes");
+
+        // The checkpoint is present as a VALUE the client reads, not an absence it interprets.
+        assert_eq!(json["pin_accepted"], serde_json::json!(true));
+        // The safety markers are unchanged: contacted and OTP-dispatched, but nothing signed yet.
+        assert_eq!(json["provider_contacted"], serde_json::json!(true));
+        assert_eq!(
+            json["signer_authorization_requested"],
+            serde_json::json!(true)
+        );
+        assert_eq!(json["document_signed"], serde_json::json!(false));
     }
 
     /// Garbage that is not a PDF at all takes the same honest branch — the validator's refusal is
