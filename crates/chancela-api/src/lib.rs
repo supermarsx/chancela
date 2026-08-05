@@ -363,8 +363,12 @@ pub async fn seed_e2e_sessions_from_data_dir(state: &AppState) {
                 &seed.token,
                 uuid::Uuid::new_v4(),
                 user_id.0,
-                None,
-                None,
+                // The seed is an identity-only origin: it carries no device and no address, which
+                // is exactly what `default()` means (and `ip_asserted: false` is the honest value
+                // for it). This call site is behind `#[cfg(feature = "e2e")]`, so a default-feature
+                // build never compiles it — it was missed when `insert` took the address and the
+                // provenance flag as one `SessionOrigin` instead of two loose `Option`s.
+                session::SessionOrigin::default(),
                 now,
                 expires_at,
             )
