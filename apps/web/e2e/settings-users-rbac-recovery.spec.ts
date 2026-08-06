@@ -297,5 +297,5 @@ async function switchCurrentUser(page: Page, username: string, password: string)
   await expect(page.getByRole('heading', { name: 'Iniciar sessão' })).toBeVisible();
   await page.getByLabel('Utilizador', { exact: true }).fill(username);
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 }

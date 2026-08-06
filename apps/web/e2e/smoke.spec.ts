@@ -59,15 +59,18 @@ test('Configurações sub-tabs switch sections and deep-link via the path', asyn
 
   // Documentos: its CAE-URL field appears, the section deep-links, and Aparência's control
   // is gone (one section at a time).
-  await page.getByRole('button', { name: 'Documentos' }).click();
+  // `exact` on every sub-tab pill: `getByRole`'s `name` is a substring match, and the sections
+  // these pills open carry per-column help buttons labelled "Ajuda sobre a coluna …" — three
+  // buttons answered to "Sobre" once Documentos was open.
+  await page.getByRole('button', { name: 'Documentos', exact: true }).click();
   await expect(page.getByLabel('URL de atualização do catálogo CAE')).toBeVisible();
   await expect(page).toHaveURL(/\/settings\/documents/);
   await expect(page.getByLabel('Tema')).toHaveCount(0);
 
   // Switch to Sobre and back to Aparência — no crash across repeated indicator re-measures.
-  await page.getByRole('button', { name: 'Sobre' }).click();
+  await page.getByRole('button', { name: 'Sobre', exact: true }).click();
   await expect(page.getByText('Versão da interface')).toBeVisible();
-  await page.getByRole('button', { name: 'Aparência' }).click();
+  await page.getByRole('button', { name: 'Aparência', exact: true }).click();
   await expect(page.getByLabel('Tema')).toBeVisible();
 });
 

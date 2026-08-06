@@ -29,7 +29,7 @@ test('wrong password is rejected inline without opening the app', async ({ page 
   await expect(page.getByRole('heading', { name: 'Iniciar sessão' })).toBeVisible();
   await pickOperatorFromSignIn(page);
   await page.getByLabel('Palavra-passe', { exact: true }).fill('wrong-password');
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 
   await expect(page.getByRole('alert')).toContainText('Utilizador ou palavra-passe incorretos.');
   await expect(page.getByTestId('tab-bar')).toHaveCount(0);
@@ -91,7 +91,7 @@ test('settings-created users require passwords and can sign in with that passwor
   await expect(page.getByRole('heading', { name: 'Iniciar sessão' })).toBeVisible();
   await pickUserFromSignIn(page, displayName, username);
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page.getByTestId('session-trigger')).toContainText(displayName);
 });
 

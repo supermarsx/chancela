@@ -93,6 +93,9 @@ async function pickOperator(page: Page): Promise<void> {
   const password = page.getByLabel('Palavra-passe', { exact: true });
   await expect(password).toBeVisible();
   await password.fill(OPERATOR_PASSWORD);
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  // `exact` because the sign-in surface now also offers "Entrar com chave de acesso", and
+  // `getByRole`'s `name` is a substring match by default: the password submit is the button
+  // whose accessible name is exactly "Entrar", never merely one that starts with it.
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page.getByTestId('tab-bar')).toBeVisible();
 }

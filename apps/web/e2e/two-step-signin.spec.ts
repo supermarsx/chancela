@@ -169,10 +169,14 @@ test('active sessions: the current device is flagged and cannot be revoked', asy
   const sessions = page.getByRole('table', { name: 'Sessões ativas nesta conta' });
   await expect(sessions).toBeVisible();
 
-  // The one session (the browser's own) is the current one: badged, and its action cell reads
-  // "Sessão atual" instead of offering a revoke.
+  // The one session (the browser's own) is the current one, named ONCE — the accent badge in the
+  // device column. It used to be named a second time in the action column as muted prose; that
+  // was removed deliberately (a second name for one fact, inside the column reserved for
+  // controls), so the row is now identified by the badge and the action cell is empty.
   await expect(page.getByText('esta sessão')).toBeVisible();
-  await expect(page.getByText('Sessão atual')).toBeVisible();
+  const currentRow = sessions.getByRole('row').filter({ hasText: 'esta sessão' });
+  await expect(currentRow).toHaveCount(1);
+  await expect(currentRow.getByRole('button')).toHaveCount(0);
 
   // The current session is never self-revocable here (sign-out is that verb), and with no other
   // session there is no bulk "terminar as outras" action either.
@@ -195,8 +199,11 @@ test('active sessions: revoking another session drops that session on its next r
 
   const sessions = page.getByRole('table', { name: 'Sessões ativas nesta conta' });
   await expect(sessions).toBeVisible();
-  // Current row is guarded; exactly the OTHER row carries a revoke control.
-  await expect(page.getByText('Sessão atual')).toBeVisible();
+  // Current row is guarded — badged in the device column, no control in its action cell —
+  // and exactly the OTHER row carries a revoke control.
+  const currentRow = sessions.getByRole('row').filter({ hasText: 'esta sessão' });
+  await expect(currentRow).toHaveCount(1);
+  await expect(currentRow.getByRole('button')).toHaveCount(0);
   const revoke = page.getByRole('button', { name: 'Terminar', exact: true });
   await expect(revoke).toHaveCount(1);
 
@@ -205,7 +212,7 @@ test('active sessions: revoking another session drops that session on its next r
 
   // The list collapses back to just the current session...
   await expect(page.getByRole('button', { name: 'Terminar', exact: true })).toHaveCount(0);
-  await expect(page.getByText('Sessão atual')).toBeVisible();
+  await expect(sessions.getByRole('row').filter({ hasText: 'esta sessão' })).toHaveCount(1);
 
   // ...and the revoked token is genuinely dead: rejected on its next request, not merely
   // delisted from the panel.
@@ -332,7 +339,7 @@ async function signOutToSignInSurface(page: Page): Promise<void> {
 async function submitSignIn(page: Page, username: string, password: string): Promise<void> {
   await page.getByLabel('Utilizador', { exact: true }).fill(username);
   await page.getByLabel('Palavra-passe', { exact: true }).fill(password);
-  await page.getByRole('button', { name: 'Entrar' }).click();
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 }
 
 /** Disable TOTP from the open Segurança panel — REQUIRED cleanup (see the section note). */

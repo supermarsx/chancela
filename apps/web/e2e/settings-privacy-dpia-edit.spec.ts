@@ -29,6 +29,7 @@ import {
   type PermissionGrant,
   type SessionPermissions,
   type Settings,
+  type UserPreferences,
   type UserView,
 } from '../src/api/types';
 
@@ -149,14 +150,19 @@ test('Settings Privacidade edits a DPIA on its own page and shows the guidance t
   // The `field_type` wire identifier stays verbatim (shown in mono, never translated).
   await expect(guidancePanel.getByText('review_note')).toBeVisible();
 
-  // The no_claims flag identifiers stay verbatim behind their disclosure.
-  await guidancePanel.getByText('Flags sem alegação').click();
+  // The no_claims flag identifiers stay verbatim behind their disclosure. `exact` because the
+  // panel's own inline warning (asserted further down) explains why those identifiers are
+  // English and names them in prose, so a substring match resolves to the <summary> AND that
+  // paragraph.
+  await guidancePanel.getByText('Flags sem alegação', { exact: true }).click();
   await expect(guidancePanel.getByText('cnpd_filing_completed')).toBeVisible();
 
   // --- 4. The model itself is editable, on its own address ------------------------------------
   // The panel says which body is being read (shipped here, so it reads in Portuguese) and offers
-  // the editor as a real link rather than an inline card inside the sub-tab.
-  await expect(guidancePanel.getByText('Incluído nesta versão')).toBeVisible();
+  // the editor as a real link rather than an inline card inside the sub-tab. `exact` targets the
+  // badge itself: the hint below it now opens "O modelo incluído nesta versão…", which a substring
+  // match also answers to.
+  await expect(guidancePanel.getByText('Incluído nesta versão', { exact: true })).toBeVisible();
   await expect(guidancePanel.getByRole('link', { name: 'Editar o modelo' })).toHaveAttribute(
     'href',
     '/settings/privacy/dpia-template/edit',
@@ -247,6 +253,13 @@ async function routePrivacyDpiaFixtures(page: Page): Promise<RouteState> {
     }
     if (pathname === '/v1/users') {
       await fulfillJson(route, [userFixture()]);
+      return;
+    }
+    // The shell polls this on every route; unstubbed it falls through to the catch-all below and
+    // the 500 lands in `consoleErrors`. No column overrides and no step-up preference: every table
+    // renders its default columns, which is what the assertions above read.
+    if (pathname === '/v1/me/preferences') {
+      await fulfillJson(route, { table_columns: {} } satisfies UserPreferences);
       return;
     }
     if (pathname === '/v1/settings') {
