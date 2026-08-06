@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-29 from current implementation snapshot `4868d86e671dc6bd6c7f885471b2ee4e1f5b5c58`,
+*Updated 2026-07-29 from current implementation snapshot `b973b4718d355d4e76a71e1f6a4406158594dcd4`,
 with committed evidence for the per-verb permission enforcement audit that made
 `tenant.admin` gate a real route, split `entity.registry.lookup` out of
 `entity.read`, and recorded `book.reopen` as unbuildable rather than merely
@@ -350,7 +350,7 @@ blockers.
 
 Implementation checkpoints covered here:
 
-- Current `4868d86` keeps every top-level row **PARTIAL**. This is a large batch
+- Current `b973b47` keeps every top-level row **PARTIAL**. This is a large batch
   — seventy-nine commits — and unlike the previous one it does add capability
   rather than only making existing gates true. It is still recorded without
   status movement, deliberately: promoting a row is a judgement about spec
