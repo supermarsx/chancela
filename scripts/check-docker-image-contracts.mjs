@@ -130,10 +130,18 @@ function validateProjectorDockerfile(text) {
     1,
     "docker/Dockerfile.search-projector must contain exactly one OS package installation instruction",
   );
+  // `perl make` is the whole build-stage package set, and both are load-bearing: vendored
+  // OpenSSL's `Configure` needs FindBin, Pod::Usage, File::Compare, File::Copy and IPC::Cmd,
+  // which the base image's `perl-base` does not carry. `058b26e3` repinned this from `make`
+  // alone after splitting the BuildKit target caches showed the projector stage had never been
+  // independently buildable — it had been silently consuming vendored-OpenSSL artefacts the
+  // server stage left in a shared mount, and alone against pristine mounts it failed in 15
+  // seconds. Do NOT "slim" `perl` back out; the exact match below is what keeps anything ELSE
+  // (PC/SC headers above all) from joining the list.
   assert.equal(
     packageInstalls[0].body,
-    "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends make && rm -rf /var/lib/apt/lists/*",
-    "docker/Dockerfile.search-projector OS package installation must be the exact normalized make-only contract",
+    "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends perl make && rm -rf /var/lib/apt/lists/*",
+    "docker/Dockerfile.search-projector OS package installation must be the exact normalized build-dependency contract",
   );
 
   const executable = instructions
@@ -218,7 +226,7 @@ function projectorFixture() {
   return `FROM rust AS rust-build
 RUN DEBIAN_FRONTEND=noninteractive apt-get update \\
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \\
-        make \\
+        perl make \\
     && rm -rf /var/lib/apt/lists/*
 RUN cargo build --release --locked -p chancela-search-projector --features "\${CARGO_FEATURES}"
 FROM distroless AS runtime
@@ -237,9 +245,9 @@ function runSelfTest() {
   expectFailure(
     () =>
       validateProjectorDockerfile(
-        valid.replace("    make \\", "    make libpcsclite-dev \\"),
+        valid.replace("perl make \\", "perl make libpcsclite-dev \\"),
       ),
-    "exact normalized make-only contract",
+    "exact normalized build-dependency contract",
   );
   for (const install of [
     "apt install curl",

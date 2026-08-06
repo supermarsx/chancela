@@ -243,6 +243,33 @@ export function inRanges(offset, ranges) {
   return ranges.some(([from, to]) => offset >= from && offset < to);
 }
 
+/**
+ * `macro_rules!` definitions, as {name, start, end, bodyStart, bodyEnd} offsets over the mask.
+ *
+ * A macro template is not a declaration. `enum CredentialKind { $( $(#[$meta])* $variant, )+ }`
+ * names no variant — the real names appear only at the invocation — so an item scanner that reads
+ * the template hits a member it cannot name and dies. Locating the templates lets the caller do
+ * both halves of the correct thing: skip them as declaration sites, AND read each invocation in
+ * their place. Skipping without reading would silently shrink the value vocabulary, which is the
+ * blind spot this whole check exists to prevent.
+ */
+export function macroRulesRanges(mask, file) {
+  const ranges = [];
+  const pattern = /\bmacro_rules!\s*([A-Za-z0-9_]+)\s*\{/gu;
+  let match;
+  while ((match = pattern.exec(mask)) !== null) {
+    const body = braceBody(mask, match.index + match[0].length - 1, file);
+    ranges.push({
+      name: match[1],
+      start: match.index,
+      end: body.end + 1,
+      bodyStart: body.start,
+      bodyEnd: body.end,
+    });
+  }
+  return ranges;
+}
+
 /** serde `rename_all` cases. An unrecognised case is an error, never a silent pass-through. */
 export const SERDE_CASES = {
   lowercase: (v) => v.toLowerCase(),
