@@ -37,6 +37,15 @@ use common::{TEST_PASSWORD, password_hash};
 
 /// A clearly-synthetic number in the shape the CMD lane accepts. No real number, ever.
 const FAKE_PHONE: &str = "+351 900 000 000";
+/// The written forms `FAKE_PHONE` could leak as. Each is long enough that finding one in the
+/// sidecar is proof of plaintext at rest rather than a coincidence in random base64/hex.
+const PLAINTEXT_FORMS: [&str; 5] = [
+    FAKE_PHONE,
+    "+351900000000",
+    "351900000000",
+    "900000000",
+    "900 000 000",
+];
 const OTHER_FAKE_PHONE: &str = "+351 900 000 001";
 
 struct TempDir(PathBuf);
@@ -197,10 +206,18 @@ async fn a_user_with_no_admin_permission_saves_reads_and_clears_their_own_number
     // At rest it is ciphertext. Assert against the file, not the API's own claim.
     let on_disk = sidecar(&temp.0);
     assert!(!on_disk.is_empty(), "the sidecar must have been written");
-    assert!(
-        !on_disk.contains(FAKE_PHONE) && !on_disk.contains("900"),
-        "the number must never be at rest in cleartext"
-    );
+    // Every plausible WRITTEN form of the number, not a three-character fragment of it. A bare
+    // "900" collides with `key_fingerprint`, which is hex: three digits land in 64 hex characters
+    // by chance roughly 1.5% of the time (and an RFC 3339 `saved_at` can carry them in its
+    // fractional seconds), so that spelling failed on luck rather than on a leak — it went red on
+    // Linux CI while passing 20/20 here. These forms are long enough that a base64/hex collision
+    // is not a possibility, so a red here means the plaintext really did reach the file.
+    for form in PLAINTEXT_FORMS {
+        assert!(
+            !on_disk.contains(form),
+            "the number must never be at rest in cleartext (found {form})"
+        );
+    }
     assert!(on_disk.contains("ciphertext"));
 
     // Clearing discards the row and every wrap with it.

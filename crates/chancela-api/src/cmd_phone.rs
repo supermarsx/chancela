@@ -784,11 +784,20 @@ mod tests {
 
         // At rest: ciphertext only. The number is not in the file in any form.
         let on_disk = std::fs::read_to_string(&path).expect("sidecar written");
-        assert!(
-            !on_disk.contains("900"),
-            "the number must not be at rest in cleartext"
-        );
-        assert!(!on_disk.contains(FAKE_PHONE));
+        // Written forms, not a three-character fragment: a bare "900" collides with the hex
+        // `key_fingerprint` by chance (~1.5% a run), which fails on luck rather than on a leak.
+        for form in [
+            FAKE_PHONE,
+            "+351900000000",
+            "351900000000",
+            "900000000",
+            "900 000 000",
+        ] {
+            assert!(
+                !on_disk.contains(form),
+                "the number must not be at rest in cleartext (found {form})"
+            );
+        }
         assert!(on_disk.contains("ciphertext"));
         // And it reloads.
         let reloaded = load_saved_cmd_phones(&path).expect("reload");
