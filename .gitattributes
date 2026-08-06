@@ -33,6 +33,18 @@
 *.sql  text eol=lf
 *.sh   text eol=lf
 
+# PEM key material is read by `include_str!` and compared against the canonical form the
+# normaliser emits, which is always LF. Left unpinned, a Windows runner (`core.autocrlf=true`,
+# the Git-for-Windows default the GitHub Actions images ship) checks these out as CRLF and the
+# armour line the assertion slices out carries a trailing `\r` — one test out of 1614 failed on
+# `Rust (windows-latest)` and nowhere else, on a tree byte-identical to the green Linux one.
+#
+# Deliberately NOT extended to `*.xml`, `*.csv` or `*.der`: those fixtures carry committed CRLF
+# and lone-CR bytes ON PURPOSE — `crates/chancela-xades/tests/fixtures/c14n/v15_line_ending_
+# normalization.in.xml` is a canonicalization vector whose whole subject is the `\r\n` in it, and
+# an `eol=lf` pin would silently rewrite the thing under test.
+*.pem  text eol=lf
+
 # Windows batch files are the one genuine exception: `cmd.exe` can mis-parse LF-terminated
 # scripts, so these stay CRLF deliberately rather than by platform accident.
 *.bat  text eol=crlf

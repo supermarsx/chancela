@@ -4763,7 +4763,13 @@ mod tests {
 
             // The armour is preserved, never rewritten: storing a certificate as a public key would
             // silently discard the subject, issuer and dates the operator can still inspect.
-            assert!(expected.starts_with(&clean[..clean.find('\n').unwrap()]));
+            //
+            // `lines()` rather than a slice up to the first `\n`: the slice keeps whatever line
+            // terminator the fixture was checked out with, so on a CRLF working tree it compared
+            // the canonical (always-LF) form against `-----BEGIN CERTIFICATE-----\r` and failed on
+            // the checkout rather than on the behaviour. The property is unchanged — the stored
+            // form still has to open with the very armour line the operator pasted.
+            assert!(expected.starts_with(clean.lines().next().unwrap()));
         }
     }
 
