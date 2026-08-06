@@ -6155,21 +6155,25 @@ function assertCheckpointMap() {
     "attendance_list_templates_render_structured_attendees_for_every_supported_family",
     "template catalog all-family attendance-list rendering coverage",
   );
-  // Census repinned 104 -> 109 and CSC 44 -> 45 by `c5444516` (feat(templates): state the
-  // declared page count on a new termo version), which ADDED five assets: one
-  // `<family>-termo-abertura-v2.json` per family, carrying the declared page-count row. The five
-  // v1 assets are byte-untouched and stay in the catalog so documents naming `/v1` keep
-  // resolving. Every family gained exactly one, so the subsets stay consistent with the total:
-  // 45 CSC + 15 condominio + 19 assoc + 15 fundacao + 15 cooperativa = 109.
+  // Census repinned 109 -> 139 and CSC 45 -> 51 by `8d455b6f` (feat(templates): mint termo
+  // versions that identify the entity in prose) and `a5899faf` (fix(termo): let an operator's body
+  // text reach the rendered termo). Between them they ADDED thirty assets and modified, renamed
+  // and deleted none: six per family — `termo-abertura-v3` and `-v4`, `termo-encerramento-v2` and
+  // `-v3`, `termo-retificacao-v2`, `termo-transporte-v2`. Every superseded version stays in the
+  // catalog byte-untouched, because a document already generated from one names it and must keep
+  // resolving; that is the same discipline as the 104 -> 109 repin by `c5444516` (one
+  // `<family>-termo-abertura-v2.json` each, carrying the declared page-count row). Every family
+  // gained exactly six, so the subsets stay consistent with the total:
+  // 51 CSC + 21 condominio + 25 assoc + 21 fundacao + 21 cooperativa = 139.
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    "reg.specs().len(),\n            109",
-    "template catalog 109-asset census marker",
+    "reg.specs().len(),\n            139",
+    "template catalog 139-asset census marker",
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
-    "per_family(EntityFamily::CommercialCompany), 45",
-    "template catalog 45 CSC census marker",
+    "per_family(EntityFamily::CommercialCompany), 51",
+    "template catalog 51 CSC census marker",
   );
   assertFileContains(
     "crates/chancela-templates/src/lib.rs",
@@ -12127,7 +12131,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `227582d`",
+    "Current checkpoint metadata/static checks through `4868d86`",
     "CI/E2E hardening plan current checkpoint checks marker",
   );
   assertFileContains(
@@ -12717,7 +12721,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "SPEC-COVERAGE.md",
-    "implementation snapshot `227582daa64b7eba66ba9ce5585231b73025d34b`",
+    "implementation snapshot `4868d86e671dc6bd6c7f885471b2ee4e1f5b5c58`",
     "spec coverage current implementation snapshot marker",
   );
   assertFileContains(
@@ -12807,7 +12811,7 @@ function assertCheckpointMap() {
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
-    "Current checkpoint metadata/static checks through `227582d`",
+    "Current checkpoint metadata/static checks through `4868d86`",
     "CI/E2E hardening plan checkpoint metadata head marker",
   );
   assertFileContains(
@@ -18070,12 +18074,28 @@ function assertFileExists(relativePath, label) {
   return false;
 }
 
-function assertFileContains(relativePath, needle, label) {
-  if (!assertFileExists(relativePath, label)) return;
-  const body = readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
+/**
+ * A checkpoint file, with CRLF folded to LF.
+ *
+ * Every marker in this map is written with `\n`, and `.gitattributes` pins `eol=lf` for the source
+ * extensions precisely so a raw-bytes assertion is "correct by construction rather than by luck of
+ * the developer's OS". But `eol` only binds when git WRITES the file: a working tree checked out
+ * before that pin landed still holds CRLF while `git status` reports it clean, because `text=auto`
+ * normalises on commit. `assertFileContains` folded CRLF for that reason; `assertFileOccurrenceCount`
+ * and `assertFileMatches` did not, so a multi-line marker counted 0 occurrences on Windows against
+ * bytes that were identical to HEAD. That is a false RED, and a false red on a checkpoint map is
+ * how a real failure two markers later gets triaged as "just the line endings again".
+ */
+function readCheckpointFile(relativePath) {
+  return readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
     "\r\n",
     "\n",
   );
+}
+
+function assertFileContains(relativePath, needle, label) {
+  if (!assertFileExists(relativePath, label)) return;
+  const body = readCheckpointFile(relativePath);
   const hasMarker =
     body.includes(needle) ||
     normalizeWhitespace(body).includes(normalizeWhitespace(needle));
@@ -18089,10 +18109,7 @@ function assertFileContains(relativePath, needle, label) {
 
 function assertFileContainsAny(relativePath, needles, label) {
   if (!assertFileExists(relativePath, label)) return;
-  const body = readFileSync(join(repoRoot, relativePath), "utf8").replaceAll(
-    "\r\n",
-    "\n",
-  );
+  const body = readCheckpointFile(relativePath);
   const normalizedBody = normalizeWhitespace(body);
   const hasMarker = needles.some(
     (needle) =>
@@ -18120,7 +18137,7 @@ function assertFileContainsNormalized(relativePath, needle, label) {
 
 function assertFileOccurrenceCount(relativePath, needle, expectedCount, label) {
   if (!assertFileExists(relativePath, label)) return;
-  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  const body = readCheckpointFile(relativePath);
   const actualCount = body.split(needle).length - 1;
   if (actualCount !== expectedCount) {
     recordCheckpointFailure(
@@ -18132,7 +18149,7 @@ function assertFileOccurrenceCount(relativePath, needle, expectedCount, label) {
 
 function assertFileMatches(relativePath, pattern, label) {
   if (!assertFileExists(relativePath, label)) return;
-  const body = readFileSync(join(repoRoot, relativePath), "utf8");
+  const body = readCheckpointFile(relativePath);
   if (!pattern.test(body)) {
     recordCheckpointFailure(
       relativePath,

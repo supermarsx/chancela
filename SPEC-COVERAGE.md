@@ -1,6 +1,6 @@
 # Chancela - Spec Coverage
 
-*Updated 2026-07-28 from current implementation snapshot `227582daa64b7eba66ba9ce5585231b73025d34b`,
+*Updated 2026-07-29 from current implementation snapshot `4868d86e671dc6bd6c7f885471b2ee4e1f5b5c58`,
 with committed evidence for the per-verb permission enforcement audit that made
 `tenant.admin` gate a real route, split `entity.registry.lookup` out of
 `entity.read`, and recorded `book.reopen` as unbuildable rather than merely
@@ -349,6 +349,81 @@ being useful. The matrix below records the current factual coverage and the rema
 blockers.
 
 Implementation checkpoints covered here:
+
+- Current `4868d86` keeps every top-level row **PARTIAL**. This is a large batch
+  — seventy-nine commits — and unlike the previous one it does add capability
+  rather than only making existing gates true. It is still recorded without
+  status movement, deliberately: promoting a row is a judgement about spec
+  completeness, not a mechanical consequence of shipping surfaces, and every
+  area below still has named remaining work in its own row. Whether passkeys and
+  the self-service account area move spec/05 is a call for a re-audit, not for
+  the commit that reanchors the snapshot.
+
+  **Roles & access / authentication.** `f83bd434`, `193ce557`, `c1ac6940` and
+  `a76ba49b` land WebAuthn passkeys end to end: credentials, the registration
+  and authentication ceremonies, a step-up proof arm, the web enrolment and
+  sign-in surfaces, and finally passwordless sign-in. `4b0a4bc8` auto-detects
+  the RP ID at first enrolment instead of demanding configuration, and pins it
+  there; the passkey origin stays a field of its own rather than repurposing
+  `public_base_url`, which remains the operator-only link origin. `8b97722d`
+  adds a TOTP arm to step-up plus a per-user preferred step-up method — the
+  preference applies to step-up **only**, because a personalised sign-in would
+  enumerate accounts. `0af66c39` makes step-up vacuity a property of every
+  credential kind instead of two hand-maintained fields: `credentials.rs` now
+  derives the kind enum and its complete `ALL` list from one `credential_kinds!`
+  list, so a kind that answers no role declaration is unwritable rather than
+  merely discouraged. `a76ba49b` also ships the subject-access data export as
+  its own payload carrying only the requesting subject's data — not the admin
+  export widened. `62a7c58e` records the forwarded client address on a session,
+  and only where the proxy is trusted.
+
+  **Signatures & trust.** `404115e0` rewrites the AMA integration to the JSON
+  SCMD service that actually works, replacing the SOAP path; `463a8629`,
+  `36fe6946` and `6cc8d4fc` make the `GetCertificate` chain survive framing
+  junk, indentation and a double-JSON-encoded payload without touching the key
+  bytes. `747d438f` honours the CMD environment selector and gives the probe
+  stable detail codes; `67cecd37` translates the CMD error surface instead of
+  leaking raw English. `283bda08` lets a user save their own CMD number,
+  encrypted under their own key. `f4f95112` and `014ce086` provision TSL trust
+  anchors from the UI and authenticate the QTST trust report against them —
+  previously the report was rendered without being checked against a configured
+  anchor.
+
+  **Templates, termos and documents.** `8d455b6f` and `a5899faf` mint new termo
+  versions (prose entity identification, then the operator's own body text
+  reaching the rendered instrument), thirty assets in total; every superseded
+  version stays byte-untouched so a document already generated from one keeps
+  resolving, which is why the catalog census moved 109 -> 139. `d5a97d34` adds
+  the Portuguese numeral library the instruments need. `96d23bda` re-renders a
+  frozen instrument with the template it was frozen with before repointing.
+  `91520590` adds customisable page header, footer and vertical side text, with
+  `5e660bbf` surfacing that furniture to an operator.
+
+  **Settings, admin and privacy.** `1e58c04a` finishes making the server
+  environment overridable and `8f446c31` gives the DPIA guidance model its own
+  editing page; `62ed9f4e` shows the email delivery log with resend. `6dc80ed0`
+  groups twenty-three admin panes and `28ba33cc` makes configuration search
+  full-text over labels, hints and values. `07902808` adds a diagnostics sub-tab
+  with copy, print and txt export. `0ddcaf47` stops new provider entries
+  defaulting to sandbox.
+
+  **UX and i18n.** `16ffb6cf`, `9a3083ef`, `28050209` and `b6c966c5` fix
+  placeholder contrast, container and banner rhythm, textarea theming and the
+  modal rhythm, and retire the flex action cell. Seven i18n commits land the new
+  keys in all fourteen locales.
+
+  **CI and packaging.** `058b26e3` stops parallel builds corrupting the shared
+  cargo registry and `509739dd` stops gitignored scratch roots shipping as build
+  context. `3b655775` repairs the `e2e`-gated session seed and refreshes the
+  desktop `Cargo.lock`.
+
+  **Recorded and NOT fixed here.** The co-signature slot carried into this batch
+  unchanged: both `sign_slot` entry points — the free function in
+  `chancela-signing`'s `envelope.rs` and the envelope method in
+  `chancela-core`'s `external_signing.rs` — still have no call site outside
+  `crates/*/tests/`, so a termo or ata with more than one signer remains
+  parallel co-signature over one snapshot rather than nested PAdES. Nothing in
+  this batch asserts legal validity, certification, or spec completion.
 
 - Current `227582d` keeps Roles & Access/Signatures & Trust/UX/CI **PARTIAL**.
   This batch is remediation: it makes existing gates true rather than adding
