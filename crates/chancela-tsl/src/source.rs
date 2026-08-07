@@ -330,11 +330,16 @@ fn hex_nibble(c: u8) -> Result<u8, TslError> {
 ///   `DigestMethod`, `DigestValue`, `SignatureMethod`, `CanonicalizationMethod`, `KeyInfo`,
 ///   `X509Data`, `X509Certificate`.
 /// - Extracting the signer certificate (base64 DER from `<ds:X509Certificate>`).
-/// - Computing the digest of the referenced content. For `URI=""` (the whole document), the
-///   signed content is the document with the `<ds:Signature>` element removed. For a simple
-///   same-document fragment (`URI="#id"`), the signed content may be the
-///   `TrustServiceStatusList` root element with a unique matching `Id`/`ID`/`id`/`xml:id`
-///   attribute.
+/// - Computing the digest of the referenced content of **every** `<ds:Reference>` inside the signed
+///   `<ds:SignedInfo>`. For `URI=""` (the whole document), the signed content is the document with
+///   the `<ds:Signature>` element removed. For a simple same-document fragment (`URI="#id"`), the
+///   signed content is the element with a unique matching `Id`/`ID`/`id`/`xml:id` attribute. Every
+///   reference must match its own `<ds:DigestValue>`; one mismatch fails the whole signature.
+/// - **Document coverage.** After every reference digest verifies, at least one of them must
+///   actually cover the list — `URI=""`, or a fragment resolving to the `TrustServiceStatusList`
+///   root. A signature whose references all point at auxiliary material (a XAdES
+///   `SignedProperties` blob, a `KeyInfo` fragment) is cryptographically valid over nothing and is
+///   rejected fail-closed.
 /// - Rejecting unsupported explicit reference transforms. The enveloped-signature transform and
 ///   C14N transform URIs are accepted only for already-canonical whole-document and root-fragment
 ///   paths.
@@ -364,16 +369,21 @@ fn hex_nibble(c: u8) -> Result<u8, TslError> {
 ///   root `URI="#id"` references when the reference explicitly carries the enveloped-signature
 ///   transform. Explicit C14N transform URIs are accepted as already-canonical no-ops; other
 ///   transforms are rejected.
-/// - **Reference URI fragments.** Only simple same-document fragments that resolve uniquely to the
-///   `TrustServiceStatusList` root are supported. External URIs, xpointer expressions, empty
-///   fragments, duplicate IDs, and non-root fragment targets are rejected fail-closed.
-/// - **Multiple references/signatures.** Rejected fail-closed; XML-DSig requires every reference to
-///   be checked and this minimal verifier supports exactly one signature with one reference.
+/// - **Reference URI fragments.** Only simple same-document fragments (`URI="#id"`) resolving
+///   uniquely to an ID-bearing element are supported. External URIs (`http(s)`/`ftp`/`file`),
+///   xpointer expressions, empty fragments and duplicate IDs are rejected fail-closed, each with a
+///   message naming the construct — a reference this verifier cannot evaluate is never skipped.
+/// - **Multiple references.** Supported, and all of them are checked: real Trusted Lists sign the
+///   document plus a XAdES `SignedProperties` element. Only references inside the signed
+///   `<ds:SignedInfo>` are in scope — a `<ds:Reference>` in a `<ds:Manifest>` under `<ds:Object>` is
+///   not covered by the signature, so it is neither verified nor able to satisfy document coverage.
+/// - **Multiple signatures.** Rejected fail-closed: exactly one `<ds:Signature>` is supported.
 /// - **ECDSA scope.** Only P-256 ECDSA-SHA256 is supported, and only in XML-DSig's raw `r||s`
 ///   signature-value form.
 ///
 /// For real-world Portuguese TSLs, the signature is typically a single enveloped signature over
-/// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256 or P-256 ECDSA-SHA256.
+/// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256 or P-256 ECDSA-SHA256, often
+/// accompanied by a second reference over the XAdES `SignedProperties`.
 pub fn validate_tsl_signature(xml: &[u8]) -> Result<(), TslError> {
     let anchors = TslTrustAnchors::from_env()?;
     validate_tsl_signature_with_anchors(xml, &anchors)

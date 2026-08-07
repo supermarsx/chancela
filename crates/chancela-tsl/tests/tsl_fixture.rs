@@ -744,8 +744,14 @@ fn tsl_signature_validation_rejects_malformed_signature_value_base64() {
     assert!(matches!(err, TslError::Base64(_)), "got {err:?}");
 }
 
+/// Multi-reference signatures are supported (real Trusted Lists sign the document plus a XAdES
+/// `SignedProperties`), but every reference is checked. This is the previous
+/// "multiple references are refused outright" test, re-pointed at the stronger guarantee that
+/// replaced it: an extra reference whose digest is wrong now fails the signature on that digest
+/// rather than on the reference count, so the extra reference is genuinely being verified and not
+/// merely counted. `crates/chancela-tsl/src/xmldsig.rs` covers the multi-reference happy path.
 #[test]
-fn tsl_signature_validation_rejects_multiple_references() {
+fn tsl_signature_validation_rejects_an_added_reference_with_a_bad_digest() {
     let xml = String::from_utf8(signed_fixture().xml)
         .expect("signed fixture is UTF-8")
         .replace(
@@ -757,9 +763,32 @@ fn tsl_signature_validation_rejects_multiple_references() {
 
     let err = validate_unanchored(xml.as_bytes()).unwrap_err();
     assert!(
-        matches!(err, TslError::SignatureStructure(ref msg) if msg.contains("multiple <ds:Reference>")),
+        matches!(err, TslError::SignatureDigestMismatch),
         "got {err:?}"
     );
+}
+
+/// A `<ds:Reference>` outside `<ds:SignedInfo>` (here inside a `<ds:Manifest>` in a `<ds:Object>`)
+/// is not covered by `<ds:SignatureValue>`, so an attacker can append one at will. It must be
+/// ignored entirely: neither verified — its `DigestValue` here is garbage — nor able to satisfy the
+/// document-coverage rule. The list's single in-scope reference still carries the verdict.
+#[test]
+fn tsl_signature_validation_ignores_a_reference_outside_signed_info() {
+    let signed = signed_fixture();
+    let anchors = anchors_for(&signed);
+    let xml = String::from_utf8(signed.xml)
+        .expect("signed fixture is UTF-8")
+        .replace(
+            "</ds:KeyInfo>",
+            &format!(
+                "</ds:KeyInfo><ds:Object><ds:Manifest><ds:Reference URI=\"#not-in-the-document\"><ds:Transforms><ds:Transform Algorithm=\"urn:unsupported-transform\"/></ds:Transforms><ds:DigestMethod Algorithm=\"{SHA256_DIGEST}\"/><ds:DigestValue>AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=</ds:DigestValue></ds:Reference></ds:Manifest></ds:Object>"
+            ),
+        );
+
+    // Appending the unsigned Object changes the enveloped reference's content only if the
+    // signature element is not stripped — it is, so the list still validates.
+    validate_tsl_signature_with_anchors(xml.as_bytes(), &anchors)
+        .expect("an out-of-scope <ds:Reference> must not affect the verdict");
 }
 
 #[test]
