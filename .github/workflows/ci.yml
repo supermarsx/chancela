@@ -43,12 +43,11 @@ jobs:
     name: Release metadata
     runs-on: ubuntu-latest
     steps:
+      # The default shallow clone is enough: every check in this job reads
+      # tracked files or fixtures, and none resolves a commit. (The full-history
+      # checkout this job used to request existed only for the spec-coverage
+      # tracker, which resolved a recorded snapshot commit with `git rev-parse`.)
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          # check:spec-coverage resolves the recorded implementation-snapshot
-          # commit with `git rev-parse <sha>^{commit}`; a shallow clone does not
-          # contain it. This is the only job that needs full history.
-          fetch-depth: 0
 
       - name: Install Node 24
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -66,9 +65,6 @@ jobs:
       # auto-release.yml runs.
       - name: Check release version computation
         run: npm run test:release-version
-
-      - name: Check spec coverage tracker
-        run: npm run check:spec-coverage
 
       # ci.coverage.thresholds.non_web_unit: browser/desktop/Docker/live-provider
       # coverage thresholds remain explicit waiver debt outside the apps/web

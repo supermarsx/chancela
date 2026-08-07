@@ -23,7 +23,7 @@
     "but does not satisfy this criterion.",
     "A step whose bottleneck is any client_* outcome is not a server capacity",
     "result and cannot pass, whatever rate it reached.",
-    "Passing every criterion still flips no SPEC-COVERAGE claim: this runs a",
+    "Passing every criterion still flips no spec-coverage claim: this runs a",
     "non-proof profile on loopback with raised limits, by design."
   ]
 }

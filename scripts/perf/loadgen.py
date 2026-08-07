@@ -1042,7 +1042,7 @@ def evaluate_pass_criteria(figure: dict[str, Any]) -> dict[str, Any]:
         "coverage_claim_eligible": False,
         "coverage_boundary": (
             "This is engineering measurement on a non-proof profile. It flips no "
-            "SPEC-COVERAGE claim and is not progress toward the unclaimed "
+            "spec-coverage claim and is not progress toward the unclaimed "
             "'10 000 real cryptographic signatures'."
         ),
     }
@@ -2038,7 +2038,7 @@ def command_run(args: argparse.Namespace) -> int:  # pragma: no cover - drives r
         "figures": figures,
         "coverage_boundary": (
             "Non-proof profile at a raised container CPU quota. Flips no "
-            "SPEC-COVERAGE claim under any outcome."
+            "spec-coverage claim under any outcome."
         ),
     }
     report_dir = pathlib.Path(args.report_dir)

@@ -94,7 +94,7 @@ idempotency keys, target snapshots, and secret values.
   harness (`crates/chancela-server/tests/e2e_contracts.rs`) shape-matches live responses; a
   vitest suite (`apps/web/src/contracts/`) feeds them through the real TS DTO path. A field
   rename/add/remove/retype breaks a test on whichever side moved.
-- `spec/`, `spec.md`, `SPEC-COVERAGE.md` — the product + legal specification (RFC 2119 keywords).
+- `spec/`, `spec.md` — the product + legal specification (RFC 2119 keywords).
 - `.orchestration/` — coordination state, task plans (`plans/`), and per-executor frozen-contract
   logs (`logs/`). The `docker/` and `scripts/` dirs hold the container edition and per-platform
   operator tooling.

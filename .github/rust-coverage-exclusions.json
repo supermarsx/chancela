@@ -10,8 +10,8 @@
     "numerator. Excluding pkcs11.rs wholesale would have quietly taken them out too.",
     "",
     "Approval (b) — spec requirements blocked on external parties — is not a coverage exclusion.",
-    "It belongs to the spec-coverage tracker, is reported as its own BLOCKED row with a named",
-    "blocker per requirement, and never enters this numerator."
+    "Such a requirement is tracked against its named external blocker, and never enters this",
+    "numerator."
   ],
   "functions": [
     { "file": "pkcs11.rs", "name": "open", "reason": "calls Cryptoki::new / initialize against a real PKCS#11 module" },

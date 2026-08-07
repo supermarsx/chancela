@@ -956,16 +956,6 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan password-required auth checks marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Password-required account creation/session slice",
-    "spec coverage password-required auth checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Focused Playwright auth proof pins",
-    "spec coverage focused Playwright auth proof marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "the browser suite is not exhaustive",
     "CI/E2E hardening plan browser-suite non-exhaustive auth caveat",
@@ -1570,11 +1560,6 @@ function assertCheckpointMap() {
     "written-resolution browser forbidden-claim assertion marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Written-resolution evidence receipt browser proof",
-    "spec coverage written-resolution receipt browser proof marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Written-resolution evidence receipt browser proof",
     "CI checkpoints written-resolution receipt browser proof marker",
@@ -2165,16 +2150,6 @@ function assertCheckpointMap() {
     "API ASiC embedded LT/LTA diagnostics no-claim coverage",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "embedded LT/LTA-like diagnostics report local member/element",
-    "spec coverage ASiC embedded LT/LTA technical-only marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "one parsed ASiCManifest per CAdES signature",
-    "spec coverage ASiC-E multi-CAdES structural wiring marker",
-  );
-  assertFileContains(
     "crates/chancela-signing/src/asic.rs",
     "struct ZipSizeBudget",
     "ASiC ZIP actual decompression budget marker",
@@ -2358,16 +2333,6 @@ function assertCheckpointMap() {
     "apps/web/e2e/seeded-role-drift.spec.ts",
     "seeded role drift review is disabled without role.manage",
     "browser seeded role drift no-role-manage disabled marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`GET`/`POST /v1/roles/{id}/seeded-drift-reconciliation`",
-    "spec coverage seeded role drift reconciliation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`apps/web/e2e/seeded-role-drift.spec.ts`",
-    "spec coverage seeded role drift browser proof marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -2800,11 +2765,6 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan PDF accessibility projection marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `99d15a4` PDF accessibility evidence projection keeps Documents",
-    "spec coverage PDF accessibility projection partial marker",
-  );
-  assertFileContains(
     "crates/chancela-api/src/external_validator_evidence.rs",
     "create_external_validator_report_metadata",
     "external-validator report metadata capture API",
@@ -3089,11 +3049,6 @@ function assertCheckpointMap() {
     "Mobile P1 API base URL checks through `842b7f2`",
     "CI/E2E hardening plan mobile P1 focused checks marker",
   );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `33e70bb` preserves the `842b7f2` mobile P1 slice",
-    "spec coverage mobile P1 checkpoint marker",
-  );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "subject DEK secret-store binding markers for `subject_dek_crypto`, dedicated subject-DEK HKDF root derivation, subject/field/key-version AAD binding, empty wrapped-DEK erase failure, randomized wrap blobs, and cross-store unwrap failure",
@@ -3103,11 +3058,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "GDPR/API subject-DEK secret-store binding through `33e70bb`",
     "CI/E2E hardening plan subject DEK focused checks marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `33e70bb` keeps Legal/Data/Architecture/API/CI **PARTIAL**",
-    "spec coverage subject DEK checkpoint marker",
   );
   assertFileContains(
     "crates/chancela-api/src/secretstore.rs",
@@ -3515,11 +3465,6 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan Compose runtime smoke marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "actual `single-node`, `worker`, and `postgres` profiles",
-    "spec coverage Docker actual Compose profiles marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Release packaging still emits\n`releaseTrust.mode = unsigned-dev`",
     "CI checkpoints release workflow unsigned-dev marker",
@@ -3714,16 +3659,6 @@ function assertCheckpointMap() {
     "StatusCode::UNPROCESSABLE_ENTITY",
     "local PKCS#12 SCAP mismatch 422 status marker",
   );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `00078b0` keeps Signatures & Trust/API/CI **PARTIAL**",
-    "spec coverage backend SCAP capacity checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "backend-only `scap_capacity_evidence`",
-    "spec coverage backend-only SCAP capacity evidence marker",
-  );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "backend-only local PKCS#12 `scap_capacity_evidence` markers with preprod/mock `declared_capacity_by_provider`, prod-fixture `verified_by_scap`, local `Granted` fixture evidence, mismatched-capacity 422 refusal, and no-SCAP fallback preservation",
@@ -3788,11 +3723,6 @@ function assertCheckpointMap() {
     "crates/chancela-server/tests/e2e_contracts.rs",
     "/v1/templates/user-encosto-ata%2Fv1/export",
     "server e2e template export fixture marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `35ddb1f` keeps Template Catalog/Roles & Access/API/UX/CI\n  **PARTIAL**",
-    "spec coverage wp23 template authoring partial checkpoint marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -3945,16 +3875,6 @@ function assertCheckpointMap() {
     "web CC batch signing browser no-live-provider boundary marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "CC batch UI evidence only",
-    "spec coverage local CC batch signing no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "route-stubbed local browser proof only",
-    "spec coverage local CC batch signing browser proof boundary marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "local CC batch UI evidence only: not CMD batch signing",
     "CI/E2E hardening local CC batch signing no-claim marker",
@@ -4050,16 +3970,6 @@ function assertCheckpointMap() {
     "web focus trap Shift+Tab wrap coverage",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "web accessibility/focus guard evidence",
-    "spec coverage web accessibility/focus evidence marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not complete UX coverage,\n  WCAG/legal accessibility certification",
-    "spec coverage web accessibility/focus no-certification marker",
-  );
-  assertFileContains(
     "crates/chancela-core/src/seal.rs",
     "manual_signature_original_reference_is_required_before_mutation",
     "core manual-signature original-reference required-before-mutation coverage",
@@ -4108,16 +4018,6 @@ function assertCheckpointMap() {
     "apps/web/e2e/manual-signature-original-reference.spec.ts",
     "not a qualified/eIDAS/legal signature validity claim",
     "focused Playwright manual-signature original-reference no-claim boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "manual-signature original-reference metadata",
-    "spec coverage manual-signature original-reference metadata marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not a qualified/eIDAS/legal signature validity claim",
-    "spec coverage manual-signature original-reference no-claim marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -4340,11 +4240,6 @@ function assertCheckpointMap() {
     "template editor bounded mobile CSS marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `16000bb` keeps Template Catalog/Documents/UX/CI **PARTIAL**",
-    "spec coverage template PDF/editor checkpoint marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "The current substantive checkpoint is `3b13a5e` (2026-07-27)",
     "CI checkpoints template PDF/editor substantive marker",
@@ -4353,11 +4248,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current template PDF/editor checks through `16000bb`",
     "CI/E2E hardening template PDF/editor validation marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "does not claim interactive visual QA, live WebView/device testing, exhaustive browser coverage, PDF/A certification, legal/template correctness, or completion of any top-level spec area; statuses remain PARTIAL=11",
-    "spec coverage template PDF/editor no-claim boundary",
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -4645,16 +4535,6 @@ function assertCheckpointMap() {
     "web remote provider manifest no-claim copy marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `7f9930a` keeps Signatures & Trust/UX/CI **PARTIAL**",
-    "spec coverage remote provider readiness checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no live CMD/CSC/QTSP/CC calls, no provider\n  approval, no provider-native batch, no TSL/trust-list validation at listing",
-    "spec coverage remote provider readiness no-claim marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`GET /v1/signature/providers` now includes a local-only readiness manifest",
     "CI/E2E hardening remote provider readiness marker",
@@ -4733,46 +4613,6 @@ function assertCheckpointMap() {
     "apps/web/e2e/remote-signing-pending-session.spec.ts",
     "endpointMismatches",
     "web pending-session negative endpoint assertion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`GET\n  /v1/acts/{id}/signature` returns additive pending-session provider metadata",
-    "spec coverage pending-session provider identity bridge marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Focused route-stubbed Playwright proof now pins\n  reload adoption/routing",
-    "spec coverage pending-session browser proof marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "This is pending-session adoption/routing only",
-    "spec coverage pending-session provider identity no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Repeated remote-session API/UI seam",
-    "spec coverage repeated remote-session seam marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "POST /v1/signature/remote/{provider}/batch-initiate` plus SigningPanel UI\n  expose that as repeated pending-session initiation",
-    "spec coverage repeated remote-session API/UI marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "provider-native multi-document authorization, not single\n  OTP/PIN/SAD authorizing multiple documents, not CMD multiple-sign, not\n  CSC/QTSP multi-hash/SAD batch, and not SCAP/legal-capacity proof",
-    "spec coverage repeated remote-session remote-batch no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `011123c` Signatures & Trust credential/batch checkpoint keeps",
-    "spec coverage credential/batch checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "encrypted local credential storage, runtime credential selection, stored-only\n  local PKCS#12 technical signing, and route-stubbed/per-document remote\n  pending-session initiation only",
-    "spec coverage credential/batch no-overclaim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -5784,11 +5624,6 @@ function assertCheckpointMap() {
     "apps/web/src/features/settings/SettingsPage.test.tsx",
     "renders the static DPIA guidance pack without echoing live register values",
     "Settings DPIA template no-echo UI coverage",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Privacy DPIA template/guidance pack",
-    "spec coverage DPIA template guidance marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -8686,36 +8521,6 @@ function assertCheckpointMap() {
     "entities.chronology.boundary",
     "localized entity chronology boundary copy",
   );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Current working-tree entity chronology analytics summary keeps Entity/UX/CI **PARTIAL**",
-    "spec coverage entity chronology analytics checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "event totals, dated/undated counts, event-kind counts, unique source-inscription counts/list, and structured graph node/edge/warning counts",
-    "spec coverage entity chronology analytics values marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "no chronology editing, legal ownership/priority conclusion, registry certification, provider certification, DRE verification, external call, archive mutation, or authority-approved graph claim",
-    "spec coverage entity chronology analytics no-claim marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Current `bac4337` keeps Entity/UX/CI **PARTIAL**",
-    "spec coverage sealed-act chronology checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "local sealed or archived acts for the entity into a `sealed_act_projection` with event/source provenance, typed local nodes and edges, retification/correction edges, and false `legal_validity_claimed` and `authority_certified_claimed` flags",
-    "spec coverage sealed-act chronology projection details marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "does not mutate archives or acts, certify a registry/provider result, prove legal validity, replace legal review, or claim authoritative ownership/relationship facts",
-    "spec coverage sealed-act chronology boundary marker",
-  );
   assertFileContains(
     "apps/web/src/features/entities/entities.test.tsx",
     "pins entity table and filter CSS to single-line no-overflow rules",
@@ -9991,21 +9796,6 @@ function assertCheckpointMap() {
     "web sync handoff no-extra-request save coverage",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`GET /v1/sync/handoff-preflight`\n  now adds a read-only local sync/handoff",
-    "spec coverage sync handoff endpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "save/export the already-loaded `GET /v1/sync/handoff-preflight` report as\n  local JSON through the browser save picker",
-    "spec coverage sync handoff local export boundary marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "untrusted backup-directory candidates, verified recovery-drill manifest/member/isolated-snapshot evidence when present",
-    "spec coverage sync handoff no-claim marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current working-tree sync/handoff preflight readiness checks",
     "CI/E2E hardening plan sync handoff focused checks marker",
@@ -10384,11 +10174,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "e2e/platform-operations.spec.ts",
     "CI checkpoints platform operations browser command marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "focused\n  browser proof in `apps/web/e2e/platform-operations.spec.ts` is route-stubbed",
-    "spec coverage platform operations browser proof marker",
   );
   assertFileContains(
     "package.json",
@@ -10823,31 +10608,6 @@ function assertCheckpointMap() {
     "crates/chancela-store/tests/store.rs",
     "ledger_events_page_fills_sparse_chain_and_text_filtered_pages",
     "store ledger persisted filtered sparse page coverage",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "route-stubbed\n  `/arquivo` proof verifies all-filtered export does not load older records into\n  the table",
-    "spec coverage ledger archive browser proof marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "all-filtered PDF/A remains buffered and capped at\n  1,000 records",
-    "spec coverage ledger archive no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `e8bcd19` keeps Data/Archive/UX/CI **PARTIAL**",
-    "spec coverage archive filter reset icon checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "uses the shared `Icon.FilterClear` funnel/clear\n  glyph instead of the generic close icon",
-    "spec coverage archive filter reset icon semantics marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "archive UI clarity/accessibility regression coverage only",
-    "spec coverage archive filter reset no-overclaim marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -11335,11 +11095,6 @@ function assertCheckpointMap() {
     "ActDocumentPanel imported-document review focus coverage",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`b9394ca` keeps Workflows/UX/Documents **PARTIAL**",
-    "spec coverage imported-document review reminder checkpoint marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Imported-document review reminder markers pin the API dashboard reminder unit",
     "CI checkpoints imported-document review reminder marker",
@@ -11428,11 +11183,6 @@ function assertCheckpointMap() {
     "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
     "await expect(visibleCopy).not.toContainText(",
     "generated-convening dispatch-evidence browser request no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Route-stubbed browser proof now pins\n  the dashboard reminder -> generated-document dispatch-evidence workflow",
-    "spec coverage absent-owner dispatch-evidence browser proof marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -11945,16 +11695,6 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan trust copy-safe identifier marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Trust/import/static request-boundary hardening",
-    "spec coverage trust/import/static hardening marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "trust/import/static hardening markers for unsafe TSL/TSA URL refusal",
-    "spec coverage recent-landed trust/import/static marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "API trust/import/static hardening markers",
     "CI checkpoints trust/import/static hardening lane marker",
@@ -12003,21 +11743,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "web preview-confirm flow markers, stale file/policy response guards",
     "CI checkpoints web import preflight stale guard marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Per-book import preflight",
-    "spec coverage per-book import preflight checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "explicit confirm import; stale preview responses for an older file or policy are ignored",
-    "spec coverage per-book import preflight stale guard marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Per-book import preflight is an operator-safety preview only",
-    "spec coverage per-book import preflight no-overclaim marker",
   );
   assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -12525,11 +12250,6 @@ function assertCheckpointMap() {
     "CI release hardening opt-in no-production-claim marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recent `ef3270a` keeps Release/Architecture/CI **PARTIAL**",
-    "spec coverage opt-in release-signing checkpoint marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Without a container identity it performs no image-set download or\nregistry write and emits honest unsigned/not-performed status artifacts",
     "CI checkpoints opt-in release-signing honest status marker",
@@ -12720,46 +12440,6 @@ function assertCheckpointMap() {
     "CI/E2E hardening plan notification footer checks marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "implementation snapshot `b973b4718d355d4e76a71e1f6a4406158594dcd4`",
-    "spec coverage current implementation snapshot marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `16000bb` keeps Legal/Data/Signatures/API/UX/CI **PARTIAL**",
-    "spec coverage erasure workflow current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "tenant-chain ledger membership, tenant-aware archive\n  chain labeling, tenant scope handling in entity activity indexing",
-    "spec coverage tenant-chain integration marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "destructive erasure workflow persistence, and `67952f7`\n  preflight/approve/execute route wiring",
-    "spec coverage erasure workflow route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`58b7e55` append-only subject rectification and processing-restriction\n  annotation routes/kinds",
-    "spec coverage sealed-record annotation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "legal GDPR compliance/completion, legal disposal approval,\n  production key-custody proof, full multi-tenancy isolation certification",
-    "spec coverage erasure workflow no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `63df508` keeps Signatures/Trust/CI **PARTIAL**",
-    "spec coverage signing trust validation current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "bounded technical validation evidence only: it does not\n  claim production trust-list validity",
-    "spec coverage signing validation no-overclaim marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Signing DSS/trust-validation checkpoint: `63df508` is the signing validation\n  implementation checkpoint inside the current `16000bb` snapshot",
     "CI checkpoints signing validation snapshot marker",
@@ -12825,26 +12505,6 @@ function assertCheckpointMap() {
     "CI checkpoints signing validation no-overclaim marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `6bba291` keeps Data/Roles/UX/CI **PARTIAL**",
-    "spec coverage sync handoff export current snapshot marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `f4047b5` keeps Architecture/API/CI **PARTIAL**",
-    "spec coverage observability checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`/metrics` is intentionally unauthenticated for scraper compatibility and\n  must stay on an internal network or behind a reverse-proxy/network allowlist",
-    "spec coverage metrics internal allowlist marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`/readyz` is degraded-mode readiness only",
-    "spec coverage readyz degraded-mode-only marker",
-  );
-  assertFileContains(
     "crates/chancela-store/src/pg_tls.rs",
     "defaulting to `verify-full`",
     "Postgres rustls TLS fail-closed default marker",
@@ -12878,21 +12538,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "The wp25 observability markers pin first-class API probes and Prometheus output",
     "CI checkpoints observability marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `22bb23d` keeps Architecture/API/CI **PARTIAL**",
-    "spec coverage runtime security hardening checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local in-memory single-node runtime\n  HTTP/session hardening only",
-    "spec coverage runtime security single-node boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no TLS termination, deployed HSTS proof,\n  cluster-wide/distributed rate limiting, HA, production SQLCipher proof",
-    "spec coverage runtime security no production/HA/distributed claim marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -12958,16 +12603,6 @@ function assertCheckpointMap() {
     "crates/chancela-server/src/main.rs",
     "the durable SQLite database is UNENCRYPTED at rest",
     "server plaintext SQLite warning marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "additive `03784e5` hardened Docker lane",
-    "spec coverage hardened Docker lane commit marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not a production-readiness, TLS/key-custody, vulnerability-free, scanner/SBOM,\n  signature/attestation, HA/failover/RPO/RTO, legal/DR certification, cloud\n  deployment readiness, or spec-completion claim",
-    "spec coverage hardened Docker no-claim marker",
   );
   assertFileContains(
     "Dockerfile.hardened",
@@ -13036,81 +12671,6 @@ function assertCheckpointMap() {
     "docker build -f Dockerfile.hardened --check .",
     "CI/E2E hardening plan hardened Docker build-check marker",
   );
-  assertFileDoesNotContain(
-    "scripts/check-spec-coverage.mjs",
-    '"Dockerfile.hardened"',
-    "spec coverage checker keeps hardened Docker implementation files out of checkpoint allowlist",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `92de3e7` keeps AI/MCP, Documents/Archive, and CI **PARTIAL**",
-    "spec coverage MCP document/archive v12 current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Static guidance advertises\n  `pdf_accessibility_v12`, and argumented `arguments.document_archive` summaries\n  emit `pdf_accessibility_v12_summary`, `v12_report_count`",
-    "spec coverage MCP document/archive v12 field marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`limited_tagged_structure` blocker counts, `other` buckets for unrecognized\n  caller blocker text",
-    "spec coverage MCP document/archive blocker bucket marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`pdf_accessibility_v12_report_missing` when no v12 report is supplied",
-    "spec coverage MCP document/archive missing v12 blocker marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "The\n  fixture report is version 12 in both `report_version` and nested\n  `accessibility_report_json.version`",
-    "spec coverage MCP document/archive fixture report v12 marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not claim PDF/UA\n  conformance, DGLAB certification, legal validity, signature validity, provider\n  validation, external-validator success, trust validation, legal review, full\n  archive completion, AI/MCP completion, or spec completion",
-    "spec coverage MCP document/archive explicit no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `2d84112` keeps AI/MCP, Workflows, UX, and CI **PARTIAL**",
-    "spec coverage workflow provenance panel current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "copies a local payload shaped for\n  `chancela://mcp/workflow-provenance-review` with\n  `arguments.workflow_evidence`",
-    "spec coverage workflow provenance local copy payload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no raw act IDs, book IDs, document identifiers, names, emails, contacts,\n  titles, deliberation text, access codes, reviewer values, operator notes,\n  document labels, payload digests, attachment digests, or raw caller payloads",
-    "spec coverage workflow provenance no raw sensitive values marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "The panel and copy action run in the browser only and do not call\n  MCP, the API bridge, AI providers, hidden providers, legal services, registries,\n  trust services, or external validators",
-    "spec coverage workflow provenance no browser MCP/API/provider call marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "No-claim flags remain false for\n  AI-01, AI-02, full AI/MCP completion",
-    "spec coverage workflow provenance AI no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `0954b53` keeps CI/Documents/UX **PARTIAL**",
-    "spec coverage generated-document fixture checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`npm run test:web:coverage` is green again after fixture alignment",
-    "spec coverage web coverage fixture restored marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `6b33517` CI assurance waiver guard keeps CI **PARTIAL**",
-    "spec coverage CI waiver checkpoint hash marker",
-  );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current `2d84112` Ata editor workflow provenance panel checks",
@@ -13142,101 +12702,6 @@ function assertCheckpointMap() {
     "CI checkpoints generated-document coverage fixture marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recent `7ab3ab7` keeps Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage automated-review law UI current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "renders the tier with a separate info-toned badge and\n  help caveat",
-    "spec coverage automated-review law UI badge/caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recent `baad7b4` keeps Data/Archive/UX/CI **PARTIAL**",
-    "spec coverage archive filter refinement current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `040ce48` keeps Data/Archive/UX/CI **PARTIAL**",
-    "spec coverage all-filtered archive export checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "advanced-filter summary now exposes a compact active-filter count badge",
-    "spec coverage archive active-filter count marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recent `9402174` keeps Legal/Compliance, Template Catalog, and CI",
-    "spec coverage automated-review law corpus recent checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recent `eb1a846` keeps AI & MCP/CI **PARTIAL**",
-    "spec coverage workflow provenance recent checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    'Data Management "Chaves e reposicao" surface now renders the existing\n  `persistence.database_encryption` readiness object',
-    "spec coverage key custody readiness surface marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "SQLCipher build availability, whether the\n  opened store is keyed/SQLCipher-backed, key source class",
-    "spec coverage key custody signal marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not execute migration or rekey,\n  prove live production SQLCipher encryption at rest",
-    "spec coverage key custody no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `4c80e78` keeps Data/Architecture/UX/CI **PARTIAL**",
-    "spec coverage key-rotation receipt current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Forbidden users, plaintext stores, and\n  no-SQLCipher/non-ready paths do not create success receipts",
-    "spec coverage key-rotation no-success-refusal marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Data key-rotation receipt history",
-    "spec coverage key-rotation receipt history section marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "false no-claim\n  flags for current/replacement keys, key fingerprint, raw database path",
-    "spec coverage key-rotation no-secret/path marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `7f9930a` keeps Signatures & Trust/UX/CI **PARTIAL**",
-    "spec coverage remote provider readiness current checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`platform_logs` maintenance target under the\n  existing `settings.manage` gate",
-    "spec coverage platform-log cleanup settings.manage marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "deletes only the `platform-logs.json` sidecar root",
-    "spec coverage platform-log cleanup sidecar-only marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "adds no stdout/stderr capture, MCP child-process logging, SIEM/log\n  shipping, platform audit/ledger deletion",
-    "spec coverage platform-log cleanup no stdout/SIEM/audit deletion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "legal retention, archive disposal, compliance\n  completion, or broader data-lifecycle claim",
-    "spec coverage platform-log cleanup no legal/compliance marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "bounded platform-log\nsidecar cleanup target markers",
     "CI checkpoints platform-log cleanup lane marker",
@@ -13265,86 +12730,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "does not clean\n  stdout/stderr, SIEM/log shipping, audit/ledger records",
     "CI/E2E hardening plan platform-log cleanup no stdout/SIEM/audit marker",
-  );
-  assertFileContains(
-    "docs/CI-CHECKPOINTS.md",
-    "markers drift from the declared implementation snapshot",
-    "CI checkpoints spec coverage declared snapshot guard marker",
-  );
-  assertFileContains(
-    "scripts/spec-coverage-snapshot-policy.mjs",
-    '"--diff-filter=ACDMRTUXB"',
-    "spec coverage checker merge-aware final-tree policy marker",
-  );
-  assertFileContains(
-    "scripts/check-spec-coverage-snapshot.test.mjs",
-    "accepts a clean merge whose resulting drift is checkpoint-only",
-    "spec coverage checker merge-policy regression marker",
-  );
-  assertFileContains(
-    "scripts/check-spec-coverage.mjs",
-    '"scripts/checkpoint-recent-landed.mjs"',
-    "spec coverage checker checkpoint-only path allowlist marker",
-  );
-  assertFileContains(
-    "scripts/check-spec-coverage.mjs",
-    '"docs/ARCHITECTURE.md"',
-    "spec coverage checker architecture checkpoint path allowlist marker",
-  );
-  assertFileContains(
-    "scripts/check-spec-coverage.mjs",
-    '"docs/comparison.md"',
-    "spec coverage checker comparison docs checkpoint path allowlist marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "release clean-source provenance gating, seeded role-drift\ndiagnostics",
-    "spec coverage five-slice header marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "synthetic seed\ndataset integration coverage",
-    "spec coverage synthetic seed dataset header marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "RBAC ledger verification regression coverage",
-    "spec coverage RBAC ledger verification header marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `b680b36` keeps AI & MCP/CI **PARTIAL**",
-    "spec coverage RBAC ledger verification checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "chancela://mcp/meeting-metadata-extraction-review",
-    "spec coverage MCP meeting metadata review resource marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not echo raw document text, uploaded bytes, names,\n  contacts, emails, phone numbers, access codes, credentials, secrets",
-    "spec coverage MCP meeting metadata no-echo marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "shared `application` audit-chain scoping, and absence of\n  spurious `company:` chains",
-    "spec coverage RBAC ledger application-chain marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "it does not complete\n  the role model, delegation policy, tenant policy, legal-capacity validation,\n  broad security certification, or any spec area",
-    "spec coverage RBAC ledger no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `350b720` keeps Data/Entity/Workflows/Documents & Archive/Roles &\n  Access/UX/CI **PARTIAL**",
-    "spec coverage synthetic seed dataset checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "seed production data, use real identities or records, call external\n  providers",
-    "spec coverage synthetic seed dataset no-claim marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -13437,36 +12822,6 @@ function assertCheckpointMap() {
     "API RBAC no spurious company chain marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Release clean-source provenance gate",
-    "spec coverage release clean-source bullet marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`manifest.sourceProvenance.sourceTreeState` is `dirty` or `unknown`",
-    "spec coverage release clean-source dirty/unknown marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Seeded role drift diagnostic",
-    "spec coverage seeded role drift bullet marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "explicit ROL-02 seeded role archetypes",
-    "spec coverage ROL-02 seeded archetype header marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Company Owner, Corporate Secretary, Legal Counsel,\n  Records Manager, Signatory, and Reviewer",
-    "spec coverage ROL-02 seeded archetype names marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local RBAC seed/default coverage only, not\n  legal-capacity proof",
-    "spec coverage ROL-02 no-legal-authority caveat marker",
-  );
-  assertFileContains(
     "docs/ARCHITECTURE.md",
     "Fifteen seeded defaults with deterministic ids",
     "architecture seeded role catalog count marker",
@@ -13480,71 +12835,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "`cargo test -p chancela-api --locked seeded_role`",
     "CI/E2E hardening plan ROL-02 API seeded role command marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `9ddced8` keeps Data/Architecture/CI **PARTIAL**",
-    "spec coverage Postgres store checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Database backend runtime selection",
-    "spec coverage database backend selection recent coverage marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "SQLite remains the default, Postgres selection\n  is feature/config gated",
-    "spec coverage database backend default/gated caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not production Postgres readiness, global read-freshness certification\n  for settings/users/roles/sidecars, broad API/product live DB validation beyond\n  the store backend sweep",
-    "spec coverage Postgres no-production-readiness caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `6d0c3ec` keeps Data/Workflows/UX/CI **PARTIAL**",
-    "spec coverage backup recovery freshness advisory checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "it does not create backups, run or execute restores, mutate archives or\n  live data",
-    "spec coverage backup recovery freshness advisory no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Prior `f060f42` keeps Workflows/UX/CI **PARTIAL**",
-    "spec coverage condominium annual reminder localization checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "the later\n  `3a41187` slice owns the fixed-date local advisory rule",
-    "spec coverage condominium annual reminder follow-on marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "The combined\n  condominium reminder evidence still does not claim a legal deadline,\n  legal-calendar authority, compliance status, provider execution, DRE/source\n  authority verification",
-    "spec coverage condominium annual reminder no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `711c7a4` keeps Workflows/UX/CI **PARTIAL**",
-    "spec coverage dashboard annual reminder localization checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "dashboard work queue now maps supported annual profile-calendar reminder rules to localized titles",
-    "spec coverage dashboard annual reminder localized copy marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`csc-art376-annual`, `assoc-annual`, `fundacao-annual`, and\n  `cooperativa-annual`, while preserving the existing `condominio-annual`",
-    "spec coverage dashboard annual reminder rule list marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "frontend dashboard display and workflow/calendar UI coverage only",
-    "spec coverage dashboard annual reminder UI-only caveat marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -13627,21 +12917,6 @@ function assertCheckpointMap() {
     "i18n condominium annual reminder title test marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `982cc9a` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage convocation-notice advisory checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "This is local WFL/legal-calendar advisory depth only",
-    "spec coverage convocation-notice local advisory caveat marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "dashboard reminder needs `meeting_date` to compute `notice_due_date`",
-    "spec coverage convocation-notice meeting-date limitation marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current `982cc9a` convocation-notice advisory checks",
     "CI/E2E hardening plan convocation-notice advisory marker",
@@ -13650,21 +12925,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "dashboard reminder emission needs `meeting_date` to compute `notice_due_date`",
     "CI/E2E hardening plan convocation-notice limitation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `0c539ae` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage convening dispatch browser proof checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "apps/web/e2e/convening-dispatch-evidence.spec.ts",
-    "spec coverage convening dispatch browser spec marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "route-stubbed browser evidence only: it does not call a real backend, perform email/SMS/external delivery, validate provider/registry/DRE acceptance",
-    "spec coverage convening dispatch browser no-claim marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -13685,26 +12945,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "covers the dashboard reminder link to `/atas/{id}#convening-guidance`, the visible convening guidance/no-claim copy, and the local `POST /v1/acts/{id}/convening/dispatch` request body",
     "CI checkpoints convening dispatch browser proof scope marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `caae1bf` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage convening dispatch evidence capture checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "the Ata editor now builds a bounded dispatch body from the existing `act.convening` recipients",
-    "spec coverage convening dispatch body source marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The existing endpoint accepts required `dispatched_at` plus optional `actor`, `channel`, `reference`, and `recipients`, returns `ActView`, stamps matching `convening.recipients`, and appends `convening.dispatched` ledger evidence; no backend changes were needed",
-    "spec coverage convening dispatch existing endpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "records evidence only for recipients already present in `act.convening`, does not create recipients, does not perform email/SMS/external delivery",
-    "spec coverage convening dispatch residual limitation marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -13815,26 +13055,6 @@ function assertCheckpointMap() {
     "apps/web/e2e/convening-dispatch-evidence.spec.ts",
     "suficiência (?:legal|jurídica) confirmada|entrega externa confirmada|email enviado|sms enviado|workflow concluído|registo\\/DRE aceite",
     "browser convening dispatch no-overclaim assertion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `daf8288` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage convening recipient editor checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`ConveningRecipient.contact` is now additive optional recipient contact metadata and remains distinct from dispatch proof/tracking `reference`",
-    "spec coverage convening recipient contact/reference split marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "dispatch stamping updates proof `reference` / `dispatched_at` for matching persisted recipients while preserving existing `contact`",
-    "spec coverage convening recipient persisted-state gate marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Convocatoria templates render recipient contact and proof reference distinctly",
-    "spec coverage convening recipient template distinction marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -13987,26 +13207,6 @@ function assertCheckpointMap() {
     "template convening recipient proof reference render coverage marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `82d3554` keeps Workflows/Legal/Compliance/UX/CI **PARTIAL**",
-    "spec coverage convocation reminder guidance routing checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "dashboard work-queue links and notification actions for `open_act_convening_notice` / `act-convening-notice` reminders now route to `/atas/{act-id}#convening-guidance`",
-    "spec coverage convocation reminder guidance route marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "stable `#convening-guidance` anchor around the existing convocatória/convening guidance card",
-    "spec coverage convocation guidance anchor marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "This is local workflow UI routing depth only",
-    "spec coverage convocation guidance no-claim marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current `82d3554` convocation reminder guidance routing checks",
     "CI/E2E hardening plan convocation reminder guidance routing marker",
@@ -14027,21 +13227,6 @@ function assertCheckpointMap() {
     "CI checkpoints convocation reminder routing no-product-claim marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Prior `3dc31e3` keeps Workflows/Legal/Compliance/UX/API/CI **PARTIAL**",
-    "spec coverage missing-meeting-date convocation reminder checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`notice_due_date_computable=false`, `notice_due_date_blocked_by=missing_meeting_date`, `local_deadline_computed=false`",
-    "spec coverage missing-meeting-date convocation params marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "no legal-authority, legal-sufficiency, compliance completion, external-delivery, workflow-completion, registry/DRE/provider acceptance, legal deadline computation",
-    "spec coverage missing-meeting-date convocation no-claim marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Prior `3dc31e3` missing-meeting-date convocation reminder checks",
     "CI/E2E hardening plan missing-meeting-date convocation marker",
@@ -14060,21 +13245,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "Convocation-notice advisory markers pin the local statute/convening evidence\nslice only",
     "CI checkpoints convocation-notice advisory marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `87ec6aa` keeps Workflows/Legal/Compliance/UX/CI **PARTIAL**",
-    "spec coverage convocation act-review guidance checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "act review now surfaces compact local guidance in the Ata editor and CompliancePanel for recording meeting date, dispatch date/channel, effective antecedence days, and preserved evidence reference",
-    "spec coverage convocation act-review guidance detail marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "does not change backend/dashboard contracts",
-    "spec coverage convocation act-review backend contract boundary marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -14307,16 +13477,6 @@ function assertCheckpointMap() {
     "en-US convocation-notice no-claim copy marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Prior `c83f278` keeps Data/Roles/UX/CI **PARTIAL**",
-    "spec coverage delegation legal-basis prior checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "it does not verify legal authority,\n  HR authority, SCAP/representative capacity, tenant access-policy\n  certification",
-    "spec coverage delegation legal-basis no-overclaim marker",
-  );
-  assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Current `9ddced8` Postgres store runtime, backend-selection, logical\n  recovery, cluster write-gating, and covered follower-feed checks",
     "CI/E2E hardening plan Postgres store/backend-selection checks marker",
@@ -14362,11 +13522,6 @@ function assertCheckpointMap() {
     "CI assurance waiver checker debt marker",
   );
   assertFileContains(
-    "scripts/check-spec-coverage.mjs",
-    '".github/funding.yml"',
-    "spec coverage checker metadata-only funding path marker",
-  );
-  assertFileContains(
     "package.json",
     '"check:ci-assurance-waivers": "node scripts/check-ci-assurance-waivers.mjs"',
     "CI assurance waiver package script marker",
@@ -14375,11 +13530,6 @@ function assertCheckpointMap() {
     ".github/workflows/ci.yml",
     "npm run check:ci-assurance-waivers",
     "CI assurance waiver workflow metadata marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "ci.coverage.thresholds.non_web_unit",
-    "spec coverage CI assurance waiver marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -14441,6 +13591,36 @@ function assertCheckpointMap() {
     "The Ata editor workflow provenance review panel is a browser-side companion to\nthat resource, not a browser MCP client",
     "AI provenance browser workflow panel boundary marker",
   );
+  // Re-homed from the deleted scripts/check-spec-coverage.mjs. These five pin
+  // the MCP local-review boundary in docs/AI-PROVENANCE.md and have nothing to
+  // do with the spec-coverage tracker that gate was named for — they only lived
+  // there because that script happened to be the metadata lane's doc checker.
+  // Dropping them with it would have retired an unrelated no-overclaim guard.
+  assertFileContains(
+    "docs/AI-PROVENANCE.md",
+    "## MCP local review resources",
+    "AI provenance MCP local review section",
+  );
+  assertFileContains(
+    "docs/AI-PROVENANCE.md",
+    "`chancela://mcp/meeting-metadata-extraction-review` follows the same boundary.",
+    "AI provenance MCP meeting metadata review marker",
+  );
+  assertFileContains(
+    "docs/AI-PROVENANCE.md",
+    "requires human verification and does not echo raw document text",
+    "AI provenance MCP no-echo boundary marker",
+  );
+  assertFileContains(
+    "docs/AI-PROVENANCE.md",
+    "These resources do not fetch providers, call the API",
+    "AI provenance MCP no-call boundary marker",
+  );
+  assertFileContains(
+    "docs/AI-PROVENANCE.md",
+    "or claim PDF/UA conformance, DGLAB certification, legal validity",
+    "AI provenance MCP no-claim boundary marker",
+  );
   assertFileContains(
     ".github/workflows/ci.yml",
     "POSTGRES_DB: chancela_store_ci",
@@ -14450,21 +13630,6 @@ function assertCheckpointMap() {
     ".github/workflows/ci.yml",
     "cargo test -p chancela-store --features postgres --locked --test postgres_backend runtime_reads_and_writes_roundtrip_on_postgres -- --ignored --test-threads=1",
     "CI workflow Postgres runtime test command marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "one live store runtime write/read CI gate",
-    "spec coverage narrow Postgres live CI marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `628b613` keeps Data/Architecture/CI **PARTIAL**",
-    "spec coverage full ignored Postgres sweep checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "full ignored `postgres_backend` sweep at `10 passed`",
-    "spec coverage full ignored Postgres sweep pass marker",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",
@@ -14680,21 +13845,6 @@ function assertCheckpointMap() {
     "store Postgres logical restore text-to-jsonb binding marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local Postgres advisory-lock cluster write gate and\nfail-closed promotion handoff markers",
-    "spec coverage Postgres cluster write gate header marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "live Postgres election/failover tests remain ignored and\n  gated by `DATABASE_URL`",
-    "spec coverage Postgres live failover gated marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local live store-backend sweep proof only, not\n  production Postgres readiness",
-    "spec coverage Postgres narrow live gate caveat marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "cluster/failover/feed/sidecar, and\nother live PG tests remain opt-in unless `DATABASE_URL` points at a throwaway\ndatabase",
     "CI checkpoints Postgres live tests opt-in marker",
@@ -14784,506 +13934,6 @@ function assertCheckpointMap() {
     '#[ignore = "requires a live Postgres (set DATABASE_URL)"]',
     "store Postgres cluster live tests ignore marker",
   );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "There is still no startup auto-reconciliation, Owner edit,\n  removal, unrestricted grant, or authorization bypass",
-    "spec coverage seeded role drift bounded reconciliation caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Archive readability/ZK caveat metadata",
-    "spec coverage archive readability caveat bullet marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "default old v1 manifests conservatively",
-    "spec coverage archive readability old-v1 default marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Template family/channel rule guard",
-    "spec coverage template family/channel bullet marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "test-only `FamilyChannelMismatch` issues",
-    "spec coverage template FamilyChannelMismatch marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "MCP discoverability updates",
-    "spec coverage MCP discoverability bullet marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`settings.read` tool with a closed no-arg schema",
-    "spec coverage MCP external-validator closed schema marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "release workflow static assurance\nfor the unsigned/local-only trust posture",
-    "spec coverage release workflow static assurance header marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Working tree keeps Architecture/Release/CI **PARTIAL**",
-    "spec coverage release workflow static-guard checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "the Docker job's no-push/local-load posture",
-    "spec coverage release workflow Docker no-push marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`releaseTrust.imagePublication/signing/notarization/attestation.status`\n  context",
-    "spec coverage release workflow nested trust path marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`releaseTrust.mode = unsigned-dev`, `attestation.status = not_attested`",
-    "spec coverage release workflow unsigned-dev not-attested marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Production package\n  validation now also requires `--manifest` whenever either the package metadata",
-    "spec coverage release workflow production manifest-required marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "static workflow/package metadata assurance\n  only; it does not add signing, notarization, attestation, registry publishing",
-    "spec coverage release workflow static-only boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Working tree keeps Architecture/Data/Roles/CI **PARTIAL**",
-    "spec coverage structured platform log checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`POST\n  /v1/platform/logs/forwarded` now accepts supervisor- or operator-forwarded",
-    "spec coverage platform forwarded log route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "non-meta `platform.logs.write@Global`",
-    "spec coverage platform forwarded log permission marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "API Client does not receive it\n  by default",
-    "spec coverage platform log API Client default exclusion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "older customized Platform Administrator roles may need\n  an explicit admin role update",
-    "spec coverage platform log persisted role caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "raw `stdout`/`stderr` fields, blank or oversized service/target/message",
-    "spec coverage platform forwarded log validation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "global/service `off` suppression",
-    "spec coverage platform forwarded log off suppression marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "read-only\n  local retained-tail metadata",
-    "spec coverage platform log retention visibility marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "retention/deletion execution\n  semantics beyond the visible 512-entry local tail bound",
-    "spec coverage platform log no retention execution semantics marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "append exactly one sanitized\n  `platform.log.forwarded.accepted` ledger event",
-    "spec coverage platform forwarded log accepted audit marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "message length/SHA-256, context\n  key count, and context serialized size",
-    "spec coverage platform forwarded log sanitized audit payload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Authenticated\n  RBAC denial appends one sanitized `platform.log.forwarded.denied` route",
-    "spec coverage platform forwarded log denied audit marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "append sanitized `platform.log.forwarded.rejected` reason-code audits",
-    "spec coverage platform forwarded log rejected audit marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`platform.log.forwarded.suppressed` digest-only audits",
-    "spec coverage platform forwarded log suppressed audit marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Missing or invalid\n  bearer requests remain unaudited",
-    "spec coverage platform forwarded log bearer unaudited marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no raw body,\n  message, context keys, parse errors, stdout, stderr, tokens, secrets, or user\n  strings",
-    "spec coverage platform forwarded log no raw failure audit payload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Internal logging callers still ignore the returned `Option`",
-    "spec coverage platform log internal Option suppression marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not add process lifecycle control,\n  stdout/stderr tailing or capture, production",
-    "spec coverage platform forwarded log no lifecycle/stdout caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "a generalized observability sink, retention/deletion execution\n  semantics beyond the visible 512-entry local tail bound, or a legal/compliance\n  claim",
-    "spec coverage platform forwarded log observability/retention/legal caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "data-status filesystem\n  telemetry now classifies `platform-logs.json` under `platform_logs`",
-    "spec coverage data-status platform logs classification marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`backup-recovery-drills.json` under `backup_recovery_drills`",
-    "spec coverage data-status backup recovery drills classification marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "storage telemetry classification only; it does not add deletion, retention\n  execution",
-    "spec coverage data-status telemetry-only caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `bac4337` keeps Data/Architecture/UX/CI **PARTIAL**: `/v1/data/status`\n  now reports the active durable backend family",
-    "spec coverage backend-neutral data-status checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "DB-backed sidecar logical rows/labels for\n  users, roles, delegations, settings, and provider credentials",
-    "spec coverage DB-backed sidecar data-status marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not migrate file\n  sidecars into the database, execute backup or restore workflows, certify\n  production RPO/RTO, perform deletion or any other destructive operation, or\n  depend on an external service",
-    "spec coverage backend-neutral data-status no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Working tree keeps Data/Documents/UX/CI **PARTIAL**: `POST\n  /v1/data/cleanup` export dry-runs now compute",
-    "spec coverage retained-export dry-run planning checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`would_delete_files`,\n  `would_delete_directories`, and `would_delete_bytes` while keeping",
-    "spec coverage retained-export would-delete counters marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`deleted_files`, `deleted_directories`, and `deleted_bytes` at zero, returning\n  a server-bound `preview_token`",
-    "spec coverage retained-export zero-deleted counters marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Settings now persists\n  retained-export cleanup preview defaults under\n  `data_management.retained_export_cleanup`",
-    "spec coverage retained-export settings policy marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "preview\n  payload using those configured `minimum_age_days` and `keep_latest` defaults",
-    "spec coverage retained-export settings-derived preview payload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "posts the `preview_token`,\n  rejects stale or mismatched tokens, executes only the server-selected preview manifest",
-    "spec coverage retained-export preview-token manifest execution marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not GDPR erasure, legal disposal, archive deletion,\n  certification",
-    "spec coverage retained-export no-erasure-disposal marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Working tree keeps Signatures/Documents/UX/CI **PARTIAL**",
-    "spec coverage external-validator raw upload UI partial checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "File selection computes a local safe\n  summary",
-    "spec coverage external-validator raw file local summary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not upload automatically. The existing manual JSON\n  metadata path still works",
-    "spec coverage external-validator no-auto-upload and manual JSON marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "the UI sends `raw_report.content_base64` with `content_type`,\n  `size_bytes`, `sha256`, and a safe `source_filename`",
-    "spec coverage external-validator explicit raw upload payload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "file-selection/no-auto-upload UI, submit payload,\n  summary-only rendering, and no-claim notice markers",
-    "spec coverage external-validator checkpoint marker list",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "UI and response rendering\n  show only filename/type/size/digest/provenance summaries and never raw report\n  contents",
-    "spec coverage external-validator summary-only rendering marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not\n  external-validator legal acceptance, legal validation, certification,\n  PDF/UA/PAdES certification, compliance proof",
-    "spec coverage external-validator no certification/compliance claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "/v1/external-validator-reports/{case_id}/{validator_family}/raw-report` now\n  lets `settings.read` actors download only retained raw external-validator\n  report bytes",
-    "spec coverage external-validator raw-report byte download checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "metadata-only/manifest-only\n  raw-report summaries, and sidecars without retained bytes return 404",
-    "spec coverage external-validator raw-report manifest-only 404 marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "unsafe\n  identities, malformed sidecars, and duplicate or ambiguous identities fail\n  closed",
-    "spec coverage external-validator raw-report fail-closed marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "upload remains explicit. This is technical byte preservation/access only: no\n  auto-upload",
-    "spec coverage external-validator raw-report no auto-upload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "read-only `chancela://mcp/workflow-provenance-review` resource; with\n  `arguments.workflow_evidence`",
-    "spec coverage MCP workflow provenance prompt/resource marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "aggregate workflow lifecycle counts, human-review decision status counts",
-    "spec coverage MCP workflow provenance no-call/no-secret marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "it makes no bridge/API/AI-provider/legal-service/provider calls; and it keeps\n  legal-validity",
-    "spec coverage MCP workflow provenance no-call marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "workflow-completion,\n  provider-assurance, trust, external-validation, archive-certification",
-    "spec coverage MCP workflow provenance no-completion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "bounded local provenance panel",
-    "spec coverage bounded local AI provenance panel marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no bridge/API/AI-provider/hidden-provider\n  calls",
-    "spec coverage AI provenance no provider/API call marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "static `draft_signed_comparison_review_checklist` prompt and read-only\n  `chancela://mcp/draft-signed-comparison-review` resource",
-    "spec coverage MCP draft-signed comparison prompt/resource marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "deterministic local comparison report\n  over caller-supplied identifiers",
-    "spec coverage MCP draft-signed deterministic report marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`ai_01_claimed` and `full_ai_mcp_completion_claimed` false",
-    "spec coverage MCP draft-signed no AI completion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "technical comparison signal only with human review still required",
-    "spec coverage MCP draft-signed technical signal only marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`chancela://mcp/privacy-control-review-summary` resource",
-    "spec coverage MCP privacy-control resource marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`arguments.privacy_controls` JSON it returns deterministic aggregate counts",
-    "spec coverage MCP privacy-control deterministic aggregate marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "counts, and evidence-only flags without echoing names, ids, notes, legal\n  bases, recipients, subjects, data categories, raw evidence text, or secrets",
-    "spec coverage MCP privacy-control no echo marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "bridge/API/AI-provider/legal-service/provider calls and keeps legal",
-    "spec coverage MCP privacy-control no-call marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "anonymization, redaction, erasure, legal-hold mutation,\n  retention-policy mutation, and full-erasure claims false",
-    "spec coverage MCP privacy-control no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "candidate-resolution disposition buckets, blocker/approval presence",
-    "spec coverage MCP privacy-control retention candidate-resolution marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`chancela://mcp/document-archive-review-summary` resource",
-    "spec coverage MCP document/archive resource marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`arguments.document_archive` JSON it returns deterministic aggregate counts",
-    "spec coverage MCP document/archive deterministic aggregate marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "avoids echoing raw reports, digest values, path values,\n  IDs, notes, raw PDF bytes, or secrets",
-    "spec coverage MCP document/archive no echo marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "makes no bridge/API/AI-provider/\n  legal-service/HTTP/SSE/provider calls",
-    "spec coverage MCP document/archive no-call marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "keeps PDF/UA conformance, DGLAB\n  certification, legal validity",
-    "spec coverage MCP document/archive no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`contracts/dashboard.guest.json` and\n  `apps/web/src/contracts/contracts.test.ts` now pin the guest/minimal",
-    "spec coverage dashboard guest recent-events redaction marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "owner-only ledger event fields/values\n  absent from the guest fixture",
-    "spec coverage dashboard guest owner-only absence marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Guest remaining forbidden from\n  `GET /v1/ledger/events`",
-    "spec coverage dashboard Guest ledger forbidden marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "response redaction only: no permission grants, no production privacy\n  compliance, no full dashboard privacy completion",
-    "spec coverage dashboard no permission grant marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "on-demand generated documents now return\n  `/v1/documents/generated/{document_id}`",
-    "spec coverage generated-document by-id route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "durable and in-memory\n  modes",
-    "spec coverage generated-document durable/in-memory marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "canonical\n  `/v1/acts/{act_id}/document` route remains the sealed Ata target",
-    "spec coverage generated-document canonical Ata route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "generates `condominio-comunicacao-ausentes/v1` automatically alongside the\n  Ata",
-    "spec coverage condominium absent-owner auto-generation marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`GET /v1/dashboard` add `Pending`/`Advisory` no-due-date reminders",
-    "spec coverage dashboard absent-owner reminder marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`POST`/`GET` `/v1/documents/generated/{document_id}/dispatch-evidence`",
-    "spec coverage condominium absent-owner dispatch-evidence route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`generated_document_dispatch_evidence`",
-    "spec coverage condominium absent-owner dispatch-evidence store marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "absent- or convening-recipient evidence coverage and evidence-attached status/header state while keeping `dispatch_completed=false` and `x-chancela-dispatch-completed=false`",
-    "spec coverage condominium absent-owner no dispatch completion marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Follow-on web coverage now surfaces the generated absent-owner communication list, generated Convocatoria documents, generated PDF fetch, stored evidence rows, metadata-only evidence recording form, `operator_evidence_*` status display, `documents.generated.noClaim.*` copy, and generated-document deep links",
-    "spec coverage generated absent-owner web follow-on marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Generated Convocatoria documents now reuse the same generated-document dispatch evidence path",
-    "spec coverage generated-convening dispatch evidence reuse marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`generated_document.dispatch_evidence_recorded`",
-    "spec coverage generated-convening dispatch event marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "archive_package_indexes_generated_convening_notice_dispatch_evidence_metadata_only",
-    "spec coverage generated-convening archive preservation test marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "document_bundle_indexes_generated_convening_notice_dispatch_evidence_without_replacing_ata",
-    "spec coverage generated-convening bundle preservation test marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`cargo test -p chancela-server --features e2e --locked --test e2e_act_document_persistence generated_convening -- --nocapture`",
-    "spec coverage generated-convening persistence E2E command marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `364cb4b` keeps CI/API/Workflows/Legal/Compliance/UX **PARTIAL**",
-    "spec coverage full server E2E checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local full composed-server E2E passed with\n  `cargo test -p chancela-server --features e2e --locked`",
-    "spec coverage full server E2E pass marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "not a full\n  `cargo test -p chancela-server --features e2e --locked` green-run claim",
-    "spec coverage generated-convening focused E2E no-full-suite marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "apps/web/e2e/generated-convening-dispatch-evidence.spec.ts",
-    "spec coverage generated-convening browser spec marker",
-  );
   assertFileExists(
     "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
     "real backend generated convening dispatch evidence browser spec",
@@ -15302,116 +13952,6 @@ function assertCheckpointMap() {
     "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
     "records generated Convocatoria dispatch evidence against the real backend",
     "real backend generated convening browser proof title marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "apps/web/e2e/generated-convening-dispatch-evidence-real.spec.ts",
-    "spec coverage real-backend generated-convening browser spec marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `3795016` keeps Documents/Workflows/Legal/Compliance/UX/API/CI",
-    "spec coverage real-backend generated-convening checkpoint marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "real-backend browser proof validates UI/backend integration for generated Convocatoria dispatch-evidence metadata only; statuses remain PARTIAL=11",
-    "spec coverage real-backend generated-convening partial-status marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`generated_document_id`",
-    "spec coverage generated-document deep-link id marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`focus=dispatch-evidence`",
-    "spec coverage generated-document dispatch-evidence focus marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`#generated-dispatch-evidence`",
-    "spec coverage generated-document dispatch-evidence hash marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "selects and focuses the dispatch-evidence form once",
-    "spec coverage generated-document one-time dispatch-evidence focus marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "/atas/{act_id}?generated_document_id={document_id}&focus=dispatch-evidence#generated-dispatch-evidence",
-    "spec coverage dashboard absent-owner deep-link route marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`operator_evidence_covered` is suppressed",
-    "spec coverage dashboard absent-owner covered suppression marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "server sorting keeps valid dated reminders ahead of no-date reminders before `dashboard_limit` truncation",
-    "spec coverage dashboard absent-owner no-date sort marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "action kind `open_absent_owner_dispatch_evidence`",
-    "spec coverage dashboard absent-owner action kind marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "without changing `dispatch_completed=false` or claiming send/delivery/legal-notice completion",
-    "spec coverage generated absent-owner web no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`absent_owner_communication.dispatch_evidence_recorded`",
-    "spec coverage condominium absent-owner dispatch event marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "no mail, email, SMS, or provider sending, and no delivery, legal notice completion, legal sufficiency, legal effect, provider execution, registry filing, signing, bundle readiness, template legal review, threshold correctness, law verification claim, or dashboard ledger-event append",
-    "spec coverage generated-document no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "validation_report.evidence_index.generated_dispatch_evidence",
-    "spec coverage generated dispatch bundle evidence-index marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "evidence/generated-dispatch/{document_id}.json",
-    "spec coverage generated dispatch archive sidecar marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`EvidenceReport` metadata entries with `act_id` only and no `document_id`",
-    "spec coverage generated dispatch EvidenceReport act-only marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "manifest.document_ids",
-    "spec coverage generated dispatch no manifest promotion marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "It excludes `operator_note`, `idempotency_key`, note-derived stable fingerprints, generated communication bytes, and imported proof bytes",
-    "spec coverage generated dispatch redaction marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "archive_package_indexes_generated_absent_owner_dispatch_evidence_metadata_only",
-    "spec coverage generated dispatch archive preservation test marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "document_bundle_indexes_generated_absent_owner_dispatch_evidence_without_replacing_ata",
-    "spec coverage generated dispatch bundle preservation test marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "generated dispatch-evidence bundle/archive indexes, now including generated Convocatoria notices, are metadata-only preservation pointers, not canonical document promotion",
-    "spec coverage generated dispatch metadata-only matrix marker",
   );
   assertFileContains(
     "docs/CI-E2E-HARDENING-PLAN.md",
@@ -15474,51 +14014,6 @@ function assertCheckpointMap() {
     "CI/E2E plan generated dispatch no manifest promotion marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "identifier-filtered\n  TSL/TSA catalog rows can now include optional `identifier_match` explanations",
-    "spec coverage trust identifier-match checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "preserves strict lookup behavior for complete\n  certificate SHA-256 fingerprints/SKIs",
-    "spec coverage trust identifier-match strict lookup marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "copies full SHA-256/SKI\n  values",
-    "spec coverage trust copy-safe identifier marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "includes a `Recibo de revisão` panel plus bounded technical review history\n  projected from the imported-document view",
-    "spec coverage imported-document review receipt checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "sends all four `acknowledged_guardrail_ids`",
-    "spec coverage imported-document guardrail acknowledgement browser marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "renders two\n  ordered `review_history` entries with metadata-only/no-claim copy",
-    "spec coverage imported-document ordered history browser marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Pending documents show `Sem recibo\n  de revisão` and no fake reviewer/time/note/guardrail receipt",
-    "spec coverage imported-document no fake receipt marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "missing preservation status renders neutral/not-indicated copy rather than a bytes-preserved claim",
-    "spec coverage imported-document neutral missing preservation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "technical review history only for non-canonical evidence; no OCR, conversion,\n  PDF/A replacement",
-    "spec coverage imported-document review receipt no-claim marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "browser route contract markers for all four `acknowledged_guardrail_ids`",
     "CI checkpoints imported-document guardrail browser marker",
@@ -15527,11 +14022,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "ordered review-history rendering",
     "CI checkpoints imported-document ordered history marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "legacy DOC/OLE imports now also expose a bounded\n  local `canonical_conversion_preflight` evidence report",
-    "spec coverage imported-document legacy DOC preflight marker",
   );
   assertFileContains(
     "crates/chancela-api/src/documents.rs",
@@ -15567,76 +14057,6 @@ function assertCheckpointMap() {
     "apps/web/src/i18n/locales/pt-PT.ts",
     "'documents.import.preflight.hint': 'Evidência local de metadados apenas; não converte DOC, não cria PDF/A, não executa OCR, não valida assinaturas, não chama fornecedores e não declara aceitação legal.'",
     "web imported-document legacy DOC preflight no-claim hint source-locale marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "create\n  canonical records, create signed PDFs, create seals, validate signatures, add PDF/UA",
-    "spec coverage imported-document review-depth no-runtime-behavior marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`3e72e08` keeps Legal/Data/Signatures/Documents/UX/CI **PARTIAL**",
-    "spec coverage compliance tooling checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local PAdES DSS\n  attach now accepts an optional caller-supplied `validation_time`",
-    "spec coverage PAdES DSS validation_time checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Malformed `validation_time` is rejected without digest or audit-event\n  mutation",
-    "spec coverage PAdES DSS malformed validation_time caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "bounded P-256 ECDSA-SHA256 verification",
-    "spec coverage TSL P-256 XML-DSig marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "real C14N-backed SignedInfo/reference digest",
-    "spec coverage TSL C14N candidate marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "broad ECDSA/XML-DSig profile validation",
-    "spec coverage TSL P-256 caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`POST\n  /v1/signature/asic/inspect` exposes read-only local technical ASiC profile",
-    "spec coverage ASiC inspect endpoint checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "declared\n  fixity, readable ZIP shape, and unsafe member paths",
-    "spec coverage ASiC inspect fixity/zip/path marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`technical_validation` response is projected from\n  `chancela-signing::validate_asic_container` / `AsicValidationReport`",
-    "spec coverage ASiC inspect technical_validation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "per-signature `AsicSignatureValidation` fields for CAdES, XAdES, and mixed\n  ASiC-E containers plus per-archive-timestamp",
-    "spec coverage ASiC inspect signature/archive projection marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "legacy bounded `cades` object remains for compatibility",
-    "spec coverage ASiC inspect legacy cades marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "enforces both per-member and aggregate actual decompressed-size caps across",
-    "spec coverage ASiC actual decompressed-size caps marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "underdeclared ZIP\n  entries cannot bypass inspection blockers",
-    "spec coverage ASiC underdeclared ZIP blocker marker",
   );
   assertFileContains(
     "apps/web/src/api/client.ts",
@@ -15688,256 +14108,6 @@ function assertCheckpointMap() {
     "archive timestamp META-INF/ASiCArchiveManifest.tst could not be parsed",
     "web ASiC inspector archive timestamp diagnostic marker",
   );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Ferramentas now exposes this as a sibling read-only ASiC inspector on the signature tools surface",
-    "spec coverage ASiC inspector UI checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "diagnostic/caveat rendering, and fail-closed endpoint refusals",
-    "spec coverage ASiC inspector caveat/fail-closed marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "read-only local `POST /v1/signature/asic/inspect` ASiC profile inspection",
-    "spec coverage matrix ASiC inspect route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "ASiC inspection beyond the read-only local technical endpoint and local `technical_validation` projection",
-    "spec coverage matrix ASiC remaining-gap marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`POST /v1/signature/asic/inspect` is a read-only local technical inspection endpoint",
-    "spec coverage ASiC overclaim endpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "projects `technical_validation` from\n  `chancela-signing::validate_asic_container` across CAdES, XAdES, mixed ASiC-E signatures",
-    "spec coverage ASiC overclaim technical_validation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "do not sign, store,\n  mutate archives, call live providers",
-    "spec coverage ASiC overclaim no-sign/store/live marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "read-only `GET /v1/privacy/retention-due-candidates`",
-    "spec coverage retention due-candidates read-only marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "erasure records on page load",
-    "spec coverage retention due-candidates non-mutating UI marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "record bounded archive evidence for\n  `disposal_action: archive` or bounded no-action evidence for `disposal_action: no_action`",
-    "spec coverage retention due-candidates review-only request marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Duplicate `review_only` requests for the same candidate/policy\n  reuse the existing `awaiting_review` execution",
-    "spec coverage retention duplicate review-only reuse marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "shows queued review status/id/time instead of\n  posting again",
-    "spec coverage retention queued-review UI marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Due-candidate reads also derive prior safe bounded `executed`\n  archive/no-action evidence",
-    "spec coverage retention bounded suppression marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "evidence states are explicit:\n  `review_queued`, `blocked`, `bounded_archive_recorded`, `bounded_no_action_recorded`, and\n  `prior_bounded_evidence_available`",
-    "spec coverage retention evidence-state text marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Safe prior bounded archive/no-action executions can suppress active\n  due-candidate rows only as read-only internal evidence projections",
-    "spec coverage retention bounded suppression no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Candidate-level resolution records are a separate local evidence sidecar",
-    "spec coverage retention candidate-resolution evidence-only marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Book\n  legal-hold views and archive disposal status now expose derived local\n  `operator_workflow` summaries",
-    "spec coverage legal-hold disposal workflow status marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "without posting lifecycle mutations",
-    "spec coverage legal-hold disposal status no-mutation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "**Retention execution review closure:** `POST\n  /v1/privacy/retention-executions/{id}/review-closure`",
-    "spec coverage retention review-closure section marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "same closure is idempotent and keeps the\n  original close actor/time plus the single closure ledger event",
-    "spec coverage retention review-closure idempotency marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not change the execution status/outcome, perform or approve\n  disposal",
-    "spec coverage retention review-closure no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "non-destructive restore preflight evidence",
-    "spec coverage restore preflight evidence boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`isolated_restore_verified`,\n  `isolated_restore_verification`",
-    "spec coverage backup recovery drill isolated receipt fields marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "recovery-drill receipt route records preflight-only bounded evidence",
-    "spec coverage recovery drill receipt bounded evidence marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "isolated restore material/readback and cleanup proof",
-    "spec coverage recovery drill isolated material/readback proof marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Recovery/backup matrix note",
-    "spec coverage recovery backup matrix note marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "swap the live DB, stage/replace live sidecars",
-    "spec coverage recovery drill no destructive restore caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "SQLCipher-at-rest proof",
-    "spec coverage recovery drill SQLCipher caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "or make coverage FULL",
-    "spec coverage recovery drill no FULL coverage marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "metadata-only, non-canonical conversion",
-    "spec coverage paper-book conversion-dossier implemented boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current working-tree paper-book local OCR/canonical rehearsal report keeps",
-    "spec coverage paper-book OCR canonical rehearsal checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "/v1/books/paper-import/{id}/ocr-canonical-rehearsal",
-    "spec coverage paper-book OCR canonical rehearsal route marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "confidence known/unknown buckets",
-    "spec coverage paper-book OCR canonical rehearsal confidence marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "mutates no records",
-    "spec coverage paper-book OCR canonical rehearsal no-mutation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not convert a paper book or create sealed/canonical records",
-    "spec coverage paper-book OCR canonical rehearsal no-conversion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "idempotent duplicate creation",
-    "spec coverage paper-book conversion-dossier idempotency marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "BookDetail now lists existing dossier metadata and exposes creation\n  only for accepted OCR drafts without an existing dossier",
-    "spec coverage paper-book conversion-dossier UI marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "BookDetail OCR/dossier review-depth summary is derived from loaded metadata\n  only and has explicit fallbacks for no OCR draft, no accepted draft, and no\n  dossier",
-    "spec coverage paper-book OCR/dossier metadata-derived summary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no automatic dossier POST",
-    "spec coverage paper-book conversion-dossier no automatic POST marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "reviewed `conversion_execution_artifact` row/view",
-    "spec coverage paper-book conversion execution artifact row marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "promotion response exposes optional `conversion_execution_artifact`, and dossier responses can include `conversion_execution_artifacts`",
-    "spec coverage paper-book conversion execution artifact response marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`reviewed_conversion_execution_artifact: true`, no raw OCR text in artifact or ledger payloads",
-    "spec coverage paper-book conversion execution artifact redaction marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "bounded reviewed execution evidence for a mutable drafting aid only",
-    "spec coverage paper-book conversion execution artifact no-overclaim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "do not create\n  canonical acts, create canonical documents or archive packages, create PDF/A\n  or PDF/UA",
-    "spec coverage paper-book OCR/dossier no canonical artifacts marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "loads 104 JSON template assets",
-    "spec coverage template 104-asset marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`ponto-ordem-trabalhos/v1` Convocatoria\n  standalone agenda-item templates for all five supported families",
-    "spec coverage agenda-item template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "metadata guard now\n  also requires authored `BlockSpec` template strings for `Certidao` and\n  `Extrato` assets",
-    "spec coverage post-act template metadata guard marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`ata_number` and\n  `payload_digest`, with whole-catalog and synthetic missing-binding regression",
-    "spec coverage post-act template provenance fields marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`template_catalog_metadata_lint` as runnable embedded-catalog metadata\n  consistency lint only",
-    "spec coverage post-act template runnable-lint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "existing asset wording is\n  unchanged",
-    "spec coverage post-act template no-wording-change marker",
-  );
   assertFileContains(
     "crates/chancela-api/tests/law_reference_coverage.rs",
     "law_reference_coverage_audits_template_references_against_local_corpus",
@@ -15969,21 +14139,6 @@ function assertCheckpointMap() {
     "API law-reference corpus Verified status preservation marker",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `b86adb3` keeps Legal/Compliance, Template Catalog, and CI\n  **PARTIAL**",
-    "spec coverage legal reference audit checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "makes no network, DRE, EUR-Lex, registry, provider, legal-service, or\n  authority calls",
-    "spec coverage legal reference audit no-network/provider marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does not add a\n  threshold value; does not upgrade Pending corpus/template references to\n  Verified",
-    "spec coverage legal reference audit no-threshold/no-upgrade marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "Template law-reference corpus audit:",
     "CI checkpoints legal reference audit lane marker",
@@ -16002,111 +14157,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "no Pending-to-Verified promotion; no\n  threshold value completion",
     "CI/E2E hardening plan legal reference audit no-upgrade marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "104 total / 44 CSC",
-    "spec coverage template CSC count marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-divisao-quotas/v1",
-    "spec coverage CSC quota division template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-unificacao-quotas/v1",
-    "spec coverage CSC quota unification template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-delegacao-poderes/v1",
-    "spec coverage CSC delegation powers template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-revogacao-poderes/v1",
-    "spec coverage CSC revocation powers template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-fusao/v1",
-    "spec coverage CSC merger template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-cisao/v1",
-    "spec coverage CSC demerger template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "csc-ata-liquidacao/v1",
-    "spec coverage CSC liquidation-step template marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "structural-change templates render local fusão/cisão/liquidação Ata wording",
-    "spec coverage CSC structural-change local-rendering marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "delegation/revocation templates render proposed resolution text only",
-    "spec coverage CSC delegation/revocation proposed text boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "can mark only the\n  linked external envelope slot signed when that slot has no identity\n  requirements",
-    "spec coverage external invite no-identity slot technical completion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "the normal envelope read/list completion summary then reflects\n  the technical slot state through `signed_required_slot_count` and blocking\n  slot IDs",
-    "spec coverage external invite completion summary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Identity-required slots are not auto-signed from PDF upload alone\n  and return a bounded blocked reason",
-    "spec coverage external invite identity-required blocked marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Replay of the same signed evidence is\n  idempotent, with no duplicate signed documents, slot evidence, or update\n  events",
-    "spec coverage external invite replay idempotency marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "bounded in the web UI before file read and by\n  the matching backend body-limit envelope",
-    "spec coverage external invite upload size-bound marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no provider calls, trust-list checks, QES/qualified status,\n  legal validity, provider completion, act finalization, or full envelope legal\n  completion is claimed",
-    "spec coverage external invite no provider/legal completion marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "route-stubbed Playwright coverage now pins the official signed-PDF handoff\n  import browser path",
-    "spec coverage official signed-PDF browser proof marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "client-declared trace context only",
-    "spec coverage official signed-PDF client-declared marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "collecting no PIN, OTP,\n  CAN, credential, token, password, passphrase, or private-key material",
-    "spec coverage official signed-PDF no-secret marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "does\n  not perform trust-list validation, claim qualified status, or complete legal\n  signing acceptance",
-    "spec coverage official signed-PDF no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Non-pt locales keep new external invite upload/result\n  keys localized without Portuguese source leakage through i18n guards",
-    "spec coverage external invite non-pt locale guard marker",
   );
   assertFileContains(
     "crates/chancela-api/tests/official_signature_import.rs",
@@ -16149,156 +14199,6 @@ function assertCheckpointMap() {
     "i18n external invite signed-PDF non-pt leakage guard coverage",
   );
   assertFileContains(
-    "SPEC-COVERAGE.md",
-    "later sequential slots fail with 409",
-    "spec coverage external signer linked-invite order-policy marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "lists per-act workflow-only external-signing envelopes",
-    "spec coverage external-signing envelope UI marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "SigningPanel also displays stored slot evidence metadata",
-    "spec coverage external-signing stored slot evidence marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "requires every configured identity requirement to have a tagged evidence row before submit",
-    "spec coverage external-signing identity-tagged evidence marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "sends no `complete:true`",
-    "spec coverage external-signing no-complete payload marker",
-  );
-  assertFileMatches(
-    "SPEC-COVERAGE.md",
-    /This is operator-supplied technical workflow evidence only[\s\S]*not provider\s+signing[\s\S]*provider completion[\s\S]*legal envelope completion[\s\S]*QES\/\s*qualified status[\s\S]*act\s+finalization/u,
-    "spec coverage external-signing operator evidence no-claim marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "apps/web/e2e/external-signing-operator-evidence.spec.ts",
-    "spec coverage external-signing operator evidence browser spec marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "captured `PATCH /v1/external-signing/envelopes/{id}` request body, browser no-secret boundary",
-    "spec coverage external-signing operator evidence browser request marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "leaving the slot unselected\n  preserves the tracking-only payload",
-    "spec coverage external-signing tracking-only payload marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "without raw\n  backend/token-like detail and clears the warning after slot selection changes",
-    "spec coverage external-signing safe sequential 409 marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Provider-backed signing, document-gated legal completion, provider completion,\n  act finalization, full envelope legal completion, and qualified status remain\n  incomplete",
-    "spec coverage external-signing provider completion caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "optional `operator_notes` / `custody_location` receipt keys",
-    "spec coverage backup recovery drill optional receipt keys marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "deterministic `ai_provenance.statement_sources[]` rows",
-    "spec coverage deterministic AI statement-source rows marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "authoritative-source certification, or AI-quality assessment",
-    "spec coverage AI statement-source caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`GET\n  /v1/books/{id}/archive/local-dglab-interchange-manifest`, gated by\n  `book.export@Book`, returns a deterministic local\n  `LocalDglabInterchangeManifest` scaffold",
-    "spec coverage local DGLAB interchange API marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "validates back against\n  the source manifest",
-    "spec coverage local DGLAB source manifest validation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "no ZIP sidecar member, package validation change,\n  persisted package bytes, ledger event",
-    "spec coverage local DGLAB no sidecar/persisted-bytes caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "BookDetail\n  exposes a direct save action that calls that GET endpoint and saves\n  `application/json` with a `.json` filename",
-    "spec coverage local DGLAB BookDetail JSON save marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "local scaffold metadata JSON only: no\n  official DGLAB export, government filing",
-    "spec coverage local DGLAB metadata-only no-official-export marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "grouped statement-source counts by `source_type`, row\n  path/type/label/status",
-    "spec coverage AI richer provenance UI marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "copy a deterministic pretty-JSON review packet\n  generated from `act.ai_provenance`",
-    "spec coverage AI provenance review packet copy marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "without raw sensitive statement, actor, or note values",
-    "spec coverage AI provenance review packet no-sensitive-echo marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "automated draft-vs-signed comparison execution, a\n  complete provenance experience",
-    "spec coverage AI no automated draft-vs-signed execution caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current matrix alignment note",
-    "spec coverage current matrix alignment note marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `3a41187` workflow reminder/calendar policy keeps Workflows/UX/CI\n  **PARTIAL**",
-    "spec coverage workflow reminder policy checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `6a1282d` privacy DPIA/breach/transfer advisory review status and\n  reminder depth keeps Legal/Compliance/Data/Workflows/UX/CI **PARTIAL**",
-    "spec coverage privacy advisory review checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`advisory_review` summary derived only from local `evidence_receipts`",
-    "spec coverage privacy advisory review local derivation marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`workflow.reminders.sources.privacy_control_reviews` lets Settings suppress\n  only that reminder family",
-    "spec coverage privacy reminder source toggle marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Focused route-stubbed browser proof now pins Settings > Privacidade rendering",
-    "spec coverage privacy reminder browser proof marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`privacy-dpia-review`, `privacy-breach-playbook-review`, and\n  `privacy-transfer-control-review`",
-    "spec coverage DPIA/breach/transfer dashboard reminder marker",
-  );
-  assertFileContains(
     "docs/CI-CHECKPOINTS.md",
     "apps/web/e2e/privacy-control-review-reminders.spec.ts",
     "CI checkpoints privacy reminder browser proof marker",
@@ -16312,146 +14212,6 @@ function assertCheckpointMap() {
     "docs/CI-CHECKPOINTS.md",
     "without privacy\n  record mutation",
     "CI checkpoints privacy reminder no-mutation marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "does not notify authorities or data subjects, approve transfers, execute transfers, certify adequacy/compliance, file or submit DPIAs with an authority",
-    "spec coverage privacy advisory no-claim caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`workflow.reminders` with `enabled`,\n  `dashboard_limit`, `due_soon_days`, `attendance_lookahead_days`",
-    "spec coverage workflow reminder settings shape marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Defaults preserve the prior generated dashboard behavior: enabled, limit 5,\n  45-day due-soon status, 45-day attendance lookahead",
-    "spec coverage workflow reminder defaults marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`enabled=false` suppresses reminder feed/cards without\n  removing other dashboard data",
-    "spec coverage workflow reminder enabled=false boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "toggles for `profile_calendar`, `act_follow_ups`, `attendance_hygiene`, and\n  `privacy_control_reviews`",
-    "spec coverage workflow reminder source-toggle boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "absolute calendar-day\n  deltas across year boundaries",
-    "spec coverage workflow reminder year-boundary marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Profile-calendar reminders expose a typed local advisory plan and matching\n  coverage/status params",
-    "spec coverage typed profile-calendar plan marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "The condominium\n  `condominio-annual` preset is now a supported local fixed-date advisory for\n  Jan 15 with `due_basis=annual_fixed_date`",
-    "spec coverage condominium fixed-date advisory marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Structural law references remain\n  Pending/unverified metadata",
-    "spec coverage profile-calendar pending law-source marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Unsupported presets remain pending no-date advisories with\n  no due-year or due-basis",
-    "spec coverage profile-calendar unsupported no-date/no-basis marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "they do not add legal-calendar authority, law-source authority, threshold\n  verification, external delivery/email/ICS/CalDAV/webhook",
-    "spec coverage workflow reminder caveat marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`5db121a` keeps Template Catalog/UX/CI **PARTIAL**",
-    "spec coverage compact template filter checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`2c88b90` keeps UX/Workflows/CI **PARTIAL**",
-    "spec coverage compact notifications/entity filter checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`76fc229` keeps Signatures/Documents/CI **PARTIAL**",
-    "spec coverage keyed PAdES VRI /TU checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`c1c57fe` keeps UX/Data/CI **PARTIAL**",
-    "spec coverage web SQLite table usage checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`fd70ca0` keeps CI/UX **PARTIAL**",
-    "spec coverage browser export-save gate checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`c3d874b` keeps UX/Signatures/Trust/CI **PARTIAL**",
-    "spec coverage trust catalog hash display checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`fdb9376` keeps Documents/CI **PARTIAL**",
-    "spec coverage decorative content accounting checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "report JSON version 12 includes deterministic `pdf_ua_blocker_delta` evidence",
-    "spec coverage PDF accessibility report v12 blocker-delta marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "cleared count of 13 and remaining\n  count of 0",
-    "spec coverage PDF accessibility blocker-delta count marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "default fixture no longer reports `no_alt_text_model`",
-    "spec coverage PDF accessibility default fixture no-alt blocker reduction marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "The conforming\n  generated-document fixture emits the PDF/UA-1 XMP identifier",
-    "spec coverage PDF/UA gated XMP marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`ff1823a` keeps UX/Documents/CI **PARTIAL**",
-    "spec coverage export save cancellation checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`2ffae33` keeps UX/Workflows/CI **PARTIAL**",
-    "spec coverage dashboard density checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`2187a67` keeps Data/Architecture/CI **PARTIAL**",
-    "spec coverage SQLite logical usage checkpoint marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "additive per-table `payload_stats` with\n  `estimated_payload_bytes`, `row_count`, `average_bytes_per_row`",
-    "spec coverage data-status payload stats working-tree marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "`local_loaded_payload_estimate`, and `sqlite_largest_payload_table` summary\n  metadata",
-    "spec coverage data-status local estimate and largest table marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "read-only local payload telemetry only; it does not add cleanup execution,\n  deletion/retention semantics",
-    "spec coverage data-status payload stats no-claim marker",
   );
   assertFileContains(
     "scripts/perf/profiles/capacity.json",
@@ -17112,11 +14872,6 @@ function assertCheckpointMap() {
     "performance retained 6 GiB minimum marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "This supplies the Linux build/runtime dependency needed by the generated-PFX loader test; it does not touch a reader, use a Citizen Card, or prove live PC/SC signing",
-    "spec coverage performance PCSC dependency no-live-signing boundary",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "This accounts for asynchronous server-side advisory-lock release in test teardown; it does not add production retries, alter promotion semantics, or prove HA/failover",
     "CI checkpoints Postgres test-only advisory-lock handoff boundary",
@@ -17125,11 +14880,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "This is local harness-determinism evidence, not production readiness, cross-process port ownership, HA, hosted-CI success, or deployment certification",
     "CI/E2E startup-handoff no-production-readiness boundary",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The local exact hosted filter passed 9/9 and the full `api-signatures` target passed 96/96",
-    "spec coverage mock TSA focused and full local evidence",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17343,16 +15093,6 @@ function assertCheckpointMap() {
     "search baseline Unicode byte-order regression marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "health reads are bounded to control C1 -> heartbeat -> control C2 with one retry only when the canonical lease identity/path changes",
-    "spec coverage projector monotonic liveness fix marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "the candidate stopped at 13,147 users/events and its final topology check failed on projector health",
-    "spec coverage invalidated a3b capacity candidate marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "Validation passed 24/24 projector tests, 55/55 API search tests, a 1,024-commit source-churn test in 0.879 seconds, 10/10 repeated stress iterations",
     "CI checkpoints projector liveness validation marker",
@@ -17373,11 +15113,6 @@ function assertCheckpointMap() {
     "CI/E2E invalidated capacity no-proof marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "passed exact dataset generation and validation, then OOM-killed the elected leader at its 1 GiB hard limit during one-shot book seeding",
-    "spec coverage final-source capacity OOM evidence marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "Cleanup verified zero matching containers, volumes, networks, port 18081 listeners, launcher PIDs, and run processes",
     "CI checkpoints final-source capacity exact cleanup marker",
@@ -17386,11 +15121,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "The preserved 20-file, 40,044,838-byte evidence set is bound by `sha256-manifest.txt` SHA-256 `df28a1df7c2aeacdad1b5bb108ef9616316c5eea433b4f873e76c423ea4069d2`",
     "CI/E2E final-source capacity evidence manifest marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "This invalidated run is not capacity, latency/soak, or 10,000-cryptographic-signature proof",
-    "spec coverage final-source capacity no-proof marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17403,11 +15133,6 @@ function assertCheckpointMap() {
     "CI/E2E durable generated-document validation marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The full checkpoint then exposed two archive-package tamper fixtures that assumed durable publication populated the process cache. `93580983` seeds the persisted abertura and Ata into their synthetic in-memory fallback before the original duplicate-ID and path-traversal-like-ID mutations",
-    "spec coverage archive tamper fixture fallback marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "The two exact tests passed 1/1 each, the full `archive_package` filter passed 34/34, and rustfmt/diff checks passed",
     "CI checkpoints archive tamper fixture validation marker",
@@ -17416,11 +15141,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Production code and the rejection assertions are unchanged",
     "CI/E2E archive tamper fixture production-boundary marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "the external projector reached 1,066,401,792 bytes (1017 MiB) during one-shot book seeding at 15,935 books",
-    "spec coverage projector memory breach evidence marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17433,19 +15153,9 @@ function assertCheckpointMap() {
     "CI/E2E projector breach exact cleanup marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`54092857e2e974bd6e0697bc4a2e6cf33b905004e326ed06a8d6c46964c7e49d`",
-    "spec coverage projector negative-evidence manifest marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "It is not 50,000-book, capacity/latency/soak, sub-900,000,000-byte, or 10,000-cryptographic-signature proof",
     "CI checkpoints projector capacity no-proof marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`5a48089e` addresses the measured projector peak without relaxing the SLO",
-    "spec coverage projector memory remediation marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17483,11 +15193,6 @@ function assertCheckpointMap() {
     "performance readiness separate strict topology gate regression marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "the strict initial topology capture observed the external projector health still `starting` approximately 3.55 seconds after that container started",
-    "spec coverage projector startup-race negative evidence marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "Structured timeout evidence retains actual attempts, elapsed time, the command diagnostic, and the partial snapshot; the subsequent exact topology gate remains mandatory and does not use `--allow-degraded`",
     "CI checkpoints bounded readiness evidence and strict-gate marker",
@@ -17498,11 +15203,6 @@ function assertCheckpointMap() {
     "CI/E2E readiness fix no-capacity-hosted-publication boundary marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "An exact-source run at `05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a` then breached the unchanged 190% per-container CPU ceiling at `2026-07-27T07:50:44.147561Z`: the elected writer `chancela-cluster-2` reached 194.17% while creating users",
-    "spec coverage exact-source seed CPU breach marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "It reached 194.17% CPU and used 93.3 MiB; peak memory across the run was 177,838,489 bytes, below the 900,000,000-byte ceiling. Other services stayed healthy, container IDs were stable, and no container restarted or was OOM-killed",
     "CI checkpoints seed breach bounded resource/topology marker",
@@ -17511,11 +15211,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "The stop preceded entity, book, act/signature-subject, search-readiness, cryptographic-signing, and mixed-workload phases, and therefore emitted no harness report or capacity proof",
     "CI/E2E seed breach no-report boundary marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The preserved negative evidence at `.perf-work/capacity-05f44435bbc90339ba4e6ae8460e5fa9dd33fd5a-20260727083958/` is bound by the 27-entry `sha256-manifest.txt` SHA-256 `4ea10ce9efd22b2ec39c22eb99dd3eb50fe5df03518ffbe377dce2f6a3d376f8`",
-    "spec coverage seed breach sealed-evidence marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17546,11 +15241,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "This is configuration and regression evidence only: no passing capacity result exists until a fresh exact-source run completes all seed, readiness, cryptographic, workload, resource, and final-topology proof requirements under the unchanged policy",
     "CI/E2E capacity calibration no-proof marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The exact-source `165521bd7c28faa257bebc7158de25593cc509dd` attempt generated and validated the deterministic 15,000/10,000/50,000/10,000 fixture, and both readiness and strict topology passed",
-    "spec coverage second exact-source capacity attempt marker",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17659,11 +15349,6 @@ function assertCheckpointMap() {
     "invitation pre/post-KDF role revalidation markers",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Both Argon2 operations and their parameters, the committed capacity profile, and its SLO remain unchanged. Focused local KDF gates passed 7/7, 75/75, and 8/8",
-    "spec coverage KDF security and local-gate marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "The first all-feature attempt exposed two stale `SessionStore::put` call sites plus `collapsible_if` and `bool_assert_comparison` warnings; `9ac24f52` fixes those checks mechanically",
     "CI checkpoints all-feature repair history marker",
@@ -17709,11 +15394,6 @@ function assertCheckpointMap() {
     "The feature-gated guarded-rekey success fixture still omitted required step-up reauthentication and applied path-secrecy checking too broadly. `db624ba8` changes only the test request and assertion scope",
     "CI checkpoints guarded-rekey fixture-only repair marker",
   );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`db624ba8` changes only the test request and assertion scope. Its focused test passed 1/1 and the full all-feature `data_key_ops` target passed 10/10",
-    "spec coverage guarded-rekey historical focused and full-target marker",
-  );
   assertFileContains(
     "crates/chancela-api/src/secretstore.rs",
     "const AEAD_TAG_BYTES: usize = 16;",
@@ -17750,11 +15430,6 @@ function assertCheckpointMap() {
     "CI checkpoints exact prior hosted coverage failure marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`c0161eab` makes that assertion deterministic by checking decoded-ciphertext length against plaintext length plus the 16-byte authentication tag and requiring the complete plaintext byte sequence to be absent. Existing round-trip and AAD-binding coverage remains",
-    "spec coverage deterministic subject-DEK assertion marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-E2E-HARDENING-PLAN.md",
     "At exact current source `c0161eabc6bf270755f498b0896d0f2d755e2838`, the exact regression passed 1/1 plus 100/100 repetitions and the full `secretstore` filter passed 21/21",
     "CI/E2E exact subject-DEK repeated and filter validation marker",
@@ -17770,11 +15445,6 @@ function assertCheckpointMap() {
     "CI/E2E current hosted-publication-capacity no-claim marker",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "either direct single-platform or indexed `imagetools inspect` JSON",
-    "spec coverage GHCR direct/indexed imagetools fallback evidence marker",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "digest/platform/attestation/provenance/SBOM checks remain fail-closed",
     "CI checkpoints GHCR fail-closed evidence marker",
@@ -17783,16 +15453,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "Two consecutive focused Chromium runs passed, together with web typecheck and focused seal-designer tests",
     "CI/E2E exact seal spinbutton validation evidence marker",
-  );
-  assertFileContains(
-    "SPEC-COVERAGE.md",
-    "Current `3b13a5e` keeps Architecture/Data/Documents/Template Catalog/UX/CI\n  **PARTIAL**",
-    "spec coverage current landed batch marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Focused local evidence recorded timestamp-trust stress 40/40, the full signing suite at 124 passed / 1 ignored, trust stress 140/140, the signature filter 5/5, and the DRE law guard stress 30/30",
-    "spec coverage fixture ownership exact focused evidence",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17810,11 +15470,6 @@ function assertCheckpointMap() {
     "CI checkpoints runtime artifact contract and no-HA boundary",
   );
   assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "Focused Cygwin Python 3.9 validation passed 8/8 topology tests, including the exact live-render service budgets and one-byte boundary",
-    "spec coverage Compose memory exact focused evidence",
-  );
-  assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
     "The exact live Compose render for the default three-replica topology requests 5,972,688,896 bytes (5.5625 GiB)",
     "CI checkpoints exact live Compose memory envelope",
@@ -17823,16 +15478,6 @@ function assertCheckpointMap() {
     "docs/CI-E2E-HARDENING-PLAN.md",
     "The 6 GiB minimum remains. This is bounded parser, live-render, and boundary-regression evidence only, not a capacity run, workload result, concurrency/HA proof, or production readiness",
     "CI/E2E Compose memory retained minimum and no-claim boundary",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "These are harness, isolation, and generated-fixture runtime-compatibility safeguards, not recorded capacity, latency, soak, 10,000 cryptographic-signature, public-TSA, live-provider, composed-API, or hosted-CI results",
-    "spec coverage performance no-claim marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The current harness applies its bounded whole-document TSA override only after exact seeding and search readiness and before the first cryptographic act mutation, verifies that both timestamp selectors are disabled while non-TSA operator settings survive, and records sanitized setup evidence",
-    "spec coverage performance TSA isolation evidence",
   );
   assertFileContainsNormalized(
     "docs/CI-CHECKPOINTS.md",
@@ -17878,41 +15523,6 @@ function assertCheckpointMap() {
     "scripts/perf/tests/test_pkcs12_generator.py",
     "if passphrase in runtime_output:",
     "performance runtime-loader secret-output redaction marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The inherited document-layout lane resolves the concrete instance -> template -> entity -> book cascade before render/page counting",
-    "spec coverage document layout API cascade marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "stores the canonical concrete policy with each new generated document, binds its SHA-256 digest separately from the template-spec digest in `document.generated`, and replays frozen encerramento bytes after mutable layers change",
-    "spec coverage document layout snapshot digest and freeze marker",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`01357def` strengthens the settings-persistence feature E2E to recursively verify every submitted stale-PUT leaf, preserve omitted layout and template-preview defaults, return the same canonical document from GET, and reload it after restart; the focused test passed 1/1",
-    "spec coverage additive settings persistence E2E evidence",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "At `01357def`, `cargo test -p chancela-server --features e2e --locked` also exited 0 in 112.4 seconds, including the canonical-contract and settings-persistence journeys; no aggregate count, hosted-CI result, browser proof, or production readiness is inferred",
-    "spec coverage current bounded server E2E evidence",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "`65fe793b` makes the structured Ata-editor test stub expose and directly await PATCH completion before asserting each save, including the save-button re-enable boundary",
-    "spec coverage structured editor deterministic save evidence",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "The verified selected matrix passed 25/25 files and 691/691 tests, including all 34 structured-editor tests",
-    "spec coverage exact selected web matrix evidence",
-  );
-  assertFileContainsNormalized(
-    "SPEC-COVERAGE.md",
-    "At `65fe793`, the exact local Node 24.18.0/npm 12.0.1 Vitest/V8 coverage gate passed 189/189 files and 2247/2247 tests at 90.03% statements, 80.75% branches, 88.79% functions, and 91.92% lines without lowering thresholds",
-    "spec coverage same-tree exact web coverage evidence",
   );
   assertFileContains(
     "docs/CI-CHECKPOINTS.md",

@@ -1582,7 +1582,7 @@ chancela-authz --locked platform_log_write_is_seeded_only_to_owner_and_platform_
   sink, log retention/deletion semantics, or legal/compliance claim is
   implemented.
 - Recent web focused checks through `3f19872`: books, notification popup/page,
-  storage settings, ESLint, Prettier, `npm run check:spec-coverage`,
+  storage settings, ESLint, Prettier,
   `node --check scripts/checkpoint-recent-landed.mjs`, and `npm run
 test:checkpoint:recent-landed:static` passed.
 - Recent notification footer checks through `938b61e`: the focused
@@ -2878,11 +2878,10 @@ password onboarding, recovery phrase, then opens the app` in
 - Current checkpoint metadata/static checks through `b973b47`
   bounded slice markers passed: `node
 --check scripts/checkpoint-recent-landed.mjs`, `npm run
-test:checkpoint:recent-landed:static`, `npm run check:spec-coverage`, and
-  `git diff --check -- SPEC-COVERAGE.md docs/CI-CHECKPOINTS.md
-docs/CI-E2E-HARDENING-PLAN.md scripts/checkpoint-recent-landed.mjs
-scripts/check-spec-coverage.mjs`.
-  These pin the spec snapshot,
+test:checkpoint:recent-landed:static`, and
+  `git diff --check -- docs/CI-CHECKPOINTS.md
+docs/CI-E2E-HARDENING-PLAN.md scripts/checkpoint-recent-landed.mjs`.
+  These pin the
   hardening-plan head, LOTL/member-state bootstrap markers, mobile API base
   URL/shell-detection markers, subject DEK
   secret-store binding markers, opt-in

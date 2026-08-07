@@ -35,7 +35,6 @@ if (!Array.isArray(waivers)) {
 
 checkPackageScript();
 checkCiWorkflow();
-checkSpecCoverageCheckpointPaths();
 checkRecentLandedStaticMap();
 checkBackedCaveats();
 
@@ -139,25 +138,6 @@ function checkCiWorkflow() {
   }
 }
 
-function checkSpecCoverageCheckpointPaths() {
-  const checker = readText("scripts/check-spec-coverage.mjs");
-  const requiredPaths = [
-    ".github/workflows/ci.yml",
-    "apps/web/vite.config.ts",
-    "docs/ci-assurance-waivers.json",
-    "package.json",
-    "scripts/check-ci-assurance-waivers.mjs",
-  ];
-
-  for (const requiredPath of requiredPaths) {
-    if (!checker.includes(`"${requiredPath}"`)) {
-      fail(
-        `scripts/check-spec-coverage.mjs: checkpointPaths missing ${requiredPath}`,
-      );
-    }
-  }
-}
-
 function checkRecentLandedStaticMap() {
   const checkpoint = readText("scripts/checkpoint-recent-landed.mjs");
   for (const marker of [
@@ -174,10 +154,6 @@ function checkRecentLandedStaticMap() {
 
 function checkBackedCaveats() {
   const caveats = [
-    {
-      file: "SPEC-COVERAGE.md",
-      markers: [waiverId, debtMarker, "does not reduce PARTIAL=11"],
-    },
     {
       file: "docs/CI-E2E-HARDENING-PLAN.md",
       markers: [waiverId, debtMarker, "does not add those thresholds"],

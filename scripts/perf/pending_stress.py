@@ -898,7 +898,7 @@ def run_command(args: argparse.Namespace) -> int:
         "claim_boundary": (
             "This is a pending-acts read-path engineering measurement, not a capacity "
             "proof (governed capacity/slo.capacity.json are untouched by this profile). "
-            "It does not by itself flip any SPEC-COVERAGE claim."
+            "It does not by itself flip any spec-coverage claim."
         ),
     }
     write_json(args.output, report)

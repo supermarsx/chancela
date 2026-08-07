@@ -8,7 +8,7 @@
     "open-loop arrival-rate ladder, which the closed-loop harness workload cannot",
     "express. The governed capacity profile and slo.capacity.json are untouched.",
     "proof_eligible is false and stays false: a raised container CPU quota can",
-    "never support a SPEC-COVERAGE claim.",
+    "never support a spec-coverage claim.",
     "CPU budget measured on this box, not assumed. Host: 2x Xeon Gold 6138 =",
     "40 cores / 80 logical CPUs. The Docker Desktop WSL2 VM is allocated only 26",
     "of those 80, so the container budget below is bounded by 26, not by 80.",

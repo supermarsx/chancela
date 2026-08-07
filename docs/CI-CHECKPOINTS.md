@@ -1,19 +1,5 @@
 # CI Checkpoints
 
-## Spec Coverage Status
-
-`npm run check:spec-coverage` parses `SPEC-COVERAGE.md` and fails if the
-top-level spec table no longer covers all 11 spec documents, uses an unknown
-status, loses the implementation snapshot marker, points it at a non-local
-commit, lets snapshot/checkpoint markers drift from the declared implementation snapshot,
-lets a non-checkpoint HEAD or commit chain claim an older snapshot, or drops the required
-blocker and "Do Not Overstate" boundary sections. Use
-`node scripts/check-spec-coverage.mjs --json` when a machine-readable summary is
-needed for release notes or an operator review packet.
-
-This is an honesty gate for the implementation tracker. It does not certify
-legal completeness, external-provider readiness, or spec completion.
-
 ## Live Provider Assurance
 
 `npm run check:live-provider-assurance` is a cheap static guard for the live CMD,
@@ -41,8 +27,8 @@ that the waiver stays wired into package scripts and the cheap CI metadata lane.
 
 browser/desktop/Docker/live-provider coverage thresholds remain explicit waiver
 debt outside the apps/web Vitest/V8 unit-test lane. The checker verifies that
-this caveat remains visible in `SPEC-COVERAGE.md`,
-`docs/CI-E2E-HARDENING-PLAN.md`, `.github/workflows/ci.yml`, and
+this caveat remains visible in `docs/CI-E2E-HARDENING-PLAN.md`,
+`.github/workflows/ci.yml`, and
 `apps/web/vite.config.ts`. This is no-claim static debt accounting only: it
 does not add browser, desktop, Docker, or live-provider thresholds,
 browser-matrix enforcement, release readiness, provider/legal/signing
@@ -1610,7 +1596,7 @@ areas still resolve together. Broader workspace clippy, full Rust tests,
 browser E2E, Docker, and Windows desktop smoke remain in their dedicated jobs.
 The `3f19872` refresh documents compact notification/storage UI, honest
 platform service controls, encrypted package-build defaults, and books
-filter/table density in `SPEC-COVERAGE.md` and the static checkpoint map without
+filter/table density in the static checkpoint map without
 claiming stdout/stderr, MCP process logs, supervisor lifecycle coverage,
 hardware-ID-derived key security, production key custody, legal validity, or
 complete UX/spec coverage.
