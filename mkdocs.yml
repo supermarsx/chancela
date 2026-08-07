@@ -12,8 +12,15 @@ copyright: Chancela is licensed under the Chancela Source License (MIT-derived, 
 theme:
   name: material
   language: en
-  logo: assets/hero.png
-  favicon: assets/hero.png
+  # The application mark, not the hero screenshot. `icon.svg` is a copy of
+  # apps/desktop/src-tauri/icons/icon-source.svg — a project-authored vector in
+  # the same dark-green/gilt tokens as the app, so the header logo stays crisp
+  # at every density. The favicon is a raster copy of the 128x128 desktop icon:
+  # SVG favicons are still not universally honoured, and 128px downscales to a
+  # tab icon cleanly on high-DPI displays. Both must live under docs/ — mkdocs
+  # does not resolve asset paths outside docs_dir.
+  logo: assets/icon.svg
+  favicon: assets/icon-128.png
   features:
     - navigation.instant
     - navigation.instant.prefetch
@@ -39,17 +46,25 @@ theme:
     - search.share
     - content.code.copy
     - content.tabs.link
+  # The app is dark green + old gold on parchment (apps/web/src/theme.css).
+  # Material's `primary`/`accent` keys accept only its own named palette, so the
+  # names below are the nearest families and exist so anything Material derives
+  # from the named palette (the generated `theme-color` meta, SVG masks) lands in
+  # the right hue. The EXACT brand hexes are applied in assets/extra.css, which
+  # overrides Material's CSS custom properties per scheme — see the palette block
+  # at the top of that file. Both entries keep their `media`/`toggle` pair, so
+  # the light/dark toggle and the OS-preference default both still work.
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: brown
+      primary: green
       accent: amber
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: brown
+      primary: green
       accent: amber
       toggle:
         icon: material/weather-sunny
