@@ -17,7 +17,7 @@ const appVersion: string = pkg.version;
  * It sits BESIDE the release version and never in place of it. `__APP_VERSION__` remains the sole
  * CalVer value, `displayVersion()` keeps owning the user-facing `YY.N` form, and the version-skew
  * comparison in `src/api/versionCheck.ts` never reads these fields — they are provenance, not a
- * version (see VERSIONING.md).
+ * version (see versioning.md).
  *
  * ─── IT MUST BUILD WHERE GIT IS ABSENT ─────────────────────────────────────────────────────────
  *

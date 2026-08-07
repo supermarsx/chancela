@@ -5,7 +5,7 @@
  * `vite.config.ts` resolves the commit at build time and inlines it as `__BUILD_COMMIT__` (raw and
  * unvalidated); everything below turns that into something displayable, or into `null`. This is
  * provenance, NOT a version: the release version stays `__APP_VERSION__` / `displayVersion()`, and
- * nothing here participates in the version-skew comparison (see VERSIONING.md).
+ * nothing here participates in the version-skew comparison (see versioning.md).
  *
  * ─── DEGRADE HONESTLY ──────────────────────────────────────────────────────────────────────────
  *

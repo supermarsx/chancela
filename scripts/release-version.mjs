@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Release-version automation for the CalVer `YY.N` scheme (see VERSIONING.md).
+ * Release-version automation for the CalVer `YY.N` scheme (see versioning.md).
  *
  *   node scripts/release-version.mjs compute [--json]
  *   node scripts/release-version.mjs bump [--dry-run] [--commit] [--tag]

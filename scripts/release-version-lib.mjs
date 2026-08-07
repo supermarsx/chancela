@@ -1,5 +1,5 @@
 /**
- * Pure logic for the CalVer `YY.N` release scheme documented in VERSIONING.md.
+ * Pure logic for the CalVer `YY.N` release scheme documented in versioning.md.
  *
  * Nothing here touches the filesystem, git, or the clock: callers pass in the
  * tag list, the build year and the file contents, and get back the computed
@@ -32,7 +32,7 @@ const MANIFEST_VERSION_PATTERN = /^(\d{2})\.([1-9]\d*)\.0$/u;
 /**
  * The files that carry the release version. The first six are exactly the six
  * `npm run check:versions` gates; the two lockfiles are the "plus the lockfile
- * root `version` fields" clause of VERSIONING.md, which that gate does not
+ * root `version` fields" clause of versioning.md, which that gate does not
  * cover. release-version.test.mjs asserts this list stays a superset of
  * check-versions.mjs.
  */
@@ -90,7 +90,7 @@ export function parseManifestVersion(value) {
   const match = MANIFEST_VERSION_PATTERN.exec(value ?? "");
   if (!match) {
     throw new Error(
-      `"${value}" is not a canonical manifest version; expected YY.N.0 (see VERSIONING.md)`,
+      `"${value}" is not a canonical manifest version; expected YY.N.0 (see versioning.md)`,
     );
   }
   return { year: Number(match[1]), sequence: Number(match[2]) };

@@ -17,7 +17,7 @@ import {
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(scriptsDir, "..");
 
-// The rules from VERSIONING.md, as a table. Each row is a tag list plus a build
+// The rules from versioning.md, as a table. Each row is a tag list plus a build
 // year; `expected` is the release the automation must cut.
 const computationTable = [
   {

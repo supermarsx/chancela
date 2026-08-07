@@ -2,7 +2,7 @@ name: Auto release
 
 # Cuts a CalVer `YY.N` release: computes the next version from the existing
 # tags, rewrites every version-carrying manifest, commits, tags, pushes the tag
-# and hands off to release.yml for packaging. See VERSIONING.md.
+# and hands off to release.yml for packaging. See versioning.md.
 #
 # WHY NOT "every green push to main": main takes well over a hundred commits on
 # a busy day. Releasing on each one would burn `26.1 … 26.160` in a day and make
