@@ -1158,6 +1158,10 @@ export const REVIEWED_IDENTICAL_VALUES = {
     // A cognate, and the same one already reviewed two entries above: "impressão digital" is the
     // ordinary Brazilian term for a fingerprint, and "SHA-256"/"DER" are protocol names. There is
     // no Brazilian form of this label that is not this label.
+    // Same cognate again, unqualified: the label on the trust-anchor suggestion panel (t118). The
+    // two longer forms below were reviewed for exactly this reason, and shortening the phrase does
+    // not make a Brazilian variant appear.
+    'Impressão digital SHA-256',
     'Impressão digital SHA-256 da chave pública (SPKI)',
     'Impressão digital SHA-256 do certificado (DER)',
     'Impresso em {date}',
@@ -1923,6 +1927,9 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'Substituição',
     'Sueco (Finlândia)',
     'Sueco (Suécia)',
+    // A two-word button label (t118). "Sugerir" and "âncora" are the ordinary Brazilian words;
+    // forcing a synonym to satisfy the gate would make the button read worse, not more Brazilian.
+    'Sugerir âncoras',
     'Superfície',
     'Supervisor necessário',
     'Suspender',

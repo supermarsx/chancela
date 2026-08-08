@@ -38,10 +38,19 @@ COPY . .
 # docker/Dockerfile.server carries the full reasoning.
 #
 # A literal id is enough here: this Dockerfile compiles one package with one
-# feature set (none), so there is no second variant to keep apart.
+# feature set, so there is no second variant to keep apart.
+#
+# `all-transports` compiles the S3, SFTP, SMB and FTPS protocol clients. They are
+# OFF in chancela-worker's default features — the worker's own code is
+# protocol-agnostic, and a workspace-wide `cargo check` should not pay for four
+# clients it never dials — so this image asks for them explicitly. It is the
+# runner: dropping them here would leave the queue accepting backup jobs the
+# process cannot execute. (It would refuse them loudly rather than silently, but
+# refusing is not the job.) Nothing overrides this list; keep it literal.
 RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,id=chancela-cargo-target-worker,sharing=shared,target=/build/target \
     cargo build --release --locked -p chancela-worker \
+    --features chancela-worker/all-transports \
     && cp target/release/chancela-worker /chancela-worker
 
 ########################  Stage 2: Runtime  ########################

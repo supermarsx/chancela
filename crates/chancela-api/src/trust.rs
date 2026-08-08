@@ -70,8 +70,8 @@ const TRUST_REFRESH_STATUS_FILE: &str = "tsl-refresh-status.json";
 const TRUST_STORE_PROVENANCE_FILE: &str = "tsl-trust-store.json";
 /// Default member-state territory selected from the LOTL when a refresh does not name one.
 const DEFAULT_TRUST_TERRITORY: &str = "PT";
-const DEFAULT_TSL_FETCH_TIMEOUT_SECONDS: u16 = 30;
-const DEFAULT_TSL_FETCH_MAX_BYTES: u64 = 25 * 1024 * 1024;
+pub(crate) const DEFAULT_TSL_FETCH_TIMEOUT_SECONDS: u16 = 30;
+pub(crate) const DEFAULT_TSL_FETCH_MAX_BYTES: u64 = 25 * 1024 * 1024;
 
 #[cfg(debug_assertions)]
 static LOCAL_TRUST_URL_TEST_ALLOWANCES: OnceLock<Mutex<BTreeMap<String, usize>>> = OnceLock::new();
@@ -1016,7 +1016,7 @@ fn authenticate_member_via_lotl(
 }
 
 /// Resolve the EU LOTL location: explicit override → `CHANCELA_LOTL_URL` → pinned default.
-fn resolve_lotl_url(override_url: Option<&str>) -> String {
+pub(crate) fn resolve_lotl_url(override_url: Option<&str>) -> String {
     if let Some(url) = override_url
         .map(str::trim)
         .filter(|value| !value.is_empty())
@@ -1569,7 +1569,7 @@ fn strip_url_host_for_error(host: &str) -> String {
     host.trim_matches(['[', ']']).to_owned()
 }
 
-fn fetch_bounded_tsl_url(
+pub(crate) fn fetch_bounded_tsl_url(
     url: &str,
     timeout_seconds: u16,
     max_bytes: u64,
@@ -2814,7 +2814,7 @@ fn short_hash(hasher: Sha256) -> String {
     hex::hex(&digest)[..20].to_owned()
 }
 
-fn cert_fingerprint(der: &[u8]) -> String {
+pub(crate) fn cert_fingerprint(der: &[u8]) -> String {
     let digest: [u8; 32] = Sha256::digest(der).into();
     hex::hex(&digest)
 }

@@ -31,6 +31,20 @@ WORKDIR /build
 # (space-separated; a single --features accepts the whole set).
 ARG CARGO_FEATURES="chancela-server/sqlcipher"
 
+# The four remote backup/sync transports (S3, SFTP, SMB, FTPS). They are OFF in
+# chancela-server's default features so a plain `cargo build` and every
+# workspace-wide `cargo check`/`cargo test` stop compiling four protocol clients
+# they never dial — but this image must keep speaking all four, exactly as
+# before the gating.
+#
+# Deliberately NOT part of CARGO_FEATURES: that arg is overridden wholesale by
+# the compose profiles (docker/docker-compose.yml `server-postgres`,
+# docker/docker-compose.cluster.yml `chancela-cluster`), and an override that
+# forgot to repeat the transports would produce an image that accepts an S3
+# backup target and then refuses every probe. Appending it at the build step
+# below puts it out of reach of any override. Do not fold it into the arg.
+ARG CARGO_TRANSPORT_FEATURES="chancela-server/all-transports"
+
 # Cache key for the /build/target mount below; it selects WHICH warm target
 # directory this build reuses and nothing else. It must be changed whenever
 # CARGO_FEATURES is, because a different feature set produces different
@@ -100,7 +114,8 @@ COPY . .
 #             each other's artefacts on every alternation.
 RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,id=chancela-cargo-target-${CARGO_TARGET_CACHE_ID},sharing=shared,target=/build/target \
-    cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
+    cargo build --release -p chancela-server --locked \
+    --features "${CARGO_TRANSPORT_FEATURES} ${CARGO_FEATURES}" \
     && cp target/release/chancela-server /chancela-server \
     && mkdir /runtime-libs \
     && cp /usr/lib/*-linux-gnu/libpcsclite.so.1 \

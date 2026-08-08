@@ -8,21 +8,49 @@ authors.workspace = true
 repository.workspace = true
 description = "ARC-20/21 sync and backup connector foundation for Chancela"
 
+[features]
+# NO remote transport is compiled by default.
+#
+# Four of the eight protocols carry a protocol client far heavier than the connector code that
+# uses it: `aws-sdk-s3` alone brings ~170 crates, `russh`+`russh-sftp` ~142, `smb2` ~80,
+# `suppaftp` ~48 — and `russh`/`smb2` pull the NEW RustCrypto stack (digest 0.11, aes 0.9,
+# elliptic-curve 0.14) while `cms`/`p12`/`argon2 0.5` elsewhere in the tree pull the old one, so
+# a dozen crates compiled twice. Every `cargo test`, every CI job and the desktop shell paid for
+# all four, and none of them dials any.
+#
+# What is NOT gated, deliberately: `TargetConfig` and the per-kind `*Target` structs. A build
+# without a transport still parses, validates and serves configuration for it — an operator's
+# saved target never becomes unreadable because of how a binary was compiled. Only the client is
+# optional, and `build_connector` refuses a target it cannot dial by name. See `src/codes.rs`.
+#
+# Consumers: `chancela-server` and `chancela-worker` default to none and the Docker images pass
+# `all-transports` explicitly (docker/Dockerfile.server, docker/Dockerfile.worker); the desktop
+# shell enables all four through `chancela-api/all-transports` because its embedded API really
+# does probe remote targets.
+default = []
+s3 = ["dep:aws-sdk-s3", "dep:base64"]
+sftp = ["dep:russh", "dep:russh-sftp"]
+smb = ["dep:smb2"]
+ftps = ["dep:suppaftp", "dep:rustls-native-certs"]
+all-transports = ["s3", "sftp", "smb", "ftps"]
+
 [dependencies]
 async-trait = "0.1.89"
-aws-sdk-s3 = { version = "=1.138.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"] }
-base64 = "0.22.1"
+aws-sdk-s3 = { version = "=1.138.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"], optional = true }
+# `s3` only: the checksum headers the multipart upload sends are base64.
+base64 = { version = "0.22.1", optional = true }
 bytes.workspace = true
 percent-encoding = "2.3.2"
 reqwest = { workspace = true, features = ["stream"] }
-russh = { version = "0.62.2", default-features = false, features = ["ring"] }
-russh-sftp = "2.3.0"
-rustls-native-certs = "0.8.2"
+russh = { version = "0.62.2", default-features = false, features = ["ring"], optional = true }
+russh-sftp = { version = "2.3.0", optional = true }
+# `ftps` only: the WebDAV/Graph/Drive clients get their roots from reqwest's own store.
+rustls-native-certs = { version = "0.8.2", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-smb2 = "0.13.1"
-suppaftp = { version = "10.0.1", default-features = false, features = ["tokio-rustls-ring"] }
+smb2 = { version = "0.13.1", optional = true }
+suppaftp = { version = "10.0.1", default-features = false, features = ["tokio-rustls-ring"], optional = true }
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util = { version = "0.7.18", features = ["io"] }
@@ -32,3 +60,10 @@ zeroize = "1.8.2"
 [dev-dependencies]
 axum.workspace = true
 tower.workspace = true
+
+# Wholly an S3 exercise; without the client there is nothing in it to run.
+# `security_contracts.rs` is NOT listed here on purpose: its local-connector and secret-provider
+# invariants must keep running in a default build, so its transport cases are gated per-test.
+[[test]]
+name = "s3_contract"
+required-features = ["s3"]

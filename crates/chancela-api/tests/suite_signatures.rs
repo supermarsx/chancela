@@ -19,6 +19,8 @@ mod ltv;
 mod official_signature_import;
 #[path = "signing_configure_gate.rs"]
 mod signing_configure_gate;
+#[path = "trust_anchor_suggestions.rs"]
+mod trust_anchor_suggestions;
 #[path = "xades_signature.rs"]
 mod xades_signature;
 

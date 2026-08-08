@@ -4637,6 +4637,51 @@ export const plPL: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Odcisk kotwicy {position}',
   'settings.signing.tslAnchors.digests.remove': 'Usuń odcisk kotwicy {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 znaki szesnastkowe',
+  'settings.signing.anchorSuggest.title': 'Propozycje kotwic zaufania',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela może sprawdzić w europejskiej liście list zaufania (LOTL), który certyfikat powinien podpisywać każdą skonfigurowaną przez Ciebie listę zaufania. Ta europejska lista jest najpierw uwierzytelniana kotwicą podaną poniżej. Nic nie jest dodawane samo z siebie: każda wartość to propozycja, którą tylko Ty możesz przyjąć.',
+  'settings.signing.anchorSuggest.run': 'Zaproponuj kotwice',
+  'settings.signing.anchorSuggest.running': 'Trwa pobieranie listy list zaufania…',
+  'settings.signing.anchorSuggest.checkedAt': 'Sprawdzono {url} dnia {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Nie można niczego zaproponować',
+  'settings.signing.anchorSuggest.detail': 'Serwer zgłosił:',
+  'settings.signing.anchorSuggest.noProposals': 'Brak kandydata dla tego źródła.',
+  'settings.signing.anchorSuggest.provenance.lotl': 'Z uwierzytelnionej listy list zaufania',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted': 'Z samej listy — bez weryfikacji',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Ten certyfikat poświadcza sam siebie',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Ten certyfikat pochodzi z podpisu tej samej listy, którą miałby uwierzytelniać, więc sam z siebie niczego nie dowodzi: sfałszowana lista niesie sfałszowany certyfikat. Porównaj odcisk SHA-256 poniżej z odciskiem opublikowanym przez podmiot prowadzący ten system zaufania i przyjmij go tylko wtedy, gdy oba są zgodne.',
+  'settings.signing.anchorSuggest.subject': 'Podmiot certyfikatu',
+  'settings.signing.anchorSuggest.issuer': 'Wystawca',
+  'settings.signing.anchorSuggest.validFrom': 'Ważny od',
+  'settings.signing.anchorSuggest.validUntil': 'Ważny do',
+  'settings.signing.anchorSuggest.fingerprint': 'Odcisk SHA-256',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Już skonfigurowany',
+  'settings.signing.anchorSuggest.addCertificate': 'Dodaj jako certyfikat kotwicy',
+  'settings.signing.anchorSuggest.addFingerprint': 'Dodaj jako odcisk kotwicy',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'Lista list zaufania została uwierzytelniona skonfigurowaną kotwicą.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Nie skonfigurowano żadnej kotwicy zaufania, ani tutaj, ani w środowisku. Lista list zaufania jest korzeniem zaufania i nie może uwierzytelnić samej siebie, więc nic nie da się zaproponować. Ta pierwsza kotwica jest publikowana w Dzienniku Urzędowym Unii Europejskiej i trzeba ją wprowadzić ręcznie.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Nie udało się pobrać listy list zaufania.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'Listę list zaufania pobrano, ale jej podpis nie przechodzi weryfikacji żadną skonfigurowaną kotwicą. Z listy, której nie da się uwierzytelnić, nic nie jest proponowane.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Pobrany dokument nie wskazuje żadnej listy krajowej, nie jest więc listą list zaufania i niczego nie poświadcza.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'Uwierzytelniona lista list zaufania wskazuje certyfikat, który powinien podpisywać tę listę.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'To źródło jest samą listą list zaufania. Jej własna kotwica jest publikowana w Dzienniku Urzędowym Unii Europejskiej i nigdy nie jest brana z dokumentu.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'Uwierzytelniona lista list zaufania nie ma wpisu dla tego źródła, więc nic go nie poświadcza.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'Uwierzytelniona lista list zaufania ma wpis dla tego źródła, ale nie wskazuje w nim żadnego certyfikatu podpisującego.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed': 'Nie udało się pobrać tej listy.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Ta lista nie zawiera żadnego certyfikatu w swoim podpisie.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'To źródło nie ma adresu, który dałoby się pobrać, więc nic nie można dla niego zaproponować.',
   'settings.signing.tsaProviders.title': 'Dostawcy TSA',
   'settings.signing.tsaProviders.hint':
     'Skonfiguruj urzędy znaczników czasu RFC 3161. Gdy dostawcy są włączeni, dokładnie jeden musi być domyślny.',

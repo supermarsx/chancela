@@ -4546,6 +4546,23 @@ export function useDegradedHealth() {
   });
 }
 
+/**
+ * Ask the server which trust anchors it can propose for the configured Trusted List sources.
+ *
+ * A **mutation, not a query**, and deliberately so: the call fetches the EU LOTL and possibly each
+ * configured list, so it is outbound network traffic that must happen only when an operator asks
+ * for it. A `useQuery` would fire it on mount, on focus, and on every cache revalidation.
+ *
+ * Nothing it returns is written anywhere. The operator picks values out of the response and saves
+ * them through the ordinary settings PUT, which is where `signing.configure`, validation and the
+ * audit trail already live — so there is no cache to invalidate here.
+ */
+export function useTrustAnchorSuggestions() {
+  return useMutation({
+    mutationFn: () => api.getTrustAnchorSuggestions(),
+  });
+}
+
 // --- Provider-credential entries (wp13) -----------------------------------------
 //
 // Management of the encrypted multi-key store. The list is metadata only (secrets are

@@ -28,6 +28,19 @@ postgres = ["chancela-runtime-config/postgres", "chancela-store/postgres", "dep:
 # still inert unless `REDIS_URL`/`REDIS_URL_FILE` is set at runtime (else NullCache). The in-process
 # `Ledger::verify()` memo (the real single-node win) needs NO feature — it is always compiled.
 redis = ["dep:redis"]
+# Remote backup/sync transports. OFF by default: this crate needs the connector *types* on every
+# code path (`ConnectorKind`, `TargetConfig`, `RuntimeAllowlist`, the settings allowlist) but dials
+# a remote target in exactly one place — the `POST .../connector-targets/{id}/probe` handler. A
+# build without a transport still stores, validates and serves targets of that kind; only the
+# probe refuses, by name, with a stable code (`chancela_connectors::codes`).
+#
+# `chancela-server` and the desktop shell turn these on for the artefacts that ship; a bare
+# `cargo test -p chancela-api` does not, which is the point — it is ~170 crates for S3 alone.
+s3 = ["chancela-connectors/s3", "chancela-worker/s3"]
+sftp = ["chancela-connectors/sftp", "chancela-worker/sftp"]
+smb = ["chancela-connectors/smb", "chancela-worker/smb"]
+ftps = ["chancela-connectors/ftps", "chancela-worker/ftps"]
+all-transports = ["s3", "sftp", "smb", "ftps"]
 
 [dependencies]
 chancela-apikey = { workspace = true }
@@ -35,8 +48,10 @@ chancela-action-center = { workspace = true }
 chancela-archive = { workspace = true }
 chancela-authz = { workspace = true }
 chancela-zk = { workspace = true }
-chancela-connectors = { workspace = true }
-chancela-worker = { workspace = true }
+# `default-features = false` on both: their defaults are empty today, but stating it means a
+# transport can never reach this crate's graph except through the features above.
+chancela-connectors = { workspace = true, default-features = false }
+chancela-worker = { workspace = true, default-features = false }
 chancela-core = { workspace = true }
 chancela-ledger = { workspace = true }
 chancela-registry = { workspace = true }

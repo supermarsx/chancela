@@ -8,8 +8,24 @@ authors.workspace = true
 repository.workspace = true
 description = "Durable ARC-20 sync and backup job worker for Chancela"
 
+[features]
+# Remote backup/sync transports, forwarded to `chancela-connectors`. OFF by default even though
+# this crate is the one that actually dials: the worker's own code is protocol-agnostic (it goes
+# through `build_connector`), so the choice belongs to whoever builds the artefact.
+#
+# The shipped worker image passes `all-transports` explicitly — see docker/Dockerfile.worker,
+# which appends it outside any overridable build-arg so no compose override can drop it. A worker
+# built without a transport does not fail quietly: `build_connector` refuses the target by name
+# with a permanent, non-retryable error, and the job fails rather than reporting a backup taken.
+default = []
+s3 = ["chancela-connectors/s3"]
+sftp = ["chancela-connectors/sftp"]
+smb = ["chancela-connectors/smb"]
+ftps = ["chancela-connectors/ftps"]
+all-transports = ["s3", "sftp", "smb", "ftps"]
+
 [dependencies]
-chancela-connectors = { path = "../chancela-connectors" }
+chancela-connectors = { path = "../chancela-connectors", default-features = false }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true

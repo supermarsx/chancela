@@ -119,6 +119,14 @@ embedded-server = [
     "dep:windows-sys",
     "dep:tokio",
     "dep:axum",
+    # The remote backup/sync transports, which `chancela-api` now leaves off by default. They are
+    # listed here because the desktop DOES use one: the embedded API serves the same connector
+    # settings screen as the server, and its probe handler opens a real connection to an S3/SFTP/
+    # SMB/FTPS target from this process. Dropping them would turn a working button into
+    # "compiled without this transport" for every desktop operator, which is a capability change,
+    # not a build saving. (Uploads are a separate matter — the desktop ships no worker, so a
+    # staged job has never had a runner. That gap predates this gating.)
+    "chancela-api/all-transports",
 ]
 
 # Enables whole-database encryption in the embedded API/store. In this mode the desktop app

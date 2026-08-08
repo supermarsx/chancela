@@ -1656,6 +1656,13 @@ pub(crate) const ROUTE_GUARD: &[(&str, RouteGuard)] = &[
         RouteGuard::Actions(&[ConfirmationAction::TrustListRefresh]),
     ),
     (
+        "/v1/trust/anchor-suggestions",
+        RouteGuard::NotGuarded(
+            "Read-only: proposes trust anchors and persists none of them. The operator's selection \
+             is saved through the settings write path, which is where the confirmation lives.",
+        ),
+    ),
+    (
         "/v1/trust/catalog",
         RouteGuard::NotGuarded(
             "Read-only: returns data and mutates no state, so there is nothing to confirm.",

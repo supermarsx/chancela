@@ -14,5 +14,6 @@
     "detail": "WebDAV endpoint is reachable"
   },
   "error_class": null,
-  "error": null
+  "error": null,
+  "error_code": null
 }

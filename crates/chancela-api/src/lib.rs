@@ -221,6 +221,12 @@ mod tenants;
 // the sign-in path (P2) consumes. `pub` so the adversarial suite can drive the verifier directly.
 pub mod totp;
 mod trust;
+// t118: propose Trusted List trust anchors from the authenticated EU LOTL. Read-only by
+// construction — see the module note for why an unauthenticated LOTL proposes nothing at all.
+mod trust_anchor_suggestions;
+// The stable code vocabulary the module above puts on the wire. `pub` so the web app's
+// completeness test can read the closed list out of the source, as it does for the probe codes.
+pub mod trust_anchor_suggestion_codes;
 // t37: per-user, non-ledger UI preferences (configurable table columns). Deliberately NOT part of
 // the ledger-backed `users` / `UserView` — see the module note for why churny UI toggles must not
 // ride the user-event digest.
@@ -3497,6 +3503,10 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/cae/{code}/children", get(cae::list_children))
         .route("/v1/trust/status", get(trust::trust_status))
         .route("/v1/trust/refresh", post(trust::refresh_trust_tsl))
+        .route(
+            "/v1/trust/anchor-suggestions",
+            get(trust_anchor_suggestions::trust_anchor_suggestions),
+        )
         .route("/v1/trust/catalog", get(trust::trust_catalog))
         .route("/v1/trust/tsa", get(trust::trust_tsa))
         .route("/v1/trust/providers/{id}", get(trust::trust_provider))

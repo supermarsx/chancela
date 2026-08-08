@@ -4673,6 +4673,54 @@ export const frFR: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Empreinte d’ancre {position}',
   'settings.signing.tslAnchors.digests.remove': 'Supprimer l’empreinte d’ancre {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caractères hexadécimaux',
+  'settings.signing.anchorSuggest.title': 'Suggestions d’ancres',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela peut consulter, dans la liste européenne des listes de confiance (LOTL), quel certificat est censé signer chaque liste de confiance que vous avez configurée. Cette liste européenne est d’abord authentifiée à l’aide de l’ancre indiquée ci-dessous. Rien n’est ajouté à votre place : chaque valeur affichée est une suggestion, et vous seul pouvez l’accepter.',
+  'settings.signing.anchorSuggest.run': 'Suggérer des ancres',
+  'settings.signing.anchorSuggest.running': 'Consultation de la liste des listes de confiance…',
+  'settings.signing.anchorSuggest.checkedAt': 'Consultation de {url} le {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Rien ne peut être suggéré',
+  'settings.signing.anchorSuggest.detail': 'Le serveur a signalé :',
+  'settings.signing.anchorSuggest.noProposals': 'Aucun candidat pour cette source.',
+  'settings.signing.anchorSuggest.provenance.lotl':
+    'Issu de la liste des listes de confiance authentifiée',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Issu de la liste elle-même — non vérifié',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Ce certificat se cautionne lui-même',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Ce certificat provient de la signature de la liste même qu’il servirait à authentifier ; à lui seul, il ne prouve donc rien : une liste falsifiée porte un certificat falsifié. Comparez l’empreinte SHA-256 ci-dessous avec l’empreinte publiée par l’organisme qui exploite ce schéma de confiance, et ne l’acceptez que si les deux correspondent.',
+  'settings.signing.anchorSuggest.subject': 'Titulaire',
+  'settings.signing.anchorSuggest.issuer': 'Émetteur',
+  'settings.signing.anchorSuggest.validFrom': 'Valide à partir du',
+  'settings.signing.anchorSuggest.validUntil': 'Valide jusqu’au',
+  'settings.signing.anchorSuggest.fingerprint': 'Empreinte SHA-256',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Déjà configuré',
+  'settings.signing.anchorSuggest.addCertificate': 'Ajouter comme certificat d’ancre',
+  'settings.signing.anchorSuggest.addFingerprint': 'Ajouter comme empreinte d’ancre',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'La liste des listes de confiance a été authentifiée à l’aide d’une ancre configurée.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Aucune ancre de confiance n’est configurée, ni ici ni dans l’environnement. La liste des listes de confiance est la racine de la confiance et ne peut pas s’authentifier elle-même : rien ne peut donc être suggéré. Cette première ancre est publiée au Journal officiel de l’Union européenne et doit être saisie à la main.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'La liste des listes de confiance n’a pas pu être récupérée.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'La liste des listes de confiance a été récupérée, mais sa signature ne se vérifie avec aucune ancre configurée. Rien n’est suggéré à partir d’une liste qui ne peut pas être authentifiée.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Le document récupéré ne renvoie à aucune liste nationale : ce n’est donc pas une liste des listes de confiance et il ne cautionne rien.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'La liste des listes de confiance authentifiée désigne le certificat censé signer cette liste.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Cette source est la liste des listes de confiance elle-même. Sa propre ancre est publiée au Journal officiel de l’Union européenne et n’est jamais tirée du document.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'La liste des listes de confiance authentifiée ne comporte aucune entrée pour cette source : rien ne la cautionne.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'La liste des listes de confiance authentifiée comporte une entrée pour cette source, mais elle n’y désigne aucun certificat de signature.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed':
+    'Cette liste n’a pas pu être récupérée.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Cette liste ne porte aucun certificat dans sa signature.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Cette source n’a aucune adresse récupérable : rien ne peut lui être suggéré.',
   'settings.signing.tsaProviders.title': 'Prestataires TSA',
   'settings.signing.tsaProviders.hint':
     'Configurez des autorités d’horodatage RFC 3161. Lorsqu’un prestataire est activé, un seul doit être défini par défaut.',

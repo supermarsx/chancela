@@ -988,6 +988,10 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     ("/v1/trust/status", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
     ("/v1/trust/catalog", RouteClass::Gated), // GET cae.read@Global (read-only trust reference)
     ("/v1/trust/refresh", RouteClass::Gated), // POST trust.manage@Global (operator TSL import; ledgered)
+    // GET signing.configure@Global — the SAME verb that writes the anchors, because the whole
+    // response is material an operator is about to turn into a trust root. Read-only: it fetches
+    // and returns, and writes neither settings nor ledger.
+    ("/v1/trust/anchor-suggestions", RouteClass::Gated),
     ("/v1/trust/tsa", RouteClass::Gated),     // GET cae.read@Global (read-only TSA diagnostics)
     ("/v1/trust/providers/{id}", RouteClass::Gated), // GET cae.read@Global
     ("/v1/trust/services/{id}", RouteClass::Gated), // GET cae.read@Global

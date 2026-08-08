@@ -4634,6 +4634,54 @@ export const svFI: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankarfingeravtryck {position}',
   'settings.signing.tslAnchors.digests.remove': 'Ta bort ankarfingeravtryck {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimala tecken',
+  'settings.signing.anchorSuggest.title': 'Förslag på tillitsankare',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela kan slå upp i EU:s förteckning över betrodda listor (LOTL) vilket certifikat som förväntas signera varje betrodd lista du har ställt in. Den europeiska förteckningen kontrolleras först mot det ankare du angett nedan. Ingenting läggs till åt dig: varje värde är ett förslag, och bara du kan godta det.',
+  'settings.signing.anchorSuggest.run': 'Föreslå ankare',
+  'settings.signing.anchorSuggest.running': 'Hämtar förteckningen över betrodda listor…',
+  'settings.signing.anchorSuggest.checkedAt': 'Uppslag mot {url} den {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Ingenting kan föreslås',
+  'settings.signing.anchorSuggest.detail': 'Servern rapporterade:',
+  'settings.signing.anchorSuggest.noProposals': 'Ingen kandidat för den här källan.',
+  'settings.signing.anchorSuggest.provenance.lotl':
+    'Från den kontrollerade förteckningen över betrodda listor',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Från listan själv — inte kontrollerat',
+  'settings.signing.anchorSuggest.selfAsserted.title':
+    'Det här certifikatet går i god för sig självt',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Certifikatet är hämtat ur signaturen på just den lista det skulle styrka, och bevisar därför ingenting i sig: en förfalskad lista bär ett förfalskat certifikat. Jämför SHA-256-fingeravtrycket nedan med det fingeravtryck som offentliggjorts av det organ som driver den här tillitsordningen, och godta det bara om de två stämmer överens.',
+  'settings.signing.anchorSuggest.subject': 'Innehavare',
+  'settings.signing.anchorSuggest.issuer': 'Utfärdare',
+  'settings.signing.anchorSuggest.validFrom': 'Giltigt från',
+  'settings.signing.anchorSuggest.validUntil': 'Giltigt till',
+  'settings.signing.anchorSuggest.fingerprint': 'SHA-256-fingeravtryck',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Redan inställt',
+  'settings.signing.anchorSuggest.addCertificate': 'Lägg till som ankarcertifikat',
+  'settings.signing.anchorSuggest.addFingerprint': 'Lägg till som ankarfingeravtryck',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'Förteckningen över betrodda listor kontrollerades mot ett inställt ankare.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Inget tillitsankare är inställt, varken här eller i miljön. Förteckningen över betrodda listor är tillitens rot och kan inte styrka sig själv, så ingenting kan föreslås. Det första ankaret offentliggörs i Europeiska unionens officiella tidning och måste skrivas in för hand.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Förteckningen över betrodda listor kunde inte hämtas.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'Förteckningen över betrodda listor hämtades, men dess signatur håller inte mot något inställt ankare. Från en lista som inte kan styrkas föreslås ingenting.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Dokumentet som hämtades pekar inte på någon nationell lista och är alltså ingen förteckning över betrodda listor; det går inte i god för någonting.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'Den kontrollerade förteckningen över betrodda listor anger vilket certifikat som förväntas signera den här listan.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Den här källan är själva förteckningen över betrodda listor. Dess eget ankare offentliggörs i Europeiska unionens officiella tidning och hämtas aldrig ur dokumentet.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'Den kontrollerade förteckningen över betrodda listor har ingen post för den här källan, så ingenting går i god för den.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'Den kontrollerade förteckningen över betrodda listor har en post för den här källan, men anger inget signeringscertifikat i den.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed': 'Den här listan kunde inte hämtas.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Den här listan bär inget certifikat i sin signatur.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Den här källan har ingen adress som går att hämta, så ingenting kan föreslås för den.',
   'settings.signing.tsaProviders.title': 'TSA-leverantörer',
   'settings.signing.tsaProviders.hint':
     'Konfigurera RFC 3161-tidsstämpelutfärdare. När leverantörer är aktiverade måste exakt en vara standard.',

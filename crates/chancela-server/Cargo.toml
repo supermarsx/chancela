@@ -30,6 +30,19 @@ postgres = ["chancela-api/postgres", "chancela-store/postgres"]
 # wp14 Phase 4: build the server binary with the OPTIONAL Redis cache-aside available. OFF by
 # default; when on, the cache is still inert unless REDIS_URL is set at runtime (else NullCache).
 redis = ["chancela-api/redis"]
+# Remote backup/sync transports (S3/SFTP/SMB/FTPS). OFF by default so a plain `cargo build` and
+# every workspace-wide `cargo check`/`cargo test` stop compiling four protocol clients nothing in
+# them dials. The SHIPPED image is unaffected: docker/Dockerfile.server appends
+# `chancela-server/all-transports` to the feature list itself, outside the overridable
+# CARGO_FEATURES build arg, so neither compose profile can drop it.
+#
+# A server built without one still stores, validates and serves targets of that kind; only the
+# probe handler refuses, by name, with a stable code. See crates/chancela-connectors/src/codes.rs.
+s3 = ["chancela-api/s3"]
+sftp = ["chancela-api/sftp"]
+smb = ["chancela-api/smb"]
+ftps = ["chancela-api/ftps"]
+all-transports = ["s3", "sftp", "smb", "ftps"]
 
 [dependencies]
 chancela-api = { workspace = true }

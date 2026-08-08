@@ -4636,6 +4636,52 @@ export const fiFI: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankkurin sormenjälki {position}',
   'settings.signing.tslAnchors.digests.remove': 'Poista ankkurin sormenjälki {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 heksadesimaalimerkkiä',
+  'settings.signing.anchorSuggest.title': 'Luottamusankkurien ehdotukset',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela voi hakea EU:n luottamuslistojen luettelosta (LOTL), minkä varmenteen kunkin määrittämäsi luottamuslistan pitäisi olla allekirjoittanut. Tämä eurooppalainen luettelo todennetaan ensin alla määritetyllä ankkurilla. Mitään ei lisätä puolestasi: jokainen arvo on ehdotus, jonka vain sinä voit hyväksyä.',
+  'settings.signing.anchorSuggest.run': 'Ehdota ankkureita',
+  'settings.signing.anchorSuggest.running': 'Haetaan luottamuslistojen luetteloa…',
+  'settings.signing.anchorSuggest.checkedAt': 'Haettu osoitteesta {url} {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Mitään ei voi ehdottaa',
+  'settings.signing.anchorSuggest.detail': 'Palvelin ilmoitti:',
+  'settings.signing.anchorSuggest.noProposals': 'Ei ehdokasta tälle lähteelle.',
+  'settings.signing.anchorSuggest.provenance.lotl': 'Todennetusta luottamuslistojen luettelosta',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Listalta itseltään — ei varmennettu',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Tämä varmenne vastaa itsestään',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Varmenne on otettu juuri sen listan allekirjoituksesta, jonka se todentaisi, joten se ei yksinään todista mitään: väärennetty lista kantaa väärennettyä varmennetta. Vertaa alla näkyvää SHA-256-tiivisteä siihen tiivisteeseen, jonka tätä luottamusjärjestelmää ylläpitävä taho on julkaissut, ja hyväksy se vain, jos ne täsmäävät.',
+  'settings.signing.anchorSuggest.subject': 'Haltija',
+  'settings.signing.anchorSuggest.issuer': 'Myöntäjä',
+  'settings.signing.anchorSuggest.validFrom': 'Voimassa alkaen',
+  'settings.signing.anchorSuggest.validUntil': 'Voimassa asti',
+  'settings.signing.anchorSuggest.fingerprint': 'SHA-256-tiiviste',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Jo määritetty',
+  'settings.signing.anchorSuggest.addCertificate': 'Lisää ankkurivarmenteeksi',
+  'settings.signing.anchorSuggest.addFingerprint': 'Lisää ankkuritiivisteeksi',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'Luottamuslistojen luettelo todennettiin määritetyllä ankkurilla.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Yhtään luottamusankkuria ei ole määritetty, ei täällä eikä ympäristössä. Luottamuslistojen luettelo on luottamuksen juuri eikä voi todentaa itseään, joten mitään ei voi ehdottaa. Tämä ensimmäinen ankkuri julkaistaan Euroopan unionin virallisessa lehdessä, ja se on syötettävä käsin.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Luottamuslistojen luetteloa ei saatu haettua.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'Luottamuslistojen luettelo haettiin, mutta sen allekirjoitus ei kelpaa millään määritetyllä ankkurilla. Listasta, jota ei voi todentaa, ei ehdoteta mitään.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Haettu asiakirja ei viittaa yhteenkään jäsenvaltion listaan, joten se ei ole luottamuslistojen luettelo eikä vastaa mistään.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'Todennettu luottamuslistojen luettelo nimeää varmenteen, jonka pitäisi allekirjoittaa tämä lista.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Tämä lähde on itse luottamuslistojen luettelo. Sen oma ankkuri julkaistaan Euroopan unionin virallisessa lehdessä eikä sitä koskaan oteta asiakirjasta.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'Todennetussa luottamuslistojen luettelossa ei ole merkintää tälle lähteelle, joten mikään ei vastaa siitä.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'Todennetussa luottamuslistojen luettelossa on merkintä tälle lähteelle, mutta se ei nimeä allekirjoitusvarmennetta.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed': 'Tätä listaa ei saatu haettua.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Tämän listan allekirjoituksessa ei ole varmennetta.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Tällä lähteellä ei ole haettavissa olevaa osoitetta, joten sille ei voi ehdottaa mitään.',
   'settings.signing.tsaProviders.title': 'TSA-palveluntarjoajat',
   'settings.signing.tsaProviders.hint':
     'Määritä RFC 3161 -aikaleimaviranomaiset. Kun palveluntarjoajia on käytössä, täsmälleen yhden on oltava oletus.',

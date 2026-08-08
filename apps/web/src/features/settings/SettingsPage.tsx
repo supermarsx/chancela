@@ -131,6 +131,7 @@ import { ConnectorEgressSection, parseAllowedHosts } from './ConnectorEgressSect
 import { EmailSection } from './EmailSection';
 import { LanguagePreferenceSection } from './LanguagePreferenceSection';
 import { ProviderCredentialsSection } from './ProviderCredentialsSection';
+import { TrustAnchorSuggestions } from './TrustAnchorSuggestions';
 import { providerCredentialCreatePath } from './providerCredentialRoutes';
 import { PairingPanel } from '../pairing/PairingPanel';
 import {
@@ -2906,6 +2907,22 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                   <div className="form settings-rows">
                     <p className="field__hint">{t('settings.signing.tslAnchors.hint')}</p>
                     <p className="field__hint">{t('settings.signing.tslAnchors.provenance')}</p>
+
+                    {/* The assistant sits directly above the fields it proposes values for, since
+                        "what do I paste here?" is asked at those fields and nowhere else. It never
+                        writes: each of its buttons appends to this draft, and the ordinary save
+                        flow is still the only thing that persists an anchor. */}
+                    <TrustAnchorSuggestions
+                      onAddCertificate={(pem) =>
+                        setTrustAnchors('tsl_trust_anchor_certs', (anchors) => [...anchors, pem])
+                      }
+                      onAddFingerprint={(sha256) =>
+                        setTrustAnchors('tsl_trust_anchor_sha256', (anchors) => [
+                          ...anchors,
+                          sha256,
+                        ])
+                      }
+                    />
 
                     {/* Fail-closed, so it must be legible here rather than discovered as a 422 at
                         signing time. Worded as a conditional: this page can only see the settings

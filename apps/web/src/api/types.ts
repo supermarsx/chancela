@@ -2864,12 +2864,27 @@ export interface ConnectorStatusView {
   detail: string;
 }
 
+/**
+ * Stable machine identifiers for probe failures the client must render in the operator's
+ * language. Source of truth: `crates/chancela-connectors/src/codes.rs` (append-only).
+ *
+ * These name the one failure the server cannot phrase for us: the binary was built without the
+ * protocol client for this target's transport. The English `error` sentence is still on the wire
+ * for a client that does not know the code.
+ */
+export type ConnectorProbeErrorCode =
+  | 'transport_not_compiled_s3'
+  | 'transport_not_compiled_sftp'
+  | 'transport_not_compiled_smb'
+  | 'transport_not_compiled_ftps';
+
 export interface ConnectorProbeView {
   target_id: string;
   checked_at: string;
   status: ConnectorStatusView | null;
   error_class: ConnectorErrorClass | null;
   error: string | null;
+  error_code: ConnectorProbeErrorCode | null;
 }
 
 export type ConnectorJobState =
@@ -3651,6 +3666,60 @@ export interface TslRefreshStatusView {
 export interface TslRefreshRequest {
   url?: string;
   path?: string;
+}
+
+/**
+ * Where a proposed trust anchor came from — the field the whole trust-anchor assistant hangs on.
+ *
+ * `eu_lotl` is the sound path: the certificate the **authenticated** EU LOTL names as the expected
+ * signer of that member-state list. Trust flows from the LOTL's own anchor, which the operator
+ * established out of band from the Official Journal.
+ *
+ * `list_self_asserted` is the candidate the list's OWN signature carries. It proves nothing — a
+ * forged list carries a forged one — and is shown only so the operator can compare its fingerprint
+ * against a value the scheme operator publishes. The UI must never present the two alike.
+ */
+export type TrustAnchorProvenance = 'eu_lotl' | 'list_self_asserted';
+
+export interface TrustAnchorProposalView {
+  provenance: TrustAnchorProvenance;
+  subject: string;
+  issuer: string;
+  not_before: string | null;
+  not_after: string | null;
+  /** Lowercase-hex SHA-256 of the certificate DER. */
+  sha256: string;
+  /**
+   * PEM to paste into `tsl_trust_anchor_certs`. **`null` for `list_self_asserted`** — that
+   * candidate is a fingerprint to go and verify, not an anchor to adopt, and the server withholds
+   * the pasteable form deliberately.
+   */
+  certificate_pem: string | null;
+  /** Already matches a configured anchor (settings ∪ environment), compared by DER fingerprint. */
+  already_configured: boolean;
+}
+
+export interface TrustAnchorSourceSuggestionView {
+  source_id: string;
+  source_name: string;
+  url: string | null;
+  territory: string | null;
+  /** Stable code from `crates/chancela-api/src/trust_anchor_suggestion_codes.rs`. */
+  code: string;
+  /** The underlying library/transport error verbatim. Server's own words; never translated. */
+  detail: string | null;
+  proposals: TrustAnchorProposalView[];
+}
+
+export interface TrustAnchorSuggestionsView {
+  checked_at: string;
+  lotl_url: string;
+  /** When `false`, no source carries a proposal: the endpoint fails closed. */
+  lotl_authenticated: boolean;
+  lotl_code: string;
+  lotl_detail: string | null;
+  configured_anchor_count: number;
+  sources: TrustAnchorSourceSuggestionView[];
 }
 
 export interface TslSummaryView {

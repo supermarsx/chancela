@@ -4602,6 +4602,52 @@ export const enUS = {
   'settings.signing.tslAnchors.digests.label': 'Anchor fingerprint {position}',
   'settings.signing.tslAnchors.digests.remove': 'Remove anchor fingerprint {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimal characters',
+  'settings.signing.anchorSuggest.title': 'Anchor suggestions',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela can look up, in the EU List of Trusted Lists, which certificate is expected to sign each Trusted List you have configured. That European list is itself authenticated first, against the anchor you set below. Nothing is added for you: every value shown is a suggestion, and only you can accept it.',
+  'settings.signing.anchorSuggest.run': 'Suggest anchors',
+  'settings.signing.anchorSuggest.running': 'Consulting the List of Trusted Lists…',
+  'settings.signing.anchorSuggest.checkedAt': 'Consulted {url} at {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Nothing can be suggested',
+  'settings.signing.anchorSuggest.detail': 'The server reported:',
+  'settings.signing.anchorSuggest.noProposals': 'No candidate for this source.',
+  'settings.signing.anchorSuggest.provenance.lotl': 'From the authenticated List of Trusted Lists',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'From the list itself — not verified',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'This certificate vouches for itself',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'This certificate was taken from the signature of the very list it would authenticate, so it proves nothing on its own: a forged list carries a forged certificate. Compare the SHA-256 fingerprint below against the fingerprint published by the body that operates this trust scheme, and accept it only if the two match.',
+  'settings.signing.anchorSuggest.subject': 'Subject',
+  'settings.signing.anchorSuggest.issuer': 'Issuer',
+  'settings.signing.anchorSuggest.validFrom': 'Valid from',
+  'settings.signing.anchorSuggest.validUntil': 'Valid until',
+  'settings.signing.anchorSuggest.fingerprint': 'SHA-256 fingerprint',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Already configured',
+  'settings.signing.anchorSuggest.addCertificate': 'Add as anchor certificate',
+  'settings.signing.anchorSuggest.addFingerprint': 'Add as anchor fingerprint',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'The List of Trusted Lists was authenticated against a configured anchor.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'No trust anchor is configured, here or in the environment. The List of Trusted Lists is the root of trust and cannot authenticate itself, so nothing can be suggested. That first anchor is published in the Official Journal of the European Union and has to be entered by hand.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'The List of Trusted Lists could not be fetched.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'The List of Trusted Lists was fetched, but its signature does not verify against any configured anchor. Nothing is suggested from a list that cannot be authenticated.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'The document that was fetched points to no member-state list, so it is not a List of Trusted Lists and vouches for nothing.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'The authenticated List of Trusted Lists names the certificate expected to sign this list.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'This source is the List of Trusted Lists itself. Its own anchor is published in the Official Journal of the European Union and is never taken from the document.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'The authenticated List of Trusted Lists has no entry for this source, so nothing vouches for it.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'The authenticated List of Trusted Lists has an entry for this source, but it names no signing certificate.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed': 'This list could not be fetched.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'This list carries no certificate in its signature.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'This source has no address that can be fetched, so nothing can be suggested for it.',
   'settings.signing.tsaProviders.title': 'TSA providers',
   'settings.signing.tsaProviders.hint':
     'Configure RFC 3161 timestamp authorities. When any provider is enabled, exactly one must be the default.',

@@ -58,6 +58,7 @@ const PROBE_READY: ConnectorProbeView = {
   },
   error_class: null,
   error: null,
+  error_code: null,
 };
 
 interface Recorded {

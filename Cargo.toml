@@ -77,8 +77,13 @@ chancela-apikey = { path = "crates/chancela-apikey" }
 chancela-zk = { path = "crates/chancela-zk" }
 # Durable ARC-20/21 connector execution. The API queues immutable, tenant-bound work for the
 # dedicated worker; connectors remain credential-reference-only leaf clients.
-chancela-connectors = { path = "crates/chancela-connectors" }
-chancela-worker = { path = "crates/chancela-worker" }
+# `default-features = false` on both is the workspace-wide statement that no remote transport
+# (S3/SFTP/SMB/FTPS) reaches a consumer's dependency graph unless that consumer asks for it by
+# feature. Their defaults are already empty; saying so here keeps it that way if one ever grows a
+# default, and is what lets a member restate it. Docker enables all four for the shipped server
+# and worker images; see crates/chancela-connectors/Cargo.toml for the full rationale.
+chancela-connectors = { path = "crates/chancela-connectors", default-features = false }
+chancela-worker = { path = "crates/chancela-worker", default-features = false }
 # MCP server (t65-E2): exposes platform ops as permission-gated MCP tools over stdio, authenticating
 # to the integration API (/api/v1) with an API key (one RBAC path — authz is server-side). Binary +
 # library crate; OFF by default. Deps: serde/serde_json/reqwest/thiserror (all workspace-inherited) —

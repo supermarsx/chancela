@@ -4654,6 +4654,55 @@ export const itIT: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Impronta di ancora {position}',
   'settings.signing.tslAnchors.digests.remove': 'Rimuovi l’impronta di ancora {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caratteri esadecimali',
+  'settings.signing.anchorSuggest.title': 'Suggerimenti di ancore',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela può cercare, nell’elenco europeo degli elenchi di fiducia (LOTL), quale certificato dovrebbe firmare ciascun elenco di fiducia che hai configurato. Quell’elenco europeo viene prima autenticato con l’ancora indicata qui sotto. Nulla viene aggiunto al posto tuo: ogni valore mostrato è un suggerimento e solo tu puoi accettarlo.',
+  'settings.signing.anchorSuggest.run': 'Suggerisci ancore',
+  'settings.signing.anchorSuggest.running': 'Consultazione dell’elenco degli elenchi di fiducia…',
+  'settings.signing.anchorSuggest.checkedAt': 'Consultazione di {url} il {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Non è possibile suggerire nulla',
+  'settings.signing.anchorSuggest.detail': 'Il server ha segnalato:',
+  'settings.signing.anchorSuggest.noProposals': 'Nessun candidato per questa origine.',
+  'settings.signing.anchorSuggest.provenance.lotl':
+    'Dall’elenco degli elenchi di fiducia autenticato',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Dall’elenco stesso — non verificato',
+  'settings.signing.anchorSuggest.selfAsserted.title':
+    'Questo certificato garantisce per sé stesso',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Questo certificato è stato ricavato dalla firma dello stesso elenco che dovrebbe autenticare, quindi da solo non prova nulla: un elenco contraffatto porta con sé un certificato contraffatto. Confronta l’impronta SHA-256 qui sotto con l’impronta pubblicata dall’organismo che gestisce questo schema di fiducia e accettala solo se le due coincidono.',
+  'settings.signing.anchorSuggest.subject': 'Intestatario',
+  'settings.signing.anchorSuggest.issuer': 'Emittente',
+  'settings.signing.anchorSuggest.validFrom': 'Valido dal',
+  'settings.signing.anchorSuggest.validUntil': 'Valido fino al',
+  'settings.signing.anchorSuggest.fingerprint': 'Impronta SHA-256',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Già configurato',
+  'settings.signing.anchorSuggest.addCertificate': 'Aggiungi come certificato di ancora',
+  'settings.signing.anchorSuggest.addFingerprint': 'Aggiungi come impronta di ancora',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'L’elenco degli elenchi di fiducia è stato autenticato con un’ancora configurata.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Non è configurata alcuna ancora di fiducia, né qui né nell’ambiente. L’elenco degli elenchi di fiducia è la radice della fiducia e non può autenticare sé stesso, quindi non si può suggerire nulla. Quella prima ancora è pubblicata nella Gazzetta ufficiale dell’Unione europea e va inserita a mano.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Non è stato possibile scaricare l’elenco degli elenchi di fiducia.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'L’elenco degli elenchi di fiducia è stato scaricato, ma la sua firma non si verifica con nessuna ancora configurata. Da un elenco che non si può autenticare non viene suggerito nulla.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Il documento scaricato non rimanda ad alcun elenco nazionale, quindi non è un elenco degli elenchi di fiducia e non garantisce nulla.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'L’elenco degli elenchi di fiducia autenticato indica il certificato che dovrebbe firmare questo elenco.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Questa origine è l’elenco degli elenchi di fiducia stesso. La sua ancora è pubblicata nella Gazzetta ufficiale dell’Unione europea e non viene mai ricavata dal documento.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'L’elenco degli elenchi di fiducia autenticato non ha alcuna voce per questa origine, quindi nulla garantisce per essa.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'L’elenco degli elenchi di fiducia autenticato ha una voce per questa origine, ma non vi indica alcun certificato di firma.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed':
+    'Non è stato possibile scaricare questo elenco.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Questo elenco non porta alcun certificato nella sua firma.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Questa origine non ha un indirizzo scaricabile, quindi non le si può suggerire nulla.',
   'settings.signing.tsaProviders.title': 'Provider TSA',
   'settings.signing.tsaProviders.hint':
     'Configura autorità di marcatura temporale RFC 3161. Quando esiste un provider attivo, esattamente uno deve essere predefinito.',

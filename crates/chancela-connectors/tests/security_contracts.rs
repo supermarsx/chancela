@@ -1,11 +1,13 @@
 use std::path::PathBuf;
-use std::sync::Arc;
 
+// The transport-specific constructors live in `native_connector_constructors` below, behind this
+// crate's per-protocol Cargo features. Everything in *this* scope is ungated on purpose: the
+// local-connector, purpose-routing and secret-provider invariants must keep running in a default
+// build, which is why this file is given no blanket `required-features`.
 use chancela_connectors::{
-    CancellationToken, Connector, EnvSecretProvider, ErrorClass, FtpsConnector, FtpsTarget,
-    InMemorySecretProvider, JobPurpose, LocalConnector, LocalTarget, PurposeTargets, S3Target,
-    SECRETS_DIR_ENV, SecretProvider, SftpConnector, SftpTarget, SmbConnector, SmbTarget,
-    TargetConfig, UploadRequest, WorkerTargets,
+    CancellationToken, Connector, EnvSecretProvider, ErrorClass, JobPurpose, LocalConnector,
+    LocalTarget, PurposeTargets, S3Target, SECRETS_DIR_ENV, SecretProvider, TargetConfig,
+    UploadRequest, WorkerTargets,
 };
 use sha2::{Digest, Sha256};
 
@@ -113,57 +115,87 @@ fn purpose_routing_forbids_s3_as_an_active_sync_target() {
     assert!(error.message.contains("backup-only"));
 }
 
-#[test]
-fn native_connector_constructors_enforce_security_invariants() {
-    let secrets = Arc::new(InMemorySecretProvider::default());
-    let sftp = SftpConnector::new(
-        SftpTarget {
-            id: "sftp".to_owned(),
-            host: "sftp.example.test".to_owned(),
-            port: 22,
-            username: "operator".to_owned(),
-            password_ref: "CHANCELA_CONNECTOR_SECRET_SFTP_PASSWORD".to_owned(),
-            host_key_sha256: "not-pinned".to_owned(),
-            root: "/archive".to_owned(),
-            timeout_seconds: 30,
-        },
-        secrets.clone(),
-    )
-    .expect_err("SFTP host key pin required");
-    assert_eq!(sftp.class, ErrorClass::Configuration);
+/// The constructor-time security invariants of the three native transports.
+///
+/// Was one test asserting all three; split one-per-protocol so each runs under exactly the
+/// feature that compiles the client it exercises. Every assertion is carried over unchanged — a
+/// build with the feature on still proves the pin, the bounded timeout and the traversal
+/// rejection, and a build with it off has no client to prove them about.
+#[cfg(any(feature = "sftp", feature = "ftps", feature = "smb"))]
+mod native_connector_constructors {
+    use std::sync::Arc;
 
-    let ftps = FtpsConnector::new(
-        FtpsTarget {
-            id: "ftps".to_owned(),
-            host: "ftps.example.test".to_owned(),
-            port: 21,
-            username: "operator".to_owned(),
-            password_ref: "CHANCELA_CONNECTOR_SECRET_FTPS_PASSWORD".to_owned(),
-            root: "/archive".to_owned(),
-            timeout_seconds: 0,
-        },
-        secrets.clone(),
-    )
-    .expect_err("bounded timeout required");
-    assert_eq!(ftps.class, ErrorClass::Configuration);
+    use chancela_connectors::{ErrorClass, InMemorySecretProvider};
 
-    let smb = SmbConnector::new(
-        SmbTarget {
-            id: "smb".to_owned(),
-            host: "smb.example.test".to_owned(),
-            port: 445,
-            share: "archive".to_owned(),
-            username: "operator".to_owned(),
-            domain: String::new(),
-            password_ref: "CHANCELA_CONNECTOR_SECRET_SMB_PASSWORD".to_owned(),
-            root: "..\\escape".to_owned(),
-            timeout_seconds: 30,
-            allow_unencrypted: false,
-        },
-        secrets,
-    )
-    .expect_err("SMB root traversal rejected");
-    assert_eq!(smb.class, ErrorClass::Configuration);
+    #[cfg(feature = "sftp")]
+    #[test]
+    fn sftp_constructor_requires_a_host_key_pin() {
+        use chancela_connectors::{SftpConnector, SftpTarget};
+
+        let secrets = Arc::new(InMemorySecretProvider::default());
+        let sftp = SftpConnector::new(
+            SftpTarget {
+                id: "sftp".to_owned(),
+                host: "sftp.example.test".to_owned(),
+                port: 22,
+                username: "operator".to_owned(),
+                password_ref: "CHANCELA_CONNECTOR_SECRET_SFTP_PASSWORD".to_owned(),
+                host_key_sha256: "not-pinned".to_owned(),
+                root: "/archive".to_owned(),
+                timeout_seconds: 30,
+            },
+            secrets,
+        )
+        .expect_err("SFTP host key pin required");
+        assert_eq!(sftp.class, ErrorClass::Configuration);
+    }
+
+    #[cfg(feature = "ftps")]
+    #[test]
+    fn ftps_constructor_requires_a_bounded_timeout() {
+        use chancela_connectors::{FtpsConnector, FtpsTarget};
+
+        let secrets = Arc::new(InMemorySecretProvider::default());
+        let ftps = FtpsConnector::new(
+            FtpsTarget {
+                id: "ftps".to_owned(),
+                host: "ftps.example.test".to_owned(),
+                port: 21,
+                username: "operator".to_owned(),
+                password_ref: "CHANCELA_CONNECTOR_SECRET_FTPS_PASSWORD".to_owned(),
+                root: "/archive".to_owned(),
+                timeout_seconds: 0,
+            },
+            secrets,
+        )
+        .expect_err("bounded timeout required");
+        assert_eq!(ftps.class, ErrorClass::Configuration);
+    }
+
+    #[cfg(feature = "smb")]
+    #[test]
+    fn smb_constructor_rejects_a_traversing_root() {
+        use chancela_connectors::{SmbConnector, SmbTarget};
+
+        let secrets = Arc::new(InMemorySecretProvider::default());
+        let smb = SmbConnector::new(
+            SmbTarget {
+                id: "smb".to_owned(),
+                host: "smb.example.test".to_owned(),
+                port: 445,
+                share: "archive".to_owned(),
+                username: "operator".to_owned(),
+                domain: String::new(),
+                password_ref: "CHANCELA_CONNECTOR_SECRET_SMB_PASSWORD".to_owned(),
+                root: "..\\escape".to_owned(),
+                timeout_seconds: 30,
+                allow_unencrypted: false,
+            },
+            secrets,
+        )
+        .expect_err("SMB root traversal rejected");
+        assert_eq!(smb.class, ErrorClass::Configuration);
+    }
 }
 
 #[test]

@@ -46,6 +46,9 @@ pub(crate) fn validate_relative_path(path: &str) -> Result<(), ConnectorError> {
     }
 }
 
+/// Gated with its only caller (`sftp.rs`); ungated it is dead code in a build without the SFTP
+/// client, and `clippy -D warnings` treats that as an error.
+#[cfg(feature = "sftp")]
 pub(crate) fn join_remote(root: &str, destination: &str) -> Result<String, ConnectorError> {
     validate_relative_path(destination)?;
     let normalized_root = root.replace('\\', "/");

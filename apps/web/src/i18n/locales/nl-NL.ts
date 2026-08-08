@@ -4657,6 +4657,54 @@ export const nlNL: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankervingerafdruk {position}',
   'settings.signing.tslAnchors.digests.remove': 'Ankervingerafdruk {position} verwijderen',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimale tekens',
+  'settings.signing.anchorSuggest.title': 'Voorstellen voor vertrouwensankers',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela kan in de Europese lijst van vertrouwenslijsten (LOTL) opzoeken welk certificaat elke door u ingestelde vertrouwenslijst hoort te ondertekenen. Die Europese lijst wordt eerst zelf gecontroleerd aan de hand van het anker dat u hieronder hebt ingevuld. Er wordt niets voor u toegevoegd: elke waarde is een voorstel, en alleen u kunt het aanvaarden.',
+  'settings.signing.anchorSuggest.run': 'Ankers voorstellen',
+  'settings.signing.anchorSuggest.running': 'De lijst van vertrouwenslijsten wordt opgehaald…',
+  'settings.signing.anchorSuggest.checkedAt': 'Geraadpleegd: {url} op {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Er kan niets worden voorgesteld',
+  'settings.signing.anchorSuggest.detail': 'De server meldde:',
+  'settings.signing.anchorSuggest.noProposals': 'Geen kandidaat voor deze bron.',
+  'settings.signing.anchorSuggest.provenance.lotl':
+    'Uit de gecontroleerde lijst van vertrouwenslijsten',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Uit de lijst zelf — niet gecontroleerd',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Dit certificaat staat in voor zichzelf',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Dit certificaat komt uit de handtekening van juist die lijst die het zou moeten waarmerken, en bewijst op zichzelf dus niets: een vervalste lijst draagt een vervalst certificaat. Vergelijk de SHA-256-vingerafdruk hieronder met de vingerafdruk die is gepubliceerd door de instantie die dit vertrouwensstelsel beheert, en aanvaard hem alleen als beide gelijk zijn.',
+  'settings.signing.anchorSuggest.subject': 'Houder',
+  'settings.signing.anchorSuggest.issuer': 'Uitgever',
+  'settings.signing.anchorSuggest.validFrom': 'Geldig vanaf',
+  'settings.signing.anchorSuggest.validUntil': 'Geldig tot',
+  'settings.signing.anchorSuggest.fingerprint': 'SHA-256-vingerafdruk',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Al ingesteld',
+  'settings.signing.anchorSuggest.addCertificate': 'Toevoegen als ankercertificaat',
+  'settings.signing.anchorSuggest.addFingerprint': 'Toevoegen als ankervingerafdruk',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'De lijst van vertrouwenslijsten is gecontroleerd aan de hand van een ingesteld anker.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Er is geen vertrouwensanker ingesteld, hier noch in de omgeving. De lijst van vertrouwenslijsten is de wortel van het vertrouwen en kan zichzelf niet waarmerken, dus er kan niets worden voorgesteld. Dat eerste anker wordt gepubliceerd in het Publicatieblad van de Europese Unie en moet met de hand worden ingevoerd.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'De lijst van vertrouwenslijsten kon niet worden opgehaald.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'De lijst van vertrouwenslijsten is opgehaald, maar de handtekening houdt geen stand tegen enig ingesteld anker. Uit een lijst die niet gewaarmerkt kan worden, wordt niets voorgesteld.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Het opgehaalde document verwijst naar geen enkele nationale lijst en is dus geen lijst van vertrouwenslijsten; het staat nergens voor in.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'De gecontroleerde lijst van vertrouwenslijsten noemt het certificaat dat deze lijst hoort te ondertekenen.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Deze bron is de lijst van vertrouwenslijsten zelf. Het eigen anker wordt gepubliceerd in het Publicatieblad van de Europese Unie en wordt nooit uit het document gehaald.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'De gecontroleerde lijst van vertrouwenslijsten bevat geen vermelding van deze bron, dus niets staat ervoor in.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'De gecontroleerde lijst van vertrouwenslijsten bevat een vermelding van deze bron, maar noemt daarin geen ondertekeningscertificaat.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed':
+    'Deze lijst kon niet worden opgehaald.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Deze lijst draagt geen certificaat in haar handtekening.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Deze bron heeft geen adres dat opgehaald kan worden, dus er kan niets voor worden voorgesteld.',
   'settings.signing.tsaProviders.title': 'TSA-aanbieders',
   'settings.signing.tsaProviders.hint':
     'Configureer RFC 3161-tijdstempelautoriteiten. Als er aanbieders zijn ingeschakeld, moet precies één standaard zijn.',

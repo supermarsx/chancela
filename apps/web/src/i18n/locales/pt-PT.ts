@@ -4796,6 +4796,52 @@ export const ptPT: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Impressão digital de âncora {position}',
   'settings.signing.tslAnchors.digests.remove': 'Remover a impressão digital de âncora {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caracteres hexadecimais',
+  'settings.signing.anchorSuggest.title': 'Sugestão de âncoras',
+  'settings.signing.anchorSuggest.hint':
+    'A Chancela pode consultar, na lista europeia de listas de confiança (LOTL), qual o certificado que deve assinar cada Lista de Confiança que configurou. Essa lista europeia é primeiro autenticada com a âncora indicada abaixo. Nada é acrescentado automaticamente: cada valor apresentado é uma sugestão e só o utilizador a pode aceitar.',
+  'settings.signing.anchorSuggest.run': 'Sugerir âncoras',
+  'settings.signing.anchorSuggest.running': 'A consultar a lista europeia de listas de confiança…',
+  'settings.signing.anchorSuggest.checkedAt': 'Consulta de {url} em {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Não é possível sugerir nada',
+  'settings.signing.anchorSuggest.detail': 'O servidor indicou:',
+  'settings.signing.anchorSuggest.noProposals': 'Sem candidatos para esta fonte.',
+  'settings.signing.anchorSuggest.provenance.lotl':
+    'Da lista europeia de listas de confiança autenticada',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted': 'Da própria lista — não verificado',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Este certificado atesta-se a si próprio',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Este certificado foi retirado da assinatura da mesma lista que iria autenticar, pelo que, por si só, não prova nada: uma lista falsificada traz um certificado falsificado. Compare a impressão digital SHA-256 apresentada abaixo com a impressão digital publicada pela entidade que gere este esquema de confiança e aceite-a apenas se as duas coincidirem.',
+  'settings.signing.anchorSuggest.subject': 'Titular',
+  'settings.signing.anchorSuggest.issuer': 'Emissor',
+  'settings.signing.anchorSuggest.validFrom': 'Válido desde',
+  'settings.signing.anchorSuggest.validUntil': 'Válido até',
+  'settings.signing.anchorSuggest.fingerprint': 'Impressão digital SHA-256',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Já configurado',
+  'settings.signing.anchorSuggest.addCertificate': 'Adicionar como certificado de âncora',
+  'settings.signing.anchorSuggest.addFingerprint': 'Adicionar como impressão digital de âncora',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'A lista europeia de listas de confiança foi autenticada com uma âncora configurada.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Não há nenhuma âncora de confiança configurada, nem aqui nem no ambiente. A lista europeia de listas de confiança é a raiz da confiança e não se pode autenticar a si própria, pelo que nada pode ser sugerido. Essa primeira âncora é publicada no Jornal Oficial da União Europeia e tem de ser introduzida manualmente.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Não foi possível obter a lista europeia de listas de confiança.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'A lista europeia de listas de confiança foi obtida, mas a sua assinatura não é validada por nenhuma âncora configurada. De uma lista que não se consegue autenticar nada é sugerido.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'O documento obtido não remete para nenhuma lista nacional, pelo que não é uma lista de listas de confiança e nada atesta.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'A lista europeia de listas de confiança autenticada indica qual o certificado que deve assinar esta lista.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Esta fonte é a própria lista europeia de listas de confiança. A respetiva âncora é publicada no Jornal Oficial da União Europeia e nunca é retirada do documento.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'A lista europeia de listas de confiança autenticada não tem nenhuma entrada para esta fonte, pelo que nada a atesta.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'A lista europeia de listas de confiança autenticada tem uma entrada para esta fonte, mas não indica nenhum certificado de assinatura.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed': 'Não foi possível obter esta lista.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Esta lista não traz nenhum certificado na sua assinatura.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Esta fonte não tem nenhum endereço que possa ser obtido, pelo que nada lhe pode ser sugerido.',
   'settings.signing.tsaProviders.title': 'Prestadores TSA',
   'settings.signing.tsaProviders.hint':
     'Configure autoridades de selo temporal RFC 3161. Quando existir algum prestador ativo, exatamente um deve ser predefinido.',

@@ -30,6 +30,7 @@ import type {
   TslServiceDetailView,
   TslServiceSummaryView,
   TslSummaryView,
+  TrustAnchorSuggestionsView,
   TsaCatalogView,
   TsaCatalogSearchParams,
   TsaRecordView,
@@ -1640,6 +1641,11 @@ export const api = {
   getTrustStatus: () => get<TslSummaryView>('/v1/trust/status'),
   refreshTrustTsl: (body: TslRefreshRequest = {}) =>
     post<TslRefreshStatusView>('/v1/trust/refresh', body),
+  // Trust-anchor proposals. Unlike the rest of this block it DOES fetch live — the EU LOTL, then
+  // any list the LOTL does not vouch for — so it is gated on `signing.configure`, the same verb
+  // that writes the anchors. It never writes: the operator selects, and saves through PUT
+  // /v1/settings like any other anchor edit.
+  getTrustAnchorSuggestions: () => get<TrustAnchorSuggestionsView>('/v1/trust/anchor-suggestions'),
   getTrustCatalog: () => get<TslCatalogView>('/v1/trust/catalog'),
   searchTrustCatalog: (params: TslCatalogSearchParams | string, limit?: number) =>
     get<TslServiceSummaryView[]>(`/v1/trust/catalog${query(trustSearchQuery(params, limit))}`),

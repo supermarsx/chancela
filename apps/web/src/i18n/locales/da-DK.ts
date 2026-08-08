@@ -4620,6 +4620,52 @@ export const daDK: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankerfingeraftryk {position}',
   'settings.signing.tslAnchors.digests.remove': 'Fjern ankerfingeraftryk {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimale tegn',
+  'settings.signing.anchorSuggest.title': 'Forslag til tillidsankre',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela kan slå op i EU’s liste over tillidslister (LOTL), hvilket certifikat der forventes at signere hver enkelt tillidsliste, du har konfigureret. Den europæiske liste bliver først godtgjort med det tillidsanker, du har angivet nedenfor. Intet tilføjes automatisk: hver værdi er et forslag, og kun du kan acceptere det.',
+  'settings.signing.anchorSuggest.run': 'Foreslå tillidsankre',
+  'settings.signing.anchorSuggest.running': 'Slår op i listen over tillidslister…',
+  'settings.signing.anchorSuggest.checkedAt': 'Opslag på {url} den {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Intet kan foreslås',
+  'settings.signing.anchorSuggest.detail': 'Serveren meldte:',
+  'settings.signing.anchorSuggest.noProposals': 'Ingen kandidat for denne kilde.',
+  'settings.signing.anchorSuggest.provenance.lotl': 'Fra den godtgjorte liste over tillidslister',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Fra listen selv — ikke efterprøvet',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Dette certifikat indestår for sig selv',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Certifikatet er hentet ud af signaturen på netop den liste, det skulle godtgøre, og beviser derfor intet i sig selv: en forfalsket liste bærer et forfalsket certifikat. Sammenlign SHA-256-fingeraftrykket nedenfor med det fingeraftryk, som den myndighed der driver tillidsordningen har offentliggjort, og acceptér det kun, hvis de to er ens.',
+  'settings.signing.anchorSuggest.subject': 'Indehaver',
+  'settings.signing.anchorSuggest.issuer': 'Udsteder',
+  'settings.signing.anchorSuggest.validFrom': 'Gyldigt fra',
+  'settings.signing.anchorSuggest.validUntil': 'Gyldigt til',
+  'settings.signing.anchorSuggest.fingerprint': 'SHA-256-fingeraftryk',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Allerede konfigureret',
+  'settings.signing.anchorSuggest.addCertificate': 'Tilføj som ankercertifikat',
+  'settings.signing.anchorSuggest.addFingerprint': 'Tilføj som ankerfingeraftryk',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'Listen over tillidslister blev godtgjort med et konfigureret tillidsanker.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Der er ikke konfigureret noget tillidsanker, hverken her eller i miljøet. Listen over tillidslister er tillidens rod og kan ikke godtgøre sig selv, så intet kan foreslås. Det første anker offentliggøres i Den Europæiske Unions Tidende og skal indtastes i hånden.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Listen over tillidslister kunne ikke hentes.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'Listen over tillidslister blev hentet, men dens signatur holder ikke mod noget konfigureret tillidsanker. Der foreslås intet ud fra en liste, der ikke kan godtgøres.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Det hentede dokument peger ikke på nogen national liste og er derfor ikke en liste over tillidslister; det indestår for ingenting.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'Den godtgjorte liste over tillidslister angiver, hvilket certifikat der forventes at signere denne liste.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Denne kilde er selve listen over tillidslister. Dens eget anker offentliggøres i Den Europæiske Unions Tidende og hentes aldrig ud af dokumentet.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'Den godtgjorte liste over tillidslister har ingen post for denne kilde, så intet indestår for den.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'Den godtgjorte liste over tillidslister har en post for denne kilde, men den angiver intet signeringscertifikat.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed': 'Denne liste kunne ikke hentes.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Denne liste bærer intet certifikat i sin signatur.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Denne kilde har ingen adresse, der kan hentes, så der kan ikke foreslås noget for den.',
   'settings.signing.tsaProviders.title': 'TSA-udbydere',
   'settings.signing.tsaProviders.hint':
     'Konfigurer RFC 3161-tidsstempelmyndigheder. Når en udbyder er aktiveret, skal præcis én være standard.',

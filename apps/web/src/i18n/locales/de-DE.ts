@@ -4681,6 +4681,53 @@ export const deDE: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankerfingerabdruck {position}',
   'settings.signing.tslAnchors.digests.remove': 'Ankerfingerabdruck {position} entfernen',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadezimale Zeichen',
+  'settings.signing.anchorSuggest.title': 'Vorschläge für Vertrauensanker',
+  'settings.signing.anchorSuggest.hint':
+    'Chancela kann in der EU-Liste der Vertrauenslisten (LOTL) nachschlagen, welches Zertifikat jede von Ihnen eingerichtete Vertrauensliste signieren soll. Diese europäische Liste wird zuvor selbst anhand des unten hinterlegten Ankers geprüft. Nichts wird von allein übernommen: Jeder Wert ist ein Vorschlag, den nur Sie annehmen können.',
+  'settings.signing.anchorSuggest.run': 'Anker vorschlagen',
+  'settings.signing.anchorSuggest.running': 'Liste der Vertrauenslisten wird abgerufen…',
+  'settings.signing.anchorSuggest.checkedAt': 'Abruf von {url} am {timestamp}.',
+  'settings.signing.anchorSuggest.refused.title': 'Es kann nichts vorgeschlagen werden',
+  'settings.signing.anchorSuggest.detail': 'Der Server meldete:',
+  'settings.signing.anchorSuggest.noProposals': 'Kein Kandidat für diese Quelle.',
+  'settings.signing.anchorSuggest.provenance.lotl': 'Aus der geprüften Liste der Vertrauenslisten',
+  'settings.signing.anchorSuggest.provenance.listSelfAsserted':
+    'Aus der Liste selbst — nicht geprüft',
+  'settings.signing.anchorSuggest.selfAsserted.title': 'Dieses Zertifikat bürgt für sich selbst',
+  'settings.signing.anchorSuggest.selfAsserted.body':
+    'Dieses Zertifikat stammt aus der Signatur eben jener Liste, die es beglaubigen soll, und beweist für sich genommen nichts: Eine gefälschte Liste führt ein gefälschtes Zertifikat mit. Vergleichen Sie den SHA-256-Fingerabdruck unten mit dem Fingerabdruck, den die Stelle veröffentlicht, die dieses Vertrauenssystem betreibt, und übernehmen Sie ihn nur, wenn beide übereinstimmen.',
+  'settings.signing.anchorSuggest.subject': 'Inhaber',
+  'settings.signing.anchorSuggest.issuer': 'Aussteller',
+  'settings.signing.anchorSuggest.validFrom': 'Gültig ab',
+  'settings.signing.anchorSuggest.validUntil': 'Gültig bis',
+  'settings.signing.anchorSuggest.fingerprint': 'SHA-256-Fingerabdruck',
+  'settings.signing.anchorSuggest.alreadyConfigured': 'Bereits eingerichtet',
+  'settings.signing.anchorSuggest.addCertificate': 'Als Ankerzertifikat übernehmen',
+  'settings.signing.anchorSuggest.addFingerprint': 'Als Ankerfingerabdruck übernehmen',
+  'settings.signing.anchorSuggest.code.lotl_authenticated':
+    'Die Liste der Vertrauenslisten wurde anhand eines eingerichteten Ankers geprüft.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
+    'Es ist kein Vertrauensanker eingerichtet, weder hier noch in der Umgebung. Die Liste der Vertrauenslisten ist die Wurzel des Vertrauens und kann sich nicht selbst beglaubigen, daher kann nichts vorgeschlagen werden. Dieser erste Anker wird im Amtsblatt der Europäischen Union veröffentlicht und muss von Hand eingetragen werden.',
+  'settings.signing.anchorSuggest.code.lotl_fetch_failed':
+    'Die Liste der Vertrauenslisten konnte nicht abgerufen werden.',
+  'settings.signing.anchorSuggest.code.lotl_not_authenticated':
+    'Die Liste der Vertrauenslisten wurde abgerufen, ihre Signatur hält aber keinem eingerichteten Anker stand. Aus einer Liste, die sich nicht beglaubigen lässt, wird nichts vorgeschlagen.',
+  'settings.signing.anchorSuggest.code.lotl_no_pointers':
+    'Das abgerufene Dokument verweist auf keine nationale Liste und ist somit keine Liste der Vertrauenslisten; es bürgt für nichts.',
+  'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
+    'Die geprüfte Liste der Vertrauenslisten benennt das Zertifikat, das diese Liste signieren soll.',
+  'settings.signing.anchorSuggest.code.source_is_lotl':
+    'Diese Quelle ist die Liste der Vertrauenslisten selbst. Ihr eigener Anker wird im Amtsblatt der Europäischen Union veröffentlicht und niemals dem Dokument entnommen.',
+  'settings.signing.anchorSuggest.code.source_not_in_lotl':
+    'Die geprüfte Liste der Vertrauenslisten enthält keinen Eintrag für diese Quelle, es bürgt also nichts für sie.',
+  'settings.signing.anchorSuggest.code.source_pointer_without_signer_cert':
+    'Die geprüfte Liste der Vertrauenslisten enthält einen Eintrag für diese Quelle, benennt darin aber kein Signaturzertifikat.',
+  'settings.signing.anchorSuggest.code.source_fetch_failed':
+    'Diese Liste konnte nicht abgerufen werden.',
+  'settings.signing.anchorSuggest.code.source_signer_cert_absent':
+    'Diese Liste führt in ihrer Signatur kein Zertifikat mit.',
+  'settings.signing.anchorSuggest.code.source_location_unsupported':
+    'Diese Quelle hat keine abrufbare Adresse, daher kann für sie nichts vorgeschlagen werden.',
   'settings.signing.tsaProviders.title': 'TSA-Anbieter',
   'settings.signing.tsaProviders.hint':
     'Konfigurieren Sie RFC-3161-Zeitstempelstellen. Wenn Anbieter aktiviert sind, muss genau einer Standard sein.',

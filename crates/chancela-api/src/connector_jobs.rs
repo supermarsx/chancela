@@ -209,6 +209,15 @@ pub(crate) struct ConnectorProbeView {
     status: Option<chancela_connectors::ConnectorStatus>,
     error_class: Option<chancela_connectors::ErrorClass>,
     error: Option<String>,
+    /// Stable machine identifier for the failure, when it has one
+    /// (`chancela_connectors::codes`) — beside `error`, never instead of it. The English sentence
+    /// stays on the wire and in the audit log for a client that does not know the code; the code
+    /// is what lets a client render it in the operator's language, which neither `noLiteralUiCopy`
+    /// nor `catalogLeakGate` can do for a sentence the server writes.
+    ///
+    /// Always serialized, including as `null`: `assert_shape` compares key sets exactly, so a
+    /// `skip_serializing_if` here would make the contract match depend on which branch ran.
+    error_code: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -692,9 +701,27 @@ pub(crate) async fn probe_target(
         ));
     }
     validate_api_target(&state, &record.config).await?;
-    let connector = build_connector(&record.config, std::sync::Arc::new(EnvSecretProvider))
-        .map_err(|error| ApiError::Unprocessable(error.to_string()))?;
     let checked_at = now_rfc3339();
+    let connector = match build_connector(&record.config, std::sync::Arc::new(EnvSecretProvider)) {
+        Ok(connector) => connector,
+        // A transport this build did not compile is a *probe outcome*, not a malformed request:
+        // the stored target is valid and it is the binary that is missing a client. Reporting it
+        // as the probe result is what carries the stable `error_code` to the operator, so the
+        // settings screen can say which build they are running in their own language. A 422 with
+        // a bare English string could not. Every other construction failure — a missing host-key
+        // pin, an unbounded timeout — stays the 422 it has always been.
+        Err(error) if error.is_transport_not_compiled() => {
+            return Ok(Json(ConnectorProbeView {
+                target_id: record.id,
+                checked_at,
+                status: None,
+                error_class: Some(error.class),
+                error: Some(error.message),
+                error_code: error.code,
+            }));
+        }
+        Err(error) => return Err(ApiError::Unprocessable(error.to_string())),
+    };
     let response = match connector.probe().await {
         Ok(status) => ConnectorProbeView {
             target_id: record.id,
@@ -702,6 +729,7 @@ pub(crate) async fn probe_target(
             status: Some(status),
             error_class: None,
             error: None,
+            error_code: None,
         },
         Err(error) => ConnectorProbeView {
             target_id: record.id,
@@ -709,6 +737,7 @@ pub(crate) async fn probe_target(
             status: None,
             error_class: Some(error.class),
             error: Some(error.message),
+            error_code: error.code,
         },
     };
     Ok(Json(response))
