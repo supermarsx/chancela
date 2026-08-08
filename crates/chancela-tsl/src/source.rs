@@ -378,12 +378,18 @@ fn hex_nibble(c: u8) -> Result<u8, TslError> {
 ///   `<ds:SignedInfo>` are in scope — a `<ds:Reference>` in a `<ds:Manifest>` under `<ds:Object>` is
 ///   not covered by the signature, so it is neither verified nor able to satisfy document coverage.
 /// - **Multiple signatures.** Rejected fail-closed: exactly one `<ds:Signature>` is supported.
-/// - **ECDSA scope.** Only P-256 ECDSA-SHA256 is supported, and only in XML-DSig's raw `r||s`
-///   signature-value form.
+/// - **Algorithms.** Exact-URI allowlists (see [`crate::TslAlgorithmPolicy`]): SHA-256/384/512 and
+///   SHA3-256/384/512 digests; RSASSA-PKCS1-v1_5 and RSASSA-PSS over any of those; ECDSA over
+///   P-256/P-384/P-521, where the URI fixes the hash and the certificate fixes the curve,
+///   independently (RFC 9231). Canonicalization is whatever [`crate::C14nAlgorithm`] implements —
+///   inclusive/exclusive C14N 1.0, with and without comments.
+/// - **Broken algorithms.** SHA-1 (and `rsa-sha1` / `ecdsa-sha1`) are refused unless an operator
+///   enabled that exact URI; use [`validate_tsl_signature_with_policy`] to do so, which reports
+///   every such reliance. This entry point permits none, so its `Ok(())` provably relied on none.
 ///
 /// For real-world Portuguese TSLs, the signature is typically a single enveloped signature over
-/// the whole document (`URI=""`) with exclusive C14N, RSA-SHA256 or P-256 ECDSA-SHA256, often
-/// accompanied by a second reference over the XAdES `SignedProperties`.
+/// the whole document (`URI=""`) with exclusive C14N and RSA-SHA512 (the live GNS list) or
+/// RSA-SHA256, accompanied by a second reference over the XAdES `SignedProperties`.
 pub fn validate_tsl_signature(xml: &[u8]) -> Result<(), TslError> {
     let anchors = TslTrustAnchors::from_env()?;
     validate_tsl_signature_with_anchors(xml, &anchors)
@@ -403,6 +409,27 @@ pub fn validate_tsl_signature_with_anchors(
 ) -> Result<(), TslError> {
     let parsed = crate::xmldsig::parse_signature(xml)?;
     parsed.verify(xml, anchors)
+}
+
+/// Validate the Trusted List's own XML-DSig signature under an explicit algorithm policy, reporting
+/// what the verification depended on.
+///
+/// Identical to [`validate_tsl_signature_with_anchors`] in every check it performs. The policy
+/// decides one thing only: whether a *broken* algorithm an operator deliberately enabled may be
+/// relied upon. Any such reliance is recorded in the returned [`crate::TslSignatureReport`], so a
+/// caller can distinguish a list that validated under strong algorithms from one that validated
+/// only because SHA-1 was permitted — a distinction `Ok(())` would erase at exactly the point where
+/// callers decide to present the list as trustworthy.
+///
+/// With the default [`crate::TslAlgorithmPolicy::new`] no broken algorithm is enabled, the report is
+/// always empty, and behaviour is byte-for-byte that of the other two entry points.
+pub fn validate_tsl_signature_with_policy(
+    xml: &[u8],
+    anchors: &TslTrustAnchors,
+    policy: &crate::TslAlgorithmPolicy,
+) -> Result<crate::TslSignatureReport, TslError> {
+    let parsed = crate::xmldsig::parse_signature(xml)?;
+    parsed.verify_with_policy(xml, anchors, policy)
 }
 
 #[cfg(test)]

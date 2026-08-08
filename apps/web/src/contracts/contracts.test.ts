@@ -275,6 +275,8 @@ import {
   type TslSourceView,
   type TslSummaryView,
   type TslValidationView,
+  TSL_WEAK_ALGORITHM_CODES,
+  type WeakAlgorithmUse,
   type TsaAcceptedHashView,
   type TsaCatalogView,
   type TsaPolicyAnalysisView,
@@ -408,6 +410,39 @@ function assertExactKeys<T>(
     expect(actual, `${label} is missing required key «${key}»`).toContain(key);
   }
   return obj as T;
+}
+
+/**
+ * `weak_algorithms` on a TSL validation payload: absent, or a list of flattened
+ * `WeakAlgorithmUse` rows. The `site` discriminant is a SIBLING of `code`/`algorithm`
+ * (`#[serde(flatten)]` on the Rust side), and `index`/`total`/`uri` exist only on the
+ * `reference` arm — asserting that here is what pins the flattening.
+ */
+function assertWeakAlgorithms(value: WeakAlgorithmUse[] | undefined, label: string): void {
+  if (value === undefined) return;
+  expect(Array.isArray(value), `${label} should be an array when present`).toBe(true);
+  for (const [i, use] of value.entries()) {
+    const row = use as Record<string, unknown>;
+    inEnum(TSL_WEAK_ALGORITHM_CODES, use.code, `${label}[${i}].code`);
+    expect(typeof use.algorithm, `${label}[${i}].algorithm should be a string`).toBe('string');
+    if (use.site === 'reference') {
+      assertExactKeys<Extract<WeakAlgorithmUse, { site: 'reference' }>>(
+        use,
+        { code: true, algorithm: true, site: true, index: true, total: true, uri: true },
+        `${label}[${i}]`,
+      );
+      expect(typeof use.index).toBe('number');
+      expect(typeof use.total).toBe('number');
+      expect(typeof use.uri).toBe('string');
+    } else {
+      assertExactKeys<Extract<WeakAlgorithmUse, { site: 'signature_method' }>>(
+        use,
+        { code: true, algorithm: true, site: true },
+        `${label}[${i}]`,
+      );
+      expect(row.site, `${label}[${i}].site`).toBe('signature_method');
+    }
+  }
 }
 
 /** Membership check against a pinned enum encoding array (catches unknown variants). */
@@ -5067,7 +5102,9 @@ describe('contract fixtures parse through the real client', () => {
       // Optional on the wire: the server skips serializing both anchor lists when they are empty,
       // so an install that has provisioned no anchor omits them entirely. That absence is the
       // fail-closed default, not a missing field — allowed, but never required.
-      ['tsl_trust_anchor_certs', 'tsl_trust_anchor_sha256'],
+      // `tsl_legacy_algorithms` is skipped the same way: an absent key means NO broken algorithm
+      // is permitted — the safe default — so it is allowed but never required.
+      ['tsl_trust_anchor_certs', 'tsl_trust_anchor_sha256', 'tsl_legacy_algorithms'],
     );
     inEnum(SIGNATURE_FAMILIES, signing.preferred_family, 'signing.preferred_family');
     expect(typeof signing.require_qualified_for_seal).toBe('boolean');
@@ -5943,7 +5980,11 @@ describe('contract fixtures parse through the real client', () => {
       s.validation,
       { checked_at: true, signature: true, error: true },
       `${label}.validation`,
+      // Skipped when empty: no broken algorithm was relied upon (the only state reachable unless an
+      // operator enabled one in `signing.tsl_legacy_algorithms`).
+      ['weak_algorithms'],
     );
+    assertWeakAlgorithms(validation.weak_algorithms, `${label}.validation.weak_algorithms`);
     assertTimestamp(validation.checked_at, `${label}.validation.checked_at`);
     inEnum(TSL_SIGNATURE_STATUSES, validation.signature, `${label}.validation.signature`);
     if (validation.error !== null) expect(validation.error.length).toBeGreaterThan(0);
@@ -6172,7 +6213,9 @@ describe('contract fixtures parse through the real client', () => {
       s.tsl,
       { source: true, signature: true, error: true },
       `${label}.tsl`,
+      ['weak_algorithms'],
     );
+    assertWeakAlgorithms(tsl.weak_algorithms, `${label}.tsl.weak_algorithms`);
     assertExactKeys<TslSourceView>(
       tsl.source,
       { kind: true, path: true, note: true },

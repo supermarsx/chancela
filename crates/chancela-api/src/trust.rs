@@ -25,9 +25,10 @@ use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
 use chancela_tsl::{
     AuthenticatedList, DEFAULT_LOTL_URL, DEFAULT_PT_TSL_URL, DigitalIdentity, ENV_LOTL_URL,
     FALLBACK_TTL, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
-    TrustServiceProvider, TrustedList, TslError, TslTrustAnchors, TslTrustStore, ingest_lotl,
-    ingest_member_tsl, member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl,
-    validate_tsl_signature,
+    TrustServiceProvider, TrustedList, TslAlgorithmPolicy, TslError, TslSignatureReport,
+    TslTrustAnchors, TslTrustStore, WeakAlgorithmUse, ingest_lotl, ingest_member_tsl,
+    member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl,
+    validate_tsl_signature_with_policy,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -39,7 +40,9 @@ use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::hex;
-use crate::settings::{RuntimeTsaProvider, RuntimeTsaSelection, RuntimeTslSelection};
+use crate::settings::{
+    RuntimeTsaProvider, RuntimeTsaSelection, RuntimeTslSelection, legacy_algorithm_policy,
+};
 
 const BUNDLED_PT_TSL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
@@ -123,6 +126,28 @@ pub fn allow_local_trust_url_for_tests(
     Ok(LocalTrustUrlTestAllowance { origin })
 }
 
+/// Validate the cached/imported Trusted List's own XML-DSig signature under the operator's
+/// algorithm policy, reporting what the verification depended on.
+///
+/// The anchors come from the environment ([`TslTrustAnchors::from_env`]) — exactly what
+/// `chancela_tsl::validate_tsl_signature` resolved internally, so with the default (empty) policy
+/// this is byte-for-byte the previous behaviour. The policy decides one thing only: whether a
+/// broken algorithm the operator deliberately enabled in `signing.tsl_legacy_algorithms` may be
+/// relied upon.
+///
+/// **Every** trust read-path in this module goes through this one function, and every handler
+/// resolves the policy from the same `signing.tsl_legacy_algorithms` field via
+/// [`legacy_algorithm_policy`] — so the boolean-only call sites (catalog / provider / service /
+/// TSA) and the reporting ones (`/v1/trust/status`, refresh, TSA diagnostics) cannot disagree
+/// about whether a given list is valid.
+fn validate_tsl_signature_reported(
+    xml: &[u8],
+    policy: &TslAlgorithmPolicy,
+) -> Result<TslSignatureReport, TslError> {
+    let anchors = TslTrustAnchors::from_env()?;
+    validate_tsl_signature_with_policy(xml, &anchors, policy)
+}
+
 // --- Views -------------------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -149,6 +174,13 @@ pub struct TslValidationView {
     pub checked_at: String,
     pub signature: TslSignatureStatus,
     pub error: Option<String>,
+    /// Broken algorithms this `Valid` verdict actually depended on, as stable machine codes — never
+    /// prose. Empty (and omitted from the payload) whenever the list validated under strong
+    /// algorithms alone, which is the only state an install that never set
+    /// `signing.tsl_legacy_algorithms` can reach. A non-empty list means the signature verified
+    /// **only because** an operator permitted that exact URI; the web layer owns the wording.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weak_algorithms: Vec<WeakAlgorithmUse>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -380,6 +412,10 @@ pub struct TsaTslDiagnosticsView {
     pub source: TslSourceView,
     pub signature: TslSignatureStatus,
     pub error: Option<String>,
+    /// Broken algorithms this `Valid` verdict depended on — see
+    /// [`TslValidationView::weak_algorithms`]. Machine codes only.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub weak_algorithms: Vec<WeakAlgorithmUse>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -556,10 +592,21 @@ pub async fn trust_status(
     actor: CurrentActor,
 ) -> Result<Json<TslSummaryView>, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
+    let (tsl_selection, policy) = {
+        let guard = state.settings.read().await;
+        (
+            guard.signing.runtime_tsl_selection(),
+            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+        )
+    };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    Ok(Json(summary_view(&loaded, now, Some(&tsl_selection))))
+    Ok(Json(summary_view(
+        &loaded,
+        now,
+        Some(&tsl_selection),
+        &policy,
+    )))
 }
 
 /// `POST /v1/trust/refresh` — operator-triggered TSL import from a URL or local XML file.
@@ -588,12 +635,13 @@ pub async fn refresh_trust_tsl(
                 .to_owned(),
         )
     })?;
-    let (tsl_selection, anchor_certs, anchor_fingerprints) = {
+    let (tsl_selection, anchor_certs, anchor_fingerprints, policy) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
             guard.signing.tsl_trust_anchor_certs.clone(),
             guard.signing.tsl_trust_anchor_sha256.clone(),
+            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
         )
     };
     let use_lotl = request.lotl.unwrap_or(false);
@@ -609,7 +657,7 @@ pub async fn refresh_trust_tsl(
                 now,
             )
         } else {
-            import_tsl_to_cache(data_dir, tsl_selection, request, now)
+            import_tsl_to_cache(data_dir, tsl_selection, request, now, &policy)
         }
     })
     .await
@@ -649,10 +697,16 @@ pub async fn trust_catalog(
     Query(query): Query<TslCatalogQuery>,
 ) -> Result<Response, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
+    let (tsl_selection, policy) = {
+        let guard = state.settings.read().await;
+        (
+            guard.signing.runtime_tsl_selection(),
+            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+        )
+    };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
     let filters = ServiceFilters::from_tsl_query(&query);
     if filters.is_active() {
         let limit = query
@@ -668,7 +722,7 @@ pub async fn trust_catalog(
         ))
         .into_response())
     } else {
-        Ok(Json(catalog_view(&loaded, now, Some(&tsl_selection))).into_response())
+        Ok(Json(catalog_view(&loaded, now, Some(&tsl_selection), &policy)).into_response())
     }
 }
 
@@ -683,10 +737,11 @@ pub async fn trust_tsa(
     require_trust_read(&state, &actor).await?;
     let signing = state.settings.read().await.signing.clone();
     let tsa_selection = signing.runtime_tsa_selection();
+    let policy = legacy_algorithm_policy(&signing.tsl_legacy_algorithms);
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
-    let catalog = tsa_catalog_view(&loaded, now, &tsa_selection);
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
+    let catalog = tsa_catalog_view(&loaded, now, &tsa_selection, &policy);
     let filters = ServiceFilters::from_tsa_query(&query);
     if filters.is_active() {
         let limit = query
@@ -713,10 +768,16 @@ pub async fn trust_provider(
     actor: CurrentActor,
 ) -> Result<Json<TslProviderDetailView>, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
+    let (tsl_selection, policy) = {
+        let guard = state.settings.read().await;
+        (
+            guard.signing.runtime_tsl_selection(),
+            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+        )
+    };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
     let provider = loaded
         .list
         .providers
@@ -727,7 +788,7 @@ pub async fn trust_provider(
         .ok_or(ApiError::NotFound)?;
     Ok(Json(TslProviderDetailView {
         provider,
-        summary: summary_view(&loaded, now, Some(&tsl_selection)),
+        summary: summary_view(&loaded, now, Some(&tsl_selection), &policy),
     }))
 }
 
@@ -738,10 +799,16 @@ pub async fn trust_service(
     actor: CurrentActor,
 ) -> Result<Json<TslServiceDetailView>, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let tsl_selection = state.settings.read().await.signing.runtime_tsl_selection();
+    let (tsl_selection, policy) = {
+        let guard = state.settings.read().await;
+        (
+            guard.signing.runtime_tsl_selection(),
+            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+        )
+    };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
     for (provider_index, provider) in loaded.list.providers.iter().enumerate() {
         let provider_id = provider_id_at(provider_index, provider);
         for (service_index, service) in provider.services.iter().enumerate() {
@@ -758,7 +825,7 @@ pub async fn trust_service(
                     digital_identities: digital_identity_views(service),
                     history: service_history_views(service),
                     service: summary,
-                    summary: summary_view(&loaded, now, Some(&tsl_selection)),
+                    summary: summary_view(&loaded, now, Some(&tsl_selection), &policy),
                 }));
             }
         }
@@ -789,6 +856,7 @@ fn import_tsl_to_cache(
     selection: RuntimeTslSelection,
     request: TslRefreshRequest,
     now: OffsetDateTime,
+    policy: &TslAlgorithmPolicy,
 ) -> Result<TslRefreshStatusView, ApiError> {
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| ApiError::Internal(format!("failed to create TSL cache directory: {e}")))?;
@@ -870,6 +938,7 @@ fn import_tsl_to_cache(
             status_source_url.clone(),
             display_path,
             Some(target_path.display().to_string()),
+            policy,
         ),
         Err(error) => failed_refresh_status(
             now,
@@ -1158,6 +1227,9 @@ fn lotl_success_status(
             checked_at: format_time(now),
             signature: TslSignatureStatus::Valid,
             error: None,
+            // LOTL-derived authentication runs through `ingest_lotl`/`ingest_member_tsl`, which
+            // permit no broken algorithm at all — there is nothing weak to report here.
+            weak_algorithms: Vec::new(),
         },
         providers: Some(list.providers.len()),
         services: Some(services),
@@ -1529,12 +1601,20 @@ fn status_for_imported_xml(
     source_url: Option<String>,
     source_path: Option<String>,
     target_path: Option<String>,
+    policy: &TslAlgorithmPolicy,
 ) -> TslRefreshStatusView {
     match parse_tsl(xml) {
         Ok(list) => {
-            let validation_error = validate_tsl_signature(xml)
-                .err()
-                .map(|e| format!("Trusted List signature/trust-anchor validation failed: {e}"));
+            let (weak_algorithms, validation_error) =
+                match validate_tsl_signature_reported(xml, policy) {
+                    Ok(report) => (report.weak_algorithms, None),
+                    Err(e) => (
+                        Vec::new(),
+                        Some(format!(
+                            "Trusted List signature/trust-anchor validation failed: {e}"
+                        )),
+                    ),
+                };
             let signature_valid = validation_error.is_none();
             let services = list.services().count();
             let ca_qc_services = list.services().filter(|s| s.is_ca_qc()).count();
@@ -1561,6 +1641,7 @@ fn status_for_imported_xml(
                         TslSignatureStatus::Invalid
                     },
                     error: validation_error.clone(),
+                    weak_algorithms,
                 },
                 providers: Some(list.providers.len()),
                 services: Some(services),
@@ -1604,6 +1685,7 @@ fn failed_refresh_status(
             checked_at: format_time(now),
             signature: TslSignatureStatus::Invalid,
             error: Some(error.clone()),
+            weak_algorithms: Vec::new(),
         },
         providers: None,
         services: None,
@@ -1677,10 +1759,11 @@ fn catalog_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
     runtime_selection: Option<&RuntimeTslSelection>,
+    policy: &TslAlgorithmPolicy,
 ) -> TslCatalogView {
-    let signature_valid = validate_tsl_signature(&loaded.xml).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, policy).is_ok();
     TslCatalogView {
-        summary: summary_view(loaded, now, runtime_selection),
+        summary: summary_view(loaded, now, runtime_selection, policy),
         providers: loaded
             .list
             .providers
@@ -1695,10 +1778,13 @@ fn summary_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
     runtime_selection: Option<&RuntimeTslSelection>,
+    policy: &TslAlgorithmPolicy,
 ) -> TslSummaryView {
-    let validation_error = validate_tsl_signature(&loaded.xml)
-        .err()
-        .map(|e| e.to_string());
+    let (weak_algorithms, validation_error) =
+        match validate_tsl_signature_reported(&loaded.xml, policy) {
+            Ok(report) => (report.weak_algorithms, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
     let signature_valid = validation_error.is_none();
     let services = loaded.list.services().count();
     let ca_qc_services = loaded.list.services().filter(|s| s.is_ca_qc()).count();
@@ -1729,6 +1815,7 @@ fn summary_view(
                 TslSignatureStatus::Invalid
             },
             error: validation_error,
+            weak_algorithms,
         },
         providers: loaded.list.providers.len(),
         services,
@@ -1887,10 +1974,13 @@ fn tsa_catalog_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
     selection: &RuntimeTsaSelection,
+    policy: &TslAlgorithmPolicy,
 ) -> TsaCatalogView {
-    let signature_error = validate_tsl_signature(&loaded.xml)
-        .err()
-        .map(|e| e.to_string());
+    let (weak_algorithms, signature_error) =
+        match validate_tsl_signature_reported(&loaded.xml, policy) {
+            Ok(report) => (report.weak_algorithms, None),
+            Err(e) => (Vec::new(), Some(e.to_string())),
+        };
     let signature_valid = signature_error.is_none();
     let records = tsa_records(&loaded.list, now, signature_valid);
     let granted_records = records.iter().filter(|r| r.granted).count();
@@ -1964,6 +2054,7 @@ fn tsa_catalog_view(
                     TslSignatureStatus::Invalid
                 },
                 error: signature_error,
+                weak_algorithms,
             },
             records: records.len(),
             granted_records,
@@ -3047,7 +3138,7 @@ mod tests {
     #[test]
     fn summary_reports_fixture_validation_without_trusting_it() {
         let loaded = fixture();
-        let summary = summary_view(&loaded, NOW, None);
+        let summary = summary_view(&loaded, NOW, None, &TslAlgorithmPolicy::new());
         assert_eq!(summary.scheme_territory, "PT");
         assert!(summary.last_refresh.is_none());
         assert_eq!(summary.providers, 4);
@@ -3055,6 +3146,67 @@ mod tests {
         assert_eq!(summary.trusted_esignature_services, 0);
         assert_eq!(summary.validation.signature, TslSignatureStatus::Invalid);
         assert!(summary.validation.error.is_some());
+        assert!(
+            summary.validation.weak_algorithms.is_empty(),
+            "the default policy permits no broken algorithm, so nothing weak can be reported"
+        );
+    }
+
+    /// The weak-algorithm surface is **additive**: with the default (empty) policy the key is not
+    /// serialized at all, so a stored payload or an older client sees exactly the previous shape.
+    /// When something weak *was* relied upon, the site fields are flattened siblings of
+    /// `code`/`algorithm` — the shape the web discriminated union mirrors — and every value is a
+    /// stable machine code, never a sentence.
+    #[test]
+    fn weak_algorithms_are_omitted_when_empty_and_flattened_when_present() {
+        let clean = TslValidationView {
+            checked_at: format_time(NOW),
+            signature: TslSignatureStatus::Valid,
+            error: None,
+            weak_algorithms: Vec::new(),
+        };
+        let json = serde_json::to_value(&clean).expect("clean validation view");
+        assert!(
+            json.get("weak_algorithms").is_none(),
+            "an empty list must not appear on the wire: {json}"
+        );
+
+        let weak = TslValidationView {
+            checked_at: format_time(NOW),
+            signature: TslSignatureStatus::Valid,
+            error: None,
+            weak_algorithms: vec![
+                WeakAlgorithmUse {
+                    code: chancela_tsl::CODE_WEAK_SIGNATURE_METHOD_PERMITTED.to_owned(),
+                    algorithm: chancela_tsl::LEGACY_RSA_SHA1.to_owned(),
+                    site: chancela_tsl::WeakAlgorithmSite::SignatureMethod,
+                },
+                WeakAlgorithmUse {
+                    code: chancela_tsl::CODE_WEAK_DIGEST_PERMITTED.to_owned(),
+                    algorithm: chancela_tsl::LEGACY_SHA1_DIGEST.to_owned(),
+                    site: chancela_tsl::WeakAlgorithmSite::Reference {
+                        index: 1,
+                        total: 2,
+                        uri: "#xades-props".to_owned(),
+                    },
+                },
+            ],
+        };
+        let json = serde_json::to_value(&weak).expect("weak validation view");
+        let rows = json["weak_algorithms"]
+            .as_array()
+            .expect("weak_algorithms array");
+        assert_eq!(rows[0]["code"], "tsl_weak_signature_method_permitted");
+        assert_eq!(rows[0]["site"], "signature_method");
+        assert!(
+            rows[0].get("index").is_none(),
+            "the signature_method arm carries no reference fields: {json}"
+        );
+        assert_eq!(rows[1]["code"], "tsl_weak_digest_permitted");
+        assert_eq!(rows[1]["site"], "reference");
+        assert_eq!(rows[1]["index"], 1);
+        assert_eq!(rows[1]["total"], 2);
+        assert_eq!(rows[1]["uri"], "#xades-props");
     }
 
     #[test]
@@ -3074,6 +3226,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
+            &TslAlgorithmPolicy::new(),
         )
         .expect("import status");
 
@@ -3118,6 +3271,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
+            &TslAlgorithmPolicy::new(),
         )
         .expect("failed attempt still persists status");
 
@@ -3141,6 +3295,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
+            &TslAlgorithmPolicy::new(),
         )
         .expect("unsafe URL attempt still records status");
 
@@ -3394,6 +3549,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
+            &TslAlgorithmPolicy::new(),
         )
         .expect("configured source import");
 
@@ -3618,7 +3774,7 @@ mod tests {
     #[test]
     fn provider_analysis_and_detail_views_expose_duplicate_names_and_raw_dates() {
         let loaded = fixture();
-        let catalog = catalog_view(&loaded, NOW, None);
+        let catalog = catalog_view(&loaded, NOW, None, &TslAlgorithmPolicy::new());
         let multicert = catalog
             .providers
             .iter()
@@ -3692,7 +3848,7 @@ mod tests {
     fn tsa_catalog_reports_configured_url_and_fixture_timestamp_metadata() {
         let loaded = fixture();
         let selection = tsa_selection_for_url("http://ts.cartaodecidadao.pt/tsa/server");
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
         assert_eq!(catalog.summary.status, TsaStatusKind::Ready);
         assert_eq!(
             catalog.summary.accepted_hash.digest,
@@ -3711,7 +3867,7 @@ mod tests {
     fn tsa_catalog_filters_tsl_timestamp_authority_records() {
         let loaded = fixture();
         let selection = tsa_selection_for_url("http://tsa.example.test");
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
         assert_eq!(catalog.records.len(), 2);
         assert_eq!(catalog.summary.records, 2);
         assert_eq!(catalog.summary.granted_records, 1);
@@ -3838,7 +3994,7 @@ mod tests {
     fn tsa_catalog_reports_unconfigured_and_redacts_url_credentials() {
         let loaded = fixture();
         let selection = unconfigured_tsa_selection();
-        let unconfigured = tsa_catalog_view(&loaded, NOW, &selection);
+        let unconfigured = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
         assert_eq!(unconfigured.summary.status, TsaStatusKind::Unconfigured);
         assert_eq!(unconfigured.summary.configured_url, None);
 
@@ -3880,7 +4036,7 @@ mod tests {
         };
 
         let selection = signing.runtime_tsa_selection();
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
 
         assert_eq!(catalog.summary.status, TsaStatusKind::Ready);
         assert_eq!(
@@ -3908,7 +4064,7 @@ mod tests {
         };
 
         let selection = signing.runtime_tsa_selection();
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
 
         assert_eq!(catalog.summary.status, TsaStatusKind::Error);
         assert_eq!(catalog.summary.configured_url, None);
@@ -3933,7 +4089,7 @@ mod tests {
         };
 
         let selection = signing.runtime_tsa_selection();
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection);
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
 
         assert_eq!(catalog.summary.status, TsaStatusKind::Error);
         assert!(

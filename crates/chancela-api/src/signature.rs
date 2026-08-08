@@ -10484,6 +10484,7 @@ mod tests {
                 legacy: false,
                 trust_anchor_certs: Vec::new(),
                 trust_anchor_sha256: Vec::new(),
+                legacy_algorithms: Vec::new(),
             };
 
             let err =
@@ -10509,6 +10510,7 @@ mod tests {
             legacy: false,
             trust_anchor_certs: Vec::new(),
             trust_anchor_sha256: Vec::new(),
+            legacy_algorithms: Vec::new(),
         };
 
         let mut policy = build_trust_policy(None, Some(source)).expect("policy builds");
@@ -10684,6 +10686,7 @@ mod tests {
             legacy: false,
             trust_anchor_certs,
             trust_anchor_sha256,
+            legacy_algorithms: Vec::new(),
         }
     }
 

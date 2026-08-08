@@ -1852,6 +1852,25 @@ pub struct SigningSettings {
     /// so the on-the-wire shape is unchanged for installs that never set one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tsl_trust_anchor_sha256: Vec<String>,
+    /// Cryptographically **broken** XML-DSig algorithm URIs the operator has deliberately permitted
+    /// when verifying the Trusted List's own signature (SIG-11). Each entry is one exact URI drawn
+    /// from [`chancela_tsl::KNOWN_LEGACY_ALGORITHMS`] (the SHA-1 digest method and its RSA/ECDSA
+    /// signature methods); anything else is refused on save, so this is a closed vocabulary and not
+    /// an arbitrary-URI escape hatch around the verifier's exact-match allowlist.
+    ///
+    /// **Defaults to empty, which means no broken algorithm is permitted** — a list that relies on
+    /// one is refused. This is deliberately not an `allow_weak: true` boolean: such a switch would
+    /// silently widen to every weak primitive added later. Enabling one URI permits **that
+    /// algorithm and nothing else** and relaxes no other check — every reference is still digested,
+    /// document coverage is still required, transforms and URIs are still restricted, and the trust
+    /// anchor must still match. A list that validated only because an entry here was set says so in
+    /// the API response as stable machine codes
+    /// ([`chancela_tsl::CODE_WEAK_DIGEST_PERMITTED`] /
+    /// [`chancela_tsl::CODE_WEAK_SIGNATURE_METHOD_PERMITTED`]). Omitted from the serialized document
+    /// when empty (the common, safe default) so the on-the-wire shape is unchanged for installs that
+    /// never set one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tsl_legacy_algorithms: Vec<String>,
     /// Additive RFC 3161 timestamp provider configuration. The enabled default provider is
     /// considered before the legacy [`tsa_url`](Self::tsa_url) compatibility field in timestamping.
     pub tsa_providers: Vec<TsaProviderSettings>,
@@ -1918,6 +1937,31 @@ pub(crate) struct RuntimeTslSource {
     /// [`SigningSettings::tsl_trust_anchor_sha256`]. See
     /// [`trust_anchor_certs`](Self::trust_anchor_certs).
     pub(crate) trust_anchor_sha256: Vec<String>,
+    /// Broken XML-DSig algorithm URIs the operator deliberately permitted, carried verbatim from
+    /// [`SigningSettings::tsl_legacy_algorithms`]. They travel with the source so the signature
+    /// verification that decides whether this list is authentic uses the operator's policy rather
+    /// than an implicit one. Folded into a [`chancela_tsl::TslAlgorithmPolicy`] by
+    /// [`legacy_algorithm_policy`], which drops any entry outside the known set — save-time
+    /// validation already refused those, and the fallback is to refuse, never to permit.
+    pub(crate) legacy_algorithms: Vec<String>,
+}
+
+/// Fold operator-configured legacy-algorithm URIs into a [`chancela_tsl::TslAlgorithmPolicy`].
+///
+/// Entries are validated on save by [`validate_tsl_legacy_algorithms`], so every URI reaching here
+/// should already be in [`chancela_tsl::KNOWN_LEGACY_ALGORITHMS`]. If one somehow is not (a
+/// hand-edited settings document, a downgrade across versions), it is **skipped** rather than
+/// panicking or aborting: the resulting policy permits less, never more. Failing closed here means
+/// an unrecognised URI can only cause a list to be refused, which is the safe direction.
+pub(crate) fn legacy_algorithm_policy(uris: &[String]) -> chancela_tsl::TslAlgorithmPolicy {
+    let mut policy = chancela_tsl::TslAlgorithmPolicy::new();
+    for uri in uris {
+        match policy.clone().with_legacy_algorithm(uri.trim()) {
+            Ok(next) => policy = next,
+            Err(_) => continue,
+        }
+    }
+    policy
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1975,6 +2019,7 @@ impl SigningSettings {
                     legacy: false,
                     trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
                     trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
+                    legacy_algorithms: self.tsl_legacy_algorithms.clone(),
                 });
             }
         }
@@ -1996,6 +2041,7 @@ impl SigningSettings {
                 legacy: true,
                 trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
                 trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
+                legacy_algorithms: self.tsl_legacy_algorithms.clone(),
             });
         }
 
@@ -2084,6 +2130,9 @@ impl Default for SigningSettings {
             // baked in — an operator must supply the public LOTL signing cert here or via env.
             tsl_trust_anchor_certs: Vec::new(),
             tsl_trust_anchor_sha256: Vec::new(),
+            // Fail-closed: no broken algorithm is permitted by default. An operator must name an
+            // exact URI from `chancela_tsl::KNOWN_LEGACY_ALGORITHMS` to enable one.
+            tsl_legacy_algorithms: Vec::new(),
             tsa_providers: default_tsa_providers(),
             require_qualified_for_seal: false,
             cmd: SigningCmdSettings::default(),
@@ -2603,6 +2652,7 @@ impl Settings {
             &self.signing.tsl_trust_anchor_certs,
             &self.signing.tsl_trust_anchor_sha256,
         )?;
+        validate_tsl_legacy_algorithms(&self.signing.tsl_legacy_algorithms)?;
         validate_tsa_providers(&self.signing.tsa_providers)?;
         self.registry_auto_update.validate()?;
         self.workflow.validate()?;
@@ -2745,6 +2795,38 @@ fn validate_tsl_trust_anchors(certs: &[String], fingerprints: &[String]) -> Resu
         // Reuse the shared hex validator; unlike the env form, settings fingerprints are plain
         // 64-hex (no `:` separators), which this rejects.
         validate_optional_sha256_hex(&field, fingerprint)?;
+    }
+    Ok(())
+}
+
+/// Validate the operator-permitted broken Trusted-List algorithms (SIG-11). Each entry must be one
+/// exact URI from [`chancela_tsl::KNOWN_LEGACY_ALGORITHMS`], named at most once. An unknown URI is
+/// refused rather than stored: the field is a closed vocabulary, and accepting an arbitrary URI here
+/// would re-open the exact-match allowlist the XML-DSig verifier is built on — the setting would
+/// then be able to name an algorithm this build cannot even compute. The list defaults to empty
+/// (no broken algorithm permitted), which is valid and is the safe state. A blank entry, an unknown
+/// URI or a duplicate is a client-actionable `422`.
+fn validate_tsl_legacy_algorithms(uris: &[String]) -> Result<(), ApiError> {
+    let mut seen = BTreeSet::new();
+    for (i, uri) in uris.iter().enumerate() {
+        let field = format!("signing.tsl_legacy_algorithms[{i}]");
+        let trimmed = uri.trim();
+        if trimmed.is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} must be a non-empty legacy XML-DSig algorithm URI"
+            )));
+        }
+        if !chancela_tsl::KNOWN_LEGACY_ALGORITHMS.contains(&trimmed) {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} must be one of the known legacy XML-DSig algorithm URIs ({}), got {uri:?}",
+                chancela_tsl::KNOWN_LEGACY_ALGORITHMS.join(", ")
+            )));
+        }
+        if !seen.insert(trimmed) {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} duplicates {uri:?}"
+            )));
+        }
     }
     Ok(())
 }
@@ -5402,6 +5484,114 @@ mod tests {
             }
             other => panic!("unexpected error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn tsl_legacy_algorithms_default_is_empty() {
+        // No broken algorithm is permitted on a fresh install; a list relying on one is refused.
+        let settings = Settings::default();
+        assert!(
+            settings.signing.tsl_legacy_algorithms.is_empty(),
+            "default legacy-algorithm list must be empty (nothing weak permitted)"
+        );
+        settings
+            .validate()
+            .expect("empty legacy-algorithm configuration is valid (permits nothing)");
+    }
+
+    #[test]
+    fn tsl_legacy_algorithms_accept_every_known_uri() {
+        // The closed vocabulary the settings layer and the verifier share.
+        for uri in chancela_tsl::KNOWN_LEGACY_ALGORITHMS {
+            let mut settings = Settings::default();
+            settings.signing.tsl_legacy_algorithms = vec![(*uri).to_owned()];
+            settings
+                .validate()
+                .unwrap_or_else(|e| panic!("known legacy URI {uri} should validate: {e:?}"));
+        }
+        // And all of them together.
+        let mut settings = Settings::default();
+        settings.signing.tsl_legacy_algorithms = chancela_tsl::KNOWN_LEGACY_ALGORITHMS
+            .iter()
+            .map(|uri| (*uri).to_owned())
+            .collect();
+        settings
+            .validate()
+            .expect("the full known legacy set should validate");
+    }
+
+    #[test]
+    fn tsl_legacy_algorithms_reject_unknown_uri() {
+        // The whole point of the closed vocabulary: an arbitrary URI cannot be smuggled past the
+        // verifier's exact-match allowlist by writing it into settings.
+        let mut settings = Settings::default();
+        settings.signing.tsl_legacy_algorithms =
+            vec!["http://www.w3.org/2001/04/xmldsig-more#md5".to_owned()];
+        match settings.validate().expect_err("unknown URI should fail") {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_legacy_algorithms[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tsl_legacy_algorithms_reject_blank_entry() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_legacy_algorithms = vec!["   ".to_owned()];
+        match settings.validate().expect_err("blank entry should fail") {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_legacy_algorithms[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tsl_legacy_algorithms_reject_duplicate_entry() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_legacy_algorithms = vec![
+            chancela_tsl::LEGACY_SHA1_DIGEST.to_owned(),
+            chancela_tsl::LEGACY_SHA1_DIGEST.to_owned(),
+        ];
+        match settings
+            .validate()
+            .expect_err("duplicate entry should fail")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_legacy_algorithms[1]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn legacy_algorithm_policy_folds_known_and_skips_unknown() {
+        // Save-time validation already refuses unknown URIs; if one reaches the fold anyway it is
+        // skipped, so the resulting policy can only permit less than asked, never more.
+        let policy = legacy_algorithm_policy(&[
+            chancela_tsl::LEGACY_SHA1_DIGEST.to_owned(),
+            "http://example.invalid/not-an-algorithm".to_owned(),
+        ]);
+        assert!(policy.allows_legacy(chancela_tsl::LEGACY_SHA1_DIGEST));
+        assert!(!policy.allows_legacy("http://example.invalid/not-an-algorithm"));
+        assert!(policy.permits_any_legacy());
+
+        let empty = legacy_algorithm_policy(&[]);
+        assert!(
+            !empty.permits_any_legacy(),
+            "an empty configuration must permit no weak algorithm"
+        );
+        assert_eq!(empty, chancela_tsl::TslAlgorithmPolicy::new());
     }
 
     // --- t95 P0-1 / P0-3: authentication slice + instance base URL ----------------------------

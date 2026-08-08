@@ -3565,10 +3565,48 @@ export interface TslSourceView {
   note: string;
 }
 
+/**
+ * Stable machine codes for a broken algorithm a Trusted List signature was verified with. Mirrors
+ * `chancela_tsl::CODE_*`; append-only. Never a translated sentence — the server emits the code and
+ * the web layer owns the wording.
+ */
+export const TSL_WEAK_ALGORITHM_CODES = [
+  'tsl_weak_digest_permitted',
+  'tsl_weak_signature_method_permitted',
+] as const;
+export type TslWeakAlgorithmCode = (typeof TSL_WEAK_ALGORITHM_CODES)[number];
+
+/**
+ * Where a broken algorithm was relied upon. Mirrors `chancela_tsl::WeakAlgorithmSite`, which is an
+ * internally-tagged enum (`#[serde(tag = "site", rename_all = "snake_case")]`) flattened into
+ * {@link WeakAlgorithmUse} — so `site`/`index`/`total`/`uri` are SIBLINGS of `code`/`algorithm`, not
+ * nested under a `site` object. `index`/`total`/`uri` exist only on the `reference` arm.
+ */
+export type WeakAlgorithmSite =
+  | { site: 'signature_method' }
+  | { site: 'reference'; index: number; total: number; uri: string };
+
+/**
+ * One reliance on a cryptographically broken algorithm during Trusted List signature verification.
+ * Present only when an operator enabled that exact URI in `signing.tsl_legacy_algorithms`; a
+ * verdict with an empty list validated under strong algorithms alone.
+ */
+export type WeakAlgorithmUse = {
+  code: TslWeakAlgorithmCode;
+  /** The exact XML-DSig algorithm URI relied upon. */
+  algorithm: string;
+} & WeakAlgorithmSite;
+
 export interface TslValidationView {
   checked_at: string;
   signature: TslSignatureStatus;
   error: string | null;
+  /**
+   * Broken algorithms this verdict depended on. Optional on the wire: the backend serializes it
+   * with `skip_serializing_if = "Vec::is_empty"`, so the common case (nothing weak permitted)
+   * omits the key entirely. Read as `?? []`.
+   */
+  weak_algorithms?: WeakAlgorithmUse[];
 }
 
 export type TslRefreshSourceKind = 'Url' | 'File';
@@ -3771,6 +3809,8 @@ export interface TsaTslDiagnosticsView {
   source: TslSourceView;
   signature: TslSignatureStatus;
   error: string | null;
+  /** See {@link TslValidationView.weak_algorithms}. Omitted when empty. */
+  weak_algorithms?: WeakAlgorithmUse[];
 }
 
 export interface TsaSummaryView {
@@ -7448,6 +7488,19 @@ export interface SigningSettings {
    */
   tsl_trust_anchor_certs?: string[];
   tsl_trust_anchor_sha256?: string[];
+  /**
+   * Cryptographically BROKEN XML-DSig algorithm URIs the operator has deliberately permitted when
+   * verifying a Trusted List's own signature. A closed vocabulary — the backend refuses (422) any
+   * URI outside `chancela_tsl::KNOWN_LEGACY_ALGORITHMS` (the SHA-1 digest method and its RSA/ECDSA
+   * signature methods), so this cannot be used as an arbitrary-URI escape hatch. Deliberately not a
+   * boolean: `allow_weak: true` would silently widen to every weak primitive added later.
+   *
+   * Optional on the wire (`skip_serializing_if = "Vec::is_empty"`); an absent key means NONE is
+   * permitted, which is the safe default. Enabling one permits that algorithm and nothing else and
+   * relaxes no other check; a list that validated only because of it reports
+   * {@link TslValidationView.weak_algorithms}.
+   */
+  tsl_legacy_algorithms?: string[];
   require_qualified_for_seal: boolean;
   cmd: SigningCmdSettings;
   providers: SigningProviderMetadata[];

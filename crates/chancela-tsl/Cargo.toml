@@ -15,8 +15,24 @@ x509-cert = { workspace = true }
 der = { workspace = true }
 spki = { workspace = true }
 rsa = { workspace = true }
+# XML-DSig `ecdsa-sha256`/`-sha384`/`-sha512` are each bound to one curve (P-256/P-384/P-521), so
+# supporting the SHA-384/512 signature methods means carrying the matching curve implementations.
+# Both are already workspace dependencies used by `chancela-xades` for the same XML-DSig profiles.
 p256 = { workspace = true }
-sha2 = { workspace = true }
+p384 = { workspace = true }
+p521 = { workspace = true }
+# `oid` gives the hash types an `AssociatedOid`, which is what lets the RSA verifier use
+# `Pkcs1v15Sign::new::<D>()` — deriving the RFC 8017 §9.2 `DigestInfo` prefix from the hash itself
+# rather than hand-encoding one prefix per algorithm (a wrong prefix verifies nothing, silently).
+sha2 = { workspace = true, features = ["oid"] }
+# SHA3-256/384/512 XML-DSig digest + RSA-PSS methods (RFC 9231 §2.1, §2.3.9). DEPENDENCY NOTE:
+# `sha3` 0.10 is ALREADY in `Cargo.lock`, so declaring it adds **zero** new crates to the tree — it
+# only makes an existing one directly nameable. Pure hashing, no key handling, no advisories.
+sha3 = { workspace = true, features = ["oid"] }
+# SHA-1, for the legacy XML-DSig algorithms an operator may deliberately enable. Declaring it does
+# NOT make SHA-1 acceptable: `TslAlgorithmPolicy` is empty by default and every weak algorithm is
+# refused unless its exact URI was opted in. Already a workspace dependency and already in the lock.
+sha1 = { workspace = true, features = ["oid"] }
 time = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }

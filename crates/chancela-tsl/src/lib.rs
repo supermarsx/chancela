@@ -74,5 +74,13 @@ pub use source::{
     BytesTslSource, DEFAULT_PT_TSL_URL, ENV_TSL_TRUST_ANCHOR, ENV_TSL_TRUST_ANCHOR_SHA256,
     ENV_TSL_URL, FileTslSource, HttpTslSource, TslSource, TslTrustAnchors, parse_anchor_certs,
     parse_hex_sha256, validate_tsl_signature, validate_tsl_signature_with_anchors,
+    validate_tsl_signature_with_policy,
 };
 pub use trust_store::TslTrustStore;
+/// Algorithm policy: which XML-DSig algorithms a Trusted List signature may be verified with, and
+/// what a successful verification depended on. See [`xmldsig::TslAlgorithmPolicy`].
+pub use xmldsig::{
+    CODE_WEAK_DIGEST_PERMITTED, CODE_WEAK_SIGNATURE_METHOD_PERMITTED, KNOWN_LEGACY_ALGORITHMS,
+    LEGACY_ECDSA_SHA1, LEGACY_RSA_SHA1, LEGACY_SHA1_DIGEST, TslAlgorithmPolicy, TslSignatureReport,
+    WeakAlgorithmSite, WeakAlgorithmUse,
+};
