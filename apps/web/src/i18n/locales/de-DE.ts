@@ -7096,4 +7096,34 @@ export const deDE: Catalog = {
   'account.notices.empty': 'Keine Hinweise ausgeblendet.',
   'account.notices.footnote':
     'Hier erscheinen nur Hinweise, die sich wiederherstellen lassen; manche Hinweise werden dauerhaft ausgeblendet und stehen nicht in dieser Liste.',
+
+  'settings.signing.tslLegacy.title': 'Gebrochene Algorithmen für Signaturen der Vertrauensliste',
+  'settings.signing.tslLegacy.hint':
+    'Welche kryptografisch gebrochenen Algorithmen dieser Server akzeptiert, wenn er die XML-Signatur der Vertrauensliste selbst prüft. Standardmäßig ist keiner erlaubt: In einer neuen Installation sind alle Kästchen unten leer, und kein gebrochener Algorithmus wird akzeptiert.',
+  'settings.signing.tslLegacy.warning.title': 'Diese Algorithmen sind gebrochen, nicht bloß alt',
+  'settings.signing.tslLegacy.warning.body':
+    'SHA-1-Kollisionen sind nicht theoretisch. 2017 wurden zwei verschiedene Dateien mit demselben SHA-1-Hashwert erzeugt (SHAttered), und Kollisionen mit gewähltem Präfix, bei denen die angreifende Seite beide Dateien wählt, sind seit 2020 praktisch durchführbar. Wer einen dieser Algorithmen erlaubt, macht es möglich, dass eine gefälschte Vertrauensliste als echt akzeptiert wird — und alle Anbieter, Dienste und Zertifikate, denen der Server danach vertraut, stammen aus dieser Fälschung.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Das ist keine allgemeine Abschwächung. Jedes Kästchen erlaubt genau diesen einen Algorithmus und sonst nichts; keine weitere Prüfung wird gelockert, jede Referenz wird weiterhin gehasht, und der Vertrauensanker muss weiterhin passen. Aktivieren Sie ein Kästchen nur für eine bestimmte Liste, der Sie aus anderen Gründen vertrauen, und deaktivieren Sie es danach wieder.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, als Hashwert einer signierten Referenz',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA mit SHA-1, als Signatur über die Liste',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA mit SHA-1, als Signatur über die Liste',
+  'settings.signing.tslLegacy.none':
+    'Kein gebrochener Algorithmus ist erlaubt. Das ist die Voreinstellung und der Zustand, in dem eine neue Installation startet.',
+  'settings.signing.tslLegacy.unknown.label': 'Algorithmus, den diese Version nicht kennt',
+  'settings.signing.tslLegacy.unknown.title': 'Ein Eintrag hier gehört nicht zu den dreien',
+  'settings.signing.tslLegacy.unknown.body':
+    'Diese Einstellungen nennen einen Algorithmus, den diese Seite nicht anbieten kann; er wurde also nicht hier gesetzt. Der Server verweigert das Speichern, solange er vorhanden ist; entfernen Sie ihn, indem Sie sein Kästchen oben leeren. Er wird angezeigt statt stillschweigend gelöscht, denn er ist das, was diese Installation gerade anwendet.',
+  'trust.weakAlgorithms.label': 'Algorithmen',
+  'trust.weakAlgorithms.badge': 'Gebrochener Algorithmus akzeptiert',
+  'trust.weakAlgorithms.title': 'Diese Liste wurde mit einem gebrochenen Algorithmus geprüft',
+  'trust.weakAlgorithms.intro':
+    'Die Signatur stimmt, aber nur weil die Signatureinstellungen einen Algorithmus erlauben, den die Sicherheitsgemeinschaft als gebrochen ansieht. Ein Befund, der darauf beruht, trägt weniger Gewicht als einer, der ohne ihn auskommt.',
+  'trust.weakAlgorithms.digest':
+    'Eine signierte Referenz wurde mit einem gebrochenen Algorithmus gehasht.',
+  'trust.weakAlgorithms.signatureMethod':
+    'Die Signatur über die Liste wurde mit einem gebrochenen Algorithmus geprüft.',
+  'trust.weakAlgorithms.reference': 'Referenz {index} von {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Es wurde ein gebrochener Algorithmus herangezogen, einer Art, die diese Version nicht kennt.',
 };

@@ -34,6 +34,7 @@ import {
   DEFAULT_SETTINGS,
   PRODUCT_DOCUMENT_FURNITURE,
   RETENTION_DISPOSAL_ACTIONS,
+  TSL_LEGACY_ALGORITHMS,
   type DpiaTemplateView,
   type PrivacyAdvisoryReviewStatus,
   type PrivacyAdvisoryReviewSummary,
@@ -6717,6 +6718,173 @@ describe('SettingsPage', () => {
     expect((document.querySelector('.settings-fieldset') as HTMLFieldSetElement).disabled).toBe(
       false,
     );
+  });
+
+  /**
+   * The legacy-algorithm control, and the three properties that make it safe.
+   *
+   * ## Why the assertions are on `data-algorithm` and never on copy
+   *
+   * The URI is the wire value. Asserting on the rendered label would couple this test to fourteen
+   * catalogs and to Portuguese grammar; asserting on the URI couples it to the thing the server
+   * actually validates. Where a heading has to be located, it is located through `ptPT[key]` — the
+   * catalog entry, not a transcribed sentence.
+   *
+   * ## Why "no free-text control" is an assertion rather than an observation
+   *
+   * The backend refuses any URI outside the closed set with a 422 whose field path is
+   * `signing.tsl_legacy_algorithms[{i}]`. A text box here could therefore only ever produce a
+   * settings document the server will not accept — a wedged autosave with no way out except a
+   * hand-edit. The control being a fixed list is what makes an unknown URI unreachable, so that
+   * shape is pinned, not merely relied upon.
+   */
+  it('offers exactly the three permitted legacy algorithms, as checkboxes and nothing else', async () => {
+    const { fn } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    const card = (
+      await screen.findByRole('heading', { name: ptPT['settings.signing.tslLegacy.title'] })
+    ).closest('.panel') as HTMLElement;
+    expect(card).toBeTruthy();
+
+    const boxes = [...card.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    expect(boxes.map((box) => box.dataset.algorithm)).toEqual([...TSL_LEGACY_ALGORITHMS]);
+    // Empty is the default, and the state a fixture that never touched the field is in.
+    expect(boxes.every((box) => !box.checked)).toBe(true);
+    expect(card.textContent).toContain(ptPT['settings.signing.tslLegacy.none']);
+
+    // Nothing in this card can carry an arbitrary URI. Every input is a checkbox; there is no
+    // text field, no textarea, and no combobox to type into.
+    const inputs = [...card.querySelectorAll('input, textarea, select')];
+    expect(inputs).toHaveLength(boxes.length);
+    expect(inputs.every((input) => (input as HTMLInputElement).type === 'checkbox')).toBe(true);
+
+    // The warning is the point of the feature, so it is present and NOT dismissible.
+    const warning = screen.getByText(ptPT['settings.signing.tslLegacy.warning.title']);
+    expect(warning.closest('.inline-warning')?.hasAttribute('data-notice')).toBe(false);
+  });
+
+  it('round-trips the legacy-algorithm checkboxes through the settings document', async () => {
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    const card = (
+      await screen.findByRole('heading', { name: ptPT['settings.signing.tslLegacy.title'] })
+    ).closest('.panel') as HTMLElement;
+    const box = (uri: string) =>
+      card.querySelector<HTMLInputElement>(`input[data-algorithm="${uri}"]`)!;
+
+    const lastPut = () => {
+      const put = calls.filter((call) => call.method === 'PUT').at(-1);
+      return put ? (JSON.parse(put.body as string) as TestSettings) : null;
+    };
+
+    // Tick the ECDSA arm FIRST, so the canonical ordering below cannot be an accident of click
+    // order: the array a save produces follows KNOWN_LEGACY_ALGORITHMS, not the operator.
+    fireEvent.click(box(TSL_LEGACY_ALGORITHMS[2]));
+    await waitFor(
+      () => expect(lastPut()?.signing.tsl_legacy_algorithms).toEqual([TSL_LEGACY_ALGORITHMS[2]]),
+      { timeout: 3000 },
+    );
+
+    fireEvent.click(box(TSL_LEGACY_ALGORITHMS[0]));
+    await waitFor(
+      () =>
+        expect(lastPut()?.signing.tsl_legacy_algorithms).toEqual([
+          TSL_LEGACY_ALGORITHMS[0],
+          TSL_LEGACY_ALGORITHMS[2],
+        ]),
+      { timeout: 3000 },
+    );
+
+    // Withdrawing one withdraws exactly one.
+    fireEvent.click(box(TSL_LEGACY_ALGORITHMS[2]));
+    await waitFor(
+      () => expect(lastPut()?.signing.tsl_legacy_algorithms).toEqual([TSL_LEGACY_ALGORITHMS[0]]),
+      { timeout: 3000 },
+    );
+
+    // Whatever the operator did here, the wire only ever carried members of the closed set — the
+    // property the server's 422 exists to enforce and this control exists to make unreachable.
+    for (const call of calls.filter((c) => c.method === 'PUT')) {
+      const sent = JSON.parse(call.body as string) as TestSettings;
+      for (const uri of sent.signing.tsl_legacy_algorithms ?? []) {
+        expect(TSL_LEGACY_ALGORITHMS as readonly string[]).toContain(uri);
+      }
+    }
+  });
+
+  it('shows an unrecognised legacy algorithm rather than dropping it, and lets it be withdrawn', async () => {
+    // Only reachable through a hand-edited settings document: the server refuses any other URI at
+    // save. Silently deleting it would mean this screen changed the policy the deployment is
+    // running under without saying so, which is the failure the whole surface exists to prevent.
+    const unknown = 'http://www.w3.org/2001/04/xmldsig-more#rsa-md5';
+    const fixture = settingsWithMultipleTrustSources();
+    const seeded = {
+      ...fixture,
+      signing: { ...fixture.signing, tsl_legacy_algorithms: [unknown, TSL_LEGACY_ALGORITHMS[0]] },
+    };
+    const { fn, calls } = settingsFetch(seeded);
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    const card = (
+      await screen.findByRole('heading', { name: ptPT['settings.signing.tslLegacy.title'] })
+    ).closest('.panel') as HTMLElement;
+
+    const stray = card.querySelector<HTMLInputElement>('input[data-unknown-algorithm]')!;
+    expect(stray.dataset.algorithm).toBe(unknown);
+    expect(stray.checked).toBe(true);
+    expect(card.textContent).toContain(unknown);
+    expect(screen.getByText(ptPT['settings.signing.tslLegacy.unknown.title'])).toBeTruthy();
+    // The known arm it was seeded alongside is unaffected.
+    expect(
+      card.querySelector<HTMLInputElement>(
+        `input[data-algorithm="${TSL_LEGACY_ALGORITHMS[0]}"]:not([data-unknown-algorithm])`,
+      )!.checked,
+    ).toBe(true);
+
+    // Unchecking it is the way out, and it takes only that entry with it.
+    fireEvent.click(stray);
+    await waitFor(
+      () => {
+        const put = calls.filter((call) => call.method === 'PUT').at(-1);
+        const sent = JSON.parse(put!.body as string) as TestSettings;
+        expect(sent.signing.tsl_legacy_algorithms).toEqual([TSL_LEGACY_ALGORITHMS[0]]);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('gates the legacy-algorithm control on signing.configure, exactly as the anchors are', async () => {
+    // Permitting a broken algorithm is a trust-policy change, so it sits behind the same verb the
+    // anchors do — and fails closed for a `settings.manage` holder who lacks it.
+    vi.stubGlobal('fetch', settingsFetch(settingsWithMultipleTrustSources()).fn);
+    renderWithProviders(
+      <StaticPermissionsProvider value={permissionsValue((p) => p === 'settings.manage')}>
+        <SettingsPage surface="admin" />
+      </StaticPermissionsProvider>,
+      ['/admin/signing/tsl'],
+    );
+
+    const card = (
+      await screen.findByRole('heading', { name: ptPT['settings.signing.tslLegacy.title'] })
+    ).closest('.panel') as HTMLElement;
+    const fieldset = document.querySelector('.settings-fieldset') as HTMLFieldSetElement;
+    expect(fieldset.disabled).toBe(true);
+    // The checkboxes specifically — not merely some control on the page — are inside it, so the
+    // disabled fieldset actually inerts them.
+    const boxes = [...card.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+    expect(boxes).toHaveLength(TSL_LEGACY_ALGORITHMS.length);
+    expect(boxes.every((box) => fieldset.contains(box))).toBe(true);
+    // Containment is the whole assertion, deliberately. `input.disabled` reflects the element's
+    // OWN attribute, so it reads false for a control inerted by an ancestor fieldset — asserting
+    // on it would go green on a checkbox that had escaped the fieldset entirely.
   });
 
   it('keeps exactly one enabled default TSA provider when the operator changes it', async () => {

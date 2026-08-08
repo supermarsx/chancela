@@ -6962,4 +6962,40 @@ export const enUS = {
   'account.notices.empty': 'No notices are hidden.',
   'account.notices.footnote':
     'Only notices that can be restored appear here; some notices are hidden for good and are not listed.',
+
+  // --- Broken (legacy) algorithms for Trusted List signatures ---------------------
+  // The setting is a closed vocabulary of three URIs and the control is three
+  // checkboxes, so this copy never has to describe a format. What it does have to do
+  // is be concrete about what "broken" means — a named, dated, demonstrated attack —
+  // and equally concrete about what enabling one does NOT do. Both halves are the
+  // warning: vagueness in either direction is what gets a box ticked carelessly.
+  'settings.signing.tslLegacy.title': 'Broken algorithms permitted for Trusted List signatures',
+  'settings.signing.tslLegacy.hint':
+    "Which cryptographically broken algorithms this server accepts when it verifies a Trusted List's own XML signature. Nothing is permitted by default: on a new install every box below is off, and no broken algorithm is accepted.",
+  'settings.signing.tslLegacy.warning.title': 'These algorithms are broken, not merely old',
+  'settings.signing.tslLegacy.warning.body':
+    'SHA-1 collisions are not theoretical. Two different files sharing one SHA-1 digest were produced in 2017 (SHAttered), and chosen-prefix collisions, where an attacker picks both files, have been practical since 2020. Permit one of these and a forged Trusted List can be accepted as authentic — and every provider, service and certificate the server trusts afterwards comes from that forgery.',
+  'settings.signing.tslLegacy.warning.scope':
+    'This is not a general weakening. Each box permits that one algorithm and nothing else; no other check is relaxed, every reference is still digested, and the trust anchor must still match. Turn one on only for a specific list you have separate grounds to trust, and turn it off again afterwards.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, as the digest of a signed reference',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA with SHA-1, as the signature over the list',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1':
+    'ECDSA with SHA-1, as the signature over the list',
+  'settings.signing.tslLegacy.none':
+    'No broken algorithm is permitted. This is the default, and the state a new install starts in.',
+  'settings.signing.tslLegacy.unknown.label': 'Algorithm this version does not recognize',
+  'settings.signing.tslLegacy.unknown.title': 'An entry here is not one of the three',
+  'settings.signing.tslLegacy.unknown.body':
+    'These settings name an algorithm this page cannot offer, so it was not set here. The server refuses to save while it is present; clear its box above to remove it. It is shown rather than deleted quietly, because it is what this deployment is running under right now.',
+  'trust.weakAlgorithms.label': 'Algorithms',
+  'trust.weakAlgorithms.badge': 'Broken algorithm accepted',
+  'trust.weakAlgorithms.title': 'This list was verified with a broken algorithm',
+  'trust.weakAlgorithms.intro':
+    'The signature checked out, but only because an algorithm the security community considers broken is permitted in the signing settings. A verdict resting on one of these carries less assurance than one that does not.',
+  'trust.weakAlgorithms.digest': 'A signed reference was digested with a broken algorithm.',
+  'trust.weakAlgorithms.signatureMethod':
+    'The signature over the list was verified with a broken algorithm.',
+  'trust.weakAlgorithms.reference': 'Reference {index} of {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'A broken algorithm was relied upon, of a kind this version does not recognize.',
 };

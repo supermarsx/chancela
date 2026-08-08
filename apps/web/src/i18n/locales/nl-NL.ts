@@ -7075,4 +7075,37 @@ export const nlNL: Catalog = {
   'account.notices.empty': 'Er zijn geen verborgen meldingen.',
   'account.notices.footnote':
     'Hier verschijnen alleen meldingen die hersteld kunnen worden; sommige meldingen worden definitief verborgen en staan niet in deze lijst.',
+
+  'settings.signing.tslLegacy.title':
+    'Gebroken algoritmen toegestaan voor handtekeningen van de vertrouwenslijst',
+  'settings.signing.tslLegacy.hint':
+    'Welke cryptografisch gebroken algoritmen deze server accepteert bij het controleren van de XML-handtekening van de vertrouwenslijst zelf. Standaard is er geen enkele toegestaan: in een nieuwe installatie staan alle vakjes hieronder uit en wordt geen gebroken algoritme geaccepteerd.',
+  'settings.signing.tslLegacy.warning.title': 'Deze algoritmen zijn gebroken, niet alleen oud',
+  'settings.signing.tslLegacy.warning.body':
+    'SHA-1-botsingen zijn niet theoretisch. In 2017 werden twee verschillende bestanden met dezelfde SHA-1-samenvatting gemaakt (SHAttered), en botsingen met gekozen voorvoegsel, waarbij de aanvaller beide bestanden kiest, zijn sinds 2020 praktisch haalbaar. Staat u een van deze algoritmen toe, dan kan een vervalste vertrouwenslijst als echt worden aanvaard — en alle aanbieders, diensten en certificaten die de server daarna vertrouwt, komen uit die vervalsing.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Dit is geen algemene verzwakking. Elk vakje staat dat ene algoritme toe en verder niets; geen andere controle wordt versoepeld, elke referentie wordt nog steeds samengevat en het vertrouwensanker moet nog steeds kloppen. Zet een vakje alleen aan voor een bepaalde lijst die u om andere redenen vertrouwt, en zet het daarna weer uit.',
+  'settings.signing.tslLegacy.algorithm.sha1':
+    'SHA-1, als samenvatting van een ondertekende referentie',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA met SHA-1, als handtekening over de lijst',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1':
+    'ECDSA met SHA-1, als handtekening over de lijst',
+  'settings.signing.tslLegacy.none':
+    'Er is geen gebroken algoritme toegestaan. Dit is de standaard en de toestand waarin een nieuwe installatie begint.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritme dat deze versie niet herkent',
+  'settings.signing.tslLegacy.unknown.title': 'Een vermelding hier hoort niet bij de drie',
+  'settings.signing.tslLegacy.unknown.body':
+    'Deze instellingen noemen een algoritme dat deze pagina niet kan aanbieden; het is hier dus niet ingesteld. De server weigert op te slaan zolang het aanwezig is; haal het vinkje hierboven weg om het te verwijderen. Het wordt getoond in plaats van stilletjes gewist, want het is wat deze installatie op dit moment toepast.',
+  'trust.weakAlgorithms.label': 'Algoritmen',
+  'trust.weakAlgorithms.badge': 'Gebroken algoritme aanvaard',
+  'trust.weakAlgorithms.title': 'Deze lijst is met een gebroken algoritme gecontroleerd',
+  'trust.weakAlgorithms.intro':
+    'De handtekening klopt, maar alleen omdat de ondertekeningsinstellingen een algoritme toestaan dat de beveiligingsgemeenschap als gebroken beschouwt. Een uitkomst die daarop steunt, geeft minder zekerheid dan een die dat niet doet.',
+  'trust.weakAlgorithms.digest':
+    'Een ondertekende referentie is met een gebroken algoritme samengevat.',
+  'trust.weakAlgorithms.signatureMethod':
+    'De handtekening over de lijst is met een gebroken algoritme gecontroleerd.',
+  'trust.weakAlgorithms.reference': 'Referentie {index} van {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Er is op een gebroken algoritme gesteund, van een soort die deze versie niet herkent.',
 };

@@ -60,6 +60,7 @@ import {
   REGISTERED_ENTITY_COLUMNS,
   SIGNATURE_FAMILIES,
   THEME_MODES,
+  TSL_LEGACY_ALGORITHMS,
   type AiSettings,
   type ConnectorSettings,
   type EmailSettings,
@@ -100,6 +101,10 @@ import { BuildProvenanceRows } from './BuildProvenanceRows';
 import { useActiveLocale, useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { usePlatformLogLimitations } from '../../i18n/platformLogLimitationsFallback';
+import {
+  TSL_LEGACY_ALGORITHM_LABEL_KEYS,
+  isKnownLegacyAlgorithm,
+} from '../../i18n/tslWeakAlgorithms';
 import { useTableColumnsT } from '../../i18n/tableColumnsFallback';
 import { ColumnToggleGrid } from '../tableColumns/ColumnToggleGrid';
 import { ENTITIES_TABLE, dataColumns } from '../tableColumns/tableColumnRegistry';
@@ -355,6 +360,56 @@ function normalizeTslSource(source: TslSourceSettings): TslSourceSettings {
  */
 function normalizeTrustAnchors(anchors: readonly string[] | undefined): string[] {
   return (anchors ?? []).map((anchor) => anchor.trim()).filter((anchor) => anchor.length > 0);
+}
+
+/**
+ * Normalize the permitted-legacy-algorithm list for the wire.
+ *
+ * Trims, drops blanks, and de-duplicates — nothing else. In particular it does **not** filter the
+ * list down to {@link TSL_LEGACY_ALGORITHMS}: an entry outside that set can only have arrived from
+ * a hand-edited settings document, and quietly deleting it would mean this screen silently changed
+ * the policy the deployment is actually running under. The server refuses it loudly instead, with
+ * the field path `signing.tsl_legacy_algorithms[{i}]`, and {@link legacyAlgorithmsUnknown} puts an
+ * uncheckable row on screen so the operator has a way out that is not a text editor.
+ *
+ * The checkbox list itself can only ever produce the three known URIs, so on any install that has
+ * only ever been configured through this page the two statements coincide.
+ */
+function normalizeLegacyAlgorithms(uris: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of uris ?? []) {
+    const uri = raw.trim();
+    if (uri.length === 0 || seen.has(uri)) continue;
+    seen.add(uri);
+    normalized.push(uri);
+  }
+  return normalized;
+}
+
+/**
+ * The list that results from permitting or withdrawing one algorithm.
+ *
+ * Known URIs are emitted in {@link TSL_LEGACY_ALGORITHMS} order — the same order the checkboxes
+ * render in and the same order `KNOWN_LEGACY_ALGORITHMS` declares — so the array a save produces
+ * does not depend on the order the operator happened to click. Unrecognised entries keep their
+ * original relative order and follow, preserved rather than dropped; unchecking one is the only
+ * thing that removes it.
+ */
+function nextLegacyAlgorithms(
+  current: readonly string[] | undefined,
+  uri: string,
+  permitted: boolean,
+): string[] {
+  const chosen = new Set(normalizeLegacyAlgorithms(current));
+  if (permitted) chosen.add(uri);
+  else chosen.delete(uri);
+  return [
+    ...TSL_LEGACY_ALGORITHMS.filter((known) => chosen.has(known)),
+    ...normalizeLegacyAlgorithms(current).filter(
+      (entry) => !isKnownLegacyAlgorithm(entry) && chosen.has(entry),
+    ),
+  ];
 }
 
 function normalizeTsaProvider(provider: TsaProviderSettings): TsaProviderSettings {
@@ -618,6 +673,7 @@ function toWireBody(draft: Settings): Settings {
       ),
       tsl_trust_anchor_certs: normalizeTrustAnchors(draft.signing.tsl_trust_anchor_certs),
       tsl_trust_anchor_sha256: normalizeTrustAnchors(draft.signing.tsl_trust_anchor_sha256),
+      tsl_legacy_algorithms: normalizeLegacyAlgorithms(draft.signing.tsl_legacy_algorithms),
     },
     ai: {
       enabled: draft.ai.enabled === true,
@@ -2122,6 +2178,26 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   const configuredTrustAnchorCount =
     normalizeTrustAnchors(trustAnchorCerts).length +
     normalizeTrustAnchors(trustAnchorFingerprints).length;
+  // Optional on the wire and absent when empty — which is the safe default, so `?? []` here reads
+  // "nothing broken is permitted" and every call site below can stop worrying about it.
+  const legacyAlgorithms = normalizeLegacyAlgorithms(draft.signing.tsl_legacy_algorithms);
+  const legacyAlgorithmsUnknown = legacyAlgorithms.filter((uri) => !isKnownLegacyAlgorithm(uri));
+  const setLegacyAlgorithm = (uri: string, permitted: boolean) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              tsl_legacy_algorithms: nextLegacyAlgorithms(
+                d.signing.tsl_legacy_algorithms,
+                uri,
+                permitted,
+              ),
+            },
+          }
+        : d,
+    );
   const setTsaProviders = (updater: (providers: TsaProviderSettings[]) => TsaProviderSettings[]) =>
     setDraft((d) =>
       d
@@ -2929,6 +3005,102 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                         </div>
                       ))
                     )}
+                  </div>
+                </Card>
+              ) : null}
+
+              {/* Which algorithms a Trusted List's own signature may be verified with. It sits
+                  directly under the anchors because it is the second half of the same question:
+                  the anchor says WHO was allowed to sign the list, this says WITH WHAT. Same
+                  `signing.configure` fieldset, so it is gated exactly as the anchors are.
+
+                  A fixed list of three checkboxes, never a text field. The server refuses any URI
+                  outside `KNOWN_LEGACY_ALGORITHMS` with a 422, so a free-text control could only
+                  ever offer the operator a way to wedge their own autosave — and the closed
+                  vocabulary is the whole reason this setting is not an arbitrary-URI escape hatch.
+                  MD5 and RIPEMD-160 are deliberately unofferable: nothing computes them. */}
+              {sub === 'tsl' ? (
+                <Card title={t('settings.signing.tslLegacy.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.tslLegacy.hint')}</p>
+
+                    {/* The point of the feature. Not dismissible (no `notice` key): the operator
+                        must read what they are accepting every time they come to this card. */}
+                    <InlineWarning
+                      tone="warn"
+                      title={t('settings.signing.tslLegacy.warning.title')}
+                    >
+                      <p>{t('settings.signing.tslLegacy.warning.body')}</p>
+                      <p>{t('settings.signing.tslLegacy.warning.scope')}</p>
+                    </InlineWarning>
+
+                    <div
+                      className="stack--tight"
+                      role="group"
+                      aria-label={t('settings.signing.tslLegacy.title')}
+                    >
+                      {TSL_LEGACY_ALGORITHMS.map((uri, index) => {
+                        const inputId = `set-tsl-legacy-${index}`;
+                        return (
+                          <div className="stack--tight" key={uri}>
+                            <label className="checkline" htmlFor={inputId}>
+                              <input
+                                id={inputId}
+                                type="checkbox"
+                                data-algorithm={uri}
+                                checked={legacyAlgorithms.includes(uri)}
+                                onChange={(e) => setLegacyAlgorithm(uri, e.target.checked)}
+                              />
+                              {t(TSL_LEGACY_ALGORITHM_LABEL_KEYS[uri])}
+                            </label>
+                            {/* The URI verbatim and on its own line. It is what the settings
+                                document holds and what a 422 names, so it is never translated and
+                                never fused into the label beside it. */}
+                            <p className="field__hint mono">{uri}</p>
+                          </div>
+                        );
+                      })}
+
+                      {/* Unreachable through this page — the server refuses any other URI at save
+                          — so this exists for a hand-edited settings document. The entry is shown
+                          rather than quietly dropped at the next save, and unchecking it is the
+                          way to remove it. */}
+                      {legacyAlgorithmsUnknown.map((uri, index) => {
+                        const inputId = `set-tsl-legacy-unknown-${index}`;
+                        return (
+                          <div className="stack--tight" key={uri}>
+                            <label className="checkline" htmlFor={inputId}>
+                              <input
+                                id={inputId}
+                                type="checkbox"
+                                data-algorithm={uri}
+                                data-unknown-algorithm="true"
+                                checked
+                                onChange={() => setLegacyAlgorithm(uri, false)}
+                              />
+                              {t('settings.signing.tslLegacy.unknown.label')}
+                            </label>
+                            <p className="field__hint mono">{uri}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {legacyAlgorithmsUnknown.length > 0 ? (
+                      <InlineWarning
+                        tone="error"
+                        title={t('settings.signing.tslLegacy.unknown.title')}
+                      >
+                        {t('settings.signing.tslLegacy.unknown.body')}
+                      </InlineWarning>
+                    ) : null}
+
+                    {/* Stated, not implied. Three unchecked boxes and three boxes that were never
+                        offered look the same, and this is the sentence that tells an operator the
+                        install is in the state it shipped in. */}
+                    {legacyAlgorithms.length === 0 ? (
+                      <p className="field__hint">{t('settings.signing.tslLegacy.none')}</p>
+                    ) : null}
                   </div>
                 </Card>
               ) : null}

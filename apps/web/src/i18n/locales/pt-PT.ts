@@ -7040,4 +7040,40 @@ export const ptPT: Catalog = {
   'account.notices.empty': 'Não há avisos ocultados.',
   'account.notices.footnote':
     'Só aparecem aqui os avisos que podem ser repostos; alguns avisos são ocultados definitivamente e não constam desta lista.',
+
+  // --- Algoritmos comprometidos nas assinaturas da Lista de Confiança -------------
+  // Texto deliberadamente concreto nos dois sentidos: nomeia o ataque (SHAttered,
+  // 2017) e diz também o que ligar uma destas opções NÃO faz. Não se afirma aqui
+  // qualquer efeito jurídico; o URI do algoritmo nunca é traduzido.
+  'settings.signing.tslLegacy.title':
+    'Algoritmos comprometidos permitidos nas assinaturas da Lista de Confiança',
+  'settings.signing.tslLegacy.hint':
+    'Que algoritmos criptograficamente comprometidos é que este servidor aceita ao verificar a assinatura XML da própria Lista de Confiança. Nada é permitido por omissão: numa instalação nova todas as opções abaixo estão desligadas e nenhum algoritmo comprometido é aceite.',
+  'settings.signing.tslLegacy.warning.title':
+    'Estes algoritmos estão quebrados, não são apenas antigos',
+  'settings.signing.tslLegacy.warning.body':
+    'As colisões de SHA-1 não são teóricas. Em 2017 foram produzidos dois ficheiros distintos com o mesmo resumo SHA-1 (SHAttered) e, desde 2020, as colisões de prefixo escolhido — em que o atacante escolhe ambos os ficheiros — são praticáveis. Permitir um destes algoritmos significa que uma Lista de Confiança forjada pode ser aceite como autêntica, e todos os prestadores, serviços e certificados em que o servidor passe a confiar vêm dessa falsificação.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Não se trata de um enfraquecimento geral. Cada opção permite esse algoritmo e mais nenhum; nenhuma outra verificação é relaxada, todas as referências continuam a ser resumidas e a âncora de confiança continua a ter de corresponder. Ligue uma opção apenas para uma lista concreta em que tenha outros motivos para confiar e volte a desligá-la a seguir.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, como resumo de uma referência assinada',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA com SHA-1, como assinatura da lista',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA com SHA-1, como assinatura da lista',
+  'settings.signing.tslLegacy.none':
+    'Não está permitido nenhum algoritmo comprometido. É este o valor por omissão e o estado em que uma instalação nova começa.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritmo que esta versão não reconhece',
+  'settings.signing.tslLegacy.unknown.title': 'Há aqui uma entrada que não é nenhuma das três',
+  'settings.signing.tslLegacy.unknown.body':
+    'Estas definições indicam um algoritmo que esta página não pode oferecer, pelo que não foi definido aqui. O servidor recusa gravar enquanto ele existir; desmarque a opção acima para o retirar. É mostrado em vez de ser apagado em silêncio, porque é o que esta instalação está a usar neste momento.',
+  'trust.weakAlgorithms.label': 'Algoritmos',
+  'trust.weakAlgorithms.badge': 'Algoritmo comprometido aceite',
+  'trust.weakAlgorithms.title': 'Esta lista foi verificada com um algoritmo comprometido',
+  'trust.weakAlgorithms.intro':
+    'A assinatura confere, mas apenas porque as definições de assinatura permitem um algoritmo que a comunidade de segurança considera quebrado. Um resultado que assenta num destes algoritmos dá menos garantias do que um que não assenta.',
+  'trust.weakAlgorithms.digest':
+    'Uma referência assinada foi resumida com um algoritmo comprometido.',
+  'trust.weakAlgorithms.signatureMethod':
+    'A assinatura da lista foi verificada com um algoritmo comprometido.',
+  'trust.weakAlgorithms.reference': 'Referência {index} de {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Houve dependência de um algoritmo comprometido, de um tipo que esta versão não reconhece.',
 };

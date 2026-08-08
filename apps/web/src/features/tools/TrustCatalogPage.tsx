@@ -54,6 +54,7 @@ import {
 } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { useTrustSectionsT } from '../../i18n/trustSectionsFallback';
+import { TslWeakAlgorithmsNotice, WeakAlgorithmStatuslineItem } from './TslWeakAlgorithms';
 import type {
   TslCatalogSearchParams,
   TslCatalogView,
@@ -819,7 +820,13 @@ function TsaToolingPanel() {
                 {tsa.data.summary.trusted_records} / {tsa.data.summary.records}
               </span>
             </div>
+            {/* The TSA records are drawn from a Trusted List of their own, with its own signature
+                verdict. Whether THAT list leaned on a broken algorithm belongs here, where the
+                records it produced are read. */}
+            <WeakAlgorithmStatuslineItem uses={tsa.data.summary.tsl.weak_algorithms} />
           </div>
+
+          <TslWeakAlgorithmsNotice uses={tsa.data.summary.tsl.weak_algorithms} />
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title={t('trust.tsa.configuration')}>
@@ -1118,6 +1125,9 @@ function TrustStatusPanel() {
               <span className="trust-statusline__label">{t('trust.status.signature')}</span>
               <SignatureBadge status={status.data.validation.signature} />
             </div>
+            {/* "Valid" and "valid because SHA-1 was permitted" are different facts, and the badge
+                above cannot tell them apart. This cell appears only in the second case. */}
+            <WeakAlgorithmStatuslineItem uses={status.data.validation.weak_algorithms} />
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.freshness')}</span>
               <Badge tone={status.data.stale ? 'warn' : 'ok'}>
@@ -1130,6 +1140,8 @@ function TrustStatusPanel() {
               <DateTime className="mono" value={status.data.validation.checked_at} evidentiary />
             </div>
           </div>
+
+          <TslWeakAlgorithmsNotice uses={status.data.validation.weak_algorithms} />
 
           {status.data.last_refresh ? (
             <TrustDetailSection title={t('trust.refresh.lastAttempt')}>
@@ -1182,6 +1194,10 @@ function TrustStatusPanel() {
                   </td>
                 </tr>
               </TrustFactTable>
+              {/* The import carries its own verdict, so it carries its own reliance. A list
+                  imported under a weak algorithm and a status verified under strong ones is a
+                  reachable pair — the setting can be turned off between the two. */}
+              <TslWeakAlgorithmsNotice uses={status.data.last_refresh.validation.weak_algorithms} />
               {status.data.last_refresh.error ? (
                 <p className="muted trust-source-note">{status.data.last_refresh.error}</p>
               ) : status.data.last_refresh.validation.error ? (

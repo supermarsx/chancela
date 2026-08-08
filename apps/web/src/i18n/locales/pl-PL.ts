@@ -7033,4 +7033,32 @@ export const plPL: Catalog = {
   'account.notices.empty': 'Brak ukrytych powiadomień.',
   'account.notices.footnote':
     'Pojawiają się tu tylko powiadomienia, które można przywrócić; niektóre są ukrywane trwale i nie znajdują się na tej liście.',
+
+  'settings.signing.tslLegacy.title': 'Złamane algorytmy dopuszczone dla podpisów listy zaufania',
+  'settings.signing.tslLegacy.hint':
+    'Które kryptograficznie złamane algorytmy ten serwer przyjmuje przy weryfikacji podpisu XML samej listy zaufania. Domyślnie żaden nie jest dopuszczony: w nowej instalacji wszystkie pola poniżej są odznaczone i żaden złamany algorytm nie jest przyjmowany.',
+  'settings.signing.tslLegacy.warning.title': 'Te algorytmy są złamane, a nie tylko stare',
+  'settings.signing.tslLegacy.warning.body':
+    'Kolizje SHA-1 nie są teoretyczne. W 2017 roku wytworzono dwa różne pliki o tym samym skrócie SHA-1 (SHAttered), a kolizje z wybranym prefiksem, w których atakujący dobiera oba pliki, są praktycznie wykonalne od 2020 roku. Dopuszczenie jednego z tych algorytmów sprawia, że sfałszowana lista zaufania może zostać przyjęta jako autentyczna, a wszyscy dostawcy, usługi i certyfikaty, którym serwer następnie zaufa, pochodzą z tego fałszerstwa.',
+  'settings.signing.tslLegacy.warning.scope':
+    'To nie jest ogólne osłabienie. Każde pole dopuszcza dokładnie ten jeden algorytm i nic więcej; żadna inna kontrola nie jest rozluźniana, każde odwołanie nadal jest skracane, a kotwica zaufania nadal musi się zgadzać. Włącz pole tylko dla konkretnej listy, której ufasz z innych powodów, i wyłącz je zaraz potem.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, jako skrót podpisanego odwołania',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA z SHA-1, jako podpis listy',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA z SHA-1, jako podpis listy',
+  'settings.signing.tslLegacy.none':
+    'Żaden złamany algorytm nie jest dopuszczony. To wartość domyślna i stan, w którym startuje nowa instalacja.',
+  'settings.signing.tslLegacy.unknown.label': 'Algorytm nierozpoznawany przez tę wersję',
+  'settings.signing.tslLegacy.unknown.title': 'Jeden wpis nie należy do tych trzech',
+  'settings.signing.tslLegacy.unknown.body':
+    'Te ustawienia wskazują algorytm, którego ta strona nie może zaproponować, więc nie został ustawiony tutaj. Serwer odmawia zapisu, dopóki jest obecny; odznacz jego pole powyżej, aby go usunąć. Jest pokazywany, a nie usuwany po cichu, ponieważ to według niego działa teraz ta instalacja.',
+  'trust.weakAlgorithms.label': 'Algorytmy',
+  'trust.weakAlgorithms.badge': 'Przyjęto złamany algorytm',
+  'trust.weakAlgorithms.title': 'Tę listę zweryfikowano złamanym algorytmem',
+  'trust.weakAlgorithms.intro':
+    'Podpis się zgadza, ale wyłącznie dlatego, że ustawienia podpisu dopuszczają algorytm uznawany przez środowisko bezpieczeństwa za złamany. Rozstrzygnięcie oparte na takim algorytmie daje mniejszą pewność niż takie, które się na nim nie opiera.',
+  'trust.weakAlgorithms.digest': 'Podpisane odwołanie skrócono złamanym algorytmem.',
+  'trust.weakAlgorithms.signatureMethod': 'Podpis listy zweryfikowano złamanym algorytmem.',
+  'trust.weakAlgorithms.reference': 'Odwołanie {index} z {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Oparto się na złamanym algorytmie, którego rodzaju ta wersja nie rozpoznaje.',
 };

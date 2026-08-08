@@ -7006,4 +7006,33 @@ export const daDK: Catalog = {
   'account.notices.empty': 'Ingen skjulte meddelelser.',
   'account.notices.footnote':
     'Kun meddelelser, der kan gendannes, vises her; nogle meddelelser skjules permanent og står ikke på listen.',
+
+  'settings.signing.tslLegacy.title': 'Brudte algoritmer tilladt for signaturer på tillidslisten',
+  'settings.signing.tslLegacy.hint':
+    'Hvilke kryptografisk brudte algoritmer denne server accepterer, når den kontrollerer XML-signaturen på selve tillidslisten. Ingen er tilladt som standard: i en ny installation er alle felter nedenfor slået fra, og ingen brudt algoritme accepteres.',
+  'settings.signing.tslLegacy.warning.title': 'Disse algoritmer er brudte, ikke bare gamle',
+  'settings.signing.tslLegacy.warning.body':
+    'SHA-1-kollisioner er ikke teoretiske. I 2017 blev der fremstillet to forskellige filer med samme SHA-1-aftryk (SHAttered), og kollisioner med valgt præfiks, hvor angriberen vælger begge filer, har været praktisk mulige siden 2020. Tillader du en af disse algoritmer, kan en forfalsket tillidsliste blive accepteret som ægte — og alle udbydere, tjenester og certifikater, som serveren derefter stoler på, stammer fra den forfalskning.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Det er ikke en generel svækkelse. Hvert felt tillader netop den ene algoritme og intet andet; ingen anden kontrol lempes, hver reference aftrykkes stadig, og tillidsankeret skal stadig passe. Slå kun et felt til for en bestemt liste, du har andre grunde til at stole på, og slå det fra igen bagefter.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, som aftryk af en signeret reference',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA med SHA-1, som signatur over listen',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA med SHA-1, som signatur over listen',
+  'settings.signing.tslLegacy.none':
+    'Ingen brudt algoritme er tilladt. Det er standarden og den tilstand, en ny installation starter i.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritme som denne version ikke kender',
+  'settings.signing.tslLegacy.unknown.title': 'En post her er ikke en af de tre',
+  'settings.signing.tslLegacy.unknown.body':
+    'Disse indstillinger nævner en algoritme, som denne side ikke kan tilbyde, så den er ikke sat her. Serveren nægter at gemme, så længe den findes; fjern fluebenet ovenfor for at fjerne den. Den vises i stedet for at blive slettet i stilhed, for det er det, denne installation kører efter lige nu.',
+  'trust.weakAlgorithms.label': 'Algoritmer',
+  'trust.weakAlgorithms.badge': 'Brudt algoritme accepteret',
+  'trust.weakAlgorithms.title': 'Denne liste blev kontrolleret med en brudt algoritme',
+  'trust.weakAlgorithms.intro':
+    'Signaturen holder, men kun fordi signeringsindstillingerne tillader en algoritme, som sikkerhedsmiljøet anser for brudt. Et resultat, der hviler på en af dem, giver mindre sikkerhed end et, der ikke gør.',
+  'trust.weakAlgorithms.digest': 'En signeret reference blev aftrykt med en brudt algoritme.',
+  'trust.weakAlgorithms.signatureMethod':
+    'Signaturen over listen blev kontrolleret med en brudt algoritme.',
+  'trust.weakAlgorithms.reference': 'Reference {index} af {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Der blev støttet på en brudt algoritme af en type, som denne version ikke kender.',
 };

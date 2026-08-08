@@ -7086,4 +7086,34 @@ export const frFR: Catalog = {
   'account.notices.empty': 'Aucun avis masqué.',
   'account.notices.footnote':
     'Seuls les avis pouvant être rétablis apparaissent ici ; certains avis sont masqués définitivement et ne figurent pas dans cette liste.',
+
+  'settings.signing.tslLegacy.title':
+    'Algorithmes cassés autorisés pour les signatures de liste de confiance',
+  'settings.signing.tslLegacy.hint':
+    'Les algorithmes cryptographiquement cassés que ce serveur accepte lorsqu’il vérifie la signature XML de la liste de confiance elle-même. Aucun n’est autorisé par défaut : sur une installation neuve, toutes les cases ci-dessous sont décochées et aucun algorithme cassé n’est accepté.',
+  'settings.signing.tslLegacy.warning.title': 'Ces algorithmes sont cassés, pas seulement anciens',
+  'settings.signing.tslLegacy.warning.body':
+    'Les collisions SHA-1 ne sont pas théoriques. Deux fichiers différents partageant une même empreinte SHA-1 ont été produits en 2017 (SHAttered) et, depuis 2020, les collisions à préfixe choisi, où l’attaquant choisit les deux fichiers, sont réalisables en pratique. Autoriser l’un de ces algorithmes, c’est permettre qu’une liste de confiance falsifiée soit acceptée comme authentique — et tous les prestataires, services et certificats auxquels le serveur se fiera ensuite proviendront de cette falsification.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Il ne s’agit pas d’un affaiblissement général. Chaque case autorise cet algorithme et aucun autre ; aucune autre vérification n’est relâchée, chaque référence reste hachée et l’ancre de confiance doit toujours correspondre. N’activez une case que pour une liste précise à laquelle vous avez d’autres raisons de vous fier, puis désactivez-la ensuite.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, comme empreinte d’une référence signée',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA avec SHA-1, comme signature de la liste',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA avec SHA-1, comme signature de la liste',
+  'settings.signing.tslLegacy.none':
+    'Aucun algorithme cassé n’est autorisé. C’est la valeur par défaut et l’état dans lequel démarre une installation neuve.',
+  'settings.signing.tslLegacy.unknown.label': 'Algorithme que cette version ne reconnaît pas',
+  'settings.signing.tslLegacy.unknown.title': 'Une entrée ici ne fait pas partie des trois',
+  'settings.signing.tslLegacy.unknown.body':
+    'Ces réglages désignent un algorithme que cette page ne peut pas proposer : il n’a donc pas été défini ici. Le serveur refuse d’enregistrer tant qu’il est présent ; décochez sa case ci-dessus pour le retirer. Il est affiché plutôt que supprimé en silence, car c’est ce que cette installation applique en ce moment.',
+  'trust.weakAlgorithms.label': 'Algorithmes',
+  'trust.weakAlgorithms.badge': 'Algorithme cassé accepté',
+  'trust.weakAlgorithms.title': 'Cette liste a été vérifiée avec un algorithme cassé',
+  'trust.weakAlgorithms.intro':
+    'La signature est correcte, mais uniquement parce que les réglages de signature autorisent un algorithme que la communauté de la sécurité considère comme cassé. Un verdict qui repose sur l’un d’eux offre moins d’assurance qu’un verdict qui n’en dépend pas.',
+  'trust.weakAlgorithms.digest': 'Une référence signée a été hachée avec un algorithme cassé.',
+  'trust.weakAlgorithms.signatureMethod':
+    'La signature de la liste a été vérifiée avec un algorithme cassé.',
+  'trust.weakAlgorithms.reference': 'Référence {index} sur {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Un algorithme cassé a été utilisé, d’un type que cette version ne reconnaît pas.',
 };

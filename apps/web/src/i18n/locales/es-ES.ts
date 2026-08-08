@@ -7059,4 +7059,33 @@ export const esES: Catalog = {
   'account.notices.empty': 'No hay avisos ocultos.',
   'account.notices.footnote':
     'Aquí solo aparecen los avisos que se pueden restaurar; algunos avisos se ocultan definitivamente y no figuran en esta lista.',
+
+  'settings.signing.tslLegacy.title':
+    'Algoritmos rotos permitidos en las firmas de la Lista de Confianza',
+  'settings.signing.tslLegacy.hint':
+    'Qué algoritmos criptográficamente rotos acepta este servidor al verificar la firma XML de la propia Lista de Confianza. No se permite ninguno de forma predeterminada: en una instalación nueva todas las casillas siguientes están desmarcadas y no se acepta ningún algoritmo roto.',
+  'settings.signing.tslLegacy.warning.title': 'Estos algoritmos están rotos, no solo son antiguos',
+  'settings.signing.tslLegacy.warning.body':
+    'Las colisiones de SHA-1 no son teóricas. En 2017 se produjeron dos archivos distintos con el mismo resumen SHA-1 (SHAttered) y, desde 2020, las colisiones de prefijo elegido, en las que el atacante escoge ambos archivos, son viables en la práctica. Si permite uno de estos algoritmos, una Lista de Confianza falsificada puede aceptarse como auténtica, y todos los prestadores, servicios y certificados en los que el servidor confíe después proceden de esa falsificación.',
+  'settings.signing.tslLegacy.warning.scope':
+    'No se trata de un debilitamiento general. Cada casilla permite ese algoritmo y ningún otro; no se relaja ninguna otra comprobación, cada referencia se sigue resumiendo y el ancla de confianza tiene que seguir coincidiendo. Active una casilla solo para una lista concreta en la que tenga otros motivos para confiar, y vuelva a desactivarla después.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, como resumen de una referencia firmada',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA con SHA-1, como firma de la lista',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA con SHA-1, como firma de la lista',
+  'settings.signing.tslLegacy.none':
+    'No se permite ningún algoritmo roto. Es el valor predeterminado y el estado en el que arranca una instalación nueva.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritmo que esta versión no reconoce',
+  'settings.signing.tslLegacy.unknown.title': 'Aquí hay una entrada que no es ninguna de las tres',
+  'settings.signing.tslLegacy.unknown.body':
+    'Estos ajustes nombran un algoritmo que esta página no puede ofrecer, de modo que no se configuró aquí. El servidor se niega a guardar mientras siga presente; desmarque su casilla para quitarlo. Se muestra en lugar de borrarse en silencio, porque es lo que esta instalación está aplicando ahora mismo.',
+  'trust.weakAlgorithms.label': 'Algoritmos',
+  'trust.weakAlgorithms.badge': 'Algoritmo roto aceptado',
+  'trust.weakAlgorithms.title': 'Esta lista se verificó con un algoritmo roto',
+  'trust.weakAlgorithms.intro':
+    'La firma es correcta, pero solo porque los ajustes de firma permiten un algoritmo que la comunidad de seguridad considera roto. Un resultado que se apoya en uno de ellos ofrece menos garantía que uno que no lo hace.',
+  'trust.weakAlgorithms.digest': 'Una referencia firmada se resumió con un algoritmo roto.',
+  'trust.weakAlgorithms.signatureMethod': 'La firma de la lista se verificó con un algoritmo roto.',
+  'trust.weakAlgorithms.reference': 'Referencia {index} de {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Se dependió de un algoritmo roto, de un tipo que esta versión no reconoce.',
 };

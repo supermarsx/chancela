@@ -7067,4 +7067,36 @@ export const itIT: Catalog = {
   'account.notices.empty': 'Nessun avviso nascosto.',
   'account.notices.footnote':
     'Qui compaiono solo gli avvisi ripristinabili; alcuni avvisi vengono nascosti definitivamente e non figurano in questo elenco.',
+
+  'settings.signing.tslLegacy.title':
+    'Algoritmi compromessi ammessi per le firme della lista di fiducia',
+  'settings.signing.tslLegacy.hint':
+    'Quali algoritmi crittograficamente compromessi accetta questo server quando verifica la firma XML della lista di fiducia stessa. Per impostazione predefinita non ne è ammesso nessuno: in un’installazione nuova tutte le caselle qui sotto sono deselezionate e nessun algoritmo compromesso viene accettato.',
+  'settings.signing.tslLegacy.warning.title':
+    'Questi algoritmi sono compromessi, non semplicemente vecchi',
+  'settings.signing.tslLegacy.warning.body':
+    'Le collisioni SHA-1 non sono teoriche. Nel 2017 sono stati prodotti due file diversi con la stessa impronta SHA-1 (SHAttered) e, dal 2020, le collisioni a prefisso scelto, in cui chi attacca sceglie entrambi i file, sono praticabili. Ammettere uno di questi algoritmi significa che una lista di fiducia falsificata può essere accettata come autentica, e tutti i prestatori, servizi e certificati di cui il server si fiderà in seguito provengono da quella falsificazione.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Non è un indebolimento generale. Ogni casella ammette quell’algoritmo e nessun altro; nessun altro controllo viene allentato, ogni riferimento continua a essere sottoposto a impronta e l’ancora di fiducia deve comunque corrispondere. Attivi una casella solo per una lista precisa di cui abbia altri motivi per fidarsi, e la disattivi subito dopo.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, come impronta di un riferimento firmato',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA con SHA-1, come firma della lista',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA con SHA-1, come firma della lista',
+  'settings.signing.tslLegacy.none':
+    'Non è ammesso nessun algoritmo compromesso. È il valore predefinito e lo stato in cui parte un’installazione nuova.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritmo che questa versione non riconosce',
+  'settings.signing.tslLegacy.unknown.title': 'Qui c’è una voce che non è nessuna delle tre',
+  'settings.signing.tslLegacy.unknown.body':
+    'Queste impostazioni indicano un algoritmo che questa pagina non può offrire, quindi non è stato impostato qui. Il server rifiuta di salvare finché è presente; deselezioni la casella qui sopra per rimuoverlo. Viene mostrato invece di essere cancellato in silenzio, perché è ciò che questa installazione sta applicando adesso.',
+  'trust.weakAlgorithms.label': 'Algoritmi',
+  'trust.weakAlgorithms.badge': 'Algoritmo compromesso accettato',
+  'trust.weakAlgorithms.title': 'Questa lista è stata verificata con un algoritmo compromesso',
+  'trust.weakAlgorithms.intro':
+    'La firma risulta corretta, ma solo perché le impostazioni di firma ammettono un algoritmo che la comunità della sicurezza considera compromesso. Un esito che poggia su uno di questi offre meno garanzia di uno che non vi poggia.',
+  'trust.weakAlgorithms.digest':
+    'Un riferimento firmato è stato sottoposto a impronta con un algoritmo compromesso.',
+  'trust.weakAlgorithms.signatureMethod':
+    'La firma della lista è stata verificata con un algoritmo compromesso.',
+  'trust.weakAlgorithms.reference': 'Riferimento {index} di {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Ci si è affidati a un algoritmo compromesso, di un tipo che questa versione non riconosce.',
 };

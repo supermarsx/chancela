@@ -7019,4 +7019,35 @@ export const fiFI: Catalog = {
   'account.notices.empty': 'Ei piilotettuja ilmoituksia.',
   'account.notices.footnote':
     'Täällä näkyvät vain palautettavissa olevat ilmoitukset; osa ilmoituksista piilotetaan pysyvästi eivätkä ne ole tässä luettelossa.',
+
+  'settings.signing.tslLegacy.title':
+    'Murrettujen algoritmien salliminen luottamuslistan allekirjoituksissa',
+  'settings.signing.tslLegacy.hint':
+    'Mitkä kryptografisesti murretut algoritmit tämä palvelin hyväksyy, kun se tarkistaa itse luottamuslistan XML-allekirjoituksen. Oletuksena ei sallita yhtäkään: uudessa asennuksessa kaikki alla olevat valinnat ovat pois päältä eikä yhtäkään murrettua algoritmia hyväksytä.',
+  'settings.signing.tslLegacy.warning.title': 'Nämä algoritmit ovat murrettuja, eivät vain vanhoja',
+  'settings.signing.tslLegacy.warning.body':
+    'SHA-1-törmäykset eivät ole teoreettisia. Vuonna 2017 tuotettiin kaksi eri tiedostoa, joilla oli sama SHA-1-tiiviste (SHAttered), ja valitun etuliitteen törmäykset, joissa hyökkääjä valitsee molemmat tiedostot, ovat olleet käytännössä mahdollisia vuodesta 2020. Jos sallit jonkin näistä algoritmeista, väärennetty luottamuslista voidaan hyväksyä aitona — ja kaikki tarjoajat, palvelut ja varmenteet, joihin palvelin sen jälkeen luottaa, ovat peräisin siitä väärennöksestä.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Kyse ei ole yleisestä heikennyksestä. Kukin valinta sallii juuri sen yhden algoritmin eikä mitään muuta; mitään muuta tarkistusta ei löysennetä, jokaisesta viittauksesta lasketaan yhä tiiviste ja luottamusankkurin on yhä täsmättävä. Kytke valinta päälle vain tiettyä listaa varten, johon sinulla on muita syitä luottaa, ja kytke se sen jälkeen pois.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, allekirjoitetun viittauksen tiivisteenä',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA ja SHA-1, listan allekirjoituksena',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA ja SHA-1, listan allekirjoituksena',
+  'settings.signing.tslLegacy.none':
+    'Yhtäkään murrettua algoritmia ei sallita. Tämä on oletus ja tila, jossa uusi asennus käynnistyy.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritmi, jota tämä versio ei tunnista',
+  'settings.signing.tslLegacy.unknown.title': 'Yksi merkintä ei kuulu näihin kolmeen',
+  'settings.signing.tslLegacy.unknown.body':
+    'Näissä asetuksissa on algoritmi, jota tämä sivu ei voi tarjota, joten sitä ei ole asetettu täältä. Palvelin kieltäytyy tallentamasta niin kauan kuin se on mukana; poista yllä oleva valinta poistaaksesi sen. Se näytetään sen sijaan, että se poistettaisiin hiljaisesti, koska juuri sitä tämä asennus noudattaa tällä hetkellä.',
+  'trust.weakAlgorithms.label': 'Algoritmit',
+  'trust.weakAlgorithms.badge': 'Murrettu algoritmi hyväksytty',
+  'trust.weakAlgorithms.title': 'Tämä lista tarkistettiin murretulla algoritmilla',
+  'trust.weakAlgorithms.intro':
+    'Allekirjoitus täsmää, mutta vain koska allekirjoitusasetukset sallivat algoritmin, jota tietoturvayhteisö pitää murrettuna. Tulos, joka nojaa tällaiseen, antaa vähemmän varmuutta kuin tulos, joka ei nojaa.',
+  'trust.weakAlgorithms.digest':
+    'Allekirjoitetusta viittauksesta laskettiin tiiviste murretulla algoritmilla.',
+  'trust.weakAlgorithms.signatureMethod':
+    'Listan allekirjoitus tarkistettiin murretulla algoritmilla.',
+  'trust.weakAlgorithms.reference': 'Viittaus {index} / {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Nojattiin murrettuun algoritmiin, jonka lajia tämä versio ei tunnista.',
 };

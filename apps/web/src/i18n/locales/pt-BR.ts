@@ -7027,4 +7027,35 @@ export const ptBR: Catalog = {
   'account.notices.empty': 'Não há avisos ocultados.',
   'account.notices.footnote':
     'Só aparecem aqui os avisos que podem ser restaurados; alguns avisos são ocultados definitivamente e não constam desta lista.',
+
+  'settings.signing.tslLegacy.title':
+    'Algoritmos quebrados permitidos nas assinaturas da Lista de Confiança (TSL)',
+  'settings.signing.tslLegacy.hint':
+    'Quais algoritmos criptograficamente quebrados este servidor aceita ao verificar a assinatura XML da própria Lista de Confiança. Nada é permitido por padrão: em uma instalação nova todas as opções abaixo estão desligadas e nenhum algoritmo quebrado é aceito.',
+  'settings.signing.tslLegacy.warning.title':
+    'Esses algoritmos estão quebrados, não são só antigos',
+  'settings.signing.tslLegacy.warning.body':
+    'As colisões de SHA-1 não são teóricas. Em 2017 foram produzidos dois arquivos diferentes com o mesmo resumo SHA-1 (SHAttered) e, desde 2020, as colisões de prefixo escolhido — em que o atacante escolhe os dois arquivos — são viáveis na prática. Permitir um desses algoritmos significa que uma Lista de Confiança falsificada pode ser aceita como autêntica, e todos os prestadores, serviços e certificados em que o servidor passar a confiar vêm dessa falsificação.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Não se trata de um enfraquecimento geral. Cada opção permite aquele algoritmo e nenhum outro; nenhuma outra verificação é afrouxada, todas as referências continuam sendo resumidas e a âncora de confiança continua tendo de corresponder. Ligue uma opção apenas para uma lista específica em que você tenha outros motivos para confiar, e desligue-a depois.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, no resumo de uma referência assinada',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA com SHA-1, na assinatura da lista',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA com SHA-1, na assinatura da lista',
+  'settings.signing.tslLegacy.none':
+    'Nenhum algoritmo quebrado está permitido. Esse é o padrão e o estado em que uma instalação nova começa.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritmo não reconhecido por esta versão',
+  'settings.signing.tslLegacy.unknown.title': 'Existe aqui uma entrada que não é nenhuma das três',
+  'settings.signing.tslLegacy.unknown.body':
+    'Estas configurações indicam um algoritmo que esta página não pode oferecer, ou seja, não foi definido aqui. O servidor recusa salvar enquanto ele existir; desmarque a opção acima para removê-lo. Ele é mostrado em vez de ser apagado em silêncio, porque é o que esta instalação está usando neste momento.',
+  'trust.weakAlgorithms.label': 'Algoritmos',
+  'trust.weakAlgorithms.badge': 'Algoritmo quebrado aceito',
+  'trust.weakAlgorithms.title': 'Esta lista foi verificada com um algoritmo quebrado',
+  'trust.weakAlgorithms.intro':
+    'A assinatura confere, mas apenas porque as configurações de assinatura permitem um algoritmo que a comunidade de segurança considera quebrado. Um resultado que se apoia em um desses algoritmos oferece menos garantia do que um que não se apoia.',
+  'trust.weakAlgorithms.digest': 'Uma referência assinada foi resumida com um algoritmo quebrado.',
+  'trust.weakAlgorithms.signatureMethod':
+    'A assinatura da lista foi verificada com um algoritmo quebrado.',
+  'trust.weakAlgorithms.reference': 'Referência {index} de {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'Houve dependência de um algoritmo quebrado, de um tipo que esta versão não reconhece.',
 };

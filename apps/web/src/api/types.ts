@@ -3566,6 +3566,27 @@ export interface TslSourceView {
 }
 
 /**
+ * The closed vocabulary of broken XML-DSig algorithm URIs an operator may enable in
+ * {@link SigningSettings.tsl_legacy_algorithms}. Mirrors `chancela_tsl::KNOWN_LEGACY_ALGORITHMS`,
+ * in its order, and `tslWeakAlgorithms.test.ts` reads that constant out of `xmldsig.rs` to prove
+ * the two have not drifted.
+ *
+ * It exists so the settings control can be a fixed list of checkboxes rather than a text field: a
+ * URI outside this set is a 422 at save with the field path `signing.tsl_legacy_algorithms[{i}]`,
+ * so a free-text control could only ever offer the operator a way to wedge their own autosave.
+ *
+ * MD5 and RIPEMD-160 are deliberately absent and permanently unofferable — not a policy stance but
+ * a capability one: nothing in the backend's dependency tree computes them, so allowlisting them
+ * would name an algorithm the verifier cannot evaluate.
+ */
+export const TSL_LEGACY_ALGORITHMS = [
+  'http://www.w3.org/2000/09/xmldsig#sha1',
+  'http://www.w3.org/2000/09/xmldsig#rsa-sha1',
+  'http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha1',
+] as const;
+export type TslLegacyAlgorithm = (typeof TSL_LEGACY_ALGORITHMS)[number];
+
+/**
  * Stable machine codes for a broken algorithm a Trusted List signature was verified with. Mirrors
  * `chancela_tsl::CODE_*`; append-only. Never a translated sentence — the server emits the code and
  * the web layer owns the wording.
@@ -3583,8 +3604,7 @@ export type TslWeakAlgorithmCode = (typeof TSL_WEAK_ALGORITHM_CODES)[number];
  * nested under a `site` object. `index`/`total`/`uri` exist only on the `reference` arm.
  */
 export type WeakAlgorithmSite =
-  | { site: 'signature_method' }
-  | { site: 'reference'; index: number; total: number; uri: string };
+  { site: 'signature_method' } | { site: 'reference'; index: number; total: number; uri: string };
 
 /**
  * One reliance on a cryptographically broken algorithm during Trusted List signature verification.

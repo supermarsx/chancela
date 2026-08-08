@@ -12,9 +12,12 @@ import type {
   TslServiceDetailView,
   TslServiceSummaryView,
   TslSummaryView,
+  TslValidationView,
   TsaCatalogView,
   TrustIdentifierMatchField,
+  WeakAlgorithmUse,
 } from '../../api/types';
+import { TSL_LEGACY_ALGORITHMS } from '../../api/types';
 
 async function themeSource(): Promise<string> {
   const nodeFs = 'node:fs';
@@ -526,28 +529,48 @@ function requestMatching(
   });
 }
 
-function trustFetch(): typeof fetch {
-  let summary = SUMMARY;
+/**
+ * The stub, optionally with a weak-algorithm reliance attached to every Trusted List verdict it
+ * serves — the TSL status, the import status the refresh returns, and the TSA panel's own list.
+ *
+ * All three, deliberately. The backend attaches `weak_algorithms` to each independently, and a
+ * marker wired to one screen and not the others would leave "validated because SHA-1 was allowed"
+ * looking exactly like a clean verdict everywhere it was not wired.
+ */
+function trustFetch(weak?: readonly WeakAlgorithmUse[]): typeof fetch {
+  const withWeak = <T extends { validation: TslValidationView }>(view: T): T =>
+    weak ? { ...view, validation: { ...view.validation, weak_algorithms: [...weak] } } : view;
+  const refreshStatus = withWeak(REFRESH_STATUS);
+  const tsaCatalog: TsaCatalogView = weak
+    ? {
+        ...TSA_CATALOG,
+        summary: {
+          ...TSA_CATALOG.summary,
+          tsl: { ...TSA_CATALOG.summary.tsl, weak_algorithms: [...weak] },
+        },
+      }
+    : TSA_CATALOG;
+  let summary = withWeak(SUMMARY);
   return ((input: RequestInfo | URL, init?: RequestInit) => {
     const url = typeof input === 'string' ? input : input.toString();
     const parsed = new URL(url, 'http://localhost');
     const method = init?.method ?? (input instanceof Request ? input.method : 'GET');
     if (parsed.pathname === '/v1/trust/refresh' && method === 'POST') {
       summary = {
-        ...SUMMARY,
+        ...withWeak(SUMMARY),
         source: { ...SUMMARY.source, kind: 'Cache' },
-        last_refresh: REFRESH_STATUS,
+        last_refresh: refreshStatus,
       };
-      return Promise.resolve(jsonResponse(REFRESH_STATUS));
+      return Promise.resolve(jsonResponse(refreshStatus));
     }
     if (parsed.pathname === '/v1/trust/tsa') {
       return Promise.resolve(
         jsonResponse(
           hasTrustQuery(parsed.searchParams)
-            ? TSA_CATALOG.records
+            ? tsaCatalog.records
                 .filter((record) => tsaMatchesFixtureQuery(record, parsed.searchParams))
                 .map((record) => withTsaIdentifierMatch(record, parsed.searchParams))
-            : TSA_CATALOG,
+            : tsaCatalog,
         ),
       );
     }
@@ -583,6 +606,118 @@ afterEach(() => {
 });
 
 describe('Ferramentas — TSL trust catalog', () => {
+  /**
+   * The at-use-time half of the legacy-algorithm feature.
+   *
+   * Permitting a broken algorithm is configured once, on a settings screen an operator may never
+   * open again. The verdicts it changes are read constantly, and "signature valid" and "signature
+   * valid because SHA-1 was allowed" are different facts. These tests pin that the second is
+   * visibly the second — and, in the clean case below, that it is NOT, so the marker is a real
+   * signal and not decoration that is always on.
+   *
+   * Both `site` shapes are exercised, because they are structurally different: `signature_method`
+   * carries nothing but the algorithm, while `reference` carries a 1-based position and the
+   * reference URI. A renderer that narrowed the discriminant wrongly would still compile.
+   */
+  const WEAK_USES: WeakAlgorithmUse[] = [
+    {
+      code: 'tsl_weak_signature_method_permitted',
+      algorithm: TSL_LEGACY_ALGORITHMS[1],
+      site: 'signature_method',
+    },
+    {
+      code: 'tsl_weak_digest_permitted',
+      algorithm: TSL_LEGACY_ALGORITHMS[0],
+      site: 'reference',
+      index: 2,
+      total: 2,
+      uri: '#signed-props-1',
+    },
+  ];
+
+  it('marks a Trusted List verdict that leaned on a permitted broken algorithm', async () => {
+    vi.stubGlobal('fetch', trustFetch(WEAK_USES));
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    const banner = (await screen.findByText(ptPT['trust.weakAlgorithms.title'])).closest(
+      '.inline-warning',
+    ) as HTMLElement;
+    // A property of the verdict on screen, not an announcement: it must come back next time.
+    expect(banner.hasAttribute('data-notice')).toBe(false);
+
+    const list = banner.querySelector('[data-weak-algorithms]') as HTMLElement;
+    expect(list.dataset.weakAlgorithms).toBe(String(WEAK_USES.length));
+    expect(list.querySelectorAll('li')).toHaveLength(WEAK_USES.length);
+
+    // The two codes word two different facts; both are present, neither collapsed into the other.
+    expect(banner.textContent).toContain(ptPT['trust.weakAlgorithms.signatureMethod']);
+    expect(banner.textContent).toContain(ptPT['trust.weakAlgorithms.digest']);
+    expect(banner.textContent).not.toContain(ptPT['trust.weakAlgorithms.unknown']);
+
+    // The algorithm URI reaches every locale verbatim — it is what the settings document holds
+    // and what a 422 names — so it is asserted as the wire value, never as translated copy.
+    for (const use of WEAK_USES) expect(banner.textContent).toContain(use.algorithm);
+    // …and the `reference` arm's position, which the `signature_method` arm does not have.
+    expect(banner.textContent).toContain('#signed-props-1');
+    expect(banner.textContent).toContain(
+      ptPT['trust.weakAlgorithms.reference']
+        .replace('{index}', '2')
+        .replace('{total}', '2')
+        .replace('{uri}', '#signed-props-1'),
+    );
+
+    // The scan line an operator reads before the banner also says so, in its own labelled cell —
+    // fused into the signature badge's cell it would read as one word to a screen reader.
+    const cell = document.querySelector(
+      '.trust-statusline__item[data-weak-algorithms]',
+    ) as HTMLElement;
+    expect(cell.textContent).toContain(ptPT['trust.weakAlgorithms.label']);
+    expect(cell.textContent).toContain(ptPT['trust.weakAlgorithms.badge']);
+  });
+
+  it('shows no weak-algorithm marker when the verdict stood on strong algorithms alone', async () => {
+    // The whole design intent: on an untouched install nothing here is permitted, so the marker
+    // must be absent. A marker that were always on would carry no information at all.
+    vi.stubGlobal('fetch', trustFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    await screen.findByText(ptPT['trust.status.signature']);
+    expect(screen.queryByText(ptPT['trust.weakAlgorithms.title'])).toBeNull();
+    expect(screen.queryByText(ptPT['trust.weakAlgorithms.badge'])).toBeNull();
+    expect(document.querySelector('[data-weak-algorithms]')).toBeNull();
+  });
+
+  it('carries the marker onto the TSA panel, whose records come from a list of their own', async () => {
+    vi.stubGlobal('fetch', trustFetch(WEAK_USES));
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
+
+    expect(await screen.findByText(ptPT['trust.weakAlgorithms.title'])).toBeTruthy();
+    expect(document.querySelector('.trust-statusline__item[data-weak-algorithms]')).not.toBeNull();
+  });
+
+  it('words a weak-algorithm code this build does not know rather than falling silent', async () => {
+    // A server newer than this bundle can emit a code that did not exist when these translations
+    // were written. Falling back to silence would let a newer backend turn the warning off; the
+    // fallback still says a broken algorithm was relied upon, and declines only to say which kind.
+    const future = [
+      {
+        code: 'tsl_weak_future_permitted',
+        algorithm: 'http://www.w3.org/2001/04/xmldsig-more#hmac-md5',
+        site: 'signature_method',
+      } as unknown as WeakAlgorithmUse,
+    ];
+    vi.stubGlobal('fetch', trustFetch(future));
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    const banner = (await screen.findByText(ptPT['trust.weakAlgorithms.title'])).closest(
+      '.inline-warning',
+    ) as HTMLElement;
+    expect(banner.textContent).toContain(ptPT['trust.weakAlgorithms.unknown']);
+    expect(banner.textContent).not.toContain(ptPT['trust.weakAlgorithms.signatureMethod']);
+    // The URI is still shown verbatim: it is the one thing that identifies what happened.
+    expect(banner.textContent).toContain('http://www.w3.org/2001/04/xmldsig-more#hmac-md5');
+  });
+
   it('keeps trust diagnostics and both catalog explorers in one stacked column at every width', async () => {
     const css = await themeSource();
     const diagnosticsRule = css.match(/\.trust-diagnostics-grid\s*\{([^}]*)\}/)?.[1] ?? '';

@@ -7013,4 +7013,34 @@ export const svFI: Catalog = {
   'account.notices.empty': 'Inga dolda meddelanden.',
   'account.notices.footnote':
     'Här visas bara meddelanden som kan återställas; en del meddelanden döljs permanent och står inte i listan.',
+
+  'settings.signing.tslLegacy.title':
+    'Brutna algoritmer som tillåts för signaturer på den betrodda listan',
+  'settings.signing.tslLegacy.hint':
+    'Vilka kryptografiskt brutna algoritmer den här servern godtar när den kontrollerar XML-signaturen på själva den betrodda listan. Ingen tillåts som standard: i en ny installation är alla rutor nedan avmarkerade och ingen bruten algoritm godtas.',
+  'settings.signing.tslLegacy.warning.title': 'De här algoritmerna är brutna, inte bara gamla',
+  'settings.signing.tslLegacy.warning.body':
+    'SHA-1-kollisioner är inte teoretiska. År 2017 framställdes två olika filer med samma SHA-1-avtryck (SHAttered), och kollisioner med valt prefix, där angriparen väljer båda filerna, har varit praktiskt genomförbara sedan 2020. Tillåter du en av dessa algoritmer kan en förfalskad betrodd lista godtas som äkta — och alla leverantörer, tjänster och certifikat som servern därefter litar på kommer från den förfalskningen.',
+  'settings.signing.tslLegacy.warning.scope':
+    'Det är ingen allmän försvagning. Varje ruta tillåter just den algoritmen och inget annat; ingen annan kontroll mjukas upp, varje referens avtrycks fortfarande och tillitsankaret måste fortfarande stämma. Slå bara på en ruta för en bestämd lista som du har andra skäl att lita på, och slå av den igen efteråt.',
+  'settings.signing.tslLegacy.algorithm.sha1': 'SHA-1, som avtryck av en signerad referens',
+  'settings.signing.tslLegacy.algorithm.rsaSha1': 'RSA med SHA-1, som signatur över listan',
+  'settings.signing.tslLegacy.algorithm.ecdsaSha1': 'ECDSA med SHA-1, som signatur över listan',
+  'settings.signing.tslLegacy.none':
+    'Ingen bruten algoritm är tillåten. Det är standardvärdet och det läge en ny installation startar i.',
+  'settings.signing.tslLegacy.unknown.label': 'Algoritm som den här versionen inte känner igen',
+  'settings.signing.tslLegacy.unknown.title': 'En post här hör inte till de tre',
+  'settings.signing.tslLegacy.unknown.body':
+    'De här inställningarna anger en algoritm som den här sidan inte kan erbjuda, så den sattes inte här. Servern vägrar spara så länge den finns kvar; avmarkera rutan ovan för att ta bort den. Den visas i stället för att raderas i tysthet, eftersom det är den som den här installationen tillämpar just nu.',
+  'trust.weakAlgorithms.label': 'Algoritmer',
+  'trust.weakAlgorithms.badge': 'Bruten algoritm godtagen',
+  'trust.weakAlgorithms.title': 'Den här listan kontrollerades med en bruten algoritm',
+  'trust.weakAlgorithms.intro':
+    'Signaturen stämmer, men bara för att signeringsinställningarna tillåter en algoritm som säkerhetsvärlden betraktar som bruten. Ett utfall som vilar på en sådan ger mindre visshet än ett som inte gör det.',
+  'trust.weakAlgorithms.digest': 'En signerad referens avtrycktes med en bruten algoritm.',
+  'trust.weakAlgorithms.signatureMethod':
+    'Signaturen över listan kontrollerades med en bruten algoritm.',
+  'trust.weakAlgorithms.reference': 'Referens {index} av {total} · {uri}',
+  'trust.weakAlgorithms.unknown':
+    'En bruten algoritm användes, av ett slag som den här versionen inte känner igen.',
 };

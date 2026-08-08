@@ -369,6 +369,9 @@ export const ADMIN_COPY_DESTINATION_PREFIXES: readonly (readonly [
   // The trust anchors live in the same destination as the sources they authenticate, so an
   // operator searching for "âncora" lands on the pane that holds both.
   ['settings.signing.tslAnchors', ['tsl']],
+  // The permitted-broken-algorithm control sits in that same pane: an anchor says WHO may have
+  // signed the list, this says WITH WHAT, and a search for either has to reach both.
+  ['settings.signing.tslLegacy', ['tsl']],
   ['settings.signing.tsaProviders', ['tsa']],
   ['settings.signing.tsaUrl', ['tsa']],
   ['settings.signing.providers', ['trust-services']],
