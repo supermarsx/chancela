@@ -84,10 +84,27 @@ function checkDockerBuild() {
       "chancela-server/sqlcipher",
       `${relativePath} default CARGO_FEATURES`,
     );
+    // `${CARGO_FEATURES}` must reach the build, but it is no longer the only thing in the
+    // `--features` string: the remote transports are appended from their own ARG, so the match
+    // allows siblings rather than pinning the whole argument. The property guarded is unchanged —
+    // the encrypted-store default cannot be silently dropped from the shipped server.
     assertRegex(
       dockerfile,
-      /cargo build --release -p chancela-server --locked --features "\$\{CARGO_FEATURES\}"/,
+      /cargo build --release -p chancela-server --locked[\s\\]*--features "[^"]*\$\{CARGO_FEATURES\}[^"]*"/,
       `${relativePath} server build consumes CARGO_FEATURES`,
+    );
+    // The transports ride in a SEPARATE ARG, outside the overridable CARGO_FEATURES, precisely so
+    // no compose profile can hand the image a feature list that drops them. Pin both halves: the
+    // default names all-transports, and the build actually consumes it.
+    assertContains(
+      dockerArgDefault(dockerfile, "CARGO_TRANSPORT_FEATURES", relativePath),
+      "chancela-server/all-transports",
+      `${relativePath} default CARGO_TRANSPORT_FEATURES`,
+    );
+    assertRegex(
+      dockerfile,
+      /--features "[^"]*\$\{CARGO_TRANSPORT_FEATURES\}[^"]*"/,
+      `${relativePath} server build consumes CARGO_TRANSPORT_FEATURES`,
     );
     assertContains(
       dockerfile,

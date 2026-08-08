@@ -38,6 +38,15 @@ WORKDIR /build
 #   --build-arg CARGO_FEATURES="chancela-server/sqlcipher chancela-server/postgres chancela-server/redis"
 ARG CARGO_FEATURES="chancela-server/sqlcipher"
 
+# The remote backup/sync transports (S3, SFTP, SMB, FTPS), which are OFF in
+# chancela-server's own default features so that ordinary builds and every
+# workspace `cargo check`/`cargo test` stop compiling four protocol clients they
+# never dial. They ride in their OWN arg rather than in CARGO_FEATURES: that one
+# is documented above as the overridable knob, and a compose profile overriding
+# it to add Postgres and Redis would otherwise silently produce a server that
+# cannot reach any remote backup target.
+ARG CARGO_TRANSPORT_FEATURES="chancela-server/all-transports"
+
 # Cache key for the /build/target mount below; it selects WHICH warm target
 # directory this build reuses and nothing else. It must be changed whenever
 # CARGO_FEATURES is, because a different feature set produces different
@@ -112,7 +121,8 @@ COPY . .
 #             the same base, so they SHOULD reuse one warm directory.
 RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
     --mount=type=cache,id=chancela-cargo-target-${CARGO_TARGET_CACHE_ID},sharing=shared,target=/build/target \
-    cargo build --release -p chancela-server --locked --features "${CARGO_FEATURES}" \
+    cargo build --release -p chancela-server --locked \
+    --features "${CARGO_TRANSPORT_FEATURES} ${CARGO_FEATURES}" \
     && cp target/release/chancela-server /chancela-server \
     && mkdir /runtime-libs \
     && cp /usr/lib/*-linux-gnu/libpcsclite.so.1 \
