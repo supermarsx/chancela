@@ -1517,9 +1517,14 @@ fn push_escaped_attr_value(out: &mut String, value: &str) {
 /// Extract the DER of the signer certificate from `<ds:KeyInfo>/<ds:X509Data>/<ds:X509Certificate>`,
 /// for downstream certificate-path building (wp26 E5 `certpath`, E4 `lotl`). Returns `Ok(None)` when
 /// the document carries no `<ds:Signature>` or the signature carries no embedded certificate.
-// Exposed ahead of its in-crate consumers (E4 `lotl.rs`, E5 `certpath.rs`), which land in parallel.
-#[allow(dead_code)]
-pub(crate) fn extract_signer_cert(xml: &[u8]) -> Result<Option<Vec<u8>>, TslError> {
+///
+/// **What this does NOT establish.** The certificate comes out of the list's own `<ds:KeyInfo>`, so
+/// it is whatever the bytes claim signed them. Verifying a list against it proves only internal
+/// consistency — the artefact would be supplying its own proof — which is why every trust decision
+/// in this crate anchors against [`crate::source::TslTrustAnchors`] or a LOTL pointer instead. The
+/// legitimate uses are diagnostic: showing an operator *which* certificate a list names, so they can
+/// compare its fingerprint against a value published out of band.
+pub fn extract_signer_cert(xml: &[u8]) -> Result<Option<Vec<u8>>, TslError> {
     match parse_signature(xml) {
         Ok(parsed) => Ok(parsed.signer_cert_der),
         // No signature element at all is not an error for extraction — there is simply no cert.

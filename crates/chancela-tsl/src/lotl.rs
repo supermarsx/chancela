@@ -81,6 +81,24 @@ pub fn member_pointer<'a>(
     lotl: &'a AuthenticatedList,
     territory: &str,
 ) -> Option<&'a OtherTslPointer> {
+    member_pointer_in(&lotl.list.other_tsl_pointers, territory)
+}
+
+/// The territory-selection rule of [`member_pointer`], over a bare pointer slice.
+///
+/// Same function, one layer down. It exists because [`AuthenticatedList`] is `#[non_exhaustive]` and
+/// so cannot be constructed outside this crate: a caller holding pointers that did not come from
+/// `ingest_lotl` — a test, or code that already destructured the list — could otherwise only
+/// reimplement the XML-over-PDF preference, and a second copy of that rule is exactly the thing that
+/// drifts. Taking the slice makes the wrapper above trivially the same selection.
+///
+/// **This does not authenticate anything.** Selecting a pointer out of an unauthenticated list
+/// yields an attacker-chosen certificate; the wrapper's `AuthenticatedList` argument is what
+/// normally carries that guarantee, and a caller reaching for this one owes its own.
+pub fn member_pointer_in<'a>(
+    pointers: &'a [OtherTslPointer],
+    territory: &str,
+) -> Option<&'a OtherTslPointer> {
     let want = territory.trim();
 
     let territory_matches = |pointer: &OtherTslPointer| {
@@ -100,7 +118,7 @@ pub fn member_pointer<'a>(
     // One pass: return the first XML pointer for the territory, remembering the first territory
     // match of any mime type as a fallback (a pointer that omits MimeType is still usable).
     let mut fallback: Option<&OtherTslPointer> = None;
-    for pointer in &lotl.list.other_tsl_pointers {
+    for pointer in pointers {
         if !territory_matches(pointer) {
             continue;
         }

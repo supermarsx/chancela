@@ -54,7 +54,7 @@ pub use certpath::{CertPath, PathBuildOptions, build_path};
 pub use error::TslError;
 pub use lotl::{
     AuthenticatedList, DEFAULT_LOTL_URL, ENV_LOTL_URL, bootstrap_member_tsl, ingest_lotl,
-    ingest_member_tsl, member_pointer,
+    ingest_member_tsl, member_pointer, member_pointer_in,
 };
 pub use parse::{
     DigitalIdentity, LocalizedText, OtherTslPointer, ServiceHistoryEntry, ServiceStatus,
@@ -82,5 +82,5 @@ pub use trust_store::TslTrustStore;
 pub use xmldsig::{
     CODE_WEAK_DIGEST_PERMITTED, CODE_WEAK_SIGNATURE_METHOD_PERMITTED, KNOWN_LEGACY_ALGORITHMS,
     LEGACY_ECDSA_SHA1, LEGACY_RSA_SHA1, LEGACY_SHA1_DIGEST, TslAlgorithmPolicy, TslSignatureReport,
-    WeakAlgorithmSite, WeakAlgorithmUse,
+    WeakAlgorithmSite, WeakAlgorithmUse, extract_signer_cert,
 };
