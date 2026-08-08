@@ -992,17 +992,17 @@ pub(crate) const ROUTE_CLASSIFICATION: &[(&str, RouteClass)] = &[
     // response is material an operator is about to turn into a trust root. Read-only: it fetches
     // and returns, and writes neither settings nor ledger.
     ("/v1/trust/anchor-suggestions", RouteClass::Gated),
-    ("/v1/trust/tsa", RouteClass::Gated),     // GET cae.read@Global (read-only TSA diagnostics)
+    ("/v1/trust/tsa", RouteClass::Gated), // GET cae.read@Global (read-only TSA diagnostics)
     ("/v1/trust/providers/{id}", RouteClass::Gated), // GET cae.read@Global
     ("/v1/trust/services/{id}", RouteClass::Gated), // GET cae.read@Global
-    ("/v1/law", RouteClass::Gated),           // GET law.read@Global
-    ("/v1/law/corpus", RouteClass::Gated),    // GET law.read@Global (corpus reader)
+    ("/v1/law", RouteClass::Gated),       // GET law.read@Global
+    ("/v1/law/corpus", RouteClass::Gated), // GET law.read@Global (corpus reader)
     ("/v1/law/corpus/search", RouteClass::Gated), // GET law.read@Global (full-text search)
     ("/v1/law/corpus/{diploma}", RouteClass::Gated), // GET law.read@Global
     ("/v1/law/corpus/{diploma}/{article}", RouteClass::Gated), // GET law.read@Global
     ("/v1/law/citations/resolve", RouteClass::Gated), // POST law.read@Global
     ("/v1/law/{id}/fetch", RouteClass::Gated), // POST law.manage@Global
-    ("/v1/law/{id}/pdf", RouteClass::Gated),  // GET law.read@Global · DELETE law.manage@Global
+    ("/v1/law/{id}/pdf", RouteClass::Gated), // GET law.read@Global · DELETE law.manage@Global
     // --- Users ----------------------------------------------------------------------------------
     ("/v1/users", RouteClass::Gated), // GET user.read@Global · POST user.manage@Global (bootstrap exempt)
     ("/v1/users/page", RouteClass::Gated), // GET user.read@Global

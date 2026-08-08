@@ -220,8 +220,11 @@ type FetchTsl<'a> = &'a dyn Fn(&str, u16, u64) -> Result<Vec<u8>, String>;
 ///
 /// Passed down into [`self_asserted`] so that function decides the code and the proposals and
 /// nothing else — it never gets to restate the source's identity, which is how the two would drift.
-type BuildRow<'a> =
-    &'a dyn Fn(&str, Option<String>, Vec<TrustAnchorProposalView>) -> TrustAnchorSourceSuggestionView;
+type BuildRow<'a> = &'a dyn Fn(
+    &str,
+    Option<String>,
+    Vec<TrustAnchorProposalView>,
+) -> TrustAnchorSourceSuggestionView;
 
 /// The whole flow, with the network behind [`FetchTsl`] so a unit test can drive every branch.
 fn build_suggestions(
@@ -726,7 +729,10 @@ mod tests {
             TrustAnchorProvenance::ListSelfAsserted,
             &TslTrustAnchors::new(),
         );
-        assert_eq!(candidate.provenance, TrustAnchorProvenance::ListSelfAsserted);
+        assert_eq!(
+            candidate.provenance,
+            TrustAnchorProvenance::ListSelfAsserted
+        );
         assert_eq!(
             candidate.certificate_pem, None,
             "handing over a pasteable PEM invites the operator to skip the comparison that is the \
@@ -900,7 +906,11 @@ mod tests {
             &[synthetic_cert(66)],
         )]);
         let anchors = TslTrustAnchors::new().with_cert_der(&synthetic_cert(99));
-        let sources = vec![source("xx", Some("https://lists.example/xx.xml"), Some("XX"))];
+        let sources = vec![source(
+            "xx",
+            Some("https://lists.example/xx.xml"),
+            Some("XX"),
+        )];
 
         let view = build_suggestions(
             &sources,
@@ -919,7 +929,11 @@ mod tests {
     #[test]
     fn a_failed_lotl_fetch_proposes_nothing_and_carries_the_transport_error() {
         let anchors = TslTrustAnchors::new().with_cert_der(&synthetic_cert(99));
-        let sources = vec![source("xx", Some("https://lists.example/xx.xml"), Some("XX"))];
+        let sources = vec![source(
+            "xx",
+            Some("https://lists.example/xx.xml"),
+            Some("XX"),
+        )];
 
         let view = build_suggestions(
             &sources,
@@ -956,7 +970,11 @@ mod tests {
             Some("XX"),
             &[synthetic_cert(1)],
         )]);
-        let mut entry = source("eu-lotl", Some("https://lotl.example/eu-lotl.xml"), Some("EU"));
+        let mut entry = source(
+            "eu-lotl",
+            Some("https://lotl.example/eu-lotl.xml"),
+            Some("EU"),
+        );
         entry.scheme = Some("lotl".to_owned());
 
         let row = suggest_for_source(

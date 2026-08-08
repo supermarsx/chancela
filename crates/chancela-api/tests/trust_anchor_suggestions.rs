@@ -36,7 +36,8 @@ struct TempDir {
 
 impl TempDir {
     fn new() -> Self {
-        let dir = std::env::temp_dir().join(format!("chancela-api-anchor-suggest-{}", Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("chancela-api-anchor-suggest-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&dir).expect("temp dir");
         Self { dir }
     }
@@ -155,11 +156,7 @@ async fn anchor_suggestions_require_the_same_verb_that_writes_the_anchors() {
     let settings_only_id = seed_settings_only_role(&state).await;
     let settings_only = seed_session(&state, "amelia.settings", settings_only_id).await;
 
-    let (status, body) = send(
-        state.clone(),
-        with_session(get(SUGGEST), &settings_only),
-    )
-    .await;
+    let (status, body) = send(state.clone(), with_session(get(SUGGEST), &settings_only)).await;
 
     assert_eq!(
         status,
