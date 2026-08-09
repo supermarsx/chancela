@@ -4431,8 +4431,6 @@ body {
   .titlebar *,
   .subnav,
   .subnav *,
-  .tools-subnav,
-  .tools-subnav *,
   .ledger-export-controls,
   .ledger-export-controls *,
   .ledger-filterbar,
@@ -8930,14 +8928,18 @@ a.btn--primary {
 
 /* ==========================================================================
  * Segmented sub-navigation — a pill group with a gliding gilt indicator that slides
- * under the active button. Landed for Ferramentas (Catálogo CAE | Legislação, t24) with
- * its own inline measurement; the SAME styling is aliased onto the generic `.subnav*`
- * classes so the shared `<SubNav>` component (used by Configurações) reads identically
- * without re-churning the tested Ferramentas implementation. Shares the pill idiom of the
- * CAE revision switch. On narrow viewports the generic variant scrolls rather than wraps
- * so the indicator's offset math stays valid.
+ * under the active button. Landed for Ferramentas (Catálogo CAE | Legislação, t24) with its
+ * own inline measurement and its own `.tools-subnav*` classes, which the generic `.subnav*`
+ * set was then aliased onto so the shared `<SubNav>` component read identically. The alias
+ * has since been retired the right way round: Ferramentas renders `<SubNav>` like every
+ * other section, so there is ONE implementation of this idiom and one set of classes. (The
+ * fork is exactly what let Ferramentas — the longest strip in the app — miss the overflow
+ * scroller below.) Shares the pill idiom of the CAE revision switch.
+ *
+ * A sub-nav can hold more, and longer, sections than fit the shell, so it scrolls
+ * horizontally instead of wrapping — wrapping would break the indicator's single-row
+ * offset math.
  * ========================================================================== */
-.tools-subnav,
 .subnav {
   position: relative;
   display: inline-flex;
@@ -8947,12 +8949,6 @@ a.btn--primary {
   border-radius: 999px;
   padding: 0.15rem;
   gap: 0.15rem;
-}
-
-/* The generic sub-nav can hold more (and longer) sections than Ferramentas' two, so it
-   scrolls horizontally instead of wrapping — wrapping would break the indicator's
-   single-row offset math. */
-.subnav {
   max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
@@ -8979,8 +8975,7 @@ a.btn--primary {
 /* Overflow scroll-shadows: the shared `<SubNav>` wraps the scroller so a fixed fade can be
    pinned to each visible edge, hinting at more sub-tabs when the strip overflows. The wrapper
    owns the placement (margin/align that `.subnav` otherwise carries) so the inner pill can
-   flex to its natural width and scroll inside. Ferramentas keeps its own `.tools-subnav`
-   markup (no wrapper) and is untouched.
+   flex to its natural width and scroll inside.
    The strip stays flush to the content edge: overflow is handled entirely by the scroll,
    the floating edge arrows and the gradient fades (::before/::after, sized to cover the arrow
    zone), so no side padding is reserved around the scroller — that reserved gutter only read
@@ -9116,9 +9111,8 @@ a.btn--primary {
 }
 
 /* The gliding gilt pill behind the active sub-tab — its geometry is set inline from the
-   measured active button (see ToolsPage / SubNav), and it slides on the same easing
+   measured active button (see `ui/SubNav.tsx`), and it slides on the same easing
    as the top bar's active-tab indicator. It sits behind the button labels (z-index 0 vs 1). */
-.tools-subnav__indicator,
 .subnav__indicator {
   position: absolute;
   left: 0;
@@ -9144,7 +9138,6 @@ a.btn--primary {
   will-change: transform;
 }
 
-.tools-subnav__btn,
 .subnav__btn {
   position: relative;
   z-index: 1;
@@ -9168,8 +9161,7 @@ a.btn--primary {
 }
 
 /* The decorative sub-tab glyph inherits the button's ink and sizes to the label. */
-.subnav__icon,
-.tools-subnav__icon {
+.subnav__icon {
   display: inline-flex;
   flex: none;
   font-size: 1.05em;
@@ -9178,13 +9170,11 @@ a.btn--primary {
 
 /* The active pill is the sliding indicator; the button itself stays transparent and only
    flips its ink to read on the gilt. */
-.tools-subnav__btn.is-active,
 .subnav__btn.is-active {
   background: transparent;
   color: var(--on-accent);
 }
 
-.tools-subnav__btn:not(.is-active):hover,
 .subnav__btn:not(.is-active):hover {
   color: var(--accent);
 }
@@ -9204,8 +9194,6 @@ a.btn--primary {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tools-subnav__btn,
-  .tools-subnav__indicator,
   .subnav__btn,
   .subnav__indicator {
     transition: none;

@@ -25,12 +25,12 @@
  * catalogue rather than where you are, so they stay query params and survive a tool switch. The
  * `SECTIONS` list is the single extension point for future tools.
  */
-import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { useActiveLocale, useT } from '../../i18n';
+import { type ReactNode } from 'react';
+import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import { type SearchCopyKey, useSearchT } from '../../i18n/searchFallback';
 import { type CertidaoLookupCopyKey, useCertidaoLookupT } from '../../i18n/certidaoLookupFallback';
-import { Icon, PageHeader } from '../../ui';
+import { Icon, PageHeader, SubNav } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { CaeExplorer } from '../cae/CaeExplorer';
 import { CaeCatalogPanel } from '../cae/CaeCatalogPanel';
@@ -89,7 +89,6 @@ export function ToolsPage() {
   const t = useT();
   const st = useSearchT();
   const ct = useCertidaoLookupT();
-  const locale = useActiveLocale();
   const { canAny } = usePermissions();
   const canSearch = canAny('search.read');
   // `POST /v1/registry/lookup` enforces `entity.registry.lookup@Global` (t95). The tab is gated on
@@ -121,97 +120,31 @@ export function ToolsPage() {
     replace: true,
   });
 
-  // A gilt indicator that glides to the active sub-tab (consistent with the top bar's
-  // active-tab indicator). Measured from the active button so it works with the two
-  // labels' differing widths and re-measures on locale change / resize; the CSS
-  // transition does the sliding and collapses under prefers-reduced-motion.
-  const navRef = useRef<HTMLDivElement>(null);
-  const btnRefs = useRef<Record<ToolsSection, HTMLButtonElement | null>>({
-    search: null,
-    cae: null,
-    certidao: null,
-    legislation: null,
-    pdf: null,
-    trust: null,
-    'external-signing': null,
-  });
-  const [indicator, setIndicator] = useState<{
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  } | null>(null);
-
-  useLayoutEffect(() => {
-    const measure = () => {
-      const btn = btnRefs.current[section];
-      if (!btn) return;
-      const next = {
-        left: btn.offsetLeft,
-        top: btn.offsetTop,
-        width: btn.offsetWidth,
-        height: btn.offsetHeight,
-      };
-      // Only update on a real geometry change — returning the same object ref keeps this
-      // from looping (the effect itself re-runs on section/locale/resize, not on the state
-      // it sets). `locale` is a stable tag; re-measure when the label widths change with it.
-      setIndicator((prev) =>
-        prev &&
-        prev.left === next.left &&
-        prev.top === next.top &&
-        prev.width === next.width &&
-        prev.height === next.height
-          ? prev
-          : next,
-      );
-    };
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [section, locale]);
-
   return (
     <div className="stack">
       {/* No `crumbs`: Tools is a top-level tab with no parent, so a breadcrumb
           would only repeat the title on the line above it. */}
       <PageHeader title={t('tools.title')}>
-        <div className="tools-subnav" role="group" aria-label={t('tools.subnav.aria')} ref={navRef}>
-          <span
-            className="tools-subnav__indicator"
-            aria-hidden="true"
-            style={
-              indicator
-                ? {
-                    transform: `translateX(${indicator.left}px)`,
-                    top: `${indicator.top}px`,
-                    width: `${indicator.width}px`,
-                    height: `${indicator.height}px`,
-                  }
-                : { opacity: 0 }
-            }
-          />
-          {visibleSections.map((s) => (
-            <button
-              key={s.id}
-              ref={(el) => {
-                btnRefs.current[s.id] = el;
-              }}
-              type="button"
-              className={s.id === section ? 'tools-subnav__btn is-active' : 'tools-subnav__btn'}
-              aria-pressed={s.id === section}
-              onClick={() => selectSection(s.id)}
-            >
-              <span className="tools-subnav__icon" aria-hidden="true">
-                {s.icon}
-              </span>
-              {s.searchLabel
-                ? st(s.searchLabel)
-                : s.certidaoLabel
-                  ? ct(s.certidaoLabel)
-                  : t(s.label)}
-            </button>
-          ))}
-        </div>
+        {/* The SHARED `<SubNav>`, not a fork. Ferramentas hand-rolled this pill first and the
+            generic primitive was aliased onto its styling afterwards; the fork then stopped
+            tracking the primitive, and the tool strip — the longest one in the app, seven tools —
+            was the one strip in the product with no overflow scroller, so on a narrow shell the
+            later tools simply had nowhere to go. Same markup, same gilt indicator, same icons,
+            plus the scroller, edge fades and arrows every other section already had. */}
+        <SubNav<ToolsSection>
+          items={visibleSections.map((s) => ({
+            id: s.id,
+            label: s.searchLabel
+              ? st(s.searchLabel)
+              : s.certidaoLabel
+                ? ct(s.certidaoLabel)
+                : t(s.label),
+            icon: s.icon,
+          }))}
+          active={section}
+          onSelect={selectSection}
+          ariaLabel={t('tools.subnav.aria')}
+        />
       </PageHeader>
 
       {/* The content region replays the route-enter animation when the sub-tab changes.

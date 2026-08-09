@@ -1,9 +1,14 @@
 /**
- * A segmented sub-navigation pill shared by surfaces that split into sub-tabs. It mirrors
- * the Ferramentas sub-nav visually (same `.subnav*` styling, aliased to `.tools-subnav*`
- * in theme.css) — a gliding gilt indicator that slides under the active button, measured
- * from the live button box so it tracks label widths. Pair it with the app's
+ * A segmented sub-navigation pill shared by EVERY surface that splits into sub-tabs,
+ * Ferramentas included — a gliding gilt indicator that slides under the active button,
+ * measured from the live button box so it tracks label widths, inside a horizontal scroller
+ * with edge fades and arrows for strips longer than the shell. Pair it with the app's
  * `.route-transition` (keyed on the active id) to fade the content in on switch.
+ *
+ * Ferramentas hand-rolled this pill first (`.tools-subnav*`, aliased onto `.subnav*` here) and
+ * the copy then stopped tracking this file — which is how the longest strip in the product
+ * ended up as the only one without the scroller. There is now one implementation; keep it
+ * that way rather than forking for a surface's local need.
  *
  * IMPORTANT — the indicator effect is written to avoid the "Maximum update depth exceeded"
  * loop that the first cut of the Ferramentas pill hit: it depends ONLY on stable values

@@ -60,9 +60,11 @@ describe('Ferramentas — validador técnico sub-tabs', () => {
         .getAllByRole('button')
         .map((b) => b.textContent),
     ).toEqual(['Assinaturas PDF', 'Contentores ASiC', 'Relatórios técnicos']);
-    // The shared primitive, not a fork: SubNav renders `.subnav`, the Ferramentas tool
-    // level renders `.tools-subnav`.
-    expect(document.querySelector('.subnav-wrap')).toBeTruthy();
+    // The shared primitive, not a fork: `<SubNav>` is the only thing that renders the
+    // scroller wrapper, so THIS strip having one proves it is the shared component.
+    // (Scoped to this strip: since the tool level migrated to `<SubNav>` too, an unscoped
+    // `document.querySelector` would now pass on the outer strip alone.)
+    expect(subnav().closest('.subnav-wrap')).toBeTruthy();
   });
 
   it('lands on the PDF validator with no sec param and marks only that tab pressed', () => {

@@ -1351,7 +1351,7 @@ describe('Ferramentas — sub-tab animation + indicator', () => {
     // The explicit CAE surface keeps its indicator + active pill on the CAE sub-tab.
     expect(await screen.findByText('Incorporado')).toBeTruthy();
     expect(animKey()).toBe('cae');
-    expect(container.querySelector('.tools-subnav__indicator')).toBeTruthy();
+    expect(container.querySelector('.subnav__indicator')).toBeTruthy();
     expect(screen.getByRole('button', { name: 'Catálogo CAE' }).getAttribute('aria-pressed')).toBe(
       'true',
     );
