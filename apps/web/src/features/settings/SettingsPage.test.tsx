@@ -1180,6 +1180,12 @@ function settingsFetch(
     platformLogs?: readonly unknown[];
     platformLogLimitations?: string[];
     preferences?: UserPreferences;
+    /**
+     * Answer `GET /v1/trust/anchor-suggestions`, receiving whether the caller asked for the
+     * bootstrap candidate. Absent by default, so the endpoint stays unstubbed — and a test that
+     * did not opt in cannot silently depend on a proposal arriving.
+     */
+    anchorSuggestions?: (bootstrapSelfAsserted: boolean) => unknown;
   } = {},
 ): {
   fn: typeof fetch;
@@ -1316,6 +1322,14 @@ function settingsFetch(
     }
     // Ahead of the `/v1/settings` catch-all below, which would otherwise answer the delivery
     // record with the settings DOCUMENT — an object where the email tab expects a list (t108).
+    if (url.includes('/v1/trust/anchor-suggestions')) {
+      if (!options.anchorSuggestions) {
+        return Promise.reject(new Error(`no stub for ${url}`));
+      }
+      return Promise.resolve(
+        jsonResponse(options.anchorSuggestions(url.includes('bootstrap_self_asserted=true'))),
+      );
+    }
     if (url.includes('/v1/settings/email/deliveries')) {
       return Promise.resolve(jsonResponse([]));
     }
@@ -6672,6 +6686,194 @@ describe('SettingsPage', () => {
     });
     await waitFor(() =>
       expect(screen.queryByText('Sem âncora de confiança nestas definições')).toBeNull(),
+    );
+  });
+
+  /**
+   * The LOTL bootstrap: the unanchored operator's way out of "enter the Official Journal value by
+   * hand", and the place this feature could most easily mislead.
+   *
+   * The three properties asserted here are the whole security argument:
+   *  1. the ordinary run offers nothing — the candidate is never encountered, only asked for;
+   *  2. what comes back is labelled `list_self_asserted`, warned about, and offers no PEM; and
+   *  3. accepting it writes the fingerprint AND its provenance, so the distinction outlives Save.
+   */
+  it('offers the self-asserted LOTL candidate only when asked, and records that it was', async () => {
+    // Synthetic throughout. Never a real fingerprint, certificate or endpoint in a fixture.
+    const bootstrapFingerprint = 'b'.repeat(64);
+    const refusal = (bootstrap: boolean) => ({
+      checked_at: '2026-07-09T12:00:00Z',
+      lotl_url: 'https://lotl.example.test/eu-lotl.xml',
+      lotl_authenticated: false,
+      lotl_code: 'lotl_anchor_not_configured',
+      lotl_detail: null,
+      lotl_bootstrap_code: bootstrap ? 'lotl_bootstrap_self_asserted' : null,
+      lotl_bootstrap_detail: null,
+      lotl_proposals: bootstrap
+        ? [
+            {
+              provenance: 'list_self_asserted',
+              subject: 'CN=Synthetic LOTL Signer',
+              issuer: 'CN=Synthetic LOTL Signer',
+              not_before: '2026-01-01T00:00:00Z',
+              not_after: '2027-01-01T00:00:00Z',
+              sha256: bootstrapFingerprint,
+              // Withheld by the server for exactly this provenance: the operator's job is to
+              // compare the fingerprint, and a pasteable PEM invites skipping that.
+              certificate_pem: null,
+              already_configured: false,
+            },
+          ]
+        : [],
+      configured_anchor_count: 0,
+      sources: [],
+    });
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources(), {
+      anchorSuggestions: refusal,
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    // Act one: the ordinary run. It refuses, and offers nothing to accept — no candidate is
+    // rendered and no "add" control for one exists to be clicked by mistake.
+    fireEvent.click(await screen.findByRole('button', { name: 'Sugerir âncoras' }));
+    await screen.findByText('Não é possível sugerir nada');
+    expect(
+      calls.some((c) => c.url.includes('anchor-suggestions') && !c.url.includes('bootstrap')),
+    ).toBe(true);
+    expect(screen.queryByText(bootstrapFingerprint)).toBeNull();
+    expect(
+      screen.queryAllByRole('button', { name: 'Adicionar como impressão digital de âncora' }),
+    ).toEqual([]);
+
+    // Act two: asking for it, explicitly, by a separately-labelled control.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Mostrar o certificado que a lista europeia de listas de confiança transporta',
+      }),
+    );
+    expect(await screen.findByText(bootstrapFingerprint)).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.url.includes('anchor-suggestions?bootstrap_self_asserted=true')),
+      ).toBe(true),
+    );
+    // Rendered by the same `Proposal` component as the member-state fallback, so it carries the
+    // same undismissable warning rather than a softer bootstrap-only presentation.
+    const warning = screen.getByText('Este certificado atesta-se a si próprio');
+    expect(warning.closest('.inline-warning')?.hasAttribute('data-notice')).toBe(false);
+    // No PEM was sent, so there is no "add as certificate" control at all — only the fingerprint.
+    expect(
+      screen.queryByRole('button', { name: 'Adicionar como certificado de âncora' }),
+    ).toBeNull();
+
+    // Act three: accepting it. The fingerprint becomes an anchor AND is recorded as self-asserted.
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Adicionar como impressão digital de âncora' }),
+    );
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(last).toBeTruthy();
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tsl_trust_anchor_sha256).toEqual([bootstrapFingerprint]);
+        // The point of the whole exercise: without this, the moment it is saved this anchor is
+        // indistinguishable from one transcribed out of the Official Journal.
+        expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toEqual([bootstrapFingerprint]);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  /**
+   * The provenance has to be visible where anchors LIVE, not only where they were proposed. An
+   * operator opening this screen a month later must still be able to tell which anchor nobody has
+   * checked against a published value.
+   */
+  it('keeps a self-asserted anchor marked in the anchor list, and lets it be cleared', async () => {
+    const unverified = 'c'.repeat(64);
+    const fromTheJournal = 'd'.repeat(64);
+    const base = settingsWithMultipleTrustSources();
+    const { fn, calls } = settingsFetch({
+      ...base,
+      signing: {
+        ...base.signing,
+        tsl_trust_anchor_sha256: [fromTheJournal, unverified],
+        tsl_trust_anchor_self_asserted_sha256: [unverified],
+      },
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    // Exactly one of the two anchors carries the mark. Both are 64-hex strings in identical
+    // inputs, so the badge is the ONLY thing distinguishing them — which is the requirement.
+    expect(await screen.findByText('Da própria lista — não verificado')).toBeTruthy();
+    expect(screen.queryAllByText('Da própria lista — não verificado')).toHaveLength(1);
+    // The mark hangs off position 2, the self-asserted one, not off the anchor list as a whole.
+    expect(
+      screen.getByRole('button', {
+        name: 'Marcar a impressão digital de âncora 2 como confrontada com um valor publicado',
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('button', {
+        name: 'Marcar a impressão digital de âncora 1 como confrontada com um valor publicado',
+      }),
+    ).toBeNull();
+
+    // Clearing the mark is the operator asserting they made the comparison. It changes what the
+    // deployment CLAIMS about the anchor, never which anchors it trusts.
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Marcar a impressão digital de âncora 2 como confrontada com um valor publicado',
+      }),
+    );
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(last).toBeTruthy();
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toEqual([]);
+        expect(body.signing.tsl_trust_anchor_sha256).toEqual([fromTheJournal, unverified]);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  /**
+   * Removing the anchor must take its annotation with it. Left behind, the annotation would mark a
+   * LATER anchor with the same fingerprint — plausibly the same value, this time transcribed from
+   * the Official Journal — as unverified for ever.
+   */
+  it('drops the self-asserted mark when its anchor is removed', async () => {
+    const unverified = 'e'.repeat(64);
+    const base = settingsWithMultipleTrustSources();
+    const { fn, calls } = settingsFetch({
+      ...base,
+      signing: {
+        ...base.signing,
+        tsl_trust_anchor_sha256: [unverified],
+        tsl_trust_anchor_self_asserted_sha256: [unverified],
+      },
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Remover a impressão digital de âncora 1' }),
+    );
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(last).toBeTruthy();
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tsl_trust_anchor_sha256).toEqual([]);
+        expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toEqual([]);
+      },
+      { timeout: 3000 },
     );
   });
 

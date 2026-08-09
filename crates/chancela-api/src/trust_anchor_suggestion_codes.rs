@@ -59,6 +59,43 @@ pub const LOTL_NOT_AUTHENTICATED: &str = "lotl_not_authenticated";
 /// Trusted Lists at all, and vouches for nothing.
 pub const LOTL_NO_POINTERS: &str = "lotl_no_pointers";
 
+// --- LOTL bootstrap outcomes ---------------------------------------------------------------------
+//
+// [`LOTL_ANCHOR_NOT_CONFIGURED`] is a dead end for an operator who has no anchor and no copy of the
+// Official Journal to hand: the assistant tells them the value must be entered by hand and offers
+// nothing further. These codes cover the one thing that CAN be shown in that state — the certificate
+// the LOTL document itself carries — and they exist as a **separate** field from `lotl_code` for a
+// reason worth writing down: nothing about the LOTL step's verdict changes. It still did not
+// authenticate, `lotl_authenticated` is still false, and no member-state proposal is produced. The
+// bootstrap outcome is a strictly additional answer to a strictly additional question, asked only
+// when the operator explicitly asks it.
+//
+// The candidate carries `TrustAnchorProvenance::ListSelfAsserted`, the same provenance a
+// member-state list's own certificate carries, and for the same reason: fetching the document over
+// TLS authenticated the *server*, not the list. That rules out a passive network observer and
+// nothing else — whoever served that document also chose the certificate inside it. The value only
+// becomes an anchor once a human has compared its SHA-256 fingerprint against the one published in
+// the Official Journal of the European Union.
+
+/// The operator asked for the bootstrap candidate, and the fetched LOTL carries a certificate in
+/// its own signature. It is offered as an **unverified** candidate: it authenticates nothing by
+/// itself and must be compared against the Official Journal fingerprint before it is relied on.
+pub const LOTL_BOOTSTRAP_SELF_ASSERTED: &str = "lotl_bootstrap_self_asserted";
+
+/// The operator asked for the bootstrap candidate, but the LOTL could not be fetched (network,
+/// timeout, size bound, or a blocked destination), so there is nothing to show.
+pub const LOTL_BOOTSTRAP_FETCH_FAILED: &str = "lotl_bootstrap_fetch_failed";
+
+/// The operator asked for the bootstrap candidate and the LOTL was fetched, but it carries no
+/// certificate in its XML signature, so there is no candidate at all.
+pub const LOTL_BOOTSTRAP_SIGNER_CERT_ABSENT: &str = "lotl_bootstrap_signer_cert_absent";
+
+/// The operator asked for the bootstrap candidate while an anchor **is** already configured. There
+/// is nothing to bootstrap: the LOTL is authenticated against that anchor and proposals come from
+/// the authenticated chain. Refusing here is not pedantry — offering a self-asserted candidate
+/// beside verified ones is exactly the confusion this whole vocabulary exists to prevent.
+pub const LOTL_BOOTSTRAP_NOT_APPLICABLE: &str = "lotl_bootstrap_not_applicable";
+
 // --- Per-source outcomes -------------------------------------------------------------------------
 
 /// The authenticated LOTL carries a pointer for this source, and the pointer names the
@@ -99,6 +136,10 @@ pub const ALL_TRUST_ANCHOR_SUGGESTION_CODES: &[&str] = &[
     LOTL_FETCH_FAILED,
     LOTL_NOT_AUTHENTICATED,
     LOTL_NO_POINTERS,
+    LOTL_BOOTSTRAP_SELF_ASSERTED,
+    LOTL_BOOTSTRAP_FETCH_FAILED,
+    LOTL_BOOTSTRAP_SIGNER_CERT_ABSENT,
+    LOTL_BOOTSTRAP_NOT_APPLICABLE,
     SOURCE_ANCHORS_FROM_LOTL,
     SOURCE_IS_LOTL,
     SOURCE_NOT_IN_LOTL,

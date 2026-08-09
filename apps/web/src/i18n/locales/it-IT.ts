@@ -4654,6 +4654,10 @@ export const itIT: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Impronta di ancora {position}',
   'settings.signing.tslAnchors.digests.remove': 'Rimuovi l’impronta di ancora {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caratteri esadecimali',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Un’impronta contrassegnata come proveniente dall’elenco stesso è stata accettata da un documento che garantiva per sé stesso e non è ancora stata confrontata con alcun valore pubblicato. Confrontala con l’impronta pubblicata nella Gazzetta ufficiale dell’Unione europea, o dall’organismo che gestisce lo schema di fiducia, e contrassegnala come verificata dopo averlo fatto.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Contrassegna l’impronta di ancora {position} come confrontata con un valore pubblicato',
   'settings.signing.anchorSuggest.title': 'Suggerimenti di ancore',
   'settings.signing.anchorSuggest.hint':
     'Chancela può cercare, nell’elenco europeo degli elenchi di fiducia (LOTL), quale certificato dovrebbe firmare ciascun elenco di fiducia che hai configurato. Quell’elenco europeo viene prima autenticato con l’ancora indicata qui sotto. Nulla viene aggiunto al posto tuo: ogni valore mostrato è un suggerimento e solo tu puoi accettarlo.',
@@ -4661,6 +4665,13 @@ export const itIT: Catalog = {
   'settings.signing.anchorSuggest.running': 'Consultazione dell’elenco degli elenchi di fiducia…',
   'settings.signing.anchorSuggest.checkedAt': 'Consultazione di {url} il {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Non è possibile suggerire nulla',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Ottenere la prima ancora',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Per ora non esiste nessuna ancora, quindi non si può autenticare nulla — nemmeno l’elenco degli elenchi di fiducia. Chancela può comunque scaricare quell’elenco e mostrarti il certificato che porta con sé, come punto di partenza. Vale la pena essere precisi su quanto valga. Scaricarlo via HTTPS ha autenticato il server, il che esclude che qualcuno abbia alterato il documento durante il trasferimento; non ha autenticato l’elenco. Chi ha servito quel documento ha scelto anche il certificato che contiene, quindi un elenco sostituito arriverebbe con un certificato proprio e la sua firma risulterebbe valida proprio rispetto a quello. A dirimere la questione è il confronto dell’impronta SHA-256 con quella pubblicata nella Gazzetta ufficiale dell’Unione europea. Cominciare così è prassi comune: va solo confermato in quel modo prima di farci affidamento.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Mostra il certificato che l’elenco degli elenchi di fiducia porta con sé',
+  'settings.signing.anchorSuggest.bootstrap.running':
+    'Scaricamento dell’elenco degli elenchi di fiducia…',
   'settings.signing.anchorSuggest.detail': 'Il server ha segnalato:',
   'settings.signing.anchorSuggest.noProposals': 'Nessun candidato per questa origine.',
   'settings.signing.anchorSuggest.provenance.lotl':
@@ -4689,6 +4700,14 @@ export const itIT: Catalog = {
     'L’elenco degli elenchi di fiducia è stato scaricato, ma la sua firma non si verifica con nessuna ancora configurata. Da un elenco che non si può autenticare non viene suggerito nulla.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Il documento scaricato non rimanda ad alcun elenco nazionale, quindi non è un elenco degli elenchi di fiducia e non garantisce nulla.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'L’elenco degli elenchi di fiducia è stato scaricato e porta questo certificato nella propria firma. Non è verificato: confronta la sua impronta con quella pubblicata nella Gazzetta ufficiale dell’Unione europea prima di farci affidamento.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Non è stato possibile scaricare l’elenco degli elenchi di fiducia, quindi non c’è nessun certificato da mostrare.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Il documento scaricato non porta alcun certificato nella sua firma, quindi non c’è nulla da mostrare.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Un’ancora è già configurata, quindi questo primo passo non serve: l’elenco degli elenchi di fiducia viene autenticato con quell’ancora e i suggerimenti provengono dalla catena autenticata.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'L’elenco degli elenchi di fiducia autenticato indica il certificato che dovrebbe firmare questo elenco.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

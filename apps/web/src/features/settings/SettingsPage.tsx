@@ -22,6 +22,7 @@
  * pane's permission gating moved with it.
  */
 import {
+  Fragment,
   lazy,
   Suspense,
   useEffect,
@@ -359,6 +360,26 @@ function normalizeTslSource(source: TslSourceSettings): TslSourceSettings {
  * one to refuse it, loudly, with the field path. Silently dropping an anchor the operator believes
  * they configured is precisely the fail-open this whole change exists to remove.
  */
+/**
+ * The three Trusted-List anchor lists this page edits. Two are anchors; the third
+ * (`tsl_trust_anchor_self_asserted_sha256`) is a provenance annotation over the second and grants
+ * nothing — see its doc comment in `settings.rs`. All three are plain `string[]`, so one setter
+ * keyed by field serves them all.
+ */
+type TrustAnchorField =
+  'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256' | 'tsl_trust_anchor_self_asserted_sha256';
+
+/**
+ * The comparison form of a fingerprint: trimmed and lower-cased, nothing else.
+ *
+ * Used only to decide whether an annotation refers to a given anchor. It is NOT applied to the
+ * value that is stored or sent — `normalizeTrustAnchors` still sends what the operator typed, so a
+ * malformed entry is refused by the server rather than quietly rewritten here.
+ */
+function anchorKey(fingerprint: string): string {
+  return fingerprint.trim().toLowerCase();
+}
+
 function normalizeTrustAnchors(anchors: readonly string[] | undefined): string[] {
   return (anchors ?? []).map((anchor) => anchor.trim()).filter((anchor) => anchor.length > 0);
 }
@@ -557,6 +578,10 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       // so the editor has an array to render; never to a bundled anchor.
       tsl_trust_anchor_certs: settings.signing.tsl_trust_anchor_certs ?? [],
       tsl_trust_anchor_sha256: settings.signing.tsl_trust_anchor_sha256 ?? [],
+      // The provenance annotation, hydrated the same way. Absent means "no anchor here was
+      // accepted from a document that vouched for itself" — never "provenance unknown".
+      tsl_trust_anchor_self_asserted_sha256:
+        settings.signing.tsl_trust_anchor_self_asserted_sha256 ?? [],
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
     ui: {
@@ -674,6 +699,12 @@ function toWireBody(draft: Settings): Settings {
       ),
       tsl_trust_anchor_certs: normalizeTrustAnchors(draft.signing.tsl_trust_anchor_certs),
       tsl_trust_anchor_sha256: normalizeTrustAnchors(draft.signing.tsl_trust_anchor_sha256),
+      // Sent verbatim like the anchors themselves, and specifically NOT intersected with the
+      // fingerprint list here. An annotation whose anchor has gone is inert; dropping it on the
+      // operator's behalf would erase the record that something was once accepted unverified.
+      tsl_trust_anchor_self_asserted_sha256: normalizeTrustAnchors(
+        draft.signing.tsl_trust_anchor_self_asserted_sha256,
+      ),
       tsl_legacy_algorithms: normalizeLegacyAlgorithms(draft.signing.tsl_legacy_algorithms),
     },
     ai: {
@@ -2141,10 +2172,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
    * document (PEM certificates / hex SHA-256 fingerprints), so one setter keyed by field serves
    * both rather than duplicating the add-update-remove trio per list.
    */
-  const setTrustAnchors = (
-    field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256',
-    updater: (anchors: string[]) => string[],
-  ) =>
+  const setTrustAnchors = (field: TrustAnchorField, updater: (anchors: string[]) => string[]) =>
     setDraft((d) =>
       d
         ? {
@@ -2156,22 +2184,81 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
           }
         : d,
     );
-  const addTrustAnchor = (field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256') =>
+  const addTrustAnchor = (field: TrustAnchorField) =>
     setTrustAnchors(field, (anchors) => [...anchors, '']);
-  const updateTrustAnchor = (
-    field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256',
-    index: number,
-    value: string,
-  ) =>
+  const updateTrustAnchor = (field: TrustAnchorField, index: number, value: string) =>
     setTrustAnchors(field, (anchors) => anchors.map((anchor, i) => (i === index ? value : anchor)));
-  const removeTrustAnchor = (
-    field: 'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256',
-    index: number,
-  ) => setTrustAnchors(field, (anchors) => anchors.filter((_, i) => i !== index));
+  const removeTrustAnchor = (field: TrustAnchorField, index: number) =>
+    setTrustAnchors(field, (anchors) => anchors.filter((_, i) => i !== index));
+
+  /**
+   * Accept a fingerprint the assistant proposed, carrying its provenance with it.
+   *
+   * When the candidate was `list_self_asserted` the fingerprint goes into BOTH lists in one draft
+   * update: the anchor list, which is what the deployment will trust, and the annotation list,
+   * which is what keeps it distinguishable from a value transcribed out of the Official Journal.
+   * Two separate `setDraft` calls would work, but writing them together is what makes it
+   * structurally impossible to add the anchor and lose the provenance.
+   */
+  const acceptTrustAnchorFingerprint = (sha256: string, selfAsserted: boolean) =>
+    setDraft((d) =>
+      d
+        ? {
+            ...d,
+            signing: {
+              ...d.signing,
+              tsl_trust_anchor_sha256: [...(d.signing.tsl_trust_anchor_sha256 ?? []), sha256],
+              tsl_trust_anchor_self_asserted_sha256: selfAsserted
+                ? [...(d.signing.tsl_trust_anchor_self_asserted_sha256 ?? []), sha256]
+                : (d.signing.tsl_trust_anchor_self_asserted_sha256 ?? []),
+            },
+          }
+        : d,
+    );
+
+  /**
+   * Remove a fingerprint anchor, and its provenance annotation with it.
+   *
+   * Removing the anchor is the one moment the annotation genuinely stops meaning anything: leaving
+   * it behind would mark a LATER anchor with the same fingerprint — plausibly the same value, this
+   * time transcribed from the Official Journal — as unverified for ever.
+   */
+  const removeTrustAnchorFingerprint = (index: number) =>
+    setDraft((d) => {
+      if (!d) return d;
+      const fingerprints = d.signing.tsl_trust_anchor_sha256 ?? [];
+      const removed = anchorKey(fingerprints[index] ?? '');
+      return {
+        ...d,
+        signing: {
+          ...d.signing,
+          tsl_trust_anchor_sha256: fingerprints.filter((_, i) => i !== index),
+          tsl_trust_anchor_self_asserted_sha256: (
+            d.signing.tsl_trust_anchor_self_asserted_sha256 ?? []
+          ).filter((entry) => anchorKey(entry) !== removed),
+        },
+      };
+    });
+
+  /**
+   * Clear one fingerprint's self-asserted mark: the operator asserting they have compared it with
+   * a published value. The anchor itself is untouched — this changes what the deployment CLAIMS
+   * about the anchor's provenance, never what it trusts.
+   */
+  const markTrustAnchorVerified = (fingerprint: string) =>
+    setTrustAnchors('tsl_trust_anchor_self_asserted_sha256', (entries) =>
+      entries.filter((entry) => anchorKey(entry) !== anchorKey(fingerprint)),
+    );
   // Both lists are optional on the wire (absent when empty), so read them through a `?? []` here
   // once rather than at each of the several render sites that count or map them.
   const trustAnchorCerts = draft.signing.tsl_trust_anchor_certs ?? [];
   const trustAnchorFingerprints = draft.signing.tsl_trust_anchor_sha256 ?? [];
+  // Compared case- and whitespace-insensitively, because the same fingerprint pasted twice is the
+  // same anchor: a `Set` of raw strings would lose the mark the moment an operator retyped it in
+  // upper case.
+  const selfAssertedFingerprints = new Set(
+    (draft.signing.tsl_trust_anchor_self_asserted_sha256 ?? []).map(anchorKey),
+  );
   // The unanchored warning counts what would actually be SAVED, not what is on screen. Pressing
   // "add" inserts a blank row, and `normalizeTrustAnchors` drops blank rows at the wire boundary —
   // so counting rendered rows would clear the warning the instant the operator pressed add, while
@@ -2916,12 +3003,7 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                       onAddCertificate={(pem) =>
                         setTrustAnchors('tsl_trust_anchor_certs', (anchors) => [...anchors, pem])
                       }
-                      onAddFingerprint={(sha256) =>
-                        setTrustAnchors('tsl_trust_anchor_sha256', (anchors) => [
-                          ...anchors,
-                          sha256,
-                        ])
-                      }
+                      onAddFingerprint={acceptTrustAnchorFingerprint}
                     />
 
                     {/* Fail-closed, so it must be legible here rather than discovered as a 422 at
@@ -2993,34 +3075,73 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                       </Button>
                     </div>
 
+                    {/* Only when at least one anchor still carries the mark. Explaining a badge
+                        that is not on screen would be noise on every other install. */}
+                    {trustAnchorFingerprints.some((fingerprint) =>
+                      selfAssertedFingerprints.has(anchorKey(fingerprint)),
+                    ) ? (
+                      <p className="field__hint">
+                        {t('settings.signing.tslAnchors.digests.selfAsserted')}
+                      </p>
+                    ) : null}
+
                     {trustAnchorFingerprints.length === 0 ? (
                       <p className="field__hint">{t('settings.signing.tslAnchors.digests.none')}</p>
                     ) : (
-                      trustAnchorFingerprints.map((fingerprint, index) => (
-                        <div className="input-reset" key={`tsl-anchor-digest-${index}`}>
-                          <Input
-                            aria-label={t('settings.signing.tslAnchors.digests.label', {
-                              position: index + 1,
-                            })}
-                            className="mono"
-                            value={fingerprint}
-                            spellCheck={false}
-                            placeholder={t('settings.signing.tslAnchors.digests.placeholder')}
-                            onChange={(e) =>
-                              updateTrustAnchor('tsl_trust_anchor_sha256', index, e.target.value)
-                            }
-                          />
-                          <IconButton
-                            type="button"
-                            variant="ghost"
-                            icon={<Icon.Trash />}
-                            label={t('settings.signing.tslAnchors.digests.remove', {
-                              position: index + 1,
-                            })}
-                            onClick={() => removeTrustAnchor('tsl_trust_anchor_sha256', index)}
-                          />
-                        </div>
-                      ))
+                      trustAnchorFingerprints.map((fingerprint, index) => {
+                        // The provenance the assistant showed, still on screen after the save that
+                        // would otherwise have flattened it into an ordinary anchor. Same words as
+                        // the proposal carried, from the same catalog key: an anchor accepted from
+                        // a document that vouched for itself never stops saying so.
+                        const selfAsserted = selfAssertedFingerprints.has(anchorKey(fingerprint));
+                        return (
+                          <Fragment key={`tsl-anchor-digest-${index}`}>
+                            {selfAsserted ? (
+                              <div className="section-head">
+                                <Badge tone="warn" wrap>
+                                  {t('settings.signing.anchorSuggest.provenance.listSelfAsserted')}
+                                </Badge>
+                                <IconButton
+                                  type="button"
+                                  variant="ghost"
+                                  icon={<Icon.Check />}
+                                  label={t('settings.signing.tslAnchors.digests.markVerified', {
+                                    position: index + 1,
+                                  })}
+                                  onClick={() => markTrustAnchorVerified(fingerprint)}
+                                />
+                              </div>
+                            ) : null}
+                            <div className="input-reset">
+                              <Input
+                                aria-label={t('settings.signing.tslAnchors.digests.label', {
+                                  position: index + 1,
+                                })}
+                                className="mono"
+                                value={fingerprint}
+                                spellCheck={false}
+                                placeholder={t('settings.signing.tslAnchors.digests.placeholder')}
+                                onChange={(e) =>
+                                  updateTrustAnchor(
+                                    'tsl_trust_anchor_sha256',
+                                    index,
+                                    e.target.value,
+                                  )
+                                }
+                              />
+                              <IconButton
+                                type="button"
+                                variant="ghost"
+                                icon={<Icon.Trash />}
+                                label={t('settings.signing.tslAnchors.digests.remove', {
+                                  position: index + 1,
+                                })}
+                                onClick={() => removeTrustAnchorFingerprint(index)}
+                              />
+                            </div>
+                          </Fragment>
+                        );
+                      })
                     )}
                   </div>
                 </Card>

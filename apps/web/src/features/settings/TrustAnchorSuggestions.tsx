@@ -17,6 +17,21 @@
  * - it offers only its **fingerprint**, because the server withholds the PEM for exactly this
  *   reason: the operator's job is to compare that fingerprint against a published one first.
  *
+ * ## The bootstrap case
+ *
+ * With no anchor at all the run refuses, and until now that was the end of the screen: the operator
+ * was told to fetch a value from the Official Journal and given nothing to act on. A second,
+ * separately-labelled control now asks for the certificate the EU LOTL document itself carries.
+ * Three properties hold it in place:
+ *
+ * - it is rendered **only** under `lotl_anchor_not_configured`, and only after the first run has
+ *   already reported that state — so it cannot be reached without having read the refusal;
+ * - it is a separate request. The ordinary "Suggest anchors" button never asks for it, so no
+ *   operator encounters this candidate without having asked for it by name; and
+ * - what comes back is an ordinary `list_self_asserted` proposal, rendered by the very same
+ *   `Proposal` component, with the same undismissable warning and the same withheld PEM. There is
+ *   no bootstrap-specific rendering path that could quietly present it more softly.
+ *
  * ## What this component cannot do
  *
  * Nothing here writes. Each button appends a value to the settings draft the operator is already
@@ -24,6 +39,10 @@
  * that persists it. There is no pre-selection, and deliberately **no "add all"**: a bulk control
  * would be the one gesture capable of sweeping a self-asserted candidate in beside LOTL-derived
  * ones without the operator ever reading its warning.
+ *
+ * Adding a self-asserted candidate reports that fact to the caller, which records it in
+ * `signing.tsl_trust_anchor_self_asserted_sha256`. Without that, the provenance this whole
+ * component is built around would survive exactly until the operator pressed Save.
  */
 import { useState } from 'react';
 import type {
@@ -33,14 +52,23 @@ import type {
 } from '../../api/types';
 import { useTrustAnchorSuggestions } from '../../api/hooks';
 import { useT, type TFunction } from '../../i18n';
-import { trustAnchorSuggestionKey } from '../../i18n/trustAnchorSuggestions';
+import {
+  LOTL_ANCHOR_NOT_CONFIGURED,
+  trustAnchorSuggestionKey,
+} from '../../i18n/trustAnchorSuggestions';
 import { Badge, Button, ErrorNote, Icon, InlineWarning } from '../../ui';
 
 interface Props {
   /** Append a PEM to `signing.tsl_trust_anchor_certs` in the draft. */
   onAddCertificate: (pem: string) => void;
-  /** Append a lowercase-hex SHA-256 to `signing.tsl_trust_anchor_sha256` in the draft. */
-  onAddFingerprint: (sha256: string) => void;
+  /**
+   * Append a lowercase-hex SHA-256 to `signing.tsl_trust_anchor_sha256` in the draft.
+   *
+   * `selfAsserted` is not decoration: it is the proposal's provenance travelling with the value so
+   * the caller can record it in `signing.tsl_trust_anchor_self_asserted_sha256`. A caller that
+   * ignored it would store an unverified anchor as though it had come from the Official Journal.
+   */
+  onAddFingerprint: (sha256: string, selfAsserted: boolean) => void;
 }
 
 /**
@@ -138,7 +166,7 @@ function Proposal({
             type="button"
             variant="secondary"
             icon={<Icon.Plus />}
-            onClick={() => onAddFingerprint(proposal.sha256)}
+            onClick={() => onAddFingerprint(proposal.sha256, !lotlDerived)}
           >
             {t('settings.signing.anchorSuggest.addFingerprint')}
           </Button>
@@ -186,10 +214,14 @@ export function TrustAnchorSuggestions({ onAddCertificate, onAddFingerprint }: P
   const suggest = useTrustAnchorSuggestions();
   const [result, setResult] = useState<TrustAnchorSuggestionsView | null>(null);
   const [error, setError] = useState<unknown>(null);
+  // Which of the two buttons is in flight. `isPending` alone cannot say, and a shared spinner would
+  // put "Consulting the List of Trusted Lists…" on a button that is doing nothing.
+  const [pendingBootstrap, setPendingBootstrap] = useState(false);
 
-  const run = () => {
+  const run = (bootstrapSelfAsserted: boolean) => {
     setError(null);
-    suggest.mutate(undefined, {
+    setPendingBootstrap(bootstrapSelfAsserted);
+    suggest.mutate(bootstrapSelfAsserted, {
       onSuccess: (view) => setResult(view),
       onError: (err) => {
         setResult(null);
@@ -203,9 +235,14 @@ export function TrustAnchorSuggestions({ onAddCertificate, onAddFingerprint }: P
       <p className="field__hint">{t('settings.signing.anchorSuggest.hint')}</p>
       <div className="section-head">
         <p className="field__hint">{t('settings.signing.anchorSuggest.title')}</p>
-        <Button type="button" variant="secondary" onClick={run} disabled={suggest.isPending}>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => run(false)}
+          disabled={suggest.isPending}
+        >
           {t(
-            suggest.isPending
+            suggest.isPending && !pendingBootstrap
               ? 'settings.signing.anchorSuggest.running'
               : 'settings.signing.anchorSuggest.run',
           )}
@@ -233,12 +270,62 @@ export function TrustAnchorSuggestions({ onAddCertificate, onAddFingerprint }: P
               />
             ))
           ) : (
-            // The whole run refused. Every source is still listed by the server, but not one of
-            // them carries a proposal — so rendering the reason alone is rendering the result.
-            <InlineWarning tone="warn" title={t('settings.signing.anchorSuggest.refused.title')}>
-              <Outcome code={result.lotl_code} t={t} />
-              <Detail detail={result.lotl_detail} t={t} />
-            </InlineWarning>
+            <>
+              {/* The whole run refused. Every source is still listed by the server, but not one of
+                  them carries a proposal — so rendering the reason alone is rendering the result. */}
+              <InlineWarning tone="warn" title={t('settings.signing.anchorSuggest.refused.title')}>
+                <Outcome code={result.lotl_code} t={t} />
+                <Detail detail={result.lotl_detail} t={t} />
+              </InlineWarning>
+
+              {/* Offered ONLY for the unanchored case, and only after the refusal above has
+                  already been rendered. Every other refusal — a failed fetch, a list that did not
+                  authenticate — is a state where an anchor exists and the answer is to fix
+                  something, not to trust a document that vouches for itself. */}
+              {result.lotl_code === LOTL_ANCHOR_NOT_CONFIGURED ? (
+                <>
+                  <InlineWarning
+                    tone="warn"
+                    title={t('settings.signing.anchorSuggest.bootstrap.title')}
+                  >
+                    {t('settings.signing.anchorSuggest.bootstrap.body')}
+                  </InlineWarning>
+                  <div className="section-head">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => run(true)}
+                      disabled={suggest.isPending}
+                    >
+                      {t(
+                        suggest.isPending && pendingBootstrap
+                          ? 'settings.signing.anchorSuggest.bootstrap.running'
+                          : 'settings.signing.anchorSuggest.bootstrap.run',
+                      )}
+                    </Button>
+                  </div>
+                </>
+              ) : null}
+
+              {result.lotl_bootstrap_code ? (
+                <p className="field__hint">
+                  <Outcome code={result.lotl_bootstrap_code} t={t} />
+                </p>
+              ) : null}
+              <Detail detail={result.lotl_bootstrap_detail ?? null} t={t} />
+
+              {/* The same `Proposal` the member-state fallback uses, so the candidate cannot be
+                  presented any more gently than the fallback it is. */}
+              {(result.lotl_proposals ?? []).map((proposal) => (
+                <Proposal
+                  key={`lotl-bootstrap-${proposal.sha256}`}
+                  proposal={proposal}
+                  t={t}
+                  onAddCertificate={onAddCertificate}
+                  onAddFingerprint={onAddFingerprint}
+                />
+              ))}
+            </>
           )}
         </>
       ) : null}

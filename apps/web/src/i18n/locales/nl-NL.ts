@@ -4657,6 +4657,10 @@ export const nlNL: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankervingerafdruk {position}',
   'settings.signing.tslAnchors.digests.remove': 'Ankervingerafdruk {position} verwijderen',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimale tekens',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Een vingerafdruk die is aangemerkt als afkomstig uit de lijst zelf, is overgenomen uit een document dat voor zichzelf instond en is nog niet vergeleken met een gepubliceerde waarde. Vergelijk hem met de vingerafdruk die is gepubliceerd in het Publicatieblad van de Europese Unie, of door de instantie die het vertrouwensstelsel beheert, en merk hem daarna aan als gecontroleerd.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Ankervingerafdruk {position} aanmerken als vergeleken met een gepubliceerde waarde',
   'settings.signing.anchorSuggest.title': 'Voorstellen voor vertrouwensankers',
   'settings.signing.anchorSuggest.hint':
     'Chancela kan in de Europese lijst van vertrouwenslijsten (LOTL) opzoeken welk certificaat elke door u ingestelde vertrouwenslijst hoort te ondertekenen. Die Europese lijst wordt eerst zelf gecontroleerd aan de hand van het anker dat u hieronder hebt ingevuld. Er wordt niets voor u toegevoegd: elke waarde is een voorstel, en alleen u kunt het aanvaarden.',
@@ -4664,6 +4668,13 @@ export const nlNL: Catalog = {
   'settings.signing.anchorSuggest.running': 'De lijst van vertrouwenslijsten wordt opgehaald…',
   'settings.signing.anchorSuggest.checkedAt': 'Geraadpleegd: {url} op {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Er kan niets worden voorgesteld',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Het eerste anker verkrijgen',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Er is nog geen anker, dus er kan niets worden gewaarmerkt — ook de lijst van vertrouwenslijsten niet. Chancela kan die lijst toch ophalen en u het certificaat tonen dat zij draagt, als vertrekpunt. Het loont de moeite precies te zijn over wat dat waard is. Het ophalen via HTTPS heeft de server gecontroleerd, waarmee is uitgesloten dat iemand het document onderweg heeft gewijzigd; de lijst is er niet mee gewaarmerkt. Wie dat document heeft geleverd, koos ook het certificaat dat erin zit, dus een omgewisselde lijst zou met een eigen certificaat aankomen en haar handtekening zou juist daartegen standhouden. Wat de zaak beslist, is de SHA-256-vingerafdruk vergelijken met de vingerafdruk die in het Publicatieblad van de Europese Unie is gepubliceerd. Zo beginnen is gangbare praktijk — het moet alleen op die manier worden bevestigd voordat u erop vertrouwt.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Het certificaat tonen dat de lijst van vertrouwenslijsten draagt',
+  'settings.signing.anchorSuggest.bootstrap.running':
+    'De lijst van vertrouwenslijsten wordt binnengehaald…',
   'settings.signing.anchorSuggest.detail': 'De server meldde:',
   'settings.signing.anchorSuggest.noProposals': 'Geen kandidaat voor deze bron.',
   'settings.signing.anchorSuggest.provenance.lotl':
@@ -4691,6 +4702,14 @@ export const nlNL: Catalog = {
     'De lijst van vertrouwenslijsten is opgehaald, maar de handtekening houdt geen stand tegen enig ingesteld anker. Uit een lijst die niet gewaarmerkt kan worden, wordt niets voorgesteld.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Het opgehaalde document verwijst naar geen enkele nationale lijst en is dus geen lijst van vertrouwenslijsten; het staat nergens voor in.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'De lijst van vertrouwenslijsten is opgehaald en draagt dit certificaat in haar eigen handtekening. Het is niet gecontroleerd: vergelijk de vingerafdruk ervan met de vingerafdruk die in het Publicatieblad van de Europese Unie is gepubliceerd voordat u erop vertrouwt.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'De lijst van vertrouwenslijsten kon niet worden opgehaald, dus er is geen certificaat om te tonen.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Het opgehaalde document draagt geen certificaat in zijn handtekening, dus er is niets om te tonen.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Er is al een anker ingesteld, dus deze eerste stap is niet nodig: de lijst van vertrouwenslijsten wordt aan de hand van dat anker gewaarmerkt en de voorstellen komen uit de gewaarmerkte keten.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'De gecontroleerde lijst van vertrouwenslijsten noemt het certificaat dat deze lijst hoort te ondertekenen.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

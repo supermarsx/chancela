@@ -4620,6 +4620,10 @@ export const daDK: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankerfingeraftryk {position}',
   'settings.signing.tslAnchors.digests.remove': 'Fjern ankerfingeraftryk {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimale tegn',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Et fingeraftryk, der er markeret som hentet fra listen selv, er accepteret fra et dokument, som indestod for sig selv, og det er endnu ikke holdt op mod nogen offentliggjort værdi. Sammenlign det med det fingeraftryk, der er offentliggjort i Den Europæiske Unions Tidende eller af den myndighed, der driver tillidsordningen, og markér det som efterprøvet, når du har gjort det.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Markér ankerfingeraftryk {position} som holdt op mod en offentliggjort værdi',
   'settings.signing.anchorSuggest.title': 'Forslag til tillidsankre',
   'settings.signing.anchorSuggest.hint':
     'Chancela kan slå op i EU’s liste over tillidslister (LOTL), hvilket certifikat der forventes at signere hver enkelt tillidsliste, du har konfigureret. Den europæiske liste bliver først godtgjort med det tillidsanker, du har angivet nedenfor. Intet tilføjes automatisk: hver værdi er et forslag, og kun du kan acceptere det.',
@@ -4627,6 +4631,12 @@ export const daDK: Catalog = {
   'settings.signing.anchorSuggest.running': 'Slår op i listen over tillidslister…',
   'settings.signing.anchorSuggest.checkedAt': 'Opslag på {url} den {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Intet kan foreslås',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Sådan får du det første anker',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Der er endnu ikke noget anker, så intet kan godtgøres — heller ikke listen over tillidslister. Chancela kan alligevel hente den liste og vise dig det certifikat, den bærer, som et udgangspunkt. Det er værd at være præcis om, hvad det er værd. At hente den over HTTPS godtgjorde serveren, hvilket udelukker, at nogen har ændret dokumentet undervejs; det godtgjorde ikke listen. Den, der leverede dokumentet, valgte også certifikatet inde i det, så en ombyttet liste ville komme med sit eget certifikat, og dens signatur ville holde mod netop det. Det, der afgør sagen, er at sammenligne SHA-256-fingeraftrykket med det, der er offentliggjort i Den Europæiske Unions Tidende. At begynde sådan er almindelig praksis — det skal bare bekræftes på den måde, før du læner dig op ad ankeret.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Vis det certifikat, listen over tillidslister bærer',
+  'settings.signing.anchorSuggest.bootstrap.running': 'Henter listen over tillidslister…',
   'settings.signing.anchorSuggest.detail': 'Serveren meldte:',
   'settings.signing.anchorSuggest.noProposals': 'Ingen kandidat for denne kilde.',
   'settings.signing.anchorSuggest.provenance.lotl': 'Fra den godtgjorte liste over tillidslister',
@@ -4653,6 +4663,14 @@ export const daDK: Catalog = {
     'Listen over tillidslister blev hentet, men dens signatur holder ikke mod noget konfigureret tillidsanker. Der foreslås intet ud fra en liste, der ikke kan godtgøres.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Det hentede dokument peger ikke på nogen national liste og er derfor ikke en liste over tillidslister; det indestår for ingenting.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'Listen over tillidslister blev hentet og bærer dette certifikat i sin egen signatur. Det er ikke efterprøvet: sammenlign dets fingeraftryk med det, der er offentliggjort i Den Europæiske Unions Tidende, før du læner dig op ad det.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Listen over tillidslister kunne ikke hentes, så der er intet certifikat at vise.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Det hentede dokument bærer intet certifikat i sin signatur, så der er intet at vise.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Der er allerede konfigureret et anker, så dette første trin er ikke nødvendigt: listen over tillidslister godtgøres med det anker, og forslagene kommer fra den godtgjorte kæde.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'Den godtgjorte liste over tillidslister angiver, hvilket certifikat der forventes at signere denne liste.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

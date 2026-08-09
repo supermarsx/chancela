@@ -4654,6 +4654,10 @@ export const esES: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Huella digital de ancla {position}',
   'settings.signing.tslAnchors.digests.remove': 'Eliminar la huella digital de ancla {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caracteres hexadecimales',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Una huella digital marcada como procedente de la propia lista se aceptó a partir de un documento que respondía por sí mismo y todavía no se ha cotejado con ningún valor publicado. Compárela con la huella digital publicada en el Diario Oficial de la Unión Europea, o por el organismo que gestiona el esquema de confianza, y márquela como verificada cuando lo haya hecho.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Marcar la huella digital de ancla {position} como cotejada con un valor publicado',
   'settings.signing.anchorSuggest.title': 'Sugerencias de anclas',
   'settings.signing.anchorSuggest.hint':
     'Chancela puede consultar, en la lista europea de listas de confianza (LOTL), qué certificado debería firmar cada Lista de Confianza que haya configurado. Esa lista europea se autentica antes con el ancla indicada más abajo. No se añade nada por su cuenta: cada valor mostrado es una sugerencia y solo usted puede aceptarla.',
@@ -4661,6 +4665,12 @@ export const esES: Catalog = {
   'settings.signing.anchorSuggest.running': 'Consultando la lista de listas de confianza…',
   'settings.signing.anchorSuggest.checkedAt': 'Consulta a {url} el {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'No se puede sugerir nada',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Conseguir la primera ancla',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Todavía no hay ningún ancla, así que no se puede autenticar nada, ni siquiera la lista de listas de confianza. Aun así, Chancela puede obtener esa lista y mostrarle el certificado que lleva dentro, como punto de partida. Conviene ser exactos sobre su alcance. Obtenerla por HTTPS autenticó el servidor, lo que descarta que alguien alterara el documento por el camino; no autenticó la lista. Quien sirvió el documento también eligió el certificado que va dentro, de modo que una lista sustituida llegaría con un certificado propio y su firma se validaría con él. Lo que zanja la cuestión es comparar la huella digital SHA-256 con la publicada en el Diario Oficial de la Unión Europea. Empezar así es la práctica habitual: solo hay que confirmarlo de esa manera antes de confiar en el ancla.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Mostrar el certificado que lleva la lista de listas de confianza',
+  'settings.signing.anchorSuggest.bootstrap.running': 'Obteniendo la lista de listas de confianza…',
   'settings.signing.anchorSuggest.detail': 'El servidor informó:',
   'settings.signing.anchorSuggest.noProposals': 'Ningún candidato para esta fuente.',
   'settings.signing.anchorSuggest.provenance.lotl':
@@ -4688,6 +4698,14 @@ export const esES: Catalog = {
     'Se obtuvo la lista de listas de confianza, pero su firma no se valida con ningún ancla configurada. De una lista que no se puede autenticar no se sugiere nada.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'El documento obtenido no remite a ninguna lista nacional, por lo que no es una lista de listas de confianza y no responde por nada.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'Se obtuvo la lista de listas de confianza y lleva este certificado en su propia firma. No está verificado: compare su huella digital con la publicada en el Diario Oficial de la Unión Europea antes de confiar en él.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'No se pudo obtener la lista de listas de confianza, así que no hay ningún certificado que mostrar.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'El documento obtenido no lleva ningún certificado en su firma, así que no hay nada que mostrar.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Ya hay un ancla configurada, así que este primer paso no hace falta: la lista de listas de confianza se autentica con esa ancla y las sugerencias salen de la cadena autenticada.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'La lista de listas de confianza autenticada indica qué certificado debería firmar esta lista.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

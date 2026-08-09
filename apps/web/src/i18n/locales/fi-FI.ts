@@ -4636,6 +4636,10 @@ export const fiFI: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankkurin sormenjälki {position}',
   'settings.signing.tslAnchors.digests.remove': 'Poista ankkurin sormenjälki {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 heksadesimaalimerkkiä',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Listalta itseltään peräisin olevaksi merkitty sormenjälki on hyväksytty asiakirjasta, joka vastasi itsestään, eikä sitä ole vielä verrattu mihinkään julkaistuun arvoon. Vertaa sitä sormenjälkeen, joka on julkaistu Euroopan unionin virallisessa lehdessä tai jonka luottamusjärjestelmää ylläpitävä taho on julkaissut, ja merkitse se sen jälkeen tarkistetuksi.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Merkitse ankkurin sormenjälki {position} julkaistuun arvoon verratuksi',
   'settings.signing.anchorSuggest.title': 'Luottamusankkurien ehdotukset',
   'settings.signing.anchorSuggest.hint':
     'Chancela voi hakea EU:n luottamuslistojen luettelosta (LOTL), minkä varmenteen kunkin määrittämäsi luottamuslistan pitäisi olla allekirjoittanut. Tämä eurooppalainen luettelo todennetaan ensin alla määritetyllä ankkurilla. Mitään ei lisätä puolestasi: jokainen arvo on ehdotus, jonka vain sinä voit hyväksyä.',
@@ -4643,6 +4647,12 @@ export const fiFI: Catalog = {
   'settings.signing.anchorSuggest.running': 'Haetaan luottamuslistojen luetteloa…',
   'settings.signing.anchorSuggest.checkedAt': 'Haettu osoitteesta {url} {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Mitään ei voi ehdottaa',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Ensimmäisen ankkurin hankkiminen',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Yhtään ankkuria ei vielä ole, joten mitään ei voi todentaa — ei myöskään luottamuslistojen luetteloa. Chancela voi silti hakea sen luettelon ja näyttää sinulle varmenteen, jota se kantaa, lähtökohdaksi. Kannattaa olla täsmällinen sen suhteen, mitä tämä on arvoltaan. Haku HTTPS:n yli todensi palvelimen, mikä sulkee pois asiakirjan muuttamisen matkalla; listaa se ei todentanut. Se, joka toimitti asiakirjan, valitsi myös sen sisällä olevan varmenteen, joten vaihdettu lista saapuisi oman varmenteensa kanssa ja sen allekirjoitus kelpaisi juuri sitä vastaan. Asian ratkaisee SHA-256-tiivisteen vertaaminen Euroopan unionin virallisessa lehdessä julkaistuun tiivisteeseen. Näin aloittaminen on tavanomainen käytäntö — se on vain vahvistettava tällä tavoin, ennen kuin luotat ankkuriin.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Näytä varmenne, jota luottamuslistojen luettelo kantaa',
+  'settings.signing.anchorSuggest.bootstrap.running': 'Ladataan luottamuslistojen luetteloa…',
   'settings.signing.anchorSuggest.detail': 'Palvelin ilmoitti:',
   'settings.signing.anchorSuggest.noProposals': 'Ei ehdokasta tälle lähteelle.',
   'settings.signing.anchorSuggest.provenance.lotl': 'Todennetusta luottamuslistojen luettelosta',
@@ -4669,6 +4679,14 @@ export const fiFI: Catalog = {
     'Luottamuslistojen luettelo haettiin, mutta sen allekirjoitus ei kelpaa millään määritetyllä ankkurilla. Listasta, jota ei voi todentaa, ei ehdoteta mitään.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Haettu asiakirja ei viittaa yhteenkään jäsenvaltion listaan, joten se ei ole luottamuslistojen luettelo eikä vastaa mistään.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'Luottamuslistojen luettelo haettiin, ja se kantaa tätä varmennetta omassa allekirjoituksessaan. Sitä ei ole varmennettu: vertaa sen tiivistettä Euroopan unionin virallisessa lehdessä julkaistuun tiivisteeseen, ennen kuin luotat siihen.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Luottamuslistojen luetteloa ei saatu haettua, joten näytettävää varmennetta ei ole.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Haetun asiakirjan allekirjoituksessa ei ole varmennetta, joten näytettävää ei ole.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Ankkuri on jo määritetty, joten tätä ensimmäistä vaihetta ei tarvita: luottamuslistojen luettelo todennetaan sillä ankkurilla, ja ehdotukset tulevat todennetusta ketjusta.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'Todennettu luottamuslistojen luettelo nimeää varmenteen, jonka pitäisi allekirjoittaa tämä lista.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

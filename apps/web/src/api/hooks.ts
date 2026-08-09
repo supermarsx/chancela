@@ -4559,7 +4559,8 @@ export function useDegradedHealth() {
  */
 export function useTrustAnchorSuggestions() {
   return useMutation({
-    mutationFn: () => api.getTrustAnchorSuggestions(),
+    mutationFn: (bootstrapSelfAsserted: boolean | undefined) =>
+      api.getTrustAnchorSuggestions(bootstrapSelfAsserted ?? false),
   });
 }
 

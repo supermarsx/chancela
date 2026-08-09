@@ -4637,6 +4637,10 @@ export const plPL: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Odcisk kotwicy {position}',
   'settings.signing.tslAnchors.digests.remove': 'Usuń odcisk kotwicy {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 znaki szesnastkowe',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Odcisk oznaczony jako pochodzący z samej listy został przyjęty z dokumentu, który poświadczał sam siebie, i nie został jeszcze zestawiony z żadną opublikowaną wartością. Porównaj go z odciskiem opublikowanym w Dzienniku Urzędowym Unii Europejskiej lub przez podmiot prowadzący system zaufania i dopiero wtedy oznacz go jako zweryfikowany.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Oznacz odcisk kotwicy {position} jako zestawiony z opublikowaną wartością',
   'settings.signing.anchorSuggest.title': 'Propozycje kotwic zaufania',
   'settings.signing.anchorSuggest.hint':
     'Chancela może sprawdzić w europejskiej liście list zaufania (LOTL), który certyfikat powinien podpisywać każdą skonfigurowaną przez Ciebie listę zaufania. Ta europejska lista jest najpierw uwierzytelniana kotwicą podaną poniżej. Nic nie jest dodawane samo z siebie: każda wartość to propozycja, którą tylko Ty możesz przyjąć.',
@@ -4644,6 +4648,12 @@ export const plPL: Catalog = {
   'settings.signing.anchorSuggest.running': 'Trwa pobieranie listy list zaufania…',
   'settings.signing.anchorSuggest.checkedAt': 'Sprawdzono {url} dnia {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Nie można niczego zaproponować',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Zdobycie pierwszej kotwicy',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Nie ma jeszcze żadnej kotwicy, więc niczego nie da się uwierzytelnić — również listy list zaufania. Chancela może mimo to pobrać tę listę i pokazać Ci certyfikat, który ona niesie, jako punkt wyjścia. Warto dokładnie powiedzieć, ile to jest warte. Pobranie przez HTTPS uwierzytelniło serwer, co wyklucza zmianę dokumentu w drodze; nie uwierzytelniło samej listy. Ten, kto wydał ten dokument, wybrał też certyfikat w jego wnętrzu, więc podmieniona lista przyszłaby z własnym certyfikatem, a jej podpis przeszedłby weryfikację właśnie tym certyfikatem. Sprawę rozstrzyga porównanie odcisku SHA-256 z wartością opublikowaną w Dzienniku Urzędowym Unii Europejskiej. Takie zaczynanie to zwykła praktyka — trzeba to tylko w ten sposób potwierdzić, zanim zaufasz tej kotwicy.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Pokaż certyfikat, który niesie lista list zaufania',
+  'settings.signing.anchorSuggest.bootstrap.running': 'Pobieranie listy list zaufania…',
   'settings.signing.anchorSuggest.detail': 'Serwer zgłosił:',
   'settings.signing.anchorSuggest.noProposals': 'Brak kandydata dla tego źródła.',
   'settings.signing.anchorSuggest.provenance.lotl': 'Z uwierzytelnionej listy list zaufania',
@@ -4669,6 +4679,14 @@ export const plPL: Catalog = {
     'Listę list zaufania pobrano, ale jej podpis nie przechodzi weryfikacji żadną skonfigurowaną kotwicą. Z listy, której nie da się uwierzytelnić, nic nie jest proponowane.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Pobrany dokument nie wskazuje żadnej listy krajowej, nie jest więc listą list zaufania i niczego nie poświadcza.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'Listę list zaufania pobrano i niesie ona ten certyfikat we własnym podpisie. Nie jest on zweryfikowany: porównaj jego odcisk z wartością opublikowaną w Dzienniku Urzędowym Unii Europejskiej, zanim mu zaufasz.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Nie udało się pobrać listy list zaufania, więc nie ma żadnego certyfikatu do pokazania.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Pobrany dokument nie zawiera żadnego certyfikatu w swoim podpisie, więc nie ma czego pokazać.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Kotwica jest już skonfigurowana, więc ten pierwszy krok nie jest potrzebny: lista list zaufania jest uwierzytelniana tą kotwicą, a propozycje pochodzą z uwierzytelnionego łańcucha.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'Uwierzytelniona lista list zaufania wskazuje certyfikat, który powinien podpisywać tę listę.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

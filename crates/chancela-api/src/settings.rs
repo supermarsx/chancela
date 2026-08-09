@@ -1852,6 +1852,34 @@ pub struct SigningSettings {
     /// so the on-the-wire shape is unchanged for installs that never set one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tsl_trust_anchor_sha256: Vec<String>,
+    /// Which of the [`tsl_trust_anchor_sha256`](Self::tsl_trust_anchor_sha256) entries were taken
+    /// from a Trusted List's **own** signature rather than from a published value — the
+    /// `list_self_asserted` provenance of `GET /v1/trust/anchor-suggestions`, made durable.
+    ///
+    /// # Why this field exists at all
+    ///
+    /// Both anchor lists are `Vec<String>`, which can express a value and nothing about where it
+    /// came from. Without this list, an anchor an operator accepted from a document that vouched
+    /// for itself becomes, the moment it is saved, indistinguishable from one transcribed out of
+    /// the Official Journal of the European Union. That is the distinction the assistant's whole
+    /// warning rests on, and losing it on save would make the warning a one-off inconvenience
+    /// rather than a standing fact about the deployment.
+    ///
+    /// # What it does and does not do
+    ///
+    /// It is an **annotation, not an anchor**. It is deliberately not read by
+    /// [`runtime_tsl_selection`](Self::runtime_tsl_selection) or by any trust policy: it grants
+    /// nothing, widens nothing, and an entry here that matches no configured anchor is inert. An
+    /// anchor's authority comes from `tsl_trust_anchor_sha256`, exactly as before; this says only
+    /// that a human has not yet compared it against a published fingerprint.
+    ///
+    /// Clearing an entry is the operator asserting they have made that comparison, which is why it
+    /// is an ordinary editable field and not a server-maintained one. Entries are validated as
+    /// 64-character hex and otherwise left alone — a stale entry is never silently pruned, because
+    /// pruning would quietly erase a provenance record. Omitted from the serialized document when
+    /// empty, so an install that never accepted a self-asserted anchor is byte-unchanged.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tsl_trust_anchor_self_asserted_sha256: Vec<String>,
     /// Cryptographically **broken** XML-DSig algorithm URIs the operator has deliberately permitted
     /// when verifying the Trusted List's own signature (SIG-11). Each entry is one exact URI drawn
     /// from [`chancela_tsl::KNOWN_LEGACY_ALGORITHMS`] (the SHA-1 digest method and its RSA/ECDSA
@@ -2130,6 +2158,8 @@ impl Default for SigningSettings {
             // baked in — an operator must supply the public LOTL signing cert here or via env.
             tsl_trust_anchor_certs: Vec::new(),
             tsl_trust_anchor_sha256: Vec::new(),
+            // No anchor, so nothing to annotate.
+            tsl_trust_anchor_self_asserted_sha256: Vec::new(),
             // Fail-closed: no broken algorithm is permitted by default. An operator must name an
             // exact URI from `chancela_tsl::KNOWN_LEGACY_ALGORITHMS` to enable one.
             tsl_legacy_algorithms: Vec::new(),
@@ -2651,6 +2681,7 @@ impl Settings {
         validate_tsl_trust_anchors(
             &self.signing.tsl_trust_anchor_certs,
             &self.signing.tsl_trust_anchor_sha256,
+            &self.signing.tsl_trust_anchor_self_asserted_sha256,
         )?;
         validate_tsl_legacy_algorithms(&self.signing.tsl_legacy_algorithms)?;
         validate_tsa_providers(&self.signing.tsa_providers)?;
@@ -2771,7 +2802,11 @@ fn validate_tsl_sources(entries: &[TslSourceSettings]) -> Result<(), ApiError> {
 /// be a 64-character sha256 hex string (reusing [`validate_optional_sha256_hex`]). Both lists
 /// default to empty (fail-closed) — an empty configuration is valid and simply trusts no list.
 /// Malformed PEM or malformed hex is a client-actionable `422`.
-fn validate_tsl_trust_anchors(certs: &[String], fingerprints: &[String]) -> Result<(), ApiError> {
+fn validate_tsl_trust_anchors(
+    certs: &[String],
+    fingerprints: &[String],
+    self_asserted: &[String],
+) -> Result<(), ApiError> {
     for (i, pem) in certs.iter().enumerate() {
         let field = format!("signing.tsl_trust_anchor_certs[{i}]");
         if pem.trim().is_empty() {
@@ -2794,6 +2829,20 @@ fn validate_tsl_trust_anchors(certs: &[String], fingerprints: &[String]) -> Resu
         }
         // Reuse the shared hex validator; unlike the env form, settings fingerprints are plain
         // 64-hex (no `:` separators), which this rejects.
+        validate_optional_sha256_hex(&field, fingerprint)?;
+    }
+    // Shape only. Deliberately NOT checked for membership in `fingerprints`: an annotation whose
+    // anchor has been removed is inert, and refusing the save would turn "I deleted an anchor" into
+    // a 422 the operator cannot read. Just as deliberately not pruned — silently dropping an entry
+    // here would erase the record that an anchor was accepted unverified, which is the one thing
+    // this list is for.
+    for (i, fingerprint) in self_asserted.iter().enumerate() {
+        let field = format!("signing.tsl_trust_anchor_self_asserted_sha256[{i}]");
+        if fingerprint.trim().is_empty() {
+            return Err(ApiError::Unprocessable(format!(
+                "{field} must be a 64-character sha256 hex fingerprint"
+            )));
+        }
         validate_optional_sha256_hex(&field, fingerprint)?;
     }
     Ok(())
@@ -4554,6 +4603,78 @@ pub async fn put_settings(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The self-asserted annotation is an annotation: it must be storable, and it must be inert.
+    ///
+    /// The second half is the one worth a test. A field named next to two anchor lists is one
+    /// careless `.chain()` away from becoming a third anchor list, at which point a fingerprint an
+    /// operator recorded as *unverified* would start authenticating Trusted Lists.
+    #[test]
+    fn the_self_asserted_annotation_is_stored_but_grants_no_trust() {
+        const FINGERPRINT: &str =
+            "1111111111111111111111111111111111111111111111111111111111111111";
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_self_asserted_sha256 = vec![FINGERPRINT.to_owned()];
+        settings.validate().expect("a 64-hex annotation is valid");
+
+        let selection = settings.signing.runtime_tsl_selection();
+        let selected = selection.selected.expect("a default source is selected");
+        assert!(
+            !selected
+                .trust_anchor_sha256
+                .contains(&FINGERPRINT.to_owned()),
+            "the annotation must never reach the trust policy: it records that a human has NOT \
+             yet compared this value against a published one"
+        );
+        assert!(selected.trust_anchor_sha256.is_empty());
+        assert!(selected.trust_anchor_certs.is_empty());
+    }
+
+    /// Shape is enforced, so a typo cannot be stored as though it annotated something.
+    #[test]
+    fn a_malformed_self_asserted_annotation_is_refused_with_its_field_path() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_trust_anchor_self_asserted_sha256 =
+            vec!["not-a-fingerprint".to_owned()];
+        let error = settings
+            .validate()
+            .expect_err("a non-hex annotation must be refused");
+        assert!(
+            format!("{error:?}").contains("signing.tsl_trust_anchor_self_asserted_sha256[0]"),
+            "the operator needs the field path, got: {error:?}"
+        );
+    }
+
+    /// A settings document written before this field existed loads with the annotation empty —
+    /// which reads as "no anchor here was accepted from a document that vouched for itself", not
+    /// as "provenance unknown". That is the right default: every anchor predating the assistant
+    /// was typed in by hand.
+    #[test]
+    fn a_settings_document_predating_the_annotation_loads_with_it_empty() {
+        let old = serde_json::json!({
+            "schema_version": 1,
+            "signing": {
+                "tsl_trust_anchor_sha256": [
+                    "2222222222222222222222222222222222222222222222222222222222222222"
+                ]
+            }
+        });
+        let parsed: Settings = serde_json::from_value(old).expect("old document deserializes");
+        assert_eq!(parsed.signing.tsl_trust_anchor_sha256.len(), 1);
+        assert!(
+            parsed
+                .signing
+                .tsl_trust_anchor_self_asserted_sha256
+                .is_empty()
+        );
+        // And an empty annotation is omitted again on the way out, so the document is unchanged.
+        let round_tripped = serde_json::to_value(&parsed).expect("settings serialise");
+        assert!(
+            round_tripped["signing"]
+                .get("tsl_trust_anchor_self_asserted_sha256")
+                .is_none()
+        );
+    }
 
     /// t54 §6.2 — `[]` means **every kind**, and it is the default. This is the property that makes
     /// the slice's arrival a no-op for every deployment: a settings document written before the

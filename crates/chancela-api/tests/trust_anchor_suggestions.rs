@@ -30,6 +30,16 @@ use common::{TEST_PASSWORD, password_hash};
 
 const SUGGEST: &str = "/v1/trust/anchor-suggestions";
 
+/// The opt-in bootstrap form of the same endpoint.
+///
+/// Note what is deliberately **not** tested here: a run that actually reaches the bootstrap fetch.
+/// Doing so at this level would either make a live request to the real EU LOTL from CI, or require
+/// mutating `CHANCELA_LOTL_URL` process-wide inside a suite whose tests run concurrently. The fetch
+/// branches are driven instead by the unit tests in `src/trust_anchor_suggestions.rs`, which inject
+/// the fetch and can therefore pin the URL, the timeout and the size bound exactly. What belongs
+/// here is the boundary: who may ask, and that asking is opt-in.
+const SUGGEST_BOOTSTRAP: &str = "/v1/trust/anchor-suggestions?bootstrap_self_asserted=true";
+
 struct TempDir {
     dir: PathBuf,
 }
@@ -166,6 +176,29 @@ async fn anchor_suggestions_require_the_same_verb_that_writes_the_anchors() {
 }
 
 #[tokio::test]
+async fn the_bootstrap_form_is_gated_on_the_same_verb_and_never_reaches_the_fetch_without_it() {
+    // The bootstrap parameter must not be a way around the gate. It is checked BEFORE anything is
+    // fetched, so a caller without `signing.configure` cannot even cause the outbound request,
+    // let alone be handed the certificate it would return.
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let settings_only_id = seed_settings_only_role(&state).await;
+    let settings_only = seed_session(&state, "amelia.settings", settings_only_id).await;
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(get(SUGGEST_BOOTSTRAP), &settings_only),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "the bootstrap candidate is material for the anchor field; same verb, no exception: {body}"
+    );
+}
+
+#[tokio::test]
 async fn an_unauthenticated_caller_is_refused() {
     let tmp = TempDir::new();
     let state = AppState::with_data_dir(tmp.dir.clone());
@@ -210,6 +243,17 @@ async fn a_proposal_run_mutates_no_settings_and_fails_closed_without_a_lotl_anch
         json!(codes::LOTL_ANCHOR_NOT_CONFIGURED),
         "expected the fail-closed bootstrap code: {body}"
     );
+    // The bootstrap candidate is opt-in ON THE WIRE, not merely in the UI. A default run reaches
+    // the same refusal it always did, with no candidate and no bootstrap outcome to render — so a
+    // client that never learns about the parameter cannot show one by accident.
+    assert_eq!(
+        body["lotl_bootstrap_code"],
+        Value::Null,
+        "a question that was not asked has no answer: {body}"
+    );
+    assert_eq!(body["lotl_bootstrap_detail"], Value::Null);
+    assert_eq!(body["lotl_proposals"], json!([]));
+
     let sources = body["sources"].as_array().expect("sources array");
     assert!(
         !sources.is_empty(),

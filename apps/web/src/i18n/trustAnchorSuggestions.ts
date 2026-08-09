@@ -34,6 +34,13 @@ import type { MessageKey } from './types';
 const PREFIX = 'settings.signing.anchorSuggest.code.';
 
 /**
+ * The one outcome the UI has to branch on rather than merely render: it is the state in which the
+ * bootstrap question can be asked at all. Exported as a constant so the component compares against
+ * the same spelling this map is keyed by — a bare literal in the component would drift silently.
+ */
+export const LOTL_ANCHOR_NOT_CONFIGURED = 'lotl_anchor_not_configured';
+
+/**
  * Every outcome code the server can emit, mapped to its sentence.
  *
  * Ordered as `ALL_TRUST_ANCHOR_SUGGESTION_CODES` in
@@ -42,10 +49,14 @@ const PREFIX = 'settings.signing.anchorSuggest.code.';
  */
 export const TRUST_ANCHOR_SUGGESTION_KEYS: Record<string, MessageKey> = {
   lotl_authenticated: `${PREFIX}lotl_authenticated`,
-  lotl_anchor_not_configured: `${PREFIX}lotl_anchor_not_configured`,
+  [LOTL_ANCHOR_NOT_CONFIGURED]: `${PREFIX}lotl_anchor_not_configured`,
   lotl_fetch_failed: `${PREFIX}lotl_fetch_failed`,
   lotl_not_authenticated: `${PREFIX}lotl_not_authenticated`,
   lotl_no_pointers: `${PREFIX}lotl_no_pointers`,
+  lotl_bootstrap_self_asserted: `${PREFIX}lotl_bootstrap_self_asserted`,
+  lotl_bootstrap_fetch_failed: `${PREFIX}lotl_bootstrap_fetch_failed`,
+  lotl_bootstrap_signer_cert_absent: `${PREFIX}lotl_bootstrap_signer_cert_absent`,
+  lotl_bootstrap_not_applicable: `${PREFIX}lotl_bootstrap_not_applicable`,
   source_anchors_from_lotl: `${PREFIX}source_anchors_from_lotl`,
   source_is_lotl: `${PREFIX}source_is_lotl`,
   source_not_in_lotl: `${PREFIX}source_not_in_lotl`,

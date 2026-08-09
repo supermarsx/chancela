@@ -3718,6 +3718,17 @@ export interface TrustAnchorSuggestionsView {
   lotl_authenticated: boolean;
   lotl_code: string;
   lotl_detail: string | null;
+  /**
+   * Outcome of the opt-in bootstrap question, `null` when it was not asked. Separate from
+   * `lotl_code` on purpose: asking it changes nothing about whether the list authenticated.
+   */
+  lotl_bootstrap_code: string | null;
+  lotl_bootstrap_detail: string | null;
+  /**
+   * The bootstrap candidate, or empty. At most one entry, and always `list_self_asserted` — it is
+   * produced only in the unanchored state, where nothing has authenticated anything.
+   */
+  lotl_proposals: TrustAnchorProposalView[];
   configured_anchor_count: number;
   sources: TrustAnchorSourceSuggestionView[];
 }
@@ -7577,6 +7588,19 @@ export interface SigningSettings {
    */
   tsl_trust_anchor_certs?: string[];
   tsl_trust_anchor_sha256?: string[];
+  /**
+   * Which `tsl_trust_anchor_sha256` entries were accepted from a Trusted List's OWN signature
+   * rather than from a published value — the `list_self_asserted` provenance, made durable.
+   *
+   * An annotation, never an anchor: it grants nothing, the trust decision does not read it, and an
+   * entry matching no configured anchor is inert. It exists because both anchor lists are bare
+   * string arrays, so without it an anchor accepted from a document that vouched for itself would
+   * become indistinguishable, the moment it is saved, from one transcribed out of the Official
+   * Journal. Clearing an entry is the operator asserting they have made that comparison.
+   *
+   * Optional on the wire, same `skip_serializing_if` treatment as the two lists above.
+   */
+  tsl_trust_anchor_self_asserted_sha256?: string[];
   /**
    * Cryptographically BROKEN XML-DSig algorithm URIs the operator has deliberately permitted when
    * verifying a Trusted List's own signature. A closed vocabulary — the backend refuses (422) any

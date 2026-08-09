@@ -4631,6 +4631,10 @@ export const svSE: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankarfingeravtryck {position}',
   'settings.signing.tslAnchors.digests.remove': 'Ta bort ankarfingeravtryck {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimala tecken',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Ett fingeravtryck som är märkt som hämtat ur listan själv har godtagits från ett dokument som gick i god för sig självt, och det har ännu inte ställts mot något offentliggjort värde. Jämför det med det fingeravtryck som offentliggjorts i Europeiska unionens officiella tidning, eller av det organ som driver tillitsordningen, och märk det som kontrollerat när du har gjort det.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Märk ankarfingeravtryck {position} som ställt mot ett offentliggjort värde',
   'settings.signing.anchorSuggest.title': 'Förslag på tillitsankare',
   'settings.signing.anchorSuggest.hint':
     'Chancela kan slå upp i EU:s förteckning över betrodda listor (LOTL) vilket certifikat som förväntas signera varje betrodd lista du har ställt in. Den europeiska förteckningen kontrolleras först mot det ankare du angett nedan. Ingenting läggs till åt dig: varje värde är ett förslag, och bara du kan godta det.',
@@ -4638,6 +4642,13 @@ export const svSE: Catalog = {
   'settings.signing.anchorSuggest.running': 'Hämtar förteckningen över betrodda listor…',
   'settings.signing.anchorSuggest.checkedAt': 'Uppslag mot {url} den {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Ingenting kan föreslås',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Att skaffa det första ankaret',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Det finns ännu inget ankare, så ingenting kan styrkas — inte heller förteckningen över betrodda listor. Chancela kan ändå hämta den förteckningen och visa dig certifikatet som den bär, som en utgångspunkt. Det är värt att vara exakt med vad det är värt. Att hämta den över HTTPS styrkte servern, vilket utesluter att någon ändrat dokumentet på vägen; förteckningen styrkte det inte. Den som levererade dokumentet valde också certifikatet inuti det, så en utbytt förteckning skulle komma med ett eget certifikat och dess signatur skulle hålla mot just det. Det som avgör saken är att jämföra SHA-256-fingeravtrycket med det som offentliggjorts i Europeiska unionens officiella tidning. Att börja så är vanlig praxis — det måste bara bekräftas på det sättet innan du förlitar dig på ankaret.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Visa certifikatet som förteckningen över betrodda listor bär',
+  'settings.signing.anchorSuggest.bootstrap.running':
+    'Laddar ned förteckningen över betrodda listor…',
   'settings.signing.anchorSuggest.detail': 'Servern rapporterade:',
   'settings.signing.anchorSuggest.noProposals': 'Ingen kandidat för den här källan.',
   'settings.signing.anchorSuggest.provenance.lotl':
@@ -4666,6 +4677,14 @@ export const svSE: Catalog = {
     'Förteckningen över betrodda listor hämtades, men dess signatur håller inte mot något inställt ankare. Från en lista som inte kan styrkas föreslås ingenting.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Dokumentet som hämtades pekar inte på någon nationell lista och är alltså ingen förteckning över betrodda listor; det går inte i god för någonting.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'Förteckningen över betrodda listor hämtades och bär det här certifikatet i sin egen signatur. Det är inte kontrollerat: jämför dess fingeravtryck med det som offentliggjorts i Europeiska unionens officiella tidning innan du förlitar dig på det.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Förteckningen över betrodda listor kunde inte hämtas, så det finns inget certifikat att visa.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Dokumentet som hämtades bär inget certifikat i sin signatur, så det finns ingenting att visa.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Ett ankare är redan inställt, så det här första steget behövs inte: förteckningen över betrodda listor kontrolleras mot det ankaret, och förslagen kommer från den kontrollerade kedjan.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'Den kontrollerade förteckningen över betrodda listor anger vilket certifikat som förväntas signera den här listan.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

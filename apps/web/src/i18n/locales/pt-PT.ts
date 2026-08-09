@@ -4796,6 +4796,10 @@ export const ptPT: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Impressão digital de âncora {position}',
   'settings.signing.tslAnchors.digests.remove': 'Remover a impressão digital de âncora {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caracteres hexadecimais',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Uma impressão digital assinalada como vinda da própria lista foi aceite a partir de um documento que se atesta a si próprio e ainda não foi confrontada com nenhum valor publicado. Compare-a com a impressão digital publicada no Jornal Oficial da União Europeia, ou pela entidade que gere o esquema de confiança, e marque-a como verificada depois de o fazer.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Marcar a impressão digital de âncora {position} como confrontada com um valor publicado',
   'settings.signing.anchorSuggest.title': 'Sugestão de âncoras',
   'settings.signing.anchorSuggest.hint':
     'A Chancela pode consultar, na lista europeia de listas de confiança (LOTL), qual o certificado que deve assinar cada Lista de Confiança que configurou. Essa lista europeia é primeiro autenticada com a âncora indicada abaixo. Nada é acrescentado automaticamente: cada valor apresentado é uma sugestão e só o utilizador a pode aceitar.',
@@ -4803,6 +4807,13 @@ export const ptPT: Catalog = {
   'settings.signing.anchorSuggest.running': 'A consultar a lista europeia de listas de confiança…',
   'settings.signing.anchorSuggest.checkedAt': 'Consulta de {url} em {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Não é possível sugerir nada',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Obter a primeira âncora',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Ainda não há nenhuma âncora, pelo que nada pode ser autenticado — nem sequer a lista europeia de listas de confiança. Ainda assim, a Chancela pode obter essa lista e mostrar-lhe o certificado que ela transporta, como ponto de partida. Vale a pena ser exato quanto ao alcance disto. Obtê-la por HTTPS autenticou o servidor, o que exclui a alteração do documento em trânsito; não autenticou a lista. Quem serviu o documento também escolheu o certificado que vem lá dentro, pelo que uma lista substituída chegaria com um certificado próprio e a assinatura seria dada como válida perante esse certificado. O que resolve a questão é comparar a impressão digital SHA-256 com a publicada no Jornal Oficial da União Europeia. Começar assim é prática corrente — só tem de ser confirmado dessa forma antes de confiar na âncora.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Mostrar o certificado que a lista europeia de listas de confiança transporta',
+  'settings.signing.anchorSuggest.bootstrap.running':
+    'A obter a lista europeia de listas de confiança…',
   'settings.signing.anchorSuggest.detail': 'O servidor indicou:',
   'settings.signing.anchorSuggest.noProposals': 'Sem candidatos para esta fonte.',
   'settings.signing.anchorSuggest.provenance.lotl':
@@ -4829,6 +4840,14 @@ export const ptPT: Catalog = {
     'A lista europeia de listas de confiança foi obtida, mas a sua assinatura não é validada por nenhuma âncora configurada. De uma lista que não se consegue autenticar nada é sugerido.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'O documento obtido não remete para nenhuma lista nacional, pelo que não é uma lista de listas de confiança e nada atesta.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'A lista europeia de listas de confiança foi obtida e transporta este certificado na sua própria assinatura. Não está verificado: compare a impressão digital com a publicada no Jornal Oficial da União Europeia antes de confiar nele.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Não foi possível obter a lista europeia de listas de confiança, pelo que não há nenhum certificado para mostrar.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'O documento obtido não traz nenhum certificado na sua assinatura, pelo que não há nada para mostrar.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Já existe uma âncora configurada, pelo que este primeiro passo não é necessário: a lista europeia de listas de confiança é autenticada com essa âncora e as sugestões vêm da cadeia autenticada.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'A lista europeia de listas de confiança autenticada indica qual o certificado que deve assinar esta lista.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

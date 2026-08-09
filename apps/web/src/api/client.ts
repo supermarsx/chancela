@@ -1645,7 +1645,13 @@ export const api = {
   // any list the LOTL does not vouch for — so it is gated on `signing.configure`, the same verb
   // that writes the anchors. It never writes: the operator selects, and saves through PUT
   // /v1/settings like any other anchor edit.
-  getTrustAnchorSuggestions: () => get<TrustAnchorSuggestionsView>('/v1/trust/anchor-suggestions'),
+  // `bootstrapSelfAsserted` additionally asks for the certificate the EU LOTL document itself
+  // carries. Only honoured when no anchor is configured, and never the default: that candidate is
+  // trust on first use, so it has to be asked for rather than encountered.
+  getTrustAnchorSuggestions: (bootstrapSelfAsserted = false) =>
+    get<TrustAnchorSuggestionsView>(
+      `/v1/trust/anchor-suggestions${bootstrapSelfAsserted ? '?bootstrap_self_asserted=true' : ''}`,
+    ),
   getTrustCatalog: () => get<TslCatalogView>('/v1/trust/catalog'),
   searchTrustCatalog: (params: TslCatalogSearchParams | string, limit?: number) =>
     get<TslServiceSummaryView[]>(`/v1/trust/catalog${query(trustSearchQuery(params, limit))}`),

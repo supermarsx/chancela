@@ -293,6 +293,24 @@ configured certificate or fingerprint is anchored):
 > audience is unchanged. Fail-closed is preserved regardless: the union can only ever *add* anchors,
 > and an install that provisions none in settings **or** environment trusts no list at all.
 
+**Bootstrapping the first anchor.** With no anchor configured, nothing authenticates the EU List of
+Trusted Lists either, so the anchor assistant (**Assinaturas → Fontes TSL**) proposes nothing. On an
+explicit second request it will fetch that list and show the certificate the document itself carries,
+as a starting point. Be exact about what that is: fetching over HTTPS authenticated the **server**,
+not the list — whoever served the document also chose the certificate inside it, so a substituted
+list arrives with its own matching certificate and its signature verifies against that. The value
+becomes trustworthy only when a human compares its SHA-256 fingerprint with the one published in the
+Official Journal of the European Union. This is ordinary bootstrap practice; it just has to be
+confirmed that way. The assistant never pre-selects the candidate, never offers it without being
+asked, and hands over only the fingerprint — never a pasteable PEM.
+
+An anchor accepted that way is recorded in `signing.tsl_trust_anchor_self_asserted_sha256`, a list of
+64-character sha256 hex fingerprints. It is an **annotation, not an anchor**: no trust path reads it,
+it widens nothing, and an entry matching no configured anchor is inert. It exists so the distinction
+survives the save — without it, an anchor taken from a document that vouched for itself would be
+indistinguishable from one transcribed out of the Official Journal. The admin UI marks such anchors
+in the anchor list and offers a control to clear the mark once the comparison has been made.
+
 **Rotation:** because matching is by the exact signing certificate (equivalently its SHA-256
 fingerprint), configure **multiple** anchors to span a key rollover. Add the incoming signing
 certificate (or its fingerprint) alongside the outgoing one *before* the scheme switches keys;

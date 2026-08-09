@@ -4586,6 +4586,10 @@ export const enGB: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Anchor fingerprint {position}',
   'settings.signing.tslAnchors.digests.remove': 'Remove anchor fingerprint {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadecimal characters',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'A fingerprint marked as coming from the list itself was accepted from a document that vouched for itself, and has not been checked against a published value. Compare it with the fingerprint published in the Official Journal of the European Union, or by the body that operates the trust scheme, and mark it as verified once you have.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Mark anchor fingerprint {position} as checked against a published value',
   'settings.signing.anchorSuggest.title': 'Anchor suggestions',
   'settings.signing.anchorSuggest.hint':
     'Chancela can look up, in the EU List of Trusted Lists, which certificate is expected to sign each Trusted List you have configured. That European list is authenticated first, against the anchor you set below. Nothing is added for you: every value shown is a suggestion, and only you can accept it.',
@@ -4593,6 +4597,12 @@ export const enGB: Catalog = {
   'settings.signing.anchorSuggest.running': 'Consulting the List of Trusted Lists…',
   'settings.signing.anchorSuggest.checkedAt': 'Consulted {url} at {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Nothing can be suggested',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Getting the first anchor',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'There is no anchor yet, so nothing can be authenticated — the List of Trusted Lists included. Chancela can still fetch that list and show you the certificate it carries, as a starting point. It is worth being exact about what that is worth. Fetching it over HTTPS authenticated the server, which rules out someone altering the document in transit; it did not authenticate the list. Whoever served that document also chose the certificate inside it, so a substituted list would arrive with a certificate of its own and its signature would check out against it. What settles the question is comparing the SHA-256 fingerprint with the one published in the Official Journal of the European Union. Starting this way is ordinary practice — it just has to be confirmed that way before you rely on it.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Show the certificate the List of Trusted Lists carries',
+  'settings.signing.anchorSuggest.bootstrap.running': 'Fetching the List of Trusted Lists…',
   'settings.signing.anchorSuggest.detail': 'The server reported:',
   'settings.signing.anchorSuggest.noProposals': 'No candidate for this source.',
   'settings.signing.anchorSuggest.provenance.lotl': 'From the authenticated List of Trusted Lists',
@@ -4619,6 +4629,14 @@ export const enGB: Catalog = {
     'The List of Trusted Lists was fetched, but its signature does not verify against any configured anchor. Nothing is suggested from a list that cannot be authenticated.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'The document that was fetched points to no member-state list, so it is not a List of Trusted Lists and vouches for nothing.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'The List of Trusted Lists was fetched and carries this certificate in its own signature. It is unverified: compare its fingerprint with the one published in the Official Journal of the European Union before you rely on it.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'The List of Trusted Lists could not be fetched, so there is no certificate to show.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'The document that was fetched carries no certificate in its signature, so there is nothing to show.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'An anchor is already configured, so this first step is not needed: the List of Trusted Lists is authenticated against that anchor, and suggestions come from the authenticated chain.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'The authenticated List of Trusted Lists names the certificate expected to sign this list.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

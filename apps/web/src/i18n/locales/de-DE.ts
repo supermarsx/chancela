@@ -4681,6 +4681,10 @@ export const deDE: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Ankerfingerabdruck {position}',
   'settings.signing.tslAnchors.digests.remove': 'Ankerfingerabdruck {position} entfernen',
   'settings.signing.tslAnchors.digests.placeholder': '64 hexadezimale Zeichen',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Ein Fingerabdruck, der als aus der Liste selbst stammend gekennzeichnet ist, wurde aus einem Dokument übernommen, das für sich selbst bürgte, und noch nicht mit einem veröffentlichten Wert abgeglichen. Vergleichen Sie ihn mit dem Fingerabdruck, der im Amtsblatt der Europäischen Union oder von der Stelle veröffentlicht wird, die das Vertrauenssystem betreibt, und kennzeichnen Sie ihn danach als geprüft.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Ankerfingerabdruck {position} als mit einem veröffentlichten Wert abgeglichen kennzeichnen',
   'settings.signing.anchorSuggest.title': 'Vorschläge für Vertrauensanker',
   'settings.signing.anchorSuggest.hint':
     'Chancela kann in der EU-Liste der Vertrauenslisten (LOTL) nachschlagen, welches Zertifikat jede von Ihnen eingerichtete Vertrauensliste signieren soll. Diese europäische Liste wird zuvor selbst anhand des unten hinterlegten Ankers geprüft. Nichts wird von allein übernommen: Jeder Wert ist ein Vorschlag, den nur Sie annehmen können.',
@@ -4688,6 +4692,13 @@ export const deDE: Catalog = {
   'settings.signing.anchorSuggest.running': 'Liste der Vertrauenslisten wird abgerufen…',
   'settings.signing.anchorSuggest.checkedAt': 'Abruf von {url} am {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Es kann nichts vorgeschlagen werden',
+  'settings.signing.anchorSuggest.bootstrap.title': 'So kommen Sie zum ersten Anker',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Es gibt noch keinen Anker, daher lässt sich nichts beglaubigen — auch die Liste der Vertrauenslisten nicht. Chancela kann diese Liste dennoch abrufen und Ihnen das Zertifikat zeigen, das sie mitführt, als Ausgangspunkt. Es lohnt sich, genau zu sagen, was das wert ist. Der Abruf über HTTPS hat den Server geprüft, was ausschließt, dass jemand das Dokument unterwegs verändert hat; die Liste hat er nicht beglaubigt. Wer das Dokument ausgeliefert hat, hat auch das Zertifikat darin gewählt: Eine untergeschobene Liste käme mit einem eigenen Zertifikat, und ihre Signatur würde gegen genau dieses aufgehen. Entschieden wird die Frage erst durch den Vergleich des SHA-256-Fingerabdrucks mit dem im Amtsblatt der Europäischen Union veröffentlichten Wert. So anzufangen ist übliche Praxis — es muss nur auf diesem Weg bestätigt werden, bevor Sie sich darauf verlassen.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Das Zertifikat anzeigen, das die Liste der Vertrauenslisten mitführt',
+  'settings.signing.anchorSuggest.bootstrap.running':
+    'Liste der Vertrauenslisten wird heruntergeladen…',
   'settings.signing.anchorSuggest.detail': 'Der Server meldete:',
   'settings.signing.anchorSuggest.noProposals': 'Kein Kandidat für diese Quelle.',
   'settings.signing.anchorSuggest.provenance.lotl': 'Aus der geprüften Liste der Vertrauenslisten',
@@ -4714,6 +4725,14 @@ export const deDE: Catalog = {
     'Die Liste der Vertrauenslisten wurde abgerufen, ihre Signatur hält aber keinem eingerichteten Anker stand. Aus einer Liste, die sich nicht beglaubigen lässt, wird nichts vorgeschlagen.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Das abgerufene Dokument verweist auf keine nationale Liste und ist somit keine Liste der Vertrauenslisten; es bürgt für nichts.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'Die Liste der Vertrauenslisten wurde abgerufen und führt dieses Zertifikat in ihrer eigenen Signatur mit. Es ist ungeprüft: Vergleichen Sie seinen Fingerabdruck mit dem im Amtsblatt der Europäischen Union veröffentlichten Wert, bevor Sie sich darauf verlassen.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'Die Liste der Vertrauenslisten konnte nicht abgerufen werden, daher gibt es kein Zertifikat zum Anzeigen.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Das abgerufene Dokument führt in seiner Signatur kein Zertifikat mit, daher gibt es nichts anzuzeigen.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Es ist bereits ein Anker eingerichtet, daher ist dieser erste Schritt nicht nötig: Die Liste der Vertrauenslisten wird anhand dieses Ankers geprüft, und die Vorschläge stammen aus der geprüften Kette.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'Die geprüfte Liste der Vertrauenslisten benennt das Zertifikat, das diese Liste signieren soll.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

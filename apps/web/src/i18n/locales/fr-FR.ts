@@ -4673,6 +4673,10 @@ export const frFR: Catalog = {
   'settings.signing.tslAnchors.digests.label': 'Empreinte d’ancre {position}',
   'settings.signing.tslAnchors.digests.remove': 'Supprimer l’empreinte d’ancre {position}',
   'settings.signing.tslAnchors.digests.placeholder': '64 caractères hexadécimaux',
+  'settings.signing.tslAnchors.digests.selfAsserted':
+    'Une empreinte signalée comme provenant de la liste elle-même a été acceptée depuis un document qui se cautionnait lui-même, et elle n’a pas encore été confrontée à une valeur publiée. Comparez-la avec l’empreinte publiée au Journal officiel de l’Union européenne, ou par l’organisme qui exploite le schéma de confiance, puis marquez-la comme vérifiée.',
+  'settings.signing.tslAnchors.digests.markVerified':
+    'Marquer l’empreinte d’ancre {position} comme confrontée à une valeur publiée',
   'settings.signing.anchorSuggest.title': 'Suggestions d’ancres',
   'settings.signing.anchorSuggest.hint':
     'Chancela peut consulter, dans la liste européenne des listes de confiance (LOTL), quel certificat est censé signer chaque liste de confiance que vous avez configurée. Cette liste européenne est d’abord authentifiée à l’aide de l’ancre indiquée ci-dessous. Rien n’est ajouté à votre place : chaque valeur affichée est une suggestion, et vous seul pouvez l’accepter.',
@@ -4680,6 +4684,13 @@ export const frFR: Catalog = {
   'settings.signing.anchorSuggest.running': 'Consultation de la liste des listes de confiance…',
   'settings.signing.anchorSuggest.checkedAt': 'Consultation de {url} le {timestamp}.',
   'settings.signing.anchorSuggest.refused.title': 'Rien ne peut être suggéré',
+  'settings.signing.anchorSuggest.bootstrap.title': 'Obtenir la première ancre',
+  'settings.signing.anchorSuggest.bootstrap.body':
+    'Il n’y a encore aucune ancre : rien ne peut donc être authentifié, pas même la liste des listes de confiance. Chancela peut malgré tout récupérer cette liste et vous montrer le certificat qu’elle porte, comme point de départ. Il vaut la peine d’être précis sur ce que cela vaut. La récupérer en HTTPS a authentifié le serveur, ce qui exclut qu’on ait modifié le document en chemin ; cela n’a pas authentifié la liste. Celui qui a servi ce document a aussi choisi le certificat qui s’y trouve : une liste substituée arriverait avec son propre certificat et sa signature se vérifierait avec celui-ci. Ce qui tranche la question, c’est la comparaison de l’empreinte SHA-256 avec celle publiée au Journal officiel de l’Union européenne. Commencer ainsi est une pratique courante — il faut simplement le confirmer de cette façon avant de vous y fier.',
+  'settings.signing.anchorSuggest.bootstrap.run':
+    'Afficher le certificat que porte la liste des listes de confiance',
+  'settings.signing.anchorSuggest.bootstrap.running':
+    'Récupération de la liste des listes de confiance…',
   'settings.signing.anchorSuggest.detail': 'Le serveur a signalé :',
   'settings.signing.anchorSuggest.noProposals': 'Aucun candidat pour cette source.',
   'settings.signing.anchorSuggest.provenance.lotl':
@@ -4707,6 +4718,14 @@ export const frFR: Catalog = {
     'La liste des listes de confiance a été récupérée, mais sa signature ne se vérifie avec aucune ancre configurée. Rien n’est suggéré à partir d’une liste qui ne peut pas être authentifiée.',
   'settings.signing.anchorSuggest.code.lotl_no_pointers':
     'Le document récupéré ne renvoie à aucune liste nationale : ce n’est donc pas une liste des listes de confiance et il ne cautionne rien.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_self_asserted':
+    'La liste des listes de confiance a été récupérée et porte ce certificat dans sa propre signature. Il n’est pas vérifié : comparez son empreinte avec celle publiée au Journal officiel de l’Union européenne avant de vous y fier.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_fetch_failed':
+    'La liste des listes de confiance n’a pas pu être récupérée : il n’y a donc aucun certificat à afficher.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_signer_cert_absent':
+    'Le document récupéré ne porte aucun certificat dans sa signature : il n’y a donc rien à afficher.',
+  'settings.signing.anchorSuggest.code.lotl_bootstrap_not_applicable':
+    'Une ancre est déjà configurée, ce premier pas est donc inutile : la liste des listes de confiance est authentifiée à l’aide de cette ancre, et les suggestions proviennent de la chaîne authentifiée.',
   'settings.signing.anchorSuggest.code.source_anchors_from_lotl':
     'La liste des listes de confiance authentifiée désigne le certificat censé signer cette liste.',
   'settings.signing.anchorSuggest.code.source_is_lotl':

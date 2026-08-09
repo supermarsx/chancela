@@ -5104,7 +5104,14 @@ describe('contract fixtures parse through the real client', () => {
       // fail-closed default, not a missing field — allowed, but never required.
       // `tsl_legacy_algorithms` is skipped the same way: an absent key means NO broken algorithm
       // is permitted — the safe default — so it is allowed but never required.
-      ['tsl_trust_anchor_certs', 'tsl_trust_anchor_sha256', 'tsl_legacy_algorithms'],
+      // `tsl_trust_anchor_self_asserted_sha256` is skipped the same way, and its absence means the
+      // strong thing: no configured anchor was accepted from a document that vouched for itself.
+      [
+        'tsl_trust_anchor_certs',
+        'tsl_trust_anchor_sha256',
+        'tsl_trust_anchor_self_asserted_sha256',
+        'tsl_legacy_algorithms',
+      ],
     );
     inEnum(SIGNATURE_FAMILIES, signing.preferred_family, 'signing.preferred_family');
     expect(typeof signing.require_qualified_for_seal).toBe('boolean');
