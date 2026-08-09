@@ -240,6 +240,41 @@ debug = "line-tables-only"
 [profile.test]
 debug = "line-tables-only"
 
+# Optimise DEPENDENCIES — and only dependencies — in the unoptimised profiles.
+#
+# This workspace is crypto-saturated: argon2id runs on every seal/unseal, and
+# XChaCha20-Poly1305, curve25519-dalek, ECDSA P-256/384/521, RSA and SHA-3 sit
+# on ordinary request paths that the tests exercise thousands of times. At
+# `opt-level = 0` those primitives run an order of magnitude slower than they
+# ever do in production, and the test suite pays that on every run.
+#
+# `package."*"` matches dependencies ONLY — never a workspace member. That was
+# verified rather than assumed: with this override in place, `cargo test -v`
+# passes `-C opt-level=2` to every third-party crate and passes no `opt-level`
+# flag at all to `chancela-*`. Our own crates therefore still compile fast and,
+# more importantly, are compiled exactly as before, so the coverage figures
+# `scripts/rust-coverage-gate.mjs` enforces are measuring the same code.
+#
+# Both `dev` and `test` are set, and they must stay in step. `cargo test` builds
+# a dependency once and shares it with the `dev` units built by `cargo build` /
+# `cargo clippy`; overriding only one of the two profiles makes the two copies
+# differ and Cargo compiles the whole dependency graph a SECOND time. Measured
+# on chancela-authz: `cargo build` then `cargo test --no-run` issues 9 rustc
+# invocations with both profiles set (as it does with neither), and 35 with only
+# `test` set.
+#
+# The trade, measured on chancela-api (lib + api-auth + api-signatures, cold
+# build in a scratch target dir, 64-core Windows host):
+#
+#   cold build            256s -> 304s   (+19%, paid once per cache miss)
+#   api-auth, 97 tests   24.07s -> 5.64s (-77%)
+#   lib, 1638 tests      63.92s -> 42.91s (-33%)
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.test.package."*"]
+opt-level = 2
+
 [profile.release]
 lto = "thin"
 strip = true
