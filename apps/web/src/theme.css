@@ -8966,8 +8966,35 @@ a.btn--primary {
    reproducing the level-1 tab left edge on every shell width. No `:has()` dependency → nothing to
    lag, nothing to flicker. On a narrow shell the cap equals the content box and the auto margins
    resolve to 0 (no-op); nested inside a PageHeader it is also a no-op (same measure, margins 0).
-   Every `<SubNav>` renders inside `.app`, so the `--app-*` vars always resolve here. */
+   Every `<SubNav>` renders inside `.app`, so the `--app-*` vars always resolve here.
+
+   `width: 100%` is what makes the two sentences above TRUE, and it is not cosmetic. `.page-header`
+   is `display: flex; flex-direction: column`, so the rail is a flex ITEM and its width is the
+   flex CROSS size. Per CSS Flexbox §9.6 an auto cross-axis margin suppresses `align-self:
+   stretch` — so `margin-inline: auto` (which the centring needs) silently opted the rail out of
+   filling its container, leaving it sized by its own max-content and clamped only by the fixed
+   cap below. Measured in Chromium, that produced both halves of one defect:
+
+     - a strip LONGER than the measure (Ferramentas' 7 tabs, Definições' 8) took the cap as its
+       width — 1040px — no matter how narrow the shell. From a 1079px viewport down it exceeded
+       its own `.page-header`, from 1037px down it burst the shell, and since `.app-scroll` is
+       `overflow-x: hidden` the excess was CLIPPED rather than scrolled: at 320px five of the
+       seven Ferramentas tabs could not be reached by scrolling, keyboard, or the edge arrows —
+       the arrows were themselves off-screen. The `.subnav` scroller was never at fault; it can
+       only scroll within the box it is given, and it was being given a 1040px box.
+     - a strip SHORTER than the measure (Registo's 2 tabs) shrink-wrapped to its content and the
+       auto margins then CENTRED it — 230px floating 377px right of the page title at every
+       width, the exact opposite of the left edge this rail exists to reproduce.
+
+   A definite width restores stretch behaviour without giving up the centring: the cap still binds
+   on a wide shell and the auto margins still centre the leftover, while below the cap the rail
+   now tracks its container instead of its content. Note the cap alone cannot do this — it is a
+   FIXED pixel length, so it is inert at every width below itself, which is why the defect only
+   ever appeared on narrow shells. Two surfaces had already discovered this locally and patched
+   their own rail (`templateEditor.css`, `TemplatePreviewSamplesPanel.css`, both `width: 100%`);
+   both keep working unchanged, and neither should have needed to. */
 .subnav-rail {
+  width: 100%;
   max-width: calc(var(--app-measure) - 2 * var(--app-gutter));
   margin-inline: auto;
 }
