@@ -4661,6 +4661,10 @@ export const fiFI: Catalog = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'Tämä varmenne vastaa itsestään',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Varmenne on otettu juuri sen listan allekirjoituksesta, jonka se todentaisi, joten se ei yksinään todista mitään: väärennetty lista kantaa väärennettyä varmennetta. Vertaa alla näkyvää SHA-256-tiivisteä siihen tiivisteeseen, jonka tätä luottamusjärjestelmää ylläpitävä taho on julkaissut, ja hyväksy se vain, jos ne täsmäävät.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'Ankkuri, jota vasten tarkistus tehtiin, voi olla varmistamaton',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Yksi määritetyistä luottamusankkureista on otettu asiakirjasta, joka vastaa itsestään, eikä kukaan ole vielä verrannut sitä julkaistuun arvoon. Tarkistus kertoo, että luottamuslistojen luettelo täsmäsi johonkin ankkuriin, ei koskaan siihen mihin — tämä luettelo on siis voitu todentaa juuri tuota varmistamatonta ankkuria vasten, ja jokainen alla ehdotettu varmenne juontuu siitä. Vertaa tuon ankkurin SHA-256-tiivistettä Euroopan unionin virallisessa lehdessä julkaistuun arvoon ja merkitse se varmistetuksi. Siihen asti kaikki, minkä tässä hyväksyt, kirjataan niin ikään varmistamattomaksi.',
   'settings.signing.anchorSuggest.subject': 'Haltija',
   'settings.signing.anchorSuggest.issuer': 'Myöntäjä',
   'settings.signing.anchorSuggest.validFrom': 'Voimassa alkaen',
@@ -4673,6 +4677,8 @@ export const fiFI: Catalog = {
     'Luottamuslistojen luettelo todennettiin määritetyllä ankkurilla.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'Yhtään luottamusankkuria ei ole määritetty, ei täällä eikä ympäristössä. Luottamuslistojen luettelo on luottamuksen juuri eikä voi todentaa itseään, joten mitään ei voi ehdottaa. Tämä ensimmäinen ankkuri julkaistaan Euroopan unionin virallisessa lehdessä, ja se on syötettävä käsin.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Luottamusankkuri on määritetty, mutta sitä ei voitu lukea, joten mitään ei voitu tarkistaa sitä vasten. Tämä ei ole sama asia kuin se, ettei ankkuria ole lainkaan, eikä tässä siksi tarjota ensimmäistä ehdokasta: ympäristössä tai alla olevissa kentissä annettu varmennetiedosto tai tiiviste puuttuu tai on virheellinen. Mitään ei ehdoteta ennen kuin ankkuri voidaan lukea.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'Luottamuslistojen luetteloa ei saatu haettua.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7114,4 +7120,20 @@ export const fiFI: Catalog = {
   'trust.weakAlgorithms.reference': 'Viittaus {index} / {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Nojattiin murrettuun algoritmiin, jonka lajia tämä versio ei tunnista.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Tämä koontiversio ei sisällä S3-siirtotapaa, joten se ei tavoita tätä kohdetta. Tallennettu määritys on edelleen kelvollinen — muuttua täytyy binääritiedoston, joka on koottava uudelleen chancela-connectorsin ”s3”-koontivalinnalla. Julkaistut Docker-vedokset sisältävät jo kaikki neljä siirtotapaa.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Tämä koontiversio ei sisällä SFTP-siirtotapaa, joten se ei tavoita tätä kohdetta. Tallennettu määritys on edelleen kelvollinen — muuttua täytyy binääritiedoston, joka on koottava uudelleen chancela-connectorsin ”sftp”-koontivalinnalla. Julkaistut Docker-vedokset sisältävät jo kaikki neljä siirtotapaa.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Tämä koontiversio ei sisällä SMB-siirtotapaa, joten se ei tavoita tätä kohdetta. Tallennettu määritys on edelleen kelvollinen — muuttua täytyy binääritiedoston, joka on koottava uudelleen chancela-connectorsin ”smb”-koontivalinnalla. Julkaistut Docker-vedokset sisältävät jo kaikki neljä siirtotapaa.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Tämä koontiversio ei sisällä FTPS-siirtotapaa, joten se ei tavoita tätä kohdetta. Tallennettu määritys on edelleen kelvollinen — muuttua täytyy binääritiedoston, joka on koottava uudelleen chancela-connectorsin ”ftps”-koontivalinnalla. Julkaistut Docker-vedokset sisältävät jo kaikki neljä siirtotapaa.',
+  'operations.connectors.probe.untranslatedBadge': 'Englanniksi',
+  'operations.connectors.probe.untranslatedHint':
+    'Tämä lause tuli palvelimelta, eikä tässä versiossa ole sille käännöstä. Se näytetään täsmälleen siinä muodossa kuin palvelin sen kirjoitti, englanniksi.',
 };

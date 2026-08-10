@@ -43,6 +43,21 @@
  * Adding a self-asserted candidate reports that fact to the caller, which records it in
  * `signing.tsl_trust_anchor_self_asserted_sha256`. Without that, the provenance this whole
  * component is built around would survive exactly until the operator pressed Save.
+ *
+ * ## When the root itself is unverified
+ *
+ * Accepting the bootstrap candidate leaves the deployment anchored on a fingerprint nobody has
+ * checked, and from the next run onwards the European list **authenticates against it** — the check
+ * is a fingerprint pin, so a document that supplied its own anchor verifies against that anchor.
+ * The run then reports `lotl_authenticated: true`, and left alone this component would render every
+ * derived candidate with an `ok` badge and a pasteable PEM.
+ *
+ * So `lotl_anchor_self_asserted` is threaded down to every `Proposal` as `rootSelfAsserted`, and
+ * where it is set an `eu_lotl` candidate is rendered exactly as cautiously as a self-asserted one:
+ * a `warn` badge, an undismissable warning of its own, and — enforced by the server, which withholds
+ * the PEM — only the fingerprint button, which is the one that carries the annotation into the
+ * draft. There is no route through this component that accepts a candidate under an unverified root
+ * without marking it.
  */
 import { useState } from 'react';
 import type {
@@ -72,6 +87,16 @@ interface Props {
 }
 
 /**
+ * Whether the anchor the European list authenticated against may itself be unverified, threaded
+ * down from `lotl_anchor_self_asserted`. Its own interface rather than an optional field on
+ * [`Props`], so adding a rendering site cannot forget it: every component that renders a candidate
+ * has to accept it.
+ */
+interface RootProvenance {
+  rootSelfAsserted: boolean;
+}
+
+/**
  * Render an outcome code, or the raw identifier marked as untranslated.
  *
  * The server sends no English sentence for these, so there is nothing to fall back to and nothing
@@ -97,14 +122,19 @@ function Detail({ detail, t }: { detail: string | null; t: TFunction }) {
 function Proposal({
   proposal,
   t,
+  rootSelfAsserted,
   onAddCertificate,
   onAddFingerprint,
-}: { proposal: TrustAnchorProposalView; t: TFunction } & Props) {
+}: { proposal: TrustAnchorProposalView; t: TFunction } & RootProvenance & Props) {
   const lotlDerived = proposal.provenance === 'eu_lotl';
+  // A candidate is only as verified as the root it descends from. A LOTL-derived one under a
+  // self-asserted root is therefore unverified too, and is what gets stored — so this, not
+  // `lotlDerived`, is what decides the badge tone and what travels with the value into the draft.
+  const unverified = !lotlDerived || rootSelfAsserted;
   return (
     <div className="settings-rows anchor-suggestion">
       <div className="section-head">
-        <Badge tone={lotlDerived ? 'ok' : 'warn'} wrap>
+        <Badge tone={unverified ? 'warn' : 'ok'} wrap>
           {t(
             lotlDerived
               ? 'settings.signing.anchorSuggest.provenance.lotl'
@@ -126,6 +156,18 @@ function Proposal({
           {t('settings.signing.anchorSuggest.selfAsserted.body')}
         </InlineWarning>
       )}
+
+      {/* The provenance is still honestly `eu_lotl` — it did come from the European list. What is
+          in doubt is the anchor that list authenticated against, so this says that instead of
+          contradicting the badge above it. */}
+      {lotlDerived && rootSelfAsserted ? (
+        <InlineWarning
+          tone="warn"
+          title={t('settings.signing.anchorSuggest.rootSelfAsserted.title')}
+        >
+          {t('settings.signing.anchorSuggest.rootSelfAsserted.body')}
+        </InlineWarning>
+      ) : null}
 
       <dl className="kv">
         <dt>{t('settings.signing.anchorSuggest.subject')}</dt>
@@ -166,7 +208,7 @@ function Proposal({
             type="button"
             variant="secondary"
             icon={<Icon.Plus />}
-            onClick={() => onAddFingerprint(proposal.sha256, !lotlDerived)}
+            onClick={() => onAddFingerprint(proposal.sha256, unverified)}
           >
             {t('settings.signing.anchorSuggest.addFingerprint')}
           </Button>
@@ -179,9 +221,10 @@ function Proposal({
 function Source({
   source,
   t,
+  rootSelfAsserted,
   onAddCertificate,
   onAddFingerprint,
-}: { source: TrustAnchorSourceSuggestionView; t: TFunction } & Props) {
+}: { source: TrustAnchorSourceSuggestionView; t: TFunction } & RootProvenance & Props) {
   return (
     <div className="settings-rows">
       <p>
@@ -200,6 +243,7 @@ function Source({
             key={`${source.source_id}-${proposal.sha256}`}
             proposal={proposal}
             t={t}
+            rootSelfAsserted={rootSelfAsserted}
             onAddCertificate={onAddCertificate}
             onAddFingerprint={onAddFingerprint}
           />
@@ -259,12 +303,26 @@ export function TrustAnchorSuggestions({ onAddCertificate, onAddFingerprint }: P
               timestamp: result.checked_at,
             })}
           </p>
+
+          {/* Above BOTH branches, and undismissable. It is a standing fact about the deployment's
+              root of trust rather than an outcome of this run, and on the authenticated branch it
+              is the thing that stops "authenticated" from reading as "verified". */}
+          {result.lotl_anchor_self_asserted ? (
+            <InlineWarning
+              tone="warn"
+              title={t('settings.signing.anchorSuggest.rootSelfAsserted.title')}
+            >
+              {t('settings.signing.anchorSuggest.rootSelfAsserted.body')}
+            </InlineWarning>
+          ) : null}
+
           {result.lotl_authenticated ? (
             result.sources.map((source) => (
               <Source
                 key={source.source_id}
                 source={source}
                 t={t}
+                rootSelfAsserted={result.lotl_anchor_self_asserted}
                 onAddCertificate={onAddCertificate}
                 onAddFingerprint={onAddFingerprint}
               />
@@ -321,6 +379,7 @@ export function TrustAnchorSuggestions({ onAddCertificate, onAddFingerprint }: P
                   key={`lotl-bootstrap-${proposal.sha256}`}
                   proposal={proposal}
                   t={t}
+                  rootSelfAsserted={result.lotl_anchor_self_asserted}
                   onAddCertificate={onAddCertificate}
                   onAddFingerprint={onAddFingerprint}
                 />

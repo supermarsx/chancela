@@ -48,6 +48,19 @@ pub const LOTL_AUTHENTICATED: &str = "lotl_authenticated";
 /// first anchor must come from the Official Journal, by hand — no assistant can supply it.
 pub const LOTL_ANCHOR_NOT_CONFIGURED: &str = "lotl_anchor_not_configured";
 
+/// A trust anchor **is** configured, and the configured set could not be built: a certificate file
+/// named by `CHANCELA_TSL_TRUST_ANCHOR` that cannot be read, a malformed PEM, a fingerprint that is
+/// not 64 hex characters.
+///
+/// Distinct from [`LOTL_ANCHOR_NOT_CONFIGURED`] and never collapsed into it, for the same reason
+/// `provider_credentials_write::CmdTrustAnchorPreflight` keeps `AnchorsInvalid` apart from
+/// `Unanchored`: the two states call for opposite actions. "No anchor" invites the operator to
+/// establish one, and the assistant offers a trust-on-first-use candidate to start from. "Anchor
+/// unreadable" means they already have one and something in the deployment — most often an unmounted
+/// secret — is hiding it, and offering them a self-asserted candidate would walk an operator who has
+/// a real anchor into replacing it with an unverified one.
+pub const LOTL_ANCHOR_CONFIG_INVALID: &str = "lotl_anchor_config_invalid";
+
 /// The LOTL could not be fetched (network, timeout, size bound, or a blocked destination).
 pub const LOTL_FETCH_FAILED: &str = "lotl_fetch_failed";
 
@@ -133,6 +146,7 @@ pub const SOURCE_LOCATION_UNSUPPORTED: &str = "source_location_unsupported";
 pub const ALL_TRUST_ANCHOR_SUGGESTION_CODES: &[&str] = &[
     LOTL_AUTHENTICATED,
     LOTL_ANCHOR_NOT_CONFIGURED,
+    LOTL_ANCHOR_CONFIG_INVALID,
     LOTL_FETCH_FAILED,
     LOTL_NOT_AUTHENTICATED,
     LOTL_NO_POINTERS,

@@ -4661,6 +4661,10 @@ export const plPL: Catalog = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'Ten certyfikat poświadcza sam siebie',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Ten certyfikat pochodzi z podpisu tej samej listy, którą miałby uwierzytelniać, więc sam z siebie niczego nie dowodzi: sfałszowana lista niesie sfałszowany certyfikat. Porównaj odcisk SHA-256 poniżej z odciskiem opublikowanym przez podmiot prowadzący ten system zaufania i przyjmij go tylko wtedy, gdy oba są zgodne.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'Kotwica, względem której sprawdzono, może nie być zweryfikowana',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Jedna ze skonfigurowanych kotwic zaufania została przyjęta z dokumentu, który poświadcza sam siebie, i nikt jeszcze nie porównał jej z opublikowaną wartością. Sprawdzenie mówi, że lista list zaufania pasuje do jakiejś kotwicy, nigdy do której — ta lista mogła więc zostać uwierzytelniona właśnie tą niezweryfikowaną kotwicą, a każdy certyfikat proponowany poniżej z niej wynika. Porównaj odcisk SHA-256 tej kotwicy z odciskiem opublikowanym w Dzienniku Urzędowym Unii Europejskiej i oznacz ją jako sprawdzoną. Do tego czasu wszystko, co tu przyjmiesz, również zostanie zapisane jako niezweryfikowane.',
   'settings.signing.anchorSuggest.subject': 'Podmiot certyfikatu',
   'settings.signing.anchorSuggest.issuer': 'Wystawca',
   'settings.signing.anchorSuggest.validFrom': 'Ważny od',
@@ -4673,6 +4677,8 @@ export const plPL: Catalog = {
     'Lista list zaufania została uwierzytelniona skonfigurowaną kotwicą.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'Nie skonfigurowano żadnej kotwicy zaufania, ani tutaj, ani w środowisku. Lista list zaufania jest korzeniem zaufania i nie może uwierzytelnić samej siebie, więc nic nie da się zaproponować. Ta pierwsza kotwica jest publikowana w Dzienniku Urzędowym Unii Europejskiej i trzeba ją wprowadzić ręcznie.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Kotwica zaufania jest skonfigurowana, ale nie udało się jej odczytać, więc nie było względem czego sprawdzać. To nie to samo co brak kotwicy i dlatego nie proponuje się tu żadnego kandydata na początek: plik certyfikatu lub odcisk podany w środowisku albo w polach poniżej jest nieobecny lub błędny. Nic nie zostanie zaproponowane, dopóki kotwicy nie da się odczytać.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'Nie udało się pobrać listy list zaufania.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7124,4 +7130,20 @@ export const plPL: Catalog = {
   'trust.weakAlgorithms.reference': 'Odwołanie {index} z {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Oparto się na złamanym algorytmie, którego rodzaju ta wersja nie rozpoznaje.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Ta kompilacja nie zawiera transportu S3, więc nie może połączyć się z tym miejscem docelowym. Zapisana konfiguracja pozostaje prawidłowa — zmienić trzeba plik binarny, który należy zbudować ponownie z opcją kompilacji „s3” z chancela-connectors. Opublikowane obrazy Dockera zawierają już wszystkie cztery transporty.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Ta kompilacja nie zawiera transportu SFTP, więc nie może połączyć się z tym miejscem docelowym. Zapisana konfiguracja pozostaje prawidłowa — zmienić trzeba plik binarny, który należy zbudować ponownie z opcją kompilacji „sftp” z chancela-connectors. Opublikowane obrazy Dockera zawierają już wszystkie cztery transporty.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Ta kompilacja nie zawiera transportu SMB, więc nie może połączyć się z tym miejscem docelowym. Zapisana konfiguracja pozostaje prawidłowa — zmienić trzeba plik binarny, który należy zbudować ponownie z opcją kompilacji „smb” z chancela-connectors. Opublikowane obrazy Dockera zawierają już wszystkie cztery transporty.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Ta kompilacja nie zawiera transportu FTPS, więc nie może połączyć się z tym miejscem docelowym. Zapisana konfiguracja pozostaje prawidłowa — zmienić trzeba plik binarny, który należy zbudować ponownie z opcją kompilacji „ftps” z chancela-connectors. Opublikowane obrazy Dockera zawierają już wszystkie cztery transporty.',
+  'operations.connectors.probe.untranslatedBadge': 'Po angielsku',
+  'operations.connectors.probe.untranslatedHint':
+    'To zdanie przyszło z serwera i w tej wersji nie ma dla niego tłumaczenia. Jest pokazane dokładnie tak, jak napisał je serwer, po angielsku.',
 };

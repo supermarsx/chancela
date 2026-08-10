@@ -58,6 +58,24 @@
 //! - `lotl_authenticated` stays `false` and `lotl_code` stays `lotl_anchor_not_configured`. The
 //!   verdict of the LOTL step does not change, because it has not changed: nothing authenticated.
 //!
+//! # …and what happens once that bootstrap anchor exists (t118/C2)
+//!
+//! Accepting the bootstrap candidate writes a fingerprint into `signing.tsl_trust_anchor_sha256`,
+//! and from the next run onwards the LOTL **authenticates against it**: `is_anchored` is a pure
+//! fingerprint pin, so a document that supplied its own anchor verifies against that anchor.
+//! Left alone, step 1 would then report success, every member-state proposal would be built with
+//! [`TrustAnchorProvenance::EuLotl`], and accepting one would store it unmarked — the whole anchor
+//! set would descend from an unverified root with nothing in the deployment recording it. That is
+//! precisely the "third provenance silently coerced into one of these two" the enum above exists to
+//! prevent, arriving by the back door.
+//!
+//! So the run also reports [`TrustAnchorSuggestionsView::lotl_anchor_self_asserted`]: **at least one
+//! of the configured anchors carries the `signing.tsl_trust_anchor_self_asserted_sha256`
+//! annotation**. It is deliberately not "the LOTL authenticated against a self-asserted anchor",
+//! because that is not knowable — `validate_tsl_signature_with_anchors` reports that *an* anchor
+//! matched, never *which*. When any anchor in the set is unverified, the anchor that matched may
+//! have been that one, and the mark says so. See [`intersects_annotation`] for the mixed case.
+//!
 //! What fetching over TLS did buy is worth stating precisely, because both overclaims are wrong.
 //! TLS authenticated the **server**, which rules out a passive network attacker. It did not
 //! authenticate the **list**: whoever served that document also chose the certificate inside it,
@@ -82,7 +100,7 @@ use base64::engine::general_purpose::STANDARD as B64;
 use chancela_authz::{Permission, Scope};
 use chancela_tsl::{
     OtherTslPointer, TrustedList, TslTrustAnchors, extract_signer_cert, ingest_lotl,
-    member_pointer_in,
+    member_pointer_in, parse_hex_sha256,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -183,6 +201,20 @@ pub struct TrustAnchorSuggestionsView {
     /// Whether the LOTL authenticated against a configured anchor. When `false`, `sources` carries
     /// no proposals at all — this endpoint fails closed.
     pub lotl_authenticated: bool,
+    /// **At least one configured anchor carries the self-asserted annotation** — it was accepted
+    /// from a document that vouched for itself and no human has yet compared it against a published
+    /// fingerprint. See [`intersects_annotation`] for why "at least one" and not "all".
+    ///
+    /// When this is `true` and [`lotl_authenticated`](Self::lotl_authenticated) is also `true`, the
+    /// anchor the LOTL matched **may be** that unverified one: the verifier reports that an anchor
+    /// matched, never which. Every `eu_lotl` proposal in the same response therefore descends from a
+    /// root that might not be authentic, and the client must not present it as verified.
+    ///
+    /// Reported for a refused run too, because it is a fact about the deployment rather than about
+    /// this run's outcome. It is `false` when no anchor is configured and when the configured
+    /// anchors could not be read at all — in both of those states nothing has been annotated as
+    /// belonging to a set that exists.
+    pub lotl_anchor_self_asserted: bool,
     /// Stable outcome code for the LOTL step.
     pub lotl_code: String,
     /// The underlying error, verbatim, when the LOTL step failed.
@@ -199,6 +231,11 @@ pub struct TrustAnchorSuggestionsView {
     pub lotl_proposals: Vec<TrustAnchorProposalView>,
     /// How many anchors are configured today (settings ∪ environment), so the UI can say "already
     /// present" honestly without re-deriving the union client-side.
+    ///
+    /// `0` carries **two** meanings and must not be read on its own: no anchor is configured, or the
+    /// configured anchors could not be resolved. [`lotl_code`](Self::lotl_code) discriminates them
+    /// ([`codes::LOTL_ANCHOR_NOT_CONFIGURED`] against [`codes::LOTL_ANCHOR_CONFIG_INVALID`]), and it
+    /// is the field a client must branch on.
     pub configured_anchor_count: usize,
     /// One entry per configured, **enabled** TSL source, in configuration order.
     pub sources: Vec<TrustAnchorSourceSuggestionView>,
@@ -233,26 +270,25 @@ pub async fn trust_anchor_suggestions(
 ) -> Result<Json<TrustAnchorSuggestionsView>, ApiError> {
     require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
 
-    let (sources, anchor_certs, anchor_fingerprints) = {
+    let (sources, anchor_certs, anchor_fingerprints, annotated) = {
         let guard = state.settings.read().await;
         (
             guard.signing.tsl_sources.clone(),
             guard.signing.tsl_trust_anchor_certs.clone(),
             guard.signing.tsl_trust_anchor_sha256.clone(),
+            guard.signing.tsl_trust_anchor_self_asserted_sha256.clone(),
         )
     };
 
     // Blocking reqwest, exactly as the refresh path does it — never on the async runtime's threads.
     tokio::task::spawn_blocking(move || {
-        // Settings ∪ environment, the same union the signing path anchors against — so "already
-        // configured" means what an operator would mean by it, not "already in the settings
-        // document". A configuration error is fail-closed: an anchor set that cannot be built
-        // authenticates no LOTL, so the flow proposes nothing, which is the correct direction.
-        let anchors = resolve_lotl_trust_anchors(&anchor_certs, &anchor_fingerprints)
-            .unwrap_or_else(|_| TslTrustAnchors::new());
         build_suggestions(
             &sources,
-            &anchors,
+            // Settings ∪ environment, the same union the signing path anchors against — so "already
+            // configured" means what an operator would mean by it, not "already in the settings
+            // document". Resolution can FAIL, and this is the one caller that must not treat that as
+            // "unanchored": see [`AnchorConfig`].
+            &AnchorConfig::resolve(&anchor_certs, &anchor_fingerprints, &annotated),
             &resolve_lotl_url(None),
             &|url, timeout, max_bytes| fetch_bounded_tsl_url(url, timeout, max_bytes),
             OffsetDateTime::now_utc(),
@@ -284,6 +320,140 @@ type BuildRow<'a> = &'a dyn Fn(
     Vec<TrustAnchorProposalView>,
 ) -> TrustAnchorSourceSuggestionView;
 
+/// The resolved anchor set, together with what is known about where those anchors came from.
+///
+/// The two travel as one value because every decision this module makes about a proposal needs
+/// both: `is_anchored` says whether a candidate is already present, and `self_asserted` says
+/// whether the root the whole run hangs off is itself unverified. Splitting them into two
+/// parameters is what let the second be forgotten at a call site (t118/C2).
+struct ResolvedAnchors {
+    anchors: TslTrustAnchors,
+    /// See [`TrustAnchorSuggestionsView::lotl_anchor_self_asserted`].
+    self_asserted: bool,
+}
+
+impl ResolvedAnchors {
+    /// Pair an anchor set with the `signing.tsl_trust_anchor_self_asserted_sha256` annotation.
+    fn new(anchors: TslTrustAnchors, annotated: &[String]) -> Self {
+        let self_asserted = intersects_annotation(&anchors, annotated);
+        Self {
+            anchors,
+            self_asserted,
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.anchors.is_empty()
+    }
+
+    fn len(&self) -> usize {
+        self.anchors.len()
+    }
+
+    fn is_anchored(&self, der: &[u8]) -> bool {
+        self.anchors.is_anchored(der)
+    }
+}
+
+/// Whether **any** configured anchor also appears in the self-asserted annotation.
+///
+/// # Why "any", and not the "every anchor is annotated" rule that first suggests itself
+///
+/// The question the run actually needs answered is "could the anchor the LOTL matched be an
+/// unverified one?", and `validate_tsl_signature_with_anchors` does not report *which* anchor
+/// matched. So in the mixed set — one anchor transcribed from the Official Journal, one accepted on
+/// first use — the LOTL may have authenticated against either, and the honest answer is that it
+/// might have been the unverified one. "Every anchor is annotated" would go quiet on exactly that
+/// case, which is the common one: it is what a deployment looks like the moment an operator adds a
+/// real anchor beside a bootstrap one, or a bootstrap one beside a real one. Warning there is
+/// over-warning by at most one screen of copy; going quiet is presenting a possibly-unverified root
+/// as verified, which is the defect this module exists to prevent.
+///
+/// # Why the intersection, and not simply "the annotation is non-empty"
+///
+/// The annotation deliberately outlives its anchor: `validate_tsl_trust_anchors` neither prunes nor
+/// rejects an entry that matches nothing, because pruning would erase the record. Reading the bare
+/// list would therefore latch the warning on for ever the moment an operator deleted the
+/// trust-on-first-use anchor they were warned about — and a mark that is always on is not a signal.
+///
+/// # How it is computed
+///
+/// [`TslTrustAnchors`] exposes no way to enumerate its fingerprints — only `len()` and a
+/// DER-taking `is_anchored`. So the intersection is taken by cardinality:
+/// `|A ∩ B| = |A| + |B| − |A ∪ B|`, where `A` is the anchor set, `B` the distinct annotated
+/// fingerprints, and the union is `A` with every entry of `B` folded in (the fold deduplicates,
+/// which is what makes the identity exact rather than an estimate).
+fn intersects_annotation(anchors: &TslTrustAnchors, annotated: &[String]) -> bool {
+    if anchors.is_empty() {
+        return false;
+    }
+    let mut union = anchors.clone();
+    let mut distinct: Vec<[u8; 32]> = Vec::new();
+    for entry in annotated {
+        // An entry that is not a fingerprint names no anchor and so cannot be one of them; settings
+        // validation already refuses that shape on save. Skipping is the exact answer here, not a
+        // lenient one.
+        let Ok(fingerprint) = parse_hex_sha256(entry.trim()) else {
+            continue;
+        };
+        if !distinct.contains(&fingerprint) {
+            distinct.push(fingerprint);
+        }
+        union = union.with_fingerprint(fingerprint);
+    }
+    anchors.len() + distinct.len() > union.len()
+}
+
+/// The anchor configuration this run is judged against — **or the reason there isn't one**.
+///
+/// # Why this is an enum rather than a `TslTrustAnchors`
+///
+/// [`resolve_lotl_trust_anchors`] fails when `CHANCELA_TSL_TRUST_ANCHOR` points at a file that
+/// cannot be read or at bytes that are not a certificate. This module used to discard that error
+/// and carry on with an empty set, on the argument that an anchor set which cannot be built
+/// authenticates no LOTL and therefore proposes nothing — fail-closed.
+///
+/// **That argument stopped holding when the bootstrap landed** (t118/C6). `anchors.is_empty()` is
+/// now the *trigger* for the trust-on-first-use offer, so discarding the error told an operator
+/// whose secret mount had gone missing "No trust anchor is configured, either here or in the
+/// environment" — false about their deployment — and then showed them a button that walks them into
+/// accepting an unverified root in place of the real anchor they already have. An error swallowed
+/// into a sentinel value is only fail-closed for as long as nobody gives the sentinel a meaning.
+///
+/// Keeping the failure in the type is what makes that unforgettable: there is no way to obtain the
+/// anchors without deciding what an unreadable configuration means.
+enum AnchorConfig {
+    Resolved(ResolvedAnchors),
+    /// The configured anchors could not be built. Carries the library's own error, truncated.
+    Invalid(String),
+}
+
+impl AnchorConfig {
+    /// Resolve settings ∪ environment, keeping a resolution failure as a failure.
+    fn resolve(certs: &[String], fingerprints: &[String], annotated: &[String]) -> Self {
+        match resolve_lotl_trust_anchors(certs, fingerprints) {
+            Ok(anchors) => Self::Resolved(ResolvedAnchors::new(anchors, annotated)),
+            Err(e) => Self::Invalid(truncate(&e.to_string(), DETAIL_MAX_CHARS)),
+        }
+    }
+
+    /// What to report as `configured_anchor_count`. Zero for an unreadable configuration — the
+    /// count is genuinely unknown there, and `lotl_code` is what discriminates the two zeros.
+    fn anchor_count(&self) -> usize {
+        match self {
+            Self::Resolved(anchors) => anchors.len(),
+            Self::Invalid(_) => 0,
+        }
+    }
+
+    fn self_asserted(&self) -> bool {
+        match self {
+            Self::Resolved(anchors) => anchors.self_asserted,
+            Self::Invalid(_) => false,
+        }
+    }
+}
+
 /// The whole flow, with the network behind [`FetchTsl`] so a unit test can drive every branch.
 ///
 /// `bootstrap` is the operator's explicit request for the from-the-document-itself LOTL candidate.
@@ -291,14 +461,18 @@ type BuildRow<'a> = &'a dyn Fn(
 /// untouched and the bootstrap question is answered "not applicable" without a second fetch.
 fn build_suggestions(
     sources: &[TslSourceSettings],
-    anchors: &TslTrustAnchors,
+    config: &AnchorConfig,
     lotl_url: &str,
     fetch: FetchTsl<'_>,
     now: OffsetDateTime,
     bootstrap: bool,
 ) -> TrustAnchorSuggestionsView {
-    let mut view = suggest(sources, anchors, lotl_url, fetch, now, bootstrap);
-    if bootstrap && !anchors.is_empty() {
+    let mut view = suggest(sources, config, lotl_url, fetch, now, bootstrap);
+    // "Not applicable" says an anchor is configured and the LOTL is authenticated against it. That
+    // is true of a resolved, non-empty set and of nothing else — under `Invalid` it would be a claim
+    // about a chain that does not exist, so that state answers the bootstrap question not at all and
+    // lets `lotl_code` carry the whole verdict.
+    if bootstrap && matches!(config, AnchorConfig::Resolved(anchors) if !anchors.is_empty()) {
         view.lotl_bootstrap_code = Some(codes::LOTL_BOOTSTRAP_NOT_APPLICABLE.to_owned());
     }
     view
@@ -306,7 +480,7 @@ fn build_suggestions(
 
 fn suggest(
     sources: &[TslSourceSettings],
-    anchors: &TslTrustAnchors,
+    config: &AnchorConfig,
     lotl_url: &str,
     fetch: FetchTsl<'_>,
     now: OffsetDateTime,
@@ -316,6 +490,25 @@ fn suggest(
     let checked_at = now.format(&Rfc3339).unwrap_or_default();
 
     let enabled: Vec<&TslSourceSettings> = sources.iter().filter(|entry| entry.enabled).collect();
+
+    // Step 0: is the anchor configuration even readable? Until that is settled, "no anchor is
+    // configured" is not a statement this endpoint is entitled to make — and it is the statement
+    // that unlocks the bootstrap offer. See [`AnchorConfig`].
+    let anchors = match config {
+        AnchorConfig::Resolved(anchors) => anchors,
+        AnchorConfig::Invalid(detail) => {
+            return refused(
+                checked_at,
+                lotl_url,
+                codes::LOTL_ANCHOR_CONFIG_INVALID,
+                Some(detail.clone()),
+                config,
+                &enabled,
+                // Emphatically not the bootstrap path: this operator HAS an anchor.
+                BootstrapOutcome::default(),
+            );
+        }
+    };
 
     // Step 1: the root of trust. No anchor means no member-state proposal — every one of those
     // flows from the LOTL, and nothing has authenticated the LOTL.
@@ -329,7 +522,7 @@ fn suggest(
             lotl_url.clone(),
             codes::LOTL_ANCHOR_NOT_CONFIGURED,
             None,
-            0,
+            config,
             &enabled,
             if bootstrap {
                 lotl_self_asserted(&lotl_url, fetch)
@@ -351,14 +544,14 @@ fn suggest(
                 lotl_url,
                 codes::LOTL_FETCH_FAILED,
                 Some(truncate(&e, DETAIL_MAX_CHARS)),
-                anchors.len(),
+                config,
                 &enabled,
                 BootstrapOutcome::default(),
             );
         }
     };
 
-    let lotl = match ingest_lotl(&lotl_bytes, anchors) {
+    let lotl = match ingest_lotl(&lotl_bytes, &anchors.anchors) {
         Ok(list) => list,
         Err(e) => {
             return refused(
@@ -366,7 +559,7 @@ fn suggest(
                 lotl_url,
                 codes::LOTL_NOT_AUTHENTICATED,
                 Some(truncate(&e.to_string(), DETAIL_MAX_CHARS)),
-                anchors.len(),
+                config,
                 &enabled,
                 BootstrapOutcome::default(),
             );
@@ -379,7 +572,7 @@ fn suggest(
             lotl_url,
             codes::LOTL_NO_POINTERS,
             None,
-            anchors.len(),
+            config,
             &enabled,
             BootstrapOutcome::default(),
         );
@@ -394,6 +587,10 @@ fn suggest(
         checked_at,
         lotl_url,
         lotl_authenticated: true,
+        // The LOTL authenticated — against *an* anchor. When one of the configured anchors is a
+        // trust-on-first-use fingerprint, this is what stops "authenticated" from laundering that
+        // root into a verified one on the way to the operator's screen.
+        lotl_anchor_self_asserted: anchors.self_asserted,
         lotl_code: codes::LOTL_AUTHENTICATED.to_owned(),
         lotl_detail: None,
         lotl_bootstrap_code: None,
@@ -417,7 +614,7 @@ fn refused(
     lotl_url: String,
     code: &str,
     detail: Option<String>,
-    configured_anchor_count: usize,
+    config: &AnchorConfig,
     enabled: &[&TslSourceSettings],
     bootstrap: BootstrapOutcome,
 ) -> TrustAnchorSuggestionsView {
@@ -425,12 +622,15 @@ fn refused(
         checked_at,
         lotl_url,
         lotl_authenticated: false,
+        // Still reported on a refusal: whether the deployment's anchors are annotated is a fact
+        // about the deployment, not about whether this particular run reached the network.
+        lotl_anchor_self_asserted: config.self_asserted(),
         lotl_code: code.to_owned(),
         lotl_detail: detail,
         lotl_bootstrap_code: bootstrap.code,
         lotl_bootstrap_detail: bootstrap.detail,
         lotl_proposals: bootstrap.proposals,
-        configured_anchor_count,
+        configured_anchor_count: config.anchor_count(),
         sources: enabled
             .iter()
             .map(|entry| TrustAnchorSourceSuggestionView {
@@ -490,7 +690,7 @@ fn lotl_self_asserted(lotl_url: &str, fetch: FetchTsl<'_>) -> BootstrapOutcome {
             proposals: vec![proposal(
                 &der,
                 TrustAnchorProvenance::ListSelfAsserted,
-                &TslTrustAnchors::new(),
+                &ResolvedAnchors::new(TslTrustAnchors::new(), &[]),
             )],
         },
         Ok(None) => BootstrapOutcome {
@@ -510,7 +710,7 @@ fn suggest_for_source(
     entry: &TslSourceSettings,
     lotl: &TrustedList,
     lotl_url: &str,
-    anchors: &TslTrustAnchors,
+    anchors: &ResolvedAnchors,
     fetch: FetchTsl<'_>,
 ) -> TrustAnchorSourceSuggestionView {
     let url = trimmed(entry.url.as_deref());
@@ -572,7 +772,7 @@ fn suggest_for_source(
 fn self_asserted(
     url: &str,
     entry: &TslSourceSettings,
-    anchors: &TslTrustAnchors,
+    anchors: &ResolvedAnchors,
     absent_code: &str,
     row: BuildRow<'_>,
     fetch: FetchTsl<'_>,
@@ -617,7 +817,7 @@ fn self_asserted(
 fn proposal(
     der: &[u8],
     provenance: TrustAnchorProvenance,
-    anchors: &TslTrustAnchors,
+    anchors: &ResolvedAnchors,
 ) -> TrustAnchorProposalView {
     let parsed = <x509_cert::Certificate as x509_cert::der::Decode>::from_der(der).ok();
     let (subject, issuer) = parsed
@@ -647,8 +847,14 @@ fn proposal(
         not_after,
         sha256: cert_fingerprint(der),
         certificate_pem: match provenance {
-            TrustAnchorProvenance::EuLotl => Some(to_pem(der)),
-            TrustAnchorProvenance::ListSelfAsserted => None,
+            // Withheld once the root is self-asserted, and for the same reason the fallback's PEM
+            // is always withheld: a candidate this LOTL vouches for is only as verified as the LOTL,
+            // and the LOTL may have authenticated against a trust-on-first-use anchor. Leaving the
+            // "add as certificate" route open would be the one way to accept it while losing the
+            // annotation, because the annotation is keyed by fingerprint and lives on the field the
+            // other button writes.
+            TrustAnchorProvenance::EuLotl if !anchors.self_asserted => Some(to_pem(der)),
+            _ => None,
         },
         // By fingerprint, never by PEM text: the same certificate re-encoded, re-wrapped or with
         // different trailing whitespace is the same anchor, and a string comparison would re-propose
@@ -761,6 +967,27 @@ mod tests {
         OffsetDateTime::from_unix_timestamp(1_700_000_000).expect("fixed instant")
     }
 
+    /// An anchor set with **no** self-asserted annotation over it — the ordinary, verified case.
+    fn resolved(anchors: TslTrustAnchors) -> ResolvedAnchors {
+        ResolvedAnchors::new(anchors, &[])
+    }
+
+    /// The same, as the flow's entry-point argument.
+    fn config(anchors: TslTrustAnchors) -> AnchorConfig {
+        AnchorConfig::Resolved(resolved(anchors))
+    }
+
+    /// An anchor set every member of which the operator accepted on first use.
+    fn config_annotated(anchors: TslTrustAnchors, annotated: &[String]) -> AnchorConfig {
+        AnchorConfig::Resolved(ResolvedAnchors::new(anchors, annotated))
+    }
+
+    /// The lowercase-hex fingerprint of a synthetic certificate, as it would sit in
+    /// `signing.tsl_trust_anchor_self_asserted_sha256`.
+    fn fingerprint_of(der: &[u8]) -> String {
+        cert_fingerprint(der)
+    }
+
     /// A fetch that always fails. The default for tests about a source the LOTL does not vouch for:
     /// the point there is the provenance, not the bytes.
     fn no_network(_: &str, _: u16, _: u64) -> Result<Vec<u8>, String> {
@@ -829,7 +1056,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &no_network,
         );
 
@@ -865,7 +1092,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &no_network,
         );
 
@@ -884,7 +1111,7 @@ mod tests {
         let candidate = proposal(
             &der,
             TrustAnchorProvenance::ListSelfAsserted,
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
         );
         assert_eq!(
             candidate.provenance,
@@ -913,7 +1140,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &anchors,
+            &resolved(anchors),
             &no_network,
         );
 
@@ -935,7 +1162,7 @@ mod tests {
 
         let view = build_suggestions(
             &sources,
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &no_network,
             now(),
@@ -991,7 +1218,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &serving(list_naming_its_own_signer(&der)),
         );
 
@@ -1021,7 +1248,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &serving(list_naming_its_own_signer(&der)),
         );
 
@@ -1045,7 +1272,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &serving(b"<TrustServiceStatusList/>".to_vec()),
         );
 
@@ -1072,7 +1299,7 @@ mod tests {
 
         let view = build_suggestions(
             &sources,
-            &anchors,
+            &config(anchors),
             "https://lotl.example/eu-lotl.xml",
             &serving(forged),
             now(),
@@ -1096,7 +1323,7 @@ mod tests {
 
         let view = build_suggestions(
             &sources,
-            &anchors,
+            &config(anchors),
             "https://lotl.example/eu-lotl.xml",
             &no_network,
             now(),
@@ -1128,7 +1355,7 @@ mod tests {
 
         let view = build_suggestions(
             &sources,
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &serving(list_naming_its_own_signer(&synthetic_cert(11))),
             now(),
@@ -1159,7 +1386,7 @@ mod tests {
 
         let view = build_suggestions(
             &sources,
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &serving(list_naming_its_own_signer(&der)),
             now(),
@@ -1206,7 +1433,7 @@ mod tests {
         // flag. None may answer it with a candidate: with an anchor configured the LOTL is
         // authenticated against it and every proposal flows from that chain. Asserting it across
         // all three is the point — a single case would leave the other two free to regress.
-        let anchors = TslTrustAnchors::new().with_cert_der(&synthetic_cert(99));
+        let anchors = config(TslTrustAnchors::new().with_cert_der(&synthetic_cert(99)));
         let sources = vec![source(
             "xx",
             Some("https://lists.example/xx.xml"),
@@ -1256,7 +1483,7 @@ mod tests {
     fn a_failed_bootstrap_fetch_says_so_and_carries_the_transport_error() {
         let view = build_suggestions(
             &[],
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &no_network,
             now(),
@@ -1284,7 +1511,7 @@ mod tests {
     fn a_lotl_carrying_no_signature_yields_no_bootstrap_candidate() {
         let view = build_suggestions(
             &[],
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &serving(b"<TrustServiceStatusList/>".to_vec()),
             now(),
@@ -1311,7 +1538,7 @@ mod tests {
 
         build_suggestions(
             &[],
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &recording,
             now(),
@@ -1334,7 +1561,7 @@ mod tests {
         disabled.enabled = false;
         let view = build_suggestions(
             &[disabled],
-            &TslTrustAnchors::new(),
+            &config(TslTrustAnchors::new()),
             "https://lotl.example/eu-lotl.xml",
             &no_network,
             now(),
@@ -1361,7 +1588,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &no_network,
         );
 
@@ -1379,7 +1606,7 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &no_network,
         );
 
@@ -1413,12 +1640,400 @@ mod tests {
             &entry,
             &lotl,
             "https://lotl.example/eu-lotl.xml",
-            &TslTrustAnchors::new(),
+            &resolved(TslTrustAnchors::new()),
             &no_network,
         );
 
         assert_eq!(row.code, codes::SOURCE_ANCHORS_FROM_LOTL);
         assert_eq!(row.proposals.len(), 1);
+    }
+
+    // --- The root of trust's own provenance (t118/C2) ------------------------------------------
+    //
+    // Everything above stops at `LOTL_NOT_AUTHENTICATED`, which is enough for those claims and not
+    // for this one: the defect is what a *successful* authentication reports when the anchor it
+    // succeeded against is one the operator accepted on first use. So these sign a LOTL in-process
+    // and drive the whole flow through its success arm.
+
+    /// A self-signed certificate carrying `spki`. Its own signature bytes are filler: anchoring
+    /// matches on the SHA-256 of the DER and the XML-DSig verifier takes the public key from here,
+    /// so nothing reads this certificate's own signature. Synthesized on every run — never a real
+    /// certificate, which in a trust-anchor fixture is a value somebody eventually pastes.
+    fn self_signed_cert(spki: spki::SubjectPublicKeyInfoOwned) -> Vec<u8> {
+        use der::Encode as _;
+        use der::asn1::{BitString, ObjectIdentifier};
+        use std::str::FromStr as _;
+        use x509_cert::name::Name;
+        use x509_cert::serial_number::SerialNumber;
+        use x509_cert::time::Validity;
+        use x509_cert::{Certificate, TbsCertificate, Version};
+
+        let sig_alg = spki::AlgorithmIdentifierOwned {
+            oid: ObjectIdentifier::new_unwrap("1.2.840.10045.4.3.2"),
+            parameters: None,
+        };
+        let name = Name::from_str("CN=Anchor suggestion test signer").expect("name");
+        let cert = Certificate {
+            tbs_certificate: TbsCertificate {
+                version: Version::V3,
+                serial_number: SerialNumber::new(&[1]).expect("serial"),
+                signature: sig_alg.clone(),
+                issuer: name.clone(),
+                validity: Validity::from_now(std::time::Duration::from_secs(365 * 24 * 3600))
+                    .expect("validity"),
+                subject: name,
+                subject_public_key_info: spki,
+                issuer_unique_id: None,
+                subject_unique_id: None,
+                extensions: None,
+            },
+            signature_algorithm: sig_alg,
+            signature: BitString::from_bytes(&[0u8; 64]).expect("signature bits"),
+        };
+        cert.to_der().expect("certificate DER")
+    }
+
+    /// A LOTL carrying `pointers`, signed in-process by a fresh P-256 key. Returns the document and
+    /// the DER of the certificate an operator would have to anchor for it to authenticate.
+    fn signed_lotl(pointers: &[String]) -> (Vec<u8>, Vec<u8>) {
+        use p256::ecdsa::SigningKey;
+        use p256::ecdsa::signature::Signer as _;
+        use rsa::rand_core::OsRng;
+        use sha2::{Digest as _, Sha256};
+
+        const EXC_C14N_10: &str = "http://www.w3.org/2001/10/xml-exc-c14n#";
+        const ECDSA_SHA256: &str = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256";
+        const SHA256_DIGEST: &str = "http://www.w3.org/2001/04/xmlenc#sha256";
+
+        let unsigned = String::from_utf8(lotl_xml(pointers)).expect("synthetic LOTL is UTF-8");
+        let key = SigningKey::random(&mut OsRng);
+        let spki = spki::SubjectPublicKeyInfoOwned::from_key(*key.verifying_key())
+            .expect("p256 subject public key info");
+        let cert_der = self_signed_cert(spki);
+
+        // The reference is `URI=""`: the whole document with the `<ds:Signature>` element spliced
+        // out, which is exactly the pre-insertion text.
+        let digest = Sha256::digest(unsigned.as_bytes());
+        let signed_info = format!(
+            r#"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="{EXC_C14N_10}"/><ds:SignatureMethod Algorithm="{ECDSA_SHA256}"/><ds:Reference URI=""><ds:DigestMethod Algorithm="{SHA256_DIGEST}"/><ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>"#,
+            B64.encode(digest)
+        );
+        let signature: p256::ecdsa::Signature = key.sign(signed_info.as_bytes());
+        let element = format!(
+            r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>"#,
+            B64.encode(signature.to_bytes()),
+            B64.encode(&cert_der)
+        );
+        let insert_at = unsigned
+            .find("</tsl:TrustServiceStatusList>")
+            .expect("synthetic LOTL root close");
+        let xml = format!(
+            "{}{}{}",
+            &unsigned[..insert_at],
+            element,
+            &unsigned[insert_at..]
+        );
+        (xml.into_bytes(), cert_der)
+    }
+
+    /// A signed LOTL naming one member-state list: the document, the certificate that authenticates
+    /// it, and the certificate its pointer proposes. Each call mints a fresh key, so a fingerprint
+    /// taken from one call names nothing in another.
+    fn signed_lotl_with_one_member() -> (Vec<u8>, Vec<u8>, Vec<u8>) {
+        let member_cert = synthetic_cert(31);
+        let (xml, signer) = signed_lotl(&[pointer(
+            "https://lists.example/xx.xml",
+            Some("XX"),
+            std::slice::from_ref(&member_cert),
+        )]);
+        (xml, signer, member_cert)
+    }
+
+    /// One authenticated run over `xml`, against `anchors`, with `annotated` as the deployment's
+    /// `signing.tsl_trust_anchor_self_asserted_sha256`.
+    fn authenticated_run(
+        xml: Vec<u8>,
+        anchors: TslTrustAnchors,
+        annotated: &[String],
+    ) -> TrustAnchorSuggestionsView {
+        let sources = vec![source(
+            "xx",
+            Some("https://lists.example/xx.xml"),
+            Some("XX"),
+        )];
+        build_suggestions(
+            &sources,
+            &config_annotated(anchors, annotated),
+            "https://lotl.example/eu-lotl.xml",
+            &serving(xml),
+            now(),
+            false,
+        )
+    }
+
+    #[test]
+    fn a_clean_verified_root_authenticates_with_no_self_asserted_mark_and_a_pasteable_pem() {
+        // The negative that makes the mark a signal rather than decoration, and the proof that the
+        // signed fixture really does reach the success arm.
+        let (xml, signer, _) = signed_lotl_with_one_member();
+        let view = authenticated_run(xml, TslTrustAnchors::new().with_cert_der(&signer), &[]);
+
+        assert!(
+            view.lotl_authenticated,
+            "the signed fixture must authenticate"
+        );
+        assert_eq!(view.lotl_code, codes::LOTL_AUTHENTICATED);
+        assert!(
+            !view.lotl_anchor_self_asserted,
+            "an anchor nobody annotated is a verified anchor; marking it would make the warning \
+             always-on and therefore worthless"
+        );
+        let proposals = &view.sources[0].proposals;
+        assert_eq!(proposals.len(), 1);
+        assert_eq!(proposals[0].provenance, TrustAnchorProvenance::EuLotl);
+        assert!(
+            proposals[0].certificate_pem.is_some(),
+            "a candidate under a verified root is still meant to be pasted"
+        );
+    }
+
+    #[test]
+    fn a_lotl_authenticated_against_an_annotated_anchor_reports_the_root_as_self_asserted() {
+        // The laundering path in full: the bootstrap wrote a trust-on-first-use fingerprint, the
+        // LOTL now authenticates against that very fingerprint, and every member-state candidate
+        // below descends from a root nobody has checked.
+        let (xml, signer, member_cert) = signed_lotl_with_one_member();
+        let view = authenticated_run(
+            xml,
+            TslTrustAnchors::new().with_cert_der(&signer),
+            &[fingerprint_of(&signer)],
+        );
+
+        assert!(
+            view.lotl_authenticated,
+            "it DOES authenticate — against the anchor it supplied itself, which is the whole \
+             problem: the verdict is true and the trust it implies is not"
+        );
+        assert!(
+            view.lotl_anchor_self_asserted,
+            "an authenticated run whose only anchor was accepted on first use must say so, or the \
+             deployment retains no record that its entire anchor set descends from an unverified \
+             root"
+        );
+        let proposals = &view.sources[0].proposals;
+        assert_eq!(
+            proposals.len(),
+            1,
+            "the pointer's certificate is still shown"
+        );
+        assert_eq!(
+            proposals[0].provenance,
+            TrustAnchorProvenance::EuLotl,
+            "the provenance is unchanged and honest: it DID come from the LOTL"
+        );
+        assert_eq!(
+            proposals[0].certificate_pem, None,
+            "the PEM is withheld so the only route to accepting this candidate is the fingerprint \
+             button, which carries the annotation; a pasteable PEM lands in \
+             tsl_trust_anchor_certs, where the fingerprint-keyed annotation cannot follow it"
+        );
+        assert_eq!(proposals[0].sha256, cert_fingerprint(&member_cert));
+    }
+
+    #[test]
+    fn a_mixed_anchor_set_still_reports_a_self_asserted_root() {
+        // The deliberate over-warn, asserted in BOTH directions. `validate_tsl_signature_with_anchors`
+        // reports that an anchor matched and never which one, so with one verified and one
+        // unverified anchor configured the root may be either. Warning when it might be unverified
+        // costs a screen of copy; going quiet presents a possibly-unverified root as verified.
+        let other = synthetic_cert(77);
+        let mixed = |signer: &[u8]| {
+            TslTrustAnchors::new()
+                .with_cert_der(signer)
+                .with_cert_der(&other)
+        };
+
+        // (a) neither of the two anchors is annotated — the ordinary verified deployment.
+        let (xml, signer, _) = signed_lotl_with_one_member();
+        let view = authenticated_run(xml, mixed(&signer), &[]);
+        assert!(view.lotl_authenticated);
+        assert!(!view.lotl_anchor_self_asserted);
+
+        // (b) the annotated anchor is the one the LOTL did NOT match. Unknowable from here — the
+        //     verifier reports that an anchor matched, never which — so the root is still marked.
+        let (xml, signer, _) = signed_lotl_with_one_member();
+        let view = authenticated_run(xml, mixed(&signer), &[fingerprint_of(&other)]);
+        assert!(view.lotl_authenticated);
+        assert!(
+            view.lotl_anchor_self_asserted,
+            "an unverified anchor anywhere in the set means the root MAY be unverified, and \
+             'may be unverified' is not 'verified'"
+        );
+
+        // (c) the annotated anchor IS the one it matched, with a verified anchor also present.
+        let (xml, signer, _) = signed_lotl_with_one_member();
+        let annotated = vec![fingerprint_of(&signer)];
+        let view = authenticated_run(xml, mixed(&signer), &annotated);
+        assert!(view.lotl_anchor_self_asserted);
+        assert_eq!(
+            view.sources[0].proposals[0].certificate_pem, None,
+            "a mixed set withholds the PEM too: the candidate is only as verified as the root"
+        );
+    }
+
+    #[test]
+    fn a_stale_annotation_whose_anchor_was_removed_does_not_mark_the_root() {
+        // `validate_tsl_trust_anchors` deliberately neither prunes nor rejects an annotation that
+        // matches no anchor — pruning would erase the record. Reading the bare list would therefore
+        // latch the warning on for ever the moment the operator deleted the anchor they were warned
+        // about, which is exactly when the warning should stop.
+        let (xml, signer, _) = signed_lotl_with_one_member();
+        let view = authenticated_run(
+            xml,
+            TslTrustAnchors::new().with_cert_der(&signer),
+            &[fingerprint_of(&synthetic_cert(200))],
+        );
+
+        assert!(view.lotl_authenticated);
+        assert!(!view.lotl_anchor_self_asserted);
+        assert!(view.sources[0].proposals[0].certificate_pem.is_some());
+    }
+
+    #[test]
+    fn the_self_asserted_mark_is_reported_on_a_refused_run_too() {
+        // It is a fact about the deployment's anchors, not about whether this run reached the
+        // network — so a failed fetch must not make it look as though the root became verified.
+        let anchors = TslTrustAnchors::new().with_cert_der(&synthetic_cert(99));
+        let annotated = vec![fingerprint_of(&synthetic_cert(99))];
+
+        let view = build_suggestions(
+            &[],
+            &config_annotated(anchors, &annotated),
+            "https://lotl.example/eu-lotl.xml",
+            &no_network,
+            now(),
+            false,
+        );
+
+        assert_eq!(view.lotl_code, codes::LOTL_FETCH_FAILED);
+        assert!(view.lotl_anchor_self_asserted);
+    }
+
+    #[test]
+    fn the_annotation_is_intersected_with_the_anchor_set_not_read_on_its_own() {
+        let der = synthetic_cert(5);
+        let anchors = || TslTrustAnchors::new().with_cert_der(&der);
+        let fingerprint = fingerprint_of(&der);
+
+        assert!(intersects_annotation(&anchors(), std::slice::from_ref(&fingerprint)));
+        assert!(
+            !intersects_annotation(&anchors(), &[]),
+            "no annotation, no mark"
+        );
+        assert!(
+            !intersects_annotation(&TslTrustAnchors::new(), std::slice::from_ref(&fingerprint)),
+            "an empty anchor set trusts nothing, so there is no root to mark"
+        );
+        assert!(
+            !intersects_annotation(&anchors(), &[fingerprint_of(&synthetic_cert(6))]),
+            "an annotation naming a different certificate is inert"
+        );
+        assert!(
+            intersects_annotation(
+                &anchors(),
+                &[fingerprint.clone(), fingerprint.clone(), "  ".to_owned()]
+            ),
+            "duplicates and blanks must not confuse the cardinality identity the intersection is \
+             computed with"
+        );
+        assert!(
+            !intersects_annotation(&anchors(), &["not-a-fingerprint".to_owned()]),
+            "an entry that is not a fingerprint names no anchor"
+        );
+        assert!(
+            intersects_annotation(&anchors(), &[fingerprint.to_ascii_uppercase()]),
+            "the same fingerprint retyped in upper case is the same anchor"
+        );
+    }
+
+    // --- An unreadable anchor configuration (t118/C6) ------------------------------------------
+
+    #[test]
+    fn an_unreadable_anchor_configuration_gets_its_own_code_and_never_the_bootstrap_offer() {
+        use std::cell::RefCell;
+        // The fetch here would SUCCEED and would yield a certificate, so a flow that fell through
+        // to the bootstrap would show up as a candidate rather than as an absent one. It also
+        // records, because the right behaviour is not to reach the network at all.
+        let fetched: RefCell<usize> = RefCell::new(0);
+        let recording = |_: &str, _: u16, _: u64| {
+            *fetched.borrow_mut() += 1;
+            Ok(list_naming_its_own_signer(&synthetic_cert(11)))
+        };
+        let sources = vec![source(
+            "xx",
+            Some("https://lists.example/xx.xml"),
+            Some("XX"),
+        )];
+
+        let view = build_suggestions(
+            &sources,
+            &AnchorConfig::Invalid("trust-anchor file is empty".to_owned()),
+            "https://lotl.example/eu-lotl.xml",
+            &recording,
+            now(),
+            true,
+        );
+
+        assert_eq!(
+            view.lotl_code,
+            codes::LOTL_ANCHOR_CONFIG_INVALID,
+            "an operator whose anchor cannot be READ must not be told they have none: that \
+             sentence is false about their deployment, and it is the sentence that unlocks the \
+             trust-on-first-use offer"
+        );
+        assert_ne!(view.lotl_code, codes::LOTL_ANCHOR_NOT_CONFIGURED);
+        assert_eq!(
+            view.lotl_detail.as_deref(),
+            Some("trust-anchor file is empty"),
+            "the operator needs the reason, in the library's own words"
+        );
+        assert!(!view.lotl_authenticated);
+        assert!(
+            !view.lotl_anchor_self_asserted,
+            "nothing is known about a set that could not be built"
+        );
+        assert_eq!(
+            view.lotl_bootstrap_code, None,
+            "'not applicable' claims the LOTL is authenticated against a configured anchor, which \
+             is false here; the verdict code carries the whole answer instead"
+        );
+        assert!(
+            view.lotl_proposals.is_empty(),
+            "the bootstrap candidate would replace a real anchor with an unverified one"
+        );
+        assert_eq!(
+            *fetched.borrow(),
+            0,
+            "nothing is fetched before the anchors resolve"
+        );
+        assert_eq!(view.sources.len(), 1, "the source is still accounted for");
+        assert_eq!(view.sources[0].code, codes::LOTL_ANCHOR_CONFIG_INVALID);
+        assert!(view.sources[0].proposals.is_empty());
+    }
+
+    #[test]
+    fn a_resolution_failure_is_kept_as_a_failure_rather_than_degrading_to_unanchored() {
+        // Through the real resolver, on the settings arm so no environment variable is touched: a
+        // fingerprint that is not 64 hex characters cannot be parsed, and the old
+        // `unwrap_or_else(|_| TslTrustAnchors::new())` turned exactly this into "no anchor".
+        let config = AnchorConfig::resolve(&[], &["not-64-hex".to_owned()], &[]);
+
+        assert!(
+            matches!(config, AnchorConfig::Invalid(_)),
+            "an anchor configuration that cannot be built is not an empty anchor configuration"
+        );
+        assert_eq!(config.anchor_count(), 0);
+        assert!(!config.self_asserted());
     }
 
     #[test]
@@ -1428,6 +2043,7 @@ mod tests {
         for code in [
             codes::LOTL_AUTHENTICATED,
             codes::LOTL_ANCHOR_NOT_CONFIGURED,
+            codes::LOTL_ANCHOR_CONFIG_INVALID,
             codes::LOTL_FETCH_FAILED,
             codes::LOTL_NOT_AUTHENTICATED,
             codes::LOTL_NO_POINTERS,

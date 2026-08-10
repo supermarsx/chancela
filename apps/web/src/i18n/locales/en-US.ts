@@ -4627,6 +4627,10 @@ export const enUS = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'This certificate vouches for itself',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'This certificate was taken from the signature of the very list it would authenticate, so it proves nothing on its own: a forged list carries a forged certificate. Compare the SHA-256 fingerprint below against the fingerprint published by the body that operates this trust scheme, and accept it only if the two match.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'The anchor this was checked against may not be verified',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    "One of the configured trust anchors came from a document that vouched for itself, and nobody has compared it against a published value yet. The check reports that the List of Trusted Lists matched an anchor, never which one, so this list may have been authenticated against that unverified anchor — and every certificate suggested below descends from it. Compare that anchor's SHA-256 fingerprint against the one published in the Official Journal of the European Union and mark it as checked. Until then, anything you accept here is recorded as unverified too.",
   'settings.signing.anchorSuggest.subject': 'Subject',
   'settings.signing.anchorSuggest.issuer': 'Issuer',
   'settings.signing.anchorSuggest.validFrom': 'Valid from',
@@ -4639,6 +4643,8 @@ export const enUS = {
     'The List of Trusted Lists was authenticated against a configured anchor.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'No trust anchor is configured, here or in the environment. The List of Trusted Lists is the root of trust and cannot authenticate itself, so nothing can be suggested. That first anchor is published in the Official Journal of the European Union and has to be entered by hand.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'A trust anchor is configured but could not be read, so nothing could be checked against it. This is not the same as having no anchor at all, and no first-use candidate is offered here: the certificate file or fingerprint given in the environment, or in the fields below, is missing or malformed. Nothing is suggested until it can be read.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'The List of Trusted Lists could not be fetched.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7062,4 +7068,20 @@ export const enUS = {
   'trust.weakAlgorithms.reference': 'Reference {index} of {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'A broken algorithm was relied upon, of a kind this version does not recognize.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'This build was compiled without the S3 transport, so it cannot reach this target. The saved configuration is still valid — the binary is what has to change, and it must be rebuilt with the chancela-connectors “s3” build option. The published Docker images already include all four transports.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'This build was compiled without the SFTP transport, so it cannot reach this target. The saved configuration is still valid — the binary is what has to change, and it must be rebuilt with the chancela-connectors “sftp” build option. The published Docker images already include all four transports.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'This build was compiled without the SMB transport, so it cannot reach this target. The saved configuration is still valid — the binary is what has to change, and it must be rebuilt with the chancela-connectors “smb” build option. The published Docker images already include all four transports.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'This build was compiled without the FTPS transport, so it cannot reach this target. The saved configuration is still valid — the binary is what has to change, and it must be rebuilt with the chancela-connectors “ftps” build option. The published Docker images already include all four transports.',
+  'operations.connectors.probe.untranslatedBadge': 'In English',
+  'operations.connectors.probe.untranslatedHint':
+    'This sentence arrived from the server with no translation available in this version. It is shown exactly as the server wrote it, in English.',
 };

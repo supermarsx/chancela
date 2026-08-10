@@ -50,6 +50,7 @@ export const LOTL_ANCHOR_NOT_CONFIGURED = 'lotl_anchor_not_configured';
 export const TRUST_ANCHOR_SUGGESTION_KEYS: Record<string, MessageKey> = {
   lotl_authenticated: `${PREFIX}lotl_authenticated`,
   [LOTL_ANCHOR_NOT_CONFIGURED]: `${PREFIX}lotl_anchor_not_configured`,
+  lotl_anchor_config_invalid: `${PREFIX}lotl_anchor_config_invalid`,
   lotl_fetch_failed: `${PREFIX}lotl_fetch_failed`,
   lotl_not_authenticated: `${PREFIX}lotl_not_authenticated`,
   lotl_no_pointers: `${PREFIX}lotl_no_pointers`,

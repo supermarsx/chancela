@@ -4365,6 +4365,38 @@ fn carry_forward_omitted_template_preview_samples(
     }
 }
 
+/// Preserve the trust-anchor **provenance annotation** when a whole-document client omits it
+/// (t118/W4).
+///
+/// The same argument as the two carry-forwards above, with a sharper edge.
+/// `signing.tsl_trust_anchor_self_asserted_sha256` is `#[serde(default)]` and is skipped on the
+/// wire while empty, so a tab opened before the field existed echoes back the *anchors* it read and
+/// no annotation. Deserialization turns that into an empty list, and saving an unrelated tab then
+/// keeps a trust-on-first-use anchor while quietly relabelling it as one transcribed out of the
+/// Official Journal: the badge disappears, the anchor stays, and nothing in the deployment records
+/// that it was ever unverified. Of everything a stale client can silently reset here, this is the
+/// only one whose reset is a false claim about the root of trust.
+///
+/// Only an **absent** key carries forward. The web always emits it — `toWireBody` sends `[]` after
+/// the operator clears a mark, and `SettingsPage.test.tsx` pins that — so clearing a mark still
+/// clears it. What is protected is the client that has never heard of the field.
+fn carry_forward_omitted_self_asserted_anchors(
+    raw: &serde_json::Value,
+    previous: &Settings,
+    next: &mut Settings,
+) {
+    if raw
+        .get("signing")
+        .and_then(|signing| signing.get("tsl_trust_anchor_self_asserted_sha256"))
+        .is_none()
+    {
+        next.signing.tsl_trust_anchor_self_asserted_sha256 = previous
+            .signing
+            .tsl_trust_anchor_self_asserted_sha256
+            .clone();
+    }
+}
+
 /// `PUT /v1/settings` — replace the whole settings document.
 ///
 /// The body is the entire [`Settings`] document. It is parsed leniently (missing fields
@@ -4434,6 +4466,7 @@ pub async fn put_settings(
     }
     carry_forward_omitted_document_layout(&raw, &previous, &mut settings);
     carry_forward_omitted_template_preview_samples(&raw, &previous, &mut settings);
+    carry_forward_omitted_self_asserted_anchors(&raw, &previous, &mut settings);
     let raw_ui = raw.get("ui");
     if raw_ui
         .and_then(|ui| ui.get("external_signature_notice_snooze_days"))
@@ -5092,6 +5125,58 @@ mod tests {
         assert_eq!(
             wire["documents"]["layout_defaults"],
             serde_json::to_value(DocumentLayoutPolicy::default()).expect("layout serializes")
+        );
+    }
+
+    #[test]
+    fn a_client_that_omits_the_provenance_annotation_keeps_it_but_an_empty_array_clears_it() {
+        // t118/W4. The two cases are opposite intents that `#[serde(default)]` renders identical in
+        // the typed document, which is why this reads the RAW body: a tab opened before the field
+        // existed cannot echo it, and a save from that tab must not silently relabel a
+        // trust-on-first-use anchor as one transcribed out of the Official Journal.
+        const UNVERIFIED: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+        let mut previous = Settings::default();
+        previous.signing.tsl_trust_anchor_sha256 = vec![UNVERIFIED.to_owned()];
+        previous.signing.tsl_trust_anchor_self_asserted_sha256 = vec![UNVERIFIED.to_owned()];
+
+        // A body that keeps the anchor and has never heard of the annotation.
+        let stale_raw = serde_json::json!({
+            "signing": { "tsl_trust_anchor_sha256": [UNVERIFIED] }
+        });
+        let mut stale_next: Settings =
+            serde_json::from_value(stale_raw.clone()).expect("stale client document parses");
+        assert!(
+            stale_next
+                .signing
+                .tsl_trust_anchor_self_asserted_sha256
+                .is_empty(),
+            "serde alone drops the annotation, which is the whole hazard"
+        );
+        carry_forward_omitted_self_asserted_anchors(&stale_raw, &previous, &mut stale_next);
+        assert_eq!(
+            stale_next.signing.tsl_trust_anchor_self_asserted_sha256,
+            vec![UNVERIFIED.to_owned()],
+            "the anchor survived the save, so its provenance must survive it too"
+        );
+
+        // The operator asserting they have compared the fingerprint with a published value: an
+        // explicit empty array, which the web always sends. It must still clear.
+        let cleared_raw = serde_json::json!({
+            "signing": {
+                "tsl_trust_anchor_sha256": [UNVERIFIED],
+                "tsl_trust_anchor_self_asserted_sha256": []
+            }
+        });
+        let mut cleared_next: Settings =
+            serde_json::from_value(cleared_raw.clone()).expect("document parses");
+        carry_forward_omitted_self_asserted_anchors(&cleared_raw, &previous, &mut cleared_next);
+        assert!(
+            cleared_next
+                .signing
+                .tsl_trust_anchor_self_asserted_sha256
+                .is_empty(),
+            "an explicitly sent empty list is the operator marking the anchor verified; a \
+             carry-forward that overrode it would make the mark impossible to remove"
         );
     }
 

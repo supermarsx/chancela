@@ -4645,6 +4645,10 @@ export const daDK: Catalog = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'Dette certifikat indestår for sig selv',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Certifikatet er hentet ud af signaturen på netop den liste, det skulle godtgøre, og beviser derfor intet i sig selv: en forfalsket liste bærer et forfalsket certifikat. Sammenlign SHA-256-fingeraftrykket nedenfor med det fingeraftryk, som den myndighed der driver tillidsordningen har offentliggjort, og acceptér det kun, hvis de to er ens.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'Ankeret, der blev kontrolleret imod, er måske ikke efterprøvet',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Et af de konfigurerede tillidsankre blev taget fra et dokument, der indestår for sig selv, og ingen har endnu sammenlignet det med en offentliggjort værdi. Kontrollen oplyser, at listen over tillidslister passer til et anker, aldrig hvilket — så denne liste kan være godtgjort netop mod det uefterprøvede anker, og hvert certifikat, der foreslås nedenfor, stammer fra det. Sammenlign ankerets SHA-256-fingeraftryk med det, der er offentliggjort i Den Europæiske Unions Tidende, og markér det som efterprøvet. Indtil da bliver alt, du accepterer her, også registreret som uefterprøvet.',
   'settings.signing.anchorSuggest.subject': 'Indehaver',
   'settings.signing.anchorSuggest.issuer': 'Udsteder',
   'settings.signing.anchorSuggest.validFrom': 'Gyldigt fra',
@@ -4657,6 +4661,8 @@ export const daDK: Catalog = {
     'Listen over tillidslister blev godtgjort med et konfigureret tillidsanker.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'Der er ikke konfigureret noget tillidsanker, hverken her eller i miljøet. Listen over tillidslister er tillidens rod og kan ikke godtgøre sig selv, så intet kan foreslås. Det første anker offentliggøres i Den Europæiske Unions Tidende og skal indtastes i hånden.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Der er konfigureret et tillidsanker, men det kunne ikke læses, så intet kunne kontrolleres imod det. Det er ikke det samme som slet ikke at have et anker, og derfor tilbydes der ikke noget førstegangsanker her: certifikatfilen eller fingeraftrykket, der er angivet i miljøet eller i felterne nedenfor, mangler eller er ugyldigt. Der foreslås intet, før ankeret kan læses.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'Listen over tillidslister kunne ikke hentes.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7099,4 +7105,20 @@ export const daDK: Catalog = {
   'trust.weakAlgorithms.reference': 'Reference {index} af {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Der blev støttet på en brudt algoritme af en type, som denne version ikke kender.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Dette build indeholder ikke S3-transporten og kan derfor ikke nå denne destination. Den gemte konfiguration er stadig gyldig — det er binærfilen, der skal ændres, og den skal bygges igen med byggetilvalget »s3« fra chancela-connectors. De offentliggjorte Docker-images indeholder allerede alle fire transporter.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Dette build indeholder ikke SFTP-transporten og kan derfor ikke nå denne destination. Den gemte konfiguration er stadig gyldig — det er binærfilen, der skal ændres, og den skal bygges igen med byggetilvalget »sftp« fra chancela-connectors. De offentliggjorte Docker-images indeholder allerede alle fire transporter.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Dette build indeholder ikke SMB-transporten og kan derfor ikke nå denne destination. Den gemte konfiguration er stadig gyldig — det er binærfilen, der skal ændres, og den skal bygges igen med byggetilvalget »smb« fra chancela-connectors. De offentliggjorte Docker-images indeholder allerede alle fire transporter.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Dette build indeholder ikke FTPS-transporten og kan derfor ikke nå denne destination. Den gemte konfiguration er stadig gyldig — det er binærfilen, der skal ændres, og den skal bygges igen med byggetilvalget »ftps« fra chancela-connectors. De offentliggjorte Docker-images indeholder allerede alle fire transporter.',
+  'operations.connectors.probe.untranslatedBadge': 'På engelsk',
+  'operations.connectors.probe.untranslatedHint':
+    'Denne sætning kom fra serveren, og der findes ingen oversættelse i denne version. Den vises nøjagtigt, som serveren skrev den, på engelsk.',
 };

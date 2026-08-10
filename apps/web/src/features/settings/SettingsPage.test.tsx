@@ -6705,6 +6705,7 @@ describe('SettingsPage', () => {
       checked_at: '2026-07-09T12:00:00Z',
       lotl_url: 'https://lotl.example.test/eu-lotl.xml',
       lotl_authenticated: false,
+      lotl_anchor_self_asserted: false,
       lotl_code: 'lotl_anchor_not_configured',
       lotl_detail: null,
       lotl_bootstrap_code: bootstrap ? 'lotl_bootstrap_self_asserted' : null,
@@ -6787,6 +6788,184 @@ describe('SettingsPage', () => {
   });
 
   /**
+   * An anchor that cannot be READ is not an anchor that is absent (t118/C6).
+   *
+   * The endpoint used to discard the resolution error and report "no trust anchor is configured,
+   * either here or in the environment" — false about the deployment, and precisely the state that
+   * offers a trust-on-first-use candidate. An operator whose secret mount had gone missing was
+   * therefore walked towards replacing a real anchor with an unverified one.
+   */
+  it('does not offer the first-use candidate when the configured anchor merely cannot be read', async () => {
+    const { fn } = settingsFetch(settingsWithMultipleTrustSources(), {
+      anchorSuggestions: () => ({
+        checked_at: '2026-07-09T12:00:00Z',
+        lotl_url: 'https://lotl.example.test/eu-lotl.xml',
+        lotl_authenticated: false,
+        lotl_anchor_self_asserted: false,
+        lotl_code: 'lotl_anchor_config_invalid',
+        lotl_detail: 'trust-anchor file is empty',
+        lotl_bootstrap_code: null,
+        lotl_bootstrap_detail: null,
+        lotl_proposals: [],
+        configured_anchor_count: 0,
+        sources: [],
+      }),
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sugerir âncoras' }));
+
+    expect(
+      await screen.findByText(/Está configurada uma âncora de confiança, mas não foi possível/),
+    ).toBeTruthy();
+    // The sentence the old behaviour produced, which was false about this deployment.
+    expect(
+      screen.queryByText(
+        /Não há nenhuma âncora de confiança configurada, nem aqui nem no ambiente/,
+      ),
+    ).toBeNull();
+    // The control that starts trust on first use is gated on the unanchored code alone, so a
+    // distinct code removes it structurally rather than by a second condition that could drift.
+    expect(
+      screen.queryByRole('button', {
+        name: 'Mostrar o certificado que a lista europeia de listas de confiança transporta',
+      }),
+    ).toBeNull();
+    // The server's own words about what went wrong, framed as such and never translated.
+    expect(screen.getByText('trust-anchor file is empty')).toBeTruthy();
+  });
+
+  /**
+   * The step after the bootstrap, and the one that decides whether the mark was worth anything
+   * (t118/C2).
+   *
+   * Once a trust-on-first-use fingerprint is configured, the European list **authenticates against
+   * it** — the check is a fingerprint pin, so a document that supplied its own anchor verifies
+   * against that anchor. The run then reports `lotl_authenticated: true` and every member-state
+   * candidate arrives with `eu_lotl` provenance. Rendered naively, that is an `ok` badge, no
+   * warning and a pasteable PEM: the whole anchor set ends up descending from an unverified root
+   * with nothing in the deployment recording it.
+   *
+   * Both directions are asserted, because a mark that is always on is not a signal.
+   */
+  it('treats a candidate from a list authenticated against an unverified anchor as unverified', async () => {
+    const derived = 'f'.repeat(64);
+    const authenticated = (rootSelfAsserted: boolean) => ({
+      checked_at: '2026-07-09T12:00:00Z',
+      lotl_url: 'https://lotl.example.test/eu-lotl.xml',
+      lotl_authenticated: true,
+      lotl_anchor_self_asserted: rootSelfAsserted,
+      lotl_code: 'lotl_authenticated',
+      lotl_detail: null,
+      lotl_bootstrap_code: null,
+      lotl_bootstrap_detail: null,
+      lotl_proposals: [],
+      configured_anchor_count: 1,
+      sources: [
+        {
+          source_id: 'operator-cache',
+          source_name: 'Lista sintética',
+          url: 'https://lists.example.test/xx.xml',
+          territory: 'XX',
+          code: 'source_anchors_from_lotl',
+          detail: null,
+          proposals: [
+            {
+              provenance: 'eu_lotl',
+              subject: 'CN=Synthetic Member Signer',
+              issuer: 'CN=Synthetic Scheme Operator',
+              not_before: '2026-01-01T00:00:00Z',
+              not_after: '2027-01-01T00:00:00Z',
+              sha256: derived,
+              // The server withholds the PEM once the root is self-asserted, so the only route to
+              // accepting this candidate is the fingerprint — the one that carries the annotation.
+              certificate_pem: rootSelfAsserted
+                ? null
+                : '-----BEGIN CERTIFICATE-----\nc3ludGhldGlj\n-----END CERTIFICATE-----',
+              already_configured: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    // (1) The unverified root: warned about, no PEM to paste, and marked on acceptance.
+    {
+      const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources(), {
+        anchorSuggestions: () => authenticated(true),
+      });
+      vi.stubGlobal('fetch', fn);
+      const view = renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Sugerir âncoras' }));
+      const warnings = await screen.findAllByText(
+        'A âncora usada nesta verificação pode não estar verificada',
+      );
+      // Fail-closed, so no notice key and therefore no dismiss control — on every instance.
+      for (const warning of warnings) {
+        expect(warning.closest('.inline-warning')?.hasAttribute('data-notice')).toBe(false);
+      }
+      // The provenance badge still says where the certificate came from, honestly: it DID come
+      // from the European list. What the warning adds is that the list itself is only as
+      // authentic as the anchor it matched.
+      expect(screen.getByText('Da lista europeia de listas de confiança autenticada')).toBeTruthy();
+      expect(
+        screen.queryByRole('button', { name: 'Adicionar como certificado de âncora' }),
+      ).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Adicionar como impressão digital de âncora' }),
+      );
+      await waitFor(
+        () => {
+          const last = calls.filter((c) => c.method === 'PUT').at(-1);
+          expect(last).toBeTruthy();
+          const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+          expect(body.signing.tsl_trust_anchor_sha256).toContain(derived);
+          // Without this the mark stops at the root: every anchor derived from it would be stored
+          // as though it had been transcribed out of the Official Journal.
+          expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toContain(derived);
+        },
+        { timeout: 3000 },
+      );
+      view.unmount();
+    }
+
+    // (2) The verified root: no warning anywhere, the PEM is offered, and accepting the
+    //     fingerprint records nothing about provenance.
+    {
+      const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources(), {
+        anchorSuggestions: () => authenticated(false),
+      });
+      vi.stubGlobal('fetch', fn);
+      renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Sugerir âncoras' }));
+      expect(
+        await screen.findByRole('button', { name: 'Adicionar como certificado de âncora' }),
+      ).toBeTruthy();
+      expect(
+        screen.queryByText('A âncora usada nesta verificação pode não estar verificada'),
+      ).toBeNull();
+
+      fireEvent.click(
+        screen.getByRole('button', { name: 'Adicionar como impressão digital de âncora' }),
+      );
+      await waitFor(
+        () => {
+          const last = calls.filter((c) => c.method === 'PUT').at(-1);
+          expect(last).toBeTruthy();
+          const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+          expect(body.signing.tsl_trust_anchor_sha256).toContain(derived);
+          expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toEqual([]);
+        },
+        { timeout: 3000 },
+      );
+    }
+  });
+
+  /**
    * The provenance has to be visible where anchors LIVE, not only where they were proposed. An
    * operator opening this screen a month later must still be able to tell which anchor nobody has
    * checked against a published value.
@@ -6837,6 +7016,48 @@ describe('SettingsPage', () => {
         const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
         expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toEqual([]);
         expect(body.signing.tsl_trust_anchor_sha256).toEqual([fromTheJournal, unverified]);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  /**
+   * Correcting a marked anchor's text must carry its mark across (t118).
+   *
+   * The annotation is keyed by fingerprint, so an edit that left it behind would take the badge off
+   * the row and strand an entry matching no anchor — the row would silently go from "accepted
+   * unverified" to "transcribed out of the Official Journal" on a keystroke.
+   */
+  it('carries the self-asserted mark across an edit of the anchor it belongs to', async () => {
+    const typo = '1'.repeat(64);
+    const corrected = '2'.repeat(64);
+    const base = settingsWithMultipleTrustSources();
+    const { fn, calls } = settingsFetch({
+      ...base,
+      signing: {
+        ...base.signing,
+        tsl_trust_anchor_sha256: [typo],
+        tsl_trust_anchor_self_asserted_sha256: [typo],
+      },
+    });
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    expect(await screen.findByText('Da própria lista — não verificado')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Impressão digital de âncora 1'), {
+      target: { value: corrected },
+    });
+
+    // The badge stays on the row rather than vanishing with the old value.
+    expect(screen.getByText('Da própria lista — não verificado')).toBeTruthy();
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        expect(last).toBeTruthy();
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tsl_trust_anchor_sha256).toEqual([corrected]);
+        expect(body.signing.tsl_trust_anchor_self_asserted_sha256).toEqual([corrected]);
       },
       { timeout: 3000 },
     );

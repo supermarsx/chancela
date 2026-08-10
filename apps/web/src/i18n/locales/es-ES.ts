@@ -4680,6 +4680,10 @@ export const esES: Catalog = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'Este certificado responde por sí mismo',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Este certificado procede de la firma de la misma lista que autenticaría, así que por sí solo no prueba nada: una lista falsificada lleva un certificado falsificado. Compare la huella digital SHA-256 que aparece abajo con la huella publicada por el organismo que gestiona este esquema de confianza y acéptela solo si ambas coinciden.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'El ancla con la que se ha comprobado puede no estar verificada',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Una de las anclas de confianza configuradas se aceptó a partir de un documento que responde por sí mismo y nadie la ha comparado todavía con un valor publicado. La comprobación indica que la lista de listas de confianza coincide con un ancla, nunca con cuál, así que esta lista puede haberse autenticado con esa ancla sin verificar, y todos los certificados que se proponen abajo descienden de ella. Compare la huella digital SHA-256 de esa ancla con la publicada en el Diario Oficial de la Unión Europea y márquela como verificada. Hasta entonces, todo lo que acepte aquí queda registrado también como no verificado.',
   'settings.signing.anchorSuggest.subject': 'Titular del certificado',
   'settings.signing.anchorSuggest.issuer': 'Emisor',
   'settings.signing.anchorSuggest.validFrom': 'Válido desde el',
@@ -4692,6 +4696,8 @@ export const esES: Catalog = {
     'La lista de listas de confianza se autenticó con un ancla configurada.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'No hay ningún ancla de confianza configurada, ni aquí ni en el entorno. La lista de listas de confianza es la raíz de la confianza y no puede autenticarse a sí misma, de modo que no se puede sugerir nada. Esa primera ancla se publica en el Diario Oficial de la Unión Europea y hay que introducirla a mano.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Hay un ancla de confianza configurada, pero no se ha podido leer, así que no se ha podido comprobar nada con ella. No es lo mismo que no tener ninguna ancla, y por eso aquí no se ofrece ningún candidato inicial: el archivo de certificado o la huella indicados en el entorno, o en los campos de abajo, faltan o están mal formados. No se sugiere nada mientras el ancla no se pueda leer.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'No se pudo obtener la lista de listas de confianza.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7153,4 +7159,20 @@ export const esES: Catalog = {
   'trust.weakAlgorithms.reference': 'Referencia {index} de {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Se dependió de un algoritmo roto, de un tipo que esta versión no reconoce.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Esta compilación no incluye el transporte S3, por lo que no puede contactar con este destino. La configuración guardada sigue siendo válida: lo que debe cambiar es el binario, que hay que recompilar con la opción «s3» de chancela-connectors. Las imágenes Docker publicadas ya incluyen los cuatro transportes.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Esta compilación no incluye el transporte SFTP, por lo que no puede contactar con este destino. La configuración guardada sigue siendo válida: lo que debe cambiar es el binario, que hay que recompilar con la opción «sftp» de chancela-connectors. Las imágenes Docker publicadas ya incluyen los cuatro transportes.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Esta compilación no incluye el transporte SMB, por lo que no puede contactar con este destino. La configuración guardada sigue siendo válida: lo que debe cambiar es el binario, que hay que recompilar con la opción «smb» de chancela-connectors. Las imágenes Docker publicadas ya incluyen los cuatro transportes.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Esta compilación no incluye el transporte FTPS, por lo que no puede contactar con este destino. La configuración guardada sigue siendo válida: lo que debe cambiar es el binario, que hay que recompilar con la opción «ftps» de chancela-connectors. Las imágenes Docker publicadas ya incluyen los cuatro transportes.',
+  'operations.connectors.probe.untranslatedBadge': 'En inglés',
+  'operations.connectors.probe.untranslatedHint':
+    'Esta frase llegó del servidor sin traducción disponible en esta versión. Se muestra exactamente como la escribió el servidor, en inglés.',
 };

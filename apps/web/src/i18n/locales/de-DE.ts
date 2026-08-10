@@ -4707,6 +4707,10 @@ export const deDE: Catalog = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'Dieses Zertifikat bürgt für sich selbst',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Dieses Zertifikat stammt aus der Signatur eben jener Liste, die es beglaubigen soll, und beweist für sich genommen nichts: Eine gefälschte Liste führt ein gefälschtes Zertifikat mit. Vergleichen Sie den SHA-256-Fingerabdruck unten mit dem Fingerabdruck, den die Stelle veröffentlicht, die dieses Vertrauenssystem betreibt, und übernehmen Sie ihn nur, wenn beide übereinstimmen.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'Der Anker, gegen den geprüft wurde, ist möglicherweise ungeprüft',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Einer der eingerichteten Vertrauensanker wurde aus einem Dokument übernommen, das für sich selbst bürgt, und niemand hat ihn bisher mit einem veröffentlichten Wert verglichen. Die Prüfung meldet, dass die Liste der Vertrauenslisten zu einem Anker passt, nie zu welchem — diese Liste kann also gegen genau diesen ungeprüften Anker beglaubigt worden sein, und jedes unten vorgeschlagene Zertifikat geht darauf zurück. Vergleichen Sie den SHA-256-Fingerabdruck dieses Ankers mit dem im Amtsblatt der Europäischen Union veröffentlichten Wert und markieren Sie ihn als geprüft. Bis dahin wird alles, was Sie hier übernehmen, ebenfalls als ungeprüft vermerkt.',
   'settings.signing.anchorSuggest.subject': 'Inhaber',
   'settings.signing.anchorSuggest.issuer': 'Aussteller',
   'settings.signing.anchorSuggest.validFrom': 'Gültig ab',
@@ -4719,6 +4723,8 @@ export const deDE: Catalog = {
     'Die Liste der Vertrauenslisten wurde anhand eines eingerichteten Ankers geprüft.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'Es ist kein Vertrauensanker eingerichtet, weder hier noch in der Umgebung. Die Liste der Vertrauenslisten ist die Wurzel des Vertrauens und kann sich nicht selbst beglaubigen, daher kann nichts vorgeschlagen werden. Dieser erste Anker wird im Amtsblatt der Europäischen Union veröffentlicht und muss von Hand eingetragen werden.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Es ist ein Vertrauensanker eingerichtet, er konnte aber nicht gelesen werden, daher konnte nichts dagegen geprüft werden. Das ist nicht dasselbe wie gar kein Anker, und deshalb wird hier kein Anker für den ersten Einsatz angeboten: Die in der Umgebung oder in den Feldern unten angegebene Zertifikatsdatei oder der Fingerabdruck fehlt oder ist fehlerhaft. Es wird nichts vorgeschlagen, solange der Anker nicht gelesen werden kann.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'Die Liste der Vertrauenslisten konnte nicht abgerufen werden.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7192,4 +7198,20 @@ export const deDE: Catalog = {
   'trust.weakAlgorithms.reference': 'Referenz {index} von {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Es wurde ein gebrochener Algorithmus herangezogen, einer Art, die diese Version nicht kennt.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Dieser Build enthält den S3-Transport nicht und kann dieses Ziel daher nicht erreichen. Die gespeicherte Konfiguration bleibt gültig — geändert werden muss die Binärdatei: ein Neubau mit der Build-Option „s3“ von chancela-connectors. Die veröffentlichten Docker-Images enthalten bereits alle vier Transporte.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Dieser Build enthält den SFTP-Transport nicht und kann dieses Ziel daher nicht erreichen. Die gespeicherte Konfiguration bleibt gültig — geändert werden muss die Binärdatei: ein Neubau mit der Build-Option „sftp“ von chancela-connectors. Die veröffentlichten Docker-Images enthalten bereits alle vier Transporte.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Dieser Build enthält den SMB-Transport nicht und kann dieses Ziel daher nicht erreichen. Die gespeicherte Konfiguration bleibt gültig — geändert werden muss die Binärdatei: ein Neubau mit der Build-Option „smb“ von chancela-connectors. Die veröffentlichten Docker-Images enthalten bereits alle vier Transporte.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Dieser Build enthält den FTPS-Transport nicht und kann dieses Ziel daher nicht erreichen. Die gespeicherte Konfiguration bleibt gültig — geändert werden muss die Binärdatei: ein Neubau mit der Build-Option „ftps“ von chancela-connectors. Die veröffentlichten Docker-Images enthalten bereits alle vier Transporte.',
+  'operations.connectors.probe.untranslatedBadge': 'Auf Englisch',
+  'operations.connectors.probe.untranslatedHint':
+    'Dieser Satz kam vom Server und es gibt in dieser Version keine Übersetzung dafür. Er wird genau so angezeigt, wie der Server ihn geschrieben hat, auf Englisch.',
 };

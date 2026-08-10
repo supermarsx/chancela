@@ -3716,6 +3716,16 @@ export interface TrustAnchorSuggestionsView {
   lotl_url: string;
   /** When `false`, no source carries a proposal: the endpoint fails closed. */
   lotl_authenticated: boolean;
+  /**
+   * At least one configured anchor was accepted from a document that vouched for itself and has
+   * not been compared against a published fingerprint.
+   *
+   * With `lotl_authenticated` also `true`, the anchor the list matched **may be** that one — the
+   * verifier reports that an anchor matched, never which. Every `eu_lotl` proposal in the same
+   * response therefore descends from a root that might not be authentic, and must not be rendered
+   * as verified.
+   */
+  lotl_anchor_self_asserted: boolean;
   lotl_code: string;
   lotl_detail: string | null;
   /**

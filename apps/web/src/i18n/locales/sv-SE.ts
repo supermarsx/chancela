@@ -4659,6 +4659,10 @@ export const svSE: Catalog = {
     'Det här certifikatet går i god för sig självt',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Certifikatet är hämtat ur signaturen på just den lista det skulle styrka, och bevisar därför ingenting i sig: en förfalskad lista bär ett förfalskat certifikat. Jämför SHA-256-fingeravtrycket nedan med det fingeravtryck som offentliggjorts av det organ som driver den här tillitsordningen, och godta det bara om de två stämmer överens.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'Ankaret som kontrollen gjordes mot kan vara ostyrkt',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Ett av de inställda tillitsankarna hämtades ur ett dokument som går i god för sig självt, och ingen har ännu jämfört det med ett offentliggjort värde. Kontrollen anger att förteckningen över betrodda listor stämmer med något ankare, aldrig med vilket — den här förteckningen kan alltså ha styrkts just mot det ostyrkta ankaret, och varje certifikat som föreslås nedan härrör från det. Jämför ankarets SHA-256-fingeravtryck med det som offentliggörs i Europeiska unionens officiella tidning och markera det som kontrollerat. Fram till dess registreras även allt du godtar här som ostyrkt.',
   'settings.signing.anchorSuggest.subject': 'Innehavare',
   'settings.signing.anchorSuggest.issuer': 'Utfärdare',
   'settings.signing.anchorSuggest.validFrom': 'Giltigt från',
@@ -4671,6 +4675,8 @@ export const svSE: Catalog = {
     'Förteckningen över betrodda listor kontrollerades mot ett inställt ankare.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'Inget tillitsankare är inställt, varken här eller i miljön. Förteckningen över betrodda listor är tillitens rot och kan inte styrka sig själv, så ingenting kan föreslås. Det första ankaret offentliggörs i Europeiska unionens officiella tidning och måste skrivas in för hand.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Ett tillitsankare är inställt men kunde inte läsas, så ingenting kunde kontrolleras mot det. Det är inte samma sak som att sakna ankare, och därför erbjuds inget första ankare här: certifikatfilen eller fingeravtrycket som angetts i miljön, eller i fälten nedan, saknas eller är felaktigt. Ingenting föreslås förrän ankaret går att läsa.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'Förteckningen över betrodda listor kunde inte hämtas.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7106,4 +7112,20 @@ export const svSE: Catalog = {
   'trust.weakAlgorithms.reference': 'Referens {index} av {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'En bruten algoritm användes, av ett slag som den här versionen inte känner igen.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Det här bygget innehåller inte S3-transporten och kan därför inte nå den här destinationen. Den sparade konfigurationen är fortfarande giltig — det är binärfilen som måste ändras, och den måste byggas om med byggalternativet ”s3” från chancela-connectors. De publicerade Docker-avbildningarna innehåller redan alla fyra transporterna.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Det här bygget innehåller inte SFTP-transporten och kan därför inte nå den här destinationen. Den sparade konfigurationen är fortfarande giltig — det är binärfilen som måste ändras, och den måste byggas om med byggalternativet ”sftp” från chancela-connectors. De publicerade Docker-avbildningarna innehåller redan alla fyra transporterna.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Det här bygget innehåller inte SMB-transporten och kan därför inte nå den här destinationen. Den sparade konfigurationen är fortfarande giltig — det är binärfilen som måste ändras, och den måste byggas om med byggalternativet ”smb” från chancela-connectors. De publicerade Docker-avbildningarna innehåller redan alla fyra transporterna.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Det här bygget innehåller inte FTPS-transporten och kan därför inte nå den här destinationen. Den sparade konfigurationen är fortfarande giltig — det är binärfilen som måste ändras, och den måste byggas om med byggalternativet ”ftps” från chancela-connectors. De publicerade Docker-avbildningarna innehåller redan alla fyra transporterna.',
+  'operations.connectors.probe.untranslatedBadge': 'På engelska',
+  'operations.connectors.probe.untranslatedHint':
+    'Den här meningen kom från servern och det finns ingen översättning i den här versionen. Den visas exakt som servern skrev den, på engelska.',
 };

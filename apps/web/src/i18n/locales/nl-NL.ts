@@ -4684,6 +4684,10 @@ export const nlNL: Catalog = {
   'settings.signing.anchorSuggest.selfAsserted.title': 'Dit certificaat staat in voor zichzelf',
   'settings.signing.anchorSuggest.selfAsserted.body':
     'Dit certificaat komt uit de handtekening van juist die lijst die het zou moeten waarmerken, en bewijst op zichzelf dus niets: een vervalste lijst draagt een vervalst certificaat. Vergelijk de SHA-256-vingerafdruk hieronder met de vingerafdruk die is gepubliceerd door de instantie die dit vertrouwensstelsel beheert, en aanvaard hem alleen als beide gelijk zijn.',
+  'settings.signing.anchorSuggest.rootSelfAsserted.title':
+    'Het anker waartegen is gecontroleerd is mogelijk niet geverifieerd',
+  'settings.signing.anchorSuggest.rootSelfAsserted.body':
+    'Een van de ingestelde vertrouwensankers is overgenomen uit een document dat voor zichzelf instaat, en niemand heeft het nog vergeleken met een gepubliceerde waarde. De controle meldt dat de lijst van vertrouwenslijsten overeenkomt met een anker, nooit met welk anker — deze lijst kan dus juist tegen dat ongeverifieerde anker zijn gewaarmerkt, en elk certificaat dat hieronder wordt voorgesteld stamt daarvan af. Vergelijk de SHA-256-vingerafdruk van dat anker met de vingerafdruk in het Publicatieblad van de Europese Unie en markeer hem als geverifieerd. Tot dan wordt alles wat u hier aanvaardt eveneens als ongeverifieerd vastgelegd.',
   'settings.signing.anchorSuggest.subject': 'Houder',
   'settings.signing.anchorSuggest.issuer': 'Uitgever',
   'settings.signing.anchorSuggest.validFrom': 'Geldig vanaf',
@@ -4696,6 +4700,8 @@ export const nlNL: Catalog = {
     'De lijst van vertrouwenslijsten is gecontroleerd aan de hand van een ingesteld anker.',
   'settings.signing.anchorSuggest.code.lotl_anchor_not_configured':
     'Er is geen vertrouwensanker ingesteld, hier noch in de omgeving. De lijst van vertrouwenslijsten is de wortel van het vertrouwen en kan zichzelf niet waarmerken, dus er kan niets worden voorgesteld. Dat eerste anker wordt gepubliceerd in het Publicatieblad van de Europese Unie en moet met de hand worden ingevoerd.',
+  'settings.signing.anchorSuggest.code.lotl_anchor_config_invalid':
+    'Er is een vertrouwensanker ingesteld, maar het kon niet worden gelezen, dus er kon niets tegen worden gecontroleerd. Dat is niet hetzelfde als helemaal geen anker, en daarom wordt hier geen eerste kandidaat aangeboden: het certificaatbestand of de vingerafdruk in de omgeving, of in de velden hieronder, ontbreekt of is onjuist. Er wordt niets voorgesteld zolang het anker niet gelezen kan worden.',
   'settings.signing.anchorSuggest.code.lotl_fetch_failed':
     'De lijst van vertrouwenslijsten kon niet worden opgehaald.',
   'settings.signing.anchorSuggest.code.lotl_not_authenticated':
@@ -7175,4 +7181,20 @@ export const nlNL: Catalog = {
   'trust.weakAlgorithms.reference': 'Referentie {index} van {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Er is op een gebroken algoritme gesteund, van een soort die deze versie niet herkent.',
+  // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
+  // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
+  // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport
+  // rather than one with a `{transport}` placeholder: a bare token dropped into an
+  // inflected sentence is how agreement breaks.
+  'operations.connectors.probe.errorCode.transport_not_compiled_s3':
+    'Deze build bevat het S3-transport niet en kan deze bestemming daarom niet bereiken. De opgeslagen configuratie blijft geldig — wat moet veranderen is het binaire bestand, dat opnieuw gebouwd moet worden met de bouwoptie “s3” van chancela-connectors. De gepubliceerde Docker-images bevatten alle vier de transporten al.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_sftp':
+    'Deze build bevat het SFTP-transport niet en kan deze bestemming daarom niet bereiken. De opgeslagen configuratie blijft geldig — wat moet veranderen is het binaire bestand, dat opnieuw gebouwd moet worden met de bouwoptie “sftp” van chancela-connectors. De gepubliceerde Docker-images bevatten alle vier de transporten al.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_smb':
+    'Deze build bevat het SMB-transport niet en kan deze bestemming daarom niet bereiken. De opgeslagen configuratie blijft geldig — wat moet veranderen is het binaire bestand, dat opnieuw gebouwd moet worden met de bouwoptie “smb” van chancela-connectors. De gepubliceerde Docker-images bevatten alle vier de transporten al.',
+  'operations.connectors.probe.errorCode.transport_not_compiled_ftps':
+    'Deze build bevat het FTPS-transport niet en kan deze bestemming daarom niet bereiken. De opgeslagen configuratie blijft geldig — wat moet veranderen is het binaire bestand, dat opnieuw gebouwd moet worden met de bouwoptie “ftps” van chancela-connectors. De gepubliceerde Docker-images bevatten alle vier de transporten al.',
+  'operations.connectors.probe.untranslatedBadge': 'In het Engels',
+  'operations.connectors.probe.untranslatedHint':
+    'Deze zin kwam van de server en er is in deze versie geen vertaling voor. Hij wordt precies zo getoond als de server hem schreef, in het Engels.',
 };
