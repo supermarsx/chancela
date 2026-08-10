@@ -55,8 +55,9 @@ use argon2::Argon2;
 use chacha20poly1305::aead::{Aead, Payload};
 use chacha20poly1305::{KeyInit, XChaCha20Poly1305, XNonce};
 use chancela_core::{
-    Act, ActId, Book, BookId, CompanyGroup, Entity, EntityId, GroupId, GroupTemplateLibrary,
-    GroupTemplateLibraryRevision, TemplateLibraryId, TermoInstrument, TermoInstrumentId,
+    Act, ActFixityReport, ActId, Book, BookId, CompanyGroup, Entity, EntityId, GroupId,
+    GroupTemplateLibrary, GroupTemplateLibraryRevision, TemplateLibraryId, TermoInstrument,
+    TermoInstrumentId,
 };
 use chancela_ledger::{
     AppendError, ChainId, ChainLink, Event, EventId, IntegrityReport, Ledger, LedgerError,
@@ -1311,6 +1312,15 @@ pub struct LoadedState {
     /// the api (E3) queries this to serve `GET /v1/ledger/integrity` and enter its degraded state.
     /// Open still never blocks on a break — the degraded 503 gate is E3's decision.
     pub integrity: IntegrityReport,
+    /// The boot-time **act fixity** report: every sealed act row re-hashed and compared to the
+    /// digest its seal froze, plus the WFL-12 ata sequencing of every loaded book.
+    ///
+    /// [`integrity`](LoadedState::integrity) above proves the ledger's own chain, and nothing
+    /// more. It cannot see that the ata you are reading no longer hashes to the digest recorded at
+    /// its position — an `UPDATE acts SET json = …` leaves the chain verifying and every integrity
+    /// surface green. This is the fixity pass that closes that: the api treats
+    /// `!act_fixity.healthy` exactly like a broken chain and enters DEGRADED read-only mode.
+    pub act_fixity: ActFixityReport,
 }
 
 /// Read-only source snapshot used by the external search projector.
@@ -2854,6 +2864,16 @@ impl Store {
         Ok(self.load()?.integrity)
     }
 
+    /// Re-verify every persisted sealed act against the digest its seal froze, and check every
+    /// book's ata sequencing — the fixity companion to [`Store::integrity_report`].
+    ///
+    /// The two answer different questions and both are needed. `integrity_report` proves the
+    /// ledger's own hash chain is intact; this proves the act rows the chain is *about* still
+    /// hash to what it recorded. A chain can verify perfectly over altered content.
+    pub fn act_fixity_report(&self) -> Result<ActFixityReport, StoreError> {
+        Ok(self.load()?.act_fixity)
+    }
+
     /// Read all aggregate rows into their maps and all event rows (ordered by `seq`) into a
     /// [`Ledger`] via `chancela_ledger::Ledger::try_from_events` (added by t30-e1a), then return
     /// the maps, the ledger, and the boot-verify outcome as [`LoadedState`].
@@ -2985,6 +3005,11 @@ impl Store {
         // degraded state and serves the exact break location from this, instead of the old silent
         // boot log. Computing it here (once, on load) keeps the source of truth in the store.
         let integrity = ledger.integrity_report();
+        // …and the fixity pass the chain cannot do for itself: re-hash every sealed act row and
+        // hold it to the digest its seal froze. The chain proves that *some* payload with digest D
+        // was sealed at that position; without this nothing ever checked that the ata still in the
+        // `acts` table is that payload.
+        let act_fixity = ActFixityReport::build(acts.values(), books.values());
         Ok(LoadedState {
             company_groups,
             group_template_libraries,
@@ -2997,6 +3022,7 @@ impl Store {
             ledger,
             chain_status,
             integrity,
+            act_fixity,
         })
     }
 

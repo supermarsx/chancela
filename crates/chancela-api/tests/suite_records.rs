@@ -17,6 +17,8 @@ mod notifications;
 mod paper_import;
 #[path = "rbac_ledger_verify.rs"]
 mod rbac_ledger_verify;
+#[path = "sealed_act_fixity.rs"]
+mod sealed_act_fixity;
 #[path = "tenant_scan_inventory.rs"]
 mod tenant_scan_inventory;
 #[path = "working_copy_exports.rs"]

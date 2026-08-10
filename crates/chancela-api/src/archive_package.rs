@@ -1401,6 +1401,19 @@ async fn execute_book_disposal(
         operator_notes: clean_disposal_operator_notes(req.operator_notes.as_deref())?,
     };
     let payload = serde_json::to_vec(&record)?;
+    // Sealed-act fixity first, and before the ledger guard is taken (it reads `state.acts`).
+    // Disposal is reachable while degraded by design — it is an archive operation, not an ordinary
+    // mutation — so it carries its own integrity bar. A chain-only bar is not that bar: recording
+    // a disposal over a book whose sealed ata has been altered would attest the disposal of
+    // something other than what was sealed.
+    let act_fixity = crate::refresh_act_fixity(state).await;
+    if !act_fixity.healthy {
+        return Err(ApiError::Conflict(format!(
+            "archive disposal execution blocked because a sealed act no longer matches the digest \
+             its seal froze ({})",
+            act_fixity.summary()
+        )));
+    }
     let mut ledger = state.ledger.write().await;
     if !ledger.integrity_report().healthy {
         return Err(ApiError::Conflict(

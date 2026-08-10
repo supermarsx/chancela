@@ -14,12 +14,34 @@
 //! **A failure here is a chain-compatibility break, not a stale fixture.** Re-derive the constant
 //! only after deciding the change is intended and that already-sealed acts' digests may cease to
 //! be reproducible.
+//!
+//! # The two constants, and why there are two
+//!
+//! The sequential ata number (WFL-12) used to be bound by **no digest at all**: it lived only in
+//! the ledger justification string, which is not hashed, so two acts could be renumbered onto the
+//! same ata with a green chain. Binding it means putting it in the preimage, and a fact that
+//! enters the preimage necessarily changes what a *new* seal freezes. There is no design that
+//! binds the number and leaves new digests where they were — that is the same statement twice.
+//!
+//! So the two properties are pinned separately:
+//!
+//! * [`LEGACY_CLEAN_ACT_SEAL_DIGEST`] — what every act sealed **before** the number was bound was
+//!   frozen with. Such a row's stored [`SealMetadata`](chancela_core::act::SealMetadata) carries
+//!   no `ata_number`, the field is `skip_serializing_if`, and the recomputation reads the number
+//!   off the *stored metadata* rather than off the act. Its preimage is therefore byte-identical
+//!   and its digest still reproducible. **This constant must never move.**
+//! * [`CLEAN_ACT_SEAL_DIGEST`] — what a clean act seals to today, with the number bound. It moved
+//!   exactly once, when the number was bound, and must not move again.
+//!
+//! Both are load-bearing: the first is the compatibility guarantee for the installed base, the
+//! second the drift alarm for everything sealed from here.
 
+use chancela_core::act::{ManualSignatureOriginalReference, SealMetadata};
 use chancela_core::{
-    Act, ActId, ActState, AgendaItem, Book, BookId, BookKind, ConveningWaiver, Entity, EntityId,
-    EntityKind, MeetingChannel, Nipc, NoConveningBasis, NumberingScheme, SupersededSigningSnapshot,
-    TermoDeAbertura, act::ManualSignatureOriginalReference, open_and_seal_book, rule_pack_for,
-    seal_act,
+    Act, ActFixity, ActId, ActState, AgendaItem, Book, BookId, BookKind, ConveningWaiver, Entity,
+    EntityFamily, EntityId, EntityKind, MeetingChannel, Nipc, NoConveningBasis, NumberingScheme,
+    SupersededSigningSnapshot, TermoDeAbertura, open_and_seal_book, rule_pack_for, seal_act,
+    sealed_act_digest, verify_act_fixity,
 };
 use chancela_ledger::Ledger;
 use time::OffsetDateTime;
@@ -30,6 +52,13 @@ use uuid::Uuid;
 ///
 /// See the module docs before changing this.
 const CLEAN_ACT_SEAL_DIGEST: &str =
+    "6c5835c92ecbd0b8632b9b3e2c64f08796fd464fc3eb2f23e477381e7195b848";
+
+/// The digest that same clean act was frozen with **before the ata number was bound** — i.e. the
+/// digest recorded in the hash chain of every act sealed in the field to date.
+///
+/// This is the constant that must never move. See the module docs.
+const LEGACY_CLEAN_ACT_SEAL_DIGEST: &str =
     "1e3e76e7aa223644de478433edad311821d38c27b47de524793f06a7994ee2ae";
 
 fn fixed(byte: u8) -> Uuid {
@@ -162,6 +191,78 @@ fn a_clean_act_seals_to_its_frozen_golden_digest() {
         "the seal preimage moved — every already-frozen act digest is now irreproducible"
     );
     assert_eq!(act.state, ActState::Sealed);
+}
+
+#[test]
+fn an_act_sealed_before_the_number_was_bound_is_still_reproducible() {
+    // The compatibility guarantee for the installed base, pinned end to end through the public
+    // recomputation API rather than against a private type.
+    //
+    // A row sealed before WFL-12's number entered the preimage carries seal metadata WITHOUT an
+    // `ata_number` — while still carrying `Act::ata_number`, which is exactly why the number could
+    // not be read off the act. `sealed_act_digest` reads it off the stored metadata, so such a row
+    // reproduces the shorter, older preimage byte for byte and re-verifies clean.
+    //
+    // If this fails, every act sealed in the field reads as tampered. It is not a stale fixture.
+    let mut act = clean_act();
+    act.state = ActState::Sealed;
+    act.ata_number = Some(1);
+    act.seal_event_seq = Some(1);
+    act.seal_metadata = Some(
+        SealMetadata::new(
+            "csc-art63/v2",
+            EntityFamily::CommercialCompany,
+            EntityKind::SociedadeAnonima,
+        )
+        .with_manual_signature_original_reference(Some(manual_reference())),
+    );
+    assert!(
+        act.seal_metadata
+            .as_ref()
+            .expect("metadata")
+            .ata_number
+            .is_none(),
+        "the fixture must model a row sealed before the number was bound"
+    );
+
+    let recomputed = sealed_act_digest(&act).expect("a sealed row must be verifiable");
+    assert_eq!(
+        hex(&recomputed),
+        LEGACY_CLEAN_ACT_SEAL_DIGEST,
+        "a pre-existing sealed act's digest is no longer reproducible — every act in the field \
+         now reads as tampered"
+    );
+
+    // And the fixity verdict agrees: verified, not "unverifiable", and certainly not altered.
+    act.payload_digest = Some(recomputed);
+    assert_eq!(verify_act_fixity(&act), ActFixity::Verified);
+}
+
+#[test]
+fn binding_the_ata_number_is_what_separates_the_two_constants() {
+    // The whole delta between the two constants, asserted rather than asserted-by-absence: the
+    // ONLY difference between the legacy preimage and today's is the bound number. Rebuilding the
+    // freshly-sealed act's metadata without it reproduces the legacy digest exactly.
+    let mut act = clean_act();
+    advance_to_signing(&mut act);
+    assert_eq!(seal_and_return_digest(&mut act), CLEAN_ACT_SEAL_DIGEST);
+    assert_eq!(
+        act.seal_metadata.as_ref().expect("metadata").ata_number,
+        Some(1),
+        "a new seal must bind the number it assigned"
+    );
+
+    let mut as_if_legacy = act.clone();
+    as_if_legacy
+        .seal_metadata
+        .as_mut()
+        .expect("metadata")
+        .ata_number = None;
+    assert_eq!(
+        hex(&sealed_act_digest(&as_if_legacy).expect("verifiable")),
+        LEGACY_CLEAN_ACT_SEAL_DIGEST,
+        "dropping the bound number must land exactly on the pre-C7 preimage and nothing else"
+    );
 }
 
 #[test]

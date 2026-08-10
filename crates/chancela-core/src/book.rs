@@ -436,6 +436,44 @@ fn is_zero_u32(value: &u32) -> bool {
     *value == 0
 }
 
+/// A WFL-12 sequencing defect found by [`Book::check_ata_sequence`].
+///
+/// Missing numbers are **not** reported: an ata row can lawfully be absent from the live store
+/// after archival disposal, so a gap is not by itself evidence of anything. A duplicate is.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(tag = "issue", rename_all = "snake_case")]
+pub enum AtaSequenceIssue {
+    /// Two or more acts in this book claim the same ata number.
+    Duplicate {
+        /// The contested number.
+        ata_number: u64,
+        /// The acts claiming it, sorted.
+        act_ids: Vec<String>,
+    },
+    /// An act claims a number the book's counter never handed out, so the counter would hand it
+    /// out again.
+    BeyondCounter {
+        /// The number the act claims.
+        ata_number: u64,
+        /// The highest number the book believes it has assigned.
+        last_ata_number: u64,
+    },
+}
+
+impl AtaSequenceIssue {
+    /// Whether this is an **affirmative** WFL-12 uniqueness violation — two acts holding one ata
+    /// number — as opposed to a weaker signal.
+    ///
+    /// Only this gates the read-only degraded mode. [`AtaSequenceIssue::BeyondCounter`] is a real
+    /// warning (the counter would reissue the number, producing a duplicate) but it is not itself
+    /// evidence that anything was altered: a restored or imported book can legitimately carry acts
+    /// whose numbers run ahead of a counter that was rebuilt. Reported, not read-only.
+    #[must_use]
+    pub fn is_uniqueness_violation(&self) -> bool {
+        matches!(self, AtaSequenceIssue::Duplicate { .. })
+    }
+}
+
 impl Book {
     /// Create a book in the `Created` state. It cannot hold acts until [`Book::open`].
     pub fn new(entity_id: EntityId, kind: BookKind) -> Self {
@@ -556,6 +594,53 @@ impl Book {
     /// True when acts may currently be created/sealed into this book.
     pub fn is_open(&self) -> bool {
         self.state == BookState::Open
+    }
+
+    /// Check the persisted acts of this book against WFL-12 sequencing.
+    ///
+    /// [`Book::last_ata_number`] is a plain counter: it guarantees the *next* number is fresh, and
+    /// nothing else. It cannot see the act rows, so it cannot notice that two of them now claim
+    /// ata 7, or that the counter has drifted below the numbers in use. Sequencing is what makes a
+    /// livro de atas a book rather than a pile of documents, so it has to be checked against the
+    /// rows, not against the counter that produced them.
+    ///
+    /// `acts` may contain acts of any book; only those belonging to this one are considered.
+    /// Unsealed acts carry no number and are skipped.
+    #[must_use]
+    pub fn check_ata_sequence<'a>(
+        &self,
+        acts: impl IntoIterator<Item = &'a crate::act::Act>,
+    ) -> Vec<AtaSequenceIssue> {
+        let mut by_number: std::collections::BTreeMap<u64, Vec<String>> =
+            std::collections::BTreeMap::new();
+        for act in acts {
+            if act.book_id != self.id {
+                continue;
+            }
+            if let Some(number) = act.ata_number {
+                by_number
+                    .entry(number)
+                    .or_default()
+                    .push(act.id.to_string());
+            }
+        }
+        let mut issues = Vec::new();
+        for (ata_number, mut act_ids) in by_number {
+            if act_ids.len() > 1 {
+                act_ids.sort();
+                issues.push(AtaSequenceIssue::Duplicate {
+                    ata_number,
+                    act_ids,
+                });
+            }
+            if ata_number > self.last_ata_number {
+                issues.push(AtaSequenceIssue::BeyondCounter {
+                    ata_number,
+                    last_ata_number: self.last_ata_number,
+                });
+            }
+        }
+        issues
     }
 
     /// Whether this book enforces a page capacity at all.

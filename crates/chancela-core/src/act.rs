@@ -878,6 +878,21 @@ pub struct SealMetadata {
     /// The report is technical evidence only; this field does not assert legal validity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature_validation_report_digest: Option<String>,
+    /// The sequential ata number this seal assigned (WFL-12), bound into the seal preimage.
+    ///
+    /// **Appended last, and skipped when absent.** [`SealMetadata`] is serialized *inside* the
+    /// sealed-act preimage (see [`crate::seal::sealed_act_digest`]), so this field is how the ata
+    /// number enters the frozen digest. It could not go on the act payload instead: every act
+    /// already sealed in the field carries [`Act::ata_number`], but none of them digested it, so
+    /// reading the number off the act would make every existing seal irreproducible. Reading it
+    /// off the *stored metadata* is self-describing — a legacy row carries `None`, emits no bytes,
+    /// and reproduces byte-for-byte; a row sealed since carries the number and binds it.
+    ///
+    /// The number was previously bound by nothing at all: it lived only in the ledger
+    /// justification string, which is not hashed, so two acts could be renumbered onto the same
+    /// ata with a green chain.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ata_number: Option<u64>,
 }
 
 impl SealMetadata {
@@ -894,7 +909,17 @@ impl SealMetadata {
             signing_snapshot_digest: None,
             signed_pdf_digest: None,
             signature_validation_report_digest: None,
+            ata_number: None,
         }
+    }
+
+    /// Bind the sequential ata number this seal assigned into the metadata (and so into the seal
+    /// preimage). Called by [`crate::seal::seal_act_with_evidence`] between assigning the number
+    /// and freezing the payload.
+    #[must_use]
+    pub fn with_ata_number(mut self, ata_number: u64) -> Self {
+        self.ata_number = Some(ata_number);
+        self
     }
 
     /// Attach an immutable manual-signature original reference captured by the seal request.

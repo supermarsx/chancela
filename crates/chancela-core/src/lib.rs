@@ -52,7 +52,7 @@ pub use act::{
     WrittenResolutionEvidenceSummary, written_resolution_evidence_summary,
 };
 pub use book::{
-    Book, BookId, BookKind, BookState, ClosingReason, LegalHold, NumberingScheme,
+    AtaSequenceIssue, Book, BookId, BookKind, BookState, ClosingReason, LegalHold, NumberingScheme,
     TermoClauseRecord, TermoCollectedSignature, TermoDeAbertura, TermoDeEncerramento,
     TermoSignatory,
 };
@@ -100,7 +100,11 @@ pub use rules::{
     AssociacaoRulePack, ComplianceIssue, CondominioRulePack, CooperativaRulePack, CscArt63RulePack,
     FundacaoRulePack, LegalBasis, LegalBasisVerification, RulePack, Severity, statute_findings,
 };
-pub use seal::{SealEvidence, SealOutcome, open_and_seal_book, seal_act, seal_act_with_evidence};
+pub use seal::{
+    ActFixity, ActFixityFinding, ActFixityReport, BookAtaSequenceFinding, SealEvidence,
+    SealOutcome, open_and_seal_book, seal_act, seal_act_with_evidence, sealed_act_digest,
+    verify_act_fixity,
+};
 pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};
 pub use termo::{
     ClauseOrigin, DEFAULT_PAGE_CAPACITY, MAX_CLAUSE_TEXT_BYTES, MAX_PAGE_CAPACITY,
