@@ -42,6 +42,12 @@
 //! [`clear_for_user_id`] is called there rather than leaving a record no key can ever open. A
 //! password *change* rewraps the same scalar, so a saved number survives it untouched.
 //!
+//! "Cannot save" is checked against the account, not against the session's cache: a session holds
+//! the scalar it unlocked at sign-in for the life of its token, so a rotation or removal does not
+//! reach it, and a pre-rotation session would otherwise seal a number to a key the account no longer
+//! has. [`put_me_cmd_phone`] compares the session's fingerprint to the account's current anchor and
+//! refuses when they differ.
+//!
 //! ## Storage: its own sidecar, not `UserView`, not `UserPreferences`
 //!
 //! [`UserView`](crate::users::UserView) is a ledger payload — a field there moves the digest of
@@ -104,7 +110,9 @@ const MIN_PHONE_DIGITS: usize = 6;
 // refusal a user can provoke is emitted as a code the client resolves through its own catalog
 // (`apiErrorFallback.ts`). The Portuguese message stays as the honest fallback for a non-web caller.
 
-/// The session holds no unlocked attestation key, so there is no scalar to seal the number under.
+/// The session holds no unlocked attestation key, so there is no scalar to seal the number under —
+/// either because it never unlocked one, or because the one it holds is no longer the account's
+/// (a rotation superseded it after this session opened; see [`put_me_cmd_phone`]).
 pub(crate) const CMD_PHONE_NO_UNLOCKED_KEY_CODE: &str = "cmd_phone_no_unlocked_key";
 /// The submitted number is not a usable mobile number (empty, too long, too few digits, or carrying
 /// characters a dialable number cannot contain).
@@ -165,7 +173,18 @@ impl SavedCmdPhoneStore {
 /// readable by anyone who can read the sidecar or a privacy-officer export, and the feature does not
 /// need one: the only surface that displays the number is the owner's own session, which can open
 /// the seal and show the real thing.
+///
+/// ## Why `#[serde(default)]`, when every field is required today
+///
+/// A missing field on ONE row would otherwise fail the whole document, and
+/// [`load_saved_cmd_phones`]'s `None` is turned into an empty store by its caller — so the next
+/// persist would overwrite every user's row with nothing. Adding a required field in a later version
+/// would trigger that for every user at once. Defaulting keeps the blast radius at one row: the
+/// defaulted row is ill-formed, [`SavedCmdPhoneStore::sanitized`] drops it alone, and every other
+/// user's ciphertext survives the load. [`crate::user_preferences::UserPreferences`] carries the
+/// attribute for the same reason.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SavedCmdPhone {
     /// The 32-hex fingerprint of the attestation key whose scalar this seal is keyed to.
     ///
@@ -177,6 +196,23 @@ pub struct SavedCmdPhone {
     pub sealed: SealedSecret,
     /// RFC 3339 instant the user saved it.
     pub saved_at: String,
+}
+
+/// Written by hand rather than derived because [`SealedSecret`] has no `Default` — and deliberately
+/// so: an all-empty seal is not a valid record, it is the placeholder a defaulted-away field leaves
+/// behind, which [`SavedCmdPhone::is_well_formed`] then rejects.
+impl Default for SavedCmdPhone {
+    fn default() -> Self {
+        SavedCmdPhone {
+            key_fingerprint: String::new(),
+            sealed: SealedSecret {
+                kdf_salt: String::new(),
+                nonce: String::new(),
+                ciphertext: String::new(),
+            },
+            saved_at: String::new(),
+        }
+    }
 }
 
 impl SavedCmdPhone {
@@ -511,13 +547,37 @@ pub async fn put_me_cmd_phone(
         .with_code(CMD_PHONE_NO_UNLOCKED_KEY_CODE));
     };
 
+    // …and it has to still BE the account's key. The scalar is unlocked once at sign-in and cached
+    // for the life of the token, so a session opened before a rotation keeps holding the superseded
+    // one — `User::retire_attestation_key` says so in its own doc. Sealing under it would write a
+    // record no key can ever open: exactly the state `clear_for_user_id` is called on the reset path
+    // to prevent, re-created one request later. It would also quietly falsify this module's header
+    // claim that an account with no attestation key cannot save a number, since a removal leaves the
+    // session's copy behind. Compare against the account's current anchor and refuse.
+    let key_fingerprint = crate::attestation::key_fingerprint(key);
+    let current_anchor = {
+        let users = state.users.read().await;
+        users
+            .get(&user_id)
+            .and_then(|user| user.attestation_key.as_ref())
+            .map(|blob| blob.fingerprint.clone())
+    };
+    if current_anchor.as_deref() != Some(key_fingerprint.as_str()) {
+        return Err(ApiError::Forbidden(
+            "a chave de atestação desta conta foi substituída ou removida depois de esta sessão \
+             ter sido iniciada; termine a sessão e volte a autenticar-se antes de guardar o número"
+                .to_owned(),
+        )
+        .with_code(CMD_PHONE_NO_UNLOCKED_KEY_CODE));
+    }
+
     let sealed = SealedSecret::seal(&custody_secret(key), phone.as_bytes())
         .map_err(|e| ApiError::Internal(format!("could not seal the CMD phone: {e}")))?;
     let saved_at = OffsetDateTime::now_utc()
         .format(&Rfc3339)
         .unwrap_or_default();
     let record = SavedCmdPhone {
-        key_fingerprint: crate::attestation::key_fingerprint(key),
+        key_fingerprint,
         sealed,
         saved_at: saved_at.clone(),
     };
@@ -991,6 +1051,144 @@ mod tests {
         // …and the reset path clears it rather than leaving the lie in place.
         assert!(clear_for_user_id(&state, uid).await.unwrap());
         assert_eq!(open_saved_phone(&state, uid, &new_key).await.unwrap(), None);
+    }
+
+    /// A session caches the scalar it unlocked at sign-in, so it outlives a rotation of the
+    /// account's attestation key. Sealing under that superseded scalar would write a record no key
+    /// can ever open — the state `clear_for_user_id` exists to prevent — so the save is refused
+    /// against the account's CURRENT anchor, not against what the session happens to hold.
+    #[tokio::test]
+    async fn a_pre_rotation_session_cannot_seal_to_a_key_the_account_no_longer_has() {
+        let state = AppState::default();
+        let uid = seed_user(&state, "amelia.marques", Some("s3cret-pass")).await;
+        let stale_key = unlocked(&state, uid, "s3cret-pass").await;
+        let actor = CurrentActor::from_session_username(Some("amelia.marques".to_owned()));
+
+        // An administrator rotates the account's attestation key. The live session keeps its copy.
+        let replacement = AttestationKeyBlob::generate("s3cret-pass").unwrap();
+        let rotated_key = replacement.unlock("s3cret-pass").unwrap();
+        {
+            let mut users = state.users.write().await;
+            let user = users.get_mut(&uid).expect("subject");
+            user.retire_attestation_key("2026-02-01T00:00:00Z".to_owned());
+            user.attestation_key = Some(replacement);
+        }
+
+        let error = put_me_cmd_phone(
+            State(state.clone()),
+            actor.clone(),
+            attestor_for("amelia.marques", &stale_key),
+            Json(save_body(Some(FAKE_PHONE), "s3cret-pass")),
+        )
+        .await
+        .expect_err("a superseded scalar cannot seal a new number");
+        assert!(matches!(error.as_uncoded(), ApiError::Forbidden(_)));
+        assert_eq!(error.code(), CMD_PHONE_NO_UNLOCKED_KEY_CODE);
+        assert!(
+            state.saved_cmd_phones.read().await.users.is_empty(),
+            "a refused save must leave no doomed row behind"
+        );
+
+        // A session on the current anchor still saves, and the row round-trips.
+        let stored = put_me_cmd_phone(
+            State(state.clone()),
+            actor.clone(),
+            attestor_for("amelia.marques", &rotated_key),
+            Json(save_body(Some(FAKE_PHONE), "s3cret-pass")),
+        )
+        .await
+        .expect("the current key saves")
+        .0;
+        assert!(stored.readable);
+        assert_eq!(stored.phone.as_deref(), Some(FAKE_PHONE));
+
+        // Clearing stays reachable from the stale session: the doomed-row remedy must not need the
+        // key that was taken away. (The check sits after the clear branch, deliberately.)
+        let cleared = put_me_cmd_phone(
+            State(state.clone()),
+            actor.clone(),
+            attestor_for("amelia.marques", &stale_key),
+            Json(save_body(None, "s3cret-pass")),
+        )
+        .await
+        .expect("a pre-rotation session can still clear")
+        .0;
+        assert_eq!(cleared, SavedCmdPhoneView::empty());
+
+        // And an account whose key was removed outright refuses every session, including the one
+        // that unlocked the now-removed key.
+        {
+            let mut users = state.users.write().await;
+            users
+                .get_mut(&uid)
+                .expect("subject")
+                .retire_attestation_key("2026-02-02T00:00:00Z".to_owned());
+        }
+        let error = put_me_cmd_phone(
+            State(state.clone()),
+            actor,
+            attestor_for("amelia.marques", &rotated_key),
+            Json(save_body(Some(FAKE_PHONE), "s3cret-pass")),
+        )
+        .await
+        .expect_err("a removed anchor refuses the save");
+        assert_eq!(error.code(), CMD_PHONE_NO_UNLOCKED_KEY_CODE);
+        assert!(state.saved_cmd_phones.read().await.users.is_empty());
+    }
+
+    /// One malformed row must cost one row. Before `#[serde(default)]` the whole document failed to
+    /// parse, `load_saved_cmd_phones` returned `None`, and the caller's `.unwrap_or_default()` turned
+    /// that into an EMPTY store — which the next persist would write over every user's ciphertext.
+    #[test]
+    fn a_row_missing_a_field_drops_only_itself_and_never_blanks_the_store() {
+        let dir = TempDir::new();
+        let path = dir.0.join(CMD_SAVED_PHONES_FILE);
+        let intact = "11111111-2222-3333-4444-555555555555";
+        let damaged = "66666666-7777-8888-9999-aaaaaaaaaaaa";
+        let raw = serde_json::json!({
+            "schema_version": 1,
+            "users": {
+                intact: {
+                    "key_fingerprint": "0123456789abcdef0123456789abcdef",
+                    "sealed": { "kdf_salt": "c2FsdA==", "nonce": "bm9uY2U=", "ciphertext": "Y3Q=" },
+                    "saved_at": "2026-01-01T00:00:00Z"
+                },
+                // A row a later version wrote, or a truncated one: `saved_at` is simply absent.
+                damaged: {
+                    "key_fingerprint": "fedcba9876543210fedcba9876543210",
+                    "sealed": { "kdf_salt": "c2FsdA==", "nonce": "bm9uY2U=", "ciphertext": "Y3Q=" }
+                }
+            }
+        });
+        std::fs::write(&path, serde_json::to_vec_pretty(&raw).unwrap()).expect("write");
+
+        let store = load_saved_cmd_phones(&path).expect("the document still loads");
+        assert!(
+            store.users.contains_key(intact),
+            "an unrelated user's ciphertext must survive a neighbouring bad row"
+        );
+        // The defaulted row keeps its seal — a missing scalar field is not a reason to destroy a
+        // ciphertext that is still openable.
+        let recovered = store.users.get(damaged).expect("the damaged row survives");
+        assert_eq!(recovered.saved_at, "");
+        assert_eq!(recovered.sealed.ciphertext, "Y3Q=");
+
+        // A row that lost its ciphertext is genuinely unopenable, and only that row is dropped.
+        let raw = serde_json::json!({
+            "schema_version": 1,
+            "users": {
+                intact: {
+                    "key_fingerprint": "0123456789abcdef0123456789abcdef",
+                    "sealed": { "kdf_salt": "c2FsdA==", "nonce": "bm9uY2U=", "ciphertext": "Y3Q=" },
+                    "saved_at": "2026-01-01T00:00:00Z"
+                },
+                damaged: { "saved_at": "2026-01-01T00:00:00Z" }
+            }
+        });
+        std::fs::write(&path, serde_json::to_vec_pretty(&raw).unwrap()).expect("write");
+        let store = load_saved_cmd_phones(&path).expect("the document still loads");
+        assert!(store.users.contains_key(intact));
+        assert!(!store.users.contains_key(damaged));
     }
 
     #[tokio::test]

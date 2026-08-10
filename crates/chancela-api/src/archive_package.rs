@@ -30,6 +30,7 @@ use crate::AppState;
 use crate::actor::CurrentActor;
 use crate::actor::CurrentAttestor;
 use crate::authz::{require_permission, scope_of_book};
+use crate::confirmation::{ConfirmationAction, ConfirmationProof, require_confirmation};
 use crate::documents::{
     PDF_ACCESSIBILITY_ARCHIVE_PATH_PATTERN, PDF_ACCESSIBILITY_ARCHIVE_PATH_PREFIX,
     PDF_ACCESSIBILITY_EVIDENCE_KIND, PDF_ACCESSIBILITY_EVIDENCE_SCHEMA,
@@ -170,13 +171,25 @@ pub struct ExportArchivePackageQuery {
     legal_hold_reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+/// Body of `POST /v1/books/{id}/archive/disposal`.
+///
+/// Deliberately **no `Debug`**, unlike its neighbours: it now embeds a [`ConfirmationProof`], which
+/// carries a plaintext password and a recovery phrase and has no `Debug` for exactly that reason.
+#[derive(Deserialize)]
 pub struct DisposalSimulationRequest {
     #[serde(default)]
     dry_run: bool,
     retention_policy_id: Option<String>,
     execution_request_id: Option<String>,
     operator_notes: Option<String>,
+    /// The step-up + typed-phrase proof for [`ConfirmationAction::BookArchiveDisposal`], floored at
+    /// `ConfirmWithReauthAndPhrase` (phrase `REGISTAR DISPOSIÇÃO`). Read **only** on the
+    /// `dry_run: false` arm — the dry run is the review step the phrase's own tier note calls the
+    /// better safety design, and charging a preview for a proof would train operators to type
+    /// through the one that matters. Same fail-closed default as [`crate::dto::CloseBook`]: an
+    /// absent `confirmation` object deserialises to an empty proof, which the gate refuses.
+    #[serde(default)]
+    confirmation: ConfirmationProof,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -839,6 +852,25 @@ pub async fn simulate_book_disposal(
             &actor,
             Permission::LegalHoldManage,
             scope_of_book(book_id),
+        )
+        .await?;
+        // Composes with the RBAC gates above; never replaces them. `book.archive_disposal` has been
+        // floored at T3 + the `REGISTAR DISPOSIÇÃO` phrase since t56-e0 with nothing enforcing it —
+        // the registry said the gate was armed and `GET /v1/confirmation-policy` reported it as
+        // wired, while a stolen session with `legal_hold.manage` could append the permanent,
+        // non-repeatable disposal attestation unchallenged.
+        //
+        // Only the execution arm. The `dry_run` preview is the review step, and the settled tier
+        // note for this action is explicit that the preview composes with the gate rather than
+        // being a second prompt stacked on it.
+        //
+        // Placed before any eligibility reasoning or inventory load, so a refusal touches nothing:
+        // no manifest built, no evidence recorded, no ledger append.
+        require_confirmation(
+            &state,
+            &actor,
+            ConfirmationAction::BookArchiveDisposal,
+            &req.confirmation,
         )
         .await?;
     }
@@ -3090,7 +3122,80 @@ mod tests {
             retention_policy_id: Some(policy_id.to_string()),
             execution_request_id: Some(Uuid::new_v4().to_string()),
             operator_notes: Some("approved for archive disposal evidence".to_owned()),
+            // The execution arm is floored at `ConfirmWithReauthAndPhrase`, so every test that
+            // reaches it has to satisfy the gate the way an operator does: `owner` holds a
+            // password, and the phrase is byte-exact.
+            confirmation: ConfirmationProof {
+                reauth: crate::data::ReAuth {
+                    password: Some("Teste-Forte7!X".to_owned()),
+                    ..Default::default()
+                },
+                confirm_phrase: Some("REGISTAR DISPOSIÇÃO".to_owned()),
+            },
         }
+    }
+
+    /// The gate is real, not decoration: the same request without a proof is refused, and refused
+    /// **before** anything is recorded. Without this, every test above would pass just as happily
+    /// against a handler that never called `require_confirmation`.
+    #[tokio::test]
+    async fn execution_without_the_typed_phrase_is_refused_and_records_nothing() {
+        let fixture = seeded_archive_fixture().await;
+        let mut req = execution_request(fixture.policy_id);
+        req.confirmation.confirm_phrase = Some("REGISTAR DISPOSICAO".to_owned());
+
+        let err = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(req),
+        )
+        .await
+        .expect_err("a near-miss phrase must not dispose");
+        assert!(
+            matches!(err, ApiError::Forbidden(ref why) if why.contains("REGISTAR DISPOSIÇÃO")),
+            "the refusal names the expected phrase: {err:?}"
+        );
+
+        let loaded = fixture
+            .state
+            .store
+            .as_ref()
+            .expect("durable store")
+            .load()
+            .expect("load durable ledger");
+        assert!(
+            !loaded
+                .ledger
+                .events()
+                .iter()
+                .any(|event| event.kind == ARCHIVE_DISPOSAL_EVENT_KIND),
+            "a refused execution must append no disposal attestation"
+        );
+    }
+
+    /// The dry run stays free of the gate — it is the review step, not the act.
+    #[tokio::test]
+    async fn the_dry_run_needs_no_confirmation_proof() {
+        let fixture = seeded_archive_fixture().await;
+        let Json(view) = simulate_book_disposal(
+            State(fixture.state.clone()),
+            Path(fixture.book_id.0),
+            fixture.actor(),
+            CurrentAttestor::default(),
+            Json(DisposalSimulationRequest {
+                dry_run: true,
+                retention_policy_id: Some(fixture.policy_id.to_string()),
+                execution_request_id: None,
+                operator_notes: None,
+                confirmation: ConfirmationProof::default(),
+            }),
+        )
+        .await
+        .expect("the preview is reachable without a proof");
+        assert!(view.dry_run);
+        assert!(view.execution.is_none());
     }
 
     #[tokio::test]

@@ -8453,7 +8453,8 @@ fn dsr_erasure_sidecar_plan(
 //
 // Turns the evidence-only erasure preflight into a real, dual-control-gated destructive workflow that
 // PRESERVES ledger integrity. The append-only ledger is NEVER mutated: erasure physically deletes the
-// subject's live directory identity (the `users` row — username / display_name / email) and
+// subject's live directory identity (the `users` row — username / display_name / email) and the
+// per-user sidecar rows keyed by the subject's UUID (saved CMD phone, UI preferences), and
 // crypto-erases the subject's per-subject DEK (destroying the wrapped DEK makes any DEK-encrypted
 // subject PII — live rows AND backups — cryptographically irrecoverable), then appends exactly one
 // `subject.erased` attestation event, so `Ledger::verify()` advances Ok(n) → Ok(n+1). Lawfully
@@ -8610,6 +8611,21 @@ async fn load_erasure_request(
 /// only; never mutates. The `users` row is the primary erasable PII (username / display_name /
 /// email); the subject DEK is crypto-erasable. Delegations naming the subject are surfaced as a
 /// retained manual-review carve-out rather than auto-deleted.
+///
+/// ## The per-user sidecars are targets, not carve-outs
+///
+/// `cmd-saved-phones.json` and `user_preferences.json` are keyed by the subject's UUID and nothing
+/// else prunes them — no delete-user route exists, and this workflow is the only path that removes a
+/// `users` row. Enumerating them here is what makes the `subject.erased` attestation complete: this
+/// plan is what the attestation reports as destroyed, so a row missing from the plan is a row that
+/// survives *and* is not disclosed as retained, which the workflow's own header forbids
+/// ("surfaced, never silently skipped"). `ErasableTarget::technique` already names sidecar removal
+/// as in-vocabulary.
+///
+/// The saved CMD phone is sealed under the subject's attestation scalar, so the wraps that could
+/// open it die with the `users` row: the residue is a linkable record, not a readable phone number.
+/// It is erased because a residual linkable record and an under-reporting attestation are both
+/// defects, not because the number was exposed.
 async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> ErasurePlanEnumeration {
     let subject = request.subject_user_id;
     let subject_id = subject.to_string();
@@ -8643,6 +8659,28 @@ async fn enumerate_erasure_plan(state: &AppState, request: &DsrRequest) -> Erasu
             collection: "subject_keys".to_owned(),
             id: subject_id.clone(),
             technique: ERASE_TECHNIQUE_CRYPTO.to_owned(),
+            count: 1,
+        });
+    }
+    if state.saved_cmd_phones.read().await.get(subject).is_some() {
+        erasable_targets.push(ErasableTarget {
+            collection: crate::cmd_phone::CMD_SAVED_PHONES_FILE.to_owned(),
+            id: subject_id.clone(),
+            technique: ERASE_TECHNIQUE_PHYSICAL.to_owned(),
+            count: 1,
+        });
+    }
+    if state
+        .user_preferences
+        .read()
+        .await
+        .users
+        .contains_key(&subject_id)
+    {
+        erasable_targets.push(ErasableTarget {
+            collection: crate::user_preferences::USER_PREFERENCES_FILE.to_owned(),
+            id: subject_id.clone(),
+            technique: ERASE_TECHNIQUE_PHYSICAL.to_owned(),
             count: 1,
         });
     }
@@ -8900,7 +8938,8 @@ pub async fn erasure_approve(
 /// The destructive step. Requires a prior distinct-principal approval bound to the same digest, and
 /// re-checks the digest against a fresh recompute (anti-TOCTOU). In one ledger transaction it appends
 /// the `subject.erased` attestation and destroys the subject DEK; it then physically removes the
-/// subject's directory identity (write-through) and VACUUMs. The append-only ledger is never mutated,
+/// subject's directory identity (write-through) and the per-user sidecar rows keyed by the subject's
+/// UUID (saved CMD phone, UI preferences), and VACUUMs. The append-only ledger is never mutated,
 /// so `verify()` advances Ok(n) → Ok(n+1). Outcome is capped at `partially_fulfilled` (retained
 /// carve-outs remain).
 pub async fn erasure_execute(
@@ -8956,7 +8995,21 @@ pub async fn erasure_execute(
     let dek_present = report.subject_dek_present;
     let pre_erasure_ledger_head = state.ledger.read().await.len();
 
-    let mut techniques = vec![ERASE_TECHNIQUE_PHYSICAL.to_owned()];
+    // The techniques are read off the plan rather than assumed: `physical_delete` is claimed only
+    // when the plan actually names a row to delete (the `users` row, a per-user sidecar), because
+    // this list is part of an attestation of what was destroyed.
+    let targets_users_row = report
+        .erasable_targets
+        .iter()
+        .any(|target| target.collection == "users");
+    let mut techniques = Vec::new();
+    if report
+        .erasable_targets
+        .iter()
+        .any(|target| target.technique == ERASE_TECHNIQUE_PHYSICAL)
+    {
+        techniques.push(ERASE_TECHNIQUE_PHYSICAL.to_owned());
+    }
     if dek_present {
         techniques.push(ERASE_TECHNIQUE_CRYPTO.to_owned());
     }
@@ -8991,8 +9044,14 @@ pub async fn erasure_execute(
     // Reserve the subject's directory identity for erasure and validate anti-lockout/bootstrap
     // invariants before any irreversible ledger/key mutation. Keep the write lock until the
     // removal is committed so concurrent erasures cannot both observe a safe pre-removal state.
+    // The guards below are about removing a *user*, so they are checked exactly when the plan names
+    // the `users` row. A plan can legitimately consist of the DEK and the per-user sidecars alone —
+    // a subject whose directory row is already gone but whose residue is not — and refusing that
+    // outright would leave the residue permanently unerasable. Nothing is relaxed for a real
+    // removal: when the plan names the row, every check still runs, and a row that vanished between
+    // the digest recompute and this lock is still a `404`.
     let mut users = state.users.write().await;
-    {
+    if targets_users_row {
         let Some(target) = users.get(&subject) else {
             return Err(ApiError::NotFound);
         };
@@ -9059,9 +9118,19 @@ pub async fn erasure_execute(
 
     // Step 2 — physically remove the subject's directory identity, write-through (rewrites
     // `users.json` on SQLite, reconciles the `users` table on Postgres — backend-agnostic).
-    users.remove(&subject);
+    let users_row_removed = targets_users_row && users.remove(&subject).is_some();
     drop(users);
-    persist_users(&state).await?;
+    if users_row_removed {
+        persist_users(&state).await?;
+    }
+
+    // Step 2b — the per-user sidecars keyed by the subject's UUID. Neither is a lawful carve-out and
+    // nothing else prunes them, so a row left here would outlive the identity it belongs to and ride
+    // every backup. Unconditional: the plan above names them and the digest recompute a few lines up
+    // proved the plan still matches the store, so this destroys what was attested — but a clear is
+    // idempotent, and completing the erasure is worth more than skipping a row on a flag.
+    crate::cmd_phone::clear_for_user_id(&state, subject).await?;
+    crate::user_preferences::clear_for_user_id(&state, subject).await?;
 
     // Step 3 — reclaim freed pages / dead tuples so deleted PII bytes do not linger (VACUUM cannot run
     // inside a transaction). Best-effort: the DEK is already destroyed and the row already gone, so a

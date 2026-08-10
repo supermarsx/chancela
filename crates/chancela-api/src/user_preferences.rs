@@ -510,6 +510,26 @@ pub(crate) async fn persist_user_preferences(state: &AppState) -> Result<(), Api
     Ok(())
 }
 
+/// Discard a user's stored preferences row, if any, and persist. Returns whether a row was removed.
+///
+/// Called from the destructive-erasure path ([`crate::privacy`]): this sidecar is keyed by the
+/// subject's UUID and nothing else prunes it, so a row left behind would outlive the `users` row it
+/// belongs to, survive every reload, and ride every backup. It is not a lawful Art. 17(3) carve-out
+/// — it is UI state — so it is erased, and the erasure attestation names it.
+pub(crate) async fn clear_for_user_id(state: &AppState, user_id: UserId) -> Result<bool, ApiError> {
+    let removed = state
+        .user_preferences
+        .write()
+        .await
+        .users
+        .remove(&user_id.to_string())
+        .is_some();
+    if removed {
+        persist_user_preferences(state).await?;
+    }
+    Ok(removed)
+}
+
 /// A sibling temp path for the atomic write, made unique so two concurrent `PUT`s never race on the
 /// same temp file before their renames.
 fn tmp_path(path: &Path) -> PathBuf {

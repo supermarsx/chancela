@@ -1436,7 +1436,15 @@ async fn disposal_non_dry_run_is_refused_without_deleting_data() {
             "POST",
             &format!("/v1/books/{}/archive/disposal", sealed.book_id),
             &token,
-            json!({ "dry_run": false }),
+            json!({
+                "dry_run": false,
+                // The execution arm is floored at confirm-with-reauth-and-phrase; satisfying it is
+                // what lets this test reach the missing-policy refusal it is actually about.
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": "REGISTAR DISPOSIÇÃO",
+                },
+            }),
         ),
     )
     .await;
@@ -1459,6 +1467,70 @@ async fn disposal_non_dry_run_is_refused_without_deleting_data() {
     .await;
     assert_eq!(status, StatusCode::OK, "book still exists: {book}");
     assert_eq!(book["id"], sealed.book_id);
+}
+
+/// Recording a disposal is the permanent, non-repeatable attestation a legal hold exists to block.
+/// `ConfirmationAction::BookArchiveDisposal` has declared a T3 gate on it since t56-e0; this proves
+/// the wire really carries it, so a session token plus `legal_hold.manage` is not enough.
+///
+/// Over HTTP rather than in-process on purpose: the fail-closed default only holds if an **absent**
+/// `confirmation` object deserialises to an empty proof, and that is a property of the body, not of
+/// the handler.
+#[tokio::test]
+async fn disposal_execution_without_a_confirmation_proof_is_refused() {
+    let dir = TempDir::new();
+    let state = AppState::with_data_dir(&dir.0);
+    let token = bootstrap(&state).await;
+    let sealed = seal_act(&state, &token).await;
+    close_book(&state, &token, &sealed.book_id).await;
+    let before = ledger_events(&state, &token).await;
+
+    // No `confirmation` key at all — the shape a client that never learned about the gate sends.
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/books/{}/archive/disposal", sealed.book_id),
+            &token,
+            json!({ "dry_run": false, "retention_policy_id": "any" }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "an unproven disposal execution must not proceed: {body}"
+    );
+
+    // A step-up that passes but the wrong phrase: the phrase is a separate proof, not decoration.
+    let (status, body) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/books/{}/archive/disposal", sealed.book_id),
+            &token,
+            json!({
+                "dry_run": false,
+                "retention_policy_id": "any",
+                "confirmation": {
+                    "reauth": { "password": TEST_PASSWORD },
+                    "confirm_phrase": "REGISTAR DISPOSICAO",
+                },
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a near-miss phrase must not dispose: {body}"
+    );
+
+    let after = ledger_events(&state, &token).await;
+    assert_eq!(
+        before, after,
+        "a refused disposal must leave the ledger byte-identical"
+    );
 }
 
 #[tokio::test]

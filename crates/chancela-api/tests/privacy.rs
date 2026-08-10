@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
-use chancela_api::{AppState, User, UserId, provision_subject_dek, router};
+use chancela_api::{AppState, AttestationKeyBlob, User, UserId, provision_subject_dek, router};
 use chancela_authz::{
     OWNER_ROLE_ID, Permission, READER_ROLE_ID, Role, RoleAssignment, RoleCatalog, RoleId, Scope,
 };
@@ -30,6 +30,11 @@ const DSR_REQUESTS_FILE: &str = "privacy-dsr-requests.json";
 const RETENTION_POLICIES_FILE: &str = "retention-policies.json";
 const RETENTION_EXECUTIONS_FILE: &str = "privacy-retention-executions.json";
 const RETENTION_CANDIDATE_RESOLUTIONS_FILE: &str = "privacy-retention-candidate-resolutions.json";
+/// The per-user sidecars the destructive erasure must also destroy. Spelled out here rather than
+/// imported: both constants live in private modules, and the wire/on-disk names are exactly what
+/// these tests are pinning.
+const SAVED_CMD_PHONES_FILE: &str = "cmd-saved-phones.json";
+const USER_PREFERENCES_FILE: &str = "user_preferences.json";
 
 struct TempDir {
     dir: PathBuf,
@@ -7158,6 +7163,329 @@ async fn erasure_execute_rejects_last_owner_removal() {
         state.users.read().await.contains_key(&subject),
         "blocked last Owner remains in the users store"
     );
+}
+
+/// Give an existing user a real attestation key wrapped under `TEST_PASSWORD`, so a session opened
+/// afterwards carries the unlocked scalar the saved-CMD-phone seal is keyed to.
+async fn give_attestation_key(state: &AppState, uid: UserId) {
+    let blob = AttestationKeyBlob::generate(TEST_PASSWORD).expect("attestation key");
+    state
+        .users
+        .write()
+        .await
+        .get_mut(&uid)
+        .expect("user exists")
+        .attestation_key = Some(blob);
+}
+
+/// Read a sidecar document from the data directory, or `null` when it was never written.
+fn read_sidecar(dir: &std::path::Path, file: &str) -> Value {
+    match std::fs::read(dir.join(file)) {
+        Ok(bytes) => serde_json::from_slice(&bytes).expect("sidecar is valid JSON"),
+        Err(_) => Value::Null,
+    }
+}
+
+/// The per-user sidecars are keyed by the subject's UUID and nothing else prunes them: no
+/// delete-user route exists, and this workflow is the only path that removes a `users` row. So an
+/// erasure that skipped them would leave a linkable record that survives every reload and rides
+/// every backup — and, because the plan is what the `subject.erased` attestation reports, would
+/// attest an incomplete list of what was destroyed while the workflow's own contract says retained
+/// records are "surfaced, never silently skipped".
+///
+/// Materially limited: the saved CMD phone is sealed under the subject's attestation scalar, whose
+/// wraps die with the `users` row. The residue is a linkable record and an under-reporting
+/// attestation — NOT a readable phone number.
+#[tokio::test]
+async fn erasure_destroys_the_per_user_sidecars_and_the_attestation_names_them() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let auditor_token =
+        insert_admin_session(&state, UserId(Uuid::from_u128(0xA0DA)), "auditor").await;
+    let subject = UserId(Uuid::from_u128(0xA3EB));
+    let subject_id = subject.to_string();
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
+    )
+    .await;
+    give_attestation_key(&state, subject).await;
+    let subject_token = open_session(&state, subject).await;
+
+    // The subject saves a (clearly fake) CMD number and a column preference through their own
+    // self-scoped endpoints — the only way either row is ever written.
+    let (status, saved) = send(
+        state.clone(),
+        with_session(
+            put_json(
+                "/v1/me/cmd-phone",
+                json!({
+                    "phone": "+351 900 000 000",
+                    "reauth": { "password": TEST_PASSWORD },
+                }),
+            ),
+            &subject_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "subject saves a CMD phone: {saved}");
+    assert_eq!(saved["saved"], json!(true));
+    let (status, prefs) = send(
+        state.clone(),
+        with_session(
+            put_json(
+                "/v1/me/preferences",
+                json!({ "table_columns": { "entities": ["Name", "Nipc"] } }),
+            ),
+            &subject_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "subject saves preferences: {prefs}");
+
+    // Both sidecars now carry a row keyed by the subject's UUID.
+    assert!(
+        read_sidecar(&tmp.dir, SAVED_CMD_PHONES_FILE)["users"]
+            .get(&subject_id)
+            .is_some(),
+        "the saved CMD phone row is on disk before erasure"
+    );
+    assert!(
+        read_sidecar(&tmp.dir, USER_PREFERENCES_FILE)["users"]
+            .get(&subject_id)
+            .is_some(),
+        "the preferences row is on disk before erasure"
+    );
+
+    // Preflight names them as erasable targets, not as retained carve-outs.
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+    let (status, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "preflight: {report}");
+    let targets = report["erasable_targets"].as_array().expect("targets");
+    for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+        assert!(
+            targets.iter().any(|t| t["collection"] == json!(file)
+                && t["id"] == json!(subject_id)
+                && t["technique"] == json!("physical_delete")),
+            "{file} is an enumerated erasable target: {report}"
+        );
+    }
+    let carveouts = report["retained_carveouts"].as_array().expect("carveouts");
+    for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+        assert!(
+            !carveouts.iter().any(|c| c["collection"] == json!(file)),
+            "{file} is erased, so it must not also be claimed as lawfully retained: {report}"
+        );
+    }
+    let digest = report["preflight_digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/approve"),
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject_id,
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &auditor_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "approval succeeds: {body}");
+
+    let (status, executed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute"),
+                json!({
+                    "preflight_digest": digest,
+                    "reauth": { "password": TEST_PASSWORD },
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "erasure executes: {executed}");
+
+    // The attestation names exactly what was destroyed.
+    let erased = executed["erasure_execution"]["erased_targets"]
+        .as_array()
+        .expect("erased targets");
+    for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+        assert!(
+            erased
+                .iter()
+                .any(|t| t["collection"] == json!(file) && t["action"] == json!("erased")),
+            "the erasure attestation names {file}: {executed}"
+        );
+    }
+    {
+        let ledger = state.ledger.read().await;
+        let event = ledger
+            .events()
+            .iter()
+            .rev()
+            .find(|e| e.kind == "subject.erased")
+            .expect("subject.erased appended");
+        let attestation = event
+            .justification
+            .as_deref()
+            .expect("attestation payload retained");
+        for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+            assert!(
+                attestation.contains(file),
+                "the ledger attestation names {file}: {attestation}"
+            );
+        }
+    }
+
+    // The rows are gone — asserted against the store and the persisted documents, not against the
+    // fact that a call was made.
+    assert!(
+        !state
+            .saved_cmd_phones
+            .read()
+            .await
+            .users
+            .contains_key(&subject_id),
+        "the saved CMD phone row is gone from the in-memory store"
+    );
+    assert!(
+        !state
+            .user_preferences
+            .read()
+            .await
+            .users
+            .contains_key(&subject_id),
+        "the preferences row is gone from the in-memory store"
+    );
+    for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+        let document = read_sidecar(&tmp.dir, file);
+        assert!(
+            document["users"].get(&subject_id).is_none(),
+            "{file} still holds the erased subject's row: {document}"
+        );
+        assert!(
+            !document.to_string().contains(&subject_id),
+            "{file} still references the erased subject's id: {document}"
+        );
+    }
+}
+
+/// A subject who never saved a phone or a preference must still erase cleanly, and the attestation
+/// must not claim to have destroyed something that never existed.
+#[tokio::test]
+async fn erasure_without_sidecar_rows_does_not_attest_destroying_them() {
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.dir.clone());
+    let (_owner, owner_token) = bootstrap_owner(&state).await;
+    let auditor_token =
+        insert_admin_session(&state, UserId(Uuid::from_u128(0xA0DB)), "auditor").await;
+    let subject = UserId(Uuid::from_u128(0xA3EC));
+    let subject_id = subject.to_string();
+    insert_user(
+        &state,
+        subject,
+        "amelia.marques",
+        RoleAssignment::new(READER_ROLE_ID, Scope::Global),
+    )
+    .await;
+    let request_id = create_erasure_dsr(&state, subject, &owner_token).await;
+
+    let (status, report) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/preflight"),
+                json!({}),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "preflight: {report}");
+    let targets = report["erasable_targets"].as_array().expect("targets");
+    for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+        assert!(
+            !targets.iter().any(|t| t["collection"] == json!(file)),
+            "a subject with no {file} row must not have one enumerated: {report}"
+        );
+    }
+    let digest = report["preflight_digest"]
+        .as_str()
+        .expect("digest")
+        .to_owned();
+
+    let (status, _b) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/approve"),
+                json!({
+                    "preflight_digest": digest,
+                    "subject_confirmation": subject_id,
+                    "acknowledge_carveouts": true
+                }),
+            ),
+            &auditor_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "approval succeeds");
+
+    let (status, executed) = send(
+        state.clone(),
+        with_session(
+            post_json(
+                &format!("/v1/privacy/users/{subject}/dsr-requests/{request_id}/erasure/execute"),
+                json!({
+                    "preflight_digest": digest,
+                    "reauth": { "password": TEST_PASSWORD },
+                }),
+            ),
+            &owner_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "erasure executes: {executed}");
+    let erased = executed["erasure_execution"]["erased_targets"]
+        .as_array()
+        .expect("erased targets");
+    for file in [SAVED_CMD_PHONES_FILE, USER_PREFERENCES_FILE] {
+        assert!(
+            !erased.iter().any(|t| t["collection"] == json!(file)),
+            "the attestation must not claim to have destroyed a {file} row that never existed: \
+             {executed}"
+        );
+    }
+    assert!(
+        erased
+            .iter()
+            .any(|t| t["collection"] == json!("users") && t["action"] == json!("erased")),
+        "the users row is still attested as erased: {executed}"
+    );
+    assert!(!state.users.read().await.contains_key(&subject));
 }
 
 /// THE MERGE-GATE (plan P5): a real destructive erasure must preserve ledger integrity.

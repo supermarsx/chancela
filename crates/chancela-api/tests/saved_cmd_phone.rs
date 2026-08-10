@@ -354,6 +354,68 @@ async fn the_number_survives_a_password_change_and_opens_under_the_new_one() {
     assert_eq!(body["phone"], json!(FAKE_PHONE));
 }
 
+/// A session unlocks the attestation scalar once, at sign-in, and holds it for the life of its
+/// token — so a rotation does not reach it. Sealing under that superseded scalar would store a
+/// record no key can ever open, which is exactly the state the reset path calls `clear_for_user_id`
+/// to avoid; the module header's "an account with no attestation key cannot save a number" would be
+/// a claim about the account that the session could walk straight past. The save is therefore
+/// checked against the account's current anchor.
+#[tokio::test]
+async fn a_pre_rotation_session_cannot_save_under_the_superseded_key() {
+    let temp = TempDir::new();
+    let state = AppState::with_data_dir(&temp.0);
+    seed_user(&state, "owner.holder", OWNER_ROLE_ID).await;
+    let reader = seed_user(&state, "amelia.marques", READER_ROLE_ID).await;
+    let stale_token = sign_in(&state, reader).await;
+
+    // A real self-service rotation: `/attestation-key` REPLACES the scalar (unlike a password
+    // change, which re-wraps the same one) and clears the saved number with it.
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            json_req(
+                "POST",
+                &format!("/v1/users/{}/attestation-key", reader.0),
+                json!({ "current_password": TEST_PASSWORD }),
+            ),
+            &stale_token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "attestation key rotates: {body}");
+
+    // The still-open pre-rotation session holds the old scalar. Its save is refused, with the code
+    // the client already resolves for "this session has no usable attestation key".
+    let (status, body) = put_phone(&state, &stale_token, Some(FAKE_PHONE), TEST_PASSWORD).await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a pre-rotation session must not seal to the superseded key: {body}"
+    );
+    assert_eq!(body["code"], json!("cmd_phone_no_unlocked_key"), "{body}");
+    assert!(
+        !sidecar(&temp.0).contains("ciphertext"),
+        "no doomed row may be written"
+    );
+
+    // A session opened after the rotation holds the current scalar and saves normally.
+    let fresh_token = sign_in(&state, reader).await;
+    let (status, body) = put_phone(&state, &fresh_token, Some(FAKE_PHONE), TEST_PASSWORD).await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the current key still saves: {body}"
+    );
+    assert_eq!(body["readable"], json!(true));
+    assert_eq!(body["phone"], json!(FAKE_PHONE));
+
+    // And the stale session can still CLEAR: the remedy for a doomed row must not require the key
+    // that was taken away.
+    let (status, body) = put_phone(&state, &stale_token, None, TEST_PASSWORD).await;
+    assert_eq!(status, StatusCode::OK, "a stale session can clear: {body}");
+    assert_eq!(body["saved"], json!(false));
+}
+
 /// The subject-access export carries the number for the subject's own unlocked session, and states
 /// its existence honestly for anyone else. The failure this guards against is the export quietly
 /// omitting the field, which would make a saved number personal data the subject cannot obtain.
