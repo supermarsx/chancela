@@ -108,6 +108,7 @@ pub use validate::{
 
 // Re-export the pieces of the underlying stack callers most often name through this crate.
 pub use chancela_cades::{RawSignature, SignatureAlgorithm};
+pub use chancela_pades::validate::PdfSignatureCoverage;
 pub use chancela_pades::{
     DssEvidence, DssReport, ImageSeal, PreparedSignature, SealAppearance, SealContent,
     SealImageFormat, SealPlacement, SealTextLine, SignOptions, TextSeal, embed_signature,

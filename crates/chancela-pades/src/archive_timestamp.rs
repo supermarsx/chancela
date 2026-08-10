@@ -95,7 +95,11 @@ pub enum DocTimeStampSemanticStatus {
 pub enum DocTimeStampFailureReason {
     /// `/ByteRange` is absent from the timestamp dictionary.
     MissingByteRange,
-    /// `/ByteRange` is not four non-negative integers within the file.
+    /// `/ByteRange` cannot support a coverage claim: it is not four non-negative integers within
+    /// the file, it does not start at byte 0, the excluded gap is not exactly the `/Contents` token,
+    /// or it does not reach the end of a revision. A token over an arbitrary sub-range attests only
+    /// those bytes and must never be reported `Valid` — the same requirements the signature path
+    /// already enforces in [`crate::validate::validate_pdf_signature`].
     InvalidByteRange,
     /// `/Contents` is absent or is not a complete DER `TimeStampToken`.
     InvalidContents,
@@ -351,7 +355,7 @@ fn validate_doc_timestamp(
     pdf_bytes: &[u8],
     token: Result<&[u8], DocTimeStampFailureReason>,
 ) -> DocTimeStampValidation {
-    let byte_range = match parse_byte_range(dict, pdf_bytes.len()) {
+    let byte_range = match parse_byte_range(dict, pdf_bytes) {
         Ok(range) => range,
         Err(reason) => {
             return DocTimeStampValidation {
@@ -477,10 +481,24 @@ fn decoded_timestamp_token(dict: &lopdf::Dictionary) -> Result<&[u8], DocTimeSta
     Ok(&contents[..len])
 }
 
+/// Parse and *vet* a `/DocTimeStamp` `/ByteRange`, applying the same coverage requirements the
+/// signature path enforces (finding W4).
+///
+/// Four in-range non-negative integers are not enough. An archive timestamp is only evidence about
+/// the document if it covers the document: a token minted over an arbitrary sub-range attests those
+/// bytes and nothing else, yet would otherwise reach [`DocTimeStampSemanticStatus::Valid`] and make
+/// [`DocTimeStampReport::all_imprints_valid`] true. So this additionally requires that
+///
+/// * the range starts at byte 0,
+/// * the excluded gap is byte-for-byte the `/Contents` hex token (nothing else is left unsigned),
+///   reusing [`crate::validate::gap_matches_contents`], and
+/// * the range reaches the end of the revision it closes — either the end of the file, or a
+///   `%%EOF` boundary (a later incremental update, such as a renewal timestamp, follows).
 fn parse_byte_range(
     dict: &lopdf::Dictionary,
-    total_len: usize,
+    pdf_bytes: &[u8],
 ) -> Result<[i64; 4], DocTimeStampFailureReason> {
+    let total_len = pdf_bytes.len();
     let arr = dict
         .get(b"ByteRange")
         .and_then(lopdf::Object::as_array)
@@ -504,7 +522,37 @@ fn parse_byte_range(
     {
         return Err(DocTimeStampFailureReason::InvalidByteRange);
     }
+    if s1 != 0 {
+        return Err(DocTimeStampFailureReason::InvalidByteRange);
+    }
+    let contents = dict
+        .get(b"Contents")
+        .and_then(lopdf::Object::as_str)
+        .map_err(|_| DocTimeStampFailureReason::InvalidContents)?;
+    if !crate::validate::gap_matches_contents(pdf_bytes, s1 + l1, s2, contents) {
+        return Err(DocTimeStampFailureReason::InvalidByteRange);
+    }
+    if !ends_at_revision_boundary(pdf_bytes, s2 + l2) {
+        return Err(DocTimeStampFailureReason::InvalidByteRange);
+    }
     Ok(byte_range)
+}
+
+/// Whether `end` sits on a PDF revision boundary: it is the end of the file, or the bytes just
+/// before it are the `%%EOF` marker that closes a revision (with optional trailing end-of-line).
+/// This is what stops a `/DocTimeStamp` from claiming a truncated prefix of its own revision.
+fn ends_at_revision_boundary(pdf_bytes: &[u8], end: usize) -> bool {
+    if end > pdf_bytes.len() {
+        return false;
+    }
+    if end == pdf_bytes.len() {
+        return true;
+    }
+    let mut cut = end;
+    while cut > 0 && matches!(pdf_bytes[cut - 1], b'\r' | b'\n') {
+        cut -= 1;
+    }
+    pdf_bytes[..cut].ends_with(b"%%EOF")
 }
 
 fn digest_byte_range(pdf_bytes: &[u8], byte_range: [i64; 4]) -> [u8; 32] {

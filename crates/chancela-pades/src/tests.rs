@@ -2017,3 +2017,282 @@ fn sign_with_overwide_gap(signer: &TestSigner) -> Vec<u8> {
     buf[hex_start..hex_start + hex.len()].copy_from_slice(&hex);
     buf
 }
+
+// --- C2: incremental updates that delete content without adding or modifying an object -----------
+
+/// A one-page PDF whose page carries a `/Contents` stream. Freeing that stream deletes the clause
+/// from the rendered page, which is what makes the C2 tamper an evidentiary failure rather than a
+/// cosmetic one.
+fn base_pdf_with_page_contents() -> Vec<u8> {
+    let clause = "BT /F1 12 Tf 72 720 Td (Clausula 4: prazo de 30 dias.) Tj ET\n";
+    let stream = format!("<< /Length {} >>\nstream\n{clause}endstream", clause.len());
+    assemble_pdf(
+        &[
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (
+                3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> /Contents 4 0 R >>",
+            ),
+            (4, stream.as_str()),
+        ],
+        1,
+    )
+}
+
+/// A one-page PDF that also carries a *second*, unreferenced catalog (object 5) over its own page
+/// tree. Both catalogs are inside the signed revision, so repointing `/Root` at the decoy adds and
+/// modifies nothing while swapping the whole rendered document.
+fn base_pdf_with_decoy_catalog() -> Vec<u8> {
+    assemble_pdf(
+        &[
+            (1, "<< /Type /Catalog /Pages 2 0 R >>"),
+            (2, "<< /Type /Pages /Kids [3 0 R] /Count 1 >>"),
+            (
+                3,
+                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << >> >>",
+            ),
+            (4, "<< /Type /Pages /Kids [6 0 R] /Count 1 >>"),
+            (5, "<< /Type /Catalog /Pages 4 0 R >>"),
+            (
+                6,
+                "<< /Type /Page /Parent 4 0 R /MediaBox [0 0 72 72] /Resources << >> >>",
+            ),
+        ],
+        1,
+    )
+}
+
+/// Append an incremental update that contains only a cross-reference section (`subsections` is the
+/// text between the `xref` keyword and `trailer`) and a trailer, optionally overriding `/Root`.
+fn append_bare_xref_section(pdf: &[u8], subsections: &str, root_override: Option<u32>) -> Vec<u8> {
+    let doc = lopdf::Document::load_mem(pdf).expect("parse PDF");
+    let root = doc
+        .trailer
+        .get(b"Root")
+        .and_then(lopdf::Object::as_reference)
+        .expect("root");
+    let prev_startxref = crate::pdf::last_startxref(pdf).expect("startxref");
+    let root_id = root_override.unwrap_or(root.0);
+    let mut out = pdf.to_vec();
+    out.extend_from_slice(b"\n");
+    let xref_offset = out.len();
+    out.extend_from_slice(
+        format!(
+            "xref\n{subsections}trailer\n<< /Size {} /Root {root_id} 0 R /Prev {prev_startxref} >>\nstartxref\n{xref_offset}\n%%EOF\n",
+            doc.max_id + 1
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+#[test]
+fn appended_update_that_frees_a_page_contents_stream_is_not_benign() {
+    let signer = TestSigner::new_rsa("PAdES Free", 30);
+    let signed = sign_with(
+        &base_pdf_with_page_contents(),
+        &signer,
+        &SignOptions::default(),
+    );
+    let report = validate_pdf_signature(&signed).expect("validate signed PDF");
+    assert_eq!(report.coverage, PdfSignatureCoverage::WholeDocument);
+
+    // No object is added or modified: the appended section only marks object 4 free.
+    let deleted = append_bare_xref_section(&signed, "4 1\n0000000000 65535 f\r\n", None);
+
+    let base = lopdf::Document::load_mem(&signed).expect("parse signed revision");
+    let full = lopdf::Document::load_mem(&deleted).expect("parse tampered file");
+    assert_eq!(
+        full.objects, base.objects,
+        "lopdf discards free entries, so the object diff cannot see this tamper"
+    );
+
+    let report = validate_pdf_signature(&deleted).expect("validate content-deleting update");
+    assert_eq!(
+        report.coverage,
+        PdfSignatureCoverage::AlteredAfterSigning,
+        "a freed /Contents stream removes a clause from the rendered page"
+    );
+    assert!(!report.coverage.covers_rendered_document());
+}
+
+#[test]
+fn appended_trailer_repointing_root_is_not_benign() {
+    let signer = TestSigner::new_rsa("PAdES Repoint", 31);
+    let signed = sign_with(
+        &base_pdf_with_decoy_catalog(),
+        &signer,
+        &SignOptions::default(),
+    );
+    assert_eq!(
+        validate_pdf_signature(&signed).expect("validate").coverage,
+        PdfSignatureCoverage::WholeDocument
+    );
+
+    let repointed = append_bare_xref_section(&signed, "0 1\n0000000000 65535 f\r\n", Some(5));
+
+    let base = lopdf::Document::load_mem(&signed).expect("parse signed revision");
+    let full = lopdf::Document::load_mem(&repointed).expect("parse tampered file");
+    assert_eq!(
+        full.objects, base.objects,
+        "the /Root repoint adds and modifies no object"
+    );
+    assert_eq!(
+        full.trailer
+            .get(b"Root")
+            .and_then(lopdf::Object::as_reference)
+            .expect("root"),
+        (5, 0),
+        "lopdf adopts the newest trailer, so the decoy catalog is what gets rendered"
+    );
+
+    let report = validate_pdf_signature(&repointed).expect("validate repointed /Root");
+    assert_eq!(report.coverage, PdfSignatureCoverage::AlteredAfterSigning);
+    assert!(!report.coverage.covers_rendered_document());
+}
+
+#[test]
+fn appended_update_freeing_only_object_zero_is_still_benign() {
+    // Object 0 heads the free list and is free by definition (PDF 32000-1 7.5.4); conforming writers
+    // repeat its entry in incremental updates. Rejecting every `f` entry would break real files.
+    let signer = TestSigner::new_rsa("PAdES FreeZero", 32);
+    let signed = sign_with(
+        &base_pdf_with_page_contents(),
+        &signer,
+        &SignOptions::default(),
+    );
+    let appended = append_bare_xref_section(&signed, "0 1\n0000000000 65535 f\r\n", None);
+
+    let report = validate_pdf_signature(&appended).expect("validate object-0 free entry");
+    assert_eq!(
+        report.coverage,
+        PdfSignatureCoverage::LtvAugmentedSignedRevision
+    );
+    assert!(report.coverage.covers_rendered_document());
+}
+
+#[test]
+fn genuine_ltv_augmentation_still_covers_the_rendered_document() {
+    // The over-breadth guard for the C2 fix: a real B-T + DSS + archive-timestamp stack appends
+    // several incremental updates, every one of which must stay benign.
+    let signer = TestSigner::new_rsa("PAdES Benign LTV", 33);
+    let signed = sign_with(
+        &base_pdf_with_page_contents(),
+        &signer,
+        &SignOptions::default(),
+    );
+    let with_ts = add_fixture_timestamp(&signed);
+    let with_dss = add_dss_revision(&with_ts, &fixture_dss_evidence(&signer)).expect("DSS append");
+
+    let report = validate_pdf_signature(&with_dss).expect("validate B-T + DSS");
+    assert_eq!(
+        report.coverage,
+        PdfSignatureCoverage::LtvAugmentedSignedRevision,
+        "a DSS revision must stay benign LTV augmentation"
+    );
+    assert!(report.coverage.covers_rendered_document());
+
+    let token = doc_timestamp_token_for_revision(&with_dss);
+    let with_dts = add_doc_timestamp_revision(&with_dss, &token).expect("DTS append");
+    let report = validate_pdf_signature(&with_dts).expect("validate B-T + DSS + DocTimeStamp");
+    assert_eq!(
+        report.coverage,
+        PdfSignatureCoverage::LtvAugmentedSignedRevision,
+        "an archive timestamp must stay benign LTV augmentation"
+    );
+    assert!(report.coverage.covers_rendered_document());
+    assert!(
+        report.doc_timestamps.all_imprints_valid(),
+        "the archive timestamp's own ByteRange must still validate: {:?}",
+        report.doc_timestamps.validations
+    );
+}
+
+// --- W4: a /DocTimeStamp ByteRange must cover a revision, not an arbitrary sub-range -------------
+
+/// Rewrite the last `/DocTimeStamp` revision's `/ByteRange` to `[s1 l1 s2 l2]` and re-mint its token
+/// so the RFC 3161 imprint attests exactly those bytes. The `/ByteRange` digits are fixed-width and
+/// the token length is unchanged, so no offset moves: the *only* difference from a well-formed
+/// archive timestamp is which bytes it covers.
+fn repoint_doc_timestamp_byte_range(
+    pdf: &[u8],
+    s1: usize,
+    l1: usize,
+    s2: usize,
+    l2: usize,
+) -> Vec<u8> {
+    assert!(s1 < 10, "the template writes start1 as a single digit");
+    let mut out = pdf.to_vec();
+    let br_marker = crate::pdf::rfind(&out, b"/ByteRange [").expect("DocTimeStamp ByteRange")
+        + b"/ByteRange [".len();
+    let br = format!("{s1} {l1:010} {s2:010} {l2:010}");
+    assert_eq!(out[br_marker + br.len()], b']', "fixed-width ByteRange");
+    out[br_marker..br_marker + br.len()].copy_from_slice(br.as_bytes());
+
+    let hex_start = crate::pdf::rfind(&out, b"/Contents <").expect("DocTimeStamp /Contents")
+        + b"/Contents <".len();
+    let mut hasher = Sha256::new();
+    hasher.update(&out[s1..s1 + l1]);
+    hasher.update(&out[s2..s2 + l2]);
+    let digest: [u8; 32] = hasher.finalize().into();
+    let hex = crate::pdf::to_hex(&token_with_replaced_fixture_imprint(&digest));
+    out[hex_start..hex_start + hex.len()].copy_from_slice(&hex);
+    out
+}
+
+#[test]
+fn doc_timestamp_over_a_sub_range_is_refused() {
+    let signer = TestSigner::new_rsa("PAdES DTS Range", 35);
+    let signed = sign_with(&base_pdf(), &signer, &SignOptions::default());
+    let with_ts = add_fixture_timestamp(&signed);
+    let with_dss = add_dss_revision(&with_ts, &fixture_dss_evidence(&signer)).expect("DSS append");
+    let token = doc_timestamp_token_for_revision(&with_dss);
+    let with_dts = add_doc_timestamp_revision(&with_dss, &token).expect("DTS append");
+
+    let lt = crate::pdf::rfind(&with_dts, b"/Contents <").expect("DocTimeStamp /Contents")
+        + b"/Contents ".len();
+    let gt = lt + 1 + token.len() * 2;
+    assert_eq!(with_dts[gt], b'>', "closing '>' where expected");
+
+    let report = inspect_doc_timestamps(&with_dts).expect("inspect well-formed DTS");
+    assert!(
+        report.all_imprints_valid(),
+        "baseline archive timestamp must validate: {:?}",
+        report.validations
+    );
+
+    // (a) The range does not start at byte 0: the first byte of the file is unattested.
+    let skipped_prefix =
+        repoint_doc_timestamp_byte_range(&with_dts, 1, lt - 1, gt + 1, with_dts.len() - (gt + 1));
+    let report = inspect_doc_timestamps(&skipped_prefix).expect("inspect skipped-prefix DTS");
+    assert_eq!(
+        report.validations[0].status,
+        DocTimeStampSemanticStatus::Failed
+    );
+    assert_eq!(
+        report.validations[0].failure_reason,
+        Some(DocTimeStampFailureReason::InvalidByteRange)
+    );
+    assert!(!report.all_imprints_valid());
+
+    // (b) The excluded gap is wider than `/Contents`: the byte after '>' is left unattested.
+    let overwide_gap =
+        repoint_doc_timestamp_byte_range(&with_dts, 0, lt, gt + 2, with_dts.len() - (gt + 2));
+    let report = inspect_doc_timestamps(&overwide_gap).expect("inspect overwide-gap DTS");
+    assert_eq!(
+        report.validations[0].failure_reason,
+        Some(DocTimeStampFailureReason::InvalidByteRange)
+    );
+    assert!(!report.all_imprints_valid());
+
+    // (c) The range stops short of the end of the revision it closes.
+    let truncated =
+        repoint_doc_timestamp_byte_range(&with_dts, 0, lt, gt + 1, with_dts.len() - (gt + 1) - 8);
+    let report = inspect_doc_timestamps(&truncated).expect("inspect truncated DTS");
+    assert_eq!(
+        report.validations[0].failure_reason,
+        Some(DocTimeStampFailureReason::InvalidByteRange)
+    );
+    assert!(!report.all_imprints_valid());
+}

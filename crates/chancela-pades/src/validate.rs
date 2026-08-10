@@ -186,7 +186,7 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
     } else if !has_later_incremental_updates {
         PdfSignatureCoverage::WholeDocument
     } else {
-        match classify_later_updates(&doc, &pdf[..signed_revision_len]) {
+        match classify_later_updates(&doc, pdf, signed_revision_len) {
             LaterUpdateClass::LtvAugmentationOnly => {
                 PdfSignatureCoverage::LtvAugmentedSignedRevision
             }
@@ -235,7 +235,12 @@ pub fn validate_pdf_signature(pdf: &[u8]) -> Result<PdfSignatureReport, PadesErr
 /// hex-string token — i.e. a single `<...>` whose hex decodes to exactly `contents` and nothing
 /// else. This is what makes "the signature covers everything except `/Contents`" true: if the gap
 /// were larger than `/Contents`, unsigned content bytes would sit in the hole (finding C3 MEDIUM).
-fn gap_matches_contents(pdf: &[u8], gap_start: usize, gap_end: usize, contents: &[u8]) -> bool {
+pub(crate) fn gap_matches_contents(
+    pdf: &[u8],
+    gap_start: usize,
+    gap_end: usize,
+    contents: &[u8],
+) -> bool {
     if gap_end <= gap_start || gap_end > pdf.len() {
         return false;
     }
@@ -287,11 +292,27 @@ enum LaterUpdateClass {
 /// full document relative to that revision must fall inside a tight allowlist of DSS/DocTimeStamp
 /// wiring; anything else (a redefined page, page tree, annotation, or an unconstrained
 /// catalog/AcroForm change) is content-bearing and breaks the coverage claim.
-fn classify_later_updates(full: &lopdf::Document, signed_revision: &[u8]) -> LaterUpdateClass {
+fn classify_later_updates(
+    full: &lopdf::Document,
+    pdf: &[u8],
+    signed_revision_len: usize,
+) -> LaterUpdateClass {
+    let Some(signed_revision) = pdf.get(..signed_revision_len) else {
+        return LaterUpdateClass::NotProvenBenign;
+    };
     let Ok(base) = lopdf::Document::load_mem(signed_revision) else {
         // Cannot establish what the signed revision contained; do not claim the later bytes benign.
         return LaterUpdateClass::NotProvenBenign;
     };
+
+    // The object diff below is structurally blind to two rendered-document changes that add or
+    // modify nothing. Both are recoverable only from the raw appended bytes, so check them first.
+    if !appended_xref_sections_free_nothing(pdf, signed_revision_len) {
+        return LaterUpdateClass::NotProvenBenign;
+    }
+    if !root_reference_is_unchanged(full, &base) {
+        return LaterUpdateClass::NotProvenBenign;
+    }
 
     let mut changed: Vec<(u32, u16)> = Vec::new();
     for (id, obj) in &full.objects {
@@ -311,6 +332,149 @@ fn classify_later_updates(full: &lopdf::Document, signed_revision: &[u8]) -> Lat
     } else {
         LaterUpdateClass::NotProvenBenign
     }
+}
+
+/// Upper bound on cross-reference sections walked while auditing the appended bytes. A legitimate
+/// PAdES file has a handful (signature, DSS, one archive timestamp per renewal); anything deeper is
+/// treated as unprovable rather than benign.
+const MAX_APPENDED_XREF_SECTIONS: usize = 64;
+
+/// Whether every cross-reference section appended after the signed revision marks nothing free.
+///
+/// The object diff in [`classify_later_updates`] structurally cannot answer this. `lopdf`'s
+/// cross-reference parser keeps only in-use (`n`) entries, and `Xref::merge` inserts with
+/// `or_insert`, so an appended section that marks a signed object **free** (`f`) leaves
+/// `full.objects` byte-identical to `base.objects` — zero changed objects. A conforming reader,
+/// however, resolves the freed object to null: freeing a page's `/Contents` stream deletes the whole
+/// clause from the rendered page while the diff reports that nothing changed. The information is
+/// gone by the time there is an object graph to compare, so it must be read back off the raw bytes.
+///
+/// The chain is walked from the last `startxref` (what a reader uses) through each trailer's
+/// `/Prev`, stopping at the first section that lies inside the signed revision — those bytes are
+/// covered by the signature. Anything that cannot be parsed as a classic cross-reference table
+/// (notably a cross-reference *stream*, whose entries are compressed binary and cannot be audited
+/// textually) fails closed.
+///
+/// Object 0 is exempt: it is the head of the free list and is free by definition
+/// (PDF 32000-1 §7.5.4), so writers legitimately repeat `0000000000 65535 f` in an update.
+fn appended_xref_sections_free_nothing(pdf: &[u8], signed_revision_len: usize) -> bool {
+    let Some(mut offset) = pdf::last_startxref(pdf) else {
+        return false;
+    };
+    let mut seen: Vec<usize> = Vec::new();
+
+    loop {
+        if offset < signed_revision_len {
+            // Reached a cross-reference section the signature covers: the appended ones are done.
+            return true;
+        }
+        if seen.contains(&offset) || seen.len() >= MAX_APPENDED_XREF_SECTIONS {
+            return false;
+        }
+        seen.push(offset);
+
+        if pdf.get(offset..offset + 4) != Some(b"xref".as_slice()) {
+            return false;
+        }
+        let Some(trailer_at) = pdf::find(&pdf[offset..], b"trailer").map(|at| at + offset) else {
+            return false;
+        };
+        if !xref_table_frees_nothing(&pdf[offset + 4..trailer_at]) {
+            return false;
+        }
+        // Bound the trailer at the `startxref` that closes this revision.
+        let end = pdf::find(&pdf[trailer_at..], b"startxref")
+            .map(|at| trailer_at + at)
+            .unwrap_or(pdf.len());
+        // No `/Prev` means this appended section claims to be the document's whole cross-reference
+        // table, so the signed revision's own sections are unreachable: never provably benign.
+        let Some(prev) = trailer_key_integer(&pdf[trailer_at..end], b"/Prev") else {
+            return false;
+        };
+        offset = prev;
+    }
+}
+
+/// Whether a classic cross-reference table body — everything between the `xref` keyword and the
+/// `trailer` keyword — marks no object other than object 0 as free. Returns `false` when the table
+/// does not parse, so a malformed or unexpected shape is never read as benign.
+fn xref_table_frees_nothing(body: &[u8]) -> bool {
+    let mut tokens = body
+        .split(|b: &u8| b.is_ascii_whitespace())
+        .filter(|t| !t.is_empty());
+
+    loop {
+        let Some(first_token) = tokens.next() else {
+            return true;
+        };
+        let (Some(first), Some(count)) = (
+            ascii_u32(first_token),
+            tokens.next().and_then(ascii_u32),
+        ) else {
+            return false;
+        };
+        for i in 0..count {
+            // Each entry is `nnnnnnnnnn ggggg [nf]`; only the type letter matters here.
+            let (Some(_), Some(_), Some(kind)) = (
+                tokens.next().and_then(ascii_u32),
+                tokens.next().and_then(ascii_u32),
+                tokens.next(),
+            ) else {
+                return false;
+            };
+            match kind {
+                b"n" => {}
+                b"f" => {
+                    if first.checked_add(i) != Some(0) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+    }
+}
+
+/// Parse an all-digits ASCII token as a `u32`, rejecting anything else (signs, empty, overflow).
+fn ascii_u32(token: &[u8]) -> Option<u32> {
+    if token.is_empty() || !token.iter().all(u8::is_ascii_digit) {
+        return None;
+    }
+    std::str::from_utf8(token).ok()?.parse().ok()
+}
+
+/// Read the integer value of `key` out of the raw bytes of a trailer dictionary.
+fn trailer_key_integer(trailer: &[u8], key: &[u8]) -> Option<usize> {
+    let at = pdf::find(trailer, key)?;
+    let mut i = at + key.len();
+    while i < trailer.len() && trailer[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let start = i;
+    while i < trailer.len() && trailer[i].is_ascii_digit() {
+        i += 1;
+    }
+    std::str::from_utf8(trailer.get(start..i)?).ok()?.parse().ok()
+}
+
+/// Whether the document catalog the *latest* trailer names is the one the signed revision named.
+///
+/// `lopdf` adopts the newest trailer verbatim, so an appended trailer can repoint `/Root` at another
+/// catalog-shaped object that already lives inside the signed revision. Nothing is added and nothing
+/// is modified — the object diff sees an empty change set — yet a reader renders a different
+/// document. Fails closed when either `/Root` is missing or is not a plain reference.
+fn root_reference_is_unchanged(full: &lopdf::Document, base: &lopdf::Document) -> bool {
+    let (Ok(full_root), Ok(base_root)) = (
+        full.trailer
+            .get(b"Root")
+            .and_then(lopdf::Object::as_reference),
+        base.trailer
+            .get(b"Root")
+            .and_then(lopdf::Object::as_reference),
+    ) else {
+        return false;
+    };
+    full_root == base_root
 }
 
 /// The set of object ids in `full` that a later incremental update is allowed to add or modify while
@@ -1211,6 +1375,82 @@ fn dss_stream_blobs(doc: &lopdf::Document, key: &[u8]) -> Result<Vec<Vec<u8>>, P
         blobs.push(stream.content.clone());
     }
     Ok(blobs)
+}
+
+#[cfg(test)]
+mod appended_bytes_tests {
+    //! Direct tests for the raw-byte audit of appended incremental updates (finding C2).
+    //!
+    //! These drive the textual scan on crafted bytes, so they cover the shapes that never reach an
+    //! object graph at all — a cross-reference stream, an unterminated table, a section with no
+    //! `/Prev` — which an end-to-end fixture cannot express without also becoming unparseable.
+
+    use super::{appended_xref_sections_free_nothing, xref_table_frees_nothing};
+
+    /// A signed revision ending at a `%%EOF`, plus `appended` bytes and a `startxref` naming the
+    /// appended section. Returns `(pdf, signed_revision_len)`.
+    fn with_appended(appended: &str) -> (Vec<u8>, usize) {
+        let signed = "%PDF-1.7\nxref\n0 1\n0000000000 65535 f\r\ntrailer\n<< /Size 1 /Root 1 0 R >>\nstartxref\n9\n%%EOF\n";
+        let signed_revision_len = signed.len();
+        let mut pdf = signed.to_owned();
+        let xref_offset = pdf.len();
+        pdf.push_str(appended);
+        pdf.push_str(&format!("startxref\n{xref_offset}\n%%EOF\n"));
+        (pdf.into_bytes(), signed_revision_len)
+    }
+
+    #[test]
+    fn an_appended_table_of_in_use_entries_is_benign() {
+        let (pdf, len) = with_appended(
+            "xref\n0 1\n0000000000 65535 f\r\n4 1\n0000000123 00000 n\r\ntrailer\n<< /Size 5 /Root 1 0 R /Prev 9 >>\n",
+        );
+        assert!(appended_xref_sections_free_nothing(&pdf, len));
+    }
+
+    #[test]
+    fn an_appended_table_freeing_a_signed_object_is_refused() {
+        let (pdf, len) = with_appended(
+            "xref\n4 1\n0000000000 65535 f\r\ntrailer\n<< /Size 5 /Root 1 0 R /Prev 9 >>\n",
+        );
+        assert!(!appended_xref_sections_free_nothing(&pdf, len));
+    }
+
+    #[test]
+    fn an_appended_table_freeing_the_second_object_of_a_subsection_is_refused() {
+        // The free entry is not the first in its subsection, so the object number has to be derived
+        // from the subsection header plus the entry's position.
+        let (pdf, len) = with_appended(
+            "xref\n3 2\n0000000123 00000 n\r\n0000000000 65535 f\r\ntrailer\n<< /Size 5 /Root 1 0 R /Prev 9 >>\n",
+        );
+        assert!(!appended_xref_sections_free_nothing(&pdf, len));
+    }
+
+    #[test]
+    fn an_appended_cross_reference_stream_is_refused() {
+        // Entries live in compressed binary that the textual audit cannot read: fail closed.
+        let (pdf, len) = with_appended(
+            "5 0 obj\n<< /Type /XRef /W [1 4 2] /Root 1 0 R /Prev 9 >>\nstream\nendstream\nendobj\n",
+        );
+        assert!(!appended_xref_sections_free_nothing(&pdf, len));
+    }
+
+    #[test]
+    fn an_appended_table_without_prev_is_refused() {
+        // Without `/Prev` the appended section claims to be the whole cross-reference table, so the
+        // signed revision's own sections become unreachable.
+        let (pdf, len) =
+            with_appended("xref\n0 1\n0000000000 65535 f\r\ntrailer\n<< /Size 1 /Root 1 0 R >>\n");
+        assert!(!appended_xref_sections_free_nothing(&pdf, len));
+    }
+
+    #[test]
+    fn a_truncated_or_mistyped_table_is_refused() {
+        assert!(!xref_table_frees_nothing(b"\n4 2\n0000000123 00000 n\r\n"));
+        assert!(!xref_table_frees_nothing(b"\n4 1\n0000000123 00000 x\r\n"));
+        assert!(!xref_table_frees_nothing(b"\n-4 1\n0000000123 00000 n\r\n"));
+        assert!(xref_table_frees_nothing(b"\n0 1\n0000000000 65535 f\r\n"));
+        assert!(xref_table_frees_nothing(b"\n"));
+    }
 }
 
 #[cfg(test)]

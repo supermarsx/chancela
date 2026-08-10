@@ -97,7 +97,20 @@ pub struct SignatureValidationReport {
     pub evidentiary_level: EvidentiaryLevel,
     /// For PAdES, whether the ByteRange covers the whole file except the `/Contents` value (the
     /// well-formed shape). `None` for detached CAdES.
+    ///
+    /// This is `false` both for a benign PAdES-B-LT signature (a `/DSS` or `/DocTimeStamp` revision
+    /// legitimately follows the signed one, so the ByteRange no longer reaches EOF) and for an
+    /// incremental-update tamper. Consult [`Self::pdf_coverage`] to tell those apart; do not gate a
+    /// validity decision on this field alone.
     pub covers_whole_file: Option<bool>,
+    /// For PAdES, the authoritative coverage verdict over the *rendered* document (SIG-24, finding
+    /// C3). `None` for detached CAdES and ASiC, whose bytes carry no incremental updates.
+    ///
+    /// Gate on
+    /// [`covers_rendered_document`](chancela_pades::validate::PdfSignatureCoverage::covers_rendered_document):
+    /// it separates benign long-term-validation augmentation, which
+    /// [`Self::covers_whole_file`] cannot, from an update that changes what a reader displays.
+    pub pdf_coverage: Option<chancela_pades::validate::PdfSignatureCoverage>,
     /// Embedded PAdES DSS/VRI evidence, if any. Empty for detached CAdES.
     pub dss: chancela_pades::DssReport,
     /// Technical local evidence marker: true only when a PAdES signature has B-T timestamp evidence
@@ -136,6 +149,7 @@ pub fn validate_signature(
                 has_signature_timestamp: report.has_signature_timestamp,
                 evidentiary_level: artifact.evidentiary_level,
                 covers_whole_file: Some(report.covers_whole_file_except_contents),
+                pdf_coverage: Some(report.coverage),
                 has_local_dss_revocation_evidence: report.has_signature_timestamp
                     && report.dss.has_revocation_evidence(),
                 dss: report.dss,
@@ -156,6 +170,7 @@ pub fn validate_signature(
                 has_signature_timestamp: artifact.timestamp_token_der.is_some(),
                 evidentiary_level: artifact.evidentiary_level,
                 covers_whole_file: None,
+                pdf_coverage: None,
                 dss: chancela_pades::DssReport::default(),
                 has_local_dss_revocation_evidence: false,
                 signer_trust: None,

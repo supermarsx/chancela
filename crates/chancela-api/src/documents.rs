@@ -1949,9 +1949,18 @@ pub struct SignedPdfSignalReport {
     pub has_byte_range: bool,
     pub byte_range_marker_count: usize,
     pub byte_range: Option<[i64; 4]>,
+    /// Raw textual read of the first `/ByteRange`: whether it starts at 0 and reaches EOF. This is
+    /// a structural datum only — it is legitimately `false` for any PAdES-B-LT signature, whose
+    /// `/DSS` revision follows the signed one. [`Self::covers_rendered_document`] is the field to
+    /// gate on; findings fall back to this one only when no coverage verdict was reached.
     pub byte_range_complete: Option<bool>,
     pub byte_range_digest_sha256: Option<String>,
     pub signed_revision_bytes: Option<usize>,
+    /// Coverage verdict from the validated PAdES report, when one was produced. `None` means the
+    /// validator did not reach a coverage classification.
+    pub coverage: Option<&'static str>,
+    /// Whether the validated signature covers the document as a reader renders it.
+    pub covers_rendered_document: Option<bool>,
     pub covered_bytes: Option<usize>,
     pub excluded_bytes: Option<usize>,
     pub has_contents_marker: bool,
@@ -2418,7 +2427,11 @@ fn validate_document_candidate_with_fixity(
                 "signed_pdf_missing_byte_range",
                 "signed-looking PDF has no /ByteRange marker",
             ));
-        } else if signature.byte_range_complete != Some(true) {
+        } else if signature.coverage.is_none() && signature.byte_range_complete != Some(true) {
+            // The raw `/ByteRange` text scan is only consulted when the PAdES validator reached no
+            // coverage verdict. On its own it flags every legitimate B-LT signature — whose DSS
+            // revision follows the signed one by design — as incomplete; when a real report exists,
+            // `coverage` below is the accurate signal.
             findings.push(DocumentValidationFinding::error(
                 "signed_pdf_incomplete_byte_range",
                 "signed-looking PDF has a malformed or incomplete /ByteRange",
@@ -2438,6 +2451,12 @@ fn validate_document_candidate_with_fixity(
             "structurally_signed" => findings.push(DocumentValidationFinding::warning(
                 "signed_pdf_structural_only",
                 "signature markers are present but this import screen could not establish a valid PAdES-B signature",
+            )),
+            "altered_after_signing" => findings.push(DocumentValidationFinding::error(
+                "signed_pdf_altered_after_signing",
+                signature.validation_error.clone().unwrap_or_else(|| {
+                    "signed PDF was altered by an incremental update after it was signed".to_owned()
+                }),
             )),
             "invalid" => findings.push(DocumentValidationFinding::error(
                 "signed_pdf_invalid",
@@ -4566,7 +4585,9 @@ fn pades_signature_entry(
 ) -> DocumentSignatureValidationEntry {
     let (status, valid) = match report.validation_status {
         "valid_pades_b" => ("valid", true),
-        "invalid" => ("invalid", false),
+        // A verified CMS whose coverage does not bind the rendered document is an invalid
+        // signature for this purpose, not an indeterminate one: the tamper is proven, not unknown.
+        "invalid" | "altered_after_signing" => ("invalid", false),
         _ => ("indeterminate", false),
     };
     DocumentSignatureValidationEntry {
@@ -4842,6 +4863,8 @@ fn recognize_signed_pdf(bytes: &[u8]) -> SignedPdfSignalReport {
         },
         byte_range_digest_sha256,
         signed_revision_bytes: pades_validation.signed_revision_bytes,
+        coverage: pades_validation.coverage,
+        covers_rendered_document: pades_validation.covers_rendered_document,
         covered_bytes: byte_range_shape.map(|shape| shape.covered_bytes),
         excluded_bytes: byte_range_shape.map(|shape| shape.excluded_bytes),
         has_contents_marker,
@@ -4863,6 +4886,8 @@ fn unsigned_pdf_signal_report() -> SignedPdfSignalReport {
         byte_range_complete: None,
         byte_range_digest_sha256: None,
         signed_revision_bytes: None,
+        coverage: None,
+        covers_rendered_document: None,
         covered_bytes: None,
         excluded_bytes: None,
         has_contents_marker: false,
@@ -4877,79 +4902,135 @@ struct PadesValidationSignal {
     performed: bool,
     pades_profile: Option<&'static str>,
     signed_revision_bytes: Option<usize>,
+    coverage: Option<&'static str>,
+    covers_rendered_document: Option<bool>,
     error: Option<String>,
+}
+
+impl PadesValidationSignal {
+    /// A verdict reached without a `chancela_pades` coverage report (no signature signal, or the
+    /// validator returned `Err` before it could classify coverage).
+    fn without_coverage(
+        status: &'static str,
+        performed: bool,
+        error: Option<String>,
+    ) -> PadesValidationSignal {
+        PadesValidationSignal {
+            status,
+            performed,
+            pades_profile: None,
+            signed_revision_bytes: None,
+            coverage: None,
+            covers_rendered_document: None,
+            error,
+        }
+    }
 }
 
 fn classify_pades_validation(bytes: &[u8], signed_pdf_signal: bool) -> PadesValidationSignal {
     if !signed_pdf_signal {
-        return PadesValidationSignal {
-            status: "unsigned",
-            performed: false,
-            pades_profile: None,
-            signed_revision_bytes: None,
-            error: None,
-        };
+        return PadesValidationSignal::without_coverage("unsigned", false, None);
     }
 
     match chancela_pades::validate_pdf_signature(bytes) {
-        Ok(report) => PadesValidationSignal {
-            status: "valid_pades_b",
-            performed: true,
-            pades_profile: Some(if report.has_signature_timestamp {
+        // A verified CMS is not by itself a valid signature: it only ever attests the bytes named by
+        // its `/ByteRange`. If an incremental update appended afterwards can change what a reader
+        // displays — or the excluded gap is not exactly `/Contents` — the signature does not vouch
+        // for the rendered document and must not be reported as a valid PAdES-B signature. This is
+        // the gate `PdfSignatureCoverage::covers_rendered_document` exists for, and it is the same
+        // gate `crate::pdf_signature_validation` applies, so both surfaces agree on one file.
+        Ok(report) => {
+            let coverage = coverage_verdict(report.coverage);
+            let profile = Some(if report.has_signature_timestamp {
                 "PAdES-B-T"
             } else {
                 "PAdES-B-B"
-            }),
-            signed_revision_bytes: Some(report.signed_revision_len),
-            error: None,
-        },
-        Err(chancela_pades::PadesError::InvalidByteRange) => PadesValidationSignal {
-            status: "invalid",
-            performed: true,
-            pades_profile: None,
-            signed_revision_bytes: None,
-            error: Some("signature ByteRange is malformed or points outside the file".to_owned()),
-        },
+            });
+            let (status, error) = match report.coverage {
+                chancela_pades::validate::PdfSignatureCoverage::WholeDocument
+                | chancela_pades::validate::PdfSignatureCoverage::LtvAugmentedSignedRevision => {
+                    ("valid_pades_b", None)
+                }
+                chancela_pades::validate::PdfSignatureCoverage::AlteredAfterSigning => (
+                    "altered_after_signing",
+                    Some(
+                        "the embedded signature verifies, but an incremental update appended after \
+                         the signed revision can change the rendered document, so the signature \
+                         does not cover what is displayed"
+                            .to_owned(),
+                    ),
+                ),
+                chancela_pades::validate::PdfSignatureCoverage::Malformed => (
+                    "invalid",
+                    Some(
+                        "signature ByteRange does not exclude exactly the /Contents value, so bytes \
+                         outside the signature were left unsigned"
+                            .to_owned(),
+                    ),
+                ),
+                _ => (
+                    "indeterminate",
+                    Some("signature coverage could not be classified".to_owned()),
+                ),
+            };
+            PadesValidationSignal {
+                status,
+                performed: true,
+                pades_profile: profile,
+                signed_revision_bytes: Some(report.signed_revision_len),
+                coverage: Some(coverage),
+                covers_rendered_document: Some(report.coverage.covers_rendered_document()),
+                error,
+            }
+        }
+        Err(chancela_pades::PadesError::InvalidByteRange) => PadesValidationSignal::without_coverage(
+            "invalid",
+            true,
+            Some("signature ByteRange is malformed or points outside the file".to_owned()),
+        ),
         Err(chancela_pades::PadesError::Cades(_))
-        | Err(chancela_pades::PadesError::InvalidContents) => PadesValidationSignal {
-            status: "invalid",
-            performed: true,
-            pades_profile: None,
-            signed_revision_bytes: None,
-            error: Some(
+        | Err(chancela_pades::PadesError::InvalidContents) => PadesValidationSignal::without_coverage(
+            "invalid",
+            true,
+            Some(
                 "embedded signature bytes did not validate against the PDF ByteRange digest"
                     .to_owned(),
             ),
-        },
-        Err(chancela_pades::PadesError::NoSignature) => PadesValidationSignal {
-            status: "structurally_signed",
-            performed: true,
-            pades_profile: None,
-            signed_revision_bytes: None,
-            error: Some(
+        ),
+        Err(chancela_pades::PadesError::NoSignature) => PadesValidationSignal::without_coverage(
+            "structurally_signed",
+            true,
+            Some(
                 "signature-like markers were present but no parseable /Sig dictionary was found"
                     .to_owned(),
             ),
-        },
+        ),
         Err(chancela_pades::PadesError::PdfParse(_))
-        | Err(chancela_pades::PadesError::MalformedStructure(_)) => PadesValidationSignal {
-            status: "indeterminate",
-            performed: true,
-            pades_profile: None,
-            signed_revision_bytes: None,
-            error: Some(
-                "PDF parsing could not establish whether the signature is valid".to_owned(),
-            ),
-        },
-        Err(err) => PadesValidationSignal {
-            status: "indeterminate",
-            performed: true,
-            pades_profile: None,
-            signed_revision_bytes: None,
-            error: Some(format!(
-                "PAdES validation did not reach a conclusion: {err}"
-            )),
-        },
+        | Err(chancela_pades::PadesError::MalformedStructure(_)) => {
+            PadesValidationSignal::without_coverage(
+                "indeterminate",
+                true,
+                Some("PDF parsing could not establish whether the signature is valid".to_owned()),
+            )
+        }
+        Err(err) => PadesValidationSignal::without_coverage(
+            "indeterminate",
+            true,
+            Some(format!("PAdES validation did not reach a conclusion: {err}")),
+        ),
+    }
+}
+
+/// Stable wire name for a [`chancela_pades::validate::PdfSignatureCoverage`]. Matches the vocabulary
+/// `crate::pdf_signature_validation` publishes, so the two surfaces name the same verdict alike.
+fn coverage_verdict(coverage: chancela_pades::validate::PdfSignatureCoverage) -> &'static str {
+    use chancela_pades::validate::PdfSignatureCoverage;
+    match coverage {
+        PdfSignatureCoverage::WholeDocument => "whole_document",
+        PdfSignatureCoverage::LtvAugmentedSignedRevision => "ltv_augmented_signed_revision",
+        PdfSignatureCoverage::AlteredAfterSigning => "altered_after_signing",
+        PdfSignatureCoverage::Malformed => "malformed",
+        _ => "unclassified",
     }
 }
 
@@ -8506,6 +8587,13 @@ fn build_document_bundle_validation_report(
                     "structurally_signed" => signed_findings.push(DocumentValidationFinding::warning(
                         "signed_pdf_structural_only",
                         "signature markers are present, but local inspection did not establish a valid PAdES-B signature",
+                    )),
+                    "altered_after_signing" => signed_findings.push(DocumentValidationFinding::error(
+                        "signed_pdf_altered_after_signing",
+                        structural_validation.validation_error.clone().unwrap_or_else(|| {
+                            "stored signed PDF was altered by an incremental update after it was signed"
+                                .to_owned()
+                        }),
                     )),
                     "invalid" => signed_findings.push(DocumentValidationFinding::error(
                         "signed_pdf_invalid",
