@@ -28,8 +28,8 @@
 //   node scripts/check-nextest-parity.mjs [--features <list>]
 //   node scripts/check-nextest-parity.mjs --self-test
 
-import { spawnSync } from 'node:child_process';
-import { argv, exit } from 'node:process';
+import { spawnSync } from "node:child_process";
+import { argv, exit } from "node:process";
 
 // Doctest entries from `cargo test -- --list` carry a FILE, a `-`, an item path and a line:
 //   crates\chancela-api\src\confirmation.rs - confirmation::require_confirmation (line 2214)
@@ -48,10 +48,10 @@ const DOCTEST = /^.+\.rs - .*\(line \d+\)$/u;
 
 export function parseCargoList(stdout) {
   const all = stdout
-    .split('\n')
+    .split("\n")
     .map((l) => l.trim())
-    .filter((l) => l.endsWith(': test'))
-    .map((l) => l.slice(0, -': test'.length));
+    .filter((l) => l.endsWith(": test"))
+    .map((l) => l.slice(0, -": test".length));
   return {
     tests: all.filter((n) => !DOCTEST.test(n)),
     doctests: all.filter((n) => DOCTEST.test(n)),
@@ -63,7 +63,7 @@ export function parseCargoList(stdout) {
 //       some::test::name
 export function parseNextestList(stdout) {
   return stdout
-    .split('\n')
+    .split("\n")
     .filter((l) => /^ {4}\S/u.test(l))
     .map((l) => l.trim());
 }
@@ -78,14 +78,15 @@ export function compare(cargo, nextest) {
     else counted.set(n, left - 1);
   }
   const extra = [];
-  for (const [name, left] of counted) for (let i = 0; i < left; i += 1) extra.push(name);
+  for (const [name, left] of counted)
+    for (let i = 0; i < left; i += 1) extra.push(name);
   return { missing, extra };
 }
 
 /** Strip SGR escapes. See `run` for why this is not paranoia. */
 function stripAnsi(text) {
   // eslint-disable-next-line no-control-regex
-  return text.replace(/\u001b\[[0-9;]*m/gu, '');
+  return text.replace(/\u001b\[[0-9;]*m/gu, "");
 }
 
 function run(command, args) {
@@ -97,108 +98,148 @@ function run(command, args) {
   // tools that honour them, `--color never` covers nextest explicitly, and `stripAnsi` covers
   // whatever ignores all three.
   const r = spawnSync(command, args, {
-    encoding: 'utf8',
+    encoding: "utf8",
     shell: false,
     maxBuffer: 256 * 1024 * 1024,
-    env: { ...process.env, NO_COLOR: '1', CARGO_TERM_COLOR: 'never' },
+    env: { ...process.env, NO_COLOR: "1", CARGO_TERM_COLOR: "never" },
   });
   if (r.error) throw r.error;
   if (r.status !== 0) {
-    console.error(`${command} ${args.join(' ')} exited ${r.status}`);
+    console.error(`${command} ${args.join(" ")} exited ${r.status}`);
     console.error(r.stderr);
     exit(2);
   }
   return stripAnsi(r.stdout);
 }
 
-if (argv.includes('--self-test')) {
+if (argv.includes("--self-test")) {
   const cargo = parseCargoList(
     [
-      'alpha::one: test',
-      'beta::two: test',
-      'crates\\chancela-api\\src\\a.rs - a::doc (line 12): test',
+      "alpha::one: test",
+      "beta::two: test",
+      "crates\\chancela-api\\src\\a.rs - a::doc (line 12): test",
       // A doctest in a `//!` module-doc block has NO item name. This shape is why the gate once
       // reported a phantom drop, so it is pinned here: classify it as a plain test again and the
       // assertions below fail.
-      'crates\\chancela-store\\src\\lib.rs - (line 22): test',
-      'not a test line',
-    ].join('\n'),
+      "crates\\chancela-store\\src\\lib.rs - (line 22): test",
+      "not a test line",
+    ].join("\n"),
   );
   if (cargo.tests.length !== 2) {
-    console.error(`self-test FAILED: expected 2 real tests, got ${cargo.tests.length}: ${cargo.tests.join(', ')}`);
+    console.error(
+      `self-test FAILED: expected 2 real tests, got ${cargo.tests.length}: ${cargo.tests.join(", ")}`,
+    );
     exit(1);
   }
   if (cargo.doctests.length !== 2) {
     console.error(
       `self-test FAILED: expected 2 doctests (one of them name-less), got ${cargo.doctests.length}: ` +
-        cargo.doctests.join(', '),
+        cargo.doctests.join(", "),
     );
     exit(1);
   }
 
   // Not `console.assert`: it writes to stderr and leaves the exit code at 0, so a self-test built
   // on it passes in CI no matter what it finds.
-  const listed = parseNextestList(['pkg::bin:', '    alpha::one', '    beta::two'].join('\n'));
+  const listed = parseNextestList(
+    ["pkg::bin:", "    alpha::one", "    beta::two"].join("\n"),
+  );
   if (listed.length !== 2) {
-    console.error(`self-test FAILED: expected 2 listed tests, got ${listed.length}`);
+    console.error(
+      `self-test FAILED: expected 2 listed tests, got ${listed.length}`,
+    );
     exit(1);
   }
 
   const clean = compare(cargo, listed);
   if (clean.missing.length !== 0 || clean.extra.length !== 0) {
-    console.error('self-test FAILED: identical sets were reported as differing');
+    console.error(
+      "self-test FAILED: identical sets were reported as differing",
+    );
     exit(1);
   }
   // The gate must go RED when a test disappears from nextest. Proving that is the whole point:
   // a parity check that cannot fail is worse than none, because it reports confidence it has not
   // earned.
-  const dropped = compare(cargo, ['alpha::one']);
-  if (dropped.missing.length !== 1 || dropped.missing[0] !== 'beta::two') {
-    console.error('self-test FAILED: a dropped test was not detected');
+  const dropped = compare(cargo, ["alpha::one"]);
+  if (dropped.missing.length !== 1 || dropped.missing[0] !== "beta::two") {
+    console.error("self-test FAILED: a dropped test was not detected");
     exit(1);
   }
-  const gained = compare(cargo, ['alpha::one', 'beta::two', 'gamma::three']);
-  if (gained.extra.length !== 1 || gained.extra[0] !== 'gamma::three') {
-    console.error('self-test FAILED: an unexpected extra test was not detected');
+  const gained = compare(cargo, ["alpha::one", "beta::two", "gamma::three"]);
+  if (gained.extra.length !== 1 || gained.extra[0] !== "gamma::three") {
+    console.error(
+      "self-test FAILED: an unexpected extra test was not detected",
+    );
     exit(1);
   }
-  console.log('check-nextest-parity self-test OK (detects drops and additions)');
+  console.log(
+    "check-nextest-parity self-test OK (detects drops and additions)",
+  );
   exit(0);
 }
 
-const featuresIndex = argv.indexOf('--features');
-const features = featuresIndex === -1 ? [] : ['--features', argv[featuresIndex + 1]];
+const featuresIndex = argv.indexOf("--features");
+const features =
+  featuresIndex === -1 ? [] : ["--features", argv[featuresIndex + 1]];
 
 const cargo = parseCargoList(
-  run('cargo', ['test', '--workspace', '--locked', ...features, '--', '--list']),
+  run("cargo", [
+    "test",
+    "--workspace",
+    "--locked",
+    ...features,
+    "--",
+    "--list",
+  ]),
 );
 const nextest = parseNextestList(
-  run('cargo', ['nextest', 'list', '--color', 'never', '--workspace', '--locked', ...features, '--run-ignored', 'all']),
+  run("cargo", [
+    "nextest",
+    "list",
+    "--color",
+    "never",
+    "--workspace",
+    "--locked",
+    ...features,
+    "--run-ignored",
+    "all",
+  ]),
 );
 
 const { missing, extra } = compare(cargo, nextest);
 
-console.log(`cargo test   : ${cargo.tests.length} tests + ${cargo.doctests.length} doctests`);
-console.log(`cargo nextest: ${nextest.length} tests (doctests are not runnable by nextest)`);
+console.log(
+  `cargo test   : ${cargo.tests.length} tests + ${cargo.doctests.length} doctests`,
+);
+console.log(
+  `cargo nextest: ${nextest.length} tests (doctests are not runnable by nextest)`,
+);
 
 if (missing.length === 0 && extra.length === 0 && cargo.doctests.length > 0) {
-  console.log('\nnextest parity: PASS — nextest executes every non-doctest cargo test executes.');
+  console.log(
+    "\nnextest parity: PASS — nextest executes every non-doctest cargo test executes.",
+  );
   exit(0);
 }
 
 if (missing.length) {
-  console.error(`\n${missing.length} test(s) cargo test runs and nextest does NOT:`);
+  console.error(
+    `\n${missing.length} test(s) cargo test runs and nextest does NOT:`,
+  );
   for (const n of missing.slice(0, 50)) console.error(`  - ${n}`);
 }
 if (extra.length) {
-  console.error(`\n${extra.length} test(s) nextest lists and cargo test does NOT:`);
+  console.error(
+    `\n${extra.length} test(s) nextest lists and cargo test does NOT:`,
+  );
   for (const n of extra.slice(0, 50)) console.error(`  + ${n}`);
 }
 if (cargo.doctests.length === 0) {
   console.error(
-    '\nNo doctests were found. The separate `cargo test --doc` CI step is now a no-op and ' +
-      'should be removed rather than left implying coverage it does not provide.',
+    "\nNo doctests were found. The separate `cargo test --doc` CI step is now a no-op and " +
+      "should be removed rather than left implying coverage it does not provide.",
   );
 }
-console.error('\nnextest parity: FAIL');
+console.error("\nnextest parity: FAIL");
 exit(1);
