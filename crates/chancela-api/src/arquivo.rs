@@ -16,8 +16,9 @@ use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
 use axum::response::Response;
 use chancela_authz::{Permission, Scope};
 use chancela_core::{Block, BookKind, DocumentModel, KvRow, Run};
-use chancela_ledger::{ChainId, ChainStatus, Event, ReanchorRecord};
+use chancela_ledger::{ChainId, ChainStatus, Event, ReanchorRecord, digest};
 use futures_core::Stream;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use time::OffsetDateTime;
@@ -741,9 +742,13 @@ fn render_csv_stream_header(input: &StreamInterchangeInput, notice: &str) -> Str
     ));
     out.push_str("# has_more=false\n");
     out.push_str("# next_cursor=-\n");
-    out.push_str("seq,chain_seq,kind,scope,actor,timestamp,chains,payload_digest,prev_hash,hash,justification\n");
+    out.push_str(CSV_HEADER_ROW);
     out
 }
+
+/// `justification` is followed by the verdict that qualifies it, so a consumer reading the column
+/// cannot mistake an unanchored string for a chain-verified one.
+const CSV_HEADER_ROW: &str = "seq,chain_seq,kind,scope,actor,timestamp,chains,payload_digest,prev_hash,hash,justification,justification_integrity\n";
 
 fn render_csv_record(record: &RenderRecord) -> String {
     let row = [
@@ -757,7 +762,12 @@ fn render_csv_record(record: &RenderRecord) -> String {
         record.payload_digest.clone(),
         record.chain_prev_hash.clone(),
         record.hash.clone(),
-        record.justification.clone().unwrap_or_default(),
+        record.justification.text().unwrap_or_default().to_owned(),
+        record
+            .justification
+            .integrity_code()
+            .unwrap_or_default()
+            .to_owned(),
     ]
     .into_iter()
     .map(csv_escape)
@@ -1026,27 +1036,11 @@ fn render_csv(input: &InterchangeInput<'_>, notice: &str) -> String {
         "# next_cursor={}\n",
         input.page_meta.next_cursor_label()
     ));
-    out.push_str("seq,chain_seq,kind,scope,actor,timestamp,chains,payload_digest,prev_hash,hash,justification\n");
+    out.push_str(CSV_HEADER_ROW);
+    // Share the row writer with the streamed export so the two cannot drift on what each column
+    // claims.
     for record in input.records {
-        let row = [
-            record.seq.to_string(),
-            record.chain_seq.to_string(),
-            record.kind.clone(),
-            record.scope.clone(),
-            record.actor.clone(),
-            record.timestamp.clone(),
-            record.chains.join("|"),
-            record.payload_digest.clone(),
-            record.chain_prev_hash.clone(),
-            record.hash.clone(),
-            record.justification.clone().unwrap_or_default(),
-        ]
-        .into_iter()
-        .map(csv_escape)
-        .collect::<Vec<_>>()
-        .join(",");
-        out.push_str(&row);
-        out.push('\n');
+        out.push_str(&render_csv_record(record));
     }
     out
 }
@@ -1127,6 +1121,66 @@ fn html_escape(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+/// Whether an event's recorded `justification` is inside the tamper-evident chain.
+///
+/// The frozen hash preimage covers `prev_hash, seq, actor, scope, kind, timestamp, payload_digest,
+/// links`. It does **not** cover `justification`, and `attestation::sign_event` signs only
+/// `event.hash`, so a stored justification can be rewritten without `Ledger::verify` reporting a
+/// break — unlike every other field this export renders.
+///
+/// The one case where the text *is* anchored is the pattern `Ledger::reanchored_segments` relies
+/// on: the event digested its own justification as its payload, so `digest(justification) ==
+/// payload_digest`, and that digest is in the preimage. Every justification is classified against
+/// exactly that test before it is rendered, so an unanchored string is never presented beside the
+/// chain verdict as though the verdict covered it.
+enum JustificationEvidence {
+    /// The event recorded no justification.
+    Absent,
+    /// `digest(justification) == payload_digest`: altering the text would break `verify()`.
+    DigestAnchored(String),
+    /// Recorded, but no digest in the chain covers it — outside the verification's reach.
+    Unanchored(String),
+}
+
+impl JustificationEvidence {
+    fn classify(event: &Event) -> Self {
+        match event.justification.as_deref() {
+            None => Self::Absent,
+            Some(text) if digest(text.as_bytes()) == event.payload_digest => {
+                Self::DigestAnchored(text.to_owned())
+            }
+            Some(text) => Self::Unanchored(text.to_owned()),
+        }
+    }
+
+    fn text(&self) -> Option<&str> {
+        match self {
+            Self::Absent => None,
+            Self::DigestAnchored(text) | Self::Unanchored(text) => Some(text),
+        }
+    }
+
+    /// Stable machine-readable verdict for the interchange exports.
+    fn integrity_code(&self) -> Option<&'static str> {
+        match self {
+            Self::Absent => None,
+            Self::DigestAnchored(_) => Some("payload_digest_anchored"),
+            Self::Unanchored(_) => Some("outside_chain_verification"),
+        }
+    }
+}
+
+impl Serialize for JustificationEvidence {
+    /// Flattened into [`RenderRecord`] so the interchange formats keep the historical
+    /// `justification` field and gain the verdict that qualifies it.
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(2))?;
+        map.serialize_entry("justification", &self.text())?;
+        map.serialize_entry("justification_integrity", &self.integrity_code())?;
+        map.end()
+    }
+}
+
 #[derive(Serialize)]
 struct RenderRecord {
     chain_seq: u64,
@@ -1136,7 +1190,8 @@ struct RenderRecord {
     kind: String,
     scope: String,
     actor: String,
-    justification: Option<String>,
+    #[serde(flatten)]
+    justification: JustificationEvidence,
     timestamp: String,
     payload_digest: String,
     hash: String,
@@ -1153,7 +1208,7 @@ impl RenderRecord {
             kind: event.kind.clone(),
             scope: event.scope.clone(),
             actor: event.actor.clone(),
-            justification: event.justification.clone(),
+            justification: JustificationEvidence::classify(event),
             timestamp: event.timestamp.format(&Rfc3339).unwrap_or_default(),
             payload_digest: hex(&event.payload_digest),
             hash: hex(&event.hash),
@@ -1282,7 +1337,12 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
         });
     }
 
+    // Every `Motivo` this renders was reconstructed by `Ledger::reanchored_segments`, which drops
+    // any disclosure whose retained JSON does not match the committed `payload_digest` — so unlike
+    // a bare event justification, it is already inside the frozen preimage.
     append_reanchor_disclosure(&mut blocks, input.reanchors);
+
+    append_justification_scope_note(&mut blocks, input.records);
 
     blocks.push(Block::Rule);
     if input.records.is_empty() {
@@ -1308,8 +1368,14 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
                 kv("Autor", &record.actor),
                 kv("Data", &record.timestamp),
             ];
-            if let Some(justification) = &record.justification {
-                rows.push(kv("Justificacao", justification));
+            match &record.justification {
+                JustificationEvidence::Absent => {}
+                JustificationEvidence::DigestAnchored(text) => {
+                    rows.push(kv(JUSTIFICATION_ANCHORED_KEY, text))
+                }
+                JustificationEvidence::Unanchored(text) => {
+                    rows.push(kv(JUSTIFICATION_UNANCHORED_KEY, text))
+                }
             }
             rows.push(kv("Digest do conteudo", &record.payload_digest));
             rows.push(kv("Ligacao anterior na cadeia", &record.chain_prev_hash));
@@ -1331,6 +1397,45 @@ fn build_archive_document(input: ArchiveDocumentInput<'_>) -> DocumentModel {
         // An archive export belongs to no book, so it declares no page capacity.
         page_capacity: None,
     }
+}
+
+/// Row key for a justification the chain commits to (`digest(justification) == payload_digest`).
+const JUSTIFICATION_ANCHORED_KEY: &str = "Justificacao (abrangida pelo digest do conteudo)";
+/// Row key for a justification no digest in the chain covers. The qualifier is part of the key so
+/// that a page read in isolation still carries it.
+const JUSTIFICATION_UNANCHORED_KEY: &str =
+    "Justificacao (nao abrangida pela verificacao da cadeia)";
+
+/// Explain, once per document, what the two justification row keys mean.
+///
+/// The per-record keys carry the verdict, but a reader also needs to know *why* one field of the
+/// record sits outside a verification that the header block reports as passing.
+fn append_justification_scope_note(blocks: &mut Vec<Block>, records: &[RenderRecord]) {
+    if !records
+        .iter()
+        .any(|record| record.justification.text().is_some())
+    {
+        return;
+    }
+    blocks.push(Block::Heading {
+        level: 2,
+        text: "Justificacoes e o alcance da verificacao".to_owned(),
+    });
+    blocks.push(Block::Paragraph {
+        runs: vec![Run {
+            text: "A verificacao da cadeia abrange, em cada registo, o autor, o ambito, o tipo, a \
+                   data, o digest do conteudo e as ligacoes entre registos. O texto da \
+                   justificacao nao entra nesse calculo: e conservado a parte e pode ter sido \
+                   alterado sem que a verificacao assinale qualquer quebra. Cada justificacao e \
+                   por isso apresentada com a indicacao do seu alcance. Constituem excecao os \
+                   registos cujo digest do conteudo foi calculado sobre o proprio texto da \
+                   justificacao: nesses, qualquer alteracao do texto seria detetada pela \
+                   verificacao."
+                .to_owned(),
+            bold: false,
+            italic: false,
+        }],
+    });
 }
 
 fn append_reanchor_disclosure(blocks: &mut Vec<Block>, records: &[ReanchorRecord]) {
@@ -1514,5 +1619,290 @@ mod tests {
 
         assert_eq!(selected.events.len(), 1);
         assert_eq!(selected.events[0].kind, "act.sealed");
+    }
+
+    /// The justification that IS the digested payload — the `Ledger::reanchored_segments` pattern.
+    const ANCHORED_JUSTIFICATION: &str = "aprovada em reuniao ordinaria de 5 de janeiro";
+    /// A justification recorded beside an unrelated payload, as every mutation route records one.
+    const UNANCHORED_JUSTIFICATION: &str = "reabertura para correcao de lapso material";
+
+    /// Index of the digest-anchored event in [`justification_fixture_ledger`].
+    const ANCHORED_SEQ: usize = 1;
+    /// Index of the unanchored event in [`justification_fixture_ledger`].
+    const UNANCHORED_SEQ: usize = 2;
+
+    /// A chain-valid fixture: `Ledger::try_from_events` (used by the tamper test) enforces the
+    /// per-chain genesis kinds that `append` does not, so the company chain opens with
+    /// `entity.created` and the book chain with `book.opened`.
+    fn justification_fixture_ledger() -> Ledger {
+        let mut ledger = Ledger::new();
+        ledger.append("amelia.marques", "entity:e1", "entity.created", None, b"e1");
+        ledger.append(
+            "amelia.marques",
+            "entity:e1/book:b1",
+            "book.opened",
+            Some(ANCHORED_JUSTIFICATION),
+            ANCHORED_JUSTIFICATION.as_bytes(),
+        );
+        ledger.append(
+            "amelia.marques",
+            "entity:e1/book:b1/act:a1",
+            "act.reopened",
+            Some(UNANCHORED_JUSTIFICATION),
+            b"{\"act\":\"a1\",\"state\":\"Draft\"}",
+        );
+        ledger
+    }
+
+    fn render_records(ledger: &Ledger, chain: &ChainId) -> Vec<RenderRecord> {
+        ledger
+            .events()
+            .iter()
+            .map(|event| RenderRecord::from_event(event, chain))
+            .collect()
+    }
+
+    fn archive_document(ledger: &Ledger, records: &[RenderRecord]) -> DocumentModel {
+        let chain = ChainId::Global;
+        let status = ledger.chain_status(&chain).expect("global chain status");
+        build_archive_document(ArchiveDocumentInput {
+            chain: &chain,
+            status: &status,
+            records,
+            page_meta: ArchivePageMeta {
+                scope: ArchiveDocumentScope::BoundedFirstPage,
+                order: LedgerOrder::Desc,
+                page_limit: Some(50),
+                internal_batch_limit: None,
+                has_more: false,
+                next_cursor: None,
+                record_cap: None,
+                streamed: false,
+            },
+            reanchors: &ledger.reanchored_segments(),
+            degraded: false,
+            sources: &LabelSources {
+                entities: HashMap::new(),
+                books: HashMap::new(),
+            },
+            instance_name: "Encosto Estrategico Lda",
+            generated_at: "2026-01-05T10:00:00Z",
+            filter_summary: "sem filtros",
+        })
+    }
+
+    fn kv_rows(model: &DocumentModel) -> Vec<(&str, &str)> {
+        model
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::KeyValue { rows } => Some(rows),
+                _ => None,
+            })
+            .flatten()
+            .map(|row| (row.key.as_str(), row.value.as_str()))
+            .collect()
+    }
+
+    fn document_text(model: &DocumentModel) -> String {
+        model
+            .blocks
+            .iter()
+            .map(|block| match block {
+                Block::Heading { text, .. } => text.clone(),
+                Block::Paragraph { runs } => {
+                    runs.iter().map(|run| run.text.as_str()).collect::<String>()
+                }
+                _ => String::new(),
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn archive_document_renders_only_a_digest_anchored_justification_as_evidence() {
+        let ledger = justification_fixture_ledger();
+        let records = render_records(&ledger, &ChainId::Global);
+        let model = archive_document(&ledger, &records);
+        let rows = kv_rows(&model);
+
+        assert!(
+            rows.contains(&(JUSTIFICATION_ANCHORED_KEY, ANCHORED_JUSTIFICATION)),
+            "digest-covered justification renders as evidence: {rows:?}"
+        );
+        assert!(
+            rows.contains(&(JUSTIFICATION_UNANCHORED_KEY, UNANCHORED_JUSTIFICATION)),
+            "uncovered justification renders labelled: {rows:?}"
+        );
+        // The chain verdict is still asserted, and no justification sits beside it unqualified.
+        assert!(
+            rows.contains(&("Estado da cadeia", "Verificada")),
+            "{rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(key, _)| *key == "Justificacao"),
+            "no unqualified justification row survives: {rows:?}"
+        );
+        assert!(
+            document_text(&model).contains("Justificacoes e o alcance da verificacao"),
+            "the document explains what the two labels mean"
+        );
+    }
+
+    #[test]
+    fn archive_document_omits_the_scope_note_when_no_justification_is_rendered() {
+        let mut ledger = Ledger::new();
+        ledger.append("amelia.marques", "settings", "settings.updated", None, b"1");
+        let records = render_records(&ledger, &ChainId::Global);
+        let model = archive_document(&ledger, &records);
+
+        assert!(
+            !document_text(&model).contains("Justificacoes e o alcance da verificacao"),
+            "no justification rendered, so nothing to qualify"
+        );
+    }
+
+    #[test]
+    fn tampering_with_a_justification_demotes_it_out_of_the_evidence_rows() {
+        let ledger = justification_fixture_ledger();
+        let baseline = archive_document(&ledger, &render_records(&ledger, &ChainId::Global));
+        let baseline_hashes = kv_rows(&baseline)
+            .into_iter()
+            .filter(|(key, _)| *key == "Hash do registo" || *key == "Estado da cadeia")
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect::<Vec<_>>();
+
+        // The single UPDATE the frozen preimage cannot see.
+        let mut events = ledger.events().to_vec();
+        events[ANCHORED_SEQ].justification =
+            Some("aprovada por unanimidade em assembleia geral".to_owned());
+        let (tampered, verdict) = Ledger::try_from_events(events);
+
+        // The premise: the chain still verifies, byte-identical hashes and all.
+        assert!(
+            verdict.is_ok(),
+            "justification is outside the preimage, so verify() cannot see the edit: {verdict:?}"
+        );
+        let rows = kv_rows(&baseline);
+        let tampered_records = render_records(&tampered, &ChainId::Global);
+        let tampered_model = archive_document(&tampered, &tampered_records);
+        let tampered_rows = kv_rows(&tampered_model);
+        let tampered_pairs = tampered_rows
+            .iter()
+            .filter(|(key, _)| *key == "Hash do registo" || *key == "Estado da cadeia")
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect::<Vec<_>>();
+
+        // What the document claims is verified did not move...
+        assert_eq!(baseline_hashes, tampered_pairs);
+        // ...and the substituted text is no longer presented as covered by that claim.
+        assert!(
+            rows.contains(&(JUSTIFICATION_ANCHORED_KEY, ANCHORED_JUSTIFICATION)),
+            "control: the untampered text was evidence"
+        );
+        assert!(
+            !tampered_rows
+                .iter()
+                .any(|(key, _)| *key == JUSTIFICATION_ANCHORED_KEY),
+            "tampered text lost its anchored labelling: {tampered_rows:?}"
+        );
+        assert!(
+            tampered_rows.contains(&(
+                JUSTIFICATION_UNANCHORED_KEY,
+                "aprovada por unanimidade em assembleia geral"
+            )),
+            "tampered text renders labelled instead: {tampered_rows:?}"
+        );
+    }
+
+    #[test]
+    fn csv_export_qualifies_every_justification_column() {
+        let ledger = justification_fixture_ledger();
+        let records = render_records(&ledger, &ChainId::Global);
+        let csv = render_csv(
+            &InterchangeInput {
+                format: ArchiveExportFormat::Csv,
+                chain: &ChainId::Global,
+                status: &ledger
+                    .chain_status(&ChainId::Global)
+                    .expect("global chain status"),
+                records: &records,
+                page_meta: ArchivePageMeta {
+                    scope: ArchiveDocumentScope::BoundedFirstPage,
+                    order: LedgerOrder::Desc,
+                    page_limit: Some(50),
+                    internal_batch_limit: None,
+                    has_more: false,
+                    next_cursor: None,
+                    record_cap: None,
+                    streamed: false,
+                },
+                degraded: false,
+                generated_at: "2026-01-05T10:00:00Z",
+                filter_summary: "sem filtros",
+            },
+            "audit interchange",
+        );
+
+        assert!(
+            csv.contains("hash,justification,justification_integrity\n"),
+            "the verdict column follows the text column: {csv}"
+        );
+        assert!(
+            csv.contains(&format!(
+                "{ANCHORED_JUSTIFICATION},payload_digest_anchored\n"
+            )),
+            "{csv}"
+        );
+        assert!(
+            csv.contains(&format!(
+                "{UNANCHORED_JUSTIFICATION},outside_chain_verification\n"
+            )),
+            "{csv}"
+        );
+        // The streamed writer is the same row writer, so it cannot drift from the buffered one.
+        assert!(
+            csv.contains(&render_csv_record(&records[UNANCHORED_SEQ])),
+            "{csv}"
+        );
+    }
+
+    #[test]
+    fn json_export_carries_the_integrity_verdict_beside_the_justification() {
+        let ledger = justification_fixture_ledger();
+        let records = render_records(&ledger, &ChainId::Global);
+
+        let anchored: serde_json::Value = serde_json::from_str(
+            render_json_record(&records[ANCHORED_SEQ])
+                .expect("json")
+                .trim(),
+        )
+        .expect("record json");
+        assert_eq!(anchored["justification"], ANCHORED_JUSTIFICATION);
+        assert_eq!(
+            anchored["justification_integrity"],
+            "payload_digest_anchored"
+        );
+
+        let unanchored: serde_json::Value = serde_json::from_str(
+            render_json_record(&records[UNANCHORED_SEQ])
+                .expect("json")
+                .trim(),
+        )
+        .expect("record json");
+        assert_eq!(unanchored["justification"], UNANCHORED_JUSTIFICATION);
+        assert_eq!(
+            unanchored["justification_integrity"],
+            "outside_chain_verification"
+        );
+
+        let mut without = Ledger::new();
+        without.append("amelia.marques", "settings", "settings.updated", None, b"1");
+        let none = render_records(&without, &ChainId::Global);
+        let value: serde_json::Value =
+            serde_json::from_str(render_json_record(&none[0]).expect("json").trim())
+                .expect("record json");
+        assert!(value["justification"].is_null());
+        assert!(value["justification_integrity"].is_null());
     }
 }

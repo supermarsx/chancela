@@ -1925,7 +1925,10 @@ mod tests {
         let anchors = || TslTrustAnchors::new().with_cert_der(&der);
         let fingerprint = fingerprint_of(&der);
 
-        assert!(intersects_annotation(&anchors(), std::slice::from_ref(&fingerprint)));
+        assert!(intersects_annotation(
+            &anchors(),
+            std::slice::from_ref(&fingerprint)
+        ));
         assert!(
             !intersects_annotation(&anchors(), &[]),
             "no annotation, no mark"
