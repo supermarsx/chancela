@@ -778,6 +778,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
+name = "base64"
+version = "0.23.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac07cdecf99051d9a5238b80f35af32cdeba5b336e55d957b318b50137e18da5"
+
+[[package]]
 name = "base64-simd"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1193,7 +1199,7 @@ version = "26.1.0"
 dependencies = [
  "argon2 0.5.3",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "bytes",
  "chacha20poly1305",
  "chancela-action-center",
@@ -1321,7 +1327,7 @@ dependencies = [
 name = "chancela-cmd"
 version = "26.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chancela-cades",
  "der 0.7.10",
  "reqwest",
@@ -1377,7 +1383,7 @@ dependencies = [
 name = "chancela-csc"
 version = "26.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chancela-cades",
  "chancela-pades",
  "chancela-signing",
@@ -1493,7 +1499,7 @@ dependencies = [
 name = "chancela-scap"
 version = "26.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chancela-cades",
  "reqwest",
  "serde",
@@ -1536,7 +1542,7 @@ dependencies = [
 name = "chancela-signing"
 version = "26.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chancela-cades",
  "chancela-cmd",
  "chancela-pades",
@@ -1675,7 +1681,7 @@ dependencies = [
 name = "chancela-xades"
 version = "26.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "chancela-cades",
  "chancela-tsa",
  "der 0.7.10",
@@ -1696,7 +1702,7 @@ dependencies = [
 name = "chancela-zk"
 version = "26.1.0"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "serde",
  "sha2 0.10.9",
  "thiserror 2.0.18",
