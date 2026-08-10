@@ -77,6 +77,15 @@ fn json_request(method: &str, uri: &str, body: Value) -> Request<Body> {
 fn post(uri: &str, body: Value) -> Request<Body> {
     json_request("POST", uri, body)
 }
+fn delete(uri: &str, body: Value) -> Request<Body> {
+    json_request("DELETE", uri, body)
+}
+
+/// A confirmation proof carrying the acting user's own password — what the second-factor
+/// credential operations demand now that they no longer ride the session alone.
+fn with_password_proof() -> Value {
+    json!({ "confirmation": { "reauth": { "password": TEST_PASSWORD } } })
+}
 
 async fn seed_user(state: &AppState, username: &str, role: RoleId) -> UserId {
     let uid = UserId(Uuid::new_v4());
@@ -379,11 +388,10 @@ async fn a_user_can_disable_their_own_factor_unless_it_is_required() {
     let (status, body) = send(
         state.clone(),
         with_session(
-            Request::builder()
-                .method("DELETE")
-                .uri(format!("/v1/users/{}/two-factor/totp", uid.0))
-                .body(Body::empty())
-                .unwrap(),
+            delete(
+                &format!("/v1/users/{}/two-factor/totp", uid.0),
+                with_password_proof(),
+            ),
             &token,
         ),
     )
@@ -405,11 +413,10 @@ async fn a_user_can_disable_their_own_factor_unless_it_is_required() {
     let (status, view) = send(
         state.clone(),
         with_session(
-            Request::builder()
-                .method("DELETE")
-                .uri(format!("/v1/users/{}/two-factor/totp", uid.0))
-                .body(Body::empty())
-                .unwrap(),
+            delete(
+                &format!("/v1/users/{}/two-factor/totp", uid.0),
+                with_password_proof(),
+            ),
             &token,
         ),
     )
@@ -431,7 +438,7 @@ async fn regenerating_backup_codes_requires_an_active_factor_and_replaces_the_ol
         with_session(
             post(
                 &format!("/v1/users/{}/two-factor/backup-codes", uid.0),
-                Value::Null,
+                with_password_proof(),
             ),
             &token,
         ),
@@ -445,7 +452,7 @@ async fn regenerating_backup_codes_requires_an_active_factor_and_replaces_the_ol
         with_session(
             post(
                 &format!("/v1/users/{}/two-factor/backup-codes", uid.0),
-                Value::Null,
+                with_password_proof(),
             ),
             &token,
         ),
@@ -722,4 +729,197 @@ async fn the_exported_verifier_round_trips_a_generated_secret() {
     ));
     // The window is one step wide either side.
     assert_eq!(STEP_SECONDS, 30);
+}
+
+// =================================================================================================
+// THE SECOND FACTOR IS A CREDENTIAL, SO NEITHER OPERATION MAY RIDE THE SESSION ALONE
+// =================================================================================================
+
+/// **Destroying a confirmed second factor is a credential operation.**
+///
+/// `disable_totp` used to take no request body at all — structurally incapable of carrying a
+/// proof — so its only checks were `require_self` and the `two_factor_required` conflict. Any holder
+/// of a session token (a stolen cookie, an unattended signed-in browser: exactly step-up's threat
+/// model) could destroy the factor, while `passkeys::revoke_passkey` honoured the rule stated three
+/// lines below these routes in `lib.rs`. The route was declared `TwoFactorDisable` in `ROUTE_GUARD`
+/// and floored at `ConfirmWithReauth` the whole time — a declared gate nothing enforced.
+///
+/// The refusal must also leave the factor **intact**: a gate that refuses after clearing the
+/// enrolment would be worse than no gate.
+#[tokio::test]
+async fn disabling_the_second_factor_is_refused_without_a_valid_proof() {
+    let temp = TempDir::new();
+    let state = AppState::with_data_dir(&temp.0);
+    let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
+    let token = open_session(&state, uid).await;
+    enrol_and_confirm(&state, uid, &token).await;
+    let uri = format!("/v1/users/{}/two-factor/totp", uid.0);
+
+    // The old wire shape: a DELETE with no body whatsoever. It must parse (the body is optional)
+    // and be refused (the absent proof is an empty proof), never 400 and never succeed.
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            Request::builder()
+                .method("DELETE")
+                .uri(&uri)
+                .body(Body::empty())
+                .unwrap(),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "a session token alone must not destroy the second factor: {body}"
+    );
+
+    // A supplied but wrong proof is the same uniform refusal.
+    let (status, body) = send(
+        state.clone(),
+        with_session(
+            delete(
+                &uri,
+                json!({ "confirmation": { "reauth": { "password": "nao-e-a-palavra-passe" } } }),
+            ),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+
+    // Both refusals left the factor exactly as it was.
+    let (status, twofa) = send(
+        state.clone(),
+        with_session(get(&format!("/v1/users/{}/two-factor", uid.0)), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{twofa}");
+    assert_eq!(
+        twofa["confirmed"], true,
+        "a refused disable must not have cleared the enrolment"
+    );
+
+    // And the acting user's own password carries it through.
+    let (status, view) = send(
+        state.clone(),
+        with_session(delete(&uri, with_password_proof()), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{view}");
+    assert_eq!(view["has_totp"], false);
+}
+
+/// The no-lockout half of the same gate: **a live code from the very factor being disabled
+/// satisfies it.** `ReAuth::totp_code` is an equal-strength arm for what step-up defends against, so
+/// the holder of the authenticator never needs their password to retire it.
+///
+/// `confirm_totp` spends the step it activated on, and the replay guard refuses that step and every
+/// earlier one — so the enrolment is first moved back a few windows, standing in for a factor
+/// confirmed at some earlier time rather than one second ago.
+#[tokio::test]
+async fn a_live_code_from_the_factor_itself_satisfies_the_disable_gate() {
+    let temp = TempDir::new();
+    let state = AppState::with_data_dir(&temp.0);
+    let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
+    let token = open_session(&state, uid).await;
+    let secret = enrol_and_confirm(&state, uid, &token).await;
+
+    let earlier = chancela_api::totp::current_step(OffsetDateTime::now_utc().unix_timestamp())
+        .saturating_sub(5);
+    state
+        .users
+        .write()
+        .await
+        .get_mut(&uid)
+        .unwrap()
+        .totp
+        .as_mut()
+        .unwrap()
+        .last_accepted_step = Some(earlier);
+
+    let (status, view) = send(
+        state.clone(),
+        with_session(
+            delete(
+                &format!("/v1/users/{}/two-factor/totp", uid.0),
+                json!({ "confirmation": { "reauth": { "totp_code": current_code(&secret) } } }),
+            ),
+            &token,
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "the authenticator's own code must satisfy the gate, or losing the password is a lockout: {view}"
+    );
+    assert_eq!(view["has_totp"], false);
+}
+
+/// **Regenerating backup codes is credential issuance, and it is destructive to the holder.**
+///
+/// It hands the caller ten fresh codes that each bypass the second factor at sign-in — a foothold
+/// that outlives revoking every session — and it silently voids the printed set the account holder
+/// is carrying, so a theft surfaces at the worst possible moment. It was bodyless too, and its
+/// action was floored at `Confirm`, which `require_confirmation` cannot enforce server-side by
+/// construction; the floor is now `ConfirmWithReauth`.
+///
+/// The refusal must leave the **existing** codes valid — otherwise the refused call still achieves
+/// the attacker's second effect.
+#[tokio::test]
+async fn regenerating_backup_codes_is_refused_without_a_valid_proof() {
+    let temp = TempDir::new();
+    let state = AppState::with_data_dir(&temp.0);
+    let uid = seed_user(&state, "amelia.marques", OWNER_ROLE_ID).await;
+    let token = open_session(&state, uid).await;
+    enrol_and_confirm(&state, uid, &token).await;
+    let uri = format!("/v1/users/{}/two-factor/backup-codes", uid.0);
+
+    let issued = |state: AppState| async move {
+        state
+            .users
+            .read()
+            .await
+            .get(&uid)
+            .unwrap()
+            .totp
+            .as_ref()
+            .unwrap()
+            .backup_code_hashes
+            .clone()
+    };
+    let before = issued(state.clone()).await;
+    assert_eq!(before.len(), 10);
+
+    for proof in [
+        json!({}),
+        json!({ "confirmation": { "reauth": { "password": "nao-e-a-palavra-passe" } } }),
+    ] {
+        let (status, body) = send(state.clone(), with_session(post(&uri, proof), &token)).await;
+        assert_eq!(
+            status,
+            StatusCode::FORBIDDEN,
+            "a session token alone must not mint sign-in bypass codes: {body}"
+        );
+    }
+    assert_eq!(
+        issued(state.clone()).await,
+        before,
+        "a refused regeneration must not have voided the printed set"
+    );
+
+    let (status, body) = send(
+        state.clone(),
+        with_session(post(&uri, with_password_proof()), &token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["backup_codes"].as_array().unwrap().len(), 10);
+    assert_ne!(
+        issued(state.clone()).await,
+        before,
+        "a proved regeneration really does replace the set"
+    );
 }

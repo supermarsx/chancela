@@ -332,6 +332,7 @@ use zeroize::Zeroizing;
 use crate::AppState;
 use crate::CredentialMode;
 use crate::actor::{CurrentActor, CurrentAttestor};
+use crate::confirmation::{ConfirmationAction, ConfirmationProof, require_confirmation};
 use crate::error::ApiError;
 use crate::secretstore_persist::{CredentialFieldSet, FIELD_TOTP_SECRET, TotpCredentialFields};
 use crate::users::{TotpEnrolment, User, UserId, UserView};
@@ -365,6 +366,22 @@ pub struct BackupCodesIssued {
     pub backup_codes: Vec<String>,
     /// How many remain unspent (equal to the length of `backup_codes` right after issuance).
     pub backup_codes_remaining: usize,
+}
+
+/// Body of `DELETE …/two-factor/totp` and `POST …/two-factor/backup-codes`.
+///
+/// Both operations act on a **credential**, so neither may ride a session alone — the rule
+/// `passkeys::revoke_passkey` already honours. The body is optional and the field defaults, so a
+/// caller that sends nothing still parses and resolves to an *empty* proof, which the gate refuses
+/// at every strictness above `Confirm`. That is the fail-closed direction: a client that renders the
+/// dialog but forgets to thread the proof gets a `403`, never a silent bypass.
+///
+/// Deliberately **no `Debug`**, like every body carrying a [`ConfirmationProof`]: the proof holds a
+/// plaintext password and a recovery phrase.
+#[derive(Default, Deserialize)]
+pub struct TwoFactorConfirmation {
+    #[serde(default)]
+    pub confirmation: ConfirmationProof,
 }
 
 /// Read view of a user's TOTP state (`GET …/two-factor`). Carries no secret — it is the richer
@@ -709,14 +726,37 @@ pub(crate) async fn verify_totp_for_user(
 /// Refused while the account carries `two_factor_required`: a user cannot opt out of a requirement
 /// an administrator set. Everything else — clearing a pending enrolment, disabling a confirmed one —
 /// is allowed, drops the stored secret, and (for a confirmed factor) is ledgered.
+///
+/// **Destroying a confirmed second factor must not ride a session alone** — that is precisely
+/// step-up's threat model (a stolen cookie, an unattended signed-in browser), and it is the rule
+/// `lib.rs` states three lines above these routes and `passkeys::revoke_passkey` already honours.
+/// The proof is optional on the wire and empty when absent, so a caller that omits it is refused
+/// with `403` rather than silently allowed: the fail-closed direction, exactly as
+/// [`ConfirmationProof`] documents. The gate is
+/// [`ConfirmationAction::TwoFactorDisable`], floored at `ConfirmWithReauth`.
+///
+/// **This locks nobody out.** Any of the acting user's own proofs satisfies it — password,
+/// recovery phrase, passkey assertion, or a live code from this very factor — and a user who holds
+/// no step-up-capable credential at all passes on their session (`step_up_is_vacuous`). The one
+/// case that could have been a lockout, "I lost the authenticator and want to disable it", is
+/// satisfied by the password the same account signs in with.
 pub async fn disable_totp(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
     actor: CurrentActor,
     attestor: CurrentAttestor,
+    body: Option<Json<TwoFactorConfirmation>>,
 ) -> Result<Json<UserView>, ApiError> {
     let target = UserId(id);
     let user = require_self(&state, &actor, target).await?;
+    let TwoFactorConfirmation { confirmation } = body.map(|Json(b)| b).unwrap_or_default();
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::TwoFactorDisable,
+        &confirmation,
+    )
+    .await?;
     if user.two_factor_required {
         return Err(ApiError::Conflict(
             "esta conta é obrigada a manter um segundo fator; não pode ser desativado".to_owned(),
@@ -749,14 +789,29 @@ pub async fn disable_totp(
 ///
 /// Requires a **confirmed** factor. Every previous code is invalidated (they are replaced wholesale),
 /// and the new set is returned **once**.
+///
+/// **Gated exactly like [`disable_totp`], and for a sharper reason.** Regeneration does two things
+/// to a session-only attacker's advantage at once: it hands them ten fresh codes that each bypass
+/// the second factor at sign-in — a foothold that outlives revoking every session — and it silently
+/// voids the printed set the account holder is holding, so the theft is discovered at the worst
+/// moment. The gate is [`ConfirmationAction::TwoFactorBackupCodesRegenerate`].
 pub async fn regenerate_backup_codes(
     State(state): State<AppState>,
     AxumPath(id): AxumPath<Uuid>,
     actor: CurrentActor,
     attestor: CurrentAttestor,
+    body: Option<Json<TwoFactorConfirmation>>,
 ) -> Result<Json<BackupCodesIssued>, ApiError> {
     let target = UserId(id);
     let user = require_self(&state, &actor, target).await?;
+    let TwoFactorConfirmation { confirmation } = body.map(|Json(b)| b).unwrap_or_default();
+    require_confirmation(
+        &state,
+        &actor,
+        ConfirmationAction::TwoFactorBackupCodesRegenerate,
+        &confirmation,
+    )
+    .await?;
     if !user.totp.as_ref().is_some_and(TotpEnrolment::is_active) {
         return Err(ApiError::Conflict(
             "não há um segundo fator ativo para o qual gerar códigos de recuperação".to_owned(),

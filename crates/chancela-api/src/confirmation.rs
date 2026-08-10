@@ -373,6 +373,14 @@ impl ConfirmationAction {
             // operator, so an unattended signed-in browser must not be one click from it.
             Self::DevicePairing => ConfirmWithReauth,
             Self::TwoFactorDisable => ConfirmWithReauth,
+            // Tiered **up** from `Confirm`, against first appearances. Regenerating looks like a
+            // routine self-service refresh, and for the account holder it is. For a session-only
+            // attacker it is two things at once: ten fresh codes that each bypass the second factor
+            // at sign-in — a foothold surviving the revocation of every session — and the silent
+            // voiding of the printed set the holder is carrying, so the theft surfaces at the worst
+            // possible moment. `Confirm` is enforced client-side by construction, so leaving it
+            // there would have meant no server check at all on a credential-issuing operation.
+            Self::TwoFactorBackupCodesRegenerate => ConfirmWithReauth,
             Self::TrustListRefresh => ConfirmWithReauth,
 
             // --- T1: reversible, or single-subject with low blast radius ----------------------
@@ -385,10 +393,7 @@ impl ConfirmationAction {
             Self::RoleAssign | Self::RoleSeededReconciliation => Confirm,
             Self::DelegationRevoke | Self::DelegationSuspend => Confirm,
             Self::ApiKeyRevoke | Self::ApiKeyRotate => Confirm,
-            Self::PairingDeviceRevoke
-            | Self::SessionRevoke
-            | Self::SessionRevokeOthers
-            | Self::TwoFactorBackupCodesRegenerate => Confirm,
+            Self::PairingDeviceRevoke | Self::SessionRevoke | Self::SessionRevokeOthers => Confirm,
             Self::DataCleanupOperational => Confirm,
             Self::SettingsReplace
             | Self::EntityTypeDisable
