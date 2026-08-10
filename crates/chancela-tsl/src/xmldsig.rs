@@ -52,6 +52,36 @@
 //! `<ds:SignatureValue>` commits to. A `<ds:Reference>` elsewhere in the signature (e.g. inside a
 //! `<ds:Manifest>` in a `<ds:Object>`) sits outside the signed scope, so it can neither be trusted
 //! nor satisfy the coverage rule.
+//!
+//! # The enveloped-signature transform is applied on parser offsets
+//! The enveloped-signature transform removes the `<ds:Signature>` element the reference belongs to
+//! before digesting. Which bytes come out of that removal *is* the security boundary: the digest
+//! authenticates whatever remains, so anything the removal swallows is authenticated by nothing.
+//!
+//! [`parse_signature`] therefore records the signature element's byte span
+//! ([`ParsedSignature::signature_start`]/[`ParsedSignature::signature_end`]) from the real
+//! `Start`/`End` events quick-xml reports, matched on **local-name equality** after stripping the
+//! namespace prefix, and [`remove_span`] splices on exactly those offsets. There is no text search
+//! for the tag anywhere in this module, and no fallback to one.
+//!
+//! That is not a stylistic preference. A substring search for `<ds:Signature` is a *prefix* match:
+//! it also matches `<ds:SignatureWrapper`, `<ds:SignatureValue`, `<ds:SignatureProperties`. A
+//! matching search for `</ds:Signature>` is not, because it ends in `>`. Those two asymmetries
+//! compose into a signature-wrapping attack on the trust root: splicing
+//! `<ds:SignatureWrapper>…attacker content…</ds:SignatureWrapper>` immediately before a genuine
+//! signature makes the removal start at the injected element and end at the genuine
+//! `</ds:Signature>`, so the digested bytes are byte-identical to the untampered document. The
+//! digest matches, `SignedInfo` is untouched so the signature value verifies, the certificate is
+//! untouched so the anchor matches — and the injected `<TrustServiceProvider>` /
+//! `<OtherTSLPointer>` are read as genuine list content by [`crate::parse::parse_tsl`], which
+//! dispatches on local element name. Byte offsets from the parser that produced the events cannot
+//! be steered this way: an injected element is a *different element*, at a different offset, and
+//! stays inside the digested bytes.
+//!
+//! A signature nested inside another (an XAdES counter-signature in a `<ds:Object>`) is part of the
+//! outer signature's content, not a second signature: it is not counted, and removing the outer
+//! span removes it too, which is what the transform's own definition requires. Two *sibling*
+//! signatures remain refused.
 
 use der::{Decode, Encode};
 use sha2::Digest;
@@ -387,7 +417,13 @@ impl SignatureAlgorithm {
 /// The parsed XML-DSig `<ds:Signature>` element — enough to verify the signature.
 #[derive(Debug, Clone)]
 pub(crate) struct ParsedSignature {
-    /// Number of `<ds:Signature>` elements seen. The minimal verifier supports exactly one.
+    /// Number of **top-level** `<ds:Signature>` elements seen — signatures that are not themselves
+    /// inside another signature. The verifier supports exactly one.
+    ///
+    /// A nested signature (an XAdES counter-signature inside this signature's `<ds:Object>`) is
+    /// content of the signature that encloses it, not a second signature over the list, so it is
+    /// deliberately not counted. Two *sibling* signatures still make this 2 and are refused: the
+    /// verifier would otherwise have to pick one, and the choice would be the attacker's.
     pub signature_count: usize,
     /// The canonicalization algorithm URI.
     pub canonicalization_method: String,
@@ -410,6 +446,16 @@ pub(crate) struct ParsedSignature {
     /// the original document — used to re-extract canonical signed bytes.
     pub signed_info_start: usize,
     pub signed_info_end: usize,
+    /// Byte offset of the `<` opening the top-level `<ds:Signature>` element, and the offset one
+    /// past the `>` closing it — recorded from the real `Start`/`End` events, matched on local-name
+    /// equality.
+    ///
+    /// This span, and nothing else, is what the enveloped-signature transform removes
+    /// ([`remove_span`]). Both are `0` when the element could not be located, which
+    /// [`ParsedSignature::verify_with_policy`] refuses by name rather than falling back to any
+    /// looser way of finding the tag.
+    pub signature_start: usize,
+    pub signature_end: usize,
 }
 
 /// A parsed `<ds:Reference>` element.
@@ -469,6 +515,35 @@ impl ParsedSignature {
             return Err(TslError::SignatureStructure(
                 "missing <ds:SignedInfo> element".to_owned(),
             ));
+        }
+        // The `<ds:Signature>` element's own byte span. The enveloped-signature transform splices
+        // on exactly these parser-recorded offsets, so a span that is missing or does not fit the
+        // document is a hard refusal — never a fallback to searching for the tag text, which is a
+        // prefix match and therefore a signature-wrapping lever (see the module docs).
+        if self.signature_end <= self.signature_start || self.signature_end > xml.len() {
+            return Err(TslError::SignatureStructure(format!(
+                "could not locate the <ds:Signature> element's byte span (start {}, end {}, \
+                 document {} bytes) — the enveloped-signature transform is applied on parser \
+                 offsets and is never approximated by searching for the tag text",
+                self.signature_start,
+                self.signature_end,
+                xml.len()
+            )));
+        }
+        // The SignedInfo the signature value commits to must be inside the signature element whose
+        // span will be removed. If it is not, the two were read from different elements and the
+        // whole parse is incoherent.
+        if self.signed_info_start < self.signature_start
+            || self.signed_info_end > self.signature_end
+        {
+            return Err(TslError::SignatureStructure(format!(
+                "<ds:SignedInfo> ({}..{}) lies outside the <ds:Signature> element it was read from \
+                 ({}..{})",
+                self.signed_info_start,
+                self.signed_info_end,
+                self.signature_start,
+                self.signature_end
+            )));
         }
         if self.canonicalization_method.is_empty() {
             return Err(TslError::SignatureStructure(
@@ -580,7 +655,12 @@ impl ParsedSignature {
                 });
             }
 
-            let resolved = resolve_referenced_content(xml, &reference.uri, &reference.transforms)?;
+            let resolved = resolve_referenced_content(
+                xml,
+                &reference.uri,
+                &reference.transforms,
+                (self.signature_start, self.signature_end),
+            )?;
             if !reference_digest_matches(reference, digest_algorithm, &resolved) {
                 return Err(TslError::SignatureDigestMismatch);
             }
@@ -674,6 +754,11 @@ impl ParsedSignature {
 }
 
 /// Parse the `<ds:Signature>` element from `xml` bytes.
+///
+/// Every element is matched by **local-name equality** after stripping the namespace prefix, so any
+/// prefix works (`ds:`, `dsig:`, `ns2:`, none) and no element whose name merely *starts with*
+/// `Signature` — `SignatureWrapper`, `SignatureValue`, `SignatureMethod`, `SignatureProperties` —
+/// is ever mistaken for the signature itself.
 pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
     use quick_xml::events::Event;
 
@@ -681,7 +766,6 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
     reader.config_mut().trim_text(true);
 
     let mut buf = Vec::new();
-    let mut stack: Vec<String> = Vec::new();
 
     let mut sig = ParsedSignature {
         canonicalization_method: String::new(),
@@ -691,42 +775,72 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
         signer_cert_der: None,
         signed_info_start: 0,
         signed_info_end: 0,
+        signature_start: 0,
+        signature_end: 0,
         signature_count: 0,
     };
 
     let mut saw_signature = false;
-    let mut in_signature = false;
+    // How many `Signature` elements are currently open. `1` means "inside the signature"; `2` or
+    // more means "inside a counter-signature nested in it", whose contents belong to the enclosing
+    // signature and must not be read as this signature's own SignedInfo/value/certificate.
+    let mut open_signatures = 0usize;
     let mut in_signed_info = false;
     let mut in_signature_value = false;
+    let mut in_key_info = false;
+    let mut in_x509_data = false;
     let mut in_x509_cert = false;
     let mut in_digest_value = false;
     let mut cur_reference: Option<Reference> = None;
     let mut cur_text = String::new();
     let mut signed_info_start: Option<usize> = None;
+    let mut signature_start: Option<usize> = None;
 
     loop {
         match reader.read_event_into(&mut buf)? {
             Event::Start(e) => {
                 let local = local_name(e.name().as_ref());
-                stack.push(local.clone());
+                // Directly inside the FIRST top-level signature, and not inside a nested one.
+                let in_signature = open_signatures == 1 && sig.signature_count == 1;
+                // The offset of this start tag's `<`: the reader sits just past the closing `>`,
+                // and `e.as_ref()` is the tag text between the two delimiters.
+                let element_start =
+                    (reader.buffer_position() as usize).saturating_sub(e.as_ref().len() + 2);
 
                 if local == "Signature" {
-                    sig.signature_count += 1;
+                    if open_signatures == 0 {
+                        // A top-level signature. One nested inside another is that signature's
+                        // content, not a second signature over the list, so it is not counted.
+                        sig.signature_count += 1;
+                        if signature_start.is_none() {
+                            signature_start = Some(element_start);
+                        }
+                    }
                     saw_signature = true;
-                    in_signature = true;
+                    open_signatures += 1;
                 } else if in_signature && local == "SignedInfo" {
                     in_signed_info = true;
                     // Record the byte offset of the SignedInfo start tag (including the tag
                     // itself, as it appears in the input).
-                    signed_info_start = Some(
-                        (reader.buffer_position() as usize).saturating_sub(e.as_ref().len() + 2),
-                    );
+                    signed_info_start = Some(element_start);
                 } else if in_signature && local == "SignatureValue" {
                     in_signature_value = true;
                     cur_text.clear();
-                } else if in_signature && local == "X509Certificate" {
-                    in_x509_cert = true;
-                    cur_text.clear();
+                } else if in_signature && local == "KeyInfo" {
+                    in_key_info = true;
+                } else if in_key_info && local == "X509Data" {
+                    in_x509_data = true;
+                } else if in_x509_data && local == "X509Certificate" {
+                    // The FIRST certificate, and only inside `KeyInfo/X509Data`. Several national
+                    // Trusted Lists carry a signer-then-issuer chain here; XML-DSig puts the
+                    // certificate that made the signature first, so taking the last one would
+                    // verify against the CA and refuse a perfectly valid list. Scoping to
+                    // `KeyInfo/X509Data` also keeps a certificate in some other part of the
+                    // signature (a `<ds:Object>`, a XAdES certificate-value blob) out of the way.
+                    if sig.signer_cert_der.is_none() {
+                        in_x509_cert = true;
+                        cur_text.clear();
+                    }
                 } else if in_signed_info && local == "DigestValue" && cur_reference.is_some() {
                     in_digest_value = true;
                     cur_text.clear();
@@ -759,8 +873,14 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
             }
             Event::Empty(e) => {
                 let local = local_name(e.name().as_ref());
+                let in_signature = open_signatures == 1 && sig.signature_count == 1;
                 if local == "Signature" {
-                    sig.signature_count += 1;
+                    if open_signatures == 0 {
+                        // An empty `<ds:Signature/>` is counted but leaves no span: it carries no
+                        // `<ds:SignedInfo>`, so `verify` refuses it by name before any transform
+                        // would need offsets.
+                        sig.signature_count += 1;
+                    }
                     saw_signature = true;
                 } else if in_signed_info && local == "Reference" {
                     // A self-closing `<ds:Reference/>` has no children, so it is complete here. It
@@ -797,10 +917,18 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
             }
             Event::End(e) => {
                 let local = local_name(e.name().as_ref());
-                stack.pop();
 
                 if local == "Signature" {
-                    in_signature = false;
+                    open_signatures = open_signatures.saturating_sub(1);
+                    // Closing the FIRST top-level signature fixes its span: `buffer_position` is
+                    // one past this end tag's `>`, which is exactly where the element stops.
+                    if open_signatures == 0
+                        && sig.signature_end == 0
+                        && let Some(start) = signature_start
+                    {
+                        sig.signature_start = start;
+                        sig.signature_end = reader.buffer_position() as usize;
+                    }
                 } else if local == "SignedInfo" && in_signed_info {
                     in_signed_info = false;
                     if let Some(start) = signed_info_start {
@@ -815,6 +943,11 @@ pub(crate) fn parse_signature(xml: &[u8]) -> Result<ParsedSignature, TslError> {
                     in_x509_cert = false;
                     sig.signer_cert_der = Some(decode_base64(cur_text.trim())?);
                     cur_text.clear();
+                } else if local == "X509Data" && in_x509_data {
+                    in_x509_data = false;
+                } else if local == "KeyInfo" && in_key_info {
+                    in_key_info = false;
+                    in_x509_data = false;
                 } else if local == "DigestValue" && in_digest_value {
                     in_digest_value = false;
                     if let Some(r) = cur_reference.as_mut() {
@@ -930,15 +1063,19 @@ struct ResolvedReference {
 /// Anything else — an external `http(s)`/`ftp` URI, an xpointer expression, an empty fragment — is
 /// refused with a message naming the construct. It is never skipped: a reference inside the signed
 /// `SignedInfo` that the verifier cannot evaluate is content it cannot vouch for.
+///
+/// `signature_span` is the `<ds:Signature>` element's byte range in `xml`, as recorded by
+/// [`parse_signature`]; it is the only thing the enveloped-signature transform removes.
 fn resolve_referenced_content(
     xml: &[u8],
     uri: &str,
     transforms: &[String],
+    signature_span: (usize, usize),
 ) -> Result<ResolvedReference, TslError> {
     if uri.is_empty() {
-        // Enveloped signature: return the document with the <ds:Signature> element stripped.
+        // Enveloped signature: return the document with the <ds:Signature> element removed.
         return Ok(ResolvedReference {
-            content: strip_signature_element(xml),
+            content: remove_span(xml, signature_span.0, signature_span.1)?,
             hoisted: None,
             target: ReferenceTarget::WholeDocument,
         });
@@ -967,6 +1104,7 @@ fn resolve_referenced_content(
     };
 
     let mut content = target.bytes;
+    let subtree_len = content.len();
     // The sliced subtree does not carry the `xmlns` declarations it inherits from its ancestors;
     // C14N requires them on the apex element, so keep a hoisted variant as an extra digest
     // candidate (real XAdES `SignedProperties` references are digested over exactly that form).
@@ -977,8 +1115,24 @@ fn resolve_referenced_content(
         .iter()
         .any(|transform| transform == ENVELOPED_SIGNATURE_TRANSFORM)
     {
-        content = strip_signature_element(&content);
-        hoisted = hoisted.map(|h| strip_signature_element(&h));
+        // The transform removes the `<ds:Signature>` element this reference belongs to. Its span is
+        // in document coordinates, so rebase it onto the sliced subtree. When the signature does
+        // not lie inside the subtree the transform's defining XPath matches no node and the content
+        // passes through unchanged — the same-document fragment simply never contained it.
+        if signature_span.0 >= target.start && signature_span.1 <= target.end {
+            let rel_start = signature_span.0 - target.start;
+            let rel_end = signature_span.1 - target.start;
+            content = remove_span(&content, rel_start, rel_end)?;
+            hoisted = match hoisted {
+                // Hoisting injects declarations *inside the apex start tag*, strictly before any
+                // descendant, so every later offset shifts by exactly the injected byte count.
+                Some(h) => {
+                    let shift = h.len().saturating_sub(subtree_len);
+                    Some(remove_span(&h, rel_start + shift, rel_end + shift)?)
+                }
+                None => None,
+            };
+        }
     }
     Ok(ResolvedReference {
         content,
@@ -1167,48 +1321,28 @@ fn find_event_start(xml: &[u8], event_end: usize) -> Result<usize, TslError> {
         })
 }
 
-/// Remove the `<ds:Signature>...</ds:Signature>` subtree from `xml` bytes, returning a new
-/// Vec. This is the "enveloped signature" transform.
-fn strip_signature_element(xml: &[u8]) -> Vec<u8> {
-    // Find `<ds:Signature` or `<Signature` (with or without namespace prefix). We look for the
-    // start tag and then find its matching close tag by counting depth.
-    let needle_lower = b"<signature";
-    let needle_upper = b"<ds:signature";
-    let xml_str = xml; // operate on raw bytes
-
-    let sig_start = find_case_insensitive(xml_str, needle_upper)
-        .or_else(|| find_case_insensitive(xml_str, needle_lower));
-    let Some(sig_start_byte) = sig_start else {
-        // No Signature element — return as-is (the digest check will then fail against the
-        // original document, which is the correct outcome for an unsigned document).
-        return xml.to_vec();
-    };
-
-    // Find the matching close tag `</ds:Signature>` or `</Signature>`.
-    let close_upper = b"</ds:signature>";
-    let close_lower = b"</signature>";
-    let sig_end = find_case_insensitive(xml_str, close_upper)
-        .or_else(|| find_case_insensitive(xml_str, close_lower));
-    let Some(sig_end_byte) = sig_end else {
-        return xml.to_vec();
-    };
-    let end_inclusive = sig_end_byte + close_upper.len().max(close_lower.len());
-
-    let mut out = Vec::with_capacity(xml.len());
-    out.extend_from_slice(&xml[..sig_start_byte]);
-    out.extend_from_slice(&xml[end_inclusive.min(xml.len())..]);
-    out
-}
-
-/// Case-insensitive search for `needle` in `haystack`, returning the byte offset of the first
-/// match.
-fn find_case_insensitive(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    if needle.is_empty() || needle.len() > haystack.len() {
-        return None;
+/// Remove `bytes[start..end]` — the `<ds:Signature>` element located by
+/// [`parse_signature`] — returning the remaining octets. This is the enveloped-signature transform.
+///
+/// The offsets come from the parser that produced the signature's own events, matched by local-name
+/// equality, so the removed range is exactly one element. Nothing here searches for tag text:
+/// `<ds:Signature` is a *prefix* of `<ds:SignatureWrapper`, `<ds:SignatureValue` and
+/// `<ds:SignatureProperties`, while `</ds:Signature>` is a prefix of nothing, and that asymmetry is
+/// precisely the signature-wrapping lever the module docs describe. An inconsistent range is
+/// refused rather than clamped: silently splicing the wrong bytes would authenticate content nobody
+/// signed.
+fn remove_span(bytes: &[u8], start: usize, end: usize) -> Result<Vec<u8>, TslError> {
+    if start >= end || end > bytes.len() {
+        return Err(TslError::SignatureStructure(format!(
+            "inconsistent <ds:Signature> byte span for the enveloped-signature transform (start \
+             {start}, end {end}, input {} bytes)",
+            bytes.len()
+        )));
     }
-    haystack
-        .windows(needle.len())
-        .position(|w| w.eq_ignore_ascii_case(needle))
+    let mut out = Vec::with_capacity(bytes.len() - (end - start));
+    out.extend_from_slice(&bytes[..start]);
+    out.extend_from_slice(&bytes[end..]);
+    Ok(out)
 }
 
 /// Whether the reference's `<ds:DigestValue>` matches the digest — under `algorithm`, the one this
@@ -1859,12 +1993,83 @@ mod tests {
         assert!(matches!(err, TslError::SignatureStructure(_)));
     }
 
+    /// The document with its `<Signature>` subtree removed, located by explicit depth counting over
+    /// the literal source and matching on the element's **local** name.
+    ///
+    /// Deliberately an independent implementation: every fixture digest below is computed with
+    /// this, never with the verifier's own locator, so a bug in the production offsets cannot make
+    /// a fixture agree with itself. It handles any namespace prefix and nested signatures, which is
+    /// exactly what the production code must also do.
+    fn strip_signature_by_text(doc: &str) -> Vec<u8> {
+        let b = doc.as_bytes();
+        let mut i = 0usize;
+        let mut depth = 0usize;
+        let mut start: Option<usize> = None;
+        while i < b.len() {
+            if b[i] != b'<' {
+                i += 1;
+                continue;
+            }
+            if doc[i..].starts_with("<!--") {
+                i = doc[i..].find("-->").map_or(b.len(), |p| i + p + 3);
+                continue;
+            }
+            if doc[i..].starts_with("<?") || doc[i..].starts_with("<!") {
+                i = doc[i..].find('>').map_or(b.len(), |p| i + p + 1);
+                continue;
+            }
+            let Some(tag_end) = doc[i..].find('>').map(|p| i + p) else {
+                break;
+            };
+            let is_close = b[i + 1] == b'/';
+            let self_closing = b[tag_end - 1] == b'/';
+            let name_start = if is_close { i + 2 } else { i + 1 };
+            let qname = doc[name_start..tag_end]
+                .split([' ', '\t', '\r', '\n', '/'])
+                .next()
+                .unwrap_or("");
+            let local = qname.rsplit(':').next().unwrap_or("");
+            if local == "Signature" && !self_closing {
+                if is_close {
+                    depth -= 1;
+                    if depth == 0
+                        && let Some(s) = start
+                    {
+                        let mut out = b[..s].to_vec();
+                        out.extend_from_slice(&b[tag_end + 1..]);
+                        return out;
+                    }
+                } else {
+                    if depth == 0 {
+                        start = Some(i);
+                    }
+                    depth += 1;
+                }
+            }
+            i = tag_end + 1;
+        }
+        b.to_vec()
+    }
+
+    /// The parser-recorded span must select exactly the `<ds:Signature>` element — the same bytes
+    /// an independent depth-counting scan removes.
     #[test]
     fn strip_signature_removes_subtree() {
-        let stripped = strip_signature_element(SIMPLE_SIGNED.as_bytes());
+        let parsed = parse_signature(SIMPLE_SIGNED.as_bytes()).expect("parse");
+        let stripped = remove_span(
+            SIMPLE_SIGNED.as_bytes(),
+            parsed.signature_start,
+            parsed.signature_end,
+        )
+        .expect("remove span");
         let s = String::from_utf8_lossy(&stripped);
         assert!(!s.contains("ds:Signature"));
         assert!(s.contains("SchemeTerritory"));
+        assert_eq!(
+            stripped,
+            strip_signature_by_text(SIMPLE_SIGNED),
+            "the parser offsets must remove exactly the signature element"
+        );
     }
 
     const NS_DS: &str = "http://www.w3.org/2000/09/xmldsig#";
@@ -2011,7 +2216,7 @@ mod tests {
             &placeholder,
             &cert_b64,
         );
-        let stripped = strip_signature_element(doc0.as_bytes());
+        let stripped = strip_signature_by_text(&doc0);
         let digest_b64 = base64_standard(&sha2::Sha256::digest(&stripped));
 
         // Rebuild the document with the correct reference digest, then locate SignedInfo and sign
@@ -2285,7 +2490,7 @@ mod tests {
     /// The reference over the whole document: `URI=""` with the enveloped-signature transform, whose
     /// digest is taken over the document minus the `<ds:Signature>` subtree.
     fn document_reference(probe: &str) -> RefSpec {
-        let stripped = strip_signature_element(probe.as_bytes());
+        let stripped = strip_signature_by_text(probe);
         RefSpec::new("", base64_standard(&sha2::Sha256::digest(&stripped)))
             .with_transform(ENVELOPED_SIGNATURE_TRANSFORM)
     }
@@ -2324,8 +2529,7 @@ mod tests {
         for corrupt_index in [0usize, 1usize] {
             let (key, cert_der) = ephemeral_signer();
             let doc = signed_multiref_doc(&key, &cert_der, |probe| {
-                let mut doc_digest =
-                    sha2::Sha256::digest(strip_signature_element(probe.as_bytes()));
+                let mut doc_digest = sha2::Sha256::digest(strip_signature_by_text(probe));
                 let mut props_digest = sha2::Sha256::digest(signed_properties_bytes(probe));
                 if corrupt_index == 0 {
                     doc_digest[0] ^= 0x01;
@@ -2535,6 +2739,553 @@ mod tests {
 
     fn document_reference_only(probe: &str) -> Vec<RefSpec> {
         vec![document_reference(probe)]
+    }
+
+    // ---- Signature wrapping (XSW) --------------------------------------------------------------
+    //
+    // The enveloped-signature transform decides which bytes the `URI=""` digest authenticates, so
+    // *how* the `<ds:Signature>` element is located is a trust-root question. These fixtures are
+    // synthesized in-process from an ephemeral P-256 key: no real certificate, anchor, endpoint or
+    // fingerprint appears anywhere below, and nothing touches the network.
+
+    /// The attacker's payload — ordinary Trusted List content, shaped so [`crate::parse::parse_tsl`]
+    /// reads it as genuine: one provider with a granted QC CA service, and a LOTL pointer carrying
+    /// an attacker-chosen signer certificate. The names are fictional and the URIs are the ETSI
+    /// vocabulary, not anyone's identifiers.
+    const INJECTED_LIST_CONTENT: &str = concat!(
+        "<TrustServiceProviderList><TrustServiceProvider><TSPInformation><TSPName>",
+        "<Name xml:lang=\"en\">Encosto Estrategico Lda</Name></TSPName></TSPInformation>",
+        "<TSPServices><TSPService><ServiceInformation>",
+        "<ServiceTypeIdentifier>http://uri.etsi.org/TrstSvc/Svctype/CA/QC</ServiceTypeIdentifier>",
+        "<ServiceName><Name xml:lang=\"en\">Injected QC CA</Name></ServiceName>",
+        "<ServiceStatus>http://uri.etsi.org/TrstSvc/TrustedList/Svcstatus/granted</ServiceStatus>",
+        "</ServiceInformation></TSPService></TSPServices>",
+        "</TrustServiceProvider></TrustServiceProviderList>",
+        "<PointersToOtherTSL><OtherTSLPointer>",
+        "<TSLLocation>https://example.invalid/attacker-tsl.xml</TSLLocation>",
+        "<ServiceDigitalIdentities><ServiceDigitalIdentity><DigitalId>",
+        "<X509Certificate>AAAA</X509Certificate>",
+        "</DigitalId></ServiceDigitalIdentity></ServiceDigitalIdentities>",
+        "</OtherTSLPointer></PointersToOtherTSL>",
+    );
+
+    /// An element whose *name* merely starts with `Signature`, carrying the payload. Any namespace
+    /// prefix it uses is declared on the element itself so the document stays well-formed.
+    fn wrapper_element(qname: &str) -> String {
+        let decl = match qname.split_once(':') {
+            Some((prefix, _)) => format!(" xmlns:{prefix}=\"{NS_DS}\""),
+            None => String::new(),
+        };
+        format!("<{qname}{decl}>{INJECTED_LIST_CONTENT}</{qname}>")
+    }
+
+    /// Render a Trusted List whose XML-DSig elements carry `prefix` (`"ds:"`, `""`, `"dsig:"`).
+    ///
+    /// `counter_signature` nests an XAdES-style counter-signature inside the signature's
+    /// `<Object>`; `second_signature` appends a second, *sibling* `<Signature>` to the root.
+    fn wrapping_doc(
+        prefix: &str,
+        digest_b64: &str,
+        sig_b64: &str,
+        cert_b64: &str,
+        counter_signature: bool,
+        second_signature: bool,
+    ) -> String {
+        let p = prefix;
+        let ns = if p.is_empty() {
+            format!(" xmlns=\"{NS_DS}\"")
+        } else {
+            format!(" xmlns:{}=\"{NS_DS}\"", p.trim_end_matches(':'))
+        };
+        // Fixed synthetic values, distinct from the placeholders the signer substitutes.
+        let counter_digest = base64_standard(&[0x33u8; 32]);
+        let counter_sig = base64_standard(&[0x44u8; 64]);
+        let counter = if counter_signature {
+            format!(
+                "<{p}Object><{p}Signature{ns} Id=\"counter-1\"><{p}SignedInfo>\
+                 <{p}CanonicalizationMethod Algorithm=\"{EXC_C14N_10}\"/>\
+                 <{p}SignatureMethod Algorithm=\"{ECDSA_SHA256}\"/>\
+                 <{p}Reference URI=\"#value-1\"><{p}DigestMethod Algorithm=\"{SHA256_DIGEST}\"/>\
+                 <{p}DigestValue>{counter_digest}</{p}DigestValue></{p}Reference>\
+                 </{p}SignedInfo><{p}SignatureValue>{counter_sig}</{p}SignatureValue>\
+                 </{p}Signature></{p}Object>"
+            )
+        } else {
+            String::new()
+        };
+        let signature = format!(
+            "<{p}Signature{ns} Id=\"sig-1\"><{p}SignedInfo>\n  \
+             <{p}CanonicalizationMethod Algorithm=\"{EXC_C14N_10}\"/>\n  \
+             <{p}SignatureMethod Algorithm=\"{ECDSA_SHA256}\"/>\n  \
+             <{p}Reference URI=\"\"><{p}Transforms>\
+             <{p}Transform Algorithm=\"{ENVELOPED_SIGNATURE_TRANSFORM}\"/></{p}Transforms>\
+             <{p}DigestMethod Algorithm=\"{SHA256_DIGEST}\"/>\
+             <{p}DigestValue>{digest_b64}</{p}DigestValue></{p}Reference>\n</{p}SignedInfo>\
+             <{p}SignatureValue Id=\"value-1\">{sig_b64}</{p}SignatureValue>\
+             <{p}KeyInfo><{p}X509Data><{p}X509Certificate>{cert_b64}</{p}X509Certificate>\
+             </{p}X509Data></{p}KeyInfo>{counter}</{p}Signature>"
+        );
+        let sibling = if second_signature {
+            signature.replace("Id=\"sig-1\"", "Id=\"sig-2\"")
+        } else {
+            String::new()
+        };
+        format!(
+            "<TrustServiceStatusList>\
+             <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>\
+             {signature}{sibling}</TrustServiceStatusList>"
+        )
+    }
+
+    /// `(start, end)` of the OUTER `<SignedInfo>` under `prefix` — a plain string search, so the
+    /// fixture's signed bytes are located independently of the verifier's own offsets.
+    fn signed_info_offsets_under(doc: &str, prefix: &str) -> (usize, usize) {
+        let open = format!("<{prefix}SignedInfo>");
+        let close = format!("</{prefix}SignedInfo>");
+        let start = doc.find(&open).expect("SignedInfo start");
+        let end = doc.find(&close).expect("SignedInfo end") + close.len();
+        (start, end)
+    }
+
+    /// Assemble and sign a wrapping fixture: one `URI=""` reference with the enveloped-signature
+    /// transform, signed over the real C14N of its `<SignedInfo>` exactly as a conforming signer
+    /// would. The returned document is genuine and untampered.
+    fn signed_wrapping_doc(
+        key: &p256::ecdsa::SigningKey,
+        cert_der: &[u8],
+        prefix: &str,
+        counter_signature: bool,
+        second_signature: bool,
+    ) -> String {
+        use p256::ecdsa::signature::Signer;
+
+        let cert_b64 = base64_standard(cert_der);
+        let sig_placeholder = base64_standard(&[0x11u8; 64]);
+        let digest_placeholder = base64_standard(&[0x22u8; 32]);
+
+        // The `URI=""` digest is taken over the document minus the signature, located by the
+        // test's own depth-counting scan — never by the code under test.
+        let probe = wrapping_doc(
+            prefix,
+            &digest_placeholder,
+            &sig_placeholder,
+            &cert_b64,
+            counter_signature,
+            second_signature,
+        );
+        let digest_b64 = base64_standard(&sha2::Sha256::digest(strip_signature_by_text(&probe)));
+        assert_eq!(digest_b64.len(), digest_placeholder.len());
+
+        let doc = wrapping_doc(
+            prefix,
+            &digest_b64,
+            &sig_placeholder,
+            &cert_b64,
+            counter_signature,
+            second_signature,
+        );
+        let (start, end) = signed_info_offsets_under(&doc, prefix);
+        let candidates = signed_info_candidates(doc.as_bytes(), start, end, EXC_C14N_10);
+        let signature: p256::ecdsa::Signature = key.sign(&candidates[0]);
+        let sig_b64 = base64_standard(&signature.to_bytes());
+        assert_eq!(
+            sig_b64.len(),
+            sig_placeholder.len(),
+            "signature substitution must preserve byte offsets"
+        );
+        doc.replace(&sig_placeholder, &sig_b64)
+    }
+
+    /// Splice `injected` in immediately before the (outer) `<Signature>` start tag.
+    fn splice_before_signature(doc: &str, prefix: &str, injected: &str) -> String {
+        let at = doc
+            .find(&format!("<{prefix}Signature"))
+            .expect("signature start tag");
+        format!("{}{injected}{}", &doc[..at], &doc[at..])
+    }
+
+    /// Splice `injected` in immediately after the (outer) `</Signature>` end tag.
+    fn splice_after_signature(doc: &str, prefix: &str, injected: &str) -> String {
+        let close = format!("</{prefix}Signature>");
+        let at = doc.rfind(&close).expect("signature end tag") + close.len();
+        format!("{}{injected}{}", &doc[..at], &doc[at..])
+    }
+
+    /// **The C1 exploit.** A genuine signed list verifies; the same list with
+    /// `<ds:SignatureWrapper>…</ds:SignatureWrapper>` spliced in immediately before the real
+    /// `<ds:Signature>` is refused.
+    ///
+    /// Why that placement was the hole: the old removal found the signature by substring search.
+    /// `<ds:Signature` is a **prefix** of `<ds:SignatureWrapper`, so the removal *started* at the
+    /// injected element; `</ds:Signature>` ends in `>` and so is a prefix of nothing, and the
+    /// removal *ended* at the genuine signature's close tag. The bytes handed to the digest were
+    /// therefore byte-identical to the untampered document: the digest matched, `SignedInfo` was
+    /// untouched so the signature value verified, the certificate was untouched so the anchor
+    /// matched, and `verify()` returned `Ok(())` over a document carrying attacker content.
+    ///
+    /// The second half of this test is what that bought the attacker: `parse_tsl` dispatches on
+    /// local element name with no ancestry check, so the injected provider and LOTL pointer are
+    /// read as genuine list content the moment the signature check says yes.
+    #[test]
+    fn a_signature_wrapper_element_cannot_smuggle_list_content_past_the_digest() {
+        let (key, cert_der) = ephemeral_signer();
+        let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+        let genuine = signed_wrapping_doc(&key, &cert_der, "ds:", false, false);
+
+        parse_signature(genuine.as_bytes())
+            .expect("parse")
+            .verify(genuine.as_bytes(), &anchors)
+            .expect("the genuine list must verify");
+
+        let tampered =
+            splice_before_signature(&genuine, "ds:", &wrapper_element("ds:SignatureWrapper"));
+        assert_ne!(tampered, genuine, "the injection must have applied");
+
+        // What was at stake. The genuine list declares no provider and no pointer; the tampered one
+        // hands a parser a granted QC CA and a LOTL pointer with an attacker-chosen signer cert.
+        let genuine_list = crate::parse::parse_tsl(genuine.as_bytes()).expect("parse genuine");
+        assert!(genuine_list.providers.is_empty());
+        assert!(genuine_list.other_tsl_pointers.is_empty());
+        let tampered_list = crate::parse::parse_tsl(tampered.as_bytes()).expect("parse tampered");
+        assert_eq!(
+            tampered_list.providers.len(),
+            1,
+            "the injected content is read as genuine list content: this is what the digest must \
+             be the only thing standing in the way of"
+        );
+        assert_eq!(tampered_list.providers[0].services.len(), 1);
+        assert_eq!(
+            tampered_list.other_tsl_pointers.len(),
+            1,
+            "the injected LOTL pointer would re-anchor every member-state list"
+        );
+        assert_eq!(tampered_list.other_tsl_pointers[0].signer_certs.len(), 1);
+
+        // And the refusal.
+        let err = parse_signature(tampered.as_bytes())
+            .expect("parse")
+            .verify(tampered.as_bytes(), &anchors)
+            .expect_err("a signature-wrapped list MUST be refused");
+        assert!(
+            matches!(err, TslError::SignatureDigestMismatch),
+            "the injected element must stay inside the digested bytes, got {err:?}"
+        );
+    }
+
+    /// The wrapping variants that must all be refused, each a different way of steering a
+    /// name-based search: the wrapper after the signature, under a different prefix, and an element
+    /// merely *named* `SignatureValue` sitting at document level.
+    #[test]
+    fn every_signature_wrapping_variant_is_refused() {
+        #[derive(Clone, Copy)]
+        enum At {
+            Before,
+            After,
+        }
+        let cases = [
+            (
+                "wrapper before the signature",
+                "ds:SignatureWrapper",
+                At::Before,
+            ),
+            (
+                "wrapper after the signature",
+                "ds:SignatureWrapper",
+                At::After,
+            ),
+            (
+                "wrapper under a different prefix",
+                "dsig:SignatureWrapper",
+                At::Before,
+            ),
+            (
+                "an element merely named SignatureValue",
+                "SignatureValue",
+                At::Before,
+            ),
+            (
+                "an element merely named SignatureProperties",
+                "ds:SignatureProperties",
+                At::Before,
+            ),
+        ];
+
+        for (label, qname, at) in cases {
+            let (key, cert_der) = ephemeral_signer();
+            let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+            let genuine = signed_wrapping_doc(&key, &cert_der, "ds:", false, false);
+            let injected = wrapper_element(qname);
+            let tampered = match at {
+                At::Before => splice_before_signature(&genuine, "ds:", &injected),
+                At::After => splice_after_signature(&genuine, "ds:", &injected),
+            };
+            assert_ne!(
+                tampered, genuine,
+                "{label}: the injection must have applied"
+            );
+            assert_eq!(
+                crate::parse::parse_tsl(tampered.as_bytes())
+                    .expect("parse tampered")
+                    .providers
+                    .len(),
+                1,
+                "{label}: the injected provider must be visible to the list parser"
+            );
+
+            let err = parse_signature(tampered.as_bytes())
+                .expect("parse")
+                .verify(tampered.as_bytes(), &anchors)
+                .unwrap_err();
+            assert!(
+                matches!(err, TslError::SignatureDigestMismatch),
+                "{label}: got {err:?}"
+            );
+        }
+    }
+
+    /// Two *sibling* `<ds:Signature>` elements stay refused by name. The verifier would otherwise
+    /// have to choose which one to honour, and the choice would be the attacker's.
+    #[test]
+    fn two_sibling_signatures_are_refused_by_name() {
+        let (key, cert_der) = ephemeral_signer();
+        let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+        let doc = signed_wrapping_doc(&key, &cert_der, "ds:", false, true);
+
+        let parsed = parse_signature(doc.as_bytes()).expect("parse");
+        assert_eq!(parsed.signature_count, 2);
+        let err = parsed
+            .verify(doc.as_bytes(), &anchors)
+            .expect_err("two signatures must be refused");
+        assert!(
+            matches!(err, TslError::SignatureStructure(ref msg)
+                if msg.contains("exactly one <ds:Signature>")),
+            "got {err:?}"
+        );
+    }
+
+    /// W1, and the prefix half of the same bug. Locating the element by parser offsets makes the
+    /// removal prefix-agnostic, which the substring search never was:
+    ///
+    /// - an unprefixed `<Signature>` closed with the 12-byte `</Signature>` had 15 bytes removed
+    ///   (the length of `</ds:Signature>`), silently eating 3 bytes of list content;
+    /// - any prefix other than `ds:` — `dsig:`, or the `ns2:` real EU lists use — matched neither
+    ///   open needle, leaving the entire signature inside the digested bytes.
+    ///
+    /// Both are ordinary conforming XML-DSig and both were a guaranteed refusal. They must verify.
+    #[test]
+    fn a_signature_verifies_under_any_namespace_prefix() {
+        for prefix in ["ds:", "", "dsig:", "ns2:"] {
+            let (key, cert_der) = ephemeral_signer();
+            let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+            let doc = signed_wrapping_doc(&key, &cert_der, prefix, false, false);
+            parse_signature(doc.as_bytes())
+                .expect("parse")
+                .verify(doc.as_bytes(), &anchors)
+                .unwrap_or_else(|err| {
+                    panic!("a signature prefixed {prefix:?} must verify, got {err:?}")
+                });
+        }
+    }
+
+    /// An XAdES counter-signature nested in the signature's `<ds:Object>` is content *of* that
+    /// signature, not a second signature over the list. The enveloped transform must remove the
+    /// signature the reference belongs to — at its own depth — so the span runs to the OUTER end
+    /// tag, not to the first `</ds:Signature>` in byte order.
+    #[test]
+    fn a_counter_signature_nested_in_an_object_still_verifies() {
+        let (key, cert_der) = ephemeral_signer();
+        let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+        let doc = signed_wrapping_doc(&key, &cert_der, "ds:", true, false);
+        assert!(
+            doc.contains("Id=\"counter-1\""),
+            "the fixture must carry a nested signature"
+        );
+
+        let parsed = parse_signature(doc.as_bytes()).expect("parse");
+        assert_eq!(
+            parsed.signature_count, 1,
+            "a nested counter-signature is not a second signature"
+        );
+        assert!(
+            doc[parsed.signature_start..parsed.signature_end].contains("counter-1"),
+            "the removed span must enclose the nested counter-signature, i.e. it must end at the \
+             OUTER close tag"
+        );
+        assert_eq!(
+            parsed.signature_end,
+            doc.len() - "</TrustServiceStatusList>".len(),
+            "the span must end where the outer signature ends"
+        );
+        parsed
+            .verify(doc.as_bytes(), &anchors)
+            .expect("a signature carrying a counter-signature must verify");
+    }
+
+    /// Fail closed by name when the element cannot be located: never a fallback to a looser search.
+    #[test]
+    fn an_unlocatable_signature_span_is_refused_by_name() {
+        let err = parse_signature(b"<TrustServiceStatusList/>").unwrap_err();
+        assert!(
+            matches!(err, TslError::SignatureStructure(ref msg)
+                if msg.contains("no <ds:Signature> element found")),
+            "got {err:?}"
+        );
+
+        let (key, cert_der) = ephemeral_signer();
+        let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+        let doc = signed_wrapping_doc(&key, &cert_der, "ds:", false, false);
+        let mut parsed = parse_signature(doc.as_bytes()).expect("parse");
+        parsed.signature_start = 0;
+        parsed.signature_end = 0;
+        let err = parsed
+            .verify(doc.as_bytes(), &anchors)
+            .expect_err("a missing signature span must refuse the signature");
+        assert!(
+            matches!(err, TslError::SignatureStructure(ref msg)
+                if msg.contains("could not locate the <ds:Signature> element's byte span")),
+            "got {err:?}"
+        );
+    }
+
+    /// A same-document fragment reference that both carries the enveloped-signature transform and
+    /// needs namespace hoisting: the signature lives *inside* the referenced element, and that
+    /// element inherits `xmlns:ds` from the root.
+    ///
+    /// The two have to compose. Hoisting injects bytes into the apex start tag, which is strictly
+    /// before every descendant, so the signature's document-coordinate span has to be rebased onto
+    /// the slice *and* shifted by the injected byte count. Get either wrong and the digest is taken
+    /// over the wrong bytes — which is the same class of failure as the wrapping bug itself.
+    #[test]
+    fn an_enveloped_fragment_reference_composes_hoisting_with_signature_removal() {
+        use p256::ecdsa::signature::Signer;
+
+        let (key, cert_der) = ephemeral_signer();
+        let cert_b64 = base64_standard(&cert_der);
+        let sig_placeholder = base64_standard(&[0x11u8; 64]);
+        let doc_digest_placeholder = base64_standard(&[0x22u8; 32]);
+        let part_digest_placeholder = base64_standard(&[0x55u8; 32]);
+
+        // `SignedPart` is a synthetic wrapper: the shape that matters is an ID-bearing element that
+        // encloses the signature and inherits a namespace declaration from its parent.
+        let render = |doc_digest: &str, part_digest: &str, sig: &str| {
+            format!(
+                "<TrustServiceStatusList xmlns:ds=\"{NS_DS}\"><SignedPart Id=\"part-1\">\
+                 <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>\
+                 <ds:Signature Id=\"sig-1\"><ds:SignedInfo>\n  \
+                 <ds:CanonicalizationMethod Algorithm=\"{EXC_C14N_10}\"/>\n  \
+                 <ds:SignatureMethod Algorithm=\"{ECDSA_SHA256}\"/>\n  \
+                 <ds:Reference URI=\"\"><ds:Transforms>\
+                 <ds:Transform Algorithm=\"{ENVELOPED_SIGNATURE_TRANSFORM}\"/></ds:Transforms>\
+                 <ds:DigestMethod Algorithm=\"{SHA256_DIGEST}\"/>\
+                 <ds:DigestValue>{doc_digest}</ds:DigestValue></ds:Reference>\n  \
+                 <ds:Reference URI=\"#part-1\"><ds:Transforms>\
+                 <ds:Transform Algorithm=\"{ENVELOPED_SIGNATURE_TRANSFORM}\"/></ds:Transforms>\
+                 <ds:DigestMethod Algorithm=\"{SHA256_DIGEST}\"/>\
+                 <ds:DigestValue>{part_digest}</ds:DigestValue></ds:Reference>\n</ds:SignedInfo>\
+                 <ds:SignatureValue>{sig}</ds:SignatureValue>\
+                 <ds:KeyInfo><ds:X509Data><ds:X509Certificate>{cert_b64}</ds:X509Certificate>\
+                 </ds:X509Data></ds:KeyInfo></ds:Signature></SignedPart>\
+                 </TrustServiceStatusList>"
+            )
+        };
+
+        // What a conforming signer digests for `#part-1`, written out by hand: the subtree with the
+        // inherited `xmlns:ds` on its apex element and the signature gone.
+        let hoisted_and_stripped = format!(
+            "<SignedPart Id=\"part-1\" xmlns:ds=\"{NS_DS}\">\
+             <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>\
+             </SignedPart>"
+        );
+        let raw_and_stripped = "<SignedPart Id=\"part-1\">\
+             <SchemeInformation><SchemeTerritory>PT</SchemeTerritory></SchemeInformation>\
+             </SignedPart>";
+        assert_ne!(
+            hoisted_and_stripped, raw_and_stripped,
+            "the test must exercise the hoisted candidate, not the raw slice"
+        );
+        let part_digest = base64_standard(&sha2::Sha256::digest(hoisted_and_stripped.as_bytes()));
+
+        let probe = render(
+            &doc_digest_placeholder,
+            &part_digest_placeholder,
+            &sig_placeholder,
+        );
+        let doc_digest = base64_standard(&sha2::Sha256::digest(strip_signature_by_text(&probe)));
+        let doc = render(&doc_digest, &part_digest, &sig_placeholder);
+
+        let (start, end) = signed_info_offsets(&doc);
+        let candidates = signed_info_candidates(doc.as_bytes(), start, end, EXC_C14N_10);
+        let signature: p256::ecdsa::Signature = key.sign(&candidates[0]);
+        let sig_b64 = base64_standard(&signature.to_bytes());
+        assert_eq!(sig_b64.len(), sig_placeholder.len());
+        let doc = doc.replace(&sig_placeholder, &sig_b64);
+
+        let anchors = TslTrustAnchors::new().with_cert_der(&cert_der);
+        parse_signature(doc.as_bytes())
+            .expect("parse")
+            .verify(doc.as_bytes(), &anchors)
+            .expect("namespace hoisting and signature removal must compose on one fragment");
+    }
+
+    /// `<ds:KeyInfo>/<ds:X509Data>` carrying a signer-then-issuer chain — the shape several national
+    /// Trusted Lists publish. The FIRST certificate is the one that made the signature; taking the
+    /// last verified against the CA's key and refused a valid list. The capture is also scoped to
+    /// `KeyInfo/X509Data`, so a certificate elsewhere in the signature cannot displace it.
+    #[test]
+    fn the_signer_certificate_is_the_first_one_in_key_info() {
+        let (key, cert_der) = ephemeral_signer();
+        let (_, issuer_der) = ephemeral_signer();
+        assert_ne!(cert_der, issuer_der);
+        let doc = signed_wrapping_doc(&key, &cert_der, "ds:", false, false);
+
+        // Append the issuer after the signer inside the same <ds:X509Data>, and plant a decoy
+        // certificate in a <ds:Object> that appears BEFORE <ds:KeyInfo> — an unscoped "first wins"
+        // capture would take the decoy, an unscoped "last wins" one would take the issuer.
+        let (_, decoy_der) = ephemeral_signer();
+        let chained = doc
+            .replace(
+                "</ds:X509Data>",
+                &format!(
+                    "<ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data>",
+                    base64_standard(&issuer_der)
+                ),
+            )
+            .replace(
+                "<ds:KeyInfo>",
+                &format!(
+                    "<ds:Object><ds:X509Certificate>{}</ds:X509Certificate></ds:Object><ds:KeyInfo>",
+                    base64_standard(&decoy_der)
+                ),
+            );
+        assert_ne!(chained, doc, "the chain and decoy must have applied");
+
+        let parsed = parse_signature(chained.as_bytes()).expect("parse");
+        assert_eq!(
+            parsed.signer_cert_der.as_deref(),
+            Some(cert_der.as_slice()),
+            "the signer is the first certificate inside KeyInfo/X509Data"
+        );
+
+        // Everything added lives inside <ds:Signature>, which the enveloped transform removes, so
+        // the list still verifies — against the signer, and only the signer.
+        parse_signature(chained.as_bytes())
+            .expect("parse")
+            .verify(
+                chained.as_bytes(),
+                &TslTrustAnchors::new().with_cert_der(&cert_der),
+            )
+            .expect("a signer-then-issuer chain must verify against the signer");
+        let err = parse_signature(chained.as_bytes())
+            .expect("parse")
+            .verify(
+                chained.as_bytes(),
+                &TslTrustAnchors::new().with_cert_der(&issuer_der),
+            )
+            .expect_err("anchoring on the issuer alone must not authenticate the list");
+        assert!(
+            matches!(err, TslError::SignatureUntrusted(_)),
+            "got {err:?}"
+        );
     }
 
     // ---- The widened strong algorithm set ------------------------------------------------------
@@ -3586,7 +4337,7 @@ mod tests {
         algorithm: DigestAlgorithm,
         digest_uri: &str,
     ) -> RefSpec {
-        let stripped = strip_signature_element(probe.as_bytes());
+        let stripped = strip_signature_by_text(probe);
         RefSpec::new("", base64_standard(&algorithm.digest(&stripped)))
             .with_transform(ENVELOPED_SIGNATURE_TRANSFORM)
             .with_digest_uri(digest_uri)

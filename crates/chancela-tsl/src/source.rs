@@ -377,7 +377,14 @@ fn hex_nibble(c: u8) -> Result<u8, TslError> {
 ///   document plus a XAdES `SignedProperties` element. Only references inside the signed
 ///   `<ds:SignedInfo>` are in scope — a `<ds:Reference>` in a `<ds:Manifest>` under `<ds:Object>` is
 ///   not covered by the signature, so it is neither verified nor able to satisfy document coverage.
-/// - **Multiple signatures.** Rejected fail-closed: exactly one `<ds:Signature>` is supported.
+/// - **Multiple signatures.** Rejected fail-closed: exactly one top-level `<ds:Signature>` is
+///   supported. A signature *nested* inside it (an XAdES counter-signature in a `<ds:Object>`) is
+///   that signature's own content, not a second signature over the list: it is not counted, and the
+///   enveloped-signature transform removes the enclosing element — located by parser byte offsets,
+///   never by searching for the tag text — with the nested one inside it.
+/// - **Namespace prefixes.** The signature's elements are matched by local name, so any prefix
+///   works (`ds:`, `dsig:`, the `ns2:` real EU lists use, or none), and no element whose name
+///   merely starts with `Signature` is mistaken for the signature.
 /// - **Algorithms.** Exact-URI allowlists (see [`crate::TslAlgorithmPolicy`]): SHA-256/384/512 and
 ///   SHA3-256/384/512 digests; RSASSA-PKCS1-v1_5 and RSASSA-PSS over any of those; ECDSA over
 ///   P-256/P-384/P-521, where the URI fixes the hash and the certificate fixes the curve,
