@@ -261,8 +261,11 @@ test('two-factor: TOTP can be enrolled and confirmed from the Segurança panel',
   // leftover factor would fail the reset of every subsequent test (the SPA cannot complete a
   // challenge; see the file header). Disabling is offered because this account is not
   // `two_factor_required`, and it returns the operator to a resettable state.
-  await page.getByRole('button', { name: 'Desativar dois fatores' }).click();
-  await expect(page.getByText('Dois fatores desativados.')).toBeVisible();
+  //
+  // It goes through the step-up dialog, which is why the helper is shared with the round-trip
+  // test below: when the server began demanding a proof here and the client did not send one, the
+  // cleanup 403'd, the factor survived, and every later test in the worker failed its reset.
+  await disableTotpFromSecurityPanel(page);
   await expect(page.getByRole('button', { name: 'Ativar dois fatores' })).toBeVisible();
 });
 
@@ -290,6 +293,98 @@ test('two-factor: a wrong confirmation code is rejected inline, keeping the enro
   await expect(secretLocator).toBeVisible();
   await expect(page.getByTestId('tab-bar')).toBeVisible();
   await expect(page.locator('.totp-backup-codes li')).toHaveCount(0);
+});
+
+/**
+ * Read the ten once-shown backup codes currently on screen.
+ *
+ * They are shown EXACTLY once — the server keeps only their hashes — so a caller that wants to
+ * compare one issued set against the next has to capture them before dismissing the notice.
+ */
+async function readShownBackupCodes(page: Page): Promise<string[]> {
+  await expect(page.getByText('Guarde os códigos de recuperação')).toBeVisible();
+  const items = page.locator('.totp-backup-codes li');
+  await expect(items).toHaveCount(10);
+  const codes = (await items.allTextContents()).map((code) => code.trim());
+  expect(new Set(codes).size, 'the ten issued codes must be distinct').toBe(10);
+  return codes;
+}
+
+/**
+ * Reissuing the backup codes, which had **no browser coverage at all** until now — and that
+ * absence is the whole reason this test exists.
+ *
+ * `regenerate_backup_codes` was gated server-side at the same time as `disable_totp`, but where
+ * the disable break announced itself (the enrolment test's cleanup failed, and took the rest of
+ * the worker down with it), this one broke in silence: no spec drove the button, so CI stayed
+ * green while a user low on codes had no way to get more. The lesson the coverage encodes is that
+ * a control the suite never clicks is a control the suite cannot tell you is broken.
+ *
+ * Three things are asserted, and the middle one is the point:
+ *
+ *  1. the dialog appears rather than the request firing straight off the button;
+ *  2. a WRONG proof is refused, inline, with the codes not reissued — so the test cannot pass
+ *     against a server that stopped checking, which is exactly what a click-and-expect-success
+ *     test could not have told anyone;
+ *  3. a right proof reissues ten codes and the previous set is gone — the product's actual
+ *     contract, since the server replaces them wholesale rather than appending.
+ */
+test('two-factor: reissuing the backup codes needs a step-up proof and voids the previous set', async ({
+  page,
+}) => {
+  await signInAt(page, '/');
+  await openOwnSecurityTab(page);
+
+  // Enrol a factor so there is something to reissue codes for; keep the first set to compare.
+  await page.getByRole('button', { name: 'Ativar dois fatores' }).click();
+  const secretLocator = page.locator('.totp-enrol__secret code.mono');
+  await expect(secretLocator).toBeVisible();
+  const secret = ((await secretLocator.textContent()) ?? '').trim();
+  await page.getByLabel('Código de verificação').fill(totpCode(secret));
+  await page.getByRole('button', { name: 'Confirmar', exact: true }).click();
+
+  const issuedAtEnrolment = await readShownBackupCodes(page);
+  await page.getByRole('button', { name: 'Concluído' }).click();
+  await expect(page.getByText('Códigos de recuperação restantes')).toBeVisible();
+
+  // (1) The control opens the step-up dialog; it does not reissue on the click alone.
+  await page.getByRole('button', { name: 'Gerar novos códigos' }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(
+    dialog.getByRole('heading', { name: 'Emitir novos códigos de recuperação?' }),
+  ).toBeVisible();
+  await expect(page.locator('.totp-backup-codes li')).toHaveCount(0);
+
+  // (2) A wrong password is refused inline and reissues nothing. The refusal is the server's
+  // uniform 403, which the modal renders as its own error — never a sign-out, and never a toast
+  // that outlives the dialog. The dialog stays open on the same proof arm, ready to retry.
+  await dialog.getByLabel('Palavra-passe', { exact: true }).fill('nao-e-a-palavra-passe');
+  await dialog.getByRole('button', { name: 'Emitir novos códigos', exact: true }).click();
+  // `toContainText` on the leading sentence, the idiom `session.spec.ts` uses for the sibling
+  // wrong-password refusal: enough to prove this is the step-up gate answering rather than the
+  // endpoint erroring, without pinning the trailing "verifique…" clause that is pure wording.
+  await expect(dialog.getByRole('alert')).toContainText('É necessária autenticação reforçada.');
+  await expect(dialog).toBeVisible();
+  await expect(page.locator('.totp-backup-codes li')).toHaveCount(0);
+  await expect(page.getByTestId('tab-bar')).toBeVisible();
+
+  // (3) The real password reissues. Ten fresh codes, shown once, and NONE of the previous ten
+  // survives — the server replaces the set wholesale, which is what makes a printed sheet worth
+  // reprinting rather than appending to.
+  await dialog.getByLabel('Palavra-passe', { exact: true }).fill(OPERATOR_PASSWORD);
+  await dialog.getByRole('button', { name: 'Emitir novos códigos', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+
+  const reissued = await readShownBackupCodes(page);
+  const survivors = reissued.filter((code) => issuedAtEnrolment.includes(code));
+  expect(survivors, 'reissuing must invalidate every previously issued code').toEqual([]);
+
+  await page.getByRole('button', { name: 'Concluído' }).click();
+
+  // Cleanup (REQUIRED): see the poisoning note in the file header — a confirmed factor left on the
+  // sole operator strands the next test's factory reset.
+  await disableTotpFromSecurityPanel(page);
+  await expect(page.getByRole('button', { name: 'Ativar dois fatores' })).toBeVisible();
 });
 
 // --- Two-step sign-in challenge + required-action wall (t21) --------------------------------
@@ -342,10 +437,33 @@ async function submitSignIn(page: Page, username: string, password: string): Pro
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
 }
 
-/** Disable TOTP from the open Segurança panel — REQUIRED cleanup (see the section note). */
+/**
+ * Disable TOTP from the open Segurança panel — REQUIRED cleanup (see the section note).
+ *
+ * Destroying the second factor is a credential operation, so it does not ride the session alone:
+ * the server gates it on `ConfirmationAction::TwoFactorDisable` at the `ConfirmWithReauth` floor,
+ * and the panel collects the proof in a `ConfirmActionModal` before it will send the request. The
+ * operator re-types the password they signed in with — the arm the gate opens on by default.
+ *
+ * The dialog is scoped into rather than reached through `page`, because the confirm button reads
+ * "Desativar" and the button that OPENED the dialog reads "Desativar dois fatores": an unscoped
+ * substring match resolves to two elements and fails on strict mode. `exact: true` on top of the
+ * scope is belt-and-braces against a future label that starts the same way.
+ */
 async function disableTotpFromSecurityPanel(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Desativar dois fatores' }).click();
+
+  const dialog = page.getByRole('dialog');
+  await expect(
+    dialog.getByRole('heading', { name: 'Desativar a verificação em dois passos?' }),
+  ).toBeVisible();
+  await dialog.getByLabel('Palavra-passe', { exact: true }).fill(OPERATOR_PASSWORD);
+  await dialog.getByRole('button', { name: 'Desativar', exact: true }).click();
+
   await expect(page.getByText('Dois fatores desativados.')).toBeVisible();
+  // The dialog closes on success; a gate that silently left it open would still "pass" the toast
+  // assertion above while stranding the operator behind a modal.
+  await expect(dialog).toHaveCount(0);
 }
 
 test('two-step sign-in: an enrolled operator is challenged on sign-in and completes it (the lockout, fixed)', async ({
