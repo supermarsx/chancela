@@ -819,6 +819,21 @@ pub struct AppState {
     /// Per-user sign-in backoff (plan t29 §4.5): a naive in-memory speed-bump against repeated
     /// wrong-password attempts. Resets on restart; not a hardened anti-brute-force.
     pub signin_backoff: Arc<RwLock<HashMap<UserId, session::Backoff>>>,
+    /// **Test seam. `cfg(test)` only — this field does not exist in any shipped build**, nor in the
+    /// library the integration tests link against. When `Some`, the two throttles that render a wait
+    /// into their refusal — [`session::create_session`] and `users::authorize_secret_op_throttled`
+    /// — read the backoff against this instant instead of the wall clock. `None` (the default) is
+    /// the wall clock, so the pin is opt-in per state and cannot leak between tests.
+    ///
+    /// It exists for the anti-enumeration parity assertions on both. Each refusal must be
+    /// byte-identical for a real and a non-existent subject, and each renders the remaining wait in
+    /// **whole seconds**. Two live `now_utc()` reads either side of a second boundary render `3601`
+    /// and `3600`, failing a parity check that has found nothing: the delta is a function of *when*
+    /// each request ran, not of whether the account exists. Pinning the instant removes the clock
+    /// from the comparison so the equality can stay byte-for-byte instead of being relaxed to ignore
+    /// the number — which would let a real divergence through.
+    #[cfg(test)]
+    pub(crate) backoff_clock: Option<time::OffsetDateTime>,
     /// Cross-user secret/reset backoff (t52): the speed-bump on the credential-reset endpoints
     /// (`set_secret`/`remove_secret`/`attestation-key`/`recovery`), keyed by
     /// **`(requester, target-from-request)`** so a failed attempt against a *non-existent* target
@@ -22373,12 +22388,18 @@ mod tests {
     /// long argon2 takes — exactly the load-sensitive flake that gets a test deleted. So the two
     /// buckets are armed through the production path (one real failure each, which is also what
     /// proves an unknown identifier gets a bucket at all), and their deadlines are then rewritten to
-    /// one shared instant far beyond any plausible run time. The half-second offset puts both
-    /// requests inside the same rounded-up "tente novamente em N s" with ~500 ms of slack, on a code
-    /// path that runs no crypto at all — the backoff is checked before the verifier.
+    /// one shared instant far beyond any plausible run time.
+    ///
+    /// **The clock is then pinned** ([`AppState::backoff_clock`], `cfg(test)` only). The refusal
+    /// renders the remaining wait in whole seconds, so two live `now_utc()` reads either side of a
+    /// second boundary produced `3601` and `3600` and reddened this parity check — a difference
+    /// caused by *when* each request ran, never by whether the account exists. An offset chosen to
+    /// straddle the rounding with "enough" slack only narrows that window; pinning closes it, and
+    /// lets the comparison below stay byte-for-byte rather than being relaxed to ignore the number.
+    /// Both requests therefore render exactly `3600`, and any genuine divergence still fails.
     #[tokio::test]
     async fn create_session_throttle_refusal_is_the_same_for_real_and_unknown_identifiers() {
-        let (state, _) = state_with_amelia().await;
+        let (mut state, _) = state_with_amelia().await;
 
         for username in ["amelia.marques", "nao.existe"] {
             let (status, _) = send_raw(
@@ -22399,7 +22420,12 @@ mod tests {
         // Two buckets exist: the real user's id, and the synthetic bucket the unknown identifier
         // folded into. Rewriting both to one instant removes the clock from the comparison without
         // the test needing to know how either key is derived.
-        let armed_until = time::OffsetDateTime::now_utc() + time::Duration::milliseconds(3_600_500);
+        //
+        // An hour AHEAD of the wall clock, so the pin is load-bearing rather than merely harmless:
+        // measured from the real clock the same deadline renders `7200 s`, so the body pinned below
+        // fails loudly the day this seam stops being read, instead of quietly going back to racing.
+        let pinned = time::OffsetDateTime::now_utc() + time::Duration::hours(1);
+        let armed_until = pinned + time::Duration::seconds(3_600);
         {
             let mut backoff = state.signin_backoff.write().await;
             assert_eq!(
@@ -22411,6 +22437,9 @@ mod tests {
                 entry.next_allowed_at = armed_until;
             }
         }
+        // Only now — the two arming failures above must go through the live clock, since they are
+        // what create the buckets this test then rewrites.
+        state.backoff_clock = Some(pinned);
 
         let throttled = |username: &'static str| {
             let state = state.clone();
@@ -22441,10 +22470,14 @@ mod tests {
             "the throttled refusal distinguishes a real account from an unknown one"
         );
         assert_eq!(unknown_headers, real_headers);
-        assert!(
-            String::from_utf8_lossy(&real_bytes).contains("demasiadas tentativas"),
-            "expected the throttle refusal, got {}",
-            String::from_utf8_lossy(&real_bytes)
+        // Strictly stronger than the substring check this replaces, and only expressible because
+        // the clock is pinned: with `now` fixed the rendered wait is exactly the armed hour, so the
+        // refusal can be pinned whole. A substring would pass against a body that had grown a
+        // per-account field beside it.
+        assert_eq!(
+            String::from_utf8_lossy(&real_bytes),
+            r#"{"error":"demasiadas tentativas — tente novamente em 3600 s","code":"signin_throttled.no_wait"}"#,
+            "expected the throttle refusal"
         );
     }
 
@@ -25485,13 +25518,18 @@ mod tests {
     /// (argon2 cost in a single request can otherwise consume most of it — the wall-clock flake
     /// t51-e2 flagged for signin). The window itself being SET by a real failure is asserted
     /// separately; this only fast-forwards an already-earned window to a stable value.
+    ///
+    /// Anchored on [`crate::session::backoff_now`] rather than the wall clock, so a caller that has
+    /// pinned [`AppState::backoff_clock`] gets a deadline the throttle will measure from that same
+    /// instant. Two keys pushed by `secs` from two *different* `now_utc()` reads carry deadlines
+    /// that already differ, before the two requests then read the clock twice more.
     async fn push_secret_backoff_window(
         state: &AppState,
         requester: &str,
         target: &str,
         secs: i64,
     ) {
-        let now = time::OffsetDateTime::now_utc();
+        let now = crate::session::backoff_now(state);
         let mut bo = state.secret_backoff.write().await;
         let entry =
             bo.entry(secret_backoff_key(requester, target))
@@ -25559,7 +25597,7 @@ mod tests {
         // body on the first attempt, and same 429 (byte-identical body) while throttled. If a ghost
         // target were not throttled, or throttled differently, "throttled ⇒ real user" would be an
         // enumeration oracle. Both keys are pushed to the same window so the 429 bodies must match.
-        let state = AppState::default();
+        let mut state = AppState::default();
         let real = make_user(&state, "amelia.marques").await;
         give_target_password(&state, &real, "Corrente-Ok3!X").await;
         let ghost = Uuid::new_v4().to_string(); // no such user
@@ -25602,6 +25640,17 @@ mod tests {
 
         // While throttled (both windows fast-forwarded to the same value), the 429 bodies are
         // byte-identical — a ghost target is indistinguishable from a real one.
+        //
+        // Pin the clock first ([`AppState::backoff_clock`], `cfg(test)` only). The 429 renders the
+        // remaining wait in whole seconds, so on the live clock the two windows are pushed from two
+        // different instants and then measured from two more — four reads, any second boundary
+        // between them rendering `30` against `29`. That is the sign-in throttle's flake in a second
+        // place, and it says nothing about whether the target exists. Pinned, both render exactly
+        // `30 s` and the equality below can stay byte-for-byte. An hour ahead of the wall clock so
+        // the pin is load-bearing: were the throttle to go back to reading the real clock, the
+        // window pushed from this instant would render `3630 s` and the body pinned below would say
+        // so, rather than passing on a seam nobody reads any more.
+        state.backoff_clock = Some(time::OffsetDateTime::now_utc() + time::Duration::hours(1));
         push_secret_backoff_window(&state, &bruno, &real, 30).await;
         push_secret_backoff_window(&state, &bruno, &ghost, 30).await;
         let (rs2, rb2) = cross_user_set(
@@ -25623,6 +25672,13 @@ mod tests {
         assert_eq!(
             rb2, gb2,
             "the throttled 429 body is identical for a real vs a non-existent target"
+        );
+        // Strictly stronger than the equality alone, and only expressible because the clock is
+        // pinned: the pushed window renders exactly, so the refusal can be pinned whole rather than
+        // merely agreeing with itself.
+        assert_eq!(
+            rb2["error"], "demasiadas tentativas — tente novamente em 30 s",
+            "the throttled refusal renders the pushed window"
         );
     }
 

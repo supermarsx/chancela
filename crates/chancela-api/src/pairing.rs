@@ -895,11 +895,17 @@ mod tests {
 
     /// Enrol and confirm a real second factor for `user_id`, returning the base32 secret.
     ///
-    /// The enrolment is confirmed with the code for the **previous** step, deliberately: confirming
-    /// stores the accepted step as the replay floor, so confirming with the *current* step would
-    /// leave every code this test could then present already spent. Using step `N-1` (inside the
-    /// ±1 acceptance window) leaves step `N` unspent, which is what a real operator has when they
-    /// pair a device some time after enrolling.
+    /// Confirmed with the code for the **current** step, and [`live_totp_code`] then presents the
+    /// **next** one — the pairing the two form is what keeps these tests off the 30 s step boundary.
+    ///
+    /// Confirming stores the accepted step as the replay floor, so the two codes must differ; the
+    /// question is only which side of the current step each sits on, and the ±1 window makes that
+    /// asymmetric. Generation happens at step `N` and verification can only be at step `N` or later,
+    /// so of a code's three accepted steps the earlier one is unreachable. A code for step `N` is
+    /// still accepted at step `N+1` — a whole step of slack. A code for step `N-1` is accepted only
+    /// at step `N` exactly: one tick between generating it and the handler reading the clock rejects
+    /// it. That zero-slack edge is what made these tests flake (`401 "código inválido"`), and it is
+    /// why the previous step is not used here.
     async fn enrol_confirmed_totp(state: &AppState, token: &str, user_id: &str) -> String {
         let (status, started) = json_response(
             crate::router(state.clone())
@@ -916,8 +922,9 @@ mod tests {
         assert_eq!(status, StatusCode::CREATED, "enrol totp: {started}");
         let secret = started["secret"].as_str().unwrap().to_owned();
 
-        let previous_step = OffsetDateTime::now_utc().unix_timestamp() - crate::totp::STEP_SECONDS;
-        let code = crate::totp::code_for_secret(&secret, previous_step).unwrap();
+        let code =
+            crate::totp::code_for_secret(&secret, OffsetDateTime::now_utc().unix_timestamp())
+                .unwrap();
         let (status, confirmed) = json_response(
             crate::router(state.clone())
                 .oneshot(auth_request(
@@ -934,9 +941,20 @@ mod tests {
         secret
     }
 
-    /// A live code for `secret` at the current step.
+    /// A code for `secret` the verifier accepts now: the step **after** the current one, which is
+    /// both above the replay floor [`enrol_confirmed_totp`] left and inside the ±1 window. Mirrors
+    /// `next_step_code` in `tests/step_up_totp.rs`.
+    ///
+    /// The next step is the boundary-proof choice in both directions: presented at step `M+1` and
+    /// verified at step `M` or `M+1` (verification cannot precede generation, and cannot lag it by
+    /// 30 s in these tests), it is in window either way. The current step is in window too, but it
+    /// is the very step the confirmation just spent, so it would be refused as a replay.
     fn live_totp_code(secret: &str) -> String {
-        crate::totp::code_for_secret(secret, OffsetDateTime::now_utc().unix_timestamp()).unwrap()
+        crate::totp::code_for_secret(
+            secret,
+            OffsetDateTime::now_utc().unix_timestamp() + crate::totp::STEP_SECONDS,
+        )
+        .unwrap()
     }
 
     /// Narrow this deployment's accepted confirmation methods.

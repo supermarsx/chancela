@@ -1519,7 +1519,7 @@ async fn authorize_secret_op_throttled(
     }
 
     let key = (requester_id, target_id);
-    let now = OffsetDateTime::now_utc();
+    let now = crate::session::backoff_now(state);
     // Hold the backoff lock across the constant-work verify (mirrors `signin_backoff`): concurrent
     // attempts cannot each read "no backoff" and then each spend argon2 cost, nor bypass the window.
     let mut backoff = state.secret_backoff.write().await;

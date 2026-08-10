@@ -887,6 +887,23 @@ fn stored_verifier_for(user: &User) -> Result<String, ApiError> {
     Ok(stored)
 }
 
+/// The instant a wait-rendering throttle is evaluated against: the wall clock, always.
+///
+/// This is the whole of the production definition — `AppState::backoff_clock` is `cfg(test)` and is
+/// not compiled into any shipped build (which is why it is not linked here: in this build it does
+/// not exist), so no deployment has a way to pin this. Shared with the cross-user secret/reset
+/// throttle in `users::authorize_secret_op_throttled`; see the field for why the seam exists.
+#[cfg(not(test))]
+pub(crate) fn backoff_now(_state: &AppState) -> OffsetDateTime {
+    OffsetDateTime::now_utc()
+}
+
+/// The test build's counterpart: the pinned instant when a test set one, the wall clock otherwise.
+#[cfg(test)]
+pub(crate) fn backoff_now(state: &AppState) -> OffsetDateTime {
+    state.backoff_clock.unwrap_or_else(OffsetDateTime::now_utc)
+}
+
 /// `POST /v1/session` — mint a token for a user addressed by `username` (preferred) or `user_id`
 /// (back-compat). **t41 H1 / t33-e2:** unknown identifier, inactive user, and wrong password all
 /// return a uniform `401 "credenciais inválidas"` — same status, same body, same wording, and the
@@ -960,7 +977,7 @@ pub async fn create_session(
         )
         .with_code("signin_throttled.no_wait"));
     }
-    let now = OffsetDateTime::now_utc();
+    let now = backoff_now(&state);
     let seed = state.verifier_seed.read().await.clone();
     let mut backoff = state.signin_backoff.write().await;
     let entry = backoff.entry(uid).or_insert(Backoff {
