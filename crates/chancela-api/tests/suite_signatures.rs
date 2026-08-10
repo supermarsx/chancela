@@ -21,6 +21,8 @@ mod official_signature_import;
 mod signing_configure_gate;
 #[path = "trust_anchor_suggestions.rs"]
 mod trust_anchor_suggestions;
+#[path = "trust_read_path_anchors.rs"]
+mod trust_read_path_anchors;
 #[path = "xades_signature.rs"]
 mod xades_signature;
 

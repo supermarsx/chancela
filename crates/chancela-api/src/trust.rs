@@ -41,7 +41,8 @@ use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::hex;
 use crate::settings::{
-    RuntimeTsaProvider, RuntimeTsaSelection, RuntimeTslSelection, legacy_algorithm_policy,
+    RuntimeTsaProvider, RuntimeTsaSelection, RuntimeTslSelection, SigningSettings,
+    legacy_algorithm_policy,
 };
 
 const BUNDLED_PT_TSL: &[u8] = include_bytes!(concat!(
@@ -126,26 +127,90 @@ pub fn allow_local_trust_url_for_tests(
     Ok(LocalTrustUrlTestAllowance { origin })
 }
 
-/// Validate the cached/imported Trusted List's own XML-DSig signature under the operator's
-/// algorithm policy, reporting what the verification depended on.
+/// The trust material a Trusted List is verified against on **every** path in this module: the
+/// resolved anchor set plus the operator's algorithm policy, taken from a single settings read.
 ///
-/// The anchors come from the environment ([`TslTrustAnchors::from_env`]) — exactly what
-/// `chancela_tsl::validate_tsl_signature` resolved internally, so with the default (empty) policy
-/// this is byte-for-byte the previous behaviour. The policy decides one thing only: whether a
-/// broken algorithm the operator deliberately enabled in `signing.tsl_legacy_algorithms` may be
-/// relied upon.
+/// It exists so the anchors and the policy travel together and are resolved in exactly one place
+/// ([`TslVerification::resolve`]). Before t61-e2 each read handler resolved the *policy* from
+/// settings but the *anchors* came from [`TslTrustAnchors::from_env`] deep inside the shared
+/// validator — so `signing.tsl_trust_anchor_certs` / `signing.tsl_trust_anchor_sha256` were inert
+/// on `/v1/trust/status`, `/v1/trust/catalog`, `/v1/trust/tsa`, `/v1/trust/providers/{id}` and
+/// `/v1/trust/services/{id}`, while the refresh/LOTL path and `signature::build_trust_policy`
+/// honoured them. An operator who provisioned an anchor through the admin UI alone saw the same
+/// list reported valid by one screen and unsigned by another.
+///
+/// **Fail-closed is structural here.** The anchor set can only ever *grow* by the union, and an
+/// install that configures no anchor in settings **and** none in the environment resolves the empty
+/// set, which anchors nothing.
+#[derive(Debug, Clone)]
+pub(crate) struct TslVerification {
+    /// `settings ∪ environment`, resolved by the one shared union [`resolve_lotl_trust_anchors`] —
+    /// the same call the LOTL bootstrap and `signature::build_trust_policy` make, so no path can
+    /// hold a different idea of where an anchor may come from.
+    anchors: TslTrustAnchors,
+    /// Set when anchor *resolution itself* failed (unparseable PEM, malformed pinned fingerprint).
+    /// Held rather than propagated so a misconfigured anchor fails the **verdict** closed — the
+    /// list is reported not-valid with the configuration error as its reason — instead of failing
+    /// the whole read endpoint, which would take the catalog away at the moment an operator most
+    /// needs to see why. The anchor set is left empty in that state, so nothing authenticates.
+    anchor_error: Option<String>,
+    /// Whether a *broken* algorithm the operator deliberately enabled in
+    /// `signing.tsl_legacy_algorithms` may be relied upon. Empty by default, which permits none.
+    policy: TslAlgorithmPolicy,
+}
+
+impl TslVerification {
+    /// Resolve anchors + policy from the signing settings. The **only** constructor a request path
+    /// uses: five read handlers, the refresh import and the TSA diagnostics all call this, so they
+    /// cannot disagree about either half.
+    pub(crate) fn resolve(signing: &SigningSettings) -> Self {
+        let policy = legacy_algorithm_policy(&signing.tsl_legacy_algorithms);
+        match resolve_lotl_trust_anchors(
+            &signing.tsl_trust_anchor_certs,
+            &signing.tsl_trust_anchor_sha256,
+        ) {
+            Ok(anchors) => Self {
+                anchors,
+                anchor_error: None,
+                policy,
+            },
+            Err(e) => Self {
+                anchors: TslTrustAnchors::new(),
+                anchor_error: Some(e.to_string()),
+                policy,
+            },
+        }
+    }
+
+    /// An explicit anchor set + policy, for tests that drive the view helpers directly without a
+    /// settings document. Never used by a request path — production trust material only ever comes
+    /// from [`resolve`](Self::resolve).
+    #[cfg(test)]
+    pub(crate) fn from_parts(anchors: TslTrustAnchors, policy: TslAlgorithmPolicy) -> Self {
+        Self {
+            anchors,
+            anchor_error: None,
+            policy,
+        }
+    }
+}
+
+/// Validate the cached/imported Trusted List's own XML-DSig signature against the operator's
+/// resolved trust material, reporting what the verification depended on.
 ///
 /// **Every** trust read-path in this module goes through this one function, and every handler
-/// resolves the policy from the same `signing.tsl_legacy_algorithms` field via
-/// [`legacy_algorithm_policy`] — so the boolean-only call sites (catalog / provider / service /
-/// TSA) and the reporting ones (`/v1/trust/status`, refresh, TSA diagnostics) cannot disagree
-/// about whether a given list is valid.
+/// builds its [`TslVerification`] with [`TslVerification::resolve`] — so the boolean-only call
+/// sites (catalog / provider / service / TSA) and the reporting ones (`/v1/trust/status`, refresh,
+/// TSA diagnostics) cannot disagree about whether a given list is valid, nor about which anchors
+/// decided it.
 fn validate_tsl_signature_reported(
     xml: &[u8],
-    policy: &TslAlgorithmPolicy,
+    verification: &TslVerification,
 ) -> Result<TslSignatureReport, TslError> {
-    let anchors = TslTrustAnchors::from_env()?;
-    validate_tsl_signature_with_policy(xml, &anchors, policy)
+    if let Some(error) = &verification.anchor_error {
+        return Err(TslError::TrustAnchorConfig(error.clone()));
+    }
+    validate_tsl_signature_with_policy(xml, &verification.anchors, &verification.policy)
 }
 
 // --- Views -------------------------------------------------------------------------------------
@@ -592,11 +657,11 @@ pub async fn trust_status(
     actor: CurrentActor,
 ) -> Result<Json<TslSummaryView>, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let (tsl_selection, policy) = {
+    let (tsl_selection, verification) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+            TslVerification::resolve(&guard.signing),
         )
     };
     let loaded = load_tsl(&state)?;
@@ -605,7 +670,7 @@ pub async fn trust_status(
         &loaded,
         now,
         Some(&tsl_selection),
-        &policy,
+        &verification,
     )))
 }
 
@@ -635,29 +700,23 @@ pub async fn refresh_trust_tsl(
                 .to_owned(),
         )
     })?;
-    let (tsl_selection, anchor_certs, anchor_fingerprints, policy) = {
+    // One resolution for both arms: the LOTL bootstrap and the plain import share the anchors the
+    // read paths display, so an import can never authenticate against a different set than the
+    // catalog then reports.
+    let (tsl_selection, verification) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            guard.signing.tsl_trust_anchor_certs.clone(),
-            guard.signing.tsl_trust_anchor_sha256.clone(),
-            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+            TslVerification::resolve(&guard.signing),
         )
     };
     let use_lotl = request.lotl.unwrap_or(false);
     let attempt = tokio::task::spawn_blocking(move || {
         let now = OffsetDateTime::now_utc();
         if use_lotl {
-            import_tsl_via_lotl(
-                data_dir,
-                tsl_selection,
-                anchor_certs,
-                anchor_fingerprints,
-                request,
-                now,
-            )
+            import_tsl_via_lotl(data_dir, tsl_selection, &verification, request, now)
         } else {
-            import_tsl_to_cache(data_dir, tsl_selection, request, now, &policy)
+            import_tsl_to_cache(data_dir, tsl_selection, request, now, &verification)
         }
     })
     .await
@@ -697,16 +756,16 @@ pub async fn trust_catalog(
     Query(query): Query<TslCatalogQuery>,
 ) -> Result<Response, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let (tsl_selection, policy) = {
+    let (tsl_selection, verification) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+            TslVerification::resolve(&guard.signing),
         )
     };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &verification).is_ok();
     let filters = ServiceFilters::from_tsl_query(&query);
     if filters.is_active() {
         let limit = query
@@ -722,7 +781,13 @@ pub async fn trust_catalog(
         ))
         .into_response())
     } else {
-        Ok(Json(catalog_view(&loaded, now, Some(&tsl_selection), &policy)).into_response())
+        Ok(Json(catalog_view(
+            &loaded,
+            now,
+            Some(&tsl_selection),
+            &verification,
+        ))
+        .into_response())
     }
 }
 
@@ -737,11 +802,11 @@ pub async fn trust_tsa(
     require_trust_read(&state, &actor).await?;
     let signing = state.settings.read().await.signing.clone();
     let tsa_selection = signing.runtime_tsa_selection();
-    let policy = legacy_algorithm_policy(&signing.tsl_legacy_algorithms);
+    let verification = TslVerification::resolve(&signing);
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
-    let catalog = tsa_catalog_view(&loaded, now, &tsa_selection, &policy);
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &verification).is_ok();
+    let catalog = tsa_catalog_view(&loaded, now, &tsa_selection, &verification);
     let filters = ServiceFilters::from_tsa_query(&query);
     if filters.is_active() {
         let limit = query
@@ -768,16 +833,16 @@ pub async fn trust_provider(
     actor: CurrentActor,
 ) -> Result<Json<TslProviderDetailView>, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let (tsl_selection, policy) = {
+    let (tsl_selection, verification) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+            TslVerification::resolve(&guard.signing),
         )
     };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &verification).is_ok();
     let provider = loaded
         .list
         .providers
@@ -788,7 +853,7 @@ pub async fn trust_provider(
         .ok_or(ApiError::NotFound)?;
     Ok(Json(TslProviderDetailView {
         provider,
-        summary: summary_view(&loaded, now, Some(&tsl_selection), &policy),
+        summary: summary_view(&loaded, now, Some(&tsl_selection), &verification),
     }))
 }
 
@@ -799,16 +864,16 @@ pub async fn trust_service(
     actor: CurrentActor,
 ) -> Result<Json<TslServiceDetailView>, ApiError> {
     require_trust_read(&state, &actor).await?;
-    let (tsl_selection, policy) = {
+    let (tsl_selection, verification) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            legacy_algorithm_policy(&guard.signing.tsl_legacy_algorithms),
+            TslVerification::resolve(&guard.signing),
         )
     };
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
-    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &policy).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, &verification).is_ok();
     for (provider_index, provider) in loaded.list.providers.iter().enumerate() {
         let provider_id = provider_id_at(provider_index, provider);
         for (service_index, service) in provider.services.iter().enumerate() {
@@ -825,7 +890,7 @@ pub async fn trust_service(
                     digital_identities: digital_identity_views(service),
                     history: service_history_views(service),
                     service: summary,
-                    summary: summary_view(&loaded, now, Some(&tsl_selection), &policy),
+                    summary: summary_view(&loaded, now, Some(&tsl_selection), &verification),
                 }));
             }
         }
@@ -856,7 +921,7 @@ fn import_tsl_to_cache(
     selection: RuntimeTslSelection,
     request: TslRefreshRequest,
     now: OffsetDateTime,
-    policy: &TslAlgorithmPolicy,
+    verification: &TslVerification,
 ) -> Result<TslRefreshStatusView, ApiError> {
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| ApiError::Internal(format!("failed to create TSL cache directory: {e}")))?;
@@ -938,7 +1003,7 @@ fn import_tsl_to_cache(
             status_source_url.clone(),
             display_path,
             Some(target_path.display().to_string()),
-            policy,
+            verification,
         ),
         Err(error) => failed_refresh_status(
             now,
@@ -1083,8 +1148,7 @@ pub(crate) fn resolve_lotl_trust_anchors(
 fn import_tsl_via_lotl(
     data_dir: PathBuf,
     selection: RuntimeTslSelection,
-    anchor_certs: Vec<String>,
-    anchor_fingerprints: Vec<String>,
+    verification: &TslVerification,
     request: TslRefreshRequest,
     now: OffsetDateTime,
 ) -> Result<TslRefreshStatusView, ApiError> {
@@ -1105,13 +1169,16 @@ fn import_tsl_via_lotl(
     let lotl_url = resolve_lotl_url(request.lotl_url.as_deref());
     let member_url = resolve_member_tsl_url(&selection, request.url.as_deref());
 
-    // Root of trust: the pinned OJEU LOTL signing anchor(s) — settings-provisioned anchors unioned
-    // with the environment ones, settings-first. An empty set fails closed inside `ingest_lotl`, but
-    // we surface a configuration error early so the operator knows the anchor — not the bytes — is
-    // missing.
-    let anchors = resolve_lotl_trust_anchors(&anchor_certs, &anchor_fingerprints).map_err(|e| {
-        ApiError::Unprocessable(format!("LOTL trust anchor configuration error: {e}"))
-    })?;
+    // Root of trust: the pinned OJEU LOTL signing anchor(s) — the SAME resolved set the read paths
+    // display, settings-provisioned anchors unioned with the environment ones. An empty set fails
+    // closed inside `ingest_lotl`, but a resolution *error* is surfaced early so the operator knows
+    // the anchor — not the bytes — is what is missing.
+    if let Some(error) = &verification.anchor_error {
+        return Err(ApiError::Unprocessable(format!(
+            "LOTL trust anchor configuration error: {error}"
+        )));
+    }
+    let anchors = &verification.anchors;
 
     // Fetch the LOTL then the member TSL, both SSRF-vetted + size-bounded (never the raw
     // `HttpTslSource`, which does no egress vetting).
@@ -1149,7 +1216,7 @@ fn import_tsl_via_lotl(
         }
     };
 
-    match authenticate_member_via_lotl(&lotl_bytes, &member_bytes, &anchors, &territory) {
+    match authenticate_member_via_lotl(&lotl_bytes, &member_bytes, anchors, &territory) {
         Ok(authenticated) => {
             // Promote only an authenticated list. Write the member bytes to the cache atomically so a
             // crash mid-write never leaves a truncated `tsl.xml`.
@@ -1601,12 +1668,12 @@ fn status_for_imported_xml(
     source_url: Option<String>,
     source_path: Option<String>,
     target_path: Option<String>,
-    policy: &TslAlgorithmPolicy,
+    verification: &TslVerification,
 ) -> TslRefreshStatusView {
     match parse_tsl(xml) {
         Ok(list) => {
             let (weak_algorithms, validation_error) =
-                match validate_tsl_signature_reported(xml, policy) {
+                match validate_tsl_signature_reported(xml, verification) {
                     Ok(report) => (report.weak_algorithms, None),
                     Err(e) => (
                         Vec::new(),
@@ -1759,11 +1826,11 @@ fn catalog_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
     runtime_selection: Option<&RuntimeTslSelection>,
-    policy: &TslAlgorithmPolicy,
+    verification: &TslVerification,
 ) -> TslCatalogView {
-    let signature_valid = validate_tsl_signature_reported(&loaded.xml, policy).is_ok();
+    let signature_valid = validate_tsl_signature_reported(&loaded.xml, verification).is_ok();
     TslCatalogView {
-        summary: summary_view(loaded, now, runtime_selection, policy),
+        summary: summary_view(loaded, now, runtime_selection, verification),
         providers: loaded
             .list
             .providers
@@ -1778,10 +1845,10 @@ fn summary_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
     runtime_selection: Option<&RuntimeTslSelection>,
-    policy: &TslAlgorithmPolicy,
+    verification: &TslVerification,
 ) -> TslSummaryView {
     let (weak_algorithms, validation_error) =
-        match validate_tsl_signature_reported(&loaded.xml, policy) {
+        match validate_tsl_signature_reported(&loaded.xml, verification) {
             Ok(report) => (report.weak_algorithms, None),
             Err(e) => (Vec::new(), Some(e.to_string())),
         };
@@ -1974,10 +2041,10 @@ fn tsa_catalog_view(
     loaded: &LoadedTsl,
     now: OffsetDateTime,
     selection: &RuntimeTsaSelection,
-    policy: &TslAlgorithmPolicy,
+    verification: &TslVerification,
 ) -> TsaCatalogView {
     let (weak_algorithms, signature_error) =
-        match validate_tsl_signature_reported(&loaded.xml, policy) {
+        match validate_tsl_signature_reported(&loaded.xml, verification) {
             Ok(report) => (report.weak_algorithms, None),
             Err(e) => (Vec::new(), Some(e.to_string())),
         };
@@ -3078,6 +3145,14 @@ mod tests {
         }
     }
 
+    /// The trust material an install that has configured **no** anchor resolves to: an empty set
+    /// and a policy permitting no broken algorithm. Passing it explicitly (rather than letting the
+    /// validator read the environment, as this module used to) also makes these view tests immune
+    /// to an ambient `CHANCELA_TSL_TRUST_ANCHOR[_SHA256]` on a developer machine.
+    fn unanchored() -> TslVerification {
+        TslVerification::from_parts(TslTrustAnchors::new(), TslAlgorithmPolicy::new())
+    }
+
     fn tsa_selection_for_url(url: &str) -> RuntimeTsaSelection {
         let mut signing = SigningSettings::default();
         signing.tsa_providers[0].url = Some(url.to_owned());
@@ -3138,7 +3213,7 @@ mod tests {
     #[test]
     fn summary_reports_fixture_validation_without_trusting_it() {
         let loaded = fixture();
-        let summary = summary_view(&loaded, NOW, None, &TslAlgorithmPolicy::new());
+        let summary = summary_view(&loaded, NOW, None, &unanchored());
         assert_eq!(summary.scheme_territory, "PT");
         assert!(summary.last_refresh.is_none());
         assert_eq!(summary.providers, 4);
@@ -3226,7 +3301,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
-            &TslAlgorithmPolicy::new(),
+            &unanchored(),
         )
         .expect("import status");
 
@@ -3271,7 +3346,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
-            &TslAlgorithmPolicy::new(),
+            &unanchored(),
         )
         .expect("failed attempt still persists status");
 
@@ -3295,7 +3370,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
-            &TslAlgorithmPolicy::new(),
+            &unanchored(),
         )
         .expect("unsafe URL attempt still records status");
 
@@ -3549,7 +3624,7 @@ mod tests {
                 ..TslRefreshRequest::default()
             },
             NOW,
-            &TslAlgorithmPolicy::new(),
+            &unanchored(),
         )
         .expect("configured source import");
 
@@ -3774,7 +3849,7 @@ mod tests {
     #[test]
     fn provider_analysis_and_detail_views_expose_duplicate_names_and_raw_dates() {
         let loaded = fixture();
-        let catalog = catalog_view(&loaded, NOW, None, &TslAlgorithmPolicy::new());
+        let catalog = catalog_view(&loaded, NOW, None, &unanchored());
         let multicert = catalog
             .providers
             .iter()
@@ -3848,7 +3923,7 @@ mod tests {
     fn tsa_catalog_reports_configured_url_and_fixture_timestamp_metadata() {
         let loaded = fixture();
         let selection = tsa_selection_for_url("http://ts.cartaodecidadao.pt/tsa/server");
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &unanchored());
         assert_eq!(catalog.summary.status, TsaStatusKind::Ready);
         assert_eq!(
             catalog.summary.accepted_hash.digest,
@@ -3867,7 +3942,7 @@ mod tests {
     fn tsa_catalog_filters_tsl_timestamp_authority_records() {
         let loaded = fixture();
         let selection = tsa_selection_for_url("http://tsa.example.test");
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &unanchored());
         assert_eq!(catalog.records.len(), 2);
         assert_eq!(catalog.summary.records, 2);
         assert_eq!(catalog.summary.granted_records, 1);
@@ -3994,7 +4069,7 @@ mod tests {
     fn tsa_catalog_reports_unconfigured_and_redacts_url_credentials() {
         let loaded = fixture();
         let selection = unconfigured_tsa_selection();
-        let unconfigured = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
+        let unconfigured = tsa_catalog_view(&loaded, NOW, &selection, &unanchored());
         assert_eq!(unconfigured.summary.status, TsaStatusKind::Unconfigured);
         assert_eq!(unconfigured.summary.configured_url, None);
 
@@ -4036,7 +4111,7 @@ mod tests {
         };
 
         let selection = signing.runtime_tsa_selection();
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &unanchored());
 
         assert_eq!(catalog.summary.status, TsaStatusKind::Ready);
         assert_eq!(
@@ -4064,7 +4139,7 @@ mod tests {
         };
 
         let selection = signing.runtime_tsa_selection();
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &unanchored());
 
         assert_eq!(catalog.summary.status, TsaStatusKind::Error);
         assert_eq!(catalog.summary.configured_url, None);
@@ -4089,7 +4164,7 @@ mod tests {
         };
 
         let selection = signing.runtime_tsa_selection();
-        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &TslAlgorithmPolicy::new());
+        let catalog = tsa_catalog_view(&loaded, NOW, &selection, &unanchored());
 
         assert_eq!(catalog.summary.status, TsaStatusKind::Error);
         assert!(
@@ -4169,5 +4244,114 @@ mod tests {
         let anchors = resolve_lotl_trust_anchors(&[], &[]).expect("empty config resolves");
         assert!(anchors.is_empty(), "unconfigured anchors trust nothing");
         assert!(!anchors.is_anchored(b"any signer certificate"));
+    }
+
+    /// The read paths resolve through the same union as the refresh path (t61-e2). This pins the
+    /// resolution itself; `tests/trust_read_path_anchors.rs` pins what the five endpoints then
+    /// report. Both arms of the union are exercised here because the environment arm cannot be
+    /// driven from the integration suite, which runs its tests concurrently.
+    #[test]
+    fn read_path_verification_resolves_settings_unioned_with_env() {
+        let _guard = ANCHOR_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let env_cert = b"env-provisioned-read-path-anchor-der";
+        let env_fp: [u8; 32] = Sha256::digest(env_cert).into();
+        let settings_cert = b"settings-provisioned-read-path-anchor-der";
+        let settings_fp: [u8; 32] = Sha256::digest(settings_cert).into();
+
+        let signing = SigningSettings {
+            tsl_trust_anchor_sha256: vec![crate::hex::hex(&settings_fp)],
+            ..SigningSettings::default()
+        };
+
+        // SAFETY: single-threaded within the ANCHOR_ENV_LOCK critical section.
+        unsafe {
+            std::env::set_var(
+                chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256,
+                crate::hex::hex(&env_fp),
+            );
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR);
+        }
+        let both = TslVerification::resolve(&signing);
+        let env_only = TslVerification::resolve(&SigningSettings::default());
+        unsafe {
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256);
+        }
+        let settings_only = TslVerification::resolve(&signing);
+
+        assert!(both.anchor_error.is_none());
+        assert!(
+            both.anchors.is_anchored(settings_cert) && both.anchors.is_anchored(env_cert),
+            "a read path holds the union, not one source or the other"
+        );
+        assert!(
+            env_only.anchors.is_anchored(env_cert),
+            "an install that configures its anchor in the environment alone keeps working unchanged"
+        );
+        assert!(
+            !env_only.anchors.is_anchored(settings_cert),
+            "the environment arm must not conjure an anchor settings never carried"
+        );
+        assert!(
+            settings_only.anchors.is_anchored(settings_cert),
+            "an anchor provisioned in settings alone is a read-path anchor — the regression"
+        );
+        assert!(
+            !settings_only.anchors.is_anchored(env_cert),
+            "with the environment unset only the settings anchor survives"
+        );
+    }
+
+    /// Fail-closed with nothing configured anywhere, at the level the read paths actually use: not
+    /// merely an empty anchor set, but a *verdict* of not-valid for a well-formed list.
+    #[test]
+    fn read_path_verification_without_any_anchor_authenticates_nothing() {
+        let _guard = ANCHOR_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // SAFETY: single-threaded within the ANCHOR_ENV_LOCK critical section.
+        unsafe {
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256);
+            std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR);
+        }
+
+        let verification = TslVerification::resolve(&SigningSettings::default());
+        assert!(
+            verification.anchors.is_empty(),
+            "no anchor is ever baked in: an unconfigured install trusts no list"
+        );
+        assert!(
+            validate_tsl_signature_reported(BUNDLED_PT_TSL, &verification).is_err(),
+            "a list nothing anchors must not be reported valid"
+        );
+    }
+
+    /// A settings anchor that cannot be parsed leaves the resolution in its fail-closed state: an
+    /// empty anchor set plus a held error, so the verdict is not-valid and says why. Dropping the
+    /// bad entry and carrying on with the good ones would silently change which anchors decide.
+    #[test]
+    fn an_unparseable_settings_anchor_resolves_fail_closed_with_its_reason() {
+        let _guard = ANCHOR_ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let good_cert = b"a well-formed anchor der";
+        let good_fp: [u8; 32] = Sha256::digest(good_cert).into();
+        let signing = SigningSettings {
+            tsl_trust_anchor_sha256: vec![
+                crate::hex::hex(&good_fp),
+                "not-a-fingerprint".to_owned(),
+            ],
+            ..SigningSettings::default()
+        };
+
+        let verification = TslVerification::resolve(&signing);
+        assert!(
+            verification.anchors.is_empty() && verification.anchor_error.is_some(),
+            "a misconfigured anchor trusts nothing, and the good entry beside it does not rescue it"
+        );
+        let error = validate_tsl_signature_reported(BUNDLED_PT_TSL, &verification)
+            .expect_err("an unresolvable anchor set can validate nothing");
+        assert!(
+            error.to_string().contains("anchor"),
+            "the reason reaches the operator: {error}"
+        );
     }
 }
