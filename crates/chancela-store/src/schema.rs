@@ -1229,11 +1229,16 @@ pub const LOGICAL_BACKUP_TABLES: &[&str] = &[
 /// The table names the DDL declares, parsed out of `CREATE TABLE IF NOT EXISTS <name>`. Index
 /// statements are not tables and are skipped.
 ///
-/// Test-only, and `pub(crate)` because the wipe-list guard in [`crate::recovery`] needs the same
-/// parse: the wipe list, the backup list and the DDL are three hand-maintained enumerations of one
-/// thing, and each pairwise guard has to derive "what tables exist" identically or the guards
-/// disagree with each other rather than with the schema.
-#[cfg(test)]
+/// `pub(crate)` because the wipe-list guard in [`crate::recovery`] needs the same parse: the wipe
+/// list, the backup list and the DDL are three hand-maintained enumerations of one thing, and each
+/// pairwise guard has to derive "what tables exist" identically or the guards disagree with each
+/// other rather than with the schema.
+///
+/// Not test-only: a factory reset promises a blank first-run instance, so its delete list is
+/// *derived* from this parse rather than hand-maintained. Enumerating what the schema creates is
+/// the only way that promise cannot go stale — the hand-maintained list it replaced had drifted to
+/// 17 of the 37 tables, leaving `users`, `provider_credentials` and every retained evidence
+/// document behind on an instance reported as reset to factory.
 pub(crate) fn schema_table_names() -> Vec<&'static str> {
     const PREFIX: &str = "CREATE TABLE IF NOT EXISTS ";
     ALL.iter()

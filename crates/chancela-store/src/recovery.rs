@@ -390,7 +390,12 @@ pub struct RestoreOutcome {
 
 /// Mark every failure after a whole-store durable commit so upper layers reconcile from the new
 /// authority instead of releasing their destructive fence as though nothing was applied.
-#[cfg(any(feature = "postgres", test))]
+///
+/// Not gated on the `postgres` feature. It was, which meant a default SQLite build did not even
+/// compile the classifier the SQLite restore path needs: a failure after the live `chancela.db` had
+/// been replaced surfaced as a plain error, the api took its not-applied branch, released the
+/// destructive search fence and told the operator the restore had not happened — on an instance
+/// where it entirely had.
 fn after_restore_commit<T>(result: Result<T, StoreError>) -> Result<T, StoreError> {
     result.map_err(|error| match error {
         already @ StoreError::RestoreCommitted(_) => already,
@@ -398,9 +403,81 @@ fn after_restore_commit<T>(result: Result<T, StoreError>) -> Result<T, StoreErro
     })
 }
 
+// Test-only: arm a failure at the first step *after* the live database file has been replaced.
+//
+// A real post-swap failure is a disk or lock fault that cannot be provoked identically on every
+// platform, and the property under test — that such a failure is classified APPLIED rather than
+// "nothing happened" — is exactly the one no test could reach without an injection point. Armed
+// per-thread and consumed on read, so it cannot leak into a concurrently running test.
+#[cfg(test)]
+thread_local! {
+    static FAIL_AFTER_RESTORE_SWAP: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Arm [`FAIL_AFTER_RESTORE_SWAP`] for the current thread's next SQLite restore.
+#[cfg(test)]
+pub(crate) fn arm_post_swap_failure_for_test() {
+    FAIL_AFTER_RESTORE_SWAP.with(|armed| armed.set(true));
+}
+
+#[cfg(test)]
+fn injected_post_swap_failure() -> Result<(), StoreError> {
+    if FAIL_AFTER_RESTORE_SWAP.with(std::cell::Cell::take) {
+        return Err(StoreError::Io(std::io::Error::other(
+            "injected post-swap restore failure",
+        )));
+    }
+    Ok(())
+}
+
+#[cfg(not(test))]
+#[inline]
+fn injected_post_swap_failure() -> Result<(), StoreError> {
+    Ok(())
+}
+
+/// A throwaway temp directory unique to one in-crate test, removed on drop.
+#[cfg(test)]
+struct TestDir(PathBuf);
+
+#[cfg(test)]
+impl TestDir {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!("chancela-recovery-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&path).expect("create temp dir");
+        TestDir(path)
+    }
+
+    fn path(&self) -> &Path {
+        &self.0
+    }
+}
+
+#[cfg(test)]
+impl Drop for TestDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
 #[cfg(test)]
 mod committed_restore_tests {
     use super::*;
+
+    /// Seed a store with one chained event and take a backup of it, returning both.
+    fn seeded_store_with_backup(dir: &TestDir) -> (Store, Ledger, PathBuf) {
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = store.load().expect("load").ledger;
+        let event = ledger
+            .append("amelia.marques", RECOVERY_SCOPE, "test.seeded", None, b"s")
+            .clone();
+        store
+            .persist(|tx| tx.append_event(&event))
+            .expect("seed event");
+        let manifest = store.backup(dir.path(), &[]).expect("backup");
+        let archive = PathBuf::from(&manifest.path);
+        (store, ledger, archive)
+    }
 
     #[test]
     fn post_commit_failures_are_never_reported_as_precommit_errors() {
@@ -412,6 +489,71 @@ mod committed_restore_tests {
             Err(StoreError::RestoreCommitted(message))
                 if message.contains("injected sidecar failure")
         ));
+    }
+
+    /// **The SQLite restore path must route its post-swap steps through that classifier.**
+    ///
+    /// The unit test above proves the classifier works; it stayed green for as long as the SQLite
+    /// path never called it. With the live `chancela.db` already replaced, a failure returned as a
+    /// plain error makes `chancela-api`'s restore coordinator take its not-applied branch: it
+    /// releases the destructive search fence (so a worker may rebuild the index from pre-restore
+    /// sources), never invalidates the sessions minted against the old instance (which now
+    /// authenticate against restored data), leaves the in-memory read models describing an
+    /// instance that no longer exists, appends no `ledger.restored`, and tells the operator the
+    /// restore failed.
+    #[test]
+    fn a_sqlite_restore_that_fails_after_the_swap_is_reported_as_applied() {
+        let dir = TestDir::new();
+        let (store, mut ledger, archive) = seeded_store_with_backup(&dir);
+
+        arm_post_swap_failure_for_test();
+        let error = store
+            .restore(
+                &mut ledger,
+                &archive,
+                dir.path(),
+                "amelia.marques",
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .expect_err("the armed post-swap failure must fail the restore");
+
+        assert!(
+            matches!(
+                &error,
+                StoreError::RestoreCommitted(message)
+                    if message.contains("injected post-swap restore failure")
+            ),
+            "a failure after the database file was replaced must be classified as an APPLIED \
+             restore needing reconciliation, not as a restore that did not happen; got {error:?}"
+        );
+    }
+
+    /// A restore with nothing armed still succeeds and is reported as `Ok`, so the test above
+    /// cannot be passing merely because the SQLite restore path is broken. Also the operator's
+    /// recovery route out of an applied-but-unreconciled restore: retrying it works.
+    #[test]
+    fn an_uninjected_restore_still_succeeds() {
+        let dir = TestDir::new();
+        let (store, mut ledger, archive) = seeded_store_with_backup(&dir);
+
+        let outcome = store
+            .restore(
+                &mut ledger,
+                &archive,
+                dir.path(),
+                "amelia.marques",
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .expect("an uninjected restore succeeds");
+
+        assert!(outcome.chain_verified);
+        assert!(
+            ledger
+                .events()
+                .iter()
+                .any(|e| e.kind == RESTORED_EVENT_KIND),
+            "a complete restore records ledger.restored"
+        );
     }
 }
 
@@ -1225,6 +1367,16 @@ impl Store {
 
         // Atomic db swap plus sidecar replacement: free the live file, write the verified snapshot,
         // replace sidecar roots from the staging dir, then reopen the connection.
+        //
+        // Removing the live database file is the commit point. Everything from there on is wrapped
+        // in `after_restore_commit`, exactly as `pg_restore` wraps its own post-commit steps: a
+        // failure here has already replaced the instance's authority, so it must be reported as an
+        // APPLIED restore needing reconciliation, never as "nothing changed". The pre-restore
+        // sessions the api must invalidate, the in-memory read models it must reload, the
+        // destructive search fence it must hold, and the `ledger.restored` event all hang off that
+        // classification. A conservative boundary is deliberate: if the removal silently failed and
+        // the write then failed too, calling it applied costs a reconciliation, whereas calling it
+        // not-applied on a swapped instance costs the operator the truth.
         {
             let mut guard = self.locked_conn()?;
             let placeholder = rusqlite::Connection::open_in_memory()?;
@@ -1234,33 +1386,40 @@ impl Store {
             let _ = std::fs::remove_file(&db);
             let _ = std::fs::remove_file(data_dir.join(format!("{DB_FILE}-wal")));
             let _ = std::fs::remove_file(data_dir.join(format!("{DB_FILE}-shm")));
-            std::fs::write(&db, &sanitized_db_bytes)?;
-            replace_live_sidecars(data_dir, &sidecar_stage, &staged_roots, sidecars)?;
-            *guard = open_connection_with_options(data_dir, &sqlite_open_options)?;
+            after_restore_commit((|| {
+                std::fs::write(&db, &sanitized_db_bytes)?;
+                injected_post_swap_failure()?;
+                replace_live_sidecars(data_dir, &sidecar_stage, &staged_roots, sidecars)?;
+                *guard = open_connection_with_options(data_dir, &sqlite_open_options)?;
+                Ok(())
+            })())?;
         }
 
-        // Load the restored chain, record the restore (chained), and hand the caller the new ledger.
-        let restored = self.load()?;
-        let mut restored_ledger = restored.ledger;
-        let record = RestoreRecord {
-            actor: actor.to_owned(),
-            at,
-            archive: archive.to_string_lossy().into_owned(),
-            source_instance_id: self.instance_id().ok(),
-            restored_length: restored_ledger.len() as u64,
-            restored_head: restored_ledger.head().map(|h| hex(&h)),
-        };
-        self.append_recovery_event(&mut restored_ledger, RESTORED_EVENT_KIND, actor, &record)?;
+        // Load the restored chain, record the restore (chained), and hand the caller the new
+        // ledger. Still post-commit: the swap above already landed.
+        after_restore_commit((|| {
+            let restored = self.load()?;
+            let mut restored_ledger = restored.ledger;
+            let record = RestoreRecord {
+                actor: actor.to_owned(),
+                at,
+                archive: archive.to_string_lossy().into_owned(),
+                source_instance_id: self.instance_id().ok(),
+                restored_length: restored_ledger.len() as u64,
+                restored_head: restored_ledger.head().map(|h| hex(&h)),
+            };
+            self.append_recovery_event(&mut restored_ledger, RESTORED_EVENT_KIND, actor, &record)?;
 
-        let ledger_length = restored_ledger.len() as u64;
-        let ledger_head = restored_ledger.head().map(|h| hex(&h));
-        *ledger = restored_ledger;
-        Ok(RestoreOutcome {
-            restored_from: archive.to_path_buf(),
-            ledger_length,
-            ledger_head,
-            chain_verified: true,
-        })
+            let ledger_length = restored_ledger.len() as u64;
+            let ledger_head = restored_ledger.head().map(|h| hex(&h));
+            *ledger = restored_ledger;
+            Ok(RestoreOutcome {
+                restored_from: archive.to_path_buf(),
+                ledger_length,
+                ledger_head,
+                chain_verified: true,
+            })
+        })())
     }
 
     /// **Per-book start-over** (archive-then-fresh, non-destructive; §2.7).
@@ -1463,19 +1622,16 @@ impl Store {
                 })
             }
             ResetScope::BackendFactory => {
-                // Clear ALL rows (incl. the ledger) atomically → blank first-run.
-                self.persist(|tx| {
-                    clear_domain(tx)?;
-                    clear_imported(tx)?;
-                    clear_events(tx)?;
-                    Ok(())
-                })?;
+                // Clear EVERY table the schema creates except the documented retentions (incl. the
+                // ledger, the accounts, and the encrypted provider credentials) atomically →
+                // blank first-run. Deliberately NOT the narrower `BackendDomain` list: a factory
+                // reset is what an operator runs to decommission or hand over an instance.
+                self.persist(clear_everything)?;
                 *ledger = Ledger::new();
 
                 // Remove the sidecar files (users.json / settings / caches). Best-effort AFTER the
                 // atomic db-blank; the retained archive already preserved everything.
-                let mut cleared = domain_table_names();
-                cleared.push("events".to_owned());
+                let mut cleared = factory_table_names();
                 for s in sidecars {
                     if s.exists() {
                         let removed = if s.is_dir() {
@@ -1894,6 +2050,47 @@ impl Store {
                 verdict_break = Some(b);
             }
         }
+        // Fixity of the acts themselves. Everything above verifies the bundle's *packaging* (the
+        // manifest digest, each member's digest, the chain over the events) — all of which a
+        // producer with an edited ata recomputes for free, because it builds the bundle from the
+        // edited rows. Until here the importer never parsed an act at all; the one question that
+        // catches such a bundle is whether each sealed ata still hashes to the digest its own seal
+        // froze, which is a fact about the act, not about how it was wrapped.
+        if verdict_break.is_none() {
+            let mut acts = Vec::new();
+            for (name, bytes) in &members {
+                if !(name.starts_with("acts/") && name.ends_with(".json")) {
+                    continue;
+                }
+                match serde_json::from_slice::<chancela_core::Act>(bytes) {
+                    Ok(act) => acts.push(act),
+                    Err(e) => {
+                        verdict_break = Some(tamper_break(
+                            &book_id,
+                            &format!("bundle member {name} is not a readable act: {e}"),
+                        ));
+                        break;
+                    }
+                }
+            }
+            if verdict_break.is_none() {
+                let fixity = chancela_core::ActFixityReport::build(acts.iter(), []);
+                if !fixity.healthy {
+                    let first = fixity
+                        .findings
+                        .iter()
+                        .find(|f| f.fixity.is_broken())
+                        .map(|f| format!("act {} ({:?})", f.act_id, f.fixity))
+                        .unwrap_or_else(|| "an act".to_owned());
+                    verdict_break = Some(tamper_break(
+                        &book_id,
+                        &format!(
+                            "a sealed act no longer matches the digest its seal froze: {first}"
+                        ),
+                    ));
+                }
+            }
+        }
         let verdict = match verdict_break {
             None => ImportVerdict::Verified,
             Some(b) => ImportVerdict::Quarantined { break_: b },
@@ -2217,6 +2414,73 @@ fn clear_imported(tx: &Tx<'_>) -> Result<(), StoreError> {
 /// Clear the append-only ledger table (factory reset / whole-instance start-over only).
 fn clear_events(tx: &Tx<'_>) -> Result<(), StoreError> {
     tx.execute_recovery_batch("DELETE FROM events;")
+}
+
+/// The only tables a [`ResetScope::BackendFactory`] reset does not empty, each with its reason.
+///
+/// This is an allow-list, not a delete-list: [`factory_table_names`] derives what to clear by
+/// subtracting these from what the schema actually creates, so a table added to the DDL tomorrow is
+/// cleared by a factory reset without anyone remembering to say so. Adding an entry here is a
+/// deliberate statement that a blank first-run instance still has those rows.
+const FACTORY_RESET_RETAINED_TABLES: &[(&str, &str)] = &[
+    (
+        "meta",
+        "the store's own identity: schema_version (deleting it makes the database unopenable) and \
+         the instance id every restore/export provenance record is written against",
+    ),
+    (
+        "search_projection_control",
+        "the singleton projector coordination row is re-fenced in place (fence_token and \
+         command_generation advance, any live lease is invalidated) rather than deleted. Deleting \
+         it would reset a monotonic fence back to zero and leave an in-flight projector holding a \
+         lease no read could evaluate — a blank instance must still refuse stale published text",
+    ),
+];
+
+/// Every table a factory reset empties: what the DDL creates, minus
+/// [`FACTORY_RESET_RETAINED_TABLES`]. Returned verbatim as [`ResetOutcome::cleared`], so it is also
+/// the operator's receipt.
+///
+/// Derived, not enumerated, on purpose. The hand-maintained list this replaced was
+/// [`domain_table_names`] plus `"events"` — 17 of the schema's tables. It left `users`, `roles`,
+/// `delegations`, `settings`, `provider_credentials` (the encrypted signing credentials),
+/// `tenants`, `imported_documents` and `paper_book_imports` (retained evidence bytes),
+/// `email_deliveries` (recipient addresses) and `pending_cmd_sessions` (a signer certificate and a
+/// prepared PDF) fully populated. On Postgres those tables *are* the authority behind the file
+/// sidecars, so an instance "reset to factory" for decommissioning or handover came back at the
+/// next boot with every operator account and every signing credential intact.
+fn factory_table_names() -> Vec<String> {
+    crate::schema::schema_table_names()
+        .into_iter()
+        .filter(|table| {
+            !FACTORY_RESET_RETAINED_TABLES
+                .iter()
+                .any(|(retained, _)| retained == table)
+        })
+        .map(String::from)
+        .collect()
+}
+
+/// Empty the whole store to a blank first-run instance, in one transaction.
+///
+/// Backend-agnostic via [`Tx::execute_recovery_batch`], so SQLite and Postgres are blanked by the
+/// same statements — which is the point: on Postgres the `users` / `provider_credentials` /
+/// `settings` rows are the authority the file sidecars are projected from, and deleting only the
+/// files left the authority untouched.
+fn clear_everything(tx: &Tx<'_>) -> Result<(), StoreError> {
+    // Table names come from the compile-time DDL parse, never from input. `user_template_versions`
+    // is the schema's only foreign key and cascades from `user_templates`; DDL order deletes the
+    // parent first, and the child DELETE that follows is then a no-op rather than a violation.
+    let batch: String = factory_table_names()
+        .iter()
+        .map(|table| format!("DELETE FROM {table};"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    tx.execute_recovery_batch(&batch)?;
+    // The retained coordination row is advanced instead of deleted (see
+    // [`FACTORY_RESET_RETAINED_TABLES`]): every projector lease and published checkpoint that
+    // described the erased instance is invalidated, and the next projection is a full rebuild.
+    tx.fence_search_projection(&crate::now_rfc3339())
 }
 
 /// The per-book-chain seq of `event` within `chain` (for deterministic bundle ordering).
@@ -3013,6 +3277,308 @@ mod wipe_coverage_tests {
         assert!(
             unknown.is_empty(),
             "the wipe receipt names {unknown:?}, which schema::ALL does not create"
+        );
+    }
+
+    /// **`BackendDomain` stays narrow.** The two scopes are separate promises: a domain wipe keeps
+    /// the ledger, the accounts and the settings *on purpose*, and widening it while fixing the
+    /// factory reset would silently destroy the operator's own instance under a milder word.
+    #[test]
+    fn a_domain_wipe_still_keeps_the_identity_and_configuration_tables() {
+        let wiped = domain_table_names();
+        for retained in [
+            "users",
+            "roles",
+            "delegations",
+            "settings",
+            "provider_credentials",
+            "tenants",
+            "events",
+        ] {
+            assert!(
+                !wiped.iter().any(|table| table == retained),
+                "a BackendDomain wipe must not clear {retained}: it preserves the ledger, the \
+                 accounts and the instance configuration by design"
+            );
+        }
+    }
+
+    /// **A factory reset must name every table the schema creates, minus the documented
+    /// retentions.** The list is derived, so this is really a guard on the exemptions: each must
+    /// name a real table and carry a reason.
+    #[test]
+    fn the_factory_reset_covers_the_whole_schema_except_the_documented_retentions() {
+        let created = crate::schema::schema_table_names();
+        assert!(
+            created.len() > 20,
+            "the DDL parser found only {} tables — it stopped matching the schema's shape",
+            created.len()
+        );
+
+        let cleared = factory_table_names();
+        let missing: Vec<&str> = created
+            .iter()
+            .copied()
+            .filter(|table| !cleared.iter().any(|name| name == table))
+            .filter(|table| {
+                !FACTORY_RESET_RETAINED_TABLES
+                    .iter()
+                    .any(|(retained, _)| retained == table)
+            })
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "a factory reset would leave {missing:?} populated on an instance reported as a blank \
+             first-run install"
+        );
+        assert_eq!(
+            cleared.len(),
+            created.len() - FACTORY_RESET_RETAINED_TABLES.len(),
+            "the factory list is exactly the schema minus the retentions"
+        );
+
+        for (retained, reason) in FACTORY_RESET_RETAINED_TABLES {
+            assert!(
+                created.contains(retained),
+                "FACTORY_RESET_RETAINED_TABLES names {retained:?}, which schema::ALL does not \
+                 create"
+            );
+            assert!(
+                !reason.trim().is_empty(),
+                "retaining {retained:?} through a factory reset must carry a reason"
+            );
+        }
+
+        // The tables the old hand-maintained list left behind. Named explicitly so a future
+        // narrowing has to delete an assertion that says what it costs.
+        for table in [
+            "users",
+            "roles",
+            "delegations",
+            "settings",
+            "provider_credentials",
+            "tenants",
+            "imported_documents",
+            "paper_book_imports",
+            "email_deliveries",
+            "pending_cmd_sessions",
+            "events",
+        ] {
+            assert!(
+                cleared.iter().any(|name| name == table),
+                "a factory reset must clear {table}"
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod factory_reset_tests {
+    //! The end-to-end property: after `ResetScope::BackendFactory` the database really is blank.
+    //!
+    //! An in-crate test (not `tests/recovery.rs`) because proving it needs a raw row count over
+    //! every table the schema declares, including the ones no public read model exposes — which is
+    //! how the gap survived: every existing assertion went through a read model, and the read
+    //! models for `provider_credentials`, `pending_cmd_sessions` and `imported_documents` were
+    //! never among them.
+    use super::*;
+
+    /// Row counts for every table the schema creates, read straight from SQLite.
+    fn row_counts(store: &Store) -> Vec<(&'static str, i64)> {
+        let guard = store.locked_conn().expect("connection");
+        crate::schema::schema_table_names()
+            .into_iter()
+            .map(|table| {
+                let count: i64 = guard
+                    .query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap_or_else(|e| panic!("count {table}: {e}"));
+                (table, count)
+            })
+            .collect()
+    }
+
+    /// Put a row into each table the previous factory list left behind, so the emptiness assertion
+    /// below is not vacuous for exactly the tables that mattered.
+    ///
+    /// The identity rows go in through the typed helpers; on Postgres these ARE the authority the
+    /// file sidecars are projected from. `provider_credentials` holds the encrypted signing
+    /// credentials, `imported_documents` the retained evidence bytes that
+    /// `GET /v1/imported-documents` lists and serves, and `pending_cmd_sessions` a signer
+    /// certificate beside a prepared PDF. Synthetic values throughout.
+    fn seed_survivor_rows(store: &Store, act_id: chancela_core::ActId) {
+        store
+            .persist(|tx| {
+                tx.upsert_user("u1", r#"{"username":"amelia.marques"}"#)?;
+                tx.upsert_role("r1", r#"{"id":"owner"}"#)?;
+                tx.upsert_delegation("d1", r#"{"id":"d1"}"#)?;
+                tx.put_credential_record(
+                    "signing",
+                    "cmd",
+                    1,
+                    "2026-01-01T00:00:00Z",
+                    b"opaque AEAD ciphertext",
+                )?;
+                tx.upsert_imported_document(&crate::StoredImportedDocument {
+                    meta: crate::StoredImportedDocumentMeta {
+                        id: "imp-1".to_owned(),
+                        act_id: Some(act_id),
+                        filename: Some("ata.pdf".to_owned()),
+                        declared_content_type: Some("application/pdf".to_owned()),
+                        detected_content_type: "application/pdf".to_owned(),
+                        sha256: "0".repeat(64),
+                        size_bytes: 9,
+                        imported_at: OffsetDateTime::UNIX_EPOCH,
+                        imported_by: "amelia.marques".to_owned(),
+                        operator_review_status:
+                            crate::StoredImportedDocumentReviewStatus::OperatorReviewRequired,
+                        operator_reviewed_at: None,
+                        operator_reviewed_by: None,
+                        operator_review_note: None,
+                        operator_acknowledged_guardrail_ids: Vec::new(),
+                        technical_validation_report_json: "{}".to_owned(),
+                    },
+                    bytes: b"%PDF-1.7 ".to_vec(),
+                })
+            })
+            .expect("seed the rows a factory reset used to leave behind");
+
+        // `settings` and `tenants` have no in-crate typed writer on this path; the row is the
+        // point, not the route it arrived by.
+        let guard = store.locked_conn().expect("connection");
+        guard
+            .execute_batch(
+                "INSERT INTO settings (id, json) VALUES ('s1', '{\"theme\":\"light\"}');
+                 INSERT INTO tenants (id, json) VALUES ('t1', '{\"id\":\"t1\"}');",
+            )
+            .expect("seed settings and tenants");
+    }
+
+    /// **A factory reset leaves nothing behind.** The operator is told this produces a "blank
+    /// first-run instance"; it cleared 17 of the schema's tables, so an instance decommissioned or
+    /// handed over by factory reset came back at the next boot with every operator account, the
+    /// encrypted signing credentials, and the uploaded evidence documents still listed and served.
+    #[test]
+    fn a_factory_reset_empties_every_table_the_schema_creates() {
+        let dir = TestDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = store.load().expect("load").ledger;
+
+        let entity = chancela_core::Entity::new(
+            "Encosto Estratégico Lda",
+            chancela_core::Nipc::parse("503004642").expect("nipc"),
+            "Lisboa",
+            chancela_core::EntityKind::SociedadePorQuotas,
+        );
+        let book = chancela_core::Book::new(entity.id, chancela_core::BookKind::AssembleiaGeral);
+        let act = chancela_core::Act::draft(
+            book.id,
+            "Ata da assembleia geral",
+            chancela_core::MeetingChannel::Physical,
+        );
+        let act_id = act.id;
+        let event = ledger
+            .append(
+                "amelia.marques",
+                &entity.id.to_string(),
+                "entity.created",
+                None,
+                b"seed",
+            )
+            .clone();
+        store
+            .persist(|tx| {
+                tx.upsert_entity(&entity)?;
+                tx.upsert_book(&book)?;
+                tx.upsert_act(&act)?;
+                tx.append_event(&event)
+            })
+            .expect("seed");
+        seed_survivor_rows(&store, act_id);
+
+        let populated: Vec<&str> = row_counts(&store)
+            .into_iter()
+            .filter(|(_, count)| *count > 0)
+            .map(|(table, _)| table)
+            .collect();
+        for table in [
+            "users",
+            "roles",
+            "delegations",
+            "settings",
+            "tenants",
+            "provider_credentials",
+            "imported_documents",
+            "events",
+            "entities",
+        ] {
+            assert!(
+                populated.contains(&table),
+                "{table} must be populated before the reset for this test to mean anything"
+            );
+        }
+
+        store
+            .reset(
+                &mut ledger,
+                dir.path(),
+                ResetScope::BackendFactory,
+                false,
+                &[],
+                "amelia.marques",
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .expect("factory reset");
+
+        let leftovers: Vec<(&str, i64)> = row_counts(&store)
+            .into_iter()
+            .filter(|(table, count)| {
+                *count > 0
+                    && !FACTORY_RESET_RETAINED_TABLES
+                        .iter()
+                        .any(|(retained, _)| retained == table)
+            })
+            .collect();
+        assert!(
+            leftovers.is_empty(),
+            "a factory reset reported a blank first-run instance but left {leftovers:?} populated"
+        );
+    }
+
+    /// The retained coordination row is *fenced*, not merely spared: a projector holding a lease
+    /// over the erased instance must not be able to publish text derived from it.
+    #[test]
+    fn a_factory_reset_fences_the_retained_projection_control_row() {
+        let dir = TestDir::new();
+        let store = Store::open(dir.path()).expect("open");
+        let mut ledger = store.load().expect("load").ledger;
+        let before = store
+            .search_projection_control()
+            .expect("control row before the reset");
+
+        store
+            .reset(
+                &mut ledger,
+                dir.path(),
+                ResetScope::BackendFactory,
+                false,
+                &[],
+                "amelia.marques",
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .expect("factory reset");
+
+        let after = store
+            .search_projection_control()
+            .expect("the control row survives, so every read stays evaluable");
+        assert!(
+            after.checkpoint.fence_token > before.checkpoint.fence_token,
+            "the fence token must advance so a pre-reset lease can never publish"
+        );
+        assert!(
+            after.lease.is_none(),
+            "any live projector lease is invalidated"
         );
     }
 }

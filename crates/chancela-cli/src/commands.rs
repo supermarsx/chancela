@@ -191,7 +191,7 @@ pub fn data_wipe(ctx: &Ctx, args: WipeArgs) -> Cmd {
         &ctx.data_dir,
         scope,
         export_first,
-        &ctx.sidecars(),
+        &ctx.sidecars()?,
         &ctx.actor,
         now(),
     )?;
@@ -219,7 +219,7 @@ pub fn data_wipe(ctx: &Ctx, args: WipeArgs) -> Cmd {
 /// `chancela backup`.
 pub fn backup(ctx: &Ctx, args: BackupArgs) -> Cmd {
     let store = ctx.open_store()?;
-    let manifest = store.backup(&ctx.data_dir, &ctx.sidecars())?;
+    let manifest = store.backup(&ctx.data_dir, &ctx.sidecars()?)?;
     println!("Backup written.");
     println!("  Archive       {}", manifest.path);
     println!("  Size          {} bytes", manifest.bytes);
@@ -255,7 +255,18 @@ pub fn restore(ctx: &Ctx, args: RestoreArgs) -> Cmd {
 
     let store = ctx.open_store()?;
     let mut ledger = store.load()?.ledger;
-    let outcome = store.restore(&mut ledger, &args.archive, &ctx.data_dir, &ctx.actor, now())?;
+    // Pass the sidecar set, as the api's restore does: a live sidecar the archive does not carry
+    // must be REMOVED, not left behind. Restoring with an empty list installs the archive's members
+    // over the top and leaves the previous instance's other sidecars in place — a half-restored
+    // instance mixing two identities.
+    let outcome = store.restore_with_sidecars(
+        &mut ledger,
+        &args.archive,
+        &ctx.data_dir,
+        &ctx.actor,
+        now(),
+        &ctx.sidecars()?,
+    )?;
 
     println!("Restored.");
     println!("  From          {}", outcome.restored_from.display());

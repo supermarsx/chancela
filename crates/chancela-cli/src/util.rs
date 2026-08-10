@@ -18,16 +18,14 @@ pub const DATA_DIR_ENV: &str = "CHANCELA_DATA_DIR";
 /// The `users.json` sidecar file name (the on-disk contract shared with the server).
 pub const USERS_FILE: &str = "users.json";
 
-/// The standard sidecar files/dirs bundled into a whole-instance archive and removed by a factory
-/// reset — the same set the api's `POST /v1/backup` uses (a missing entry is tolerated by the store).
-pub const SIDECAR_NAMES: &[&str] = &[
-    "settings.json",
-    "users.json",
-    "roles.json",
-    "delegations.json",
-    "cae-catalog.json",
-    "laws",
-];
+// The standard sidecar files/dirs bundled into a whole-instance archive and removed by a factory
+// reset live in ONE place, `chancela_api::INSTANCE_SIDECAR_NAMES`, reached here through
+// `Ctx::sidecars`. The CLI must not keep its own copy. It did, and the copy went stale: six names
+// against the server's twenty-five, so `chancela backup` left out `password-verifier-seed.json`,
+// `apikeys.json` and the encrypted `zk-repositories/` object store. Restoring such an archive onto
+// a clean machine returned `users.json` without the seed the verifier is keyed to, a fresh seed was
+// minted, and every account — the recovery-phrase verifier included — stopped authenticating, while
+// the CLI printed `Restored.` with a verified chain.
 
 /// The resolved run context shared by every command.
 pub struct Ctx {
@@ -51,12 +49,20 @@ impl Ctx {
         )?)
     }
 
-    /// The standard sidecar paths under this data dir (for backup / reset / start-over).
-    pub fn sidecars(&self) -> Vec<PathBuf> {
-        SIDECAR_NAMES
-            .iter()
-            .map(|n| self.data_dir.join(n))
-            .collect()
+    /// The standard sidecar paths under this data dir (for backup / restore / reset / start-over).
+    ///
+    /// Delegates to the api so the host tool and the server can never disagree about what an
+    /// instance is, and so the CLI inherits the opaque-object-root symlink validation the api does
+    /// before handing recursive paths to the archive layer. A data dir whose `zk-repositories/`
+    /// tree escapes through a symlink is refused here rather than silently archived.
+    pub fn sidecars(&self) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+        chancela_api::instance_sidecar_paths(&self.data_dir).map_err(|e| {
+            let message = format!(
+                "cannot enumerate the instance sidecars under {}: {e:?}",
+                self.data_dir.display()
+            );
+            Box::<dyn std::error::Error>::from(message)
+        })
     }
 
     /// The `users.json` path under this data dir.
@@ -213,5 +219,58 @@ mod tests {
         assert!(validate_username("").is_err());
         assert!(validate_username("Has Space").is_err());
         assert!(validate_username("UPPER").is_err());
+    }
+
+    /// **`chancela backup` / `data wipe` / `restore` operate on exactly the set the server calls an
+    /// instance.** This is the guard that the two cannot drift again: it reads what the CLI will
+    /// actually pass to the store, not what it declares.
+    ///
+    /// They did drift, to six names against twenty-five. The gap included
+    /// `password-verifier-seed.json`, so a `chancela backup` restored onto a clean machine brought
+    /// the accounts back without the seed their password verifiers are keyed to — startup minted a
+    /// fresh seed, every lookup for the old seed id missed, and `verify_secret` returned false for
+    /// every account including the recovery-phrase verifier. Total, unrecoverable lockout,
+    /// reported as `Restored.` with a verified chain.
+    #[test]
+    fn the_cli_sidecar_set_is_the_apis_instance_sidecar_set() {
+        let data_dir = std::env::temp_dir().join(format!("chancela-cli-{}", uuid::Uuid::new_v4()));
+        let ctx = Ctx {
+            data_dir: data_dir.clone(),
+            actor: "amelia.marques".to_owned(),
+            json: false,
+        };
+
+        let expected: Vec<PathBuf> = chancela_api::INSTANCE_SIDECAR_NAMES
+            .iter()
+            .map(|name| data_dir.join(name))
+            .collect();
+        assert_eq!(
+            ctx.sidecars().expect("sidecar paths"),
+            expected,
+            "the CLI must back up, wipe and replace exactly the api's instance sidecars"
+        );
+
+        // A floor: the shared list shrinking is the failure mode, and a set-equality assertion
+        // against a list that is itself the source cannot see it.
+        assert!(
+            chancela_api::INSTANCE_SIDECAR_NAMES.len() >= 25,
+            "the shared sidecar list has shrunk to {} entries",
+            chancela_api::INSTANCE_SIDECAR_NAMES.len()
+        );
+        let unique: std::collections::BTreeSet<&&str> =
+            chancela_api::INSTANCE_SIDECAR_NAMES.iter().collect();
+        assert_eq!(
+            unique.len(),
+            chancela_api::INSTANCE_SIDECAR_NAMES.len(),
+            "a duplicated sidecar name would be archived twice and removed twice"
+        );
+        for name in chancela_api::INSTANCE_SIDECAR_NAMES {
+            assert_eq!(
+                Path::new(name).file_name().map(|n| n.to_string_lossy()),
+                Some(std::borrow::Cow::Borrowed(*name)),
+                "{name:?} must be a plain name directly under the data dir: the archive keys \
+                 members by file name and a restore writes them back the same way"
+            );
+        }
     }
 }

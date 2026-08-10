@@ -627,6 +627,12 @@ impl PostgresBackend {
 
         let (ledger, chain_status) = Ledger::try_from_events(events);
         let integrity = ledger.integrity_report();
+        // Same fixity pass as the SQLite path: the chain verifying says nothing about whether the
+        // `acts` rows still hash to the digests it recorded.
+        let act_fixity = chancela_core::ActFixityReport::build(
+            aggregates.acts.values(),
+            aggregates.books.values(),
+        );
         Ok(LoadedState {
             company_groups: aggregates.company_groups,
             group_template_libraries: aggregates.group_template_libraries,
@@ -639,6 +645,7 @@ impl PostgresBackend {
             ledger,
             chain_status,
             integrity,
+            act_fixity,
         })
     }
 

@@ -1023,6 +1023,93 @@ fn wipe_start_over_and_factory_reset_stay_coherent_on_postgres() {
     let _ = std::fs::remove_dir_all(&data_dir);
 }
 
+/// **A factory reset on Postgres must not survive a restart.**
+///
+/// This is where the narrow factory list did its worst. On Postgres the `users` / `roles` /
+/// `delegations` / `settings` / `provider_credentials` rows ARE the authority — the file sidecars
+/// are projected from them (`sidecars_db_backed`). The reset deleted only the sidecar FILES and
+/// cleared in-memory maps with no write-through, so an instance decommissioned or handed over by
+/// "factory reset" came back at the next boot, via `hydrate_from_store`, with every operator
+/// account and the encrypted signing credentials intact.
+///
+/// A *second* `Store::open_backend` against the same database is the restart: nothing is carried
+/// over in memory, so whatever it reads is what a rebooted instance would hydrate from.
+#[test]
+#[ignore = "requires a live PostgreSQL at DATABASE_URL"]
+fn a_factory_reset_on_postgres_is_not_undone_by_a_restart() {
+    let Some(isolated) = isolated_postgres("factory-restart") else {
+        return;
+    };
+    let database_url = isolated.url();
+    let store = Store::open_backend(StoreBackendSelection::Postgres {
+        database_url: database_url.clone(),
+    })
+    .expect("open postgres backend");
+    let data_dir = unique_data_dir("factory-restart");
+    let (mut ledger, act) = seed_blank_instance(&store, &data_dir);
+
+    // The authority a rebooted instance hydrates its identity from, plus one piece of retained
+    // evidence the supposedly blank instance would otherwise still list and serve.
+    store
+        .persist(|tx| {
+            tx.upsert_user("u1", r#"{"username":"amelia.marques"}"#)?;
+            tx.upsert_role("r1", r#"{"id":"owner"}"#)?;
+            tx.upsert_delegation("d1", r#"{"id":"d1"}"#)?;
+            tx.put_credential_record(
+                "signing",
+                "cmd",
+                1,
+                "2026-01-01T00:00:00Z",
+                b"opaque AEAD ciphertext",
+            )?;
+            tx.upsert_document(&sample_document(act, "evidence"))
+        })
+        .expect("seed the sidecar-backed authority");
+    assert_eq!(store.users().unwrap().len(), 1);
+    assert_eq!(store.read_credential_records().unwrap().len(), 1);
+
+    store
+        .reset(
+            &mut ledger,
+            &data_dir,
+            ResetScope::BackendFactory,
+            false,
+            &[],
+            "amelia.marques",
+            ts(1_700_000_400),
+        )
+        .expect("factory reset");
+
+    // The restart. A fresh backend handle reads only what is durably there.
+    drop(store);
+    let rebooted = Store::open_backend(StoreBackendSelection::Postgres { database_url })
+        .expect("reopen postgres backend");
+
+    assert!(
+        rebooted.users().unwrap().is_empty(),
+        "a factory-reset instance must not hydrate operator accounts at the next boot"
+    );
+    assert!(rebooted.roles().unwrap().is_empty(), "roles resurrected");
+    assert!(
+        rebooted.delegations().unwrap().is_empty(),
+        "delegations resurrected"
+    );
+    assert!(
+        rebooted.read_credential_records().unwrap().is_empty(),
+        "the encrypted signing credentials must not survive a factory reset"
+    );
+    assert!(
+        rebooted.document_for_act(act).unwrap().is_none(),
+        "retained evidence must not be listed and served by a blank instance"
+    );
+    assert!(
+        !rebooted.instance_id().unwrap().is_empty(),
+        "meta is retained on purpose, so the store stays openable"
+    );
+
+    let _ = std::fs::remove_dir_all(&data_dir);
+}
+
 /// A corrupted bundle is rejected by restore BEFORE any table is touched, so the live database is
 /// left exactly as it was (verify-before-trust; no partial apply).
 #[test]

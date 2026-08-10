@@ -155,11 +155,24 @@ pub(crate) struct IntegrityReportView {
     pub global: ChainStatusView,
     pub chains: Vec<ChainStatusView>,
     pub reanchored_segments: Vec<ReanchorRecordView>,
+    /// Sealed-act fixity: every sealed ata re-hashed and held to the digest its seal froze, plus
+    /// each book's WFL-12 ata sequencing.
+    ///
+    /// `healthy` above is the **chain's** verdict and stays exactly what it always was; this is
+    /// the separate question the chain cannot answer about itself. A report with
+    /// `act_fixity.healthy == false` and `healthy == true` is the precise shape of the defect
+    /// this closes: a perfectly consistent chain over content that has since been altered.
+    pub act_fixity: chancela_core::ActFixityReport,
 }
 
 impl IntegrityReportView {
-    /// Build the view from a live [`IntegrityReport`] plus the current degraded signal.
-    pub(crate) fn build(report: &IntegrityReport, degraded: bool) -> Self {
+    /// Build the view from a live [`IntegrityReport`], the act-fixity report, and the current
+    /// degraded signal.
+    pub(crate) fn build(
+        report: &IntegrityReport,
+        act_fixity: chancela_core::ActFixityReport,
+        degraded: bool,
+    ) -> Self {
         IntegrityReportView {
             healthy: report.healthy,
             degraded,
@@ -170,15 +183,22 @@ impl IntegrityReportView {
                 .iter()
                 .map(ReanchorRecordView::from)
                 .collect(),
+            act_fixity,
         }
     }
 }
 
-/// Compute the live integrity view from the in-memory (authoritative) ledger + the degraded flag.
+/// Compute the live integrity view from the in-memory (authoritative) ledger + acts + the
+/// degraded flag.
+///
+/// The act fixity is **recomputed here**, not read from the boot-time snapshot: this endpoint is
+/// what an operator hits to ask whether the record is intact right now, and an answer cached at
+/// boot would keep saying "verified" about an ata edited since.
 async fn current_integrity(state: &AppState) -> IntegrityReportView {
+    let act_fixity = crate::refresh_act_fixity(state).await;
     let report = state.ledger.read().await.integrity_report();
     let degraded = *state.degraded.read().await;
-    IntegrityReportView::build(&report, degraded)
+    IntegrityReportView::build(&report, act_fixity, degraded)
 }
 
 // =================================================================================================
@@ -279,7 +299,11 @@ pub async fn reanchor_ledger(
 
     crate::refresh_degraded(&state, &ledger).await;
     let degraded = *state.degraded.read().await;
-    let integrity = IntegrityReportView::build(&ledger.integrity_report(), degraded);
+    // Re-anchoring rebuilds chain hashes; it does not restore an altered ata. The response carries
+    // the act fixity so a repair that left the content still broken says so, rather than reporting
+    // a freshly-green chain over it.
+    let act_fixity = state.act_fixity.read().await.clone();
+    let integrity = IntegrityReportView::build(&ledger.integrity_report(), act_fixity, degraded);
     Ok(Json(ReanchorResponse {
         record: ReanchorRecordView::from(&record),
         integrity,

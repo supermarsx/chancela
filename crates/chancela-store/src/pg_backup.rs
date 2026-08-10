@@ -457,6 +457,34 @@ pub(crate) fn verify_pg_backup_bundle(bytes: &[u8]) -> Result<VerifiedPgBackup, 
         ));
     }
 
+    // A bundle written by a NEWER build cannot be loaded by this one, and must be refused here —
+    // before the first row is written, while the prior database is still the authority.
+    //
+    // Checked after the self-digest, so the version compared is one the digest covers.
+    //
+    // The load is `jsonb_populate_record`, which silently ignores JSON keys that are not columns of
+    // the target row type. A newer bundle therefore INSERTs every row while discarding every added
+    // column's data for the whole table, passes the pre-COMMIT ledger re-verify (`events` is
+    // unchanged, so its chain still matches), commits, and reports success. `meta.schema_version`
+    // is then restored to the newer value and the instance refuses to start: a "successful" restore
+    // followed by a dead instance whose `documents.template_spec_json` and
+    // `signed_documents.timestamp_trust_report_json` have been erased with it.
+    //
+    // The SQLite path has always been immune — `open_with_options` rejects `found > SCHEMA_VERSION`
+    // when it opens the staged snapshot, before the file swap. This is the Postgres twin of that
+    // gate. An OLDER bundle stays acceptable on both: it is what the forward migration is for.
+    if manifest.store_schema_version > schema::SCHEMA_VERSION {
+        return Err(StoreError::BadBackup(format!(
+            "bundle was written at store schema v{} by a newer build; this build supports up to \
+             v{}. Restoring it would insert every row while silently discarding the columns this \
+             build does not know, then leave the instance unable to start. Restore it with a build \
+             at v{} or later.",
+            manifest.store_schema_version,
+            schema::SCHEMA_VERSION,
+            manifest.store_schema_version
+        )));
+    }
+
     // Every table listed in the manifest must be present with a matching digest, and every listed
     // table name must be a known application table (no smuggled member).
     let mut table_rows: BTreeMap<String, Vec<String>> = BTreeMap::new();
@@ -1011,6 +1039,61 @@ mod tests {
         let verified = verify_pg_backup_bundle(&bundle).expect("manifested sidecar verifies");
         let sidecars = sidecar_members(&verified.members);
         assert_eq!(sidecars.get("settings.json"), Some(&sidecar_bytes));
+    }
+
+    /// Re-seal `manifest` into a bundle carrying the original members (the digests over the table
+    /// members are unaffected by a manifest-header edit, so only the self-digest is recomputed).
+    fn reseal(manifest: &mut PgBackupManifest, bundle: &[u8]) -> Vec<u8> {
+        let (_, members) = read_pg_bundle(bundle).unwrap();
+        manifest.bundle_digest = manifest.compute_digest().unwrap();
+        let mut member_vec: Vec<(String, Vec<u8>)> = members
+            .into_iter()
+            .filter(|(n, _)| n != "manifest.json")
+            .collect();
+        member_vec.sort_by(|a, b| a.0.cmp(&b.0));
+        assemble_pg_bundle(manifest, &member_vec).unwrap()
+    }
+
+    /// **A bundle from a newer build is refused before anything is written.**
+    ///
+    /// `store_schema_version` was written into every manifest and shown to the operator, and never
+    /// compared to anything. `jsonb_populate_record` ignores JSON keys that are not columns of the
+    /// target type, so a newer bundle restored fine, erased every column this build does not know
+    /// for the whole table, passed the pre-COMMIT ledger re-verify because `events` was untouched,
+    /// committed, reported success — and then left the instance unable to start, because
+    /// `meta.schema_version` had been restored to the newer value.
+    #[test]
+    fn rejects_a_bundle_written_by_a_newer_schema_version() {
+        let (bundle, mut manifest) = sample_bundle();
+        manifest.store_schema_version = schema::SCHEMA_VERSION + 1;
+        let bundle = reseal(&mut manifest, &bundle);
+
+        let err = verify_pg_backup_bundle(&bundle).unwrap_err();
+        let StoreError::BadBackup(message) = &err else {
+            panic!("a newer bundle must be a BadBackup refusal, got {err:?}");
+        };
+        assert!(
+            message.contains(&format!("v{}", schema::SCHEMA_VERSION + 1))
+                && message.contains(&format!("v{}", schema::SCHEMA_VERSION)),
+            "the refusal must name both versions so the operator knows which build to use: \
+             {message}"
+        );
+    }
+
+    /// The gate must not over-reject: restoring an OLDER bundle is the ordinary upgrade path, and
+    /// the forward migration exists for exactly that. A version equal to this build's is likewise
+    /// the common case.
+    #[test]
+    fn accepts_bundles_at_or_below_this_builds_schema_version() {
+        let (bundle, manifest) = sample_bundle();
+        assert_eq!(manifest.store_schema_version, schema::SCHEMA_VERSION);
+        verify_pg_backup_bundle(&bundle).expect("a current-version bundle verifies");
+
+        let (bundle, mut manifest) = sample_bundle();
+        manifest.store_schema_version = schema::SCHEMA_VERSION - 1;
+        let bundle = reseal(&mut manifest, &bundle);
+        verify_pg_backup_bundle(&bundle)
+            .expect("an older bundle still verifies and can be migrated");
     }
 
     #[test]

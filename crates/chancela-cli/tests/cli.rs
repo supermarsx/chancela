@@ -351,6 +351,198 @@ fn backup_then_restore_round_trips() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// The specific sidecars the CLI's stale copy omitted, named so a regression says which one is
+/// gone. Set equality between the CLI's list and the api's is asserted in
+/// `chancela_cli::util::tests::the_cli_sidecar_set_is_the_apis_instance_sidecar_set`, which can
+/// reach `Ctx::sidecars()` directly; this pins what that set must contain.
+#[test]
+fn the_shared_sidecar_set_names_the_material_an_instance_cannot_be_restored_without() {
+    for required in [
+        // Without this one, restored accounts authenticate against a freshly minted seed and
+        // every password — including the recovery phrase — is rejected.
+        "password-verifier-seed.json",
+        // The encrypted object store: its ciphertext exists nowhere else.
+        "zk-repositories",
+        "apikeys.json",
+        "platform-logs.json",
+        "connector-targets.json",
+        "privacy-dsr-requests.json",
+        "privacy-dpias.json",
+        "user_preferences.json",
+    ] {
+        assert!(
+            chancela_api::INSTANCE_SIDECAR_NAMES.contains(&required),
+            "{required} is not in the shared sidecar set"
+        );
+    }
+}
+
+/// **The round trip that would have caught the lockout: restore onto a CLEAN machine.**
+///
+/// Restoring into the directory the backup came from proves nothing about what the archive
+/// contains — every sidecar the backup omitted is still there. Here the archive is the *only*
+/// source: the destination starts empty, so a sidecar missing from the bundle is missing from the
+/// restored instance.
+///
+/// `password-verifier-seed.json` is the one that ends the instance. It carries the seed id the
+/// stored password verifiers are keyed to. Restore `users.json` without it and startup mints a
+/// fresh seed, the lookup for the old seed id misses, and `verify_secret` returns false for every
+/// account — including the recovery-phrase verifier, which is the way back in. The operator sees
+/// `Restored.` and a verified chain.
+#[test]
+fn a_backup_restored_into_a_clean_directory_carries_every_account_and_its_verifier_seed() {
+    let src = tmp_dir();
+    seed(&src);
+    assert!(
+        cli(&src, &["user", "create", "amelia.marques"])
+            .status
+            .success()
+    );
+    assert!(
+        cli(&src, &["user", "create", "joao.silva"])
+            .status
+            .success()
+    );
+
+    // Sidecars a real instance carries beside users.json. Synthetic content; the seed file is
+    // shaped like the real one only insofar as the test asserts byte-identity across the restore.
+    let sidecars: &[(&str, &str)] = &[
+        (
+            "password-verifier-seed.json",
+            r#"{"seed_id":"seed-1f0c","algorithm":"argon2id"}"#,
+        ),
+        ("apikeys.json", r#"[{"id":"ak-1","label":"integração"}]"#),
+        ("connector-targets.json", r#"[{"id":"ct-1"}]"#),
+        ("privacy-dpias.json", r#"[{"id":"dpia-1"}]"#),
+        ("platform-logs.json", r#"[{"seq":1}]"#),
+        ("user_preferences.json", r#"{"amelia.marques":{}}"#),
+    ];
+    for (name, body) in sidecars {
+        std::fs::write(src.join(name), body).unwrap();
+    }
+    // The encrypted object store is a directory, not a file.
+    std::fs::create_dir_all(src.join("zk-repositories").join("repo-1")).unwrap();
+    std::fs::write(
+        src.join("zk-repositories").join("repo-1").join("obj.bin"),
+        b"\x00opaque ciphertext",
+    )
+    .unwrap();
+
+    let archive = src.join("snapshot.zip");
+    let out = cli(&src, &["backup", "--out", archive.to_str().unwrap()]);
+    assert!(out.status.success(), "{}", stdout(&out));
+
+    // A CLEAN machine: a brand-new data dir holding nothing but the archive.
+    let dst = tmp_dir();
+    let dst_archive = dst.join("snapshot.zip");
+    std::fs::copy(&archive, &dst_archive).unwrap();
+
+    let out = cli(&dst, &["restore", dst_archive.to_str().unwrap(), "--yes"]);
+    assert!(
+        out.status.success(),
+        "restore onto a clean dir: {}{}",
+        stdout(&out),
+        stderr(&out)
+    );
+
+    // Every account came back...
+    let restored_users: Vec<User> =
+        serde_json::from_slice(&std::fs::read(dst.join("users.json")).expect(
+            "users.json must be restored onto a clean machine — without it there are no accounts",
+        ))
+        .unwrap();
+    assert_eq!(restored_users.len(), 2);
+    assert!(
+        restored_users
+            .iter()
+            .any(|u| u.username == "amelia.marques")
+    );
+
+    // ...and so did the material that lets them authenticate, byte for byte. A mismatch here is
+    // the total, unrecoverable lockout: correct accounts, wrong verifier seed.
+    for (name, body) in sidecars {
+        let restored = std::fs::read(dst.join(name)).unwrap_or_else(|e| {
+            panic!("{name} is missing from the restored instance ({e}) — the backup omitted it")
+        });
+        assert_eq!(
+            restored,
+            body.as_bytes(),
+            "{name} did not survive the round trip byte-for-byte"
+        );
+    }
+    assert_eq!(
+        std::fs::read(dst.join("zk-repositories").join("repo-1").join("obj.bin")).expect(
+            "the encrypted object store must be restored — its ciphertext is unrecoverable \
+             otherwise"
+        ),
+        b"\x00opaque ciphertext",
+    );
+
+    // The restored instance is coherent: the domain data and the chain came with it.
+    assert_eq!(
+        counts(&dst).0,
+        1,
+        "the entity restored onto a clean machine"
+    );
+    assert!(
+        cli(&dst, &["ledger", "verify"]).status.success(),
+        "the restored chain verifies"
+    );
+    let listed = stdout(&cli(&dst, &["user", "ls"]));
+    assert!(
+        listed.contains("amelia.marques") && listed.contains("joao.silva"),
+        "{listed}"
+    );
+
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&dst);
+}
+
+/// `chancela data wipe --factory` prints "erase ALL data … blank first-run instance". It must not
+/// leave live API-key credentials or ZK ciphertext on disk, and it must not leave the accounts in
+/// the database either — on Postgres those rows are the authority the sidecars are projected from,
+/// so a surviving `users` table resurrects every account at the next boot.
+#[test]
+fn factory_wipe_removes_the_credential_sidecars_it_claims_to_erase() {
+    let dir = tmp_dir();
+    seed(&dir);
+    assert!(
+        cli(&dir, &["user", "create", "amelia.marques"])
+            .status
+            .success()
+    );
+    std::fs::write(dir.join("apikeys.json"), r#"[{"id":"ak-1"}]"#).unwrap();
+    std::fs::write(
+        dir.join("password-verifier-seed.json"),
+        r#"{"seed_id":"seed-1f0c"}"#,
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("zk-repositories")).unwrap();
+    std::fs::write(
+        dir.join("zk-repositories").join("obj.bin"),
+        b"opaque ciphertext",
+    )
+    .unwrap();
+
+    let out = cli(&dir, &["data", "wipe", "--factory", "--yes", "--no-export"]);
+    assert!(out.status.success(), "{}{}", stdout(&out), stderr(&out));
+
+    for leftover in [
+        "users.json",
+        "apikeys.json",
+        "password-verifier-seed.json",
+        "zk-repositories",
+    ] {
+        assert!(
+            !dir.join(leftover).exists(),
+            "{leftover} survived a factory reset that claims to erase ALL data"
+        );
+    }
+    assert_eq!(counts(&dir).3, 0, "the ledger is blanked");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn restore_refuses_without_yes() {
     let dir = tmp_dir();
