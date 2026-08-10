@@ -49,7 +49,7 @@ rustls-native-certs = { version = "0.8.2", optional = true }
 serde.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
-smb2 = { version = "0.13.1", optional = true }
+smb2 = { version = "0.18.0", optional = true }
 suppaftp = { version = "10.0.1", default-features = false, features = ["tokio-rustls-ring"], optional = true }
 thiserror.workspace = true
 tokio.workspace = true
