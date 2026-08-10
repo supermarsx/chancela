@@ -53,12 +53,18 @@ assert.match(
 const connectorsManifest = read("crates/chancela-connectors/Cargo.toml");
 assert.match(
   connectorsManifest,
-  /^aws-sdk-s3 = \{ version = "=1\.138\.0", default-features = false, features = \["default-https-client", "http-1x", "rt-tokio"\] \}$/mu,
+  // `optional = true` is tolerated but nothing else is: the exact `=1.138.0` pin and the exact
+  // feature set stay anchored. The transports became optional in `48e3590e` so a build that never
+  // dials S3 stops compiling ~170 crates, and this assertion — which had no room for a fourth key
+  // — went red on a change that altered no version and no feature.
+  /^aws-sdk-s3 = \{ version = "=1\.138\.0", default-features = false, features = \["default-https-client", "http-1x", "rt-tokio"\](, optional = true)? \}$/mu,
   "connector must pin AWS SDK S3 1.138.0 with only the modern HTTP 1.x HTTPS client",
 );
 assert.match(
   connectorsManifest,
-  /^russh = \{ version = "0\.62\.2", default-features = false, features = \["ring"\] \}$/mu,
+  // Same widening as aws-sdk-s3 above, and for the same reason. `default-features = false` and the
+  // lone `ring` feature stay pinned — that is what keeps russh's unused RSA feature off.
+  /^russh = \{ version = "0\.62\.2", default-features = false, features = \["ring"\](, optional = true)? \}$/mu,
   "connector must not reactivate russh's unused RSA feature",
 );
 const dependencyPolicy = read("docs/dependency-management.md");
