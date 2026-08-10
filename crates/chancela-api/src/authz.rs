@@ -1356,6 +1356,107 @@ mod tests {
         }
     }
 
+    /// One source file of this crate, in two forms.
+    struct CrateSource {
+        /// Verbatim, comments and test modules included. The `ROUTE_CLASSIFICATION` annotations
+        /// **are** comments, so the map is read from this.
+        raw: String,
+        /// Comment lines and `#[cfg(test)]` items removed — what the crate actually *does*. Call
+        /// sites are counted from this, because a doc comment mentioning a call and a test whose
+        /// own name ends in `…require_step_up()` are both text a naive scan would count.
+        production: String,
+    }
+
+    /// Every `.rs` file under this crate's `src/`, read from disk at test time.
+    ///
+    /// A hand-written `include_str!` list cannot do this: the file that omits itself is exactly the
+    /// file nobody remembered to add. `CARGO_MANIFEST_DIR` is set by cargo for every build of this
+    /// crate, so this resolves the same way from any working directory.
+    fn crate_sources() -> std::collections::BTreeMap<String, CrateSource> {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let entries = std::fs::read_dir(&dir).expect("this crate's src/ must be readable");
+        let mut sources = std::collections::BTreeMap::new();
+        for entry in entries {
+            let path = entry.expect("readable directory entry").path();
+            if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .expect("a .rs file has a UTF-8 name")
+                .to_owned();
+            let raw = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("{name} must be readable: {e}"))
+                .replace("\r\n", "\n");
+            let production = strip_comments_and_test_items(&raw);
+            sources.insert(name, CrateSource { raw, production });
+        }
+        sources
+    }
+
+    /// Remove comment lines and `#[cfg(test)]` items, leaving the code that ships.
+    ///
+    /// Both halves have bitten this repo before (memory: `cfg-test-split-truncates-source`), and
+    /// both are deliberately conservative:
+    ///
+    /// * **Comments** — any line whose first non-space characters are `//`, which covers `///` doc
+    ///   comments and `//!` module headers. Those are where this crate *discusses* `require_step_up`
+    ///   most often, and a scan that cannot tell prose from code counts its own documentation.
+    /// * **`#[cfg(test)]` items** — only the attribute at **column 0**, and the item then runs to
+    ///   the next column-0 `}` (rustfmt puts every top-level item's closing brace there) or, for a
+    ///   `;`-terminated item such as `#[cfg(test)] use …;`, to that line. Anchoring on column 0
+    ///   rather than on the substring is what keeps a doc comment that merely *mentions* the
+    ///   attribute from truncating the file at the mention.
+    ///
+    /// Neither direction can degrade silently: over-stripping loses a call site and under-stripping
+    /// invents one, and the caller asserts an exact per-file count either way. The floors and the
+    /// `lib.rs` proof below pin the filter itself.
+    fn strip_comments_and_test_items(source: &str) -> String {
+        let mut kept: Vec<&str> = Vec::new();
+        let mut in_test_item = false;
+        for line in source.lines() {
+            if in_test_item {
+                // A column-0 `}` closes the item; a column-0 line ending in `;` was the whole item.
+                let at_column_zero = !line.starts_with([' ', '\t']);
+                if line == "}" || (at_column_zero && line.ends_with(';')) {
+                    in_test_item = false;
+                }
+                continue;
+            }
+            if line == "#[cfg(test)]" {
+                in_test_item = true;
+                continue;
+            }
+            if line.trim_start().starts_with("//") {
+                continue;
+            }
+            kept.push(line);
+        }
+        kept.join("\n")
+    }
+
+    /// How many times `source` **calls** `require_step_up`.
+    ///
+    /// Not `matches(…)`: `fn require_step_up(` is the definition, and
+    /// `…_genuinely_require_step_up()` is a test function whose name merely ends in the needle. The
+    /// first is excluded by name, the second by requiring the preceding byte not to be an
+    /// identifier character — so `crate::data::require_step_up(` still counts.
+    fn require_step_up_call_sites(source: &str) -> usize {
+        const NEEDLE: &str = concat!("require_step_up", "(");
+        source
+            .match_indices(NEEDLE)
+            .filter(|(at, _)| {
+                let before = &source[..*at];
+                !before.ends_with("fn ")
+                    && !before
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            })
+            .count()
+    }
+
     /// **The step-up annotations must describe the handlers (t22).**
     ///
     /// The per-route verb/step-up notes in [`ROUTE_CLASSIFICATION`] are trailing `//` comments that
@@ -1364,64 +1465,106 @@ mod tests {
     /// router walk below proves every route is *classified*; this proves the annotations are *true*.
     ///
     /// The binding is two-way. Every route annotated `+ step-up` must name a handler that really
-    /// calls `require_step_up`, and the number of annotated routes must equal the number of
-    /// `require_step_up` call sites in the crate — so adding step-up to a handler without annotating
-    /// its route fails here just as loudly as annotating a route whose handler never got it.
+    /// calls `require_step_up`, and **every `require_step_up` call site in the crate** must be
+    /// accounted for — so adding step-up to a handler without annotating its route fails here just
+    /// as loudly as annotating a route whose handler never got it.
+    ///
+    /// **"In the crate" used to mean nine hand-listed `include_str!` files**, and the sentence above
+    /// was therefore false: `confirmation.rs` was not among them, so the two call sites inside
+    /// [`crate::confirmation::require_confirmation`] were invisible, and a step-up call in a *new*
+    /// file would have been unguarded by construction — the guarantee narrowing itself exactly
+    /// where a reader would trust it most. The scan now enumerates `src/` from disk.
     #[test]
     fn every_step_up_annotation_names_a_handler_that_actually_steps_up() {
-        // (route path, handler source, handler fn) for each `+ step-up` annotation in the map.
+        // (route path, handler source file, handler fn) for each `+ step-up` annotation in the map.
         const STEP_UP_ROUTES: &[(&str, &str, &str)] = &[
             (
                 "/v1/tenants/{tenant_id}/repositories/{repository_id}/objects/{object_id}/versions/{version}/readability-package",
-                include_str!("zk_repository.rs"),
+                "zk_repository.rs",
                 "create_readability_package",
             ),
-            (
-                "/v1/books/{id}/start-over",
-                include_str!("bundles.rs"),
-                "start_over_book",
-            ),
+            ("/v1/books/{id}/start-over", "bundles.rs", "start_over_book"),
             (
                 "/v1/ledger/recovery/reanchor",
-                include_str!("recovery.rs"),
+                "recovery.rs",
                 "reanchor_ledger",
             ),
             (
                 "/v1/ledger/recovery/restore",
-                include_str!("recovery.rs"),
+                "recovery.rs",
                 "restore_store",
             ),
-            ("/v1/data/reset", include_str!("data.rs"), "reset_data"),
+            ("/v1/data/reset", "data.rs", "reset_data"),
             (
                 "/v1/data/key-rotation",
-                include_str!("data_status.rs"),
+                "data_status.rs",
                 "execute_data_key_rotation",
             ),
-            (
-                "/v1/data/start-over",
-                include_str!("data.rs"),
-                "start_over_instance",
-            ),
+            ("/v1/data/start-over", "data.rs", "start_over_instance"),
             (
                 "/v1/privacy/users/{user_id}/dsr-requests/{request_id}/erasure/execute",
-                include_str!("privacy.rs"),
+                "privacy.rs",
                 "erasure_execute",
             ),
             (
                 "/v1/users/{id}/passkeys/{credential_id}",
-                include_str!("passkeys.rs"),
+                "passkeys.rs",
                 "revoke_passkey",
             ),
-            ("/v1/me/suspend", include_str!("account.rs"), "suspend_me"),
-            (
-                "/v1/me/cmd-phone",
-                include_str!("cmd_phone.rs"),
-                "put_me_cmd_phone",
-            ),
+            ("/v1/me/suspend", "account.rs", "suspend_me"),
+            ("/v1/me/cmd-phone", "cmd_phone.rs", "put_me_cmd_phone"),
         ];
 
+        /// Call sites that are **not** one route's own gate, with the count each file may hold.
+        ///
+        /// [`crate::confirmation::require_confirmation`] is the shared handler-side gate: it steps
+        /// up once for `ConfirmWithReauth` and once for `ConfirmWithReauthAndPhrase`, on behalf of
+        /// whichever route called it. Those two are governed by `ROUTE_GUARD` and the
+        /// `ConfirmationAction` floors — a different table, checked by a different test — so a
+        /// `+ step-up` annotation would be the wrong place to record them, and crediting them to
+        /// some arbitrary route would be worse. They are named and counted here instead, so that
+        /// "every call site is accounted for" stays literally true.
+        const GENERIC_STEP_UP_GATES: &[(&str, usize)] = &[("confirmation.rs", 2)];
+
+        let sources = crate_sources();
+
+        // ── The scan must be real before anything is concluded from it ───────────────────────────
+        assert!(
+            sources.len() >= 90,
+            "the src/ scan found only {} files — it has degraded and is proving nothing",
+            sources.len()
+        );
+        let production_bytes: usize = sources.values().map(|s| s.production.len()).sum();
+        assert!(
+            production_bytes > 1_000_000,
+            "the comment/cfg(test) filter swallowed the crate ({production_bytes} bytes left)"
+        );
+        // The filter, proved on a real needle rather than asserted. `lib.rs` contains a test
+        // function whose NAME ends in the string a naive scan looks for; it must survive the read
+        // and not survive the filter, and `lib.rs` must still be substantially present afterwards.
+        let lib = sources.get("lib.rs").expect("lib.rs must be scanned");
+        const TEST_FN_NAME: &str = "restore_and_per_book_start_over_genuinely_require_step_up";
+        assert!(
+            lib.raw.contains(TEST_FN_NAME),
+            "the {TEST_FN_NAME} test was renamed — pick another cfg(test) needle so this filter \
+             stays proved rather than assumed"
+        );
+        assert!(
+            !lib.production.contains(TEST_FN_NAME),
+            "the cfg(test) filter left a test module in lib.rs's production source"
+        );
+        assert!(
+            lib.production.len() > 100_000,
+            "the cfg(test) filter truncated lib.rs to {} bytes",
+            lib.production.len()
+        );
+
         // The annotations live in this file's own source, one trailing comment per entry.
-        let authz_src = include_str!("authz.rs").replace("\r\n", "\n");
+        let authz_src = sources
+            .get("authz.rs")
+            .expect("authz.rs must be scanned")
+            .raw
+            .clone();
         // Anchor on the const's own declaration, not the first textual mention — the doc comment
         // above it names ROUTE_CLASSIFICATION and talks about step-up, which would be miscounted.
         let map_start = authz_src
@@ -1451,44 +1594,58 @@ mod tests {
                     .any(|l| l.contains("step-up"))
         };
 
-        for (path, handler_src, handler_fn) in STEP_UP_ROUTES {
+        for (path, handler_file, handler_fn) in STEP_UP_ROUTES {
             assert!(
                 annotated(path),
                 "{path} calls require_step_up but the route map does not say so"
             );
-            let src = handler_src.replace("\r\n", "\n");
+            let src = &sources
+                .get(*handler_file)
+                .unwrap_or_else(|| panic!("{handler_file} must be scanned"))
+                .production;
             let at = src
                 .find(&format!("fn {handler_fn}("))
-                .unwrap_or_else(|| panic!("handler {handler_fn} not found"));
+                .unwrap_or_else(|| panic!("handler {handler_fn} not found in {handler_file}"));
             // The handler body ends at the next top-level `\n}`.
             let body = &src[at..];
             let end = body.find("\n}\n").unwrap_or(body.len());
             assert!(
-                body[..end].contains("require_step_up("),
+                require_step_up_call_sites(&body[..end]) > 0,
                 "{path}: the map advertises step-up but {handler_fn} never calls require_step_up"
             );
         }
 
-        // Two-way: no handler steps up without its route saying so. `data.rs` also *defines*
-        // `require_step_up` and references it in prose, so count call sites only.
-        let call_sites: usize = [
-            include_str!("data.rs"),
-            include_str!("recovery.rs"),
-            include_str!("zk_repository.rs"),
-            include_str!("bundles.rs"),
-            include_str!("data_status.rs"),
-            include_str!("privacy.rs"),
-            include_str!("passkeys.rs"),
-            include_str!("account.rs"),
-            include_str!("cmd_phone.rs"),
-        ]
-        .iter()
-        .map(|src| src.matches("require_step_up(&state").count())
-        .sum();
+        // ── Two-way: no handler steps up without its route saying so ─────────────────────────────
+        //
+        // Counted over EVERY file in `src/`, and compared per file rather than in total: a new file
+        // holding a step-up call shows up as a key nothing expected, which is the case a hand-list
+        // could not see at all. `data.rs` also *defines* `require_step_up`, and several files
+        // reference it in prose; `require_step_up_call_sites` counts neither.
+        let mut found: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+        for (name, source) in &sources {
+            let count = require_step_up_call_sites(&source.production);
+            if count > 0 {
+                found.insert(name.as_str(), count);
+            }
+        }
+        let mut expected: std::collections::BTreeMap<&str, usize> =
+            std::collections::BTreeMap::new();
+        for (_, handler_file, _) in STEP_UP_ROUTES {
+            *expected.entry(handler_file).or_default() += 1;
+        }
+        for (file, count) in GENERIC_STEP_UP_GATES {
+            *expected.entry(file).or_default() += count;
+        }
         assert_eq!(
-            call_sites,
-            STEP_UP_ROUTES.len(),
-            "a require_step_up call site exists that no annotated route accounts for"
+            found, expected,
+            "a require_step_up call site exists that no annotated route (and no declared generic \
+             gate) accounts for — annotate its route in ROUTE_CLASSIFICATION, or add it to \
+             GENERIC_STEP_UP_GATES with the reason it is not one route's own gate"
+        );
+        let generic: usize = GENERIC_STEP_UP_GATES.iter().map(|(_, n)| n).sum();
+        assert_eq!(
+            found.values().sum::<usize>(),
+            STEP_UP_ROUTES.len() + generic
         );
 
         // And the map must not claim step-up anywhere outside that set — this is the assertion the
@@ -1500,6 +1657,80 @@ mod tests {
             STEP_UP_ROUTES.len(),
             "the map claims step-up on more routes than enforce it"
         );
+    }
+
+    /// **The scan's own red-proof, on synthetic sources.**
+    ///
+    /// The crate-wide scan above is only as good as these two functions, and every way it could be
+    /// hollow is a way one of them silently answers zero. Exercising them on text written to be
+    /// hostile is the part that cannot be done by adding a call site to the real crate — which
+    /// would have to be removed again, on a tree several lanes are writing to.
+    #[test]
+    fn the_step_up_scan_sees_a_call_site_and_ignores_prose_and_tests() {
+        const NEEDLE: &str = concat!("require_step_up", "(");
+
+        // A production call is seen, whatever it is qualified with.
+        assert_eq!(
+            require_step_up_call_sites(&format!("    {NEEDLE}&state, …")),
+            1
+        );
+        assert_eq!(
+            require_step_up_call_sites(&format!("    crate::data::{NEEDLE}state, actor, r)")),
+            1
+        );
+        // The definition is not a call.
+        assert_eq!(
+            require_step_up_call_sites(&format!("pub(crate) async fn {NEEDLE}")),
+            0
+        );
+        // Nor is a longer identifier that merely ends in the needle — the shape `lib.rs` already
+        // contains, and the one a `matches(…)` count gets wrong.
+        assert_eq!(
+            require_step_up_call_sites(&format!("async fn genuinely_{NEEDLE})")),
+            0
+        );
+
+        // The filter: a doc comment that *mentions* `#[cfg(test)]` must not truncate the file
+        // (memory: `cfg-test-split-truncates-source`), a real test module must be removed whole,
+        // and the production call between them must survive both.
+        let module = format!(
+            "//! Guarded by #[cfg(test)] in the sense discussed below.\n\
+             #[cfg(test)]\n\
+             use std::fmt::Debug;\n\
+             async fn handler() {{\n\
+             \x20   // Prose: {NEEDLE}) is discussed here and must not be counted.\n\
+             \x20   {NEEDLE}&state, &actor, &req.reauth).await?;\n\
+             }}\n\
+             #[cfg(test)]\n\
+             mod tests {{\n\
+             \x20   #[test]\n\
+             \x20   fn genuinely_{NEEDLE}) {{\n\
+             \x20       {NEEDLE}&state, &actor, &r);\n\
+             \x20   }}\n\
+             }}\n\
+             fn after_the_test_module() {{\n\
+             \x20   {NEEDLE}&state, &actor, &r);\n\
+             }}\n"
+        );
+        let production = strip_comments_and_test_items(&module);
+        assert!(
+            production.contains("async fn handler()"),
+            "the mention in the module header truncated the file: {production}"
+        );
+        assert!(
+            !production.contains("mod tests"),
+            "the cfg(test) module survived the filter: {production}"
+        );
+        assert!(
+            production.contains("fn after_the_test_module()"),
+            "the filter did not stop at the end of the test module: {production}"
+        );
+        // One call in `handler`, one after the test module. The prose comment, the `#[cfg(test)]`
+        // import, and both lines inside the test module are gone.
+        assert_eq!(require_step_up_call_sites(&production), 2);
+        // And the unfiltered text really does contain the extra matches, so the assertion above is
+        // measuring the filter rather than an input that never had them.
+        assert_eq!(require_step_up_call_sites(&module), 4);
     }
 
     /// **Fail-closed router walk (E8 guard).** Every route the router serves must be classified in

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useSearchParams } from 'react-router-dom';
 import type { ConnectorJobView, ConnectorProbeView, ConnectorTargetView } from '../../api/types';
+import { CONNECTOR_ERROR_KEYS } from '../../i18n/connectorErrorCodes';
+import { ptPT } from '../../i18n/locales/pt-PT';
 import { renderWithProviders } from '../../test/utils';
 import { ConnectorOperations } from './ConnectorOperations';
 import { connectorConfigTemplate } from './operatorModels';
@@ -345,6 +347,55 @@ describe('TargetEditor', () => {
     fireEvent.click(await screen.findByRole('button', { name: /Testar ligação/ }));
 
     expect(await screen.findByText('Credencial recusada pelo destino.')).toBeTruthy();
+  });
+
+  it('renders a coded failure in the operator’s language, unmarked', async () => {
+    // The gap `48e3590e` left: the code rode the wire and nothing consumed it, so a pt-PT operator
+    // read the server's English. Asserted against the catalog entry rather than a pasted sentence —
+    // this must not become a test of the wording.
+    stubFetch((call) =>
+      call.url.endsWith('/probe')
+        ? jsonResponse({
+            ...PROBE_READY,
+            status: null,
+            error_class: 'configuration',
+            error: 'this build was compiled without the s3 transport; rebuild with …',
+            error_code: 'transport_not_compiled_s3',
+          })
+        : null,
+    );
+    renderConnectors(['/operations?view=connectors&target=target-1']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Testar ligação/ }));
+
+    const translated = ptPT[CONNECTOR_ERROR_KEYS.transport_not_compiled_s3];
+    expect(await screen.findByText(translated)).toBeTruthy();
+    // The server's English is gone, and nothing is marked as untranslated.
+    expect(screen.queryByText(/this build was compiled without/)).toBeNull();
+    expect(screen.queryByText(ptPT['operations.connectors.probe.untranslatedBadge'])).toBeNull();
+  });
+
+  it('marks an uncoded failure as English rather than passing it off as translated', async () => {
+    // Most `ConnectorError`s still carry no code. The fallback must be visible, so the next
+    // backend-added code is loud instead of invisible.
+    stubFetch((call) =>
+      call.url.endsWith('/probe')
+        ? jsonResponse({
+            ...PROBE_READY,
+            status: null,
+            error_class: 'transient',
+            error: 'webdav PROPFIND returned HTTP 503',
+            error_code: null,
+          })
+        : null,
+    );
+    renderConnectors(['/operations?view=connectors&target=target-1']);
+
+    fireEvent.click(await screen.findByRole('button', { name: /Testar ligação/ }));
+
+    const english = await screen.findByText('webdav PROPFIND returned HTTP 503');
+    expect(english.getAttribute('lang')).toBe('en');
+    expect(screen.getByText(ptPT['operations.connectors.probe.untranslatedBadge'])).toBeTruthy();
   });
 
   it('blocks probing and running while the target is disabled', async () => {

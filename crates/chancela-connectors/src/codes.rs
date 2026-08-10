@@ -30,8 +30,18 @@
 //! - **A code is append-only.** Renaming one silently changes what a client renders; deleting one
 //!   makes an older client's translation dead. Add, do not edit.
 //!
-//! [`ALL_GATED_TRANSPORTS`] is the closed list, so a client-side guard can prove every code maps
-//! to a catalog key.
+//! [`ALL_GATED_TRANSPORTS`] is the closed list the client-side guard reads. That guard is
+//! `apps/web/src/i18n/connectorErrorCodes.test.ts`: it parses this file, resolves each listed
+//! variant through [`GatedTransport::not_compiled_code`] to its `pub const`, and fails if any
+//! resulting code has no catalog key — or if the map carries a key this file no longer emits.
+//!
+//! **That sentence used to be a claim rather than a fact.** This module was written to make the
+//! failure translatable, and then nothing consumed the codes: `ConnectorOperations.tsx` rendered
+//! the English [`crate::ConnectorError::message`] verbatim, so a Portuguese operator read
+//! "this build was compiled without the s3 transport" in English. The list was closed, the guard
+//! was not written, and the doc did not distinguish the two. Adding a code without its copy is
+//! now a red test rather than a silent regression — which is the only reason this paragraph is
+//! true.
 
 use crate::ConnectorKind;
 

@@ -61,6 +61,23 @@
 //! [`StepUpRole::ProofPending`] is kept, with no kind declaring it. It is the shape the *next*
 //! credential kind will pass through, and its documentation is the checklist that got this one
 //! right.
+//!
+//! ## Where the TOTP arm plugged in
+//!
+//! [`CredentialKind::TwoFactorTotp`] was declared [`StepUpRole::NotAProof`] on the grounds that
+//! "no arm exists, and none is needed, because TOTP cannot start a session". The first half stopped
+//! being true in `8b97722d`, which gave [`crate::data::require_step_up`] a TOTP arm; the second
+//! half was never what made the rule safe. A TOTP-only account was kept out of the exemption by
+//! `create_session` refusing an account with no `password_hash` and by
+//! [`ensure_removal_leaves_account_usable`] refusing to remove the last session-capable credential
+//! — two guards that have nothing to do with step-up and could each be relaxed for their own good
+//! reasons. So the kind is now [`StepUpRole::VerifiedProof`], which is what the code has actually
+//! done since the arm landed, and the exemption no longer depends on an accident holding.
+//!
+//! This is a tightening that locks nobody out, and that is exactly why it could be made *after* the
+//! arm rather than with it: an account holding a confirmed factor can always satisfy the gate with
+//! a live code from that very factor. Contrast the passkey case above, where the two halves had to
+//! land together.
 
 use std::collections::BTreeSet;
 
@@ -152,14 +169,22 @@ pub(crate) enum StepUpRole {
     /// Not a proof `require_step_up` can demand, and its presence must not make a gate
     /// unsatisfiable for its holder.
     ///
-    /// **Why TOTP is here, and why that is not the same hole.** A confirmed TOTP factor is a real
-    /// credential, and `require_step_up` has no arm for it — so counting it would make every
-    /// `ConfirmWithReauth` gate unsatisfiable for an account that holds nothing else, which is a
-    /// lockout, not a tightening. It is safe to leave outside *because TOTP cannot start a
-    /// session*: `create_session` refuses an account with no `password_hash`, so there is no
-    /// TOTP-only session for the exemption to widen. That is the whole difference from a passkey,
-    /// and it is checked below rather than trusted — a kind that can start a session may not be
-    /// declared `NotAProof`.
+    /// **No kind declares this today either.** TOTP did, until `8b97722d` gave `require_step_up` a
+    /// TOTP arm; it is now [`Self::VerifiedProof`] like every other kind an account can hold. What
+    /// this variant is *for* is a credential that grants nothing a gate could ask about — a printed
+    /// audit token, a label — and the bar for declaring it is high, because the answer is
+    /// indistinguishable from having forgotten the kind. Two rules bound it:
+    ///
+    /// 1. a kind that can start a session may **never** be declared `NotAProof` (the `const _` block
+    ///    below refuses the build), because its holder would then pass every `ConfirmWithReauth`
+    ///    gate on the session that credential just minted;
+    /// 2. for a kind that cannot start a session, `NotAProof` is admissible only while its holder
+    ///    can always reach a gate some *other* way. The moment that stops being true it is a
+    ///    lockout, and [`Self::ProofPending`] — refuse rather than exempt — is the honest answer.
+    ///
+    /// The TOTP arm is what made rule 2 moot for TOTP: the kind now carries its own proof, so
+    /// counting it locks nobody out. See [`CredentialKind::step_up_role`] for that history.
+    #[cfg_attr(not(test), allow(dead_code))]
     NotAProof,
 }
 
@@ -239,9 +264,21 @@ impl CredentialKind {
             Self::Password => StepUpRole::VerifiedProof,
             // Likewise — possession of the phrase is its own proof.
             Self::RecoveryPhrase => StepUpRole::VerifiedProof,
-            // See `StepUpRole::NotAProof`: no arm exists, and none is needed, because TOTP cannot
-            // start a session.
-            Self::TwoFactorTotp => StepUpRole::NotAProof,
+            // `8b97722d` landed the TOTP arm: `require_step_up` resolves
+            // `crate::totp::verify_totp_for_user` — which checks a live code against the confirmed
+            // enrolment's own secret and advances `last_accepted_step`, so it cannot be replayed —
+            // and `decide_step_up` accepts its result. So the kind carries a proof, and counts.
+            //
+            // **Why this moved, given that no account could reach the old exemption.** The old
+            // answer was `NotAProof`, justified by "no arm exists, and none is needed, because
+            // TOTP cannot start a session". The first clause stopped being true when the arm
+            // landed; the second was never the reason the rule was safe. What kept a TOTP-only
+            // account out of the exemption was `create_session` refusing an account with no
+            // `password_hash` and `ensure_removal_leaves_account_usable` refusing to remove the
+            // last `StartsSession` credential — an accident of two unrelated guards, not this
+            // declaration. A rule held up by an accident fails silently the day the accident is
+            // refactored, so it is stated here instead.
+            Self::TwoFactorTotp => StepUpRole::VerifiedProof,
             // t10 landed the arm `StepUpRole::ProofPending` described: `require_step_up` now
             // verifies a passkey assertion bound to a server-issued, single-use, step-up-scoped
             // challenge (`crate::passkeys::verify_step_up_assertion`), and `is_held_by` below
@@ -664,13 +701,115 @@ mod tests {
     }
 
     #[test]
-    fn a_confirmed_totp_factor_alone_stays_vacuous() {
-        // Deliberate and unchanged: `require_step_up` has no TOTP arm, so counting it would make
-        // every gate unsatisfiable for its holder. Safe because TOTP cannot start a session.
+    fn a_confirmed_totp_factor_alone_is_not_vacuous() {
+        // The W7 tightening. This account used to be exempted, on the grounds that
+        // `require_step_up` had no TOTP arm; it has had one since `8b97722d`, so the factor is a
+        // proof like any other and its holder has something to prove.
         let mut u = user();
         u.totp = Some(confirmed_totp());
-        assert!(step_up_is_vacuous(&HeldCredentials::held_by(&u)));
         assert!(HeldCredentials::held_by(&u).any(|k| k == CredentialKind::TwoFactorTotp));
+        assert!(
+            !step_up_is_vacuous(&HeldCredentials::held_by(&u)),
+            "an account holding a credential `require_step_up` can verify must not pass a \
+             ConfirmWithReauth gate on its session token alone"
+        );
+    }
+
+    /// **The other half of the W7 pair: no lockout.** Making the kind count is only admissible
+    /// because its holder can satisfy the gate — with a live code from that very factor. Runs the
+    /// real decision `require_step_up` runs, on an account holding nothing else.
+    #[test]
+    fn a_totp_only_account_satisfies_the_gate_with_a_live_code() {
+        let held = HeldCredentials::of([CredentialKind::TwoFactorTotp]);
+        assert!(
+            crate::data::decide_step_up(
+                &held,
+                None,
+                None,
+                &crate::data::ReAuth::default(),
+                crate::passkeys::PasskeyStepUp::NotSupplied,
+                true,
+            )
+            .is_ok(),
+            "a confirmed TOTP factor must be able to prove itself, or counting it is a lockout"
+        );
+    }
+
+    #[test]
+    fn a_totp_only_account_offering_nothing_is_refused() {
+        // The fail-closed direction, and the state the old `NotAProof` declaration let through.
+        let held = HeldCredentials::of([CredentialKind::TwoFactorTotp]);
+        assert!(
+            crate::data::decide_step_up(
+                &held,
+                None,
+                None,
+                &crate::data::ReAuth::default(),
+                crate::passkeys::PasskeyStepUp::NotSupplied,
+                false,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_password_account_with_a_totp_factor_still_satisfies_the_gate_with_its_password() {
+        // The shape almost every real account has. The tightening must not have taken the ordinary
+        // proof away from it.
+        let held = HeldCredentials::of([CredentialKind::Password, CredentialKind::TwoFactorTotp]);
+        let phc = crate::attestation::hash_secret("correct horse battery staple").expect("hash");
+        let reauth = crate::data::ReAuth {
+            password: Some("correct horse battery staple".to_owned()),
+            ..Default::default()
+        };
+        assert!(
+            crate::data::decide_step_up(
+                &held,
+                Some(&phc),
+                None,
+                &reauth,
+                crate::passkeys::PasskeyStepUp::NotSupplied,
+                false,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_password_only_account_still_satisfies_the_gate_with_its_password() {
+        let held = HeldCredentials::of([CredentialKind::Password]);
+        let phc = crate::attestation::hash_secret("correct horse battery staple").expect("hash");
+        let reauth = crate::data::ReAuth {
+            password: Some("correct horse battery staple".to_owned()),
+            ..Default::default()
+        };
+        assert!(
+            crate::data::decide_step_up(
+                &held,
+                Some(&phc),
+                None,
+                &reauth,
+                crate::passkeys::PasskeyStepUp::NotSupplied,
+                false,
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn no_kind_is_declared_not_a_proof_today() {
+        // Not a style rule: `NotAProof` is the answer a forgotten kind would default into, so a
+        // kind wearing it is a claim that needs the argument in the variant's docs. There is no
+        // such claim right now, and this test is what makes the next one deliberate.
+        let outliers: Vec<_> = CredentialKind::ALL
+            .iter()
+            .filter(|kind| matches!(kind.step_up_role(), StepUpRole::NotAProof))
+            .collect();
+        assert!(
+            outliers.is_empty(),
+            "{outliers:?} declare StepUpRole::NotAProof — read that variant's docs and satisfy \
+             both of its rules before pinning this"
+        );
     }
 
     #[test]
@@ -680,29 +819,52 @@ mod tests {
         assert!(!HeldCredentials::held_by(&u).any(|k| k == CredentialKind::TwoFactorTotp));
     }
 
-    /// **No caller's behaviour changes.** For every account shape the record can express today, the
-    /// new membership predicate answers exactly what the two-field predicate answered — so
-    /// `bundles.rs`, `data.rs` (×2), `data_status.rs`, `privacy.rs`, `recovery.rs` (×2),
-    /// `zk_repository.rs` and `confirmation.rs::require_confirmation` all still enforce what they
-    /// enforced.
+    /// **Where the membership predicate now departs from the two-field one, exhaustively.**
+    ///
+    /// When this test was written the two agreed on every shape the record could express, which was
+    /// the point: `bundles.rs`, `data.rs` (×2), `data_status.rs`, `privacy.rs`, `recovery.rs` (×2),
+    /// `zk_repository.rs` and `confirmation.rs::require_confirmation` all kept enforcing exactly
+    /// what they had enforced.
+    ///
+    /// W7 is the first deliberate departure, so the test states it rather than being relaxed: the
+    /// predicates differ on **exactly** the shapes holding a confirmed TOTP factor and neither hash,
+    /// and the new one is the stricter of the two everywhere. Both properties are asserted, so a
+    /// change that widens the exemption anywhere — including back to the legacy answer for a TOTP
+    /// account — fails here.
     #[test]
-    fn agrees_with_the_legacy_predicate_on_every_shape_expressible_today() {
+    fn departs_from_the_legacy_predicate_only_by_counting_a_confirmed_totp_factor() {
+        let mut divergences = Vec::new();
         for password in [None, Some("phc")] {
             for recovery in [None, Some("phc")] {
                 for totp in [None, Some(confirmed_totp()), Some(TotpEnrolment::pending())] {
+                    let confirmed = totp.as_ref().is_some_and(TotpEnrolment::is_active);
                     let mut u = user();
                     u.password_hash = password.map(str::to_owned);
                     u.recovery_hash = recovery.map(str::to_owned);
                     u.totp = totp;
-                    assert_eq!(
-                        step_up_is_vacuous(&HeldCredentials::held_by(&u)),
-                        legacy_step_up_is_vacuous(password, recovery),
-                        "membership predicate diverged from the legacy one on an account shape \
-                         that exists today (password: {password:?}, recovery: {recovery:?})"
+                    let legacy = legacy_step_up_is_vacuous(password, recovery);
+                    let now = step_up_is_vacuous(&HeldCredentials::held_by(&u));
+                    assert!(
+                        !now || legacy,
+                        "the membership predicate exempts an account the two-field one gated \
+                         (password: {password:?}, recovery: {recovery:?}, confirmed totp: \
+                         {confirmed}) — every departure must be a tightening"
                     );
+                    assert_eq!(
+                        now,
+                        legacy && !confirmed,
+                        "unexpected answer for (password: {password:?}, recovery: {recovery:?}, \
+                         confirmed totp: {confirmed})"
+                    );
+                    if now != legacy {
+                        divergences.push((password, recovery, confirmed));
+                    }
                 }
             }
         }
+        // Named, not merely counted: the one shape that changed is the credential-less operator who
+        // enrolled a second factor and nothing else.
+        assert_eq!(divergences, vec![(None, None, true)]);
     }
 
     // ── The red-proof: the widening a passkey-only account would have created ─────────────────

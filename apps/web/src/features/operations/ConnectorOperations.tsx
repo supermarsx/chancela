@@ -17,9 +17,11 @@ import type {
   ConnectorJobPurpose,
   ConnectorJobView,
   ConnectorKind,
+  ConnectorProbeView,
   ConnectorTargetView,
 } from '../../api/types';
 import { useT } from '../../i18n';
+import { resolveConnectorError } from '../../i18n/connectorErrorCodes';
 import {
   Badge,
   Button,
@@ -38,9 +40,40 @@ import {
   Table,
   TextArea,
   Toggle,
+  TooltipText,
 } from '../../ui';
 import { GateButton, scopeIntegration, scopeRepository, scopeTenant } from '../session/permissions';
 import { CONNECTOR_KINDS, connectorConfigTemplate, parseConnectorConfig } from './operatorModels';
+
+/**
+ * A failed probe's sentence, in the operator's language when the server named it with a code.
+ *
+ * When it did NOT — a code this build does not know, or one of the many `ConnectorError`s that
+ * still carry no code at all — the raw English is shown with a visible `In English` badge and
+ * `lang="en"` (so a screen reader pronounces it as English rather than mangling it in the page
+ * language). That marking is the point: a silent fallback would pass the server's English off as
+ * localized copy and make the next backend-added code invisible instead of loud. Same shape, and
+ * for the same reason, as `ProbeDetailText` in the provider-credentials settings panel.
+ */
+function ProbeFailureText({ probe }: { probe: ConnectorProbeView }) {
+  const t = useT();
+  const failure = resolveConnectorError(probe, t);
+  if (!failure) return <>{t('operations.connectors.probe.empty')}</>;
+  if (!failure.untranslated) return <>{failure.text}</>;
+  return (
+    <>
+      <span lang="en">{failure.text}</span>{' '}
+      <Badge tone="neutral">
+        <TooltipText
+          label={t('operations.connectors.probe.untranslatedHint')}
+          onlyWhenClipped={false}
+        >
+          {t('operations.connectors.probe.untranslatedBadge')}
+        </TooltipText>
+      </Badge>
+    </>
+  );
+}
 
 function jobTone(state: ConnectorJobView['state']): 'neutral' | 'ok' | 'warn' | 'error' | 'info' {
   if (state === 'succeeded' || state === 'recovered') return 'ok';
@@ -344,11 +377,7 @@ function TargetEditor({ tenantId, target }: { tenantId: string; target: Connecto
             tone={probe.data.status?.state === 'ready' ? 'info' : 'warn'}
             title={t('operations.connectors.probe.result')}
           >
-            <p>
-              {probe.data.status?.detail ??
-                probe.data.error ??
-                t('operations.connectors.probe.empty')}
-            </p>
+            <p>{probe.data.status?.detail ?? <ProbeFailureText probe={probe.data} />}</p>
             {probe.data.status ? (
               <p className="muted">{probe.data.status.capabilities.join(', ')}</p>
             ) : null}
