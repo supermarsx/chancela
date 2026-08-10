@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chancela_connectors::{
-    InMemorySecretProvider, JobPurpose, LocalTarget, PurposeTargets, TargetConfig, WorkerTargets,
+    ErrorClass, InMemorySecretProvider, JobPurpose, LocalTarget, PurposeTargets, TargetConfig,
+    WebDavAuth, WebDavTarget, WorkerTargets,
 };
 use chancela_worker::{DurableQueue, JobState, Worker, WorkerConfig, WorkerError};
 
@@ -551,6 +552,129 @@ async fn lists_newest_jobs_across_states_with_a_bounded_fail_closed_view() {
         worker.queue().list_snapshots(10).await,
         Err(WorkerError::Configuration(_))
     ));
+
+    remove_fixture(&root).await;
+}
+
+/// **A target failure must fail the job, not the worker.**
+///
+/// The trigger needs no bug at all: an administrator narrows the connector allowlist in Settings
+/// while a job for the removed host is already queued. The three resolution failures used to leave
+/// `process_claimed` through `?`, before the `Running` event — so `run_until` propagated and the
+/// process exited — while `claim_next` had already moved the job `pending` -> `running` and
+/// `recover` requeued it with no `not_before`. The restarted worker claimed the same job first and
+/// died again: an unbounded restart loop that blocked every other backup and sync behind it, with
+/// the container still reporting healthy because `heartbeat` is written once per restart.
+///
+/// The unresolvable job is deliberately the one `claim_next` reaches **first** (ids sort by the
+/// sha256 of the idempotency key, and `blocked-target` hashes below `queued-behind`), so the second
+/// job actually landing on its target is what proves head-of-line blocking is gone.
+#[tokio::test]
+async fn an_unresolvable_target_fails_the_job_and_leaves_the_queue_draining() {
+    let (root, config, worker) = fixture("target-resolution").await;
+    write_source(&config, "blocked.bin", b"never transmitted").await;
+    write_source(&config, "behind.bin", b"queued behind the failure").await;
+
+    // An API-created job carrying its own immutable target snapshot, aimed at a network target no
+    // allowlist can permit: `.invalid` is reserved by RFC 2606 and never resolves.
+    let blocked = worker
+        .queue()
+        .stage_for_target(
+            &config.source_root,
+            JobPurpose::Sync,
+            PathBuf::from("blocked.bin"),
+            "tenant/blocked.bin".to_owned(),
+            "application/octet-stream".to_owned(),
+            "blocked-target".to_owned(),
+            "tenant-a".to_owned(),
+            TargetConfig::WebDav(WebDavTarget {
+                id: "narrowed-out".to_owned(),
+                base_url: "https://backup.example.invalid/remote.php/dav".to_owned(),
+                auth: WebDavAuth::Bearer {
+                    token_ref: "CHANCELA_CONNECTOR_SECRET_WEBDAV_TOKEN".to_owned(),
+                },
+                timeout_seconds: 30,
+                allow_insecure_http: false,
+            }),
+        )
+        .await
+        .expect("stage the API job");
+    worker
+        .queue()
+        .publish_staged(&blocked.job.id)
+        .await
+        .expect("publish the staged job");
+
+    let behind = enqueue(
+        worker.queue(),
+        &config,
+        JobPurpose::Backup,
+        "behind.bin",
+        "tenant/behind.bin",
+        "queued-behind",
+    )
+    .await;
+    assert!(
+        blocked.job.id < behind.job.id,
+        "the unresolvable job must be claimed first or this test proves nothing"
+    );
+
+    // Neither call may return `Err`: a propagated target failure is what exits the process.
+    assert!(
+        worker
+            .run_once()
+            .await
+            .expect("the worker must survive an unresolvable target")
+    );
+    assert!(
+        worker
+            .run_once()
+            .await
+            .expect("and go on to the job queued behind it")
+    );
+    assert!(!worker.run_once().await.expect("the queue is drained"));
+
+    let failed = worker
+        .queue()
+        .snapshot(&blocked.job.id)
+        .await
+        .expect("failed snapshot");
+    assert_eq!(failed.latest_event.state, JobState::Failed);
+    assert_eq!(
+        failed.latest_event.error_class,
+        Some(ErrorClass::Configuration)
+    );
+    assert_eq!(
+        failed.latest_event.target_id.as_deref(),
+        Some("narrowed-out")
+    );
+    assert!(
+        failed
+            .latest_event
+            .detail
+            .contains("target could not be resolved"),
+        "the operator has to be able to see why, got {:?}",
+        failed.latest_event.detail
+    );
+    assert!(failed.receipt.is_none());
+    assert!(
+        !root.join("sync-target/tenant/blocked.bin").exists(),
+        "a failed job must not have transmitted anything"
+    );
+
+    // The queue kept draining: the job behind the failure really was transmitted.
+    let following = worker
+        .queue()
+        .snapshot(&behind.job.id)
+        .await
+        .expect("following snapshot");
+    assert_eq!(following.latest_event.state, JobState::Succeeded);
+    assert_eq!(
+        tokio::fs::read(root.join("backup-target/tenant/behind.bin"))
+            .await
+            .expect("read the file queued behind the failure"),
+        b"queued behind the failure"
+    );
 
     remove_fixture(&root).await;
 }

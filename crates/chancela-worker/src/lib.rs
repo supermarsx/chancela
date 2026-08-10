@@ -913,6 +913,39 @@ impl DurableQueue {
     }
 }
 
+/// A claimed job's target could not be turned into a usable connector.
+///
+/// Carried as data rather than as a [`WorkerError`] on purpose: a `WorkerError` out of
+/// [`Worker::process_claimed`] propagates through `run_until` and takes the process down, and this
+/// class of failure belongs to **one job**, not to the worker. See [`Worker::resolve_connector`].
+struct TargetResolution {
+    /// `None` only when the failure is that no target could be named at all.
+    target_id: Option<String>,
+    error_class: ErrorClass,
+    detail: String,
+}
+
+impl TargetResolution {
+    /// A connector-layer refusal (allowlist, policy resolution, uncompiled transport). Keeps the
+    /// connector's own class and sanitized message so the recorded reason is the real one.
+    fn refused(target_id: Option<&str>, error: ConnectorError) -> Self {
+        Self {
+            target_id: target_id.map(ToOwned::to_owned),
+            error_class: error.class,
+            detail: format!("the job's target could not be resolved: {}", error.message),
+        }
+    }
+
+    /// The worker's own configuration cannot name a target or a connector for this job.
+    fn misconfigured(target_id: Option<&str>, detail: &str) -> Self {
+        Self {
+            target_id: target_id.map(ToOwned::to_owned),
+            error_class: ErrorClass::Configuration,
+            detail: detail.to_owned(),
+        }
+    }
+}
+
 pub struct Worker {
     config: WorkerConfig,
     source_root: PathBuf,
@@ -985,34 +1018,69 @@ impl Worker {
         statuses
     }
 
-    async fn process_claimed(&self, job: Job) -> Result<(), WorkerError> {
-        let attempt = self.queue.attempt_count(&job.id).await?.saturating_add(1);
-        let (target_id, connector) = if let Some(target) = &job.target {
+    /// Resolve the connector this claimed job must upload through.
+    ///
+    /// **Every failure is returned as data, never propagated.** By the time this runs the job has
+    /// already been claimed (`pending` -> `running`), so a `?` here would abort `run_until`, exit
+    /// the process, and leave the job to be requeued by `recover` with no `not_before` — the same
+    /// job claimed first on the next start, failing the same way, forever. Nothing behind it in the
+    /// queue would ever be transmitted, and because `heartbeat` is written once per restart the
+    /// container would keep reporting healthy throughout. Failing the job instead records why and
+    /// lets the queue drain.
+    ///
+    /// The realistic trigger needs no bug at all: an administrator narrows the connector allowlist
+    /// in Settings while a job for the removed host is already queued.
+    async fn resolve_connector(
+        &self,
+        job: &Job,
+    ) -> Result<(String, Arc<dyn Connector>), TargetResolution> {
+        if let Some(target) = &job.target {
+            let target_id = target.id().to_owned();
             if !matches!(target, TargetConfig::Local(_)) {
                 // Re-resolved per job, so an allowlist narrowed in Settings takes effect on the
                 // next job rather than at the next worker restart.
-                let policy = NetworkPolicy::effective().map_err(WorkerError::Connector)?;
+                let policy = NetworkPolicy::effective()
+                    .map_err(|error| TargetResolution::refused(Some(&target_id), error))?;
                 target
                     .validate_network_policy(&policy)
                     .await
-                    .map_err(WorkerError::Connector)?;
+                    .map_err(|error| TargetResolution::refused(Some(&target_id), error))?;
             }
-            (
-                target.id().to_owned(),
-                build_connector(target, self.secrets.clone()).map_err(WorkerError::Connector)?,
-            )
+            let connector = build_connector(target, self.secrets.clone())
+                .map_err(|error| TargetResolution::refused(Some(&target_id), error))?;
+            Ok((target_id, connector))
         } else {
-            let target = self
-                .config
-                .targets
-                .target_for(job.purpose)
-                .ok_or_else(|| WorkerError::configuration("purpose target is missing"))?;
-            let connector = self
-                .connectors
-                .get(target.id())
-                .cloned()
-                .ok_or_else(|| WorkerError::configuration("purpose connector is missing"))?;
-            (target.id().to_owned(), connector)
+            let target = self.config.targets.target_for(job.purpose).ok_or_else(|| {
+                TargetResolution::misconfigured(
+                    None,
+                    "the worker configuration names no target for this job's purpose",
+                )
+            })?;
+            let connector = self.connectors.get(target.id()).cloned().ok_or_else(|| {
+                TargetResolution::misconfigured(
+                    Some(target.id()),
+                    "no connector was built for the configured purpose target",
+                )
+            })?;
+            Ok((target.id().to_owned(), connector))
+        }
+    }
+
+    async fn process_claimed(&self, job: Job) -> Result<(), WorkerError> {
+        let attempt = self.queue.attempt_count(&job.id).await?.saturating_add(1);
+        let (target_id, connector) = match self.resolve_connector(&job).await {
+            Ok(resolved) => resolved,
+            Err(failure) => {
+                self.finish_failed(
+                    &job,
+                    attempt,
+                    failure.target_id.as_deref(),
+                    failure.error_class,
+                    &failure.detail,
+                )
+                .await?;
+                return Ok(());
+            }
         };
         self.queue
             .record_event(JobEvent {
