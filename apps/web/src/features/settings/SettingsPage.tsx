@@ -2186,8 +2186,52 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
     );
   const addTrustAnchor = (field: TrustAnchorField) =>
     setTrustAnchors(field, (anchors) => [...anchors, '']);
-  const updateTrustAnchor = (field: TrustAnchorField, index: number, value: string) =>
-    setTrustAnchors(field, (anchors) => anchors.map((anchor, i) => (i === index ? value : anchor)));
+  /**
+   * Edit one anchor in place.
+   *
+   * For the fingerprint list this MOVES any self-asserted mark from the old value to the new one
+   * (t118). The annotation is keyed by fingerprint, so an edit that left it behind would take the
+   * badge off the row and strand an entry matching no anchor: the row would go from "accepted
+   * unverified" to "transcribed out of the Official Journal" on a keystroke, which is a claim
+   * nobody made. An edit corrects a row; the only thing that clears a mark is the operator
+   * pressing the control that says they have made the comparison.
+   *
+   * The old key is left in place when another row still holds it — two rows carrying the same
+   * fingerprint are one anchor, and dropping the mark would unmark that one too.
+   */
+  const updateTrustAnchor = (field: TrustAnchorField, index: number, value: string) => {
+    if (field !== 'tsl_trust_anchor_sha256') {
+      setTrustAnchors(field, (anchors) =>
+        anchors.map((anchor, i) => (i === index ? value : anchor)),
+      );
+      return;
+    }
+    setDraft((d) => {
+      if (!d) return d;
+      const fingerprints = d.signing.tsl_trust_anchor_sha256 ?? [];
+      const next = fingerprints.map((anchor, i) => (i === index ? value : anchor));
+      const marks = d.signing.tsl_trust_anchor_self_asserted_sha256 ?? [];
+      const previousKey = anchorKey(fingerprints[index] ?? '');
+      const nextKey = anchorKey(value);
+      let nextMarks = marks;
+      if (marks.some((entry) => anchorKey(entry) === previousKey)) {
+        if (!next.some((anchor) => anchorKey(anchor) === previousKey)) {
+          nextMarks = nextMarks.filter((entry) => anchorKey(entry) !== previousKey);
+        }
+        if (nextKey && !nextMarks.some((entry) => anchorKey(entry) === nextKey)) {
+          nextMarks = [...nextMarks, value];
+        }
+      }
+      return {
+        ...d,
+        signing: {
+          ...d.signing,
+          tsl_trust_anchor_sha256: next,
+          tsl_trust_anchor_self_asserted_sha256: nextMarks,
+        },
+      };
+    });
+  };
   const removeTrustAnchor = (field: TrustAnchorField, index: number) =>
     setTrustAnchors(field, (anchors) => anchors.filter((_, i) => i !== index));
 
