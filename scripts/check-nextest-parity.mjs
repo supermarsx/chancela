@@ -82,15 +82,33 @@ export function compare(cargo, nextest) {
   return { missing, extra };
 }
 
+/** Strip SGR escapes. See `run` for why this is not paranoia. */
+function stripAnsi(text) {
+  // eslint-disable-next-line no-control-regex
+  return text.replace(/\u001b\[[0-9;]*m/gu, '');
+}
+
 function run(command, args) {
-  const r = spawnSync(command, args, { encoding: 'utf8', shell: false, maxBuffer: 256 * 1024 * 1024 });
+  // Colour off, belt and braces. `cargo nextest list` colourises its output and FORCES colour when
+  // it detects CI, so the names it printed there arrived wrapped in SGR escapes while a local run
+  // produced clean bytes. The comparison is by name, so every name mismatched: CI reported
+  // "4177 test(s) cargo test runs and nextest does NOT" while both totals read exactly 4177 — a
+  // parse failure wearing the costume of a total drop. `NO_COLOR` and `CARGO_TERM_COLOR` cover the
+  // tools that honour them, `--color never` covers nextest explicitly, and `stripAnsi` covers
+  // whatever ignores all three.
+  const r = spawnSync(command, args, {
+    encoding: 'utf8',
+    shell: false,
+    maxBuffer: 256 * 1024 * 1024,
+    env: { ...process.env, NO_COLOR: '1', CARGO_TERM_COLOR: 'never' },
+  });
   if (r.error) throw r.error;
   if (r.status !== 0) {
     console.error(`${command} ${args.join(' ')} exited ${r.status}`);
     console.error(r.stderr);
     exit(2);
   }
-  return r.stdout;
+  return stripAnsi(r.stdout);
 }
 
 if (argv.includes('--self-test')) {
@@ -155,7 +173,7 @@ const cargo = parseCargoList(
   run('cargo', ['test', '--workspace', '--locked', ...features, '--', '--list']),
 );
 const nextest = parseNextestList(
-  run('cargo', ['nextest', 'list', '--workspace', '--locked', ...features, '--run-ignored', 'all']),
+  run('cargo', ['nextest', 'list', '--color', 'never', '--workspace', '--locked', ...features, '--run-ignored', 'all']),
 );
 
 const { missing, extra } = compare(cargo, nextest);
