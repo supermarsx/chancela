@@ -26,10 +26,31 @@ The implementation is split into:
 | Nextcloud / WebDAV | sync or backup | authenticated probe, `MKCOL`, streamed `PUT`, atomic `MOVE` | `OC-Checksum: SHA256`, length, temporary name, cleanup on failed move | local HTTP protocol test verifies auth, `PROPFIND`, `MKCOL`, checksum headers, body, and `MOVE` |
 | OneDrive / SharePoint | sync or backup | drive probe, upload-session creation, sequential resumable chunks; direct empty-file upload | 10 MiB chunks, `Content-Range`, bounded retry; verifies returned size and SHA-256 when Graph supplies it | local HTTP protocol test covers resumable and empty uploads and remote evidence |
 | Google Drive | sync or backup | about probe, search, folder creation, revisions, resumable and empty upload | 8 MiB sequential chunks, `Content-Range`, bounded retry; verifies returned size | local HTTP protocol test covers all listed operations |
-| SFTP / SSH | sync or backup | password-authenticated upload, recursive parent creation, temporary file, rename, stat | mandatory SHA-256 host-key pin; Ed25519/ECDSA server keys only; committed-size check | compile plus constructor/security tests; live server credentials are operator assurance |
-| Explicit FTPS | sync or backup | TLS-authenticated upload, recursive parent creation, temporary file, rename, stat | native CA trust, binary/private data mode, committed-size check; plain FTP is not implemented | compile plus constructor/security tests; live server credentials are operator assurance |
-| SMB 2/3 | sync or backup | authenticated upload, recursive parent creation, streaming temporary file, rename, stat | encryption required unless the operator explicitly sets `allow_unencrypted`; committed-size check | compile plus constructor/security tests; live server credentials are operator assurance |
-| S3-compatible | **backup only** | head/stat, bounded list, atomic local download, multipart upload, abort, idempotent replay | per-part CRC32, final size + metadata SHA-256 + provider checksum, version/ETag receipt | signed local S3 protocol test covers multipart, replay, stat, list, and verified download |
+| SFTP / SSH | sync or backup | password-authenticated upload, recursive parent creation, temporary file, rename, stat | mandatory SHA-256 host-key pin; Ed25519/ECDSA server keys only; committed-size check | compile plus a constructor/security test proving the host-key pin, run in CI under `all-transports`; live server credentials are operator assurance |
+| Explicit FTPS | sync or backup | TLS-authenticated upload, recursive parent creation, temporary file, rename, stat | native CA trust, binary/private data mode, committed-size check; plain FTP is not implemented | compile plus a constructor/security test proving the bounded timeout, run in CI under `all-transports`; live server credentials are operator assurance |
+| SMB 2/3 | sync or backup | authenticated upload, recursive parent creation, streaming temporary file, rename, stat | encryption required unless the operator explicitly sets `allow_unencrypted`; committed-size check | compile plus a constructor/security test proving root-traversal rejection, run in CI under `all-transports`; live server credentials are operator assurance |
+| S3-compatible | **backup only** | head/stat, bounded list, atomic local download, multipart upload, abort, idempotent replay | per-part CRC32, final size + metadata SHA-256 + provider checksum, version/ETag receipt | signed local S3 protocol test covering multipart, replay, stat, list, and verified download, run in CI under `all-transports` |
+
+The four native transports — SFTP, FTPS, SMB and S3 — carry protocol clients far
+heavier than the connector code that uses them, so `chancela-connectors` compiles
+none of them by default and their tests compile away with them. That makes the
+last column conditional on the feature, not on the file: a plain
+`cargo test --workspace` reports green without having run a single one of them.
+CI therefore runs them explicitly, in the `live-seams` job, as
+`cargo test -p chancela-connectors --features all-transports --locked`. All four
+are offline — the three constructor cases fail configuration validation before a
+socket is opened, and the S3 case drives a local provider bound to `127.0.0.1`
+with test-only credentials — so they need neither network access nor a secret.
+
+Every shipped server build compiles all four: the server and worker images, the
+desktop shell (through `chancela-api/all-transports`), and the server binary in the
+release tarball produced by `npm run package`. `CONNECTOR_KINDS` offers all seven
+kinds to the operator regardless of how a binary was compiled — a saved target
+never becomes unreadable — so a build that omitted a transport would accept and
+list a target it could only refuse at probe time. Keeping the shipped server
+builds complete is what makes that impossible in practice, and
+`npm run check:encrypted-build-defaults` pins it for the images and the tarball
+alike.
 
 !!! warning "Live-provider assurance boundary"
     CI does not carry real SFTP, FTPS, SMB, Microsoft, Google, Nextcloud, or S3

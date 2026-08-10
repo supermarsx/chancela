@@ -1914,6 +1914,10 @@ jobs:
   # Live seam compile gates: compile the opt-in network/hardware test surfaces
   # without running them. These commands intentionally use --no-run so CI proves
   # live seams still build while avoiding real providers, networks, and readers.
+  #
+  # The job also RUNS the remote-transport contract tests (second step). Those
+  # are feature-gated for build cost, not because they touch a provider: they
+  # are wholly offline, so --no-run would be leaving real coverage on the floor.
   # ---------------------------------------------------------------------------
   live-seams:
     name: Live seam compile (no-run)
@@ -1940,6 +1944,19 @@ jobs:
           cargo test -p chancela-tsa --features network-tests --locked --no-run
           cargo test -p chancela-tsl --features network-tests --locked --no-run
           cargo test -p chancela-smartcard --features hardware-tests --locked --no-run
+
+      # No remote transport is compiled by default (see chancela-connectors/Cargo.toml), so a
+      # plain `cargo test --workspace` compiles away every transport-gated test and reports
+      # green without them. That silently dropped the only coverage of the SFTP host-key pin,
+      # the FTPS timeout bound, the SMB root-traversal rejection, and the S3 multipart /
+      # per-part-checksum / idempotent-replay / verified-download contract.
+      #
+      # Unlike the seams above these are RUN, not just compiled, because none of them reaches a
+      # provider: the three constructor cases fail configuration validation before any socket is
+      # opened, and the S3 case drives a local axum provider on 127.0.0.1 with in-memory
+      # test-only credentials. No network egress, no secrets, nothing to make it flaky.
+      - name: Run offline remote-transport contract tests
+        run: cargo test -p chancela-connectors --features all-transports --locked
 
   # ---------------------------------------------------------------------------
   # Desktop compile check (Tauri, Windows): a FAST per-PR/push gate that compiles

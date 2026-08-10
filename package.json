@@ -44,7 +44,7 @@
     "test:desktop:smoke": "npm run test:smoke --prefix apps/desktop",
     "measure:rust-build": "node scripts/measure-rust-build.mjs",
     "build": "npm run build:rust && npm run build:web",
-    "build:rust": "cargo build --workspace --release --locked --features chancela-server/sqlcipher,chancela-cli/sqlcipher",
+    "build:rust": "cargo build --workspace --release --locked --features chancela-server/sqlcipher,chancela-cli/sqlcipher,chancela-server/all-transports",
     "build:web": "npm run build --workspace apps/web",
     "build:docker": "docker build -f docker/Dockerfile.server -t chancela-server:local .",
     "test:package-integrity": "node scripts/check-package-artifacts.mjs",

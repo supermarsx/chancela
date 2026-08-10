@@ -61,6 +61,12 @@ function checkRootReleaseBuild() {
   assertContains(buildRust, "--features", "root build:rust");
   assertContains(buildRust, "chancela-server/sqlcipher", "root build:rust");
   assertContains(buildRust, "chancela-cli/sqlcipher", "root build:rust");
+  // The remote transports are asserted as their OWN entry, not folded into the sqlcipher checks,
+  // for the same reason `CARGO_TRANSPORT_FEATURES` is a separate ARG in the images: the release
+  // tarball's server must be able to dial every kind `CONNECTOR_KINDS` still offers, and a future
+  // rewrite of the encrypted-store feature list must not be able to drop them on the way past.
+  // Siblings are allowed — what is pinned is that the entry is PRESENT.
+  assertContains(buildRust, "chancela-server/all-transports", "root build:rust");
 
   const dev = script(pkg, "dev", "root package.json");
   assertNotContains(dev, "sqlcipher", "root dev script");
