@@ -29,11 +29,19 @@
 // (Windows figures, 2026-07-21, HEAD ea75441.)
 //
 // Consequence: a RATCHET is sound on these numbers because it compares a measurement against
-// itself. A HARD ABSOLUTE THRESHOLD is only sound where the measurement is undiluted. The four
-// hard-90% crates are enforced here because the user ruled they must be, but `store` and `core`
-// are expected to fail on first run for the reason above rather than because they are untested.
-// Settle the dilution question before this job is made blocking; see
-// `.orchestration/logs/t75-coverage.md` §2.
+// itself. A HARD ABSOLUTE THRESHOLD is only sound where the measurement is undiluted.
+//
+// UPDATE, 2026-08-10 — the dilution worry above was measured and does NOT hold on Linux. The
+// first authoritative figures (ubuntu-latest, CI run 31335476839, the feature set this job
+// actually uses) are:
+//
+//   chancela-authz   98.47%     chancela-core    96.47%
+//   chancela-ledger  92.74%     chancela-store   90.94%
+//
+// All four hard-90% crates PASS. The alarming Windows numbers for `core` (85.21%) and `store`
+// (52.67%) were an artefact of that platform and its narrower feature set, not evidence that the
+// crates are untested — which is exactly why the gate refuses to write a baseline from anywhere
+// but Linux. Do not reason about absolute coverage from a Windows run.
 //
 // Usage:
 //   node scripts/rust-coverage-gate.mjs --report <llvm-cov.json> [--update-baseline]

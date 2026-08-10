@@ -13,6 +13,8 @@ node_modules/
 dist/
 apps/web/dist/
 *.tar.gz
+# mkdocs build output (mkdocs.yml declares no site_dir, so it defaults to site/)
+/site/
 
 # Orchestration scratch (not part of the shipped repo)
 .orchestration/

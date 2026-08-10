@@ -288,14 +288,70 @@ jobs:
       - name: Cache cargo build
         uses: Swatinem/rust-cache@23869a5bd66c73db3c0ac40331f3206eb23791dc # v2.9.1
 
+      # For scripts/check-nextest-parity.mjs below. Pinned rather than relying on
+      # whatever Node the runner image happens to ship, matching every other job
+      # here. No npm install: the script uses only the Node standard library.
+      - name: Install Node 24
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+
       - name: Format check
         run: cargo fmt --all -- --check
 
       - name: Clippy (deny warnings)
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      # Version-pinned from crates.io for the same reason as cargo-llvm-cov in
+      # the coverage job: every `uses:` must carry a 40-hex SHA, and a version
+      # pin is verifiable where a guessed action SHA is not.
+      #
+      # This does NOT compile nextest from source on every run. `Swatinem/rust-cache`
+      # takes `cache-bin: true` by DEFAULT and caches `$CARGO_HOME/bin` together
+      # with `.crates.toml` and `.crates2.json`, so the restored `.crates2.json`
+      # makes `cargo install` a no-op. Measured on the coverage job, whose
+      # identically-shaped `Install cargo-llvm-cov` step takes 1 SECOND per run.
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --version 0.9.109 --locked
+
+      # The failure mode of replacing a test runner for speed is a runner that is
+      # faster because it runs LESS, and nothing else in CI can see it: a dropped
+      # binary looks identical to a well-scheduled one. This asserts, by NAME and
+      # not by count, that nextest executes every test `cargo test` executes,
+      # doctests excepted. It runs on all three platforms because the test set is
+      # cfg-dependent — Linux enumerated 4150 tests where Windows enumerated 4159
+      # — so parity has to be proven per platform, not extrapolated from one.
+      #
+      # Cheap: it lists the binaries the `Test` step is about to run, so the build
+      # is shared and only the listing is new. The self-test runs first and is not
+      # optional — it plants a dropped test and confirms the gate goes red, so a
+      # green result here cannot come from a comparison that stopped comparing.
+      - name: Check nextest runs everything cargo test runs
+        run: |
+          node scripts/check-nextest-parity.mjs --self-test
+          node scripts/check-nextest-parity.mjs
+
+      # nextest pools the workspace's 138 test binaries across the runner's cores
+      # instead of running them one after another, which is what `cargo test`
+      # does. It runs each test in its own process.
+      #
+      # nextest does NOT run doctests — it cannot, they are rustdoc's, not
+      # libtest's — so the `Doctests` step below is not optional: without it the 8
+      # doctests in chancela-api, chancela-authz, chancela-store,
+      # chancela-templates and chancela-tsa would stop being executed and nothing
+      # would say so. The parity gate above fails if that number ever reaches
+      # zero, so the step cannot quietly become a no-op either.
       - name: Test
-        run: cargo test --workspace --locked
+        run: cargo nextest run --workspace --locked --no-fail-fast
+
+      # Runs AFTER the nextest step, and `!cancelled()` so a nextest failure cannot
+      # hide a doctest failure — steps otherwise stop at the first red one, which
+      # would mean a broken doctest goes unreported on exactly the runs where the
+      # suite is already unhealthy. This is NOT advisory: there is no
+      # `continue-on-error`, so a failing doctest fails this step and the job.
+      - name: Doctests
+        if: ${{ !cancelled() }}
+        run: cargo test --workspace --locked --doc
 
   # ---------------------------------------------------------------------------
   # Rust coverage gate. Until this job existed the repo measured NO Rust coverage
@@ -352,16 +408,101 @@ jobs:
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.11 --locked
 
+      # Cached by the same mechanism as cargo-llvm-cov above (rust-cache's default
+      # `cache-bin: true`), but NOT from the very first run. rust-cache skips the
+      # save entirely when the cache key matched exactly, so a binary installed
+      # during a full-hit run is discarded with the runner. nextest will therefore
+      # recompile here (a few minutes) on each run until the next commit that
+      # touches any Cargo.toml or Cargo.lock — that one restores partially, which
+      # does re-save, and pins nextest into the cache for good.
+      #
+      # Deliberately not forced with a rust-cache `key:` bump: that would change
+      # the restore key as well as the cache key, so the first run would rebuild
+      # the entire instrumented dependency graph from cold. Paying a few minutes
+      # for a few runs is the cheaper of the two.
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --version 0.9.109 --locked
+
+      # `nextest` rather than plain `cargo llvm-cov`, and this is where nearly all
+      # of this job's cost is. Measured on run 31335476839: the step below took
+      # 5846s, of which the instrumented build was 251s and 5595s — 95.7% — was
+      # 138 test binaries executing strictly one after another. nextest pools them
+      # across the runner's cores instead.
+      #
+      # Why this does not move the coverage numbers: nextest changes how many
+      # PROCESSES run, not how many INSTANTIATIONS are compiled. llvm-cov's
+      # dilution (the same function counted once per binary it is linked into,
+      # described at the top of scripts/rust-coverage-gate.mjs) is a property of
+      # the binary set, which is unchanged. Merging more profraw files takes the
+      # union of executed counters, so a function covered in any one process
+      # counts covered. The figure should therefore be stable or very slightly
+      # higher, never lower.
+      #
+      # That reasoning is not a substitute for watching the first run. chancela-store
+      # measures 90.94% against a HARD 90% floor — a 0.94pp margin — so if this
+      # switch perturbs anything at all, that is the crate it will show up on.
+      #
       # --no-fail-fast so a single failing test still yields a report: a broken
       # test should fail the `rust` job, not silently blank the coverage figure.
       - name: Measure
         run: >-
-          cargo llvm-cov --workspace --locked --no-fail-fast
+          cargo llvm-cov nextest --workspace --locked --no-fail-fast
           --features chancela-server/e2e,chancela-store/sqlcipher
           --json --output-path llvm-cov.json
 
       - name: Enforce thresholds
         run: node scripts/rust-coverage-gate.mjs --report llvm-cov.json
+
+      # Record the ratchet baseline. THREE conditions gate the write, and each
+      # one is load-bearing:
+      #
+      #   1. ubuntu-latest — this job only ever runs on Linux, which is the
+      #      platform the gate is pinned to. The script enforces this itself and
+      #      refuses to write from anywhere else.
+      #   2. a push to main — never a pull request and never workflow_dispatch.
+      #      A PR would record a figure for a tree that may never merge, and
+      #      workflow_dispatch can be aimed at any ref. Only main is the trunk
+      #      the ratchet is supposed to track.
+      #   3. AFTER a passing gate — this is what the step ORDER buys. Steps run
+      #      sequentially and `Enforce thresholds` above has no `continue-on-error`,
+      #      so a failing gate fails the job and this step never runs. Writing on
+      #      every run regardless of outcome would make the ratchet meaningless:
+      #      it would ratchet DOWN as readily as up, and a regression would
+      #      silently become the new floor.
+      #
+      # The result is uploaded as an artifact and diffed into the job summary; it
+      # is deliberately NOT committed back to main. Auto-committing would need
+      # `contents: write` on the same workflow that publishes images, and a push
+      # that re-triggers CI — a policy change, not a speed tweak. Landing the
+      # artifact is a review step.
+      - name: Record ratchet baseline (main push, gate already green)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/rust-coverage-gate.mjs --report llvm-cov.json --update-baseline
+          {
+            echo '### Rust coverage ratchet baseline (Linux, authoritative)'
+            echo
+            if git diff --quiet -- .github/rust-coverage-baseline.json; then
+              echo 'No change against the committed baseline.'
+            else
+              echo 'The committed baseline differs from this run. Review and land the'
+              echo '`rust-coverage-baseline` artifact to move the ratchet.'
+              echo
+              echo '```diff'
+              git diff -- .github/rust-coverage-baseline.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload recorded baseline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: rust-coverage-baseline
+          path: .github/rust-coverage-baseline.json
+          if-no-files-found: error
 
       - name: Upload report
         if: always()

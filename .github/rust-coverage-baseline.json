@@ -9,7 +9,12 @@
     "(2026-07-21, HEAD ea75441, .orchestration/logs/t75-coverage.md) and baking those into a Linux",
     "gate is exactly what the standing ruling forbids. Until the coverage job runs once on",
     "ubuntu-latest and records real numbers here, every non-hard-90 crate reports as 'no baseline'",
-    "and is not gated. The four hard-90% crates are rule-driven and need no baseline."
+    "and is not gated. The four hard-90% crates are rule-driven and need no baseline.",
+    "",
+    "The `Record ratchet baseline` step in ci.yml now produces this file on every main-branch push",
+    "whose coverage gate is already green, and uploads it as the `rust-coverage-baseline` artifact.",
+    "Landing that artifact here is what finally arms the ratchet for the 29 unbaselined crates.",
+    "It is intentionally a review step: nothing in CI pushes to main."
   ],
   "measuredOn": null,
   "measuredAt": null,
