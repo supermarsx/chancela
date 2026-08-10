@@ -408,6 +408,60 @@ pub struct ExportCleanupPreviewStore {
 /// and finally to pure in-memory state.
 pub use chancela_runtime_config::DATA_DIR_ENV;
 
+/// **The** whole-instance sidecar set: every file and directory that lives beside the database and
+/// carries instance state the database does not (t54 §2.11). Names are relative to the data dir.
+///
+/// One list, three consumers — [`AppState::instance_sidecars`] (so `POST /v1/backup`,
+/// `POST /v1/restore` and the data-management reset all agree), and the host `chancela` CLI's
+/// `backup` / `restore` / `data wipe`, which derives its set from this one via
+/// [`instance_sidecar_paths`] rather than restating it.
+///
+/// It was restated once. The CLI's copy held six names while this one held twenty-five, so
+/// `chancela backup` omitted `password-verifier-seed.json`: restoring that archive onto a clean
+/// machine brought `users.json` back without the seed the password verifier is keyed to, a fresh
+/// seed was minted at startup, and **every** account — including the recovery-phrase verifier —
+/// failed to authenticate, with the restore reported as successful. Add a sidecar here and both
+/// consumers get it; there is nowhere else to add one.
+pub const INSTANCE_SIDECAR_NAMES: &[&str] = &[
+    settings::SETTINGS_FILE,
+    platform_logs::PLATFORM_LOGS_FILE,
+    attestation::VERIFIER_SEED_FILE,
+    users::USERS_FILE,
+    roles::ROLES_FILE,
+    delegations::DELEGATIONS_FILE,
+    privacy::DSR_REQUESTS_FILE,
+    privacy::PROCESSORS_FILE,
+    privacy::DPIAS_FILE,
+    privacy::BREACH_PLAYBOOKS_FILE,
+    privacy::TRANSFER_CONTROLS_FILE,
+    privacy::RETENTION_POLICIES_FILE,
+    privacy::RETENTION_EXECUTIONS_FILE,
+    privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE,
+    backup_recovery::BACKUP_RECOVERY_DRILLS_FILE,
+    notifications::NOTIFICATION_TRIAGE_FILE,
+    user_preferences::USER_PREFERENCES_FILE,
+    cmd_phone::CMD_SAVED_PHONES_FILE,
+    apikeys::API_KEYS_FILE,
+    external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE,
+    connector_jobs::CONNECTOR_TARGETS_FILE,
+    external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR,
+    chancela_cae::CACHE_FILE,
+    law::LAWS_DIR,
+    zk_repository::ZK_REPOSITORY_DIR,
+];
+
+/// [`INSTANCE_SIDECAR_NAMES`] resolved under `data_dir`, with the opaque-object root validated
+/// first: backup / restore / reset must never follow a malicious intermediate symlink out of the
+/// tree, and the validation belongs with the path list so an out-of-process caller (the CLI) cannot
+/// get the paths without it.
+pub fn instance_sidecar_paths(data_dir: &Path) -> Result<Vec<PathBuf>, ApiError> {
+    zk_repository::validate_object_root_path(&data_dir.join(zk_repository::ZK_REPOSITORY_DIR))?;
+    Ok(INSTANCE_SIDECAR_NAMES
+        .iter()
+        .map(|name| data_dir.join(name))
+        .collect())
+}
+
 /// Maximum retained saves per user-authored template. The running server resolves this once from
 /// [`TEMPLATE_HISTORY_LIMIT_ENV`]; test/embedding states use [`DEFAULT_TEMPLATE_HISTORY_LIMIT`].
 pub const TEMPLATE_HISTORY_LIMIT_ENV: &str = "CHANCELA_TEMPLATE_HISTORY_LIMIT";
@@ -913,6 +967,16 @@ pub struct AppState {
     /// report, and the recovery/reset/export/quarantine-import endpoints open so the operator can see
     /// and repair. `Default` is healthy (`false`); pure in-memory state never enters degraded.
     pub degraded: Arc<RwLock<bool>>,
+    /// The boot-time **sealed-act fixity** report: every sealed act row re-hashed and held to the
+    /// digest its seal froze, plus each book's WFL-12 ata sequencing.
+    ///
+    /// Distinct from [`chain_status`](AppState::chain_status) / the ledger's `IntegrityReport`,
+    /// which prove only that the chain is internally consistent. A chain verifies perfectly over
+    /// altered act rows; this is what notices. `!healthy` contributes to
+    /// [`degraded`](AppState::degraded) exactly like a chain break, and the report is served on
+    /// `GET /v1/ledger/integrity` so an operator can see *which* ata moved. Defaults to a healthy
+    /// empty report (nothing sealed).
+    pub act_fixity: Arc<RwLock<chancela_core::ActFixityReport>>,
     /// The live SIGNED-document read model (t57-S3): the qualified signed PDF variant + metadata per
     /// act, keyed by [`ActId`]. Mirrors `documents`: an in-memory read model backed by the durable
     /// `signed_documents` table, with the read endpoints falling back to the store on a miss.
@@ -1433,7 +1497,13 @@ impl AppState {
                     // Fail-loud gate (t54 §3.1): a broken boot chain enters DEGRADED read-only mode
                     // instead of silently booting as if healthy. Reads + recovery stay open; ordinary
                     // mutations return 503 until a restore / re-anchor / factory reset repairs it.
-                    let healthy = loaded.integrity.healthy;
+                    //
+                    // The act **fixity** report gates it identically. A verifying chain proves only
+                    // that some payload with digest D was sealed at that position; if the stored ata
+                    // no longer hashes to D its substance has been altered under a green chain, and
+                    // that is at least as serious as a chain break — the whole product is the claim
+                    // that the document you are reading is the one that was sealed.
+                    let healthy = loaded.integrity.healthy && loaded.act_fixity.healthy;
                     if let Err(e) = &loaded.chain_status {
                         eprintln!(
                             "chancela-store: ledger chain integrity check FAILED on boot ({e}) — \
@@ -1442,6 +1512,38 @@ impl AppState {
                              inspect and repair; ordinary mutations are blocked with 503"
                         );
                     }
+                    if !loaded.act_fixity.healthy {
+                        eprintln!(
+                            "chancela-store: SEALED ACT FIXITY CHECK FAILED on boot — {} \
+                             sealed act(s) no longer hash to the digest their seal froze, and/or \
+                             {} ata-numbering defect(s) were found ({}). Entering DEGRADED \
+                             read-only mode: the stored content of a sealed ata has changed since \
+                             it was sealed, so the chain verifying proves nothing about it. \
+                             Nothing is repaired or re-sealed automatically. Findings:",
+                            loaded.act_fixity.broken,
+                            loaded.act_fixity.ata_sequence.len(),
+                            loaded.act_fixity.summary(),
+                        );
+                        for finding in &loaded.act_fixity.findings {
+                            eprintln!(
+                                "  act {} (book {}, ata {:?}): {:?}",
+                                finding.act_id, finding.book_id, finding.ata_number, finding.fixity
+                            );
+                        }
+                        for finding in &loaded.act_fixity.ata_sequence {
+                            eprintln!("  book {}: {:?}", finding.book_id, finding.issue);
+                        }
+                    } else if loaded.act_fixity.unverifiable > 0 {
+                        // Unknown is not good. It does not gate (a genuinely historical row is
+                        // indistinguishable from a stripped one), but it is never silent.
+                        eprintln!(
+                            "chancela-store: {} sealed act(s) cannot be re-verified against a \
+                             frozen digest ({}); their fixity is UNKNOWN, not confirmed",
+                            loaded.act_fixity.unverifiable,
+                            loaded.act_fixity.summary(),
+                        );
+                    }
+                    state.act_fixity = Arc::new(RwLock::new(loaded.act_fixity));
                     state.entities = Arc::new(RwLock::new(loaded.entities));
                     state.company_groups = Arc::new(RwLock::new(loaded.company_groups));
                     state.group_template_libraries =
@@ -1908,49 +2010,12 @@ impl AppState {
     }
 
     /// The whole-instance sidecar files bundled alongside the SQLite snapshot in a backup / export
-    /// archive and removed on a factory reset (t54 §2.11): `settings.json`, the password-verifier
-    /// seed config, user/RBAC/privacy/API sidecars, the CAE cache, and the `laws/` archive. Mirrors
-    /// [`backup::create_backup`]'s list.
+    /// archive and removed on a factory reset (t54 §2.11) — see [`INSTANCE_SIDECAR_NAMES`], the one
+    /// list every caller (this API, `POST /v1/backup`, and the host `chancela` CLI) derives from.
     /// Empty when in-memory.
     pub(crate) fn instance_sidecars(&self) -> Result<Vec<PathBuf>, ApiError> {
         match self.data_dir() {
-            Some(dir) => {
-                // Backup/restore must never follow a malicious intermediate symlink inside the
-                // opaque-object root. Validate the full tree before handing recursive paths to the
-                // generic archive layer.
-                zk_repository::validate_object_root_path(
-                    &dir.join(zk_repository::ZK_REPOSITORY_DIR),
-                )?;
-                Ok(vec![
-                    dir.join(crate::settings::SETTINGS_FILE),
-                    dir.join(crate::platform_logs::PLATFORM_LOGS_FILE),
-                    dir.join(crate::attestation::VERIFIER_SEED_FILE),
-                    dir.join(crate::users::USERS_FILE),
-                    dir.join(crate::roles::ROLES_FILE),
-                    dir.join(crate::delegations::DELEGATIONS_FILE),
-                    dir.join(crate::privacy::DSR_REQUESTS_FILE),
-                    dir.join(crate::privacy::PROCESSORS_FILE),
-                    dir.join(crate::privacy::DPIAS_FILE),
-                    dir.join(crate::privacy::BREACH_PLAYBOOKS_FILE),
-                    dir.join(crate::privacy::TRANSFER_CONTROLS_FILE),
-                    dir.join(crate::privacy::RETENTION_POLICIES_FILE),
-                    dir.join(crate::privacy::RETENTION_EXECUTIONS_FILE),
-                    dir.join(crate::privacy::RETENTION_CANDIDATE_RESOLUTIONS_FILE),
-                    dir.join(crate::backup_recovery::BACKUP_RECOVERY_DRILLS_FILE),
-                    dir.join(crate::notifications::NOTIFICATION_TRIAGE_FILE),
-                    dir.join(crate::user_preferences::USER_PREFERENCES_FILE),
-                    dir.join(crate::cmd_phone::CMD_SAVED_PHONES_FILE),
-                    dir.join(crate::apikeys::API_KEYS_FILE),
-                    dir.join(crate::external_signing::EXTERNAL_SIGNING_ENVELOPES_FILE),
-                    dir.join(crate::connector_jobs::CONNECTOR_TARGETS_FILE),
-                    dir.join(
-                        crate::external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR,
-                    ),
-                    dir.join(chancela_cae::CACHE_FILE),
-                    dir.join(crate::law::LAWS_DIR),
-                    dir.join(crate::zk_repository::ZK_REPOSITORY_DIR),
-                ])
-            }
+            Some(dir) => instance_sidecar_paths(&dir),
             None => Ok(Vec::new()),
         }
     }
@@ -1986,6 +2051,10 @@ impl AppState {
         *self.follow_ups.write().await = loaded.follow_ups;
         *self.registry_extracts.write().await = loaded.registry_extracts;
         *self.ledger.write().await = loaded.ledger;
+        // Replace the fixity report along with the acts it is about, BEFORE recomputing the
+        // degraded signal: a restore that brings back altered act rows must keep the gate down,
+        // and one that repairs them must be allowed to lift it.
+        *self.act_fixity.write().await = loaded.act_fixity;
         {
             let ledger = self.ledger.read().await;
             refresh_degraded(self, &ledger).await;
@@ -4077,8 +4146,33 @@ async fn degraded_gate(
 /// chain lifts the gate — and a still-broken one keeps it. Runs a full `integrity_report()`; it is
 /// only invoked on the rare recovery paths, never on the hot mutation path.
 pub(crate) async fn refresh_degraded(state: &AppState, ledger: &Ledger) {
-    let healthy = ledger.integrity_report().healthy;
+    // Both halves of "the record is intact": the chain is internally consistent, AND the sealed
+    // acts still hash to the digests it recorded. Repairing one does not lift the gate on the
+    // other — a re-anchor rebuilds chain hashes and would otherwise declare altered atas healthy.
+    //
+    // The stored report is read rather than recomputed here: every caller holds a `ledger` guard,
+    // and reaching for `state.acts` under it would invert the lock order the mutation paths take.
+    // `reload_domain_memory_with_settings_gate_held` refreshes it alongside the acts themselves.
+    let healthy = ledger.integrity_report().healthy && state.act_fixity.read().await.healthy;
     *state.degraded.write().await = !healthy;
+}
+
+/// Re-verify every in-memory sealed act against the digest its seal froze, store the report on
+/// `state`, and fold the verdict into the degraded gate.
+///
+/// The live counterpart to the boot-time pass: `GET /v1/ledger/integrity` serves this so an
+/// operator asking "is the record intact?" gets an answer about the *acts*, not only the chain.
+pub(crate) async fn refresh_act_fixity(state: &AppState) -> chancela_core::ActFixityReport {
+    let report = {
+        let acts = state.acts.read().await;
+        let books = state.books.read().await;
+        chancela_core::ActFixityReport::build(acts.values(), books.values())
+    };
+    *state.act_fixity.write().await = report.clone();
+    if !report.healthy {
+        *state.degraded.write().await = true;
+    }
+    report
 }
 
 /// Route a user-driven ledger append through the validating [`Ledger::try_append`] (t54 deliverable

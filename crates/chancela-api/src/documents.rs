@@ -4983,20 +4983,24 @@ fn classify_pades_validation(bytes: &[u8], signed_pdf_signal: bool) -> PadesVali
                 error,
             }
         }
-        Err(chancela_pades::PadesError::InvalidByteRange) => PadesValidationSignal::without_coverage(
-            "invalid",
-            true,
-            Some("signature ByteRange is malformed or points outside the file".to_owned()),
-        ),
+        Err(chancela_pades::PadesError::InvalidByteRange) => {
+            PadesValidationSignal::without_coverage(
+                "invalid",
+                true,
+                Some("signature ByteRange is malformed or points outside the file".to_owned()),
+            )
+        }
         Err(chancela_pades::PadesError::Cades(_))
-        | Err(chancela_pades::PadesError::InvalidContents) => PadesValidationSignal::without_coverage(
-            "invalid",
-            true,
-            Some(
-                "embedded signature bytes did not validate against the PDF ByteRange digest"
-                    .to_owned(),
-            ),
-        ),
+        | Err(chancela_pades::PadesError::InvalidContents) => {
+            PadesValidationSignal::without_coverage(
+                "invalid",
+                true,
+                Some(
+                    "embedded signature bytes did not validate against the PDF ByteRange digest"
+                        .to_owned(),
+                ),
+            )
+        }
         Err(chancela_pades::PadesError::NoSignature) => PadesValidationSignal::without_coverage(
             "structurally_signed",
             true,
@@ -5016,7 +5020,9 @@ fn classify_pades_validation(bytes: &[u8], signed_pdf_signal: bool) -> PadesVali
         Err(err) => PadesValidationSignal::without_coverage(
             "indeterminate",
             true,
-            Some(format!("PAdES validation did not reach a conclusion: {err}")),
+            Some(format!(
+                "PAdES validation did not reach a conclusion: {err}"
+            )),
         ),
     }
 }

@@ -2108,6 +2108,141 @@ pub(crate) const AWAITING_ROUTE: &[(ConfirmationAction, &str)] = &[
     ),
 ];
 
+// =================================================================================================
+// Declaration vs. enforcement
+// =================================================================================================
+//
+// [`ROUTE_GUARD`] says which action a route's handler(s) **must** gate on. That is a claim about a
+// handler, and until t97 nothing checked it: `ConfirmationAction::` reached only five source files
+// while the table declared 58 `Actions(..)` verdicts, and `GET /v1/confirmation-policy` reported
+// every one of them as `wired`. An operator reading that endpoint was told that e.g.
+// `data.cleanup_exports` demanded a typed `ELIMINAR EXPORTAÇÕES` when the server demanded nothing.
+//
+// The two constants below close that gap and are held to the crate's actual source by
+// `tests::handler_wiring_matches_the_source_and_nothing_sits_in_limbo`, which scans every `.rs`
+// file under `src/` for [`require_confirmation`] call sites:
+//
+// - [`HANDLER_WIRED`] is the **runtime-readable** mirror of that scan (a test cannot drive the
+//   policy endpoint, exactly as `ROUTE_CLASSIFICATION` cannot drive [`ROUTE_GUARD`]), and it is
+//   what `wired` is now derived from.
+// - [`AWAITING_HANDLER`] records the declarations that are **not** yet enforced, with the reason.
+//
+// Between them an action at an enforceable floor cannot sit in limbo: it is in one list or the
+// other, and the test refuses both "in neither" and "in both".
+
+/// **The actions a handler really gates on.** Exactly the set named at a [`require_confirmation`]
+/// call site somewhere in this crate's `src/`, asserted equal to a source scan in both directions.
+///
+/// Adding a call site without adding the action here is test-red, and so is the reverse. This is
+/// the only honest input to the policy endpoint's `wired` field.
+pub(crate) const HANDLER_WIRED: &[ConfirmationAction] = &[
+    ConfirmationAction::BookClose,
+    ConfirmationAction::TermoAberturaAdvance,
+    ConfirmationAction::TermoAberturaOpen,
+    ConfirmationAction::TermoEncerramentoAdvance,
+    ConfirmationAction::TermoEncerramentoClose,
+    ConfirmationAction::BookArchiveDisposal,
+    ConfirmationAction::CmdTestSignature,
+    ConfirmationAction::DevicePairing,
+    ConfirmationAction::TwoFactorDisable,
+    ConfirmationAction::TwoFactorBackupCodesRegenerate,
+];
+
+/// Actions [`ROUTE_GUARD`] declares at a floor the **server** can enforce
+/// (`>= ConfirmWithReauth`) whose handler does not yet call [`require_confirmation`].
+///
+/// Mirrors [`AWAITING_ROUTE`] one level down: that list is "no route reaches this action", this one
+/// is "a route reaches it but the handler does not enforce it". Both are two-way bound — an entry
+/// here must NOT be wired (so the lane that lands the call site is forced to delete its entry) and
+/// every unwired declaration at an enforceable floor MUST be here.
+///
+/// **A `Confirm`-floored action is deliberately out of scope.** [`require_confirmation`] is a no-op
+/// at `Confirm` by construction — there is no server-observable difference between "the operator
+/// accepted a dialog" and "they did not" — so "unwired" is not a *server* misstatement there. It is
+/// still visible to an operator, and honestly: those actions report `wired: false` too, because
+/// `wired` reads [`HANDLER_WIRED`] and nothing else.
+///
+/// Several entries below note that the handler already calls
+/// [`require_step_up`](crate::data::require_step_up) directly. That is not the same as being wired:
+/// it pins the action at `ConfirmWithReauth` forever, so the declared typed phrase is never asked
+/// for and an operator who raises the strictness gets no change at all.
+// Read only by the completeness test, and deliberately not `#[cfg(test)]` for the same reason
+// `AWAITING_ROUTE` is not: it is a standing statement about what is not yet enforced.
+#[allow(dead_code)]
+pub(crate) const AWAITING_HANDLER: &[(ConfirmationAction, &str)] = &[
+    (
+        ConfirmationAction::LegalHoldRelease,
+        "`books::clear_legal_hold` (`DELETE /v1/books/{id}/legal-hold`) does not call \
+         `require_confirmation`. Its body is optional and `apps/web`'s `deleteBookLegalHold` sends \
+         one with no `confirmation` object, so wiring the gate alone would `403` the release \
+         control — it needs the web change in the same change set.",
+    ),
+    (
+        ConfirmationAction::ActArchive,
+        "`acts::archive_act` (`POST /v1/acts/{id}/archive`) does not call `require_confirmation`, \
+         and `apps/web`'s `archiveAct` posts no body at all, so there is nowhere to put the proof \
+         until the client sends one.",
+    ),
+    (
+        ConfirmationAction::DataCleanupExports,
+        "`data_status::cleanup_data` (`POST /v1/data/cleanup`) calls neither \
+         `require_confirmation` nor `require_step_up`: nothing above `settings.manage` stands in \
+         front of deleting retained export archives, though the `preview_token` handshake does \
+         force a dry run first. The declared `ELIMINAR EXPORTAÇÕES` phrase is not asked for. \
+         `apps/web`'s `cleanDataStorage` posts a body with no `confirmation` object.",
+    ),
+    (
+        ConfirmationAction::LedgerReanchor,
+        "`recovery::reanchor_ledger` calls `require_step_up` directly, so the re-auth half is \
+         enforced by a hard-coded gate — but the declared `RECONSTRUIR CADEIA` phrase is never \
+         asked for and an operator-configured raise has no effect.",
+    ),
+    (
+        ConfirmationAction::LedgerRestore,
+        "`recovery::restore_store` calls `require_step_up` directly, so the re-auth half is \
+         enforced by a hard-coded gate — but the declared `RESTAURAR REGISTO` phrase is never \
+         asked for and an operator-configured raise has no effect.",
+    ),
+    (
+        ConfirmationAction::BookStartOver,
+        "`bundles::start_over_book` calls `require_step_up` directly, so the re-auth half is \
+         enforced by a hard-coded gate — but the declared `RECOMEÇAR LIVRO` phrase is never asked \
+         for and an operator-configured raise has no effect.",
+    ),
+    (
+        ConfirmationAction::DataKeyRotation,
+        "`data_status::execute_data_key_rotation` calls `require_step_up` directly, so the re-auth \
+         half is enforced by a hard-coded gate — but the declared `SUBSTITUIR CHAVE` phrase is \
+         never asked for and an operator-configured raise has no effect.",
+    ),
+    (
+        ConfirmationAction::PrivacyErasureExecute,
+        "`privacy::erasure_execute` calls `require_step_up` directly, so the re-auth half is \
+         enforced by a hard-coded gate — but the declared `APAGAR TITULAR` phrase is never asked \
+         for and an operator-configured raise has no effect.",
+    ),
+    (
+        ConfirmationAction::TrustListRefresh,
+        "`trust::refresh_trust_tsl` (`POST /v1/trust/refresh`) does not call \
+         `require_confirmation`; the route is gated by permission alone.",
+    ),
+    (
+        ConfirmationAction::RolePermissionChange,
+        "`roles::patch_role` (`PATCH /v1/roles/{id}`) does not call `require_confirmation`; the \
+         route is gated by permission alone.",
+    ),
+    (
+        ConfirmationAction::RoleDelete,
+        "`roles::delete_role` (`DELETE /v1/roles/{id}`) does not call `require_confirmation`; the \
+         route is gated by permission alone.",
+    ),
+    (
+        ConfirmationAction::RoleUnassign,
+        "`roles::unassign_role` (`DELETE /v1/users/{id}/roles`) does not call \
+         `require_confirmation`; the route is gated by permission alone.",
+    ),
+];
+
 /// Resolve a router path to its verdict.
 // t56-e0 delivers the substrate only; the surface owners (t51, t54, t56-e3/e4) add the call sites.
 // Until then this has no non-test caller.
@@ -2483,8 +2618,18 @@ pub struct ConfirmationActionPolicyView {
     pub consequence: ConfirmationConsequence,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub phrase: Option<&'static str>,
-    /// `false` while no route reaches this action yet (a sibling lane is still wiring it). The UI
-    /// must not offer to configure an action that nothing can trigger.
+    /// Whether the **server actually enforces** this action's strictness — i.e. some handler calls
+    /// `require_confirmation` for it ([`HANDLER_WIRED`], held to a source scan by the tests).
+    ///
+    /// **Deliberately not "a route in [`ROUTE_GUARD`] declares it", which is what this used to
+    /// read.** `ROUTE_GUARD` records what a handler *must* gate on; that is a requirement, not an
+    /// observation, and reporting it as `wired` told an operator that e.g. `data.cleanup_exports`
+    /// demanded a typed `ELIMINAR EXPORTAÇÕES` when the server demanded nothing. This field's whole
+    /// job is to be `false` in exactly that case, so it now reads the enforcement side.
+    ///
+    /// The UI must not offer to configure an action the server will not act on. Note that raising a
+    /// `Confirm`-floored action is only ever a client-side change even when it is wired — see
+    /// [`require_confirmation`].
     pub wired: bool,
 }
 
@@ -2508,14 +2653,8 @@ pub async fn get_confirmation_policy(
 ) -> Result<Json<ConfirmationPolicyView>, ApiError> {
     crate::roles::resolve_principal_id(&state, &actor).await?;
     let auth = state.settings.read().await.auth.clone();
-    let wired: std::collections::BTreeSet<ConfirmationAction> = ROUTE_GUARD
-        .iter()
-        .filter_map(|(_, guard)| match guard {
-            RouteGuard::Actions(actions) => Some(actions.iter().copied()),
-            RouteGuard::PreExistingGate(_) | RouteGuard::NotGuarded(_) => None,
-        })
-        .flatten()
-        .collect();
+    let wired: std::collections::BTreeSet<ConfirmationAction> =
+        HANDLER_WIRED.iter().copied().collect();
     let actions = ConfirmationAction::ALL
         .iter()
         .map(|&action| ConfirmationActionPolicyView {
@@ -2748,6 +2887,247 @@ mod tests {
                 "{path}: reason should read as a sentence: {reason:?}"
             );
         }
+    }
+
+    // =============================================================================================
+    // Declaration vs. enforcement: `RouteGuard::Actions` must describe the handlers
+    // =============================================================================================
+
+    /// Every `.rs` file under the crate's `src/`, as `(relative path, source)`.
+    ///
+    /// **A directory walk, not a hand-listed `include_str!` set.** A call site in a file nobody
+    /// remembered to list is invisible, and so is a whole new handler module — a gate this test
+    /// cannot see is a gate it cannot check — so the file set is derived rather than transcribed.
+    /// `CARGO_MANIFEST_DIR` is a compile-time constant, so this does not depend on the working
+    /// directory the test runs in.
+    ///
+    /// The sibling `authz::tests::every_step_up_annotation_names_a_handler_that_actually_steps_up`
+    /// had exactly that defect when this was written — it claimed crate coverage while reading nine
+    /// named files — and was widened the same day, so both scans now derive their file set. The
+    /// two walks are deliberately left separate for now rather than sharing a helper; that is a
+    /// follow-up, noted here so it is not mistaken for an oversight.
+    fn crate_sources() -> Vec<(String, String)> {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut stack = vec![root.clone()];
+        let mut out = Vec::new();
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("src/ must be readable") {
+                let path = entry.expect("readable dir entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                // This file *names* every action — in the table, in `phrase()`, in the doc
+                // comments. Only handlers count as enforcement.
+                if path.file_name().and_then(|n| n.to_str()) == Some("confirmation.rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path)
+                    .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+                    .replace("\r\n", "\n");
+                let rel = path
+                    .strip_prefix(&root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                out.push((rel, text));
+            }
+        }
+        out.sort();
+        assert!(
+            out.len() >= 50,
+            "the src/ walk found only {} file(s) — it is not seeing the crate",
+            out.len()
+        );
+        out
+    }
+
+    /// Drop the trailing unit-test module, so a `require_confirmation` call inside a test cannot be
+    /// mistaken for a handler gating on it.
+    ///
+    /// Anchored on the attribute **alone on its own line** — a `#[cfg(test)]` written inside a doc
+    /// comment or prose is indented or prefixed and does not match, which is the failure mode that
+    /// would silently empty the scanned set.
+    fn without_test_modules(src: &str) -> &str {
+        match src.find("\n#[cfg(test)]\n") {
+            Some(at) => &src[..at],
+            None => src,
+        }
+    }
+
+    /// The actions named at a `require_confirmation(..)` call site, and where.
+    ///
+    /// The variant name is read back through `Debug`, which is derived, so this cannot drift from
+    /// the enum the way a hand-written name table would.
+    fn actions_gated_in_handlers() -> BTreeMap<ConfirmationAction, BTreeSet<String>> {
+        const CALL: &str = "require_confirmation(";
+        let by_variant: BTreeMap<String, ConfirmationAction> = ConfirmationAction::ALL
+            .iter()
+            .map(|a| (format!("{a:?}"), *a))
+            .collect();
+
+        let mut found: BTreeMap<ConfirmationAction, BTreeSet<String>> = BTreeMap::new();
+        for (file, full) in crate_sources() {
+            let src = without_test_modules(&full);
+            let mut from = 0;
+            while let Some(at) = src[from..].find(CALL) {
+                let call = from + at;
+                from = call + CALL.len();
+                // Prose mentioning the function is not a call site.
+                let line_start = src[..call].rfind('\n').map_or(0, |n| n + 1);
+                let line = src[line_start..].lines().next().unwrap_or("").trim_start();
+                if line.starts_with("//") || line.starts_with('*') {
+                    continue;
+                }
+                // The action is the first `ConfirmationAction::X` in the argument list.
+                let window = &src[from..src.len().min(from + 400)];
+                let Some(m) = window.find("ConfirmationAction::") else {
+                    panic!(
+                        "{file}: a require_confirmation call site names no ConfirmationAction \
+                         within 400 bytes — this scan cannot tell what it gates on"
+                    );
+                };
+                let rest = &window[m + "ConfirmationAction::".len()..];
+                let end = rest
+                    .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                    .unwrap_or(rest.len());
+                let variant = &rest[..end];
+                let action = by_variant.get(variant).copied().unwrap_or_else(|| {
+                    panic!("{file}: require_confirmation names unknown action {variant}")
+                });
+                found.entry(action).or_default().insert(file.clone());
+            }
+        }
+        found
+    }
+
+    /// Every action declared by a `RouteGuard::Actions(..)` entry, with the route that declares it.
+    fn declared_actions() -> BTreeMap<ConfirmationAction, BTreeSet<&'static str>> {
+        let mut out: BTreeMap<ConfirmationAction, BTreeSet<&'static str>> = BTreeMap::new();
+        for (path, guard) in ROUTE_GUARD {
+            if let RouteGuard::Actions(actions) = guard {
+                for action in *actions {
+                    out.entry(*action).or_default().insert(path);
+                }
+            }
+        }
+        out
+    }
+
+    /// **`RouteGuard::Actions` must describe the handlers, not merely require them (t97).**
+    ///
+    /// `RouteGuard::Actions` is documented as "the route's handler(s) **must** gate on one of these
+    /// actions". Nothing checked it, and it decayed exactly as unchecked claims do: 58 declarations,
+    /// 10 call sites, and `GET /v1/confirmation-policy` reporting all 58 as `wired` — telling an
+    /// operator a typed phrase stood in front of an act where the server asked for nothing. This is
+    /// the analogue of `authz::tests::every_step_up_annotation_names_a_handler_that_actually_steps_up`
+    /// for the confirmation table.
+    ///
+    /// Three bindings, so nothing can sit in limbo:
+    ///
+    /// 1. [`HANDLER_WIRED`] equals the scanned call sites, **both ways** — it is what the policy
+    ///    endpoint reports, so a stale entry there is the misstatement in a new place.
+    /// 2. Every declaration at a floor the server can enforce is wired **or** in
+    ///    [`AWAITING_HANDLER`].
+    /// 3. Nothing in [`AWAITING_HANDLER`] is wired, and every entry there is a real declaration at
+    ///    an enforceable floor.
+    #[test]
+    fn handler_wiring_matches_the_source_and_nothing_sits_in_limbo() {
+        let gated = actions_gated_in_handlers();
+        let declared = declared_actions();
+        let scanned: BTreeSet<ConfirmationAction> = gated.keys().copied().collect();
+
+        // --- 1. The runtime mirror is the truth ---------------------------------------------
+        let mirrored: BTreeSet<ConfirmationAction> = HANDLER_WIRED.iter().copied().collect();
+        assert_eq!(
+            mirrored.len(),
+            HANDLER_WIRED.len(),
+            "HANDLER_WIRED lists an action twice"
+        );
+        let unlisted: Vec<&str> = scanned.difference(&mirrored).map(|a| a.as_str()).collect();
+        assert!(
+            unlisted.is_empty(),
+            "HANDLER_WIRED is missing {unlisted:?} — a handler calls require_confirmation for \
+             them, but GET /v1/confirmation-policy still reports them as not enforced. Add them \
+             (and delete any AWAITING_HANDLER entry)."
+        );
+        let overclaimed: Vec<&str> = mirrored.difference(&scanned).map(|a| a.as_str()).collect();
+        assert!(
+            overclaimed.is_empty(),
+            "HANDLER_WIRED claims {overclaimed:?} are enforced but no require_confirmation call \
+             site in src/ names them. The policy endpoint would tell an operator a gate is armed \
+             when it is not — wire the handler or remove the claim."
+        );
+
+        // --- 2. Nothing declared at an enforceable floor is silently unenforced -------------
+        let awaiting: BTreeSet<ConfirmationAction> =
+            AWAITING_HANDLER.iter().map(|(a, _)| *a).collect();
+        assert_eq!(
+            awaiting.len(),
+            AWAITING_HANDLER.len(),
+            "AWAITING_HANDLER lists an action twice"
+        );
+        for (action, routes) in &declared {
+            if action.floor() < ConfirmationStrictness::ConfirmWithReauth {
+                continue;
+            }
+            assert!(
+                scanned.contains(action) || awaiting.contains(action),
+                "{} is declared at {:?} by {routes:?} but no handler calls require_confirmation \
+                 for it and it is not in AWAITING_HANDLER. The table claims a gate the server does \
+                 not apply — wire the handler, or record why not.",
+                action.as_str(),
+                action.floor()
+            );
+        }
+
+        // --- 3. The awaiting list is neither stale nor invented -----------------------------
+        for (action, why) in AWAITING_HANDLER {
+            assert!(
+                !scanned.contains(action),
+                "{} is in AWAITING_HANDLER ({why}) but {:?} now calls require_confirmation for it \
+                 — delete the entry and add it to HANDLER_WIRED",
+                action.as_str(),
+                gated.get(action).expect("just checked it is scanned")
+            );
+            let routes = declared.get(action).unwrap_or_else(|| {
+                panic!(
+                    "{} is in AWAITING_HANDLER but no ROUTE_GUARD entry declares it — it belongs \
+                     in AWAITING_ROUTE, not here",
+                    action.as_str()
+                )
+            });
+            assert!(
+                action.floor() >= ConfirmationStrictness::ConfirmWithReauth,
+                "{} is floored at {:?} ({routes:?}); require_confirmation is a no-op below \
+                 ConfirmWithReauth, so there is no server gate for this list to be awaiting",
+                action.as_str(),
+                action.floor()
+            );
+            assert!(
+                why.len() >= 30 && (why.ends_with('.') || why.ends_with('`')),
+                "{}: the recorded reason is too thin to review: {why:?}",
+                action.as_str()
+            );
+        }
+    }
+
+    /// The scan is only worth anything if it can see a gate that is really there. Pin one known
+    /// call site by name so an accidentally-empty walk (a bad root, an over-eager `#[cfg(test)]`
+    /// split) fails here with a legible reason rather than silently reporting "nothing is wired".
+    #[test]
+    fn the_handler_scan_finds_a_known_call_site() {
+        let gated = actions_gated_in_handlers();
+        let files = gated
+            .get(&ConfirmationAction::BookClose)
+            .expect("books::close_book calls require_confirmation(.., BookClose, ..)");
+        assert!(
+            files.contains("books.rs"),
+            "BookClose was found in {files:?}, not books.rs — the scan is reading something else"
+        );
     }
 
     /// The new endpoint must itself be classified, or it would be the one route in the app that
