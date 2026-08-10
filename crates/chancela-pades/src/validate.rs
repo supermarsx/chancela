@@ -407,10 +407,9 @@ fn xref_table_frees_nothing(body: &[u8]) -> bool {
         let Some(first_token) = tokens.next() else {
             return true;
         };
-        let (Some(first), Some(count)) = (
-            ascii_u32(first_token),
-            tokens.next().and_then(ascii_u32),
-        ) else {
+        let (Some(first), Some(count)) =
+            (ascii_u32(first_token), tokens.next().and_then(ascii_u32))
+        else {
             return false;
         };
         for i in 0..count {
@@ -454,7 +453,10 @@ fn trailer_key_integer(trailer: &[u8], key: &[u8]) -> Option<usize> {
     while i < trailer.len() && trailer[i].is_ascii_digit() {
         i += 1;
     }
-    std::str::from_utf8(trailer.get(start..i)?).ok()?.parse().ok()
+    std::str::from_utf8(trailer.get(start..i)?)
+        .ok()?
+        .parse()
+        .ok()
 }
 
 /// Whether the document catalog the *latest* trailer names is the one the signed revision named.

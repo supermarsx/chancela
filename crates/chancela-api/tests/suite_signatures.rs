@@ -17,6 +17,8 @@ mod external_signing_envelopes;
 mod ltv;
 #[path = "official_signature_import.rs"]
 mod official_signature_import;
+#[path = "pades_coverage_agreement.rs"]
+mod pades_coverage_agreement;
 #[path = "signing_configure_gate.rs"]
 mod signing_configure_gate;
 #[path = "trust_anchor_suggestions.rs"]

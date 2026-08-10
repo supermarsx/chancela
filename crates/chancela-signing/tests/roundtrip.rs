@@ -301,6 +301,134 @@ fn tampered_content_digest_fails_cades_validation() {
 // --- PAdES round-trips ---------------------------------------------------------------------------
 
 #[test]
+fn pades_coverage_separates_benign_ltv_augmentation_from_a_later_tamper() {
+    // `covers_whole_file` reads `false` for both a legitimate B-LT signature (its `/DSS` revision
+    // follows the signed one by design) and an incremental-update tamper. Before finding W11 that
+    // was the only coverage signal this report carried, so consumers could not tell them apart.
+    let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
+    let mut env = SignatureEnvelope::new(
+        SigningOrder::Parallel,
+        vec![request(
+            SigningFamily::CartaoDeCidadao,
+            SignatureFormat::PAdES,
+            BaselineProfile::B_B,
+        )],
+    );
+    sign_slot(
+        &mut env,
+        0,
+        SigningJob {
+            provider: &provider,
+            policy: None,
+            tsa: None,
+            input: DocumentInput::Pdf(&base_pdf()),
+            signing_time: fixed_time(),
+            pdf_options: SignOptions::default(),
+        },
+    )
+    .expect("sign PAdES");
+    let signed = env.artifacts[0].signature.clone();
+
+    let evidence = chancela_signing::DssEvidence {
+        certificates: vec![provider.signing_certificate_der().unwrap()],
+        ocsp_responses: vec![vec![0x30, 0x03, 0x02, 0x01, 0x05]],
+        crls: vec![],
+    };
+    let augmented =
+        chancela_pades::add_dss_revision(&signed, &evidence).expect("append DSS revision");
+    let tampered = append_page_override(&signed);
+
+    for (label, bytes) in [("augmented", &augmented), ("tampered", &tampered)] {
+        let artifact = SignatureArtifact {
+            signature: bytes.clone(),
+            ..env.artifacts[0].clone()
+        };
+        let report = validate_signature(&artifact, None).expect("validate PAdES");
+        assert!(
+            report.cryptographically_valid,
+            "{label}: CMS still verifies"
+        );
+        assert_eq!(
+            report.covers_whole_file,
+            Some(false),
+            "{label}: both shapes look identical through covers_whole_file"
+        );
+    }
+
+    let augmented_report = validate_signature(
+        &SignatureArtifact {
+            signature: augmented,
+            ..env.artifacts[0].clone()
+        },
+        None,
+    )
+    .expect("validate B-LT");
+    assert_eq!(
+        augmented_report.pdf_coverage,
+        Some(chancela_signing::PdfSignatureCoverage::LtvAugmentedSignedRevision)
+    );
+    assert!(
+        augmented_report
+            .pdf_coverage
+            .is_some_and(chancela_signing::PdfSignatureCoverage::covers_rendered_document)
+    );
+
+    let tampered_report = validate_signature(
+        &SignatureArtifact {
+            signature: tampered,
+            ..env.artifacts[0].clone()
+        },
+        None,
+    )
+    .expect("validate tampered PDF");
+    assert_eq!(
+        tampered_report.pdf_coverage,
+        Some(chancela_signing::PdfSignatureCoverage::AlteredAfterSigning)
+    );
+    assert!(
+        !tampered_report
+            .pdf_coverage
+            .is_some_and(chancela_signing::PdfSignatureCoverage::covers_rendered_document)
+    );
+}
+
+/// Append an incremental update redefining the page object of [`base_pdf`], so a reader renders a
+/// page the signature never covered.
+fn append_page_override(pdf: &[u8]) -> Vec<u8> {
+    let marker = pdf
+        .windows(b"startxref".len())
+        .rposition(|w| w == b"startxref")
+        .expect("startxref");
+    let mut i = marker + b"startxref".len();
+    while i < pdf.len() && pdf[i].is_ascii_whitespace() {
+        i += 1;
+    }
+    let start = i;
+    while i < pdf.len() && pdf[i].is_ascii_digit() {
+        i += 1;
+    }
+    let prev_startxref: usize = std::str::from_utf8(&pdf[start..i])
+        .expect("utf8")
+        .parse()
+        .expect("startxref offset");
+
+    let mut out = pdf.to_vec();
+    let obj_offset = out.len() + 1;
+    out.extend_from_slice(b"\n");
+    out.extend_from_slice(
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 72 72] /Resources << >> >>\nendobj\n",
+    );
+    let xref_offset = out.len();
+    out.extend_from_slice(
+        format!(
+            "xref\n3 1\n{obj_offset:010} 00000 n\r\ntrailer\n<< /Size 64 /Root 1 0 R /Prev {prev_startxref} >>\nstartxref\n{xref_offset}\n%%EOF\n"
+        )
+        .as_bytes(),
+    );
+    out
+}
+
+#[test]
 fn pades_b_b_round_trip_rsa() {
     let provider = rsa_provider(SigningFamily::CartaoDeCidadao);
     let pdf = base_pdf();
@@ -336,6 +464,18 @@ fn pades_b_b_round_trip_rsa() {
     let report = validate_signature(artifact, None).expect("validate PAdES");
     assert!(report.cryptographically_valid);
     assert_eq!(report.covers_whole_file, Some(true));
+    // The coverage verdict is carried through, not collapsed into `covers_whole_file`: a caller
+    // must be able to tell benign LTV augmentation from an incremental-update tamper, and
+    // `covers_whole_file` reads `false` for both (finding W11).
+    assert_eq!(
+        report.pdf_coverage,
+        Some(chancela_signing::PdfSignatureCoverage::WholeDocument)
+    );
+    assert!(
+        report
+            .pdf_coverage
+            .is_some_and(chancela_signing::PdfSignatureCoverage::covers_rendered_document)
+    );
     assert!(!report.has_signature_timestamp);
     assert_eq!(report.evidentiary_level, EvidentiaryLevel::Qualified);
     assert_eq!(
