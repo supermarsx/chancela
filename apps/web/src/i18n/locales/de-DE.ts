@@ -1822,6 +1822,16 @@ export const deDE: Catalog = {
   'users.totp.code.hint': 'Geben Sie den von der App angezeigten 6-stelligen Code ein.',
   'users.totp.code.wrong': 'Falscher Code. Versuchen Sie es erneut.',
   'users.totp.disable': 'Zwei-Faktor deaktivieren',
+  'users.totp.disable.title': 'Zwei-Faktor-Authentifizierung deaktivieren?',
+  'users.totp.disable.consequence':
+    'Das Konto verlangt bei der Anmeldung keinen zweiten Faktor mehr, und die aktuellen Wiederherstellungscodes werden ungültig. Sie können sie jederzeit durch erneute Einrichtung wieder aktivieren.',
+  'users.totp.disable.confirm': 'Deaktivieren',
+  'users.totp.disable.pending': 'Wird deaktiviert…',
+  'users.totp.backup.regenerate.title': 'Neue Wiederherstellungscodes ausstellen?',
+  'users.totp.backup.regenerate.consequence':
+    'Die von Ihnen gedruckten oder gespeicherten Codes werden ungültig, sobald die neuen ausgestellt sind. Die neuen werden nur einmal angezeigt.',
+  'users.totp.backup.regenerate.confirm': 'Neue Codes ausstellen',
+  'users.totp.backup.regenerate.pending': 'Wird ausgestellt…',
   'users.totp.disabled': 'Zwei-Faktor deaktiviert.',
   'users.totp.backup.title': 'Sichern Sie Ihre Backup-Codes',
   'users.totp.backup.body':

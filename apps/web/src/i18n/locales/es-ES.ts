@@ -1808,6 +1808,16 @@ export const esES: Catalog = {
   'users.totp.code.hint': 'Introduzca el código de 6 dígitos que muestra la aplicación.',
   'users.totp.code.wrong': 'Código incorrecto. Inténtelo de nuevo.',
   'users.totp.disable': 'Desactivar dos factores',
+  'users.totp.disable.title': '¿Desactivar la verificación en dos pasos?',
+  'users.totp.disable.consequence':
+    'La cuenta dejará de pedir un segundo factor al iniciar sesión y los códigos de recuperación actuales dejarán de servir. Puede volver a activarla cuando quiera, registrándola de nuevo.',
+  'users.totp.disable.confirm': 'Desactivar',
+  'users.totp.disable.pending': 'Desactivando…',
+  'users.totp.backup.regenerate.title': '¿Emitir códigos de recuperación nuevos?',
+  'users.totp.backup.regenerate.consequence':
+    'Los códigos que imprimió o guardó dejarán de funcionar en cuanto se emitan los nuevos. Los nuevos se muestran una sola vez.',
+  'users.totp.backup.regenerate.confirm': 'Emitir códigos nuevos',
+  'users.totp.backup.regenerate.pending': 'Emitiendo…',
   'users.totp.disabled': 'Dos factores desactivados.',
   'users.totp.backup.title': 'Guarde sus códigos de recuperación',
   'users.totp.backup.body':

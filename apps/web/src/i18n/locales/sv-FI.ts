@@ -1806,6 +1806,16 @@ export const svFI: Catalog = {
   'users.totp.code.hint': 'Ange den 6-siffriga koden som appen visar.',
   'users.totp.code.wrong': 'Fel kod. Försök igen.',
   'users.totp.disable': 'Inaktivera tvåfaktor',
+  'users.totp.disable.title': 'Stänga av tvåfaktorsautentisering?',
+  'users.totp.disable.consequence':
+    'Kontot slutar begära en andra faktor vid inloggning och de nuvarande återställningskoderna slutar fungera. Du kan slå på den igen när som helst genom att registrera den på nytt.',
+  'users.totp.disable.confirm': 'Stäng av',
+  'users.totp.disable.pending': 'Stänger av…',
+  'users.totp.backup.regenerate.title': 'Utfärda nya återställningskoder?',
+  'users.totp.backup.regenerate.consequence':
+    'Koderna du skrivit ut eller sparat slutar fungera i samma stund som de nya utfärdas. De nya visas endast en gång.',
+  'users.totp.backup.regenerate.confirm': 'Utfärda nya koder',
+  'users.totp.backup.regenerate.pending': 'Utfärdar…',
   'users.totp.disabled': 'Tvåfaktor inaktiverad.',
   'users.totp.backup.title': 'Spara dina reservkoder',
   'users.totp.backup.body':

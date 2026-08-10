@@ -1798,6 +1798,16 @@ export const enGB: Catalog = {
   'users.totp.code.hint': 'Enter the 6-digit code shown by the app.',
   'users.totp.code.wrong': 'Incorrect code. Try again.',
   'users.totp.disable': 'Turn off two-factor',
+  'users.totp.disable.title': 'Turn off two-factor authentication?',
+  'users.totp.disable.consequence':
+    'The account will stop asking for a second factor at sign-in, and the current recovery codes stop working. You can turn it back on at any time by enrolling again.',
+  'users.totp.disable.confirm': 'Turn off',
+  'users.totp.disable.pending': 'Turning off…',
+  'users.totp.backup.regenerate.title': 'Issue new recovery codes?',
+  'users.totp.backup.regenerate.consequence':
+    'The codes you printed or saved stop working the moment the new ones are issued. The new codes are shown once.',
+  'users.totp.backup.regenerate.confirm': 'Issue new codes',
+  'users.totp.backup.regenerate.pending': 'Issuing…',
   'users.totp.disabled': 'Two-factor turned off.',
   'users.totp.backup.title': 'Save your backup codes',
   'users.totp.backup.body':

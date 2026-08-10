@@ -885,6 +885,12 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'email ou referência opcional',
     'Emissor',
     'Emissor autenticado',
+    // The two-factor recovery-code dialog. "Emitir", "novos", "códigos" and "recuperação" are the
+    // ordinary words in both variants, so the confirm label and its title coincide exactly. The
+    // surrounding pt-BR copy is genuinely Brazilian throughout ("duas etapas", "Emitindo…", "você
+    // imprimiu"), which is what marks these two as cognates rather than an untranslated gap.
+    'Emitir novos códigos',
+    'Emitir novos códigos de recuperação?',
     'Encerramento do exercício',
     'Encosto Estratégico, Lda.',
     'Endereço',

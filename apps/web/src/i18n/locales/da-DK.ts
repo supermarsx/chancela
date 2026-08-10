@@ -1800,6 +1800,16 @@ export const daDK: Catalog = {
   'users.totp.code.hint': 'Indtast den 6-cifrede kode, appen viser.',
   'users.totp.code.wrong': 'Forkert kode. Prøv igen.',
   'users.totp.disable': 'Deaktivér tofaktor',
+  'users.totp.disable.title': 'Slå tofaktorgodkendelse fra?',
+  'users.totp.disable.consequence':
+    'Kontoen beder ikke længere om en anden faktor ved login, og de nuværende gendannelseskoder holder op med at virke. Du kan slå den til igen når som helst ved at tilmelde dig på ny.',
+  'users.totp.disable.confirm': 'Slå fra',
+  'users.totp.disable.pending': 'Slår fra…',
+  'users.totp.backup.regenerate.title': 'Udsted nye gendannelseskoder?',
+  'users.totp.backup.regenerate.consequence':
+    'De koder, du har udskrevet eller gemt, holder op med at virke i det øjeblik de nye udstedes. De nye vises kun én gang.',
+  'users.totp.backup.regenerate.confirm': 'Udsted nye koder',
+  'users.totp.backup.regenerate.pending': 'Udsteder…',
   'users.totp.disabled': 'Tofaktor deaktiveret.',
   'users.totp.backup.title': 'Gem dine gendannelseskoder',
   'users.totp.backup.body':

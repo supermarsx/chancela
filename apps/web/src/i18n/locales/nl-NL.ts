@@ -1809,6 +1809,16 @@ export const nlNL: Catalog = {
   'users.totp.code.hint': 'Voer de 6-cijferige code in die de app toont.',
   'users.totp.code.wrong': 'Onjuiste code. Probeer het opnieuw.',
   'users.totp.disable': 'Tweefactor uitschakelen',
+  'users.totp.disable.title': 'Tweefactorauthenticatie uitschakelen?',
+  'users.totp.disable.consequence':
+    'Het account vraagt bij het aanmelden niet langer om een tweede factor en de huidige herstelcodes werken niet meer. U kunt het altijd opnieuw inschakelen door zich opnieuw te registreren.',
+  'users.totp.disable.confirm': 'Uitschakelen',
+  'users.totp.disable.pending': 'Uitschakelen…',
+  'users.totp.backup.regenerate.title': 'Nieuwe herstelcodes uitgeven?',
+  'users.totp.backup.regenerate.consequence':
+    'De codes die u hebt afgedrukt of bewaard werken niet meer zodra de nieuwe zijn uitgegeven. De nieuwe worden eenmalig getoond.',
+  'users.totp.backup.regenerate.confirm': 'Nieuwe codes uitgeven',
+  'users.totp.backup.regenerate.pending': 'Bezig met uitgeven…',
   'users.totp.disabled': 'Tweefactor uitgeschakeld.',
   'users.totp.backup.title': 'Bewaar uw back-upcodes',
   'users.totp.backup.body':

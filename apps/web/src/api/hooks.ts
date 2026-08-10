@@ -3012,7 +3012,7 @@ export function useConfirmTotp(id: string) {
 export function useDisableTotp(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.disableTotp(id),
+    mutationFn: (reauth: ReAuth) => api.disableTotp(id, reauth),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
       void qc.invalidateQueries({ queryKey: keys.users });
@@ -3026,7 +3026,7 @@ export function useDisableTotp(id: string) {
 export function useRegenerateBackupCodes(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.regenerateBackupCodes(id),
+    mutationFn: (reauth: ReAuth) => api.regenerateBackupCodes(id, reauth),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: keys.userTwoFactor(id) });
     },

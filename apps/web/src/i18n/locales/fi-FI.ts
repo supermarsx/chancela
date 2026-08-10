@@ -1800,6 +1800,16 @@ export const fiFI: Catalog = {
   'users.totp.code.hint': 'Syötä sovelluksen näyttämä 6-numeroinen koodi.',
   'users.totp.code.wrong': 'Virheellinen koodi. Yritä uudelleen.',
   'users.totp.disable': 'Poista kaksivaiheinen käytöstä',
+  'users.totp.disable.title': 'Poistetaanko kaksivaiheinen tunnistautuminen käytöstä?',
+  'users.totp.disable.consequence':
+    'Tili ei enää pyydä toista tekijää kirjautumisessa, ja nykyiset palautuskoodit lakkaavat toimimasta. Voit ottaa sen uudelleen käyttöön milloin tahansa rekisteröimällä sen uudelleen.',
+  'users.totp.disable.confirm': 'Poista käytöstä',
+  'users.totp.disable.pending': 'Poistetaan käytöstä…',
+  'users.totp.backup.regenerate.title': 'Myönnetäänkö uudet palautuskoodit?',
+  'users.totp.backup.regenerate.consequence':
+    'Tulostamasi tai tallentamasi koodit lakkaavat toimimasta sillä hetkellä, kun uudet myönnetään. Uudet näytetään vain kerran.',
+  'users.totp.backup.regenerate.confirm': 'Myönnä uudet koodit',
+  'users.totp.backup.regenerate.pending': 'Myönnetään…',
   'users.totp.disabled': 'Kaksivaiheinen poistettu käytöstä.',
   'users.totp.backup.title': 'Tallenna varakoodisi',
   'users.totp.backup.body':

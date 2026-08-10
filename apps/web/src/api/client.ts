@@ -237,6 +237,7 @@ import type {
   FinishPasskeyEnrolmentBody,
   FinishPrfWrapBody,
   RenamePasskeyBody,
+  ReAuth,
   RevokePasskeyBody,
   PasskeySignInBody,
   SessionListResponse,
@@ -1790,9 +1791,17 @@ export const api = {
   enrolTotp: (id: string) => post<TotpEnrolment>(`/v1/users/${id}/two-factor/totp/enrol`, {}),
   confirmTotp: (id: string, body: TotpConfirmBody) =>
     post<BackupCodes>(`/v1/users/${id}/two-factor/totp/confirm`, body),
-  disableTotp: (id: string) => del<UserView>(`/v1/users/${id}/two-factor/totp`),
-  regenerateBackupCodes: (id: string) =>
-    post<BackupCodes>(`/v1/users/${id}/two-factor/backup-codes`, {}),
+  // Both carry a step-up proof: destroying the second factor, or voiding the printed backup codes
+  // and issuing new ones, must not ride a session alone — the same rule `revokePasskey` follows.
+  //
+  // NOTE the envelope differs from the passkey route's. These take `{ confirmation: { reauth } }`
+  // (the server's `TwoFactorConfirmation` wraps a `ConfirmationProof`), where `revokePasskey` takes
+  // a bare `reauth`. Sending the passkey shape here `#[serde(default)]`s to an empty proof and 403s
+  // with no hint as to why, which is exactly how these two endpoints shipped unusable.
+  disableTotp: (id: string, reauth: ReAuth) =>
+    del<UserView>(`/v1/users/${id}/two-factor/totp`, { confirmation: { reauth } }),
+  regenerateBackupCodes: (id: string, reauth: ReAuth) =>
+    post<BackupCodes>(`/v1/users/${id}/two-factor/backup-codes`, { confirmation: { reauth } }),
   // Passkeys (t10). The LIST is self-or-`user.manage`; enrol, rename and revoke are self-only and
   // refused in the handler, so the UI must not offer them cross-user. Every credential id is path
   // data and is base64url — which contains `-` and `_` but never `/` or `+` — so

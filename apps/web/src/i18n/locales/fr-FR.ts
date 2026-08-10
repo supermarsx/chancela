@@ -1820,6 +1820,16 @@ export const frFR: Catalog = {
   'users.totp.code.hint': 'Saisissez le code à 6 chiffres affiché par l’application.',
   'users.totp.code.wrong': 'Code incorrect. Réessayez.',
   'users.totp.disable': 'Désactiver les deux facteurs',
+  'users.totp.disable.title': 'Désactiver la double authentification ?',
+  'users.totp.disable.consequence':
+    'Le compte cessera de demander un second facteur à la connexion et les codes de récupération actuels ne fonctionneront plus. Vous pourrez la réactiver à tout moment en vous réinscrivant.',
+  'users.totp.disable.confirm': 'Désactiver',
+  'users.totp.disable.pending': 'Désactivation…',
+  'users.totp.backup.regenerate.title': 'Émettre de nouveaux codes de récupération ?',
+  'users.totp.backup.regenerate.consequence':
+    'Les codes que vous avez imprimés ou enregistrés cesseront de fonctionner dès que les nouveaux seront émis. Les nouveaux ne sont affichés qu’une seule fois.',
+  'users.totp.backup.regenerate.confirm': 'Émettre de nouveaux codes',
+  'users.totp.backup.regenerate.pending': 'Émission…',
   'users.totp.disabled': 'Deux facteurs désactivés.',
   'users.totp.backup.title': 'Enregistrez vos codes de secours',
   'users.totp.backup.body':

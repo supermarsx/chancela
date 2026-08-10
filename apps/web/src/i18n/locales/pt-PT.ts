@@ -1844,6 +1844,16 @@ export const ptPT: Catalog = {
   'users.totp.code.hint': 'Introduza o código de 6 dígitos apresentado pela aplicação.',
   'users.totp.code.wrong': 'Código incorreto. Tente novamente.',
   'users.totp.disable': 'Desativar dois fatores',
+  'users.totp.disable.title': 'Desativar a verificação em dois passos?',
+  'users.totp.disable.consequence':
+    'A conta deixa de exigir um segundo fator ao iniciar sessão e os códigos de recuperação atuais deixam de servir. Pode voltar a ativar quando quiser, com uma nova inscrição.',
+  'users.totp.disable.confirm': 'Desativar',
+  'users.totp.disable.pending': 'A desativar…',
+  'users.totp.backup.regenerate.title': 'Emitir novos códigos de recuperação?',
+  'users.totp.backup.regenerate.consequence':
+    'Os códigos que imprimiu ou guardou deixam de funcionar no momento em que os novos forem emitidos. Os novos são mostrados uma única vez.',
+  'users.totp.backup.regenerate.confirm': 'Emitir novos códigos',
+  'users.totp.backup.regenerate.pending': 'A emitir…',
   'users.totp.disabled': 'Dois fatores desativados.',
   'users.totp.backup.title': 'Guarde os códigos de recuperação',
   'users.totp.backup.body':

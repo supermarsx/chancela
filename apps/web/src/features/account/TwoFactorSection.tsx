@@ -44,9 +44,19 @@ import {
   useUpdateUser,
 } from '../../api/hooks';
 import { ApiError } from '../../api/client';
-import type { UserView } from '../../api/types';
+import type { ReAuth, UserView } from '../../api/types';
 import { useT } from '../../i18n';
-import { Badge, Button, Card, Field, Icon, InlineWarning, Input, useToast } from '../../ui';
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmActionModal,
+  Field,
+  Icon,
+  InlineWarning,
+  Input,
+  useToast,
+} from '../../ui';
 import { QrCode } from '../pairing/QrCode';
 import { GateButton } from '../session/permissions';
 
@@ -116,6 +126,10 @@ export function TwoFactorSection({ user, isSelf }: { user: UserView; isSelf: boo
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string | null>(null);
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  // Open-state for the two step-up dialogs. Both actions destroy a credential, so neither may fire
+  // straight from its button.
+  const [disabling, setDisabling] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
 
   // The live two-factor read is the authority; the `UserView` booleans are the fallback for the
   // frame before it lands (and for a `403` on another account, where the read is refused).
@@ -165,21 +179,24 @@ export function TwoFactorSection({ user, isSelf }: { user: UserView; isSelf: boo
     setCodeError(null);
   }
 
-  function doDisable() {
-    disable.mutate(undefined, {
-      onSuccess: () => toast.success(t('users.totp.disabled')),
-      onError: (e) => toast.error(e),
-    });
+  // Both of these destroy a credential — the second factor itself, or the printed backup codes —
+  // so the server demands step-up and the UI has to collect it. They are driven through
+  // `ConfirmActionModal` with `requireReauth`, the same way `PasskeySection` revokes a passkey.
+  //
+  // Errors are deliberately NOT caught here: the modal renders a rejection inline, which is where
+  // a refused proof belongs — "that password was wrong" is an answer to the dialog's question, not
+  // a toast that outlives the dialog.
+  async function confirmDisable({ reauth }: { reauth: ReAuth }) {
+    await disable.mutateAsync(reauth);
+    toast.success(t('users.totp.disabled'));
+    setDisabling(false);
   }
 
-  function doRegenerate() {
-    regenerate.mutate(undefined, {
-      onSuccess: (res) => {
-        setBackupCodes(res.backup_codes);
-        toast.success(t('users.totp.backup.regenerated'));
-      },
-      onError: (e) => toast.error(e),
-    });
+  async function confirmRegenerate({ reauth }: { reauth: ReAuth }) {
+    const res = await regenerate.mutateAsync(reauth);
+    setBackupCodes(res.backup_codes);
+    toast.success(t('users.totp.backup.regenerated'));
+    setRegenerating(false);
   }
 
   function toggleRequired(next: boolean) {
@@ -261,13 +278,23 @@ export function TwoFactorSection({ user, isSelf }: { user: UserView; isSelf: boo
                 </Badge>
               </Field>
               <div className="form__actions">
-                <Button type="button" variant="secondary" disabled={busy} onClick={doRegenerate}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => setRegenerating(true)}
+                >
                   {t('users.totp.backup.regenerate')}
                 </Button>
                 {required ? (
                   <p className="field__hint">{t('users.totp.required.locked')}</p>
                 ) : (
-                  <Button type="button" variant="ghost" disabled={busy} onClick={doDisable}>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={busy}
+                    onClick={() => setDisabling(true)}
+                  >
                     {t('users.totp.disable')}
                   </Button>
                 )}
@@ -311,6 +338,31 @@ export function TwoFactorSection({ user, isSelf }: { user: UserView; isSelf: boo
           </div>
         )}
       </div>
+      {/* Step-up dialogs. `requireReauth` collects the proof the server demands; a refused proof
+          renders inline in the dialog rather than as a toast that outlives it. */}
+      <ConfirmActionModal
+        open={disabling}
+        onClose={() => setDisabling(false)}
+        title={t('users.totp.disable.title')}
+        intro={<p>{t('users.totp.disable.consequence')}</p>}
+        confirmLabel={t('users.totp.disable.confirm')}
+        pendingLabel={t('users.totp.disable.pending')}
+        danger
+        requireReauth
+        pending={disable.isPending}
+        onConfirm={confirmDisable}
+      />
+      <ConfirmActionModal
+        open={regenerating}
+        onClose={() => setRegenerating(false)}
+        title={t('users.totp.backup.regenerate.title')}
+        intro={<p>{t('users.totp.backup.regenerate.consequence')}</p>}
+        confirmLabel={t('users.totp.backup.regenerate.confirm')}
+        pendingLabel={t('users.totp.backup.regenerate.pending')}
+        requireReauth
+        pending={regenerate.isPending}
+        onConfirm={confirmRegenerate}
+      />
     </Card>
   );
 }

@@ -2073,9 +2073,31 @@ describe('EditUserPage — two-factor (TOTP)', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Gerar novos códigos' }));
 
+    // Reissuing voids the codes the holder already printed, so the server demands step-up and the
+    // dialog collects it. Driving it here rather than asserting straight through is the point: the
+    // bodyless version of this flow shipped in `21ae0a3a` and 403'd for every real user, because
+    // no test exercised the proof the server had started requiring.
+    fireEvent.change(await screen.findByLabelText(ptPT['confirm.reauth.password']), {
+      target: { value: 'correct horse battery staple' },
+    });
+    fireEvent.click(
+      screen.getByRole('button', { name: ptPT['users.totp.backup.regenerate.confirm'] }),
+    );
+
     expect(await screen.findByText('fresh-0')).toBeTruthy();
     expect(screen.getByText('Guarde os códigos de recuperação')).toBeTruthy();
-    expect(calls.some((c) => c.url.endsWith('/two-factor/backup-codes'))).toBe(true);
+    const regen = calls.find((c) => c.url.endsWith('/two-factor/backup-codes'));
+    expect(regen).toBeTruthy();
+    // The proof must actually reach the wire, in the envelope THIS route wants: the server's
+    // `TwoFactorConfirmation` wraps a `ConfirmationProof`, so it is `confirmation.reauth` — not the
+    // passkey route's bare `reauth`, which would `serde(default)` to an empty proof and 403.
+    const sent =
+      typeof regen?.body === 'string'
+        ? JSON.parse(regen.body)
+        : (regen?.body as Record<string, unknown>);
+    expect(
+      (sent as { confirmation: { reauth: { password: string } } }).confirmation.reauth.password,
+    ).toBe('correct horse battery staple');
   });
 });
 

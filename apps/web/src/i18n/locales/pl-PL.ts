@@ -1803,6 +1803,16 @@ export const plPL: Catalog = {
   'users.totp.code.hint': 'Wprowadź 6-cyfrowy kod wyświetlony przez aplikację.',
   'users.totp.code.wrong': 'Nieprawidłowy kod. Spróbuj ponownie.',
   'users.totp.disable': 'Wyłącz dwuskładnikowe',
+  'users.totp.disable.title': 'Wyłączyć uwierzytelnianie dwuskładnikowe?',
+  'users.totp.disable.consequence':
+    'Konto przestanie prosić o drugi składnik przy logowaniu, a obecne kody odzyskiwania przestaną działać. Możesz je włączyć ponownie w dowolnej chwili, rejestrując je na nowo.',
+  'users.totp.disable.confirm': 'Wyłącz',
+  'users.totp.disable.pending': 'Wyłączanie…',
+  'users.totp.backup.regenerate.title': 'Wydać nowe kody odzyskiwania?',
+  'users.totp.backup.regenerate.consequence':
+    'Kody, które wydrukowano lub zapisano, przestaną działać w chwili wydania nowych. Nowe są pokazywane tylko raz.',
+  'users.totp.backup.regenerate.confirm': 'Wydaj nowe kody',
+  'users.totp.backup.regenerate.pending': 'Wydawanie…',
   'users.totp.disabled': 'Dwuskładnikowe wyłączone.',
   'users.totp.backup.title': 'Zapisz kody zapasowe',
   'users.totp.backup.body':

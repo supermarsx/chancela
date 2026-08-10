@@ -1809,6 +1809,16 @@ export const itIT: Catalog = {
   'users.totp.code.hint': 'Inserisci il codice a 6 cifre mostrato dall’app.',
   'users.totp.code.wrong': 'Codice errato. Riprova.',
   'users.totp.disable': 'Disattiva i due fattori',
+  'users.totp.disable.title': 'Disattivare la verifica in due passaggi?',
+  'users.totp.disable.consequence':
+    "L'account smetterà di richiedere un secondo fattore all'accesso e i codici di recupero attuali non funzioneranno più. Puoi riattivarla in qualsiasi momento registrandola di nuovo.",
+  'users.totp.disable.confirm': 'Disattiva',
+  'users.totp.disable.pending': 'Disattivazione…',
+  'users.totp.backup.regenerate.title': 'Emettere nuovi codici di recupero?',
+  'users.totp.backup.regenerate.consequence':
+    'I codici che hai stampato o salvato smetteranno di funzionare nel momento in cui vengono emessi i nuovi. I nuovi vengono mostrati una sola volta.',
+  'users.totp.backup.regenerate.confirm': 'Emetti nuovi codici',
+  'users.totp.backup.regenerate.pending': 'Emissione…',
   'users.totp.disabled': 'Due fattori disattivati.',
   'users.totp.backup.title': 'Salva i codici di backup',
   'users.totp.backup.body':
