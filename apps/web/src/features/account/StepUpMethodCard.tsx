@@ -68,7 +68,7 @@ export function StepUpMethodCard() {
         <Field
           label={t('account.stepup.label')}
           htmlFor="stepup-method"
-          hint={t('account.stepup.hint')}
+          help={t('account.stepup.hint')}
         >
           <Select
             id="stepup-method"

@@ -429,7 +429,7 @@ export function PasskeySection({ user, isSelf }: { user: UserView; isSelf: boole
             <Field
               label={t('users.passkeys.name.label')}
               htmlFor={`passkey-name-${user.id}`}
-              hint={t('users.passkeys.name.hint')}
+              help={t('users.passkeys.name.hint')}
             >
               <Input
                 id={`passkey-name-${user.id}`}

@@ -422,7 +422,7 @@ export function ExternalSigningWorkflowsPage() {
           <Field
             label={t('externalSigning.token.label')}
             htmlFor="external-signing-token"
-            hint={t('externalSigning.token.hint')}
+            help={t('externalSigning.token.hint')}
           >
             <Input
               id="external-signing-token"

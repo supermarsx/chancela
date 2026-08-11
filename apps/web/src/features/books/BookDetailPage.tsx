@@ -1943,7 +1943,7 @@ function PaperBookImportsPanel({ book }: { book: BookView }) {
             <Field
               label={t('books.detail.imports.pageRangeLabel')}
               htmlFor="paper-import-page-range"
-              hint={t('books.detail.imports.pageRangeHint')}
+              help={t('books.detail.imports.pageRangeHint')}
             >
               <Input
                 id="paper-import-page-range"

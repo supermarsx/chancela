@@ -932,7 +932,7 @@ export function BookIntegritySection() {
         <Field
           label={t('integrity.restore.keyLabel')}
           htmlFor="restore-key"
-          hint={t('integrity.restore.keyHint')}
+          help={t('integrity.restore.keyHint')}
         >
           <Input
             id="restore-key"

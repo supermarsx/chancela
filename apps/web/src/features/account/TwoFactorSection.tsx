@@ -324,7 +324,7 @@ export function TwoFactorSection({ user, isSelf }: { user: UserView; isSelf: boo
                 <Badge tone="neutral">{t('users.totp.off')}</Badge>
               )}
             </Field>
-            <Field label={t('users.totp.required.label')} hint={t('users.totp.required.hint')}>
+            <Field label={t('users.totp.required.label')} help={t('users.totp.required.hint')}>
               <GateButton
                 perm="user.manage"
                 type="button"

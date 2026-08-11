@@ -3437,7 +3437,7 @@ export function SigningPanel({ act, entityName }: { act: ActView; entityName?: s
             <Field
               label={t('signing.format.label')}
               htmlFor="signing-format"
-              hint={t('signing.format.hint')}
+              help={t('signing.format.hint')}
             >
               <Select
                 id="signing-format"

@@ -221,6 +221,39 @@ describe('AccountPage — Perfil', () => {
     expect(administrativeCalls(calls)).toEqual([]);
   });
 
+  /**
+   * The username's "it is the audit identifier and cannot be changed" sentence moved out of the
+   * caption line and behind the label's help glyph. The failure mode a passing render would hide
+   * is the sentence going mouse-only, so this asserts the two things that make it not: a real
+   * focusable button, and a description that resolves ON THE INPUT rather than only on the glyph.
+   */
+  it('keeps the read-only username explanation reachable from the input itself', async () => {
+    const { fn } = accountServer();
+    vi.stubGlobal('fetch', fn);
+    renderAccount();
+
+    const username = (await screen.findByLabelText(
+      ptPT['users.table.username'],
+    )) as HTMLInputElement;
+    const describedBy = username.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    const bubble = document.getElementById(describedBy as string);
+    expect(bubble?.getAttribute('role')).toBe('tooltip');
+    expect(bubble?.textContent).toBe(ptPT['account.identity.usernameHint']);
+
+    // The glyph is a real button, keyboard-reachable, and points at the SAME node — the sentence
+    // is not duplicated in the accessibility tree. Selected by the association rather than by
+    // name: the page carries several help glyphs and they all share the generic "Ajuda".
+    const trigger = screen
+      .getAllByRole('button', { name: ptPT['common.help'] })
+      .find((b) => b.getAttribute('aria-describedby') === describedBy) as HTMLButtonElement;
+    expect(trigger).toBeTruthy();
+    expect(trigger.tagName).toBe('BUTTON');
+    expect(trigger.getAttribute('type')).toBe('button');
+    trigger.focus();
+    expect(document.activeElement).toBe(trigger);
+  });
+
   it('sends no request at all when nothing changed', async () => {
     const { fn, calls } = accountServer();
     vi.stubGlobal('fetch', fn);

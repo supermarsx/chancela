@@ -87,7 +87,7 @@ function IdentityCard({ user }: { user: UserView }) {
         <Field
           label={t('users.table.username')}
           htmlFor="account-username"
-          hint={t('account.identity.usernameHint')}
+          help={t('account.identity.usernameHint')}
         >
           <Input id="account-username" value={user.username} readOnly />
         </Field>

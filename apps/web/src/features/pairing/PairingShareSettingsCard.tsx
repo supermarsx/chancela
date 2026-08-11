@@ -1,4 +1,5 @@
-import { Card, Field, Input, Toggle } from '../../ui';
+import { useId } from 'react';
+import { Card, Field, FieldHelp, Input, Toggle } from '../../ui';
 import { usePairingShareT } from '../../i18n/pairingShareFallback';
 
 export const MIN_EXTERNAL_SIGNATURE_NOTICE_SNOOZE_DAYS = 1;
@@ -26,22 +27,47 @@ export function PairingShareSettingsCard({
   onExternalSignatureNoticeSnoozeDaysChange,
 }: PairingShareSettingsCardProps) {
   const pt = usePairingShareT();
+  const emailHelpId = useId();
+  const whatsappHelpId = useId();
 
   return (
     <Card title={pt('settings.pairingShare.cardTitle')}>
       <div className="form settings-rows">
+        {/* What each switch turns on is background, not something the operator needs in front of
+            them to flip it — so it rides the label's `FieldHelp` rather than a caption line under
+            every row. `FieldHelp` renders a real `<button>`, and `describedById` puts the bubble
+            on the switch's own `aria-describedby`, so the sentence is announced with the control
+            and not only to whoever tabs onto the glyph. Same idiom as
+            `RegistryAutoUpdateSection`: a switch has no `Field` to hang `help` on. */}
         <Toggle
-          label={pt('settings.pairingShare.email.label')}
+          label={
+            <>
+              {pt('settings.pairingShare.email.label')}{' '}
+              <FieldHelp
+                text={pt('settings.pairingShare.email.hint')}
+                describedById={emailHelpId}
+              />
+            </>
+          }
           checked={emailEnabled}
           onChange={onEmailEnabledChange}
+          aria-describedby={emailHelpId}
         />
-        <p className="field__hint">{pt('settings.pairingShare.email.hint')}</p>
         <Toggle
-          label={pt('settings.pairingShare.whatsapp.label')}
+          label={
+            <>
+              {pt('settings.pairingShare.whatsapp.label')}{' '}
+              <FieldHelp
+                text={pt('settings.pairingShare.whatsapp.hint')}
+                describedById={whatsappHelpId}
+              />
+            </>
+          }
           checked={whatsappEnabled}
           onChange={onWhatsappEnabledChange}
+          aria-describedby={whatsappHelpId}
         />
-        <p className="field__hint">{pt('settings.pairingShare.whatsapp.hint')}</p>
+
         <Field
           label={pt('settings.pairingShare.snooze.label')}
           htmlFor="external-signature-notice-snooze-days"

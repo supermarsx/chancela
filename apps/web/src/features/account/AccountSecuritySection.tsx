@@ -62,21 +62,23 @@ function PostureCard({ user }: { user: UserView }) {
       <div className="stack">
         <p className="field__hint">{t('account.security.lede')}</p>
         <div className="form settings-rows">
-          <Field label={t('users.secret.label')} hint={t('users.security.password.hint')}>
+          {/* A posture row has no control to fill in, so its sentence is pure background: it moves
+              behind the label's help glyph rather than printing a caption under every badge. */}
+          <Field label={t('users.secret.label')} help={t('users.security.password.hint')}>
             {user.has_secret ? (
               <Badge tone="ok">{t('users.secret.has')}</Badge>
             ) : (
               <Badge tone="neutral">{t('users.secret.none')}</Badge>
             )}
           </Field>
-          <Field label={t('users.recovery.label')} hint={t('users.security.recovery.hint')}>
+          <Field label={t('users.recovery.label')} help={t('users.security.recovery.hint')}>
             {user.has_recovery_phrase ? (
               <Badge tone="accent">{t('users.recovery.has')}</Badge>
             ) : (
               <Badge tone="neutral">{t('users.recovery.none')}</Badge>
             )}
           </Field>
-          <Field label={t('users.key.label')} hint={t('users.security.key.hint')}>
+          <Field label={t('users.key.label')} help={t('users.security.key.hint')}>
             {user.has_attestation_key ? (
               <span className="stack--tight">
                 <Badge tone="ok">{t('users.key.has')}</Badge>

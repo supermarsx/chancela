@@ -197,7 +197,7 @@ function IdentitySection({ user }: { user: UserView }) {
         <Field
           label={t('users.table.username')}
           htmlFor="edit-username"
-          hint={t('users.edit.usernameHint')}
+          help={t('users.edit.usernameHint')}
         >
           <Input id="edit-username" value={user.username} readOnly />
         </Field>
@@ -293,21 +293,21 @@ function SecuritySection({ user }: { user: UserView }) {
             publishes. Management is single-source in Acesso e auditoria; the row action points
             there rather than re-mounting the manager on a second tab. */}
         <div className="form settings-rows">
-          <Field label={t('users.secret.label')} hint={t('users.security.password.hint')}>
+          <Field label={t('users.secret.label')} help={t('users.security.password.hint')}>
             {user.has_secret ? (
               <Badge tone="ok">{t('users.secret.has')}</Badge>
             ) : (
               <Badge tone="neutral">{t('users.secret.none')}</Badge>
             )}
           </Field>
-          <Field label={t('users.recovery.label')} hint={t('users.security.recovery.hint')}>
+          <Field label={t('users.recovery.label')} help={t('users.security.recovery.hint')}>
             {user.has_recovery_phrase ? (
               <Badge tone="accent">{t('users.recovery.has')}</Badge>
             ) : (
               <Badge tone="neutral">{t('users.recovery.none')}</Badge>
             )}
           </Field>
-          <Field label={t('users.key.label')} hint={t('users.security.key.hint')}>
+          <Field label={t('users.key.label')} help={t('users.security.key.hint')}>
             {user.has_attestation_key ? (
               <span className="stack--tight">
                 <Badge tone="ok">{t('users.key.has')}</Badge>

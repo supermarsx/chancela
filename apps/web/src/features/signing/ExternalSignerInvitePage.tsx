@@ -525,7 +525,7 @@ export function ExternalSignerInvitePage() {
                     <Field
                       label={t('externalInvite.upload.file.label')}
                       htmlFor="external-signed-pdf"
-                      hint={t('externalInvite.upload.file.hint')}
+                      help={t('externalInvite.upload.file.hint')}
                     >
                       <Input
                         id="external-signed-pdf"

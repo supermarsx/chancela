@@ -2980,7 +2980,7 @@ function DataStatusPanel({ tab, resetControls }: { tab: DataTab; resetControls: 
                         <Field
                           label={t('data.status.keyRotation.replacementKey.label')}
                           htmlFor="data-key-rotation-replacement"
-                          hint={t('data.status.keyRotation.replacementKey.hint')}
+                          help={t('data.status.keyRotation.replacementKey.hint')}
                         >
                           <Input
                             id="data-key-rotation-replacement"
