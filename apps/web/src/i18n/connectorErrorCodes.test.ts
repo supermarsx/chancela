@@ -76,7 +76,10 @@ function parseCodes(source: string): { declared: Set<string>; listed: Set<string
   }
 
   // `Self::S3 => TRANSPORT_NOT_COMPILED_S3,` — the variant → constant arms.
-  const codeArms = /fn not_compiled_code\(self\) -> &'static str \{([\s\S]*?)\n    \}/.exec(
+  // ` {4}` rather than four literal spaces: `no-regex-spaces` rejects a run of them, and it is
+  // right to — the closing brace's indentation is load-bearing here (it is what ends the match at
+  // the fn's own brace rather than an inner one), so it should be stated as a count, not eyeballed.
+  const codeArms = /fn not_compiled_code\(self\) -> &'static str \{([\s\S]*?)\n {4}\}/.exec(
     source,
   )?.[1];
   const perVariant = new Map<string, string>();
