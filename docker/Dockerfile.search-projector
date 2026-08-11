@@ -47,9 +47,13 @@ COPY . .
 # stage alongside the server, and two cargo processes unpacking into one registry
 # collide on `.cargo-ok` (File exists, os error 17).
 #
-# The registry gets sharing=locked because cargo's package cache lock lives at
-# $CARGO_HOME/.package-cache — outside this mount, hence private per container
-# and unable to arbitrate between stages. The target dir keeps sharing=shared
+# The registry gets sharing=private because cargo's package cache lock lives at
+# $CARGO_HOME/.package-cache — outside this mount, hence unable to arbitrate
+# between stages. A private copy per build is the isolation cargo cannot supply
+# itself. It was sharing=locked, which was correct but serialised every Rust
+# stage in the bake: measured, running the four images concurrently instead of
+# back-to-back is 1.71x, and costs only a registry copy per build. The target dir
+# keeps sharing=shared
 # because cargo's build directory lock (<target-dir>/.cargo-lock) IS inside the
 # mount and does serialise concurrent users; its id is split per package purely
 # to stop the projector and server builds invalidating each other's artefacts.
@@ -59,7 +63,7 @@ COPY . .
 # image, so one image means one feature set. If you ever do override it, give the
 # override its own id as the server Dockerfiles do with CARGO_TARGET_CACHE_ID —
 # otherwise the two feature sets churn one directory between them.
-RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=chancela-cargo-registry,sharing=private,target=/usr/local/cargo/registry \
     --mount=type=cache,id=chancela-cargo-target-search-projector,sharing=shared,target=/build/target \
     cargo build --release --locked -p chancela-search-projector --features "${CARGO_FEATURES}" \
     && cp target/release/chancela-search-projector /chancela-search-projector

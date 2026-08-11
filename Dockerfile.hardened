@@ -103,14 +103,20 @@ COPY . .
 #     target dir has only ever cost time, not correctness.
 #
 # So the two mounts are treated differently:
-#   registry  sharing=locked. BuildKit supplies the mutual exclusion cargo's own
-#             lock cannot reach across containers. Every target downloads the
-#             same crates, so one shared registry is worth keeping. The cost is
-#             that BuildKit holds a locked mount for the WHOLE RUN, so sibling
-#             cargo builds serialise — which is already what the shared target
-#             dir did, so this is not a slowdown against the old behaviour.
-#             Swap to sharing=private if you would rather trade one registry
-#             copy per concurrent build for parallel compiles.
+#   registry  sharing=private. Each concurrent build gets its own copy of the
+#             mount, which is the mutual exclusion cargo's own lock cannot reach
+#             across containers — no two containers share a registry, so nothing
+#             races on `.cargo-ok`.
+#
+#             This was sharing=locked, and the comment here used to argue the
+#             serialisation it causes was free because the shared target dir
+#             already serialised. Measured, that was the single largest cost in
+#             the whole image build: BuildKit holds a locked mount for the WHOLE
+#             RUN, so the four Rust stages ran strictly one after another. One
+#             build uses 4.3 of 26 available vCPUs; the same four images took
+#             1187s back-to-back and 693s concurrently — 1.71x, for no change to
+#             any shipped binary. The price is one registry copy (~920 MB) per
+#             concurrent build, which is disk, not time.
 #   target    sharing=shared, keyed per package+feature set via
 #             CARGO_TARGET_CACHE_ID. Concurrent use is already safe (see the
 #             in-mount .cargo-lock above); the id split is about churn — a
@@ -119,7 +125,7 @@ COPY . .
 #             matches docker/Dockerfile.server's: the hardened and standard
 #             server stages compile the same package with the same features from
 #             the same base, so they SHOULD reuse one warm directory.
-RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=chancela-cargo-registry,sharing=private,target=/usr/local/cargo/registry \
     --mount=type=cache,id=chancela-cargo-target-${CARGO_TARGET_CACHE_ID},sharing=shared,target=/build/target \
     cargo build --release -p chancela-server --locked \
     --features "${CARGO_TRANSPORT_FEATURES} ${CARGO_FEATURES}" \

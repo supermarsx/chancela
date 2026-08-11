@@ -29,9 +29,13 @@ COPY . .
 # --profile worker build` builds three of them at once, and two cargo processes
 # unpacking into one registry collide on `.cargo-ok` (File exists, os error 17).
 #
-# The registry gets sharing=locked because cargo's package cache lock lives at
-# $CARGO_HOME/.package-cache — outside this mount, hence private per container
-# and unable to arbitrate between stages. The target dir keeps sharing=shared
+# The registry gets sharing=private because cargo's package cache lock lives at
+# $CARGO_HOME/.package-cache — outside this mount, hence unable to arbitrate
+# between stages. A private copy per build is the isolation cargo cannot supply
+# itself. It was sharing=locked, which was correct but serialised every Rust
+# stage in the bake: measured, running the four images concurrently instead of
+# back-to-back is 1.71x, and costs only a registry copy per build. The target dir
+# keeps sharing=shared
 # because cargo's build directory lock (<target-dir>/.cargo-lock) IS inside the
 # mount and does serialise concurrent users; its id is split per package purely
 # to stop the worker and server builds invalidating each other's artefacts.
@@ -47,7 +51,7 @@ COPY . .
 # runner: dropping them here would leave the queue accepting backup jobs the
 # process cannot execute. (It would refuse them loudly rather than silently, but
 # refusing is not the job.) Nothing overrides this list; keep it literal.
-RUN --mount=type=cache,id=chancela-cargo-registry,sharing=locked,target=/usr/local/cargo/registry \
+RUN --mount=type=cache,id=chancela-cargo-registry,sharing=private,target=/usr/local/cargo/registry \
     --mount=type=cache,id=chancela-cargo-target-worker,sharing=shared,target=/build/target \
     cargo build --release --locked -p chancela-worker \
     --features chancela-worker/all-transports \
