@@ -1761,6 +1761,87 @@ async fn cc_sign_rejects_real_tsl_source_with_invalid_signature() {
     assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
 }
 
+/// A Trusted List that cannot be **fetched** is not an anchor fault, and is no longer «erro de
+/// gateway».
+///
+/// This is the reported bug, driven end to end. With anchors configured correctly and the list
+/// simply unreachable, `TslClient::refresh` fails at `source.fetch()` — *before* the anchor check —
+/// so the failure arrives as `SigningError::TrustedList`. Every `SigningError → ApiError` mapper
+/// swept that into `other => ApiError::Upstream(…)`, which renders as
+/// `502 {"error":"erro de gateway","code":"http.upstream"}` with the only useful sentence diverted
+/// to the server log. The operator was told to go and look at a gateway.
+///
+/// It must now name its own cause, and must NOT be reported as either anchor fault: bypassing or
+/// re-provisioning an anchor cannot fix a list that was never retrieved, and sending an operator to
+/// edit their anchor configuration for it is a new misdirection in place of the old one.
+///
+/// The source is a local path that does not exist, so nothing here touches the network, and no real
+/// endpoint, certificate or fingerprint appears.
+#[tokio::test]
+async fn an_unfetchable_trusted_list_names_its_own_cause_instead_of_a_gateway_error() {
+    let dir = TempDir::new();
+    let card = CcTestCard::cc_v1();
+    let issuer = fixture_granted_issuer_cert();
+    let factory = provider_factory(card, Some(issuer));
+    let mut state = state_at(&dir.0, Some(factory), true, true);
+    state.cmd_trust_policy = None;
+    let missing = dir.0.join("this-trusted-list-was-never-written.xml");
+    {
+        let mut settings = state.settings.write().await;
+        settings.signing.tsl_sources.truncate(1);
+        settings.signing.tsl_sources[0].url = None;
+        settings.signing.tsl_sources[0].path = Some(missing.display().to_string());
+        settings.signing.tsl_url = None;
+        settings.signing.tsa_url = None;
+        settings.signing.tsa_providers.clear();
+        // Anchors ARE configured. The whole point of the report was that a correctly-configured
+        // deployment still got «erro de gateway», so a test with no anchors would not reproduce it.
+        settings.signing.tsl_trust_anchor_sha256 = vec!["ab".repeat(32)];
+    }
+    let (token, _uid) = bootstrap(&state).await;
+    let act_id = seal_an_act(&state, &token).await;
+
+    let (status, err) = send(
+        &state,
+        json_req(
+            "POST",
+            &format!("/v1/acts/{act_id}/signature/cc/sign"),
+            &token,
+            json!({ "capacity": "Administrador" }),
+        ),
+    )
+    .await;
+
+    assert_eq!(
+        status,
+        StatusCode::BAD_GATEWAY,
+        "a dependency that did not answer stays a 5xx — what changes is that it says which one: \
+         {err}"
+    );
+    assert_eq!(
+        err["code"], "signing_trusted_list_unavailable",
+        "the cause must be named, not swept into `http.upstream`: {err}"
+    );
+    for anchor_code in ["trust_anchor_not_configured", "trusted_list_not_anchored"] {
+        assert_ne!(
+            err["code"], anchor_code,
+            "a list that was never retrieved is not an anchor fault — no anchor edit fixes it: \
+             {err}"
+        );
+    }
+    let msg = err["error"].as_str().unwrap_or_default();
+    assert_ne!(
+        msg, "erro de gateway",
+        "the detail must reach the operator, not only the server log: {err}"
+    );
+    assert!(
+        msg.contains("trusted-list"),
+        "the operator detail must name the Trusted List as what failed: {err}"
+    );
+    // And nothing was signed on the way to reporting it.
+    assert_no_signed_artifact_or_event(&state, &token, &act_id).await;
+}
+
 #[tokio::test]
 async fn trust_refresh_rejects_unsafe_tsl_source_without_replacing_cache() {
     let dir = TempDir::new();

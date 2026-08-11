@@ -177,6 +177,48 @@ export const apiErrorPtPT = {
   'apiError.signer_service_not_active':
     'A assinatura qualificada foi recusada porque o prestador de serviços de confiança do signatário não consta como ativo na Lista de Confiança. O problema está do lado do prestador, não deste servidor.',
 
+  // ═══ FALHAS DE ASSINATURA, POR CAUSA (`SigningError::code()`) ══════════════════════════════
+  // The four `SigningError` → `ApiError` mappers used to sweep everything they did not name into
+  // one `502` / «erro de gateway», with the only useful sentence written to the server log. These
+  // are the causes that were behind it. `apiErrorFallback.test.ts` reads the closed code list out
+  // of `crates/chancela-signing/src/lib.rs` and fails if one is left without copy here.
+  //
+  // The first sentence of each says WHERE the fault is, because that is the whole point of
+  // splitting them: a Lista de Confiança that could not be fetched, our own PDF assembler, and a
+  // profile this build never implemented send the operator to three different places.
+  'apiError.signing_trusted_list_unavailable':
+    'A assinatura não avançou porque não foi possível obter nem ler a Lista de Confiança. Sem ela não há veredito nenhum sobre o certificado do signatário: o que falhou foi o acesso à lista, não o certificado. Verifique o endereço da Lista de Confiança nas definições de assinatura e a ligação de saída deste servidor.',
+  'apiError.signing_timestamp_failed':
+    'A autoridade de carimbo temporal não devolveu um carimbo utilizável, por isso a assinatura não foi concluída. Verifique o endereço do serviço de carimbo temporal nas definições de assinatura e volte a tentar.',
+  'apiError.signing_not_implemented':
+    'A operação de assinatura pedida não está implementada nesta versão. Não é uma falha passageira — repetir não altera o resultado. Escolha um formato ou perfil que esta instalação produza; os detalhes técnicos indicam o que foi pedido.',
+  'apiError.signing_unsupported_format':
+    'Esta instalação não produz o formato de assinatura pedido. Repetir não altera o resultado: escolha um dos formatos suportados. Os detalhes técnicos indicam qual foi pedido.',
+  'apiError.signing_unsupported_profile':
+    'O perfil de assinatura pedido é reconhecido mas não é suportado por esta instalação. Repetir não altera o resultado. Os detalhes técnicos indicam o perfil em causa e as alternativas disponíveis.',
+  'apiError.signing_format_input_mismatch':
+    'O documento enviado não corresponde ao formato de assinatura pedido — uma assinatura PAdES, por exemplo, exige os bytes de um PDF. Os detalhes técnicos indicam o formato esperado.',
+  'apiError.signing_family_mismatch':
+    'O prestador escolhido não pertence à família de assinatura que este lugar de assinatura exige. Escolha um prestador da família pedida; os detalhes técnicos indicam as duas.',
+  'apiError.signing_issuer_certificate_missing':
+    'Não foi possível obter o certificado da entidade que emitiu o certificado do signatário, pelo que a verificação na Lista de Confiança não pôde ser feita. Uma assinatura qualificada não dispensa essa verificação, por isso o pedido foi recusado.',
+  'apiError.signing_cades_failed':
+    'Não foi possível montar ou validar a estrutura criptográfica CAdES/CMS da assinatura. A falha é deste servidor, não de um serviço externo; os detalhes técnicos indicam o componente em causa.',
+  'apiError.signing_pades_failed':
+    'Não foi possível assinar ou validar o PDF na estrutura PAdES. A falha é deste servidor, não de um serviço externo; os detalhes técnicos indicam o componente em causa.',
+  'apiError.signing_asic_failed':
+    'Não foi possível criar, ler ou validar o contentor ASiC. A falha é deste servidor, não de um serviço externo; os detalhes técnicos indicam o componente em causa.',
+  'apiError.signing_xades_failed':
+    'Não foi possível montar ou validar a assinatura XAdES/XMLDSig. A falha é deste servidor, não de um serviço externo; os detalhes técnicos indicam o componente em causa.',
+  'apiError.signing_slot_out_of_range':
+    'O lugar de assinatura indicado não existe neste conjunto de assinaturas. Recarregue a página e escolha um dos lugares disponíveis.',
+  'apiError.signing_slot_already_signed':
+    'Este lugar de assinatura já foi assinado, por isso não pode ser assinado outra vez. Nada foi alterado.',
+  'apiError.signing_slot_out_of_order':
+    'Este conjunto de assinaturas é sequencial e ainda falta assinar um lugar anterior. Assine primeiro o lugar em falta; os detalhes técnicos indicam qual.',
+  'apiError.signing_wrong_path':
+    'Este lugar de assinatura não pode ser assinado por esta via: uma assinatura manuscrita digitalizada e uma assinatura qualificada seguem percursos diferentes. Use o percurso correspondente à família deste lugar.',
+
   // ═══ SESSION AND CREDENTIALS ═════════════════════════════════════════════════════════════
   'apiError.session_required':
     'Esta operação exige sessão iniciada. Inicie sessão e tente de novo.',
@@ -554,6 +596,39 @@ export const apiErrorEnglish = {
   'apiError.signer_service_not_active':
     'Qualified signing was refused because the signer’s trust service is not listed as active in the Trusted List. The problem is on the provider’s side, not this server’s.',
 
+  'apiError.signing_trusted_list_unavailable':
+    'Signing did not proceed because the Trusted List could not be fetched or read. Without it there is no verdict at all on the signer’s certificate: what failed was reaching the list, not the certificate. Check the Trusted List address in the signing settings and this server’s outbound connectivity.',
+  'apiError.signing_timestamp_failed':
+    'The timestamp authority did not return a usable timestamp, so the signature was not completed. Check the timestamping service address in the signing settings and try again.',
+  'apiError.signing_not_implemented':
+    'The signing operation requested is not implemented in this version. This is not a transient failure — repeating it changes nothing. Choose a format or profile this installation produces; the technical details name what was requested.',
+  'apiError.signing_unsupported_format':
+    'This installation does not produce the signature format requested. Repeating it changes nothing: choose one of the supported formats. The technical details name what was asked for.',
+  'apiError.signing_unsupported_profile':
+    'The signature profile requested is recognised but is not supported by this installation. Repeating it changes nothing. The technical details name the profile and the alternatives available.',
+  'apiError.signing_format_input_mismatch':
+    'The document sent does not match the signature format requested — a PAdES signature, for example, needs the bytes of a PDF. The technical details name the expected format.',
+  'apiError.signing_family_mismatch':
+    'The chosen provider does not belong to the signing family this signature slot requires. Choose a provider from the required family; the technical details name both.',
+  'apiError.signing_issuer_certificate_missing':
+    'The certificate of the authority that issued the signer’s certificate could not be obtained, so the Trusted List check could not be performed. A qualified signature does not skip that check, so the request was refused.',
+  'apiError.signing_cades_failed':
+    'The signature’s CAdES/CMS cryptographic structure could not be assembled or validated. The fault is on this server, not an external service; the technical details name the component involved.',
+  'apiError.signing_pades_failed':
+    'The PDF could not be signed or validated in the PAdES structure. The fault is on this server, not an external service; the technical details name the component involved.',
+  'apiError.signing_asic_failed':
+    'The ASiC container could not be created, read or validated. The fault is on this server, not an external service; the technical details name the component involved.',
+  'apiError.signing_xades_failed':
+    'The XAdES/XMLDSig signature could not be assembled or validated. The fault is on this server, not an external service; the technical details name the component involved.',
+  'apiError.signing_slot_out_of_range':
+    'The signature slot given does not exist in this signature set. Reload the page and choose one of the available slots.',
+  'apiError.signing_slot_already_signed':
+    'This signature slot has already been signed, so it cannot be signed again. Nothing was changed.',
+  'apiError.signing_slot_out_of_order':
+    'This signature set is sequential and an earlier slot is still unsigned. Sign the outstanding slot first; the technical details name which one.',
+  'apiError.signing_wrong_path':
+    'This signature slot cannot be signed through this route: a scanned handwritten signature and a qualified signature follow different paths. Use the route matching this slot’s family.',
+
   'apiError.session_required':
     'This operation requires a signed-in session. Sign in and try again.',
   'apiError.session_invalid': 'The session has ended or is no longer valid. Sign in again.',
@@ -872,6 +947,14 @@ export const NON_ROUTINE_CODES = [
   // until the operator edits their anchor configuration.
   'trust_anchor_not_configured',
   'trusted_list_not_anchored',
+  // Capability gaps: this build does not produce what was asked for, and no retry changes that.
+  // Rendering them as an ordinary "something went wrong, try again" is the specific misdirection
+  // that follows from a `_ =>` arm — which is exactly where they used to end up.
+  'signing_not_implemented',
+  'signing_unsupported_format',
+  'signing_unsupported_profile',
+  // Already signed: the refusal protects a signature that exists. Retrying re-refuses.
+  'signing_slot_already_signed',
   // t112: the CMD production test-signature refusals. Each one stops BEFORE a real qualified
   // signature is produced and none of them clears on a retry — `cmd_test_session_expired` is
   // deliberately absent, because that one IS cleared by starting again.

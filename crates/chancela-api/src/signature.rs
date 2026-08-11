@@ -3728,8 +3728,15 @@ fn sanitize_signing_probe_error(error: &chancela_signing::SigningError) -> CcBri
 /// messages, distinct from the internal PDF-structure (`Pades`) / CMS (`Cades`) errors. A provider
 /// failure (card absent, PIN cancelled/wrong, signature not activated, reader missing) is
 /// client-actionable → 422. No secret is ever echoed (the CC path holds none).
+///
+/// **This mapper owns the prose, never the classification.** Every code below is
+/// [`SigningError::code()`](chancela_signing::SigningError::code), and the residual arm delegates to
+/// the single `From<SigningError>` conversion in [`crate::error`] rather than flattening the rest
+/// into a gateway error. The arms that remain here exist because the *sentence* is path-specific —
+/// «o Cartão de Cidadão» is not «o signatário» — not because the cause is decided here.
 pub(crate) fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
+    let code = e.code();
     match e {
         // MUST NOT BE SOFTENED, AND MUST NOT BE MERGED (t58 §4 item 10). These three arms are the
         // three states t61-e2 split apart, and each sends the operator somewhere different: the
@@ -3741,20 +3748,19 @@ pub(crate) fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiErro
             "o certificado do Cartão de Cidadão não está ativo na Lista de Confiança ({})",
             status_label(status)
         ))
-        .with_code("signer_service_not_active"),
+        .with_code(code),
         // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
-        // are client-actionable, so both are 422 — never the `other =>` 502 below.
+        // are client-actionable, so both are 422.
         S::TrustAnchorNotConfigured { checked } => {
-            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked))
-                .with_code("trust_anchor_not_configured")
+            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked)).with_code(code)
         }
         S::TrustedListNotAnchored { configured_in, .. } => {
-            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in))
-                .with_code("trusted_list_not_anchored")
+            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in)).with_code(code)
         }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do Cartão de Cidadão".to_owned(),
-        ),
+        )
+        .with_code(code),
         // Where a card/PIN/activation/reader failure surfaces (distinct from Pades/Cades). A
         // *rejected/blocked in-app PIN* is classified into a structured 4xx carrying the tries-left
         // hint (never the PIN, never the raw provider string); any other provider fault stays a
@@ -3764,12 +3770,16 @@ pub(crate) fn map_cc_signing_error(e: chancela_signing::SigningError) -> ApiErro
             None => ApiError::Unprocessable(format!(
                 "não foi possível assinar com o Cartão de Cidadão (verifique o cartão, o leitor e o \
                  PIN): {msg}"
-            )),
+            ))
+            .with_code(code),
         },
         S::Cades(msg) | S::Pades(msg) => {
             ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
         }
-        other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
+        // Not a gateway error, and no longer reported as one: the single `From` conversion decides
+        // the status and attaches the intrinsic code, so a Trusted List that could not be fetched no
+        // longer reads the same as a profile this build does not produce.
+        other => ApiError::from(other),
     }
 }
 
@@ -5606,6 +5616,20 @@ fn remote_batch_doc_error_message(e: &chancela_signing::SigningError) -> String 
         S::Cades(_) | S::Pades(_) => {
             "falha ao preparar ou iniciar a assinatura deste documento".to_owned()
         }
+        // The two dependency failures a batch operator most needs told apart. Everything else stays
+        // the generic per-document reason: this surface is a plain string with no code beside it, so
+        // it cannot demote an English detail into a technical-details block the way an `ApiError`
+        // can, and naming a cause here without being able to qualify it is how the same sentence
+        // ends up covering causes it does not describe.
+        S::TrustedList(_) => concat!(
+            "não foi possível obter ou ler a Lista de Confiança, pelo que não há veredito ",
+            "sobre o signatário deste documento"
+        )
+        .to_owned(),
+        S::Timestamp(_) => {
+            "a autoridade de carimbo temporal não devolveu um carimbo para este documento"
+                .to_owned()
+        }
         _ => "falha no serviço de assinatura para este documento".to_owned(),
     }
 }
@@ -5950,6 +5974,7 @@ fn csc_config_err(e: CscError) -> ApiError {
 /// assembly fault is a 500.
 fn map_remote_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
+    let code = e.code();
     match e {
         // MUST NOT BE SOFTENED, AND MUST NOT BE MERGED (t58 §4 item 10) — see
         // `map_cc_signing_error` for why the three states keep three codes.
@@ -5957,27 +5982,28 @@ fn map_remote_error(e: chancela_signing::SigningError) -> ApiError {
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(status)
         ))
-        .with_code("signer_service_not_active"),
+        .with_code(code),
         // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
-        // are client-actionable, so both are 422 — never the `other =>` 502 below.
+        // are client-actionable, so both are 422.
         S::TrustAnchorNotConfigured { checked } => {
-            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked))
-                .with_code("trust_anchor_not_configured")
+            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked)).with_code(code)
         }
         S::TrustedListNotAnchored { configured_in, .. } => {
-            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in))
-                .with_code("trusted_list_not_anchored")
+            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in)).with_code(code)
         }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
-        ),
+        )
+        .with_code(code),
         S::Provider(msg) => {
             ApiError::Unprocessable(format!("o prestador de assinatura recusou o pedido: {msg}"))
+                .with_code(code)
         }
         S::Cades(msg) | S::Pades(msg) => {
             ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
         }
-        other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
+        // Classified once, in `error.rs`. See `map_cc_signing_error`.
+        other => ApiError::from(other),
     }
 }
 
@@ -9051,20 +9077,28 @@ fn require_appended_doc_timestamp_evidence(
     Ok(())
 }
 
+/// Map a [`chancela_signing::SigningError`] from the **local PKCS#12** path. Every arm is a
+/// client-actionable `422` — a software certificate is material the caller supplied — and each now
+/// carries the intrinsic code so a wrong password is distinguishable from unusable material and from
+/// an assembly fault. The residual arm is left `422` here rather than delegating: on this path the
+/// remedy is always a different PFX or a different request, never a look at somebody's gateway.
 fn map_local_pkcs12_signing_error(e: chancela_signing::SigningError) -> ApiError {
+    let code = e.code();
     match e {
         chancela_signing::SigningError::SoftCertificate(SoftCertificateError::WrongPassword) => {
-            ApiError::Unprocessable("PKCS#12 password is incorrect".to_owned())
+            ApiError::Unprocessable("PKCS#12 password is incorrect".to_owned()).with_code(code)
         }
         chancela_signing::SigningError::SoftCertificate(error) => {
             ApiError::Unprocessable(format!("invalid PKCS#12 signing material: {error}"))
+                .with_code(code)
         }
         chancela_signing::SigningError::Cades(msg)
         | chancela_signing::SigningError::Pades(msg)
         | chancela_signing::SigningError::Provider(msg) => {
-            ApiError::Unprocessable(format!("local PKCS#12 signing failed: {msg}"))
+            ApiError::Unprocessable(format!("local PKCS#12 signing failed: {msg}")).with_code(code)
         }
-        other => ApiError::Unprocessable(format!("local PKCS#12 signing failed: {other}")),
+        other => ApiError::Unprocessable(format!("local PKCS#12 signing failed: {other}"))
+            .with_code(code),
     }
 }
 
@@ -9079,16 +9113,26 @@ pub(crate) fn map_revocation_collect_error(e: chancela_signing::RevocationError)
 /// (t67-e9). Revocation-collection failures surface as `SigningError::Pades(String)` (the pipeline
 /// flattens the finer `RevocationError` there) and archive-timestamp failures as
 /// `SigningError::Timestamp` — both are client-actionable `422`s carrying only the honest reason
-/// (never a secret; the error type holds none). Anything else is an upstream `502`.
+/// (never a secret; the error type holds none).
+///
+/// The archive-timestamp `422` is a **deliberate local override** of the intrinsic `502`: in the LTV
+/// pipeline the operator chose the archive TSA for this execution, and a retry against a different
+/// provider is the remedy, so this is a request-level refusal rather than a bare dependency outage.
+/// The *code* stays intrinsic either way, so the two surfaces still say the same thing about the
+/// cause. Everything else is classified once, by the `From<SigningError>` conversion.
 pub(crate) fn map_ltv_execution_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
+    let code = e.code();
     match e {
         S::Timestamp(msg) => ApiError::Unprocessable(format!(
             "falha ao obter carimbo temporal de arquivo para a execução LTV: {msg}"
-        )),
-        S::Pades(msg) => ApiError::Unprocessable(format!("falha na execução LTV: {msg}")),
+        ))
+        .with_code(code),
+        S::Pades(msg) => {
+            ApiError::Unprocessable(format!("falha na execução LTV: {msg}")).with_code(code)
+        }
         S::Cades(msg) => ApiError::Internal(format!("falha ao montar a evidência LTV: {msg}")),
-        other => ApiError::Upstream(format!("falha no serviço de execução LTV: {other}")),
+        other => ApiError::from(other),
     }
 }
 
@@ -9262,6 +9306,7 @@ async fn consume_pending(state: &AppState, session_id: &str) {
 /// 422; a missing issuer / untrusted service is a clean, honest error.
 pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
+    let code = e.code();
     match e {
         // MUST NOT BE SOFTENED, AND MUST NOT BE MERGED (t58 §4 item 10) — see
         // `map_cc_signing_error` for why the three states keep three codes.
@@ -9269,20 +9314,19 @@ pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
             "o serviço de confiança do signatário não está ativo na Lista de Confiança ({})",
             status_label(status)
         ))
-        .with_code("signer_service_not_active"),
+        .with_code(code),
         // t61-e2: the operator's own trust-anchor configuration, not the signer's service. Both
-        // are client-actionable, so both are 422 — never the `other =>` 502 below.
+        // are client-actionable, so both are 422.
         S::TrustAnchorNotConfigured { checked } => {
-            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked))
-                .with_code("trust_anchor_not_configured")
+            ApiError::Unprocessable(trust_anchor_not_configured_detail(checked)).with_code(code)
         }
         S::TrustedListNotAnchored { configured_in, .. } => {
-            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in))
-                .with_code("trusted_list_not_anchored")
+            ApiError::Unprocessable(trusted_list_not_anchored_detail(configured_in)).with_code(code)
         }
         S::MissingIssuerCertificate => ApiError::Unprocessable(
             "não foi possível resolver o emissor do certificado do signatário".to_owned(),
-        ),
+        )
+        .with_code(code),
         // A provider failure is where an OTP rejection surfaces (ValidateOtp non-success), and where
         // a GetCertificate cert-chain parse failure, a transport error, or a relay refusal surface
         // too. Report it as 422 (client-actionable), without echoing the OTP.
@@ -9292,15 +9336,24 @@ pub(crate) fn map_signing_error(e: chancela_signing::SigningError) -> ApiError {
         // to a stable code so the client renders the detail in the operator's language instead of
         // the raw English that used to trail the Portuguese headline. An unclassifiable message still
         // gets a translated headline (`cmd_refused`) rather than a bare status tier.
+        // A *refinement* of the intrinsic `signing_provider_refused`, not a competing
+        // classification: `chancela_signing` flattened a typed `CmdError` to its `Display` two
+        // crates ago, and this recovers the finer cause the CMD vocabulary already has copy for. It
+        // is the one place a call site may narrow the intrinsic code, and it narrows within the same
+        // cause rather than renaming it.
         S::Provider(msg) => {
-            let code = chancela_cmd::CmdError::stable_code_from_display(&msg);
+            let cmd_code = chancela_cmd::CmdError::stable_code_from_display(&msg);
             ApiError::Unprocessable(format!("a Chave Móvel Digital recusou o pedido: {msg}"))
-                .with_code(code)
+                .with_code(cmd_code)
         }
         S::Cades(msg) | S::Pades(msg) => {
             ApiError::Internal(format!("falha ao montar a assinatura: {msg}"))
         }
-        other => ApiError::Upstream(format!("falha no serviço de assinatura: {other}")),
+        // THE BUG THIS LANE EXISTS FOR. `/v1/signature/cmd/test-signature/initiate` routes through
+        // here, and a Trusted List that could not be fetched — with the operator's anchors correctly
+        // configured — arrived as `502 http.upstream` / «erro de gateway», with the only useful
+        // sentence written to the server log. It is now classified once, in `error.rs`.
+        other => ApiError::from(other),
     }
 }
 

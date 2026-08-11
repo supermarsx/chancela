@@ -513,19 +513,24 @@ fn xmldsig_algorithm_label(alg: SignatureAlgorithm) -> &'static str {
 }
 
 /// Map a signing failure to an HTTP error, keeping the wrong-passphrase case a clean 422 and never
-/// echoing any secret.
+/// echoing any secret. The prose is path-specific; the code is [`SigningError::code()`], and the
+/// residual arm delegates to the single `From<SigningError>` conversion.
 fn map_signing_error(err: SigningError) -> ApiError {
+    let code = err.code();
     match &err {
         SigningError::SoftCertificate(e) => ApiError::Unprocessable(format!(
             "não foi possível carregar o certificado PKCS#12: {e}"
-        )),
+        ))
+        .with_code(code),
         SigningError::Xades(msg) => {
             ApiError::Unprocessable(format!("não foi possível produzir o XAdES: {msg}"))
+                .with_code(code)
         }
         SigningError::Timestamp(msg) => {
             ApiError::Unprocessable(format!("falha ao obter carimbo temporal: {msg}"))
+                .with_code(code)
         }
-        _ => ApiError::Internal(format!("XAdES signing failed: {err}")),
+        _ => ApiError::from(err),
     }
 }
 

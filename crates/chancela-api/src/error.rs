@@ -144,6 +144,45 @@ pub enum ApiError {
         /// government service for a bug at home and sends the operator to the wrong place.
         ours: bool,
     },
+    /// A signing operation failed with a `5xx`-shaped cause **that is established** — the sibling of
+    /// [`RegistryConsultation`](ApiError::RegistryConsultation), for the same reason and built the
+    /// same way.
+    ///
+    /// The API had four `chancela_signing::SigningError` → `ApiError` mappers, each naming the
+    /// causes it cared about and sweeping the rest into `other => ApiError::Upstream(…)`. That arm
+    /// swallowed `TrustedList`, `Timestamp`, `SoftCertificate`, `NotImplemented`,
+    /// `UnsupportedProfile`, `Asic`, `Xades`, `UnsupportedFormat`, `FormatInputMismatch` and
+    /// `FamilyMismatch` into one opaque `{"error": "erro de gateway", "code": "http.upstream"}` with
+    /// the detail diverted to the server log. An operator whose trust anchors were correct, whose
+    /// Trusted List simply could not be fetched, was told only «erro de gateway» — and sent to
+    /// diagnose a gateway.
+    ///
+    /// The `code` is **intrinsic**, produced by
+    /// [`SigningError::code()`](chancela_signing::SigningError::code) at the single [`From`]
+    /// conversion below — never chosen by a call site. Four mappers classifying one enum drift, and
+    /// the arm that drifts is always the `_ =>` fallback, which fails by getting vaguer rather than
+    /// by failing to compile.
+    ///
+    /// `4xx` causes do **not** come here: they are ordinary `Unprocessable`/`Conflict` errors
+    /// carrying the same intrinsic code through [`with_code`](ApiError::with_code), exactly as the
+    /// registry conversion does. This variant exists only because `Internal`/`Upstream` refuse to
+    /// carry a code at all.
+    ///
+    /// The message is safe to return: `SigningError` is `Clone + Eq` and built from error *kinds*
+    /// and upstream `Display` strings, never from a credential — the CC path holds no secret, the
+    /// CMD path's OTP and the PKCS#12 password are checked before the error is built, and the
+    /// smartcard middleware's PIN-free `Display` is a documented guarantee.
+    SigningFailure {
+        /// Human-readable English detail (mirrors the base `error` field).
+        message: String,
+        /// Stable machine-readable code (`signing_trusted_list_unavailable`, …), from
+        /// [`chancela_signing::ALL_SIGNING_ERROR_CODES`].
+        code: &'static str,
+        /// `true` when **this installation** is at fault (`500`) rather than a service we depend on
+        /// (`502`). A PDF our own assembler could not build is not a bad gateway; reporting it as
+        /// one sends the operator to look at somebody else's outage.
+        ours: bool,
+    },
     /// An ata's markdown body was rejected — a malformed placeholder, a construct the frozen block
     /// set cannot represent, or an over-cap body (422, t74 §5).
     ///
@@ -306,7 +345,7 @@ impl ApiError {
             ApiError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::Upstream(_) => StatusCode::BAD_GATEWAY,
-            ApiError::RegistryConsultation { ours, .. } => {
+            ApiError::RegistryConsultation { ours, .. } | ApiError::SigningFailure { ours, .. } => {
                 if *ours {
                     StatusCode::INTERNAL_SERVER_ERROR
                 } else {
@@ -355,6 +394,8 @@ impl ApiError {
             ApiError::InvalidActBody { code, .. } => code,
             // Classified at the source by `RegistryError::code()`, never by a call site.
             ApiError::RegistryConsultation { code, .. } => code,
+            // Likewise, by `SigningError::code()` at the single `From` conversion.
+            ApiError::SigningFailure { code, .. } => code,
             ApiError::InvalidNipc(_) => "invalid_nipc",
             ApiError::PasswordPolicy { .. } => "password_policy",
             ApiError::ComplianceBlocked { .. } => "compliance_blocked",
@@ -471,6 +512,7 @@ impl ApiError {
             | ApiError::PinRejected { message, .. }
             | ApiError::InvalidActBody { message, .. }
             | ApiError::RegistryConsultation { message, .. }
+            | ApiError::SigningFailure { message, .. }
             | ApiError::PasswordPolicy { message, .. } => message.clone(),
         }
     }
@@ -676,6 +718,78 @@ impl From<RegistryError> for ApiError {
     }
 }
 
+/// Signing failures — **the one place a [`SigningError`] is classified** (t61-e2 follow-up).
+///
+/// Every mapper in `signature.rs`, `asic_signing.rs` and `xades_signature.rs` keeps its own
+/// path-specific *prose* (a Cartão de Cidadão sentence is not a Chave Móvel Digital one) but takes
+/// its *code* from [`SigningError::code()`] and delegates its residual arm here. So there is exactly
+/// one table deciding what each cause is, and adding a `SigningError` variant fails that table to
+/// compile rather than quietly falling into a gateway error.
+///
+/// Four groups, and the boundary between them is "who has to do something about it":
+///
+/// - **`422` — the request, the input, or the operator's own configuration.** Nothing upstream
+///   failed, so a `502` would be a lie. This covers the three trust states (`UntrustedService`,
+///   `TrustAnchorNotConfigured`, `TrustedListNotAnchored`), a missing issuer certificate, a provider
+///   that refused, unusable PKCS#12 material, and — deliberately — the capability gaps
+///   (`NotImplemented`, `UnsupportedFormat`, `UnsupportedProfile`) alongside the input mismatches
+///   (`FormatInputMismatch`, `FamilyMismatch`, `SlotOutOfRange`, `WrongSigningPath`).
+///
+///   A capability gap could be argued into a `501`, and `501` is what HTTP means by "the server does
+///   not support the functionality required". It is not used, for two reasons. The request named a
+///   format or profile, so what has to change is the *request*, and every one of these errors is
+///   raised with the supported alternatives attached — that is a `4xx` conversation, not an outage.
+///   And a `5xx` here would page whoever watches the error rate for an operator asking for XAdES on a
+///   build that produces CAdES, which is the misdirection this whole conversion exists to remove.
+///
+/// - **`409` — the envelope's state, not the request's shape.** A slot already signed, or a serial
+///   envelope signed out of order: the request was well-formed and would succeed against a different
+///   state of the same resource, which is precisely what a conflict is.
+///
+/// - **`500` — we are at fault.** `Cades`/`Pades`/`Asic`/`Xades` are *our* assembly and validation
+///   code failing on material we produced or accepted. Calling that a bad gateway blames a
+///   third party for a defect at home. Unlike a bare [`Internal`](ApiError::Internal) the message
+///   survives, exactly as it does for `RegistryError::Config`: it names our own component, holds no
+///   secret, and is the only thing that tells an operator whether to look at the PDF or the CMS.
+///
+/// - **`502` — a service we depend on did not give us an answer.** `TrustedList` (the list could not
+///   be fetched, read or parsed) and `Timestamp` (the qualified timestamp authority did not return a
+///   usable token). Critically, `TrustedList` must never read as a verdict about the signer:
+///   we did not get an answer, which is not the same as getting a negative one — and the whole
+///   reason the operator in the original report could not tell those apart.
+impl From<chancela_signing::SigningError> for ApiError {
+    fn from(e: chancela_signing::SigningError) -> Self {
+        use chancela_signing::SigningError as S;
+        let message = e.to_string();
+        let code = e.code();
+        match e {
+            // The state of the envelope, not the shape of the request.
+            S::SlotAlreadySigned(_) | S::SlotOrder { .. } => {
+                ApiError::Conflict(message).with_code(code)
+            }
+            // Our own assembly/validation code failed. `ours: true` keeps the message, which a bare
+            // `Internal` would scrub — and the message is the only thing that says which component.
+            S::Cades(_) | S::Pades(_) | S::Asic(_) | S::Xades(_) => ApiError::SigningFailure {
+                message,
+                code,
+                ours: true,
+            },
+            // A service we depend on did not answer. Genuinely upstream, and genuinely `5xx`.
+            S::TrustedList(_) | S::Timestamp(_) => ApiError::SigningFailure {
+                message,
+                code,
+                ours: false,
+            },
+            // Everything else is client-actionable: the request, the input, the operator's
+            // configuration, or a provider's refusal. Listed as a residual arm rather than
+            // enumerated because `SigningError` is `#[non_exhaustive]` — but nothing is *silently*
+            // swallowed here, because the code is intrinsic and a new variant must be given one in
+            // `SigningError::code()`, whose match is exhaustive in its own crate.
+            _ => ApiError::Unprocessable(message).with_code(code),
+        }
+    }
+}
+
 /// CAE auto-update failures on `POST /v1/cae/refresh` (contract §2.7): a fetch/parse/integrity
 /// failure is a bad gateway (`502`); a config error (e.g. `CHANCELA_CAE_URL` unset) is a server
 /// misconfiguration (`500`).
@@ -733,6 +847,18 @@ mod tests {
                 offset: Some(17),
             },
             ApiError::Conflict("stale facts".to_owned()).with_code("termo_stale_facts"),
+            // The two variants whose code is intrinsic because their cause was classified at the
+            // source. Both were missing from a list whose whole purpose is to be complete.
+            ApiError::RegistryConsultation {
+                message: "the registry could not be reached".to_owned(),
+                code: "registry.unreachable",
+                ours: false,
+            },
+            ApiError::SigningFailure {
+                message: "the trusted list could not be fetched".to_owned(),
+                code: chancela_signing::SIGNING_TRUSTED_LIST_UNAVAILABLE,
+                ours: false,
+            },
         ]
     }
 
@@ -880,6 +1006,209 @@ mod tests {
         assert!(matches!(nested.as_uncoded(), ApiError::NotFound));
         assert_eq!(nested.status(), StatusCode::NOT_FOUND);
         assert!(matches!(nested.into_uncoded(), ApiError::NotFound));
+    }
+
+    /// The regression this conversion exists for.
+    ///
+    /// Every one of these used to reach the wire as the same `502` /
+    /// `{"error": "erro de gateway", "code": "http.upstream"}`, with the only useful sentence
+    /// diverted to the server log. An operator whose anchors were configured correctly, and whose
+    /// Trusted List simply could not be fetched, was told to go and look at a gateway.
+    #[tokio::test]
+    async fn the_causes_the_upstream_catch_all_merged_are_now_distinguishable() {
+        use chancela_signing::SigningError as S;
+
+        let causes = [
+            S::TrustedList("connect timed out".to_owned()),
+            S::Timestamp("the TSA returned status 5".to_owned()),
+            S::NotImplemented("XAdES-LTA"),
+            S::UnsupportedFormat(chancela_signing::SignatureFormat::XAdES),
+            S::Asic("container has no mimetype member".to_owned()),
+            S::Xades("reference did not digest".to_owned()),
+        ];
+
+        let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for cause in causes {
+            let debug = format!("{cause:?}");
+            let error = ApiError::from(cause);
+            let code = error.code().to_owned();
+            assert_ne!(code, "http.upstream", "{debug} is still opaque");
+            assert!(
+                seen.insert(code.clone()),
+                "{debug} shares code {code:?} with an unrelated cause"
+            );
+            // The detail reaches the caller rather than only the log.
+            let body = body_of(error).await;
+            assert_ne!(
+                body["error"], "erro de gateway",
+                "{debug} is still scrubbed"
+            );
+            assert_eq!(body["code"], code);
+        }
+    }
+
+    /// The status split, stated as the table it is. A `502` claims a dependency failed; saying that
+    /// about our own PDF assembler, or about a profile this build never implemented, sends the
+    /// operator to diagnose somebody else's outage.
+    #[test]
+    fn signing_failures_get_the_status_their_cause_justifies() {
+        use chancela_signing::SigningError as S;
+
+        let cases: Vec<(StatusCode, chancela_signing::SigningError)> = vec![
+            // A dependency did not answer. Genuinely upstream.
+            (
+                StatusCode::BAD_GATEWAY,
+                S::TrustedList("connect timed out".to_owned()),
+            ),
+            (
+                StatusCode::BAD_GATEWAY,
+                S::Timestamp("no timestamp token".to_owned()),
+            ),
+            // Our own assembly code. Ours, not a gateway's.
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                S::Asic("no mimetype member".to_owned()),
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                S::Xades("reference did not digest".to_owned()),
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                S::Cades("CMS assembly failed".to_owned()),
+            ),
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                S::Pades("byte range is malformed".to_owned()),
+            ),
+            // The request, the input, or the operator's own configuration.
+            (StatusCode::UNPROCESSABLE_ENTITY, S::NotImplemented("XAdES")),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                S::UnsupportedFormat(chancela_signing::SignatureFormat::XAdES),
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                S::FormatInputMismatch {
+                    format: chancela_signing::SignatureFormat::PAdES,
+                },
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                S::FamilyMismatch {
+                    requested: chancela_signing::SigningFamily::CartaoDeCidadao,
+                    provided: chancela_signing::SigningFamily::ChaveMovelDigital,
+                },
+            ),
+            (
+                StatusCode::UNPROCESSABLE_ENTITY,
+                S::TrustAnchorNotConfigured {
+                    checked: chancela_signing::policy::TrustAnchorSource::ApplicationSettings,
+                },
+            ),
+            // The envelope's state, not the request's shape.
+            (StatusCode::CONFLICT, S::SlotAlreadySigned(1)),
+            (
+                StatusCode::CONFLICT,
+                S::SlotOrder {
+                    expected: 0,
+                    got: 1,
+                },
+            ),
+        ];
+
+        for (expected, cause) in cases {
+            let debug = format!("{cause:?}");
+            let error = ApiError::from(cause);
+            assert_eq!(error.status(), expected, "{debug} got the wrong status");
+        }
+    }
+
+    /// A `500` here is not a scrubbed `Internal`: the message is what tells an operator whether to
+    /// look at the PDF assembler or the CMS one, and it holds no secret.
+    #[tokio::test]
+    async fn an_our_fault_signing_500_keeps_its_message_unlike_a_bare_internal() {
+        let body = body_of(ApiError::from(chancela_signing::SigningError::Asic(
+            "ASiC container has no mimetype member".to_owned(),
+        )))
+        .await;
+        assert_eq!(body["code"], chancela_signing::SIGNING_ASIC_FAILED);
+        assert!(
+            body["error"]
+                .as_str()
+                .is_some_and(|e| e.contains("mimetype")),
+            "the component-naming detail was scrubbed: {body}"
+        );
+    }
+
+    /// The three trust states must never merge, and a list that could not be *fetched* must never
+    /// read as a verdict about the signer's service.
+    #[test]
+    fn an_unfetchable_trusted_list_is_not_a_verdict_about_the_signer() {
+        use chancela_signing::SigningError as S;
+
+        let unfetchable = ApiError::from(S::TrustedList("connect timed out".to_owned()));
+        let inactive = ApiError::from(S::UntrustedService {
+            status: chancela_signing::TrustedListStatus::Withdrawn,
+        });
+        let no_anchor = ApiError::from(S::TrustAnchorNotConfigured {
+            checked: chancela_signing::policy::TrustAnchorSource::Environment,
+        });
+        let stale_anchor = ApiError::from(S::TrustedListNotAnchored {
+            configured_in: chancela_signing::policy::TrustAnchorSource::Environment,
+            anchor_count: 1,
+        });
+
+        let codes = [
+            unfetchable.code(),
+            inactive.code(),
+            no_anchor.code(),
+            stale_anchor.code(),
+        ];
+        let unique: std::collections::BTreeSet<&&str> = codes.iter().collect();
+        assert_eq!(unique.len(), codes.len(), "trust states merged: {codes:?}");
+
+        // And the three already-shipped codes are unchanged, so no operator runbook or client copy
+        // entry quietly stops resolving.
+        assert_eq!(inactive.code(), "signer_service_not_active");
+        assert_eq!(no_anchor.code(), "trust_anchor_not_configured");
+        assert_eq!(stale_anchor.code(), "trusted_list_not_anchored");
+    }
+
+    /// Every code the conversion can emit is in `chancela_signing`'s closed list, which is what the
+    /// web copy gate reads. A code invented here would have no sentence behind it.
+    #[test]
+    fn every_converted_code_is_in_the_closed_signing_vocabulary() {
+        use chancela_signing::SigningError as S;
+
+        let causes: Vec<chancela_signing::SigningError> = vec![
+            S::NotImplemented("seam"),
+            S::MissingIssuerCertificate,
+            S::Provider("card removed".to_owned()),
+            S::Cades("x".to_owned()),
+            S::Pades("x".to_owned()),
+            S::Asic("x".to_owned()),
+            S::Xades("x".to_owned()),
+            S::Timestamp("x".to_owned()),
+            S::TrustedList("x".to_owned()),
+            S::UnsupportedFormat(chancela_signing::SignatureFormat::XAdES),
+            S::FormatInputMismatch {
+                format: chancela_signing::SignatureFormat::PAdES,
+            },
+            S::SlotAlreadySigned(0),
+            S::SlotOutOfRange { slot: 3, len: 1 },
+            S::WrongSigningPath {
+                family: chancela_signing::SigningFamily::Manual,
+            },
+        ];
+        for cause in causes {
+            let debug = format!("{cause:?}");
+            let code = ApiError::from(cause).code();
+            assert!(
+                chancela_signing::ALL_SIGNING_ERROR_CODES.contains(&code),
+                "{debug} produced {code:?}, which the client copy gate never sees"
+            );
+        }
     }
 
     #[tokio::test]

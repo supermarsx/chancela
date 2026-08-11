@@ -489,3 +489,147 @@ describe('CMD signing errors resolve to a translated headline for every code the
     expect(resolved.forceDetails).toBe(true);
   });
 });
+
+/**
+ * The signing-error recurrence guard — the same eye as the CMD one above, aimed at the defect that
+ * made it necessary.
+ *
+ * `chancela-api` had FOUR `SigningError` → `ApiError` mappers, each naming the causes it cared about
+ * and sweeping the rest into `other => ApiError::Upstream(…)`. That renders as an opaque
+ * `{"error": "erro de gateway", "code": "http.upstream"}` with the detail diverted to the server
+ * log, so "the Trusted List could not be fetched", "the qualified timestamp authority refused" and
+ * "this profile is not implemented" reached the operator as one indistinguishable sentence — and all
+ * three were called a *gateway* failure, which two of them are not.
+ *
+ * `SigningError::code()` now classifies every variant intrinsically, at one conversion. This reads
+ * that closed list out of the Rust source and fails if any code the server can emit has no copy
+ * here, because a code without copy falls back to a bare status tier — which is the same opacity in
+ * a new place.
+ */
+describe('signing errors resolve to a translated headline for every code the server can emit', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  async function emittedSigningErrorCodes(): Promise<{
+    declared: Set<string>;
+    listed: Set<string>;
+  }> {
+    const nodeFs = 'node:fs';
+    const { readFileSync } = (await import(nodeFs)) as {
+      readFileSync(path: string, encoding: 'utf8'): string;
+    };
+    // Tests run with cwd = apps/web; the repo root is two levels up.
+    const source = readFileSync('../../crates/chancela-signing/src/lib.rs', 'utf8');
+
+    // `pub const SIGNING_NAME: &str = "value";` — one code's declaration. Scoped to the `SIGNING_`
+    // prefix so unrelated `pub const … &str` items in this large module cannot inflate the set.
+    const declarations = new Map<string, string>();
+    for (const match of source.matchAll(
+      /pub const (SIGNING_[A-Z0-9_]+): &str = "([a-z0-9_]+)";/g,
+    )) {
+      declarations.set(match[1], match[2]);
+    }
+    // The body of `ALL_SIGNING_ERROR_CODES`, so a constant declared but never listed is caught too.
+    const listBody =
+      /ALL_SIGNING_ERROR_CODES: &\[&str\] = &\[([\s\S]*?)\];/.exec(source)?.[1] ?? '';
+    const listed = new Set<string>();
+    for (const match of listBody.matchAll(/^\s{4}([A-Z0-9_]+),$/gm)) {
+      const value = declarations.get(match[1]);
+      if (value) listed.add(value);
+    }
+    return { declared: new Set(declarations.values()), listed };
+  }
+
+  const hasCopyInBoth = (code: string): boolean =>
+    Boolean(ptPT[`apiError.${code}`]?.trim()) && Boolean(english[`apiError.${code}`]?.trim());
+
+  it('extracts a non-vacuous code list from the Rust source', async () => {
+    const { declared, listed } = await emittedSigningErrorCodes();
+    expect(declared.size, 'the SigningError code constant scan matched nothing').toBeGreaterThan(0);
+    expect(listed.size, 'the ALL_SIGNING_ERROR_CODES scan matched nothing').toBeGreaterThan(0);
+    // A floor just under the current count, so a half-broken sweep is caught rather than passing.
+    expect(listed.size).toBeGreaterThanOrEqual(20);
+  });
+
+  it('lists every declared code (none declared but left out of the closed list)', async () => {
+    const { declared, listed } = await emittedSigningErrorCodes();
+    expect([...declared].filter((code) => !listed.has(code)).sort()).toEqual([]);
+  });
+
+  it('gives every emitted signing error code its own pt-PT and English copy', async () => {
+    const { listed } = await emittedSigningErrorCodes();
+    const unmapped = [...listed].filter((code) => !hasCopyInBoth(code));
+    expect(
+      unmapped.sort(),
+      'a signing error code the backend can emit has no copy, so it would fall back to a bare ' +
+        'status tier — the same opacity the `Upstream` catch-all had',
+    ).toEqual([]);
+  });
+
+  it('resolves each signing error code to its dedicated headline, not the status tier', async () => {
+    const { listed } = await emittedSigningErrorCodes();
+    for (const code of listed) {
+      const resolved = resolveApiError({ status: 422, code });
+      expect(resolved.key, `${code} fell back to a tier headline`).toBe(`apiError.${code}`);
+      expect(resolved.unmapped, `${code} was treated as an unwritten-copy gap`).toBe(false);
+    }
+  });
+
+  it('keeps every signing cause a distinct sentence — none may collapse into another', async () => {
+    // Distinct codes with identical copy would re-create the merge in the copy layer, which is
+    // where it would be hardest to notice: the wire looks classified and the screen does not.
+    const { listed } = await emittedSigningErrorCodes();
+    const sentences = [...listed].map((code) => ptPT[`apiError.${code}`]);
+    expect(new Set(sentences).size, 'two signing causes share one pt-PT sentence').toBe(
+      sentences.length,
+    );
+  });
+
+  it('says where the fault is for the causes the gateway error used to merge', async () => {
+    // The four the `Upstream` catch-all hid, and the one thing each has to say. An operator sent to
+    // the wrong place is the defect; wording is not.
+    const { listed } = await emittedSigningErrorCodes();
+    for (const code of [
+      'signing_trusted_list_unavailable',
+      'signing_timestamp_failed',
+      'signing_not_implemented',
+    ]) {
+      expect(listed.has(code), `${code} is no longer emitted`).toBe(true);
+    }
+
+    // A list that could not be FETCHED is not a verdict about the signer.
+    const tsl = ptPT['apiError.signing_trusted_list_unavailable'];
+    expect(tsl).toMatch(/Lista de Confiança/);
+    expect(tsl, 'must say the access failed, not the certificate').toMatch(/não o certificado/i);
+
+    // Our own assembly failures must not read as somebody else's outage.
+    for (const code of [
+      'signing_cades_failed',
+      'signing_pades_failed',
+      'signing_asic_failed',
+      'signing_xades_failed',
+    ]) {
+      expect(ptPT[`apiError.${code}`], `${code} does not place the fault`).toMatch(
+        /falha é deste servidor/i,
+      );
+    }
+
+    // A capability gap is a refusal, not a hiccup.
+    for (const code of [
+      'signing_not_implemented',
+      'signing_unsupported_format',
+      'signing_unsupported_profile',
+    ]) {
+      expect(ptPT[`apiError.${code}`], `${code} reads as retryable`).toMatch(/não altera/i);
+    }
+  });
+
+  it('still shows the raw English detail, marked, for a signing code newer than this bundle', () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const resolved = resolveApiError({ status: 502, code: 'signing_a_cause_from_the_future' });
+    expect(resolved.key).toBe('apiError.tier.502');
+    expect(resolved.unmapped).toBe(true);
+    expect(resolved.forceDetails).toBe(true);
+  });
+});

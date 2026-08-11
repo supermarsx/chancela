@@ -381,21 +381,29 @@ fn decode_member(base64: &str, label: &str) -> Result<Vec<u8>, ApiError> {
     Ok(bytes)
 }
 
+/// Map an ASiC-path signing failure. The prose is path-specific; the code is
+/// [`SigningError::code()`], and the residual arm delegates to the single `From<SigningError>`
+/// conversion rather than flattening into a scrubbed `500` that says nothing at all.
 fn map_signing_error(err: SigningError) -> ApiError {
+    let code = err.code();
     match &err {
         SigningError::SoftCertificate(e) => ApiError::Unprocessable(format!(
             "não foi possível carregar o certificado PKCS#12: {e}"
-        )),
+        ))
+        .with_code(code),
         SigningError::Xades(msg) => {
             ApiError::Unprocessable(format!("falha ao produzir a assinatura XAdES: {msg}"))
+                .with_code(code)
         }
         SigningError::Asic(msg) => {
             ApiError::Unprocessable(format!("falha ao produzir o contentor ASiC: {msg}"))
+                .with_code(code)
         }
         SigningError::Timestamp(msg) => {
             ApiError::Unprocessable(format!("falha ao obter carimbo temporal: {msg}"))
+                .with_code(code)
         }
-        _ => ApiError::Internal(format!("ASiC signing failed: {err}")),
+        _ => ApiError::from(err),
     }
 }
 

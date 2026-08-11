@@ -591,7 +591,144 @@ pub enum SigningError {
     },
 }
 
+// ─── THE STABLE SIGNING-ERROR CODE VOCABULARY ──────────────────────────────────────────────────
+//
+// One code per cause, so a failing signature can be told apart from another failing signature.
+// Every constant is `snake_case` ASCII; the web layer owns the sentence and reads this list out of
+// this file (`apiErrorFallback.test.ts`) to prove none is left untranslated.
+//
+// **Append-only.** A code that has shipped is in operator logs and in the client's copy catalog;
+// renaming one silently demotes the client to a bare status tier.
+//
+// Five entries are deliberately NOT `signing_`-prefixed: they already shipped as call-site codes
+// with copy behind them (`trust_anchor_not_configured`, `trusted_list_not_anchored`,
+// `signer_service_not_active`, `pkcs12_password_incorrect`, `pkcs12_material_invalid`). Making the
+// code intrinsic must not change what the wire says, or every operator runbook quoting them breaks.
+
+/// The requested operation, profile or format is recognised but not produced by this build.
+pub const SIGNING_NOT_IMPLEMENTED: &str = "signing_not_implemented";
+/// The signer's trust service is not currently `Granted` on an **authenticated** Trusted List.
+pub const SIGNING_SIGNER_SERVICE_NOT_ACTIVE: &str = "signer_service_not_active";
+/// No Trusted List trust anchor is configured anywhere, so no list can ever be authenticated.
+pub const SIGNING_TRUST_ANCHOR_NOT_CONFIGURED: &str = "trust_anchor_not_configured";
+/// Anchors are configured, but the Trusted List did not authenticate against any of them.
+pub const SIGNING_TRUSTED_LIST_NOT_ANCHORED: &str = "trusted_list_not_anchored";
+/// No issuer certificate was available to resolve the signer's trusted-list status.
+pub const SIGNING_ISSUER_CERTIFICATE_MISSING: &str = "signing_issuer_certificate_missing";
+/// A signing device or service refused, or could not complete, the signature.
+pub const SIGNING_PROVIDER_REFUSED: &str = "signing_provider_refused";
+/// The PKCS#12 password failed the MAC/decryption gate.
+pub const SIGNING_PKCS12_PASSWORD_INCORRECT: &str = "pkcs12_password_incorrect";
+/// The PKCS#12 material carries no usable signing key or chain.
+pub const SIGNING_PKCS12_MATERIAL_INVALID: &str = "pkcs12_material_invalid";
+/// CAdES/CMS assembly or validation failed inside this application.
+pub const SIGNING_CADES_FAILED: &str = "signing_cades_failed";
+/// PAdES PDF signing or validation failed inside this application.
+pub const SIGNING_PADES_FAILED: &str = "signing_pades_failed";
+/// ASiC container creation, parsing or validation failed inside this application.
+pub const SIGNING_ASIC_FAILED: &str = "signing_asic_failed";
+/// XAdES/XMLDSig assembly or validation failed inside this application.
+pub const SIGNING_XADES_FAILED: &str = "signing_xades_failed";
+/// A recognised signature profile this build deliberately does not support.
+pub const SIGNING_UNSUPPORTED_PROFILE: &str = "signing_unsupported_profile";
+/// The qualified timestamp authority did not return a usable timestamp.
+pub const SIGNING_TIMESTAMP_FAILED: &str = "signing_timestamp_failed";
+/// The Trusted List itself could not be fetched, read or parsed — no trust verdict was reached.
+pub const SIGNING_TRUSTED_LIST_UNAVAILABLE: &str = "signing_trusted_list_unavailable";
+/// The requested container format is in the vocabulary but is not produced by this build.
+pub const SIGNING_UNSUPPORTED_FORMAT: &str = "signing_unsupported_format";
+/// The document input did not match the requested container format.
+pub const SIGNING_FORMAT_INPUT_MISMATCH: &str = "signing_format_input_mismatch";
+/// The provider's signing family did not match the family the envelope slot requested.
+pub const SIGNING_FAMILY_MISMATCH: &str = "signing_family_mismatch";
+/// The referenced envelope slot index does not exist.
+pub const SIGNING_SLOT_OUT_OF_RANGE: &str = "signing_slot_out_of_range";
+/// The referenced envelope slot has already been signed.
+pub const SIGNING_SLOT_ALREADY_SIGNED: &str = "signing_slot_already_signed";
+/// A serial envelope was signed out of order.
+pub const SIGNING_SLOT_OUT_OF_ORDER: &str = "signing_slot_out_of_order";
+/// A slot was routed through the wrong signing path (manual through crypto, or the reverse).
+pub const SIGNING_WRONG_PATH: &str = "signing_wrong_path";
+
+/// Every stable signing-error code, in one closed list.
+///
+/// The closed list is what makes the client gate possible: `apiErrorFallback.test.ts` scans this
+/// file for the constants, reads this array, and fails if any entry has no pt-PT and English copy.
+/// A constant declared but left out of this array is caught by the same test.
+pub const ALL_SIGNING_ERROR_CODES: &[&str] = &[
+    SIGNING_NOT_IMPLEMENTED,
+    SIGNING_SIGNER_SERVICE_NOT_ACTIVE,
+    SIGNING_TRUST_ANCHOR_NOT_CONFIGURED,
+    SIGNING_TRUSTED_LIST_NOT_ANCHORED,
+    SIGNING_ISSUER_CERTIFICATE_MISSING,
+    SIGNING_PROVIDER_REFUSED,
+    SIGNING_PKCS12_PASSWORD_INCORRECT,
+    SIGNING_PKCS12_MATERIAL_INVALID,
+    SIGNING_CADES_FAILED,
+    SIGNING_PADES_FAILED,
+    SIGNING_ASIC_FAILED,
+    SIGNING_XADES_FAILED,
+    SIGNING_UNSUPPORTED_PROFILE,
+    SIGNING_TIMESTAMP_FAILED,
+    SIGNING_TRUSTED_LIST_UNAVAILABLE,
+    SIGNING_UNSUPPORTED_FORMAT,
+    SIGNING_FORMAT_INPUT_MISMATCH,
+    SIGNING_FAMILY_MISMATCH,
+    SIGNING_SLOT_OUT_OF_RANGE,
+    SIGNING_SLOT_ALREADY_SIGNED,
+    SIGNING_SLOT_OUT_OF_ORDER,
+    SIGNING_WRONG_PATH,
+];
+
 impl SigningError {
+    /// The stable, machine-readable code for this failure.
+    ///
+    /// **Intrinsic, produced here and nowhere else.** Before this existed, the API's four
+    /// `SigningError` → `ApiError` mappers each named the causes they cared about and swept the rest
+    /// into one `other => ApiError::Upstream(…)` arm, which renders as an opaque
+    /// `{"error": "erro de gateway", "code": "http.upstream"}` with the detail diverted to the server
+    /// log. "The Trusted List could not be fetched", "the timestamp authority refused" and "this
+    /// profile is not implemented" were therefore indistinguishable to the operator — and all three
+    /// were reported as a *gateway* failure, which two of them are not.
+    ///
+    /// Producing the code at the error rather than at the mapper is the whole point: four mappers
+    /// classifying the same enum drift apart, and the arm that drifts is the `_ =>` fallback, which
+    /// fails by getting vaguer rather than by failing to compile. Path-specific *prose* still belongs
+    /// to each mapper (a Cartão de Cidadão sentence is not a Chave Móvel Digital one); the cause does
+    /// not.
+    ///
+    /// Every value is in [`ALL_SIGNING_ERROR_CODES`].
+    pub fn code(&self) -> &'static str {
+        match self {
+            SigningError::NotImplemented(_) => SIGNING_NOT_IMPLEMENTED,
+            SigningError::UntrustedService { .. } => SIGNING_SIGNER_SERVICE_NOT_ACTIVE,
+            SigningError::TrustAnchorNotConfigured { .. } => SIGNING_TRUST_ANCHOR_NOT_CONFIGURED,
+            SigningError::TrustedListNotAnchored { .. } => SIGNING_TRUSTED_LIST_NOT_ANCHORED,
+            SigningError::MissingIssuerCertificate => SIGNING_ISSUER_CERTIFICATE_MISSING,
+            SigningError::Provider(_) => SIGNING_PROVIDER_REFUSED,
+            // The password case is split out because it is the one an operator can fix by typing
+            // again; everything else about a PKCS#12 file needs a different file.
+            SigningError::SoftCertificate(SoftCertificateError::WrongPassword) => {
+                SIGNING_PKCS12_PASSWORD_INCORRECT
+            }
+            SigningError::SoftCertificate(_) => SIGNING_PKCS12_MATERIAL_INVALID,
+            SigningError::Cades(_) => SIGNING_CADES_FAILED,
+            SigningError::Pades(_) => SIGNING_PADES_FAILED,
+            SigningError::Asic(_) => SIGNING_ASIC_FAILED,
+            SigningError::Xades(_) => SIGNING_XADES_FAILED,
+            SigningError::UnsupportedProfile(_) => SIGNING_UNSUPPORTED_PROFILE,
+            SigningError::Timestamp(_) => SIGNING_TIMESTAMP_FAILED,
+            SigningError::TrustedList(_) => SIGNING_TRUSTED_LIST_UNAVAILABLE,
+            SigningError::UnsupportedFormat(_) => SIGNING_UNSUPPORTED_FORMAT,
+            SigningError::FormatInputMismatch { .. } => SIGNING_FORMAT_INPUT_MISMATCH,
+            SigningError::FamilyMismatch { .. } => SIGNING_FAMILY_MISMATCH,
+            SigningError::SlotOutOfRange { .. } => SIGNING_SLOT_OUT_OF_RANGE,
+            SigningError::SlotAlreadySigned(_) => SIGNING_SLOT_ALREADY_SIGNED,
+            SigningError::SlotOrder { .. } => SIGNING_SLOT_OUT_OF_ORDER,
+            SigningError::WrongSigningPath { .. } => SIGNING_WRONG_PATH,
+        }
+    }
+
     pub(crate) fn unsupported_xades(operation: &'static str) -> Self {
         SigningError::UnsupportedProfile(
             UnsupportedSignatureProfile::new(
@@ -606,6 +743,169 @@ impl SigningError {
                 "bounded ASiC-E/CAdES",
             ]),
         )
+    }
+}
+
+#[cfg(test)]
+mod signing_error_code_tests {
+    use super::*;
+    use std::collections::BTreeSet;
+
+    /// One instance of **every** variant. Constructed by hand rather than derived, so the list is a
+    /// reviewed inventory: adding a variant to the enum makes `SigningError::code()` fail to compile
+    /// (the match is exhaustive in-crate despite `#[non_exhaustive]`), and adding it here is what
+    /// forces someone to decide whether its code is new or shared.
+    fn every_variant() -> Vec<SigningError> {
+        vec![
+            SigningError::NotImplemented("phase-2 seam"),
+            SigningError::UntrustedService {
+                status: TrustedListStatus::Withdrawn,
+            },
+            SigningError::TrustAnchorNotConfigured {
+                checked: policy::TrustAnchorSource::ApplicationSettings,
+            },
+            SigningError::TrustedListNotAnchored {
+                configured_in: policy::TrustAnchorSource::Environment,
+                anchor_count: 2,
+            },
+            SigningError::MissingIssuerCertificate,
+            SigningError::Provider("the card was removed".to_owned()),
+            SigningError::SoftCertificate(SoftCertificateError::WrongPassword),
+            SigningError::SoftCertificate(SoftCertificateError::MissingPrivateKey),
+            SigningError::SoftCertificate(SoftCertificateError::EmptyCertificateChain),
+            SigningError::SoftCertificate(SoftCertificateError::MalformedInput("bad".to_owned())),
+            SigningError::Cades("CMS assembly failed".to_owned()),
+            SigningError::Pades("PDF byte range is malformed".to_owned()),
+            SigningError::Asic("container has no mimetype member".to_owned()),
+            SigningError::Xades("XMLDSig reference did not digest".to_owned()),
+            SigningError::UnsupportedProfile(UnsupportedSignatureProfile::new(
+                SignatureFormat::XAdES,
+                "XAdES",
+                "not implemented",
+            )),
+            SigningError::Timestamp("the TSA returned status 5".to_owned()),
+            SigningError::TrustedList("the trusted list could not be fetched".to_owned()),
+            SigningError::UnsupportedFormat(SignatureFormat::XAdES),
+            SigningError::FormatInputMismatch {
+                format: SignatureFormat::PAdES,
+            },
+            SigningError::FamilyMismatch {
+                requested: SigningFamily::CartaoDeCidadao,
+                provided: SigningFamily::ChaveMovelDigital,
+            },
+            SigningError::SlotOutOfRange { slot: 4, len: 2 },
+            SigningError::SlotAlreadySigned(1),
+            SigningError::SlotOrder {
+                expected: 0,
+                got: 1,
+            },
+            SigningError::WrongSigningPath {
+                family: SigningFamily::Manual,
+            },
+        ]
+    }
+
+    #[test]
+    fn every_variant_yields_a_code_from_the_closed_list() {
+        for error in every_variant() {
+            let code = error.code();
+            assert!(
+                ALL_SIGNING_ERROR_CODES.contains(&code),
+                "{error:?} yielded code {code:?}, which is not in ALL_SIGNING_ERROR_CODES"
+            );
+        }
+    }
+
+    #[test]
+    fn the_closed_list_has_no_entry_nothing_produces() {
+        // The mirror of the test above. A constant left in the array after its variant was removed
+        // is a code the client would keep copy for and the server could never send.
+        let produced: BTreeSet<&str> = every_variant().iter().map(|e| e.code()).collect();
+        let orphans: Vec<&&str> = ALL_SIGNING_ERROR_CODES
+            .iter()
+            .filter(|code| !produced.contains(**code))
+            .collect();
+        assert!(orphans.is_empty(), "codes nothing produces: {orphans:?}");
+    }
+
+    #[test]
+    fn codes_are_unique_and_client_safe_identifiers() {
+        let unique: BTreeSet<&&str> = ALL_SIGNING_ERROR_CODES.iter().collect();
+        assert_eq!(
+            unique.len(),
+            ALL_SIGNING_ERROR_CODES.len(),
+            "two signing error codes collide, so a client cannot tell their sentences apart"
+        );
+        for code in ALL_SIGNING_ERROR_CODES {
+            assert!(
+                !code.is_empty()
+                    && code
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "{code:?} is not a snake_case ASCII identifier"
+            );
+        }
+    }
+
+    /// The four causes the API's `Upstream` catch-all used to merge. They are what an operator has
+    /// to be able to tell apart: a list that could not be fetched, a timestamp authority that
+    /// refused, a profile this build does not produce, and a provider that said no.
+    #[test]
+    fn the_previously_merged_causes_are_four_distinct_codes() {
+        let codes = [
+            SigningError::TrustedList("fetch failed".to_owned()).code(),
+            SigningError::Timestamp("TSA refused".to_owned()).code(),
+            SigningError::NotImplemented("XAdES-LTA").code(),
+            SigningError::Provider("card removed".to_owned()).code(),
+        ];
+        let unique: BTreeSet<&&str> = codes.iter().collect();
+        assert_eq!(unique.len(), codes.len(), "merged again: {codes:?}");
+    }
+
+    /// A wrong PKCS#12 password is retryable by typing; anything else about the file is not. The two
+    /// must not share a code, or the client cannot tell an operator which one they are looking at.
+    #[test]
+    fn a_wrong_pkcs12_password_is_distinct_from_unusable_material() {
+        assert_ne!(
+            SigningError::SoftCertificate(SoftCertificateError::WrongPassword).code(),
+            SigningError::SoftCertificate(SoftCertificateError::MissingPrivateKey).code()
+        );
+    }
+
+    /// The three trust states t61-e2 split apart keep three codes, and keep the ones already on the
+    /// wire. Renaming any of them would silently demote a client that has copy for the old name.
+    #[test]
+    fn the_three_trust_states_keep_their_shipped_codes() {
+        assert_eq!(
+            SigningError::TrustAnchorNotConfigured {
+                checked: policy::TrustAnchorSource::Environment,
+            }
+            .code(),
+            "trust_anchor_not_configured"
+        );
+        assert_eq!(
+            SigningError::TrustedListNotAnchored {
+                configured_in: policy::TrustAnchorSource::Environment,
+                anchor_count: 1,
+            }
+            .code(),
+            "trusted_list_not_anchored"
+        );
+        assert_eq!(
+            SigningError::UntrustedService {
+                status: TrustedListStatus::Withdrawn,
+            }
+            .code(),
+            "signer_service_not_active"
+        );
+        // And an unauthenticated list is never reported as the signer's service being inactive.
+        assert_ne!(
+            SigningError::TrustedList("fetch failed".to_owned()).code(),
+            SigningError::UntrustedService {
+                status: TrustedListStatus::Withdrawn,
+            }
+            .code()
+        );
     }
 }
 
