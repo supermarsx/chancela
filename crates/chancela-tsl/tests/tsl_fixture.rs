@@ -1123,3 +1123,477 @@ fn tsl_signature_validation_rejects_incomplete_fixture_signature() {
         "got {err:?}"
     );
 }
+
+// =================================================================================================
+// Durable Trusted List cache (`disk_cache`)
+// =================================================================================================
+//
+// The fault these cover: the configured Trusted List URL is reachable from the operator's own host
+// but not from wherever the server runs (container egress, a proxy, DNS), so every qualified
+// signature is refused with `signing_trusted_list_unavailable`. The cache makes a transient fetch
+// failure survivable — and the tests below pin the boundary of *how* survivable, because a cache
+// that quietly outlives the list it holds is how a withdrawn trust service keeps reading as granted.
+mod durable_cache {
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    use chancela_tsl::{
+        CachingTslSource, DEFAULT_MAX_STALE, LEGACY_SHA1_DIGEST, QualifiedStatus,
+        TslAlgorithmPolicy, TslCacheLoad, TslCacheRefusal, TslClient, TslClock, TslDiskCache,
+        TslError, TslFetchProvenance, TslSource, TslTrustAnchors,
+        validate_tsl_signature_with_policy,
+    };
+    use sha1::Sha1;
+    use sha2::{Digest, Sha256};
+    use time::macros::datetime;
+    use time::{Duration, OffsetDateTime};
+
+    use super::{
+        EXC_C14N_10, RSA_SHA256, SignedFixture, anchors_for, base64_standard, build_self_signed,
+        fixture_without_signature, issuer_cert, sign_rsa_digest_info,
+    };
+
+    /// Inside the fixture's validity window (issued 2026-01-15, `NextUpdate` 2026-07-15).
+    const NOW: OffsetDateTime = datetime!(2026-07-06 12:00:00 UTC);
+    /// One day past the fixture's `NextUpdate` — inside the seven-day grace.
+    const ONE_DAY_STALE: OffsetDateTime = datetime!(2026-07-16 0:00 UTC);
+    /// Eight days past it — one day beyond the grace.
+    const PAST_MAX_AGE: OffsetDateTime = datetime!(2026-07-23 12:00 UTC);
+
+    const SOURCE_ID: &str = "pt-gns";
+    const LOCATION: &str = "url:https://tsl.example.invalid/TSL.xml";
+    /// The terminal cause the offline source reports. It is the shape of the real fault: the outer
+    /// `error sending request for url (…)` plus the cause that actually decides where an operator
+    /// should look.
+    const OFFLINE_CAUSE: &str = "dns error: failed to lookup address information";
+
+    /// A source that can be taken offline, standing in for the egress fault. It counts fetches so a
+    /// test can prove the durable cache was consulted rather than the network.
+    struct ToggleSource {
+        bytes: Vec<u8>,
+        online: AtomicBool,
+        attempts: AtomicUsize,
+    }
+
+    impl ToggleSource {
+        fn online(bytes: Vec<u8>) -> Self {
+            Self {
+                bytes,
+                online: AtomicBool::new(true),
+                attempts: AtomicUsize::new(0),
+            }
+        }
+
+        fn offline(bytes: Vec<u8>) -> Self {
+            let source = Self::online(bytes);
+            source.online.store(false, Ordering::SeqCst);
+            source
+        }
+    }
+
+    impl TslSource for ToggleSource {
+        fn fetch(&self) -> Result<Vec<u8>, TslError> {
+            self.attempts.fetch_add(1, Ordering::SeqCst);
+            if self.online.load(Ordering::SeqCst) {
+                Ok(self.bytes.clone())
+            } else {
+                Err(TslError::Structure(format!(
+                    "error sending request for url (https://tsl.example.invalid/TSL.xml): \
+                     {OFFLINE_CAUSE}"
+                )))
+            }
+        }
+    }
+
+    /// A scratch directory unique to one test, removed on the way in.
+    fn scratch(tag: &str) -> std::path::PathBuf {
+        static SEQ: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "chancela-tsl-durable-{tag}-{}-{}",
+            std::process::id(),
+            SEQ.fetch_add(1, Ordering::SeqCst)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// A client over `source`, caching into `dir` and reading `now` as the current instant.
+    fn client_at(
+        source: ToggleSource,
+        dir: &std::path::Path,
+        anchors: TslTrustAnchors,
+        now: OffsetDateTime,
+    ) -> TslClient<CachingTslSource<ToggleSource>> {
+        let cached = CachingTslSource::new(
+            source,
+            TslDiskCache::new(dir),
+            SOURCE_ID,
+            LOCATION,
+            DEFAULT_MAX_STALE,
+        )
+        .with_clock(TslClock::Pinned(now));
+        TslClient::new(cached).with_anchors(anchors)
+    }
+
+    /// A Trusted List signed with a SHA-1 reference digest — a broken algorithm no install accepts
+    /// unless its exact URI was opted into. Otherwise identical in shape to `signed_fixture`.
+    fn signed_sha1_digest_fixture() -> SignedFixture {
+        let unsigned_xml =
+            String::from_utf8(fixture_without_signature()).expect("fixture is UTF-8");
+        let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 2048).expect("rsa keygen");
+        let spki = spki::SubjectPublicKeyInfoOwned::from_key(rsa::RsaPublicKey::from(&key))
+            .expect("rsa spki");
+        let cert_der = build_self_signed("TSL SHA-1 digest test signer", 21, spki);
+        let digest = Sha1::digest(unsigned_xml.as_bytes());
+        let signed_info = format!(
+            r#"<ds:SignedInfo><ds:CanonicalizationMethod Algorithm="{EXC_C14N_10}"/><ds:SignatureMethod Algorithm="{RSA_SHA256}"/><ds:Reference URI=""><ds:DigestMethod Algorithm="{LEGACY_SHA1_DIGEST}"/><ds:DigestValue>{}</ds:DigestValue></ds:Reference></ds:SignedInfo>"#,
+            base64_standard(&digest)
+        );
+        let signed_info_hash: [u8; 32] = Sha256::digest(signed_info.as_bytes()).into();
+        let signature_value = sign_rsa_digest_info(&key, &signed_info_hash);
+        let signature = format!(
+            r#"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">{signed_info}<ds:SignatureValue>{}</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>{}</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature>"#,
+            base64_standard(&signature_value),
+            base64_standard(&cert_der)
+        );
+        let insert_at = unsigned_xml
+            .find("</TrustServiceStatusList>")
+            .expect("fixture root close");
+        let xml = format!(
+            "{}{}{}",
+            &unsigned_xml[..insert_at],
+            signature,
+            &unsigned_xml[insert_at..]
+        );
+        SignedFixture {
+            xml: xml.into_bytes(),
+            signature_value,
+            signer_cert_der: cert_der,
+        }
+    }
+
+    /// The headline case. A first fetch succeeds and is cached; the source then goes dark, exactly
+    /// as it did in production; a fresh client — a new signature, a new process — still resolves the
+    /// issuer to `Granted`, and says the answer came from the cache.
+    #[test]
+    fn a_failed_fetch_falls_back_to_the_cache_and_the_signature_proceeds() {
+        let dir = scratch("fallback");
+        let fixture = super::signed_fixture();
+        let anchors = anchors_for(&fixture);
+
+        let mut online = client_at(
+            ToggleSource::online(fixture.xml.clone()),
+            &dir,
+            anchors.clone(),
+            NOW,
+        );
+        online.refresh(NOW).expect("the first fetch succeeds");
+        let issuer = issuer_cert(online.cached().expect("cache").list(), "MULTICERT");
+        assert_eq!(
+            online.is_qualified_for_esig(&issuer, NOW).expect("status"),
+            QualifiedStatus::Granted
+        );
+        assert_eq!(
+            online.source().last_fetch_provenance(),
+            TslFetchProvenance::Fetched,
+            "a successful fetch is not a cache serve"
+        );
+
+        // A new process, and the network is gone.
+        let mut offline = client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            anchors,
+            NOW,
+        );
+        offline
+            .refresh(NOW)
+            .expect("the durable cache answers what the network could not");
+        assert_eq!(
+            offline.is_qualified_for_esig(&issuer, NOW).expect("status"),
+            QualifiedStatus::Granted,
+            "a transient fetch failure must not make qualified signing impossible"
+        );
+
+        match offline.source().last_fetch_provenance() {
+            TslFetchProvenance::ServedFromCache(serve) => {
+                assert!(!serve.stale, "inside NextUpdate the cache is not stale");
+                assert!(
+                    serve.fetch_error.contains(OFFLINE_CAUSE),
+                    "the serve record must carry why the fetch failed, got {:?}",
+                    serve.fetch_error
+                );
+            }
+            other => panic!("expected a cache serve, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Past `NextUpdate` the cache is still served — an operator mid-outage is not helped by a
+    /// refusal — but the answer is **marked**, because on a stale list a trust service the scheme
+    /// operator has withdrawn since then still reads as granted.
+    #[test]
+    fn a_cached_list_past_next_update_is_served_but_marked_stale() {
+        let dir = scratch("stale");
+        let fixture = super::signed_fixture();
+        let anchors = anchors_for(&fixture);
+
+        client_at(
+            ToggleSource::online(fixture.xml.clone()),
+            &dir,
+            anchors.clone(),
+            NOW,
+        )
+        .refresh(NOW)
+        .expect("seed the cache");
+
+        let mut offline = client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            anchors,
+            ONE_DAY_STALE,
+        );
+        offline.refresh(ONE_DAY_STALE).expect("cache answers");
+
+        let serve = match offline.source().last_fetch_provenance() {
+            TslFetchProvenance::ServedFromCache(serve) => serve,
+            other => panic!("expected a cache serve, got {other:?}"),
+        };
+        assert!(
+            serve.stale,
+            "past NextUpdate the serve must be marked stale"
+        );
+        assert_eq!(serve.code(), chancela_tsl::CODE_TSL_SERVED_FROM_STALE_CACHE);
+        assert_eq!(serve.expires_at, datetime!(2026-07-15 0:00 UTC));
+
+        // ...and the mark is durable, so a surface that never saw the signature can still report it.
+        let recorded = TslDiskCache::new(&dir)
+            .last_serve(&TslDiskCache::key_for(SOURCE_ID, LOCATION))
+            .expect("the stale serve is recorded on disk");
+        assert_eq!(recorded, serve);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Past the bound, the cache is refused rather than served, and the caller sees the fetch
+    /// failure — the same refusal it would have seen with no cache at all.
+    #[test]
+    fn a_cached_list_past_the_maximum_age_is_refused_not_served() {
+        let dir = scratch("too-old");
+        let fixture = super::signed_fixture();
+        let anchors = anchors_for(&fixture);
+
+        client_at(
+            ToggleSource::online(fixture.xml.clone()),
+            &dir,
+            anchors.clone(),
+            NOW,
+        )
+        .refresh(NOW)
+        .expect("seed the cache");
+
+        let mut offline = client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            anchors,
+            PAST_MAX_AGE,
+        );
+        let err = offline
+            .refresh(PAST_MAX_AGE)
+            .expect_err("a cache eight days past NextUpdate must not be served");
+        assert!(
+            err.to_string().contains(OFFLINE_CAUSE),
+            "the caller must see the fetch failure, not a cache error: {err}"
+        );
+        assert!(
+            offline.cached().is_none(),
+            "nothing may be parsed from a refused cache"
+        );
+
+        // And the refusal names the bound it tripped, for the operator-facing diagnostic.
+        match TslDiskCache::new(&dir).load(
+            &TslDiskCache::key_for(SOURCE_ID, LOCATION),
+            PAST_MAX_AGE,
+            DEFAULT_MAX_STALE,
+        ) {
+            TslCacheLoad::Refused(TslCacheRefusal::TooOld { usable_until, .. }) => {
+                assert_eq!(
+                    usable_until,
+                    datetime!(2026-07-15 0:00 UTC) + Duration::days(7)
+                );
+            }
+            other => panic!("expected a TooOld refusal, got {other:?}"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// **The cached thing is bytes, not a verdict.** Revoke the anchor that made the list authentic
+    /// and the very next use of the same cached bytes stops vouching for anybody — no cache
+    /// invalidation step, because there is no verdict on disk to invalidate.
+    #[test]
+    fn revoking_the_trust_anchor_invalidates_the_cache_immediately() {
+        let dir = scratch("anchor-revoked");
+        let fixture = super::signed_fixture();
+
+        let mut seeded = client_at(
+            ToggleSource::online(fixture.xml.clone()),
+            &dir,
+            anchors_for(&fixture),
+            NOW,
+        );
+        seeded.refresh(NOW).expect("seed the cache");
+        let issuer = issuer_cert(seeded.cached().expect("cache").list(), "MULTICERT");
+        assert_eq!(
+            seeded.is_qualified_for_esig(&issuer, NOW).expect("status"),
+            QualifiedStatus::Granted
+        );
+
+        // The operator revokes that anchor and provisions a different one. Same bytes on disk.
+        let replaced = TslTrustAnchors::new().with_cert_der(b"a different scheme signing cert");
+        let mut after = client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            replaced,
+            NOW,
+        );
+        after.refresh(NOW).expect("the cache still returns bytes");
+        assert!(
+            after
+                .source()
+                .last_fetch_provenance()
+                .cache_serve()
+                .is_some(),
+            "this test is only meaningful if the bytes came from the cache"
+        );
+        assert!(
+            !after.cached().expect("cache").signature_valid(),
+            "a revoked anchor must not still authenticate the cached list"
+        );
+        assert_eq!(
+            after.is_qualified_for_esig(&issuer, NOW).expect("status"),
+            QualifiedStatus::Unknown,
+            "a cached list authenticated under a revoked anchor must vouch for nobody"
+        );
+
+        // Fail-closed all the way down: an empty anchor set trusts nothing either.
+        let mut unanchored = client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            TslTrustAnchors::new(),
+            NOW,
+        );
+        unanchored.refresh(NOW).expect("cache answers");
+        assert!(!unanchored.cached().expect("cache").signature_valid());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The same property for the algorithm policy: a list whose signature verified only because a
+    /// broken algorithm was permitted stops verifying the moment that permission is withdrawn, even
+    /// though the bytes it is judged from never changed.
+    ///
+    /// This drives `validate_tsl_signature_with_policy` over the cached bytes, because that is the
+    /// entry point the operator's `signing.tsl_legacy_algorithms` reaches; `TslClient` itself always
+    /// uses the strict entry point, which permits no broken algorithm at all.
+    #[test]
+    fn tightening_the_algorithm_policy_invalidates_the_cache_immediately() {
+        let dir = scratch("policy-tightened");
+        let fixture = signed_sha1_digest_fixture();
+        let anchors = anchors_for(&fixture);
+        let permissive = TslAlgorithmPolicy::new()
+            .with_legacy_algorithm(LEGACY_SHA1_DIGEST)
+            .expect("SHA-1 is a known legacy algorithm");
+
+        let cache = TslDiskCache::new(&dir);
+        let key = TslDiskCache::key_for(SOURCE_ID, LOCATION);
+        cache
+            .store(&key, SOURCE_ID, &fixture.xml, NOW)
+            .expect("seed the cache");
+        let cached = match cache.load(&key, NOW, DEFAULT_MAX_STALE) {
+            TslCacheLoad::Usable(cached) => cached.bytes,
+            other => panic!("expected a usable entry, got {other:?}"),
+        };
+        assert_eq!(cached, fixture.xml, "the cache returns the fetched bytes");
+
+        let report = validate_tsl_signature_with_policy(&cached, &anchors, &permissive)
+            .expect("the list verifies while SHA-1 is permitted");
+        assert!(
+            !report.weak_algorithms.is_empty(),
+            "and says the verdict depended on it"
+        );
+
+        // The operator clears `signing.tsl_legacy_algorithms`. Nothing on disk changed.
+        let err = validate_tsl_signature_with_policy(&cached, &anchors, &TslAlgorithmPolicy::new())
+            .expect_err("a tightened policy must refuse the cached list at once");
+        assert!(
+            matches!(err, TslError::SignatureUnsupportedAlgorithm(ref m) if m.contains(LEGACY_SHA1_DIGEST)),
+            "got {err:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Unchanged behaviour where it matters: with nothing cached and no fetch, the signature is
+    /// still refused. The cache adds resilience, never authority.
+    #[test]
+    fn no_cache_and_no_fetch_still_refuses() {
+        let dir = scratch("empty");
+        let fixture = super::signed_fixture();
+        let mut client = client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            anchors_for(&fixture),
+            NOW,
+        );
+
+        let err = client
+            .refresh(NOW)
+            .expect_err("an empty cache cannot answer for an unreachable list");
+        assert!(err.to_string().contains(OFFLINE_CAUSE), "got {err}");
+        assert!(client.cached().is_none());
+        assert_eq!(
+            client.source().last_fetch_provenance(),
+            TslFetchProvenance::Fetched,
+            "nothing was served from the cache, so nothing is reported as having been"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A later successful fetch retires the record of having fallen back — the current answer came
+    /// from the network, so a surface reading the record must not keep warning about a past outage.
+    #[test]
+    fn a_successful_fetch_retires_the_cache_serve_record() {
+        let dir = scratch("recovered");
+        let fixture = super::signed_fixture();
+        let anchors = anchors_for(&fixture);
+        let key = TslDiskCache::key_for(SOURCE_ID, LOCATION);
+
+        client_at(
+            ToggleSource::online(fixture.xml.clone()),
+            &dir,
+            anchors.clone(),
+            NOW,
+        )
+        .refresh(NOW)
+        .expect("seed");
+        client_at(
+            ToggleSource::offline(fixture.xml.clone()),
+            &dir,
+            anchors.clone(),
+            ONE_DAY_STALE,
+        )
+        .refresh(ONE_DAY_STALE)
+        .expect("fall back");
+        assert!(TslDiskCache::new(&dir).last_serve(&key).is_some());
+
+        client_at(
+            ToggleSource::online(fixture.xml.clone()),
+            &dir,
+            anchors,
+            ONE_DAY_STALE,
+        )
+        .refresh(ONE_DAY_STALE)
+        .expect("the network is back");
+        assert!(
+            TslDiskCache::new(&dir).last_serve(&key).is_none(),
+            "a live fetch must clear the fallback record"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

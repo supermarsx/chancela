@@ -14,7 +14,11 @@
 //!    [`parse::TrustServiceProvider`]s / [`parse::TrustService`]s, tolerating the list's many
 //!    optional elements (defensive parsing).
 //! 3. [`cache::CachedTsl`] holds the parsed list and reports staleness against the list's own
-//!    `NextUpdate` validity window.
+//!    `NextUpdate` validity window. [`disk_cache::CachingTslSource`] backs that with a **durable**
+//!    cache of the raw bytes, so a transient fetch failure falls back to the last good list instead
+//!    of refusing the signature. It caches bytes, never a verdict: the cached copy is re-parsed and
+//!    re-verified against the current anchors and algorithm policy on every use, and a copy served
+//!    past its `NextUpdate` is reported through [`disk_cache::TslFetchProvenance`].
 //! 4. [`query`] resolves an issuer certificate to a [`query::QualifiedStatus`]
 //!    (`Granted`/`Withdrawn`/`Unknown`), which `chancela-signing` maps onto its
 //!    `TrustedListStatus`. [`query::TslClient`] ties source + cache + query together.
@@ -38,6 +42,7 @@
 pub mod c14n;
 pub mod cache;
 pub mod certpath;
+pub mod disk_cache;
 pub mod error;
 pub mod lotl;
 pub mod parse;
@@ -51,7 +56,13 @@ pub(crate) mod xmldsig;
 pub use c14n::{C14nAlgorithm, canonicalize};
 pub use cache::{CachedTsl, FALLBACK_TTL};
 pub use certpath::{CertPath, PathBuildOptions, build_path};
-pub use error::TslError;
+pub use disk_cache::{
+    ALL_TSL_CACHE_CODES, CODE_TSL_SERVED_FROM_CACHE, CODE_TSL_SERVED_FROM_STALE_CACHE,
+    CachedTslBytes, CachingTslSource, DEFAULT_MAX_STALE, ENV_TSL_CACHE_MAX_STALE_HOURS,
+    TSL_CACHE_DIR, TslCacheLoad, TslCacheRefusal, TslCacheServe, TslClock, TslDiskCache,
+    TslFetchProvenance, TslProvenanceHandle, max_stale_from_env,
+};
+pub use error::{TslError, describe_error_chain};
 pub use lotl::{
     AuthenticatedList, DEFAULT_LOTL_URL, ENV_LOTL_URL, bootstrap_member_tsl, ingest_lotl,
     ingest_member_tsl, member_pointer, member_pointer_in,

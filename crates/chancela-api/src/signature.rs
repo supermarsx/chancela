@@ -70,7 +70,8 @@ use chancela_smartcard::{
 };
 use chancela_store::{PendingCmdSession, StoreError, StoredDocument, StoredSignedDocument};
 use chancela_tsl::{
-    FileTslSource, PathBuildOptions, TslClient, TslError, TslSource, TslTrustStore, build_path,
+    CachingTslSource, FileTslSource, PathBuildOptions, TSL_CACHE_DIR, TslClient, TslDiskCache,
+    TslError, TslSource, TslTrustStore, build_path,
 };
 use rand_core::RngCore;
 use serde::{Deserialize, Serialize};
@@ -8362,9 +8363,37 @@ pub(crate) fn build_trust_policy(
             "configuração inválida da âncora de confiança da Lista de Confiança (TSL): {e}"
         ))
     })?;
+    let Some(cache_dir) = source.cache_dir.clone() else {
+        // No durable storage (in-memory instance): fetch live or refuse, exactly as before.
+        return Ok(Box::new(TslTrustPolicy::from_client(
+            TslClient::new(source).with_anchors(anchors),
+        )));
+    };
+    let cached = caching_tsl_source(source, cache_dir);
     Ok(Box::new(TslTrustPolicy::from_client(
-        TslClient::new(source).with_anchors(anchors),
+        TslClient::new(cached).with_anchors(anchors),
     )))
+}
+
+/// Wrap a configured Trusted List source in the durable byte cache rooted at `cache_dir`.
+///
+/// The wrapper caches **bytes**, so the anchors resolved above and the algorithm policy carried on
+/// the source are re-applied to a cached copy exactly as they are to a freshly-fetched one — revoke
+/// an anchor or tighten the policy and the next use of the cache is refused, with no cache
+/// invalidation logic that could disagree with the checks themselves.
+fn caching_tsl_source(
+    source: RuntimeTslSource,
+    cache_dir: std::path::PathBuf,
+) -> CachingTslSource<RuntimeTslSource> {
+    let id = source.id.clone();
+    let location = source.cache_location_key();
+    CachingTslSource::new(
+        source,
+        TslDiskCache::new(cache_dir),
+        &id,
+        &location,
+        chancela_tsl::max_stale_from_env(),
+    )
 }
 
 /// Resolve the effective **default** [`CmdConfig`]: a complete stored CMD record wins; otherwise
@@ -8949,6 +8978,13 @@ pub(crate) async fn configured_tsa_provider(
     Ok(Some(provider))
 }
 
+/// The Trusted List source the signing path will use, with this instance's durable cache directory
+/// stamped on it.
+///
+/// This is the only funnel through which a `RuntimeTslSource` reaches a *signature*, so it is where
+/// the durable cache is attached. Callers that merely describe the configuration (settings echo,
+/// trust diagnostics) build the selection directly and get `cache_dir: None`, so describing a
+/// source can never write to its cache.
 pub(crate) async fn configured_tsl_source(
     state: &AppState,
 ) -> Result<Option<RuntimeTslSource>, ApiError> {
@@ -8958,7 +8994,11 @@ pub(crate) async fn configured_tsl_source(
             "configuração TSL inválida: {error}"
         )));
     }
-    Ok(selection.selected)
+    let cache_dir = state.data_dir().map(|dir| dir.join(TSL_CACHE_DIR));
+    Ok(selection.selected.map(|mut source| {
+        source.cache_dir = cache_dir;
+        source
+    }))
 }
 
 fn map_timestamp_error(e: chancela_signing::SigningError) -> ApiError {
@@ -10538,6 +10578,7 @@ mod tests {
                 trust_anchor_certs: Vec::new(),
                 trust_anchor_sha256: Vec::new(),
                 legacy_algorithms: Vec::new(),
+                cache_dir: None,
             };
 
             let err =
@@ -10564,6 +10605,7 @@ mod tests {
             trust_anchor_certs: Vec::new(),
             trust_anchor_sha256: Vec::new(),
             legacy_algorithms: Vec::new(),
+            cache_dir: None,
         };
 
         let mut policy = build_trust_policy(None, Some(source)).expect("policy builds");
@@ -10740,6 +10782,7 @@ mod tests {
             trust_anchor_certs,
             trust_anchor_sha256,
             legacy_algorithms: Vec::new(),
+            cache_dir: None,
         }
     }
 

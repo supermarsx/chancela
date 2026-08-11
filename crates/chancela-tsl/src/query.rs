@@ -292,6 +292,14 @@ impl<S: TslSource> TslClient<S> {
         self.cache.as_ref()
     }
 
+    /// The source this client fetches from. Exposed so a caller can ask it where its last answer
+    /// came from ([`TslSource::last_fetch_provenance`]) — the client hands the bytes on to the
+    /// parser and keeps no record of whether they arrived over the network or out of the durable
+    /// cache.
+    pub fn source(&self) -> &S {
+        &self.source
+    }
+
     /// Fetch and parse the list unconditionally, replacing the cache with an entry stamped `now`.
     ///
     /// After parsing, the list's XML-DSig signature is validated (SIG-11, audit t41/C2) against

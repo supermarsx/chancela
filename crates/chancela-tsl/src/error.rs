@@ -1,5 +1,39 @@
 //! The crate error type ([`TslError`]).
 
+/// Render an error together with every distinct cause in its [`std::error::Error::source`] chain,
+/// joined with `": "`.
+///
+/// Transport errors nest: `reqwest` reports `error sending request for url (…)` and hangs the fault
+/// that actually happened — `dns error: …`, `tcp connect error: …`, `invalid peer certificate: …`,
+/// `operation timed out` — one or more `source()` hops below. Formatting only the outermost error
+/// discards exactly the part an operator needs, so this walks to the bottom.
+///
+/// A cause whose text is already contained in what has been collected is skipped: wrapper types
+/// commonly re-`Display` their inner error verbatim, and repeating it adds length without adding
+/// information. The walk is bounded ([`MAX_ERROR_CHAIN_DEPTH`]) so a cyclic or pathologically deep
+/// chain cannot spin here — this runs while an operator is waiting on a failing signature.
+pub fn describe_error_chain(err: &(dyn std::error::Error + 'static)) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    let mut depth = 0usize;
+    while let Some(e) = current {
+        if depth >= MAX_ERROR_CHAIN_DEPTH {
+            break;
+        }
+        depth += 1;
+        let text = e.to_string();
+        let trimmed = text.trim();
+        if !trimmed.is_empty() && !parts.iter().any(|seen| seen.contains(trimmed)) {
+            parts.push(trimmed.to_owned());
+        }
+        current = e.source();
+    }
+    parts.join(": ")
+}
+
+/// How many `source()` hops [`describe_error_chain`] will follow before it stops.
+const MAX_ERROR_CHAIN_DEPTH: usize = 12;
+
 /// Errors from Trusted List ingestion, parsing, caching and querying (spec 04, SIG-10..13).
 #[derive(Debug, thiserror::Error)]
 #[non_exhaustive]
@@ -26,7 +60,13 @@ pub enum TslError {
     Base64(String),
 
     /// Fetching the list over the network failed (real `HttpTslSource` only).
-    #[error("failed to fetch Trusted List over the network: {0}")]
+    ///
+    /// The message is the **whole** `source()` chain, not just `reqwest`'s outer sentence. That
+    /// outer sentence is always `error sending request for url (…)`, which is the same text for a
+    /// DNS failure, a refused connection, a TLS handshake rejection and a timeout — four faults
+    /// that send an operator to four different places. The terminal cause is what tells them apart,
+    /// and it is one `source()` hop below where the previous formatting stopped.
+    #[error("failed to fetch Trusted List over the network: {}", describe_error_chain(.0))]
     Fetch(#[from] reqwest::Error),
 
     /// Reading a fixture/on-disk Trusted List failed (`FileTslSource`).
@@ -88,4 +128,110 @@ pub enum TslError {
     /// violation, or an unsupported signature algorithm. Fail-closed: no path means no trust.
     #[error("certificate path building failed: {0}")]
     CertPath(String),
+}
+
+#[cfg(test)]
+mod error_chain_tests {
+    use std::error::Error;
+    use std::fmt;
+
+    use super::*;
+
+    /// A two-layer error mimicking the shape `reqwest` produces: a generic outer sentence, and the
+    /// cause that actually says what happened one hop below.
+    #[derive(Debug)]
+    struct Layer {
+        message: String,
+        source: Option<Box<Layer>>,
+    }
+
+    impl Layer {
+        fn new(message: &str, source: Option<Layer>) -> Self {
+            Self {
+                message: message.to_owned(),
+                source: source.map(Box::new),
+            }
+        }
+    }
+
+    impl fmt::Display for Layer {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.write_str(&self.message)
+        }
+    }
+
+    impl Error for Layer {
+        fn source(&self) -> Option<&(dyn Error + 'static)> {
+            self.source.as_deref().map(|s| s as &(dyn Error + 'static))
+        }
+    }
+
+    /// The regression this exists for: two completely different faults used to read identically,
+    /// because only the outer sentence was formatted. `error sending request for url (…)` sends an
+    /// operator nowhere; `connection timed out` and `certificate verify failed` send them to two
+    /// different places.
+    #[test]
+    fn the_terminal_cause_is_what_tells_two_faults_apart() {
+        let outer = "error sending request for url (https://tsl.example.invalid/TSL.xml)";
+        let timeout = Layer::new(
+            outer,
+            Some(Layer::new(
+                "client error (Connect)",
+                Some(Layer::new("connection timed out", None)),
+            )),
+        );
+        let tls = Layer::new(
+            outer,
+            Some(Layer::new(
+                "client error (Connect)",
+                Some(Layer::new("invalid peer certificate: UnknownIssuer", None)),
+            )),
+        );
+
+        let timeout = describe_error_chain(&timeout);
+        let tls = describe_error_chain(&tls);
+        assert!(timeout.ends_with("connection timed out"), "{timeout}");
+        assert!(
+            tls.ends_with("invalid peer certificate: UnknownIssuer"),
+            "{tls}"
+        );
+        assert_ne!(
+            timeout, tls,
+            "a timeout and a rejected certificate must not read the same"
+        );
+        // The outer sentence is kept — it still names the URL that was attempted.
+        assert!(timeout.starts_with(outer), "{timeout}");
+    }
+
+    #[test]
+    fn a_cause_that_merely_repeats_its_parent_is_not_printed_twice() {
+        let repeated = Layer::new(
+            "dns error: failed to lookup address information",
+            Some(Layer::new("failed to lookup address information", None)),
+        );
+        assert_eq!(
+            describe_error_chain(&repeated),
+            "dns error: failed to lookup address information"
+        );
+    }
+
+    #[test]
+    fn a_single_error_with_no_cause_is_unchanged() {
+        assert_eq!(
+            describe_error_chain(&Layer::new("builder error", None)),
+            "builder error"
+        );
+    }
+
+    /// A chain deeper than the bound is truncated rather than followed forever. This runs while an
+    /// operator is waiting on a failing signature.
+    #[test]
+    fn a_pathologically_deep_chain_is_bounded() {
+        let mut layer = Layer::new("cause-0", None);
+        for i in 1..40 {
+            layer = Layer::new(&format!("cause-{i}"), Some(layer));
+        }
+        let described = describe_error_chain(&layer);
+        assert_eq!(described.matches(": ").count(), MAX_ERROR_CHAIN_DEPTH - 1);
+    }
 }

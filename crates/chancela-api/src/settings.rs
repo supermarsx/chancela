@@ -1972,6 +1972,31 @@ pub(crate) struct RuntimeTslSource {
     /// [`legacy_algorithm_policy`], which drops any entry outside the known set — save-time
     /// validation already refused those, and the fallback is to refuse, never to permit.
     pub(crate) legacy_algorithms: Vec<String>,
+    /// Directory backing the **durable Trusted List cache** for this source, when the instance has
+    /// on-disk persistence. `None` means no durable cache: the list is fetched live or the
+    /// signature is refused, which is the pre-cache behaviour and the only possible one for an
+    /// in-memory instance.
+    ///
+    /// It is stamped by [`crate::signature::configured_tsl_source`] rather than by
+    /// [`SigningSettings::runtime_tsl_selection`], because the selection is derived from the
+    /// settings document alone and knows nothing about where this instance keeps its data. The
+    /// settings-echo and diagnostics callers therefore see `None` and never write a cache while
+    /// merely describing the configuration.
+    pub(crate) cache_dir: Option<std::path::PathBuf>,
+}
+
+impl RuntimeTslSource {
+    /// The location string that, together with the source id, keys this source's durable cache
+    /// entry. Including it means re-pointing a configured entry at a different URL or file starts a
+    /// fresh cache instead of inheriting bytes fetched from the previous one — a repoint changes
+    /// which list this installation trusts, and silently answering it from the old list's cache
+    /// would undo that.
+    pub(crate) fn cache_location_key(&self) -> String {
+        match &self.location {
+            RuntimeTrustLocation::Url(url) => format!("url:{url}"),
+            RuntimeTrustLocation::Path(path) => format!("path:{path}"),
+        }
+    }
 }
 
 /// Fold operator-configured legacy-algorithm URIs into a [`chancela_tsl::TslAlgorithmPolicy`].
@@ -2048,6 +2073,7 @@ impl SigningSettings {
                     trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
                     trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
                     legacy_algorithms: self.tsl_legacy_algorithms.clone(),
+                    cache_dir: None,
                 });
             }
         }
@@ -2070,6 +2096,7 @@ impl SigningSettings {
                 trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
                 trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
                 legacy_algorithms: self.tsl_legacy_algorithms.clone(),
+                cache_dir: None,
             });
         }
 

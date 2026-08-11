@@ -7183,6 +7183,25 @@ export const itIT: Catalog = {
   'trust.weakAlgorithms.reference': 'Riferimento {index} di {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Ci si è affidati a un algoritmo compromesso, di un tipo che questa versione non riconosce.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Origine',
+  'trust.cacheFallback.badge.cached': 'Copia locale',
+  'trust.cacheFallback.badge.stale': 'Copia locale scaduta',
+  'trust.cacheFallback.title': 'Questa verifica ha usato la Lista di fiducia memorizzata',
+  'trust.cacheFallback.title.stale': 'Questa verifica ha usato una Lista di fiducia scaduta',
+  'trust.cacheFallback.withinValidity':
+    'Non è stato possibile scaricare la Lista di fiducia, quindi è stata usata la copia memorizzata. È ancora entro il periodo di validità pubblicato dal gestore dello schema, perciò il risultato non cambia, ma la lista non verrà aggiornata finché la connessione non sarà ripristinata.',
+  'trust.cacheFallback.pastValidity':
+    'Non è stato possibile scaricare la Lista di fiducia, quindi è stata usata la copia memorizzata, e quella copia ha superato il periodo di validità pubblicato dal gestore dello schema. Un servizio fiduciario ritirato da allora vi risulta ancora concesso. Ripristini la connessione; oltre il limite configurato la copia memorizzata viene rifiutata e la firma non è più possibile.',
+  'trust.cacheFallback.fetchedAt': 'Copia ottenuta',
+  'trust.cacheFallback.expiresAt': 'Validità fino al',
+  'trust.cacheFallback.servedAt': 'Usata il',
+  'trust.cacheFallback.reason': 'Il tentativo di scaricare la lista non è riuscito:',
+  'trust.cacheFallback.unknown':
+    'Questa verifica ha usato una copia memorizzata della Lista di fiducia, per un motivo che questa versione non riconosce.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

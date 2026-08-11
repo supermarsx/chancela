@@ -422,6 +422,15 @@ pub use chancela_runtime_config::DATA_DIR_ENV;
 /// seed was minted at startup, and **every** account — including the recovery-phrase verifier —
 /// failed to authenticate, with the restore reported as successful. Add a sidecar here and both
 /// consumers get it; there is nowhere else to add one.
+///
+/// [`chancela_tsl::TSL_CACHE_DIR`] is included deliberately. It is a cache, so a restore that
+/// dropped it would only cost the restored instance one fetch — but it is also *evidentiary input*:
+/// it is the material a qualified signature's trust decision was taken from when the network was
+/// unavailable, and an archive of an instance should carry what that instance was deciding on.
+/// Carrying it is safe in the other direction too, because nothing about the cache is trusted on
+/// the strength of having been restored: every entry is re-hashed, re-parsed and re-verified
+/// against the *current* anchors on use, and one restored past
+/// [`chancela_tsl::DEFAULT_MAX_STALE`] beyond its own `NextUpdate` is refused rather than served.
 pub const INSTANCE_SIDECAR_NAMES: &[&str] = &[
     settings::SETTINGS_FILE,
     platform_logs::PLATFORM_LOGS_FILE,
@@ -446,6 +455,7 @@ pub const INSTANCE_SIDECAR_NAMES: &[&str] = &[
     connector_jobs::CONNECTOR_TARGETS_FILE,
     external_validator_evidence::EXTERNAL_VALIDATOR_REPORT_METADATA_DIR,
     chancela_cae::CACHE_FILE,
+    chancela_tsl::TSL_CACHE_DIR,
     law::LAWS_DIR,
     zk_repository::ZK_REPOSITORY_DIR,
 ];

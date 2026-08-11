@@ -24,10 +24,10 @@ use chancela_tsa::mock::{
 use chancela_tsa::{QualifiedTimestampPolicy, TimestampRequest, verify_response};
 use chancela_tsl::{
     AuthenticatedList, DEFAULT_LOTL_URL, DEFAULT_PT_TSL_URL, DigitalIdentity, ENV_LOTL_URL,
-    FALLBACK_TTL, LocalizedText, ServiceHistoryEntry, ServiceStatus, TrustService,
-    TrustServiceProvider, TrustedList, TslAlgorithmPolicy, TslError, TslSignatureReport,
-    TslTrustAnchors, TslTrustStore, WeakAlgorithmUse, ingest_lotl, ingest_member_tsl,
-    member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl,
+    FALLBACK_TTL, LocalizedText, ServiceHistoryEntry, ServiceStatus, TSL_CACHE_DIR, TrustService,
+    TrustServiceProvider, TrustedList, TslAlgorithmPolicy, TslCacheServe, TslDiskCache, TslError,
+    TslSignatureReport, TslTrustAnchors, TslTrustStore, WeakAlgorithmUse, ingest_lotl,
+    ingest_member_tsl, member_pointer, parse_anchor_certs, parse_hex_sha256, parse_tsl,
     validate_tsl_signature_with_policy,
 };
 use serde::{Deserialize, Serialize};
@@ -157,14 +157,22 @@ pub(crate) struct TslVerification {
     /// Whether a *broken* algorithm the operator deliberately enabled in
     /// `signing.tsl_legacy_algorithms` may be relied upon. Empty by default, which permits none.
     policy: TslAlgorithmPolicy,
+    /// Set when the **signing** path's most recent Trusted List resolution was answered out of the
+    /// durable byte cache rather than the network. Read off disk from
+    /// [`chancela_tsl::TslDiskCache::last_serve`], because the process that took that decision was
+    /// a signature request, not this read — and the operator needs to see it here regardless.
+    ///
+    /// `None` is the ordinary state: the last resolution came live from the configured source.
+    cache_fallback: Option<TslCacheServe>,
 }
 
 impl TslVerification {
     /// Resolve anchors + policy from the signing settings. The **only** constructor a request path
     /// uses: five read handlers, the refresh import and the TSA diagnostics all call this, so they
     /// cannot disagree about either half.
-    pub(crate) fn resolve(signing: &SigningSettings) -> Self {
+    pub(crate) fn resolve(signing: &SigningSettings, data_dir: Option<&std::path::Path>) -> Self {
         let policy = legacy_algorithm_policy(&signing.tsl_legacy_algorithms);
+        let cache_fallback = signing_cache_fallback(signing, data_dir);
         match resolve_lotl_trust_anchors(
             &signing.tsl_trust_anchor_certs,
             &signing.tsl_trust_anchor_sha256,
@@ -173,11 +181,13 @@ impl TslVerification {
                 anchors,
                 anchor_error: None,
                 policy,
+                cache_fallback,
             },
             Err(e) => Self {
                 anchors: TslTrustAnchors::new(),
                 anchor_error: Some(e.to_string()),
                 policy,
+                cache_fallback,
             },
         }
     }
@@ -191,6 +201,68 @@ impl TslVerification {
             anchors,
             anchor_error: None,
             policy,
+            cache_fallback: None,
+        }
+    }
+}
+
+/// Read the durable Trusted List cache's last serve record for the **currently selected signing
+/// source**, so the trust surfaces can report that a signature was decided from a cached list.
+///
+/// It resolves the selection from the same [`SigningSettings`] the anchors come from, and keys the
+/// cache exactly as `signature::build_trust_policy` does — id plus location — so a repointed entry
+/// reports no fallback rather than the previous entry's.
+///
+/// Returns `None` for an in-memory instance (no durable cache exists), when no source is selected,
+/// and — the ordinary case — when the last resolution came live from the network, because a
+/// successful fetch clears the record.
+fn signing_cache_fallback(
+    signing: &SigningSettings,
+    data_dir: Option<&std::path::Path>,
+) -> Option<TslCacheServe> {
+    let dir = data_dir?;
+    let selected = signing.runtime_tsl_selection().selected?;
+    let cache = TslDiskCache::new(dir.join(TSL_CACHE_DIR));
+    cache.last_serve(&TslDiskCache::key_for(
+        &selected.id,
+        &selected.cache_location_key(),
+    ))
+}
+
+/// A Trusted List verdict that was decided from the durable byte cache because the live fetch
+/// failed — carried on [`TslValidationView`] beside `weak_algorithms`, for the same reason: the
+/// verdict depended on something the reader should know about, and the `Valid` badge alone cannot
+/// say it.
+///
+/// [`Self::code`] is a stable machine token, never a sentence; the presentation layer owns the
+/// wording. `stale = true` is the loud case: the cached list is past its own `NextUpdate`, so a
+/// trust service the scheme operator has withdrawn since then still reads as granted on it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TslCacheFallbackView {
+    /// `tsl_served_from_cache` or `tsl_served_from_stale_cache`.
+    pub code: String,
+    /// Whether the served copy was past its own `NextUpdate`.
+    pub stale: bool,
+    /// When the cached list was originally fetched.
+    pub fetched_at: String,
+    /// The cached list's own expiry (`NextUpdate`, or the fallback TTL when it carries none).
+    pub expires_at: String,
+    /// When the cache was consulted — i.e. when the live fetch failed.
+    pub served_at: String,
+    /// The live-fetch failure that made the fallback necessary, expanded through its whole cause
+    /// chain. Technical English, exactly like the sibling `error` field.
+    pub fetch_error: String,
+}
+
+impl From<&TslCacheServe> for TslCacheFallbackView {
+    fn from(serve: &TslCacheServe) -> Self {
+        Self {
+            code: serve.code().to_owned(),
+            stale: serve.stale,
+            fetched_at: format_time(serve.fetched_at),
+            expires_at: format_time(serve.expires_at),
+            served_at: format_time(serve.served_at),
+            fetch_error: serve.fetch_error.clone(),
         }
     }
 }
@@ -246,6 +318,15 @@ pub struct TslValidationView {
     /// **only because** an operator permitted that exact URI; the web layer owns the wording.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weak_algorithms: Vec<WeakAlgorithmUse>,
+    /// Set when the Trusted List behind this verdict was served from the durable byte cache after a
+    /// live fetch failed. Absent (and omitted from the payload) on the ordinary path, so a stored
+    /// payload or an older client sees exactly the previous shape.
+    ///
+    /// It sits beside `weak_algorithms` because it is the same kind of fact: the verdict is real,
+    /// and it depended on something the reader has to be told. A cached list is how a trust service
+    /// the scheme operator withdrew can still read as granted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_fallback: Option<TslCacheFallbackView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -481,6 +562,9 @@ pub struct TsaTslDiagnosticsView {
     /// [`TslValidationView::weak_algorithms`]. Machine codes only.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub weak_algorithms: Vec<WeakAlgorithmUse>,
+    /// See [`TslValidationView::cache_fallback`]. Omitted when the list came live.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_fallback: Option<TslCacheFallbackView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -661,7 +745,7 @@ pub async fn trust_status(
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            TslVerification::resolve(&guard.signing),
+            TslVerification::resolve(&guard.signing, state.data_dir().as_deref()),
         )
     };
     let loaded = load_tsl(&state)?;
@@ -707,7 +791,7 @@ pub async fn refresh_trust_tsl(
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            TslVerification::resolve(&guard.signing),
+            TslVerification::resolve(&guard.signing, Some(data_dir.as_path())),
         )
     };
     let use_lotl = request.lotl.unwrap_or(false);
@@ -760,7 +844,7 @@ pub async fn trust_catalog(
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            TslVerification::resolve(&guard.signing),
+            TslVerification::resolve(&guard.signing, state.data_dir().as_deref()),
         )
     };
     let loaded = load_tsl(&state)?;
@@ -802,7 +886,7 @@ pub async fn trust_tsa(
     require_trust_read(&state, &actor).await?;
     let signing = state.settings.read().await.signing.clone();
     let tsa_selection = signing.runtime_tsa_selection();
-    let verification = TslVerification::resolve(&signing);
+    let verification = TslVerification::resolve(&signing, state.data_dir().as_deref());
     let loaded = load_tsl(&state)?;
     let now = OffsetDateTime::now_utc();
     let signature_valid = validate_tsl_signature_reported(&loaded.xml, &verification).is_ok();
@@ -837,7 +921,7 @@ pub async fn trust_provider(
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            TslVerification::resolve(&guard.signing),
+            TslVerification::resolve(&guard.signing, state.data_dir().as_deref()),
         )
     };
     let loaded = load_tsl(&state)?;
@@ -868,7 +952,7 @@ pub async fn trust_service(
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
-            TslVerification::resolve(&guard.signing),
+            TslVerification::resolve(&guard.signing, state.data_dir().as_deref()),
         )
     };
     let loaded = load_tsl(&state)?;
@@ -1297,6 +1381,7 @@ fn lotl_success_status(
             // LOTL-derived authentication runs through `ingest_lotl`/`ingest_member_tsl`, which
             // permit no broken algorithm at all — there is nothing weak to report here.
             weak_algorithms: Vec::new(),
+            cache_fallback: None,
         },
         providers: Some(list.providers.len()),
         services: Some(services),
@@ -1709,6 +1794,7 @@ fn status_for_imported_xml(
                     },
                     error: validation_error.clone(),
                     weak_algorithms,
+                    cache_fallback: None,
                 },
                 providers: Some(list.providers.len()),
                 services: Some(services),
@@ -1753,6 +1839,7 @@ fn failed_refresh_status(
             signature: TslSignatureStatus::Invalid,
             error: Some(error.clone()),
             weak_algorithms: Vec::new(),
+            cache_fallback: None,
         },
         providers: None,
         services: None,
@@ -1883,6 +1970,7 @@ fn summary_view(
             },
             error: validation_error,
             weak_algorithms,
+            cache_fallback: verification.cache_fallback.as_ref().map(Into::into),
         },
         providers: loaded.list.providers.len(),
         services,
@@ -2122,6 +2210,7 @@ fn tsa_catalog_view(
                 },
                 error: signature_error,
                 weak_algorithms,
+                cache_fallback: verification.cache_fallback.as_ref().map(Into::into),
             },
             records: records.len(),
             granted_records,
@@ -3239,6 +3328,7 @@ mod tests {
             signature: TslSignatureStatus::Valid,
             error: None,
             weak_algorithms: Vec::new(),
+            cache_fallback: None,
         };
         let json = serde_json::to_value(&clean).expect("clean validation view");
         assert!(
@@ -3266,6 +3356,7 @@ mod tests {
                     },
                 },
             ],
+            cache_fallback: None,
         };
         let json = serde_json::to_value(&weak).expect("weak validation view");
         let rows = json["weak_algorithms"]
@@ -3282,6 +3373,51 @@ mod tests {
         assert_eq!(rows[1]["index"], 1);
         assert_eq!(rows[1]["total"], 2);
         assert_eq!(rows[1]["uri"], "#xades-props");
+    }
+
+    /// The durable-cache marker follows `weak_algorithms`' wire discipline exactly: absent on the
+    /// ordinary path so a stored payload or an older client sees the previous shape, and machine
+    /// codes only when present — never a sentence the server chose for a Portuguese operator.
+    #[test]
+    fn cache_fallback_is_omitted_when_the_list_came_live_and_is_a_code_when_it_did_not() {
+        let live = TslValidationView {
+            checked_at: format_time(NOW),
+            signature: TslSignatureStatus::Valid,
+            error: None,
+            weak_algorithms: Vec::new(),
+            cache_fallback: None,
+        };
+        let json = serde_json::to_value(&live).expect("live validation view");
+        assert!(
+            json.get("cache_fallback").is_none(),
+            "a list fetched live must not appear cached on the wire: {json}"
+        );
+
+        let served = TslCacheServe {
+            fetched_at: NOW - time::Duration::days(200),
+            expires_at: NOW - time::Duration::days(9),
+            served_at: NOW,
+            stale: true,
+            fetch_error: "error sending request for url (…): dns error".to_owned(),
+        };
+        let cached = TslValidationView {
+            cache_fallback: Some((&served).into()),
+            ..live
+        };
+        let json = serde_json::to_value(&cached).expect("cached validation view");
+        assert_eq!(
+            json["cache_fallback"]["code"],
+            chancela_tsl::CODE_TSL_SERVED_FROM_STALE_CACHE
+        );
+        assert_eq!(json["cache_fallback"]["stale"], true);
+        // The three instants are RFC 3339, like every other timestamp this module emits.
+        for field in ["fetched_at", "expires_at", "served_at"] {
+            let value = json["cache_fallback"][field].as_str().expect(field);
+            assert!(
+                OffsetDateTime::parse(value, &Rfc3339).is_ok(),
+                "{field} is not RFC 3339: {value}"
+            );
+        }
     }
 
     #[test]
@@ -4272,12 +4408,12 @@ mod tests {
             );
             std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR);
         }
-        let both = TslVerification::resolve(&signing);
-        let env_only = TslVerification::resolve(&SigningSettings::default());
+        let both = TslVerification::resolve(&signing, None);
+        let env_only = TslVerification::resolve(&SigningSettings::default(), None);
         unsafe {
             std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR_SHA256);
         }
-        let settings_only = TslVerification::resolve(&signing);
+        let settings_only = TslVerification::resolve(&signing, None);
 
         assert!(both.anchor_error.is_none());
         assert!(
@@ -4314,7 +4450,7 @@ mod tests {
             std::env::remove_var(chancela_tsl::ENV_TSL_TRUST_ANCHOR);
         }
 
-        let verification = TslVerification::resolve(&SigningSettings::default());
+        let verification = TslVerification::resolve(&SigningSettings::default(), None);
         assert!(
             verification.anchors.is_empty(),
             "no anchor is ever baked in: an unconfigured install trusts no list"
@@ -4342,7 +4478,7 @@ mod tests {
             ..SigningSettings::default()
         };
 
-        let verification = TslVerification::resolve(&signing);
+        let verification = TslVerification::resolve(&signing, None);
         assert!(
             verification.anchors.is_empty() && verification.anchor_error.is_some(),
             "a misconfigured anchor trusts nothing, and the good entry beside it does not rescue it"

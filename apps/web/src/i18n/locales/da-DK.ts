@@ -7115,6 +7115,25 @@ export const daDK: Catalog = {
   'trust.weakAlgorithms.reference': 'Reference {index} af {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Der blev støttet på en brudt algoritme af en type, som denne version ikke kender.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Oprindelse',
+  'trust.cacheFallback.badge.cached': 'Lokal kopi',
+  'trust.cacheFallback.badge.stale': 'Udløbet lokal kopi',
+  'trust.cacheFallback.title': 'Denne kontrol brugte den gemte tillidsliste',
+  'trust.cacheFallback.title.stale': 'Denne kontrol brugte en udløbet tillidsliste',
+  'trust.cacheFallback.withinValidity':
+    'Tillidslisten kunne ikke hentes, så den gemte kopi blev brugt. Den ligger stadig inden for den gyldighedsperiode, ordningens operatør har offentliggjort, så resultatet er uændret — men listen opdateres først, når forbindelsen er genoprettet.',
+  'trust.cacheFallback.pastValidity':
+    'Tillidslisten kunne ikke hentes, så den gemte kopi blev brugt — og den kopi er ud over den gyldighedsperiode, ordningens operatør har offentliggjort. En tillidstjeneste, der er trukket tilbage siden da, står stadig som tildelt i den. Genopret forbindelsen; ud over den konfigurerede grænse afvises den gemte kopi, og der kan ikke længere signeres.',
+  'trust.cacheFallback.fetchedAt': 'Kopi hentet',
+  'trust.cacheFallback.expiresAt': 'Gyldig til',
+  'trust.cacheFallback.servedAt': 'Brugt den',
+  'trust.cacheFallback.reason': 'Forsøget på at hente listen mislykkedes med:',
+  'trust.cacheFallback.unknown':
+    'Denne kontrol brugte en gemt kopi af tillidslisten, af en årsag denne version ikke kender.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

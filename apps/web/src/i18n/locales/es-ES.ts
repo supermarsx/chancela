@@ -7169,6 +7169,25 @@ export const esES: Catalog = {
   'trust.weakAlgorithms.reference': 'Referencia {index} de {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Se dependió de un algoritmo roto, de un tipo que esta versión no reconoce.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Origen',
+  'trust.cacheFallback.badge.cached': 'Copia local',
+  'trust.cacheFallback.badge.stale': 'Copia local caducada',
+  'trust.cacheFallback.title': 'Esta comprobación usó la Lista de Confianza almacenada',
+  'trust.cacheFallback.title.stale': 'Esta comprobación usó una Lista de Confianza caducada',
+  'trust.cacheFallback.withinValidity':
+    'No se pudo obtener la Lista de Confianza, por lo que se usó la copia almacenada. Sigue dentro del periodo de validez publicado por la entidad gestora, así que el resultado no cambia, pero la lista no se actualizará hasta que se restablezca la conexión.',
+  'trust.cacheFallback.pastValidity':
+    'No se pudo obtener la Lista de Confianza, por lo que se usó la copia almacenada, y esa copia ha superado el periodo de validez publicado por la entidad gestora. Un servicio de confianza retirado desde entonces sigue apareciendo como concedido en ella. Restablezca la conexión; superado el límite configurado, la copia almacenada se rechaza y la firma deja de ser posible.',
+  'trust.cacheFallback.fetchedAt': 'Copia obtenida',
+  'trust.cacheFallback.expiresAt': 'La validez termina',
+  'trust.cacheFallback.servedAt': 'Usada el',
+  'trust.cacheFallback.reason': 'El intento de obtener la lista falló con:',
+  'trust.cacheFallback.unknown':
+    'Esta comprobación usó una copia almacenada de la Lista de Confianza, por un motivo que esta versión no reconoce.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

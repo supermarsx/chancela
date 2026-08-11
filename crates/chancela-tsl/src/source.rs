@@ -50,6 +50,18 @@ pub const ENV_TSL_TRUST_ANCHOR_SHA256: &str = "CHANCELA_TSL_TRUST_ANCHOR_SHA256"
 pub trait TslSource {
     /// Fetch the raw Trusted List XML.
     fn fetch(&self) -> Result<Vec<u8>, TslError>;
+
+    /// How the most recent [`fetch`](Self::fetch) was satisfied.
+    ///
+    /// Defaulted to [`TslFetchProvenance::Fetched`] because every source here answers from its own
+    /// configured location and has nothing to disclose. Only
+    /// [`CachingTslSource`](crate::disk_cache::CachingTslSource) overrides it — it is the one source
+    /// that can substitute a previously-fetched copy, and the substitution has to be visible to
+    /// whoever acts on the list. Defaulting rather than requiring it keeps every existing
+    /// implementation (including test doubles outside this crate) compiling unchanged.
+    fn last_fetch_provenance(&self) -> crate::disk_cache::TslFetchProvenance {
+        crate::disk_cache::TslFetchProvenance::Fetched
+    }
 }
 
 /// Fetches the Trusted List over HTTPS with a blocking `reqwest` client.

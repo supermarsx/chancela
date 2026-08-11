@@ -55,6 +55,7 @@ import {
 import { useSectionNav } from '../../app/navPath';
 import { useTrustSectionsT } from '../../i18n/trustSectionsFallback';
 import { TslWeakAlgorithmsNotice, WeakAlgorithmStatuslineItem } from './TslWeakAlgorithms';
+import { TslCacheFallbackNotice, TslCacheFallbackStatuslineItem } from './TslCacheFallback';
 import type {
   TslCatalogSearchParams,
   TslCatalogView,
@@ -824,9 +825,14 @@ function TsaToolingPanel() {
                 verdict. Whether THAT list leaned on a broken algorithm belongs here, where the
                 records it produced are read. */}
             <WeakAlgorithmStatuslineItem uses={tsa.data.summary.tsl.weak_algorithms} />
+            {/* Same argument one step further: these records were read off a list, and whether
+                that list came off the network or out of the durable cache decides whether a
+                withdrawn TSA could still be showing as granted here. */}
+            <TslCacheFallbackStatuslineItem fallback={tsa.data.summary.tsl.cache_fallback} />
           </div>
 
           <TslWeakAlgorithmsNotice uses={tsa.data.summary.tsl.weak_algorithms} />
+          <TslCacheFallbackNotice fallback={tsa.data.summary.tsl.cache_fallback} />
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title={t('trust.tsa.configuration')}>
@@ -1128,6 +1134,9 @@ function TrustStatusPanel() {
             {/* "Valid" and "valid because SHA-1 was permitted" are different facts, and the badge
                 above cannot tell them apart. This cell appears only in the second case. */}
             <WeakAlgorithmStatuslineItem uses={status.data.validation.weak_algorithms} />
+            {/* "Valid" and "valid against a list this installation could not re-fetch" are also
+                different facts. This cell appears only when the durable cache answered. */}
+            <TslCacheFallbackStatuslineItem fallback={status.data.validation.cache_fallback} />
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.freshness')}</span>
               <Badge tone={status.data.stale ? 'warn' : 'ok'}>
@@ -1142,6 +1151,7 @@ function TrustStatusPanel() {
           </div>
 
           <TslWeakAlgorithmsNotice uses={status.data.validation.weak_algorithms} />
+          <TslCacheFallbackNotice fallback={status.data.validation.cache_fallback} />
 
           {status.data.last_refresh ? (
             <TrustDetailSection title={t('trust.refresh.lastAttempt')}>

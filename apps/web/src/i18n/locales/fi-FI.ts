@@ -7130,6 +7130,25 @@ export const fiFI: Catalog = {
   'trust.weakAlgorithms.reference': 'Viittaus {index} / {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Nojattiin murrettuun algoritmiin, jonka lajia tämä versio ei tunnista.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Alkuperä',
+  'trust.cacheFallback.badge.cached': 'Paikallinen kopio',
+  'trust.cacheFallback.badge.stale': 'Vanhentunut paikallinen kopio',
+  'trust.cacheFallback.title': 'Tämä tarkistus käytti tallennettua luottamuslistaa',
+  'trust.cacheFallback.title.stale': 'Tämä tarkistus käytti vanhentunutta luottamuslistaa',
+  'trust.cacheFallback.withinValidity':
+    'Luottamuslistaa ei saatu haettua, joten käytettiin tallennettua kopiota. Se on yhä järjestelmän ylläpitäjän julkaiseman voimassaoloajan sisällä, joten tulos ei muutu — mutta listaa ei päivitetä ennen kuin yhteys on palautettu.',
+  'trust.cacheFallback.pastValidity':
+    'Luottamuslistaa ei saatu haettua, joten käytettiin tallennettua kopiota — ja se kopio on ohittanut järjestelmän ylläpitäjän julkaiseman voimassaoloajan. Sen jälkeen peruttu luottamuspalvelu näkyy siinä yhä myönnettynä. Palauta yhteys; asetetun rajan jälkeen tallennettu kopio hylätään eikä allekirjoittaminen enää onnistu.',
+  'trust.cacheFallback.fetchedAt': 'Kopio haettu',
+  'trust.cacheFallback.expiresAt': 'Voimassa asti',
+  'trust.cacheFallback.servedAt': 'Käytetty',
+  'trust.cacheFallback.reason': 'Listan hakuyritys epäonnistui:',
+  'trust.cacheFallback.unknown':
+    'Tämä tarkistus käytti tallennettua kopiota luottamuslistasta, syystä jota tämä versio ei tunnista.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

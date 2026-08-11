@@ -7208,6 +7208,25 @@ export const deDE: Catalog = {
   'trust.weakAlgorithms.reference': 'Referenz {index} von {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Es wurde ein gebrochener Algorithmus herangezogen, einer Art, die diese Version nicht kennt.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Herkunft',
+  'trust.cacheFallback.badge.cached': 'Lokale Kopie',
+  'trust.cacheFallback.badge.stale': 'Abgelaufene lokale Kopie',
+  'trust.cacheFallback.title': 'Diese Prüfung hat die gespeicherte Vertrauensliste verwendet',
+  'trust.cacheFallback.title.stale': 'Diese Prüfung hat eine abgelaufene Vertrauensliste verwendet',
+  'trust.cacheFallback.withinValidity':
+    'Die Vertrauensliste konnte nicht abgerufen werden, daher wurde die gespeicherte Kopie verwendet. Sie liegt noch innerhalb der vom Schemabetreiber veröffentlichten Gültigkeitsdauer, das Ergebnis ist also unverändert — die Liste wird jedoch erst wieder aktualisiert, wenn die Verbindung steht.',
+  'trust.cacheFallback.pastValidity':
+    'Die Vertrauensliste konnte nicht abgerufen werden, daher wurde die gespeicherte Kopie verwendet — und diese Kopie hat die vom Schemabetreiber veröffentlichte Gültigkeitsdauer überschritten. Ein seither zurückgezogener Vertrauensdienst erscheint darin weiterhin als gewährt. Stellen Sie die Verbindung wieder her; jenseits der konfigurierten Grenze wird die gespeicherte Kopie abgelehnt und es kann nicht mehr signiert werden.',
+  'trust.cacheFallback.fetchedAt': 'Kopie abgerufen',
+  'trust.cacheFallback.expiresAt': 'Gültig bis',
+  'trust.cacheFallback.servedAt': 'Verwendet am',
+  'trust.cacheFallback.reason': 'Der Abrufversuch der Liste schlug fehl mit:',
+  'trust.cacheFallback.unknown':
+    'Diese Prüfung hat eine gespeicherte Kopie der Vertrauensliste verwendet, aus einem Grund, den diese Version nicht kennt.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

@@ -700,6 +700,18 @@ pub const REGISTRY: &[EnvVarSpec] = &[
         None,
         V::FreeText,
     ),
+    // ---- Durable Trusted List cache (boundary — raising it widens the stale window) ------------
+    // Hours a cached Trusted List may still be used *past its own `NextUpdate`* when the live fetch
+    // fails. Inside `NextUpdate` no bound applies; the scheme operator's document vouches for the
+    // list. Beyond this many hours the cached copy is refused and the signature fails closed again.
+    // It is a boundary because every hour of it is an hour in which a trust service the scheme
+    // operator has withdrawn can still read as granted. `0` disables the grace entirely.
+    boundary(
+        "CHANCELA_TSL_CACHE_MAX_STALE_HOURS",
+        G::Trust,
+        Some("168"),
+        V::Unsigned,
+    ),
     // ---- Connectors ---------------------------------------------------------------------------
     // The egress ceiling already has a typed slice (`connectors.allowed_hosts`, env is the ceiling):
     // excluded from the generic store, narrow-only, shown read-only with a cross-link.

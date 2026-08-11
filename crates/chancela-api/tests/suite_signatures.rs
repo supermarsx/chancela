@@ -23,6 +23,8 @@ mod pades_coverage_agreement;
 mod signing_configure_gate;
 #[path = "trust_anchor_suggestions.rs"]
 mod trust_anchor_suggestions;
+#[path = "trust_cache_fallback.rs"]
+mod trust_cache_fallback;
 #[path = "trust_read_path_anchors.rs"]
 mod trust_read_path_anchors;
 #[path = "xades_signature.rs"]

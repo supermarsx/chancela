@@ -7191,6 +7191,25 @@ export const nlNL: Catalog = {
   'trust.weakAlgorithms.reference': 'Referentie {index} van {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'Er is op een gebroken algoritme gesteund, van een soort die deze versie niet herkent.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Herkomst',
+  'trust.cacheFallback.badge.cached': 'Lokale kopie',
+  'trust.cacheFallback.badge.stale': 'Verlopen lokale kopie',
+  'trust.cacheFallback.title': 'Deze controle gebruikte de opgeslagen vertrouwenslijst',
+  'trust.cacheFallback.title.stale': 'Deze controle gebruikte een verlopen vertrouwenslijst',
+  'trust.cacheFallback.withinValidity':
+    'De vertrouwenslijst kon niet worden opgehaald, dus is de opgeslagen kopie gebruikt. Die valt nog binnen de door de schemabeheerder gepubliceerde geldigheidsduur, dus het resultaat verandert niet — maar de lijst wordt pas ververst als de verbinding is hersteld.',
+  'trust.cacheFallback.pastValidity':
+    'De vertrouwenslijst kon niet worden opgehaald, dus is de opgeslagen kopie gebruikt — en die kopie is voorbij de door de schemabeheerder gepubliceerde geldigheidsduur. Een sindsdien ingetrokken vertrouwensdienst staat er nog steeds als verleend in. Herstel de verbinding; voorbij de ingestelde grens wordt de opgeslagen kopie geweigerd en is ondertekenen niet meer mogelijk.',
+  'trust.cacheFallback.fetchedAt': 'Kopie opgehaald',
+  'trust.cacheFallback.expiresAt': 'Geldig tot',
+  'trust.cacheFallback.servedAt': 'Gebruikt op',
+  'trust.cacheFallback.reason': 'De poging om de lijst op te halen mislukte met:',
+  'trust.cacheFallback.unknown':
+    'Deze controle gebruikte een opgeslagen kopie van de vertrouwenslijst, om een reden die deze versie niet herkent.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

@@ -7050,6 +7050,25 @@ export const enGB: Catalog = {
   'trust.weakAlgorithms.reference': 'Reference {index} of {total} · {uri}',
   'trust.weakAlgorithms.unknown':
     'A broken algorithm was relied upon, of a kind this version does not recognise.',
+  // --- Durable Trusted List cache: the verdict came from the stored copy (disk_cache.rs) ---
+  // Machine codes only over the wire; every sentence here. The stale arm is the loud one: on a
+  // list past its own NextUpdate, a trust service the scheme operator has withdrawn since still
+  // reads as granted.
+  'trust.cacheFallback.label': 'Origin',
+  'trust.cacheFallback.badge.cached': 'Local copy',
+  'trust.cacheFallback.badge.stale': 'Expired local copy',
+  'trust.cacheFallback.title': 'This check used the stored Trusted List',
+  'trust.cacheFallback.title.stale': 'This check used a Trusted List that has expired',
+  'trust.cacheFallback.withinValidity':
+    'The Trusted List could not be fetched, so the stored copy was used. It is still inside the validity period the scheme operator published, so the result is unaffected — but the list will not be refreshed until the connection is restored.',
+  'trust.cacheFallback.pastValidity':
+    'The Trusted List could not be fetched, so the stored copy was used — and that copy is past the validity period the scheme operator published. A trust service withdrawn since then still appears as granted on it. Restore the connection; beyond the configured limit the stored copy is refused and signing stops.',
+  'trust.cacheFallback.fetchedAt': 'Copy obtained',
+  'trust.cacheFallback.expiresAt': 'Validity ends',
+  'trust.cacheFallback.servedAt': 'Used at',
+  'trust.cacheFallback.reason': 'The attempt to fetch the list failed with:',
+  'trust.cacheFallback.unknown':
+    'This check used a stored copy of the Trusted List, for a reason this version does not recognise.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------
   // One key per stable `error_code` in `crates/chancela-connectors/src/codes.rs`, proved
   // complete by `connectorErrorCodes.test.ts`. Deliberately one sentence per transport

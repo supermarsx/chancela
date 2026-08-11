@@ -9,7 +9,7 @@ use std::fmt;
 
 use time::OffsetDateTime;
 
-use chancela_tsl::{TslClient, TslSource, TslTrustAnchors};
+use chancela_tsl::{TslClient, TslFetchProvenance, TslSource, TslTrustAnchors};
 
 use crate::{SigningError, TrustedListStatus};
 
@@ -64,6 +64,21 @@ pub trait TrustPolicy {
         issuer_cert_der: &[u8],
         now: OffsetDateTime,
     ) -> Result<TrustedListStatus, SigningError>;
+
+    /// Where the Trusted List behind the last [`issuer_status`](Self::issuer_status) came from.
+    ///
+    /// A `Granted` decided from a durably-cached list that is past its own `NextUpdate` is not the
+    /// same fact as one decided from a list fetched a moment ago: the Trusted List is how a
+    /// withdrawn service stops being trusted, so a stale one can still report a service the scheme
+    /// operator has since withdrawn. Callers that present or record the status can read that
+    /// distinction here instead of having to infer it.
+    ///
+    /// Defaulted to [`TslFetchProvenance::Fetched`], which is the truth for every policy that does
+    /// not consult a durable cache (including [`StaticTrustPolicy`] and the test doubles callers
+    /// inject), so no existing implementation has to change.
+    fn trusted_list_provenance(&self) -> TslFetchProvenance {
+        TslFetchProvenance::Fetched
+    }
 }
 
 /// A [`TrustPolicy`] backed by the real Portuguese Trusted List via a `chancela-tsl`
@@ -161,6 +176,14 @@ impl<S: TslSource> TrustPolicy for TslTrustPolicy<S> {
                 anchor_count: configured,
             })
         }
+    }
+
+    /// Delegates to the underlying source. When that source is a
+    /// [`chancela_tsl::CachingTslSource`] this reports whether the list this policy just decided
+    /// from was fetched live or served out of the durable cache, and if cached, whether it was past
+    /// its own `NextUpdate`.
+    fn trusted_list_provenance(&self) -> TslFetchProvenance {
+        self.client.source().last_fetch_provenance()
     }
 }
 

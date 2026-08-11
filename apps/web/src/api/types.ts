@@ -3632,6 +3632,42 @@ export type WeakAlgorithmUse = {
   algorithm: string;
 } & WeakAlgorithmSite;
 
+/**
+ * Stable machine codes for a Trusted List verdict that was decided from the durable byte cache
+ * because the live fetch failed. Mirrors `chancela_tsl::ALL_TSL_CACHE_CODES`; append-only. Never a
+ * translated sentence — the server emits the code and the web layer owns the wording.
+ */
+export const TSL_CACHE_FALLBACK_CODES = [
+  'tsl_served_from_cache',
+  'tsl_served_from_stale_cache',
+] as const;
+export type TslCacheFallbackCode = (typeof TSL_CACHE_FALLBACK_CODES)[number];
+
+/**
+ * The Trusted List behind a verdict came out of the durable cache rather than off the network.
+ *
+ * `stale` is the distinction that matters. Inside the list's own `NextUpdate` a cached copy is
+ * ordinary — the scheme operator's document says it is valid until then. Past it, the copy can
+ * still report a trust service the scheme operator has withdrawn since, which is exactly what a
+ * Trusted List exists to prevent, so that case is surfaced loudly.
+ */
+export interface TslCacheFallbackView {
+  code: TslCacheFallbackCode;
+  /** Whether the served copy was past its own `NextUpdate`. */
+  stale: boolean;
+  /** When the cached list was originally fetched. */
+  fetched_at: string;
+  /** The cached list's own expiry. */
+  expires_at: string;
+  /** When the cache was consulted — i.e. when the live fetch failed. */
+  served_at: string;
+  /**
+   * The live-fetch failure that made the fallback necessary, expanded through its whole cause
+   * chain. Technical English, exactly like the sibling {@link TslValidationView.error}.
+   */
+  fetch_error: string;
+}
+
 export interface TslValidationView {
   checked_at: string;
   signature: TslSignatureStatus;
@@ -3642,6 +3678,12 @@ export interface TslValidationView {
    * omits the key entirely. Read as `?? []`.
    */
   weak_algorithms?: WeakAlgorithmUse[];
+  /**
+   * Set when the Trusted List behind this verdict was served from the durable cache after a live
+   * fetch failed. Optional on the wire (`skip_serializing_if = "Option::is_none"`), so an absent
+   * key means the list came live — the ordinary case.
+   */
+  cache_fallback?: TslCacheFallbackView;
 }
 
 export type TslRefreshSourceKind = 'Url' | 'File';
@@ -3921,6 +3963,8 @@ export interface TsaTslDiagnosticsView {
   error: string | null;
   /** See {@link TslValidationView.weak_algorithms}. Omitted when empty. */
   weak_algorithms?: WeakAlgorithmUse[];
+  /** See {@link TslValidationView.cache_fallback}. Omitted when the list came live. */
+  cache_fallback?: TslCacheFallbackView;
 }
 
 export interface TsaSummaryView {

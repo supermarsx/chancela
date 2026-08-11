@@ -236,7 +236,7 @@ Settings.
 
 | Area | Variables |
 |---|---|
-| Trust lists (TSL / LOTL) | `CHANCELA_TSL_URL`, `CHANCELA_LOTL_URL`, `CHANCELA_TSL_TRUST_ANCHOR`, `CHANCELA_TSL_TRUST_ANCHOR_SHA256` |
+| Trust lists (TSL / LOTL) | `CHANCELA_TSL_URL`, `CHANCELA_LOTL_URL`, `CHANCELA_TSL_TRUST_ANCHOR`, `CHANCELA_TSL_TRUST_ANCHOR_SHA256`, `CHANCELA_TSL_CACHE_MAX_STALE_HOURS` |
 | Timestamping (TSA) | `CHANCELA_TSA_URL` |
 | CMD (Chave Móvel Digital) | `CHANCELA_CMD_ENV`, `CHANCELA_CMD_APPLICATION_ID`, `CHANCELA_CMD_AMA_CERT_PEM`, `CHANCELA_CMD_HTTP_BASIC_USERNAME`, `CHANCELA_CMD_HTTP_BASIC_PASSWORD` |
 | CSC / QTSP cloud signing | `CHANCELA_CSC_PROVIDERS`, plus per-provider `CHANCELA_CSC_<NAME>_CLIENT_ID` / `_CLIENT_SECRET` / `_ACCESS_TOKEN` |
@@ -317,6 +317,42 @@ certificate (or its fingerprint) alongside the outgoing one *before* the scheme 
 both are trusted during the overlap, and the retired one can be removed after the cut-over. This
 is the intended mechanism — there is no certificate-path build to an issuing CA, so the anchor
 must be the actual publishing certificate(s).
+
+### The durable Trusted List cache
+
+Every successful Trusted List fetch is stored under `tsl-cache/` in the data directory, and a later
+fetch that fails falls back to it. Without that, a transient network fault — a container egress
+rule, a proxy, a DNS blip — makes qualified signing impossible outright, even though the list
+itself carries a `NextUpdate` and is designed by ETSI TS 119 612 to be used until it.
+
+What is cached is the **raw list bytes and nothing else**: not the parsed list, not the signature
+verdict, not the set of granted services. Every use of a cached copy re-runs the whole pipeline
+against the *current* configuration — parse, XML-DSig verification, trust-anchor matching,
+algorithm policy — so revoking an anchor or tightening `signing.tsl_legacy_algorithms` invalidates
+the cache at its next use, with no invalidation step that could disagree with the checks
+themselves.
+
+Using a cached copy **inside** its `NextUpdate` is ordinary and unremarkable. Past it:
+
+- the result is **marked**. `validation.cache_fallback` on `GET /v1/trust/status` and
+  `GET /v1/trust/tsa` carries the stable code `tsl_served_from_stale_cache` and the reason the
+  fetch failed, and the admin UI shows it beside the signature verdict. A Trusted List is how a
+  withdrawn trust service *stops* being trusted, so an expired copy can still report a service the
+  scheme operator has since withdrawn — that must never be silent.
+- it is **bounded**. `CHANCELA_TSL_CACHE_MAX_STALE_HOURS` (default `168` — seven days) is how long
+  past its own expiry a cached list may still be used. Beyond that the cached copy is refused and
+  signing fails closed exactly as it would with no cache at all. Seven days covers a Friday-night
+  outage found on Monday, which is the realistic worst case for a transient infrastructure fault;
+  past a week the fault is a configuration problem to fix rather than one to wait out. Set `0` to
+  refuse any use past `NextUpdate`.
+
+Fail-closed is unchanged: **no cache and no fetch still refuses.** The cache adds resilience, never
+authority.
+
+The cache directory is included in `POST /v1/backup` and in the `chancela backup` archive, because
+it is the material a signature's trust decision was taken from while the network was down. Keeping
+it across a restore is safe in the other direction too — every entry is re-hashed, re-parsed and
+re-verified on use, and one restored past its maximum age is refused rather than served.
 
 ## Multi-node variables
 
