@@ -5111,6 +5111,7 @@ describe('contract fixtures parse through the real client', () => {
         'tsl_trust_anchor_sha256',
         'tsl_trust_anchor_self_asserted_sha256',
         'tsl_legacy_algorithms',
+        'tls_intermediate_certs',
       ],
     );
     inEnum(SIGNATURE_FAMILIES, signing.preferred_family, 'signing.preferred_family');
@@ -5133,6 +5134,8 @@ describe('contract fixtures parse through the real client', () => {
           refresh: true,
         },
         'Settings.signing.tsl_sources[]',
+        // Absent unless an operator deliberately turned off transport verification for this source.
+        ['tls_skip_verification'],
       );
       expect(typeof row.id).toBe('string');
       expect(typeof row.name).toBe('string');
@@ -5987,9 +5990,12 @@ describe('contract fixtures parse through the real client', () => {
       s.validation,
       { checked_at: true, signature: true, error: true },
       `${label}.validation`,
-      // Skipped when empty: no broken algorithm was relied upon (the only state reachable unless an
-      // operator enabled one in `signing.tsl_legacy_algorithms`).
-      ['weak_algorithms'],
+      // All three are skipped unless they apply, and each absence is the ordinary, safer state:
+      // no broken algorithm was relied upon; the list came live rather than out of the durable
+      // cache; the transport was authenticated. `cache_fallback` was missing from this list before
+      // the transport marker was added — a payload carrying it would have failed the exact-key
+      // check, so the gap was latent rather than harmless.
+      ['weak_algorithms', 'cache_fallback', 'unverified_transport'],
     );
     assertWeakAlgorithms(validation.weak_algorithms, `${label}.validation.weak_algorithms`);
     assertTimestamp(validation.checked_at, `${label}.validation.checked_at`);
@@ -6220,7 +6226,8 @@ describe('contract fixtures parse through the real client', () => {
       s.tsl,
       { source: true, signature: true, error: true },
       `${label}.tsl`,
-      ['weak_algorithms'],
+      // Same three, same reasons — see the note on `${label}.validation` above.
+      ['weak_algorithms', 'cache_fallback', 'unverified_transport'],
     );
     assertWeakAlgorithms(tsl.weak_algorithms, `${label}.tsl.weak_algorithms`);
     assertExactKeys<TslSourceView>(

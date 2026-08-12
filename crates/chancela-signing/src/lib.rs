@@ -544,6 +544,19 @@ pub enum SigningError {
     /// A trusted-list lookup failed (`chancela-tsl`).
     #[error("trusted-list error: {0}")]
     TrustedList(String),
+    /// The HTTPS connection to the Trusted List host failed because **that server** did not send
+    /// the intermediate certificate(s) linking its certificate to a trusted root.
+    ///
+    /// Split from [`Self::TrustedList`] because it is the one trusted-list failure whose fault is at
+    /// the other end and whose remedy is a specific setting in this product
+    /// (`signing.tls_intermediate_certs`). Folded into the generic variant, the only advice the copy
+    /// could offer was "check the address and this server's outbound connectivity" — both of which
+    /// the operator will find are fine, because the address is right and the connection was made.
+    ///
+    /// Nothing about this variant relaxes a check: the handshake was **refused** and no list bytes
+    /// were read. Built through [`Self::from_tsl`], never by hand.
+    #[error("{0}")]
+    TrustedListTlsChainIncomplete(String),
     /// The container format requested is recognised by the vocabulary but not yet produced by this
     /// crate. More specific profile gaps use [`SigningError::UnsupportedProfile`].
     #[error("signature format not supported yet: {0:?}")]
@@ -635,6 +648,14 @@ pub const SIGNING_UNSUPPORTED_PROFILE: &str = "signing_unsupported_profile";
 pub const SIGNING_TIMESTAMP_FAILED: &str = "signing_timestamp_failed";
 /// The Trusted List itself could not be fetched, read or parsed — no trust verdict was reached.
 pub const SIGNING_TRUSTED_LIST_UNAVAILABLE: &str = "signing_trusted_list_unavailable";
+/// The Trusted List host's HTTPS certificate chain was incomplete: that server did not send the
+/// intermediate linking its certificate to a trusted root, so the connection was refused.
+///
+/// Split from [`SIGNING_TRUSTED_LIST_UNAVAILABLE`] because the fault is at the **other** end and the
+/// remedy is a specific setting here (`signing.tls_intermediate_certs`). Merged into "unavailable",
+/// the copy could only say "check the address and your connectivity", which is exactly what an
+/// operator will find is fine.
+pub const SIGNING_TRUSTED_LIST_TLS_CHAIN: &str = "signing_trusted_list_tls_chain_incomplete";
 /// The requested container format is in the vocabulary but is not produced by this build.
 pub const SIGNING_UNSUPPORTED_FORMAT: &str = "signing_unsupported_format";
 /// The document input did not match the requested container format.
@@ -671,6 +692,7 @@ pub const ALL_SIGNING_ERROR_CODES: &[&str] = &[
     SIGNING_UNSUPPORTED_PROFILE,
     SIGNING_TIMESTAMP_FAILED,
     SIGNING_TRUSTED_LIST_UNAVAILABLE,
+    SIGNING_TRUSTED_LIST_TLS_CHAIN,
     SIGNING_UNSUPPORTED_FORMAT,
     SIGNING_FORMAT_INPUT_MISMATCH,
     SIGNING_FAMILY_MISMATCH,
@@ -681,6 +703,23 @@ pub const ALL_SIGNING_ERROR_CODES: &[&str] = &[
 ];
 
 impl SigningError {
+    /// The **one** conversion from a [`chancela_tsl::TslError`], so no call site can decide for
+    /// itself whether a trusted-list failure is the incomplete-chain case.
+    ///
+    /// Before this existed, every site did `.map_err(|e| SigningError::TrustedList(e.to_string()))`,
+    /// which is exactly the shape that loses a discriminated variant: the `TslError` arrives typed
+    /// and leaves as prose. Adding the incomplete-chain code by hand at each site would have meant
+    /// the next site to be written inherits the generic code silently, which is how the `_ =>`
+    /// fallback problem this enum's `code()` documentation describes reappears one layer down.
+    pub fn from_tsl(error: chancela_tsl::TslError) -> Self {
+        match error {
+            chancela_tsl::TslError::TlsChainIncomplete(message) => {
+                SigningError::TrustedListTlsChainIncomplete(message)
+            }
+            other => SigningError::TrustedList(other.to_string()),
+        }
+    }
+
     /// The stable, machine-readable code for this failure.
     ///
     /// **Intrinsic, produced here and nowhere else.** Before this existed, the API's four
@@ -718,7 +757,11 @@ impl SigningError {
             SigningError::Xades(_) => SIGNING_XADES_FAILED,
             SigningError::UnsupportedProfile(_) => SIGNING_UNSUPPORTED_PROFILE,
             SigningError::Timestamp(_) => SIGNING_TIMESTAMP_FAILED,
+            // A chain the remote server left incomplete is a different instruction to the operator
+            // than "the list could not be fetched": the fault is at the other end, and the fix is a
+            // setting in this product. Matched on the variant so a new TSL error cannot inherit it.
             SigningError::TrustedList(_) => SIGNING_TRUSTED_LIST_UNAVAILABLE,
+            SigningError::TrustedListTlsChainIncomplete(_) => SIGNING_TRUSTED_LIST_TLS_CHAIN,
             SigningError::UnsupportedFormat(_) => SIGNING_UNSUPPORTED_FORMAT,
             SigningError::FormatInputMismatch { .. } => SIGNING_FORMAT_INPUT_MISMATCH,
             SigningError::FamilyMismatch { .. } => SIGNING_FAMILY_MISMATCH,
@@ -785,6 +828,9 @@ mod signing_error_code_tests {
             )),
             SigningError::Timestamp("the TSA returned status 5".to_owned()),
             SigningError::TrustedList("the trusted list could not be fetched".to_owned()),
+            SigningError::TrustedListTlsChainIncomplete(
+                "the trusted list host sent an incomplete certificate chain".to_owned(),
+            ),
             SigningError::UnsupportedFormat(SignatureFormat::XAdES),
             SigningError::FormatInputMismatch {
                 format: SignatureFormat::PAdES,

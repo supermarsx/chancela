@@ -1115,6 +1115,88 @@ describe('Ferramentas — TSL trust catalog', () => {
 });
 
 /**
+ * The unverified-transport marker, on all three surfaces the backend attaches it to.
+ *
+ * Two properties are asserted, and the second is the one that makes the copy defensible.
+ *
+ * 1. It appears wherever the backend sets it — a marker wired to one screen and not the others
+ *    would leave "fetched over an unauthenticated connection" looking exactly like an ordinary
+ *    result everywhere it was missed. This is the same argument as the `weak_algorithms` test above.
+ * 2. It does **not** contradict the signature verdict beside it. The fixture pairs the marker with
+ *    `signature: 'Valid'` on purpose: that pairing is the normal case, because a list's authenticity
+ *    comes from its own signature against the configured anchors and not from TLS. Copy that told
+ *    the operator the list was untrustworthy here would be false, and false warnings are how true
+ *    ones get ignored.
+ */
+describe('Ferramentas — unverified transport marker', () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  const TRANSPORT = {
+    code: 'tsl_transport_not_verified',
+    source_id: 'pt-gns',
+    url: 'https://lists.example.pt/tsl.xml',
+  } as const;
+
+  function markedFetch(): typeof fetch {
+    const mark = <T extends { validation: TslValidationView }>(view: T): T => ({
+      ...view,
+      validation: { ...view.validation, unverified_transport: { ...TRANSPORT } },
+    });
+    const summary = mark(SUMMARY);
+    const tsaCatalog: TsaCatalogView = {
+      ...TSA_CATALOG,
+      summary: {
+        ...TSA_CATALOG.summary,
+        tsl: { ...TSA_CATALOG.summary.tsl, unverified_transport: { ...TRANSPORT } },
+      },
+    };
+    return ((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const parsed = new URL(url, 'http://localhost');
+      if (parsed.pathname === '/v1/trust/status') return Promise.resolve(jsonResponse(summary));
+      if (parsed.pathname === '/v1/trust/tsa') return Promise.resolve(jsonResponse(tsaCatalog));
+      if (parsed.pathname === '/v1/trust/catalog') return Promise.resolve(jsonResponse(CATALOG));
+      return Promise.resolve(jsonResponse({}, 404));
+    }) as typeof fetch;
+  }
+
+  it('reports an unverified transport on the trust status screen without contradicting the verdict', async () => {
+    vi.stubGlobal('fetch', markedFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+
+    expect(await screen.findByText(ptPT['trust.unverifiedTransport.title'])).toBeTruthy();
+    // The reassurance is not optional garnish: it is what stops an operator concluding that the
+    // Valid badge beside it cannot be relied on either.
+    expect(screen.getByText(ptPT['trust.unverifiedTransport.stillAuthenticated'])).toBeTruthy();
+    // Both risks named, neither overstated.
+    expect(screen.getByText(ptPT['trust.unverifiedTransport.residualRisk'])).toBeTruthy();
+    expect(screen.getByText(ptPT['trust.unverifiedTransport.remedy'])).toBeTruthy();
+    // The source and host verbatim, so an operator can find the setting that caused this.
+    expect(screen.getByText(TRANSPORT.url)).toBeTruthy();
+    expect(screen.getByText(TRANSPORT.source_id)).toBeTruthy();
+  });
+
+  it('reports it on the TSA screen too, where the records were read off the same list', async () => {
+    vi.stubGlobal('fetch', markedFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
+    expect(await screen.findByText(ptPT['trust.unverifiedTransport.title'])).toBeTruthy();
+  });
+
+  it('says nothing at all when the transport is verified', async () => {
+    // The ordinary state is silent — no green "verified" badge. The marker's mere presence is the
+    // signal, so an install that never opted out sees exactly the screen it saw before.
+    vi.stubGlobal('fetch', trustFetch());
+    renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
+    await screen.findByText(SUMMARY.scheme_operator_name);
+    expect(screen.queryByText(ptPT['trust.unverifiedTransport.title'])).toBeNull();
+    expect(screen.queryByText(ptPT['trust.unverifiedTransport.badge'])).toBeNull();
+  });
+});
+
+/**
  * t88 — "clicking on a provider should show the provider info on a floating right hand popup
  * instead of below all the info, same for ts providers".
  *

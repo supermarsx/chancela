@@ -3668,6 +3668,31 @@ export interface TslCacheFallbackView {
   fetch_error: string;
 }
 
+export const TSL_UNVERIFIED_TRANSPORT_CODES = ['tsl_transport_not_verified'] as const;
+export type TslUnverifiedTransportCode = (typeof TSL_UNVERIFIED_TRANSPORT_CODES)[number];
+
+/**
+ * The Trusted List behind this verdict is fetched over a transport whose TLS certificate is NOT
+ * verified, because an operator set `tls_skip_verification` on its configured source.
+ *
+ * NOT a claim that the list is untrustworthy, and the copy must not say so. A list's authenticity
+ * comes from its own XML-DSig signature against the configured trust anchors, and that check is
+ * mandatory with no off switch anywhere in the product — a forged list still fails. What is given up
+ * is transport authentication, whose two real consequences are that an attacker on the network path
+ * can serve a GENUINE BUT OLDER list (replay — on which a since-withdrawn service still reads as
+ * granted), and can deny service.
+ *
+ * Optional on the wire (`skip_serializing_if = "Option::is_none"`), so an absent key means the
+ * transport is verified — the ordinary case, and every install that has not opted in.
+ */
+export interface TslUnverifiedTransportView {
+  code: TslUnverifiedTransportCode;
+  /** The configured source whose verification is disabled, named so an install with several and one relaxed says which. */
+  source_id: string;
+  /** That source's URL: the host whose certificate goes unchecked. Operator-supplied configuration, not a secret. */
+  url: string;
+}
+
 export interface TslValidationView {
   checked_at: string;
   signature: TslSignatureStatus;
@@ -3684,6 +3709,13 @@ export interface TslValidationView {
    * key means the list came live — the ordinary case.
    */
   cache_fallback?: TslCacheFallbackView;
+  /**
+   * Set when the source this list comes from is configured not to verify its peer certificate.
+   * Absent — the ordinary case — means the transport is authenticated. See
+   * {@link TslUnverifiedTransportView}, and note that this says nothing about the signature verdict
+   * beside it: a list can be, and normally is, fully authentic over an unverified transport.
+   */
+  unverified_transport?: TslUnverifiedTransportView;
 }
 
 export type TslRefreshSourceKind = 'Url' | 'File';
@@ -3965,6 +3997,13 @@ export interface TsaTslDiagnosticsView {
   weak_algorithms?: WeakAlgorithmUse[];
   /** See {@link TslValidationView.cache_fallback}. Omitted when the list came live. */
   cache_fallback?: TslCacheFallbackView;
+  /**
+   * Set when the source this list comes from is configured not to verify its peer certificate.
+   * Absent — the ordinary case — means the transport is authenticated. See
+   * {@link TslUnverifiedTransportView}, and note that this says nothing about the signature verdict
+   * beside it: a list can be, and normally is, fully authentic over an unverified transport.
+   */
+  unverified_transport?: TslUnverifiedTransportView;
 }
 
 export interface TsaSummaryView {
@@ -7605,6 +7644,20 @@ export interface TslSourceSettings {
   timeout_seconds: number;
   max_bytes: number;
   refresh: TrustRefreshSettings;
+  /**
+   * Skip TLS certificate verification when fetching THIS ONE source over HTTPS.
+   *
+   * Optional on the wire (`skip_serializing_if`), absent meaning `false`, which is the shipped state
+   * and the state of every install that has not deliberately opted out.
+   *
+   * A Trusted List's authenticity does not rest on TLS — it rests on the list's own XML-DSig
+   * signature against the configured trust anchors, which is mandatory and unaffected by this. The
+   * residual risks are replay of a genuine but older list, and denial of service. Refused on save
+   * unless this source is URL-backed with an `https` URL, so a stored `true` always describes a
+   * connection that really is made unverified. Prefer `signing.tls_intermediate_certs`, which fixes
+   * the common cause with no loss of transport authentication at all.
+   */
+  tls_skip_verification?: boolean;
 }
 
 export interface TsaProviderSettings {
@@ -7655,6 +7708,28 @@ export interface SigningSettings {
    * Optional on the wire, same `skip_serializing_if` treatment as the two lists above.
    */
   tsl_trust_anchor_self_asserted_sha256?: string[];
+  /**
+   * PEM/DER **intermediate CA certificates** this installation may use to complete the TLS
+   * certificate chain of a server it fetches from over HTTPS.
+   *
+   * NOT a trust anchor, and the distinction is not a nuance. `tsl_trust_anchor_certs` pins the
+   * certificate that SIGNED a Trusted List. This is the certificate authority behind the TLS
+   * certificate of the WEB SERVER that hosts the file. An entry here can never make an unauthentic
+   * list validate.
+   *
+   * It exists because a TLS server must send its whole chain except the root and some do not — the
+   * Portuguese Trusted List endpoint sends its leaf alone. Browsers and `curl` fetch the missing
+   * certificate automatically; this client does not, and reports `UnknownIssuer`. This supplies the
+   * link the server failed to send.
+   *
+   * It is not a verification bypass: an entry joins the pool of candidate chain links, never the
+   * root store, and the chain must still reach a root the operating system already trusts, with the
+   * hostname and validity dates still checked. There is no setting that skips verification.
+   *
+   * Optional on the wire (absent when empty, which is the ordinary state) and validated on save as
+   * a real X.509 certificate. Writing it is gated on `signing.configure`.
+   */
+  tls_intermediate_certs?: string[];
   /**
    * Cryptographically BROKEN XML-DSig algorithm URIs the operator has deliberately permitted when
    * verifying a Trusted List's own signature. A closed vocabulary — the backend refuses (422) any

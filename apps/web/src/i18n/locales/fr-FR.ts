@@ -4676,6 +4676,41 @@ export const frFR: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Supprimer le certificat d’ancre {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Collez ici le certificat, en commençant par -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title':
+    'Certificats intermédiaires TLS (connexions sortantes)',
+  'settings.signing.tlsIntermediates.hint':
+    'Un serveur HTTPS doit envoyer toute la chaîne de son certificat, sauf la racine. Certains n’envoient que le certificat final : le maillon intermédiaire manque, la chaîne ne peut pas être construite et la connexion est refusée avec l’erreur UnknownIssuer. Indiquez ici le certificat intermédiaire manquant.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Ce n’est pas une ancre de confiance. Une ancre est le certificat avec lequel la liste de confiance a été signée ; il s’agit ici de l’autorité de certification derrière le certificat TLS du serveur web qui héberge le fichier. Ce sont des certificats différents, délivrés par des entités différentes : un certificat indiqué ici ne rendra jamais authentique une liste qui ne l’est pas.',
+  'settings.signing.tlsIntermediates.scope':
+    'Rien ici ne contourne la vérification. Le certificat indiqué devient un maillon candidat de plus, jamais une racine : la chaîne doit toujours aboutir à une racine déjà reconnue par le système d’exploitation, le nom du serveur doit toujours correspondre et les dates de validité restent vérifiées. Un navigateur ou curl peuvent ouvrir la même adresse sans erreur, car ils vont chercher eux-mêmes les certificats manquants ; ce client ne le fait pas.',
+  'settings.signing.tlsIntermediates.certs.hint':
+    'Certificats intermédiaires, au format PEM ou DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Ajouter un certificat intermédiaire',
+  'settings.signing.tlsIntermediates.certs.none': 'Aucun certificat intermédiaire configuré.',
+  'settings.signing.tlsIntermediates.certs.label': 'Certificat intermédiaire {position}',
+  'settings.signing.tlsIntermediates.certs.remove':
+    'Supprimer le certificat intermédiaire {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Collez ici le certificat intermédiaire, en commençant par -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label':
+    'Ne pas vérifier le certificat TLS de cette source',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Les connexions à cette source se feront sans confirmer l’identité du serveur. L’authenticité de la liste n’en dépend pas : elle reste vérifiée par la signature de la liste elle-même face aux ancres configurées, et une liste falsifiée reste refusée.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'Ce que cela met en revanche à la portée de quelqu’un placé sur le chemin réseau est autre chose : servir une liste authentique mais ancienne — qui s’authentifie parfaitement, puisqu’elle est authentique, et sur laquelle un service depuis retiré figure encore comme accordé — et empêcher purement et simplement la récupération de la liste.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Si la cause est une chaîne de certificats incomplète, indiquez plutôt le certificat intermédiaire manquant : cela règle la récupération sans renoncer à l’authentification du transport.',
   'settings.signing.tslAnchors.digests.hint':
     'Empreintes SHA-256 des certificats d’ancre, en hexadécimal (64 caractères).',
   'settings.signing.tslAnchors.digests.add': 'Ajouter une empreinte',
@@ -7216,6 +7251,23 @@ export const frFR: Catalog = {
   'trust.cacheFallback.expiresAt': 'Fin de validité',
   'trust.cacheFallback.servedAt': 'Utilisée le',
   'trust.cacheFallback.reason': 'La tentative de récupération de la liste a échoué avec :',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Non authentifié',
+  'trust.unverifiedTransport.title': 'Liste récupérée sans authentifier le serveur',
+  'trust.unverifiedTransport.body':
+    'Cette liste de confiance est récupérée depuis une source dont le certificat TLS n’est pas vérifié, par un choix configuré dans les réglages de signature.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Cela ne remet pas en cause l’authenticité de la liste. Celle-ci est authentifiée par sa propre signature, confrontée aux ancres de confiance configurées — une vérification qui reste obligatoire et qu’une liste falsifiée ne passe pas.',
+  'trust.unverifiedTransport.residualRisk':
+    'Ce que cela met à la portée de quelqu’un placé sur le chemin réseau : servir une liste authentique mais ancienne, sur laquelle un service depuis retiré figure encore comme accordé, et empêcher la récupération de la liste.',
+  'trust.unverifiedTransport.remedy':
+    'Si la cause est une chaîne de certificats incomplète, fournir le certificat intermédiaire manquant rétablit la vérification du serveur sans rien coûter.',
+  'trust.unverifiedTransport.unknown':
+    'Cette liste de confiance est récupérée sans que le certificat du serveur soit vérifié. La signature de la liste reste confrontée aux ancres configurées.',
   'trust.cacheFallback.unknown':
     'Cette vérification a utilisé une copie enregistrée de la liste de confiance, pour une raison que cette version ne reconnaît pas.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

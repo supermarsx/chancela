@@ -4799,6 +4799,38 @@ export const ptPT: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Remover o certificado de âncora {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Cole aqui o certificado, começando por -----BEGIN CERTIFICATE-----',
+
+  // --- Certificados intermédios de TLS (transporte, NÃO âncoras) ------------------
+  // A confusão que este texto existe para evitar é a mesma que o cartão das âncoras
+  // corrige um nível acima: aqui trata-se do certificado do SERVIDOR que aloja o
+  // ficheiro, não do certificado que assinou a lista. Não se dispensa verificação.
+  'settings.signing.tlsIntermediates.title': 'Certificados intermédios de TLS (ligações de saída)',
+  'settings.signing.tlsIntermediates.hint':
+    'Um servidor HTTPS deve enviar toda a cadeia do seu certificado, exceto a raiz. Alguns enviam apenas o certificado final: falta o elo do meio, a cadeia não pode ser construída e a ligação é recusada com o erro UnknownIssuer. Indique aqui o certificado intermédio em falta.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Isto não é uma âncora de confiança. Uma âncora é o certificado com que a Lista de Confiança foi assinada; isto é a autoridade de certificação por trás do certificado TLS do servidor onde o ficheiro está alojado. São certificados diferentes, emitidos por entidades diferentes: um certificado indicado aqui nunca torna autêntica uma lista que o não seja.',
+  'settings.signing.tlsIntermediates.scope':
+    'Nada aqui dispensa a verificação. O certificado indicado passa a ser mais um elo possível da cadeia, nunca uma raiz: a cadeia continua a ter de terminar numa raiz já reconhecida pelo sistema operativo, o nome do servidor continua a ter de corresponder e as datas de validade continuam a ser respeitadas. Um navegador ou o curl podem abrir o mesmo endereço sem erro, porque procuram sozinhos os certificados em falta; este cliente não o faz.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Certificados intermédios, em PEM ou DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Adicionar certificado intermédio',
+  'settings.signing.tlsIntermediates.certs.none': 'Nenhum certificado intermédio configurado.',
+  'settings.signing.tlsIntermediates.certs.label': 'Certificado intermédio {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Remover o certificado intermédio {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Cole aqui o certificado intermédio, começando por -----BEGIN CERTIFICATE-----',
+
+  // --- Não verificar o certificado TLS de uma fonte (por fonte) -------------------
+  // O texto tem de ser exato, não alarmista: a autenticidade da lista NÃO depende do
+  // TLS, depende da assinatura da lista contra as âncoras. Dizer o contrário seria
+  // falso, e avisos falsos ensinam a ignorar os verdadeiros.
+  'settings.signing.source.tlsSkipVerification.label':
+    'Não verificar o certificado TLS desta fonte',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'A ligação a esta fonte passa a ser feita sem confirmar a identidade do servidor. A autenticidade da lista não depende disto: continua a ser verificada pela assinatura da própria lista contra as âncoras configuradas, e uma lista forjada continua a ser recusada.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'O que fica ao alcance de quem esteja no caminho da ligação é outra coisa: pode servir uma lista verdadeira mas antiga — que autentica sem problema, por ser verdadeira, e na qual um serviço entretanto revogado ainda aparece como concedido — e pode impedir a obtenção da lista.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Se o problema for uma cadeia de certificados incompleta, indique antes o certificado intermédio em falta: resolve a obtenção sem abdicar da autenticação do transporte.',
   'settings.signing.tslAnchors.digests.hint':
     'Impressões digitais SHA-256 dos certificados da âncora, em hexadecimal (64 caracteres).',
   'settings.signing.tslAnchors.digests.add': 'Adicionar impressão digital',
@@ -7174,6 +7206,23 @@ export const ptPT: Catalog = {
   'trust.cacheFallback.expiresAt': 'Validade termina',
   'trust.cacheFallback.servedAt': 'Usada em',
   'trust.cacheFallback.reason': 'A tentativa de obter a lista falhou com:',
+
+  // --- Transporte não autenticado ------------------------------------------------
+  // Aparece ao lado de um veredito «Válida» e não o contradiz: a lista autenticou-se
+  // pela sua própria assinatura. O que se perde é a autenticação do servidor.
+  'trust.unverifiedTransport.label': 'Transporte',
+  'trust.unverifiedTransport.badge': 'Não autenticado',
+  'trust.unverifiedTransport.title': 'Lista obtida sem autenticar o servidor',
+  'trust.unverifiedTransport.body':
+    'Esta Lista de Confiança é obtida de uma fonte cujo certificado TLS não é verificado, por opção configurada nas definições de assinatura.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Isto não põe em causa a autenticidade da lista. A lista é autenticada pela sua própria assinatura, confrontada com as âncoras de confiança configuradas — verificação que se mantém obrigatória e que uma lista forjada não passa.',
+  'trust.unverifiedTransport.residualRisk':
+    'O que fica ao alcance de quem esteja no caminho da ligação: servir uma lista verdadeira mas antiga, na qual um serviço entretanto revogado ainda aparece como concedido, e impedir a obtenção da lista.',
+  'trust.unverifiedTransport.remedy':
+    'Se a causa for uma cadeia de certificados incompleta, indicar o certificado intermédio em falta permite voltar a verificar o servidor sem perder nada.',
+  'trust.unverifiedTransport.unknown':
+    'Esta Lista de Confiança é obtida sem que o certificado do servidor seja verificado. A assinatura da lista continua a ser confrontada com as âncoras configuradas.',
   'trust.cacheFallback.unknown':
     'Esta verificação usou uma cópia guardada da Lista de Confiança, por um motivo que esta versão não reconhece.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

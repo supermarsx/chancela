@@ -4589,6 +4589,38 @@ export const enGB: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Remove anchor certificate {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Paste the certificate here, starting with -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'Outbound TLS intermediate certificates',
+  'settings.signing.tlsIntermediates.hint':
+    'An HTTPS server must send its whole certificate chain except the root. Some send only the leaf: the middle link is missing, no chain can be built, and the connection is refused with UnknownIssuer. Supply the missing intermediate certificate here.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'This is not a trust anchor. An anchor is the certificate a Trusted List was signed with; this is the certificate authority behind the TLS certificate of the web server that hosts the file. Different certificates, issued by different bodies: a certificate given here can never make an unauthentic list authentic.',
+  'settings.signing.tlsIntermediates.scope':
+    'Nothing here skips verification. A certificate given here becomes one more candidate link in the chain, never a root: the chain must still end at a root the operating system already trusts, the server name must still match, and validity dates still apply. A browser or curl may open the same address without error, because they fetch missing certificates by themselves; this client does not.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Intermediate certificates, in PEM or DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Add intermediate certificate',
+  'settings.signing.tlsIntermediates.certs.none': 'No intermediate certificate configured.',
+  'settings.signing.tlsIntermediates.certs.label': 'Intermediate certificate {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Remove intermediate certificate {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Paste the intermediate certificate here, starting with -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label':
+    'Do not verify this source’s TLS certificate',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Connections to this source will be made without confirming the server’s identity. The list’s authenticity does not depend on that: it is still verified by the list’s own signature against the configured trust anchors, and a forged list is still refused.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'What this does put within reach of someone on the network path is different: they can serve a genuine but older list — which authenticates perfectly, being genuine, and on which a since-withdrawn service still reads as granted — and they can stop the list being fetched at all.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'If the cause is an incomplete certificate chain, supply the missing intermediate certificate instead: it fixes the fetch without giving up transport authentication.',
   'settings.signing.tslAnchors.digests.hint':
     'SHA-256 fingerprints of the anchor certificates, in hexadecimal (64 characters).',
   'settings.signing.tslAnchors.digests.add': 'Add fingerprint',
@@ -7067,6 +7099,23 @@ export const enGB: Catalog = {
   'trust.cacheFallback.expiresAt': 'Validity ends',
   'trust.cacheFallback.servedAt': 'Used at',
   'trust.cacheFallback.reason': 'The attempt to fetch the list failed with:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Not authenticated',
+  'trust.unverifiedTransport.title': 'List fetched without authenticating the server',
+  'trust.unverifiedTransport.body':
+    'This Trusted List is fetched from a source whose TLS certificate is not verified, by a choice configured in the signing settings.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'This does not cast doubt on the list’s authenticity. The list is authenticated by its own signature, checked against the configured trust anchors — a check that remains mandatory and that a forged list does not pass.',
+  'trust.unverifiedTransport.residualRisk':
+    'What it does put within reach of someone on the network path: serving a genuine but older list, on which a since-withdrawn service still reads as granted, and preventing the list from being fetched at all.',
+  'trust.unverifiedTransport.remedy':
+    'If the cause is an incomplete certificate chain, supplying the missing intermediate certificate restores server verification at no cost.',
+  'trust.unverifiedTransport.unknown':
+    'This Trusted List is fetched without the server’s certificate being verified. The list’s signature is still checked against the configured trust anchors.',
   'trust.cacheFallback.unknown':
     'This check used a stored copy of the Trusted List, for a reason this version does not recognise.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

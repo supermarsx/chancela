@@ -188,6 +188,8 @@ export const apiErrorPtPT = {
   // profile this build never implemented send the operator to three different places.
   'apiError.signing_trusted_list_unavailable':
     'A assinatura não avançou porque não foi possível obter nem ler a Lista de Confiança. Sem ela não há veredito nenhum sobre o certificado do signatário: o que falhou foi o acesso à lista, não o certificado. Verifique o endereço da Lista de Confiança nas definições de assinatura e a ligação de saída deste servidor.',
+  'apiError.signing_trusted_list_tls_chain_incomplete':
+    'A assinatura não avançou porque o servidor que aloja a Lista de Confiança não enviou a cadeia completa do seu certificado: falta o certificado intermédio que liga o certificado desse servidor a uma raiz reconhecida. A falha está desse lado, não neste: o endereço está correto e a ligação chegou lá. Um navegador ou o curl podem abrir o mesmo endereço sem erro, porque procuram sozinhos os certificados em falta e este cliente não o faz. Indique o certificado intermédio em falta nas definições de assinatura, em signing.tls_intermediate_certs.',
   'apiError.signing_timestamp_failed':
     'A autoridade de carimbo temporal não devolveu um carimbo utilizável, por isso a assinatura não foi concluída. Verifique o endereço do serviço de carimbo temporal nas definições de assinatura e volte a tentar.',
   'apiError.signing_not_implemented':
@@ -598,6 +600,8 @@ export const apiErrorEnglish = {
 
   'apiError.signing_trusted_list_unavailable':
     'Signing did not proceed because the Trusted List could not be fetched or read. Without it there is no verdict at all on the signer’s certificate: what failed was reaching the list, not the certificate. Check the Trusted List address in the signing settings and this server’s outbound connectivity.',
+  'apiError.signing_trusted_list_tls_chain_incomplete':
+    'Signing did not proceed because the server hosting the Trusted List did not send its full certificate chain: the intermediate certificate linking that server’s certificate to a trusted root is missing. The fault is at that server, not at this installation — the address is correct and the connection reached it. A browser or curl may open the same address without error, because they fetch missing certificates automatically and this client does not. Supply the missing intermediate certificate in the signing settings, under signing.tls_intermediate_certs.',
   'apiError.signing_timestamp_failed':
     'The timestamp authority did not return a usable timestamp, so the signature was not completed. Check the timestamping service address in the signing settings and try again.',
   'apiError.signing_not_implemented':

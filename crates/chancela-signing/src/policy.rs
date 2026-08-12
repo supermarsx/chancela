@@ -121,7 +121,7 @@ impl<S: TslSource> TslTrustPolicy<S> {
             Some(anchors) => Ok((TrustAnchorSource::ApplicationSettings, anchors.len())),
             None => TslTrustAnchors::from_env()
                 .map(|anchors| (TrustAnchorSource::Environment, anchors.len()))
-                .map_err(|e| SigningError::TrustedList(e.to_string())),
+                .map_err(SigningError::from_tsl),
         }
     }
 }
@@ -156,7 +156,10 @@ impl<S: TslSource> TrustPolicy for TslTrustPolicy<S> {
         let status: TrustedListStatus = self
             .client
             .is_qualified_for_esig(issuer_cert_der, now)
-            .map_err(|e| SigningError::TrustedList(e.to_string()))?
+            // `from_tsl`, not `TrustedList(e.to_string())`: this is the call that fetches the list,
+            // so it is the one that can fail because the host sent an incomplete certificate chain
+            // — the case with its own operator instructions and its own stable code.
+            .map_err(SigningError::from_tsl)?
             .into();
 
         if self

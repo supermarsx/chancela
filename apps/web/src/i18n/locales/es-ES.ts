@@ -4657,6 +4657,40 @@ export const esES: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Eliminar el certificado de ancla {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Pegue aquí el certificado, empezando por -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title':
+    'Certificados intermedios de TLS (conexiones salientes)',
+  'settings.signing.tlsIntermediates.hint':
+    'Un servidor HTTPS debe enviar toda la cadena de su certificado salvo la raíz. Algunos envían solo el certificado final: falta el eslabón intermedio, la cadena no puede construirse y la conexión se rechaza con el error UnknownIssuer. Indique aquí el certificado intermedio que falta.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Esto no es un ancla de confianza. Un ancla es el certificado con el que se firmó la Lista de Confianza; esto es la autoridad de certificación del certificado TLS del servidor web que aloja el archivo. Son certificados distintos, emitidos por entidades distintas: un certificado indicado aquí nunca hace auténtica una lista que no lo sea.',
+  'settings.signing.tlsIntermediates.scope':
+    'Nada de esto omite la verificación. El certificado indicado pasa a ser un eslabón candidato más de la cadena, nunca una raíz: la cadena sigue teniendo que terminar en una raíz que el sistema operativo ya reconozca, el nombre del servidor sigue teniendo que coincidir y las fechas de validez se siguen comprobando. Un navegador o curl pueden abrir la misma dirección sin error, porque buscan por su cuenta los certificados que faltan; este cliente no lo hace.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Certificados intermedios, en PEM o DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Añadir certificado intermedio',
+  'settings.signing.tlsIntermediates.certs.none':
+    'No hay ningún certificado intermedio configurado.',
+  'settings.signing.tlsIntermediates.certs.label': 'Certificado intermedio {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Quitar el certificado intermedio {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Pegue aquí el certificado intermedio, empezando por -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label':
+    'No verificar el certificado TLS de esta fuente',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'La conexión con esta fuente se hará sin confirmar la identidad del servidor. La autenticidad de la lista no depende de eso: se sigue comprobando mediante la firma de la propia lista frente a las anclas configuradas, y una lista falsificada se sigue rechazando.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'Lo que sí queda al alcance de quien esté en el camino de la conexión es otra cosa: puede servir una lista auténtica pero antigua — que se autentica sin problema, por ser auténtica, y en la que un servicio ya retirado sigue figurando como concedido — y puede impedir que la lista se obtenga.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Si la causa es una cadena de certificados incompleta, indique en su lugar el certificado intermedio que falta: resuelve la descarga sin renunciar a la autenticación del transporte.',
   'settings.signing.tslAnchors.digests.hint':
     'Huellas digitales SHA-256 de los certificados del ancla, en hexadecimal (64 caracteres).',
   'settings.signing.tslAnchors.digests.add': 'Añadir huella digital',
@@ -7186,6 +7220,23 @@ export const esES: Catalog = {
   'trust.cacheFallback.expiresAt': 'La validez termina',
   'trust.cacheFallback.servedAt': 'Usada el',
   'trust.cacheFallback.reason': 'El intento de obtener la lista falló con:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transporte',
+  'trust.unverifiedTransport.badge': 'Sin autenticar',
+  'trust.unverifiedTransport.title': 'Lista obtenida sin autenticar el servidor',
+  'trust.unverifiedTransport.body':
+    'Esta Lista de Confianza se obtiene de una fuente cuyo certificado TLS no se verifica, por una opción configurada en los ajustes de firma.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Esto no pone en duda la autenticidad de la lista. La lista se autentica mediante su propia firma, contrastada con las anclas de confianza configuradas: una comprobación que sigue siendo obligatoria y que una lista falsificada no supera.',
+  'trust.unverifiedTransport.residualRisk':
+    'Lo que sí queda al alcance de quien esté en el camino de la conexión: servir una lista auténtica pero antigua, en la que un servicio ya retirado sigue figurando como concedido, e impedir que la lista se obtenga.',
+  'trust.unverifiedTransport.remedy':
+    'Si la causa es una cadena de certificados incompleta, indicar el certificado intermedio que falta restablece la verificación del servidor sin coste alguno.',
+  'trust.unverifiedTransport.unknown':
+    'Esta Lista de Confianza se obtiene sin verificar el certificado del servidor. La firma de la lista se sigue contrastando con las anclas configuradas.',
   'trust.cacheFallback.unknown':
     'Esta comprobación usó una copia almacenada de la Lista de Confianza, por un motivo que esta versión no reconoce.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

@@ -4639,6 +4639,37 @@ export const fiFI: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Poista ankkurivarmenne {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Liitä varmenne tähän alkaen rivistä -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'Lähtevien yhteyksien TLS-välivarmenteet',
+  'settings.signing.tlsIntermediates.hint':
+    'HTTPS-palvelimen on lähetettävä koko varmenneketjunsa juurta lukuun ottamatta. Osa lähettää vain loppuvarmenteen: välilenkki puuttuu, ketjua ei voi muodostaa ja yhteys hylätään virheellä UnknownIssuer. Anna puuttuva välivarmenne tässä.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Tämä ei ole luottamusankkuri. Ankkuri on se varmenne, jolla luottamuslista on allekirjoitettu; tässä on kyse tiedostoa isännöivän verkkopalvelimen TLS-varmenteen takana olevasta varmentajasta. Eri varmenteita, eri tahojen myöntämiä: tässä annettu varmenne ei koskaan tee epäaidosta listasta aitoa.',
+  'settings.signing.tlsIntermediates.scope':
+    'Mikään tässä ei ohita tarkistusta. Annetusta varmenteesta tulee yksi mahdollinen ketjun lenkki lisää, ei koskaan juuri: ketjun on yhä päätyttävä juureen, johon käyttöjärjestelmä jo luottaa, palvelimen nimen on yhä täsmättävä ja voimassaoloajat pätevät edelleen. Selain tai curl voi avata saman osoitteen virheittä, koska ne noutavat puuttuvat varmenteet itse; tämä asiakasohjelma ei tee niin.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Välivarmenteet, PEM- tai DER-muodossa.',
+  'settings.signing.tlsIntermediates.certs.add': 'Lisää välivarmenne',
+  'settings.signing.tlsIntermediates.certs.none': 'Välivarmennetta ei ole määritetty.',
+  'settings.signing.tlsIntermediates.certs.label': 'Välivarmenne {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Poista välivarmenne {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Liitä välivarmenne tähän, alkaen -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label': 'Älä tarkista tämän lähteen TLS-varmennetta',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Yhteydet tähän lähteeseen muodostetaan varmistamatta palvelimen henkilöllisyyttä. Listan aitous ei riipu siitä: se tarkistetaan edelleen listan omalla allekirjoituksella määritettyjä ankkureita vasten, ja väärennetty lista hylätään edelleen.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'Verkkoreitillä olevan ulottuville tulee sen sijaan muuta: hän voi tarjota aidon mutta vanhemman listan — joka todentuu moitteettomasti, koska se on aito, ja jossa sittemmin peruttu palvelu näkyy yhä myönnettynä — ja estää listan noutamisen kokonaan.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Jos syynä on puutteellinen varmenneketju, anna sen sijaan puuttuva välivarmenne: se korjaa noudon luopumatta siirtotien todentamisesta.',
   'settings.signing.tslAnchors.digests.hint':
     'Ankkurivarmenteiden SHA-256-sormenjäljet heksadesimaalimuodossa (64 merkkiä).',
   'settings.signing.tslAnchors.digests.add': 'Lisää sormenjälki',
@@ -7147,6 +7178,23 @@ export const fiFI: Catalog = {
   'trust.cacheFallback.expiresAt': 'Voimassa asti',
   'trust.cacheFallback.servedAt': 'Käytetty',
   'trust.cacheFallback.reason': 'Listan hakuyritys epäonnistui:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Siirtotie',
+  'trust.unverifiedTransport.badge': 'Todentamaton',
+  'trust.unverifiedTransport.title': 'Lista noudettu palvelinta todentamatta',
+  'trust.unverifiedTransport.body':
+    'Tämä luottamuslista noudetaan lähteestä, jonka TLS-varmennetta ei tarkisteta — näin on valittu allekirjoitusasetuksissa.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Tämä ei kyseenalaista listan aitoutta. Lista todennetaan omalla allekirjoituksellaan määritettyjä luottamusankkureita vasten — tarkistus, joka pysyy pakollisena ja jota väärennetty lista ei läpäise.',
+  'trust.unverifiedTransport.residualRisk':
+    'Verkkoreitillä olevan ulottuville tulee: aidon mutta vanhemman listan tarjoaminen, jossa sittemmin peruttu palvelu näkyy yhä myönnettynä, sekä listan noutamisen estäminen.',
+  'trust.unverifiedTransport.remedy':
+    'Jos syynä on puutteellinen varmenneketju, puuttuvan välivarmenteen antaminen palauttaa palvelimen tarkistuksen ilman mitään menetystä.',
+  'trust.unverifiedTransport.unknown':
+    'Tämä luottamuslista noudetaan tarkistamatta palvelimen varmennetta. Listan allekirjoitus tarkistetaan edelleen määritettyjä ankkureita vasten.',
   'trust.cacheFallback.unknown':
     'Tämä tarkistus käytti tallennettua kopiota luottamuslistasta, syystä jota tämä versio ei tunnista.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

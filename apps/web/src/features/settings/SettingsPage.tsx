@@ -367,7 +367,15 @@ function normalizeTslSource(source: TslSourceSettings): TslSourceSettings {
  * keyed by field serves them all.
  */
 type TrustAnchorField =
-  'tsl_trust_anchor_certs' | 'tsl_trust_anchor_sha256' | 'tsl_trust_anchor_self_asserted_sha256';
+  | 'tsl_trust_anchor_certs'
+  | 'tsl_trust_anchor_sha256'
+  | 'tsl_trust_anchor_self_asserted_sha256'
+  // Not an anchor, and listed here only because it is the fourth `string[]` on `signing` and the
+  // add/update/remove setters are keyed by field name. It is TLS transport trust — the certificate
+  // of the server hosting a list, never the certificate that signed one. The UI keeps it in its own
+  // card, with its own copy, for exactly the reason the anchor card explains the source/anchor
+  // distinction: operators conflate the two, and the fix is words, not proximity.
+  | 'tls_intermediate_certs';
 
 /**
  * The comparison form of a fingerprint: trimmed and lower-cased, nothing else.
@@ -582,6 +590,9 @@ function withSettingsDefaults(settings: SettingsWithMaybeAi): Settings {
       // accepted from a document that vouched for itself" — never "provenance unknown".
       tsl_trust_anchor_self_asserted_sha256:
         settings.signing.tsl_trust_anchor_self_asserted_sha256 ?? [],
+      // Also absent on the wire when empty, and empty is the ordinary state: a server that sends
+      // its full certificate chain — every correctly configured one — needs nothing here.
+      tls_intermediate_certs: settings.signing.tls_intermediate_certs ?? [],
     },
     ai: { ...DEFAULT_SETTINGS.ai, ...(settings.ai ?? {}) },
     ui: {
@@ -706,6 +717,9 @@ function toWireBody(draft: Settings): Settings {
         draft.signing.tsl_trust_anchor_self_asserted_sha256,
       ),
       tsl_legacy_algorithms: normalizeLegacyAlgorithms(draft.signing.tsl_legacy_algorithms),
+      // Same normalization as the anchors: trim and drop blanks, send what was typed. The server
+      // parses each entry as a real X.509 certificate and refuses anything else by field path.
+      tls_intermediate_certs: normalizeTrustAnchors(draft.signing.tls_intermediate_certs),
     },
     ai: {
       enabled: draft.ai.enabled === true,
@@ -2296,6 +2310,10 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
   // Both lists are optional on the wire (absent when empty), so read them through a `?? []` here
   // once rather than at each of the several render sites that count or map them.
   const trustAnchorCerts = draft.signing.tsl_trust_anchor_certs ?? [];
+  // Read the same way, and deliberately NOT folded into `configuredTrustAnchorCount` below: an
+  // intermediate anchors nothing, so counting one towards the unanchored warning would clear a
+  // fail-closed warning with a setting that cannot authenticate a list.
+  const tlsIntermediateCerts = draft.signing.tls_intermediate_certs ?? [];
   const trustAnchorFingerprints = draft.signing.tsl_trust_anchor_sha256 ?? [];
   // Compared case- and whitespace-insensitively, because the same fingerprint pasted twice is the
   // same anchor: a `Set` of raw strings would lose the mark the moment an operator retyped it in
@@ -2979,6 +2997,48 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                                     updateTslSource(source.id, { url: e.target.value })
                                   }
                                 />
+                                {/* Directly under the URL it applies to, and nowhere else: the
+                                    opt-out is per source, and putting it anywhere more general
+                                    would misrepresent its scope. The server refuses it on a
+                                    file-backed or http source with the field path, so a
+                                    misconfiguration is a visible 422 rather than an inert tick.
+
+                                    Not hidden behind a disclosure: an operator arriving at this
+                                    screen to diagnose a failing fetch should be able to see that a
+                                    source is relaxed without going looking for it. */}
+                                <label
+                                  className="checkline"
+                                  htmlFor={`set-tsl-insecure-${source.id}`}
+                                >
+                                  <input
+                                    id={`set-tsl-insecure-${source.id}`}
+                                    type="checkbox"
+                                    checked={source.tls_skip_verification ?? false}
+                                    onChange={(e) =>
+                                      updateTslSource(source.id, {
+                                        tls_skip_verification: e.target.checked,
+                                      })
+                                    }
+                                  />
+                                  {t('settings.signing.source.tlsSkipVerification.label')}
+                                </label>
+                                {source.tls_skip_verification ? (
+                                  <>
+                                    {/* Shown only when it is on. The accurate statement, not the
+                                        alarming one: the list still has to authenticate against the
+                                        configured anchors, and what is actually given up is
+                                        transport authentication. */}
+                                    <p className="field__hint">
+                                      {t('settings.signing.source.tlsSkipVerification.effect')}
+                                    </p>
+                                    <p className="field__hint">
+                                      {t('settings.signing.source.tlsSkipVerification.residual')}
+                                    </p>
+                                    <p className="field__hint">
+                                      {t('settings.signing.source.tlsSkipVerification.prefer')}
+                                    </p>
+                                  </>
+                                ) : null}
                               </td>
                               <td data-label={t('settings.signing.source.path')}>
                                 <Input
@@ -3283,6 +3343,74 @@ export function SettingsPage({ surface = 'settings' }: SettingsPageProps = {}) {
                     {legacyAlgorithms.length === 0 ? (
                       <p className="field__hint">{t('settings.signing.tslLegacy.none')}</p>
                     ) : null}
+                  </div>
+                </Card>
+              ) : null}
+
+              {/* Outbound TLS intermediates. Its own card, below the anchors and never inside them,
+                  because the single most likely misreading of this feature is "another place to put
+                  a trust anchor". It is not: an anchor says who may have SIGNED the list, this says
+                  which certificate authority issued the TLS certificate of the WEB SERVER the list
+                  is downloaded from. The copy leads with that distinction for the same reason the
+                  anchor card leads with the source-versus-anchor one.
+
+                  Same `signing.configure` fieldset as the anchors — supplying a chain link is
+                  signing configuration, and `signing_policy_changed` on the server treats it as
+                  such. */}
+              {sub === 'tsl' ? (
+                <Card title={t('settings.signing.tlsIntermediates.title')}>
+                  <div className="form settings-rows">
+                    <p className="field__hint">{t('settings.signing.tlsIntermediates.hint')}</p>
+                    <p className="field__hint">
+                      {t('settings.signing.tlsIntermediates.notAnAnchor')}
+                    </p>
+                    <p className="field__hint">{t('settings.signing.tlsIntermediates.scope')}</p>
+
+                    <div className="section-head">
+                      <p className="field__hint">
+                        {t('settings.signing.tlsIntermediates.certs.hint')}
+                      </p>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        icon={<Icon.Plus />}
+                        onClick={() => addTrustAnchor('tls_intermediate_certs')}
+                      >
+                        {t('settings.signing.tlsIntermediates.certs.add')}
+                      </Button>
+                    </div>
+
+                    {tlsIntermediateCerts.length === 0 ? (
+                      <p className="field__hint">
+                        {t('settings.signing.tlsIntermediates.certs.none')}
+                      </p>
+                    ) : (
+                      tlsIntermediateCerts.map((cert, index) => (
+                        <div className="input-reset" key={`tls-intermediate-${index}`}>
+                          <TextArea
+                            aria-label={t('settings.signing.tlsIntermediates.certs.label', {
+                              position: index + 1,
+                            })}
+                            value={cert}
+                            rows={4}
+                            spellCheck={false}
+                            placeholder={t('settings.signing.tlsIntermediates.certs.placeholder')}
+                            onChange={(e) =>
+                              updateTrustAnchor('tls_intermediate_certs', index, e.target.value)
+                            }
+                          />
+                          <IconButton
+                            type="button"
+                            variant="ghost"
+                            icon={<Icon.Trash />}
+                            label={t('settings.signing.tlsIntermediates.certs.remove', {
+                              position: index + 1,
+                            })}
+                            onClick={() => removeTrustAnchor('tls_intermediate_certs', index)}
+                          />
+                        </div>
+                      ))
+                    )}
                   </div>
                 </Card>
               ) : null}

@@ -69,6 +69,25 @@ pub enum TslError {
     #[error("failed to fetch Trusted List over the network: {}", describe_error_chain(.0))]
     Fetch(#[from] reqwest::Error),
 
+    /// The HTTPS connection to the Trusted List host failed because that server did not send the
+    /// intermediate certificate(s) linking its own certificate to a trusted root.
+    ///
+    /// Split out of [`Fetch`](Self::Fetch) because it is the one transport failure whose remedy is a
+    /// **configuration change here** and whose fault is **at the other end**. Every other network
+    /// error tells the operator to look at their address or their connectivity; this one tells them
+    /// the remote server is misconfigured and that they can work around it by supplying the missing
+    /// certificate. Sharing a code with "the list could not be fetched" made those instructions
+    /// unreachable — and the terminal cause an operator does see (`UnknownIssuer`) reads like a
+    /// verdict on the certificate rather than on the chain.
+    ///
+    /// The message is produced by the caller that owns the TLS stack (`chancela-api`), which is the
+    /// only layer that can inspect the `rustls` error by type. It is fully rendered technical
+    /// English, including the whole `source()` chain, so this variant carries a `String`.
+    ///
+    /// This is **not** a relaxation of anything: the connection was refused and no bytes were read.
+    #[error("{0}")]
+    TlsChainIncomplete(String),
+
     /// Reading a fixture/on-disk Trusted List failed (`FileTslSource`).
     #[error("failed to read Trusted List file: {0}")]
     Io(#[from] std::io::Error),

@@ -4640,6 +4640,38 @@ export const plPL: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Usuń certyfikat kotwicy {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Wklej tutaj certyfikat, zaczynając od -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'Pośrednie certyfikaty TLS dla połączeń wychodzących',
+  'settings.signing.tlsIntermediates.hint':
+    'Serwer HTTPS powinien wysyłać cały łańcuch swojego certyfikatu z wyjątkiem korzenia. Niektóre wysyłają wyłącznie certyfikat końcowy: brakuje ogniwa pośredniego, łańcucha nie da się zbudować, a połączenie zostaje odrzucone z błędem UnknownIssuer. Podaj tutaj brakujący certyfikat pośredni.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'To nie jest kotwica zaufania. Kotwica to certyfikat, którym podpisano listę zaufania; tutaj chodzi o urząd certyfikacji stojący za certyfikatem TLS serwera, na którym plik jest udostępniany. To różne certyfikaty, wydane przez różne podmioty: certyfikat podany tutaj nigdy nie uczyni autentyczną listy, która taka nie jest.',
+  'settings.signing.tlsIntermediates.scope':
+    'Nic tutaj nie pomija weryfikacji. Podany certyfikat staje się kolejnym możliwym ogniwem łańcucha, nigdy korzeniem: łańcuch nadal musi kończyć się na korzeniu, któremu system operacyjny już ufa, nazwa serwera nadal musi się zgadzać, a daty ważności nadal obowiązują. Przeglądarka albo curl mogą otworzyć ten sam adres bez błędu, ponieważ same pobierają brakujące certyfikaty; ten klient tego nie robi.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Certyfikaty pośrednie, w formacie PEM lub DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Dodaj certyfikat pośredni',
+  'settings.signing.tlsIntermediates.certs.none':
+    'Nie skonfigurowano żadnego certyfikatu pośredniego.',
+  'settings.signing.tlsIntermediates.certs.label': 'Certyfikat pośredni {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Usuń certyfikat pośredni {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Wklej tutaj certyfikat pośredni, zaczynając od -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label': 'Nie sprawdzaj certyfikatu TLS tego źródła',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Połączenia z tym źródłem będą nawiązywane bez potwierdzania tożsamości serwera. Autentyczność listy od tego nie zależy: nadal jest sprawdzana podpisem samej listy wobec skonfigurowanych kotwic, a lista sfałszowana nadal zostaje odrzucona.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'W zasięgu kogoś na drodze sieciowej znajduje się natomiast co innego: może podać listę prawdziwą, lecz starszą — która uwierzytelnia się bez zarzutu, bo jest prawdziwa, i na której usługa już wycofana wciąż figuruje jako udzielona — oraz może całkowicie uniemożliwić pobranie listy.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Jeśli przyczyną jest niepełny łańcuch certyfikatów, podaj raczej brakujący certyfikat pośredni: rozwiązuje to pobieranie bez rezygnacji z uwierzytelnienia transportu.',
   'settings.signing.tslAnchors.digests.hint':
     'Odciski SHA-256 certyfikatów kotwicy, szesnastkowo (64 znaki).',
   'settings.signing.tslAnchors.digests.add': 'Dodaj odcisk',
@@ -7157,6 +7189,23 @@ export const plPL: Catalog = {
   'trust.cacheFallback.expiresAt': 'Ważna do',
   'trust.cacheFallback.servedAt': 'Użyta',
   'trust.cacheFallback.reason': 'Próba pobrania listy nie powiodła się:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Nieuwierzytelniony',
+  'trust.unverifiedTransport.title': 'Lista pobrana bez uwierzytelnienia serwera',
+  'trust.unverifiedTransport.body':
+    'Ta lista zaufania jest pobierana ze źródła, którego certyfikat TLS nie jest sprawdzany — zgodnie z wyborem dokonanym w ustawieniach podpisywania.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Nie podważa to autentyczności listy. Lista jest uwierzytelniana własnym podpisem, konfrontowanym ze skonfigurowanymi kotwicami zaufania — sprawdzeniem, które pozostaje obowiązkowe i którego lista sfałszowana nie przechodzi.',
+  'trust.unverifiedTransport.residualRisk':
+    'W zasięgu kogoś na drodze sieciowej znajduje się: podanie listy prawdziwej, lecz starszej, na której usługa już wycofana wciąż figuruje jako udzielona, oraz uniemożliwienie pobrania listy.',
+  'trust.unverifiedTransport.remedy':
+    'Jeśli przyczyną jest niepełny łańcuch certyfikatów, podanie brakującego certyfikatu pośredniego przywraca sprawdzanie serwera bez żadnej straty.',
+  'trust.unverifiedTransport.unknown':
+    'Ta lista zaufania jest pobierana bez sprawdzania certyfikatu serwera. Podpis listy nadal jest konfrontowany ze skonfigurowanymi kotwicami.',
   'trust.cacheFallback.unknown':
     'Ta weryfikacja użyła zapisanej kopii listy zaufania, z powodu, którego ta wersja nie rozpoznaje.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

@@ -4660,6 +4660,38 @@ export const nlNL: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Ankercertificaat {position} verwijderen',
   'settings.signing.tslAnchors.certs.placeholder':
     'Plak het certificaat hier, beginnend met -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'TLS-tussencertificaten voor uitgaande verbindingen',
+  'settings.signing.tlsIntermediates.hint':
+    'Een HTTPS-server hoort zijn hele certificaatketen te sturen, behalve de wortel. Sommige sturen alleen het eindcertificaat: de schakel in het midden ontbreekt, er kan geen keten worden gebouwd en de verbinding wordt geweigerd met de fout UnknownIssuer. Geef hier het ontbrekende tussencertificaat op.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Dit is geen vertrouwensanker. Een anker is het certificaat waarmee de vertrouwenslijst is ondertekend; dit is de certificaatautoriteit achter het TLS-certificaat van de webserver waar het bestand staat. Verschillende certificaten, uitgegeven door verschillende instanties: een certificaat dat u hier opgeeft maakt een niet-authentieke lijst nooit authentiek.',
+  'settings.signing.tlsIntermediates.scope':
+    'Er wordt hier niets aan de controle toegegeven. Het opgegeven certificaat wordt één extra mogelijke schakel in de keten, nooit een wortel: de keten moet nog steeds uitkomen bij een wortel die het besturingssysteem al vertrouwt, de servernaam moet nog steeds kloppen en de geldigheidsdata blijven gelden. Een browser of curl kan hetzelfde adres zonder fout openen, omdat die ontbrekende certificaten zelf ophalen; deze client doet dat niet.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Tussencertificaten, in PEM of DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Tussencertificaat toevoegen',
+  'settings.signing.tlsIntermediates.certs.none': 'Geen tussencertificaat geconfigureerd.',
+  'settings.signing.tlsIntermediates.certs.label': 'Tussencertificaat {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Tussencertificaat {position} verwijderen',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Plak hier het tussencertificaat, beginnend met -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label':
+    'Het TLS-certificaat van deze bron niet controleren',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Verbindingen met deze bron worden gemaakt zonder de identiteit van de server te bevestigen. De echtheid van de lijst hangt daar niet van af: die wordt nog steeds gecontroleerd via de handtekening van de lijst zelf tegen de ingestelde ankers, en een vervalste lijst wordt nog steeds geweigerd.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'Wat wel binnen bereik komt van iemand op het netwerkpad is iets anders: een echte maar oudere lijst aanbieden — die prima authenticeert, want echt, en waarop een inmiddels ingetrokken dienst nog als verleend staat — en het ophalen van de lijst geheel blokkeren.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Is de oorzaak een onvolledige certificaatketen, geef dan liever het ontbrekende tussencertificaat op: dat lost het ophalen op zonder de authenticatie van het transport op te geven.',
   'settings.signing.tslAnchors.digests.hint':
     'SHA-256-vingerafdrukken van de ankercertificaten, hexadecimaal (64 tekens).',
   'settings.signing.tslAnchors.digests.add': 'Vingerafdruk toevoegen',
@@ -7208,6 +7240,23 @@ export const nlNL: Catalog = {
   'trust.cacheFallback.expiresAt': 'Geldig tot',
   'trust.cacheFallback.servedAt': 'Gebruikt op',
   'trust.cacheFallback.reason': 'De poging om de lijst op te halen mislukte met:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Niet geauthenticeerd',
+  'trust.unverifiedTransport.title': 'Lijst opgehaald zonder de server te authenticeren',
+  'trust.unverifiedTransport.body':
+    'Deze vertrouwenslijst wordt opgehaald bij een bron waarvan het TLS-certificaat niet wordt gecontroleerd, door een keuze in de ondertekeningsinstellingen.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Dit trekt de echtheid van de lijst niet in twijfel. De lijst wordt geauthenticeerd via haar eigen handtekening, getoetst aan de ingestelde vertrouwensankers — een controle die verplicht blijft en die een vervalste lijst niet doorstaat.',
+  'trust.unverifiedTransport.residualRisk':
+    'Wat wel binnen bereik komt van iemand op het netwerkpad: een echte maar oudere lijst aanbieden, waarop een inmiddels ingetrokken dienst nog als verleend staat, en het ophalen van de lijst blokkeren.',
+  'trust.unverifiedTransport.remedy':
+    'Is de oorzaak een onvolledige certificaatketen, dan herstelt het ontbrekende tussencertificaat de servercontrole zonder enig verlies.',
+  'trust.unverifiedTransport.unknown':
+    'Deze vertrouwenslijst wordt opgehaald zonder dat het certificaat van de server wordt gecontroleerd. De handtekening van de lijst wordt nog steeds getoetst aan de ingestelde ankers.',
   'trust.cacheFallback.unknown':
     'Deze controle gebruikte een opgeslagen kopie van de vertrouwenslijst, om een reden die deze versie niet herkent.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

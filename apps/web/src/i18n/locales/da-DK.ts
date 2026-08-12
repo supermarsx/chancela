@@ -4623,6 +4623,39 @@ export const daDK: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Fjern ankercertifikat {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Indsæt certifikatet her, begyndende med -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'TLS-mellemcertifikater til udgående forbindelser',
+  'settings.signing.tlsIntermediates.hint':
+    'En HTTPS-server skal sende hele sin certifikatkæde undtagen roden. Nogle sender kun slutcertifikatet: mellemleddet mangler, kæden kan ikke bygges, og forbindelsen afvises med fejlen UnknownIssuer. Angiv det manglende mellemcertifikat her.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Dette er ikke et tillidsanker. Et anker er det certifikat, som tillidslisten er underskrevet med; her er der tale om den certifikatmyndighed, der står bag TLS-certifikatet på den webserver, som filen ligger på. Forskellige certifikater, udstedt af forskellige instanser: et certifikat, der angives her, gør aldrig en uægte liste ægte.',
+  'settings.signing.tlsIntermediates.scope':
+    'Intet her springer kontrollen over. Det angivne certifikat bliver blot endnu et muligt led i kæden, aldrig en rod: kæden skal stadig ende i en rod, som styresystemet i forvejen har tillid til, servernavnet skal stadig passe, og gyldighedsdatoerne gælder fortsat. En browser eller curl kan åbne den samme adresse uden fejl, fordi de selv henter de manglende certifikater; det gør denne klient ikke.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Mellemcertifikater, i PEM eller DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Tilføj mellemcertifikat',
+  'settings.signing.tlsIntermediates.certs.none':
+    'Der er ikke konfigureret noget mellemcertifikat.',
+  'settings.signing.tlsIntermediates.certs.label': 'Mellemcertifikat {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Fjern mellemcertifikat {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Indsæt mellemcertifikatet her, begyndende med -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label':
+    'Kontrollér ikke denne kildes TLS-certifikat',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Forbindelser til denne kilde oprettes uden at bekræfte serverens identitet. Listens ægthed afhænger ikke af det: den kontrolleres fortsat via listens egen signatur mod de konfigurerede ankre, og en forfalsket liste afvises fortsat.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'Det, som til gengæld kommer inden for rækkevidde af nogen på netværksvejen, er noget andet: at levere en ægte, men ældre liste — som godtgør sig fint, fordi den er ægte, og hvorpå en siden tilbagetrukket tjeneste stadig står som bevilget — og helt at forhindre, at listen hentes.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Er årsagen en ufuldstændig certifikatkæde, så angiv i stedet det manglende mellemcertifikat: det løser hentningen uden at give afkald på autentificering af transporten.',
   'settings.signing.tslAnchors.digests.hint':
     'SHA-256-fingeraftryk af ankercertifikaterne, i hexadecimal (64 tegn).',
   'settings.signing.tslAnchors.digests.add': 'Tilføj fingeraftryk',
@@ -7132,6 +7165,23 @@ export const daDK: Catalog = {
   'trust.cacheFallback.expiresAt': 'Gyldig til',
   'trust.cacheFallback.servedAt': 'Brugt den',
   'trust.cacheFallback.reason': 'Forsøget på at hente listen mislykkedes med:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Ikke autentificeret',
+  'trust.unverifiedTransport.title': 'Liste hentet uden at autentificere serveren',
+  'trust.unverifiedTransport.body':
+    'Denne tillidsliste hentes fra en kilde, hvis TLS-certifikat ikke kontrolleres, efter et valg truffet i signeringsindstillingerne.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Det sår ikke tvivl om listens ægthed. Listen autentificeres via sin egen signatur, holdt op mod de konfigurerede tillidsankre — en kontrol, der fortsat er obligatorisk, og som en forfalsket liste ikke består.',
+  'trust.unverifiedTransport.residualRisk':
+    'Det, der kommer inden for rækkevidde af nogen på netværksvejen: at levere en ægte, men ældre liste, hvorpå en siden tilbagetrukket tjeneste stadig står som bevilget, og at forhindre, at listen hentes.',
+  'trust.unverifiedTransport.remedy':
+    'Er årsagen en ufuldstændig certifikatkæde, genopretter det manglende mellemcertifikat kontrollen af serveren uden omkostninger.',
+  'trust.unverifiedTransport.unknown':
+    'Denne tillidsliste hentes, uden at serverens certifikat kontrolleres. Listens signatur holdes fortsat op mod de konfigurerede ankre.',
   'trust.cacheFallback.unknown':
     'Denne kontrol brugte en gemt kopi af tillidslisten, af en årsag denne version ikke kender.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

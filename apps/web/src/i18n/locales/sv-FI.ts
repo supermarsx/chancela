@@ -4637,6 +4637,37 @@ export const svFI: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Ta bort ankarcertifikat {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Klistra in certifikatet här, med början på -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'TLS-mellancertifikat för utgående förbindelser',
+  'settings.signing.tlsIntermediates.hint':
+    'En HTTPS-server bör sända hela sin certifikatkedja utom roten. Somliga sänder endast slutcertifikatet: mellanledet fattas, någon kedja kan inte byggas och förbindelsen avvisas med felet UnknownIssuer. Uppge det felande mellancertifikatet här.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Detta är inte något förtroendeankare. Ett ankare är det certifikat som förtroendeförteckningen undertecknades med; här gäller det certifikatutfärdaren bakom TLS-certifikatet på den webbserver där filen finns. Skilda certifikat, utfärdade av skilda instanser: ett certifikat som uppges här gör aldrig en oäkta förteckning äkta.',
+  'settings.signing.tlsIntermediates.scope':
+    'Ingenting här kringgår kontrollen. Det uppgivna certifikatet blir ännu ett tänkbart led i kedjan, aldrig en rot: kedjan måste alltjämt sluta i en rot som operativsystemet redan litar på, servernamnet måste alltjämt stämma och giltighetstiderna gäller fortfarande. En webbläsare eller curl kan öppna samma adress felfritt, eftersom de på egen hand hämtar de certifikat som fattas; denna klient gör det inte.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Mellancertifikat, som PEM eller DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Lägg till ett mellancertifikat',
+  'settings.signing.tlsIntermediates.certs.none': 'Inget mellancertifikat har konfigurerats.',
+  'settings.signing.tlsIntermediates.certs.label': 'Mellancertifikat nr {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Avlägsna mellancertifikat nr {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Klistra in mellancertifikatet här, inlett med -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label': 'Granska inte denna källas TLS-certifikat',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Förbindelser till denna källa upprättas utan att serverns identitet bestyrks. Förteckningens äkthet beror inte på det: den prövas fortfarande genom förteckningens egen signatur mot de uppgivna ankarna, och en förfalskad förteckning avvisas fortfarande.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'Vad som däremot blir möjligt för någon på nätverksvägen är en annan sak: att leverera en äkta men äldre förteckning — som styrker sig felfritt, då den är äkta, och där en sedan dess återkallad tjänst alltjämt står som beviljad — och att helt hindra att förteckningen hämtas.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Är orsaken en ofullständig certifikatkedja, uppge hellre det felande mellancertifikatet: det avhjälper hämtningen utan att avstå från autentisering av transporten.',
   'settings.signing.tslAnchors.digests.hint':
     'SHA-256-fingeravtryck för ankarcertifikaten, i hexadecimal form (64 tecken).',
   'settings.signing.tslAnchors.digests.add': 'Lägg till fingeravtryck',
@@ -7143,6 +7174,23 @@ export const svFI: Catalog = {
   'trust.cacheFallback.expiresAt': 'Giltig till',
   'trust.cacheFallback.servedAt': 'Användes',
   'trust.cacheFallback.reason': 'Försöket att hämta listan misslyckades med:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Obestyrkt',
+  'trust.unverifiedTransport.title': 'Förteckningen hämtad utan att servern bestyrkts',
+  'trust.unverifiedTransport.body':
+    'Denna förtroendeförteckning hämtas från en källa vars TLS-certifikat inte granskas, enligt ett val i signeringsinställningarna.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Detta rubbar inte förteckningens äkthet. Förteckningen bestyrks genom sin egen signatur, prövad mot de uppgivna förtroendeankarna — en kontroll som förblir obligatorisk och som en förfalskad förteckning inte klarar.',
+  'trust.unverifiedTransport.residualRisk':
+    'Vad som blir möjligt för någon på nätverksvägen: att leverera en äkta men äldre förteckning, där en sedan dess återkallad tjänst alltjämt står som beviljad, och att hindra att förteckningen hämtas.',
+  'trust.unverifiedTransport.remedy':
+    'Är orsaken en ofullständig certifikatkedja återställer det felande mellancertifikatet granskningen av servern utan någon förlust.',
+  'trust.unverifiedTransport.unknown':
+    'Denna förtroendeförteckning hämtas utan att serverns certifikat granskas. Förteckningens signatur prövas alltjämt mot de uppgivna ankarna.',
   'trust.cacheFallback.unknown':
     'Den här kontrollen använde en sparad kopia av förtroendelistan, av ett skäl som den här versionen inte känner igen.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

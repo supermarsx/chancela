@@ -4684,6 +4684,37 @@ export const deDE: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Ankerzertifikat {position} entfernen',
   'settings.signing.tslAnchors.certs.placeholder':
     'Fügen Sie das Zertifikat hier ein, beginnend mit -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title': 'TLS-Zwischenzertifikate für ausgehende Verbindungen',
+  'settings.signing.tlsIntermediates.hint':
+    'Ein HTTPS-Server muss seine gesamte Zertifikatskette außer der Wurzel senden. Manche senden nur das Endzertifikat: Das mittlere Glied fehlt, es lässt sich keine Kette bilden, und die Verbindung wird mit dem Fehler UnknownIssuer abgelehnt. Hinterlegen Sie hier das fehlende Zwischenzertifikat.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Dies ist kein Vertrauensanker. Ein Anker ist das Zertifikat, mit dem die Vertrauensliste signiert wurde; hier geht es um die Zertifizierungsstelle hinter dem TLS-Zertifikat des Webservers, auf dem die Datei liegt. Das sind verschiedene Zertifikate von verschiedenen Stellen: Ein hier hinterlegtes Zertifikat macht eine nicht authentische Liste niemals authentisch.',
+  'settings.signing.tlsIntermediates.scope':
+    'Hier wird nichts an der Prüfung nachgelassen. Das hinterlegte Zertifikat wird zu einem weiteren möglichen Kettenglied, niemals zu einer Wurzel: Die Kette muss weiterhin bei einer Wurzel enden, der das Betriebssystem bereits vertraut, der Servername muss weiterhin übereinstimmen, und die Gültigkeitsdaten werden weiterhin geprüft. Ein Browser oder curl können dieselbe Adresse fehlerfrei öffnen, weil sie fehlende Zertifikate selbst nachladen; dieser Client tut das nicht.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Zwischenzertifikate, als PEM oder DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Zwischenzertifikat hinzufügen',
+  'settings.signing.tlsIntermediates.certs.none': 'Kein Zwischenzertifikat konfiguriert.',
+  'settings.signing.tlsIntermediates.certs.label': 'Zwischenzertifikat {position}',
+  'settings.signing.tlsIntermediates.certs.remove': 'Zwischenzertifikat {position} entfernen',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Fügen Sie hier das Zwischenzertifikat ein, beginnend mit -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label': 'TLS-Zertifikat dieser Quelle nicht prüfen',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'Verbindungen zu dieser Quelle werden ohne Bestätigung der Serveridentität aufgebaut. Die Echtheit der Liste hängt davon nicht ab: Sie wird weiterhin über die Signatur der Liste selbst gegen die konfigurierten Anker geprüft, und eine gefälschte Liste wird weiterhin abgelehnt.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'In Reichweite von jemandem auf dem Netzwerkweg gerät dagegen etwas anderes: eine echte, aber ältere Liste auszuliefern — die einwandfrei authentifiziert, weil sie echt ist, und auf der ein inzwischen zurückgezogener Dienst weiterhin als gewährt erscheint — und den Abruf der Liste ganz zu verhindern.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Liegt die Ursache in einer unvollständigen Zertifikatskette, hinterlegen Sie stattdessen das fehlende Zwischenzertifikat: das behebt den Abruf, ohne die Transportauthentifizierung aufzugeben.',
   'settings.signing.tslAnchors.digests.hint':
     'SHA-256-Fingerabdrücke der Ankerzertifikate, hexadezimal (64 Zeichen).',
   'settings.signing.tslAnchors.digests.add': 'Fingerabdruck hinzufügen',
@@ -7225,6 +7256,23 @@ export const deDE: Catalog = {
   'trust.cacheFallback.expiresAt': 'Gültig bis',
   'trust.cacheFallback.servedAt': 'Verwendet am',
   'trust.cacheFallback.reason': 'Der Abrufversuch der Liste schlug fehl mit:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transport',
+  'trust.unverifiedTransport.badge': 'Nicht authentifiziert',
+  'trust.unverifiedTransport.title': 'Liste ohne Authentifizierung des Servers abgerufen',
+  'trust.unverifiedTransport.body':
+    'Diese Vertrauensliste wird von einer Quelle abgerufen, deren TLS-Zertifikat nicht geprüft wird — so in den Signatureinstellungen konfiguriert.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Das stellt die Echtheit der Liste nicht in Frage. Die Liste wird über ihre eigene Signatur gegen die konfigurierten Vertrauensanker authentifiziert — eine Prüfung, die verpflichtend bleibt und die eine gefälschte Liste nicht besteht.',
+  'trust.unverifiedTransport.residualRisk':
+    'In Reichweite von jemandem auf dem Netzwerkweg gerät: eine echte, aber ältere Liste auszuliefern, auf der ein inzwischen zurückgezogener Dienst weiterhin als gewährt erscheint, und den Abruf ganz zu verhindern.',
+  'trust.unverifiedTransport.remedy':
+    'Liegt die Ursache in einer unvollständigen Zertifikatskette, stellt das fehlende Zwischenzertifikat die Serverprüfung kostenlos wieder her.',
+  'trust.unverifiedTransport.unknown':
+    'Diese Vertrauensliste wird abgerufen, ohne dass das Zertifikat des Servers geprüft wird. Die Signatur der Liste wird weiterhin gegen die konfigurierten Anker geprüft.',
   'trust.cacheFallback.unknown':
     'Diese Prüfung hat eine gespeicherte Kopie der Vertrauensliste verwendet, aus einem Grund, den diese Version nicht kennt.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

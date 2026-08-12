@@ -40,12 +40,13 @@ use crate::actor::CurrentActor;
 use crate::authz::require_permission;
 use crate::error::ApiError;
 use crate::hex;
+use crate::outbound_tls::{OutboundTls, TlsIntermediates};
 use crate::settings::{
     RuntimeTsaProvider, RuntimeTsaSelection, RuntimeTslSelection, SigningSettings,
     legacy_algorithm_policy,
 };
 
-const BUNDLED_PT_TSL: &[u8] = include_bytes!(concat!(
+pub(crate) const BUNDLED_PT_TSL: &[u8] = include_bytes!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/../chancela-tsl/fixtures/pt-tsl-sample.xml"
 ));
@@ -164,6 +165,14 @@ pub(crate) struct TslVerification {
     ///
     /// `None` is the ordinary state: the last resolution came live from the configured source.
     cache_fallback: Option<TslCacheServe>,
+    /// Set when the **currently selected** source is configured not to verify its peer certificate.
+    ///
+    /// Resolved here, from the same single settings read as the anchors, so that every trust surface
+    /// reports it without each handler having to remember to. It is deliberately a statement about
+    /// the configured posture rather than a record of one past fetch: the posture is what governs
+    /// the next fetch and every cached answer served in the meantime, and unlike a recorded event it
+    /// cannot go stale in the direction that understates the situation.
+    unverified_transport: Option<TslUnverifiedTransportView>,
 }
 
 impl TslVerification {
@@ -173,6 +182,7 @@ impl TslVerification {
     pub(crate) fn resolve(signing: &SigningSettings, data_dir: Option<&std::path::Path>) -> Self {
         let policy = legacy_algorithm_policy(&signing.tsl_legacy_algorithms);
         let cache_fallback = signing_cache_fallback(signing, data_dir);
+        let unverified_transport = selected_unverified_transport(signing);
         match resolve_lotl_trust_anchors(
             &signing.tsl_trust_anchor_certs,
             &signing.tsl_trust_anchor_sha256,
@@ -182,12 +192,14 @@ impl TslVerification {
                 anchor_error: None,
                 policy,
                 cache_fallback,
+                unverified_transport,
             },
             Err(e) => Self {
                 anchors: TslTrustAnchors::new(),
                 anchor_error: Some(e.to_string()),
                 policy,
                 cache_fallback,
+                unverified_transport,
             },
         }
     }
@@ -202,8 +214,29 @@ impl TslVerification {
             anchor_error: None,
             policy,
             cache_fallback: None,
+            unverified_transport: None,
         }
     }
+}
+
+/// The unverified-transport marker for the **currently selected** Trusted List source, or `None`
+/// when it verifies its peer — which is every install that has not deliberately opted out.
+///
+/// Resolved from the same [`SigningSettings`] the anchors come from, and from the same selection
+/// `signing_cache_fallback` keys on, so the marker always describes the source whose bytes are
+/// actually in play. A file-backed or `http` source can never carry the flag (settings validation
+/// refuses it there), so a marker emitted here always corresponds to a real unverified TLS
+/// connection rather than an inert setting.
+fn selected_unverified_transport(signing: &SigningSettings) -> Option<TslUnverifiedTransportView> {
+    let selected = signing.runtime_tsl_selection().selected?;
+    if !selected.tls_skip_verification {
+        return None;
+    }
+    Some(TslUnverifiedTransportView {
+        code: TSL_TRANSPORT_NOT_VERIFIED_CODE.to_owned(),
+        source_id: selected.id.clone(),
+        url: selected.location.url().unwrap_or_default().to_owned(),
+    })
 }
 
 /// Read the durable Trusted List cache's last serve record for the **currently selected signing
@@ -306,6 +339,36 @@ pub enum TslSignatureStatus {
     Invalid,
 }
 
+/// The Trusted List behind this verdict is fetched over a transport whose TLS certificate is **not
+/// verified**, because the operator set `tls_skip_verification` on its configured source.
+///
+/// Carried beside [`TslValidationView::weak_algorithms`] and
+/// [`TslValidationView::cache_fallback`] for the same reason as both: the verdict is real, and it
+/// depended on something the reader has to be told. A settings page cannot carry this — it is read
+/// once, by whoever made the change, possibly months earlier. The fact belongs next to every result
+/// it applies to.
+///
+/// **It is not a claim that the list is untrustworthy, and the copy must not say so.** The list's
+/// authenticity comes from its own XML-DSig signature against the configured anchors, which is
+/// checked here exactly as it is everywhere else. What is given up is transport authentication, and
+/// the two consequences that follow from that are replay of a *genuine but older* list, and denial
+/// of service. A forged list still fails.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TslUnverifiedTransportView {
+    /// Stable machine token, never a sentence: `tsl_transport_not_verified`. The presentation layer
+    /// owns the wording, as it does for the sibling markers.
+    pub code: String,
+    /// The configured source whose TLS verification is disabled, so the marker names *which* source
+    /// on an install that has several and only relaxed one.
+    pub source_id: String,
+    /// That source's URL. The host whose certificate goes unchecked is the operationally useful
+    /// fact, and it is already operator-supplied configuration, not a secret.
+    pub url: String,
+}
+
+/// The stable code carried by [`TslUnverifiedTransportView`].
+pub(crate) const TSL_TRANSPORT_NOT_VERIFIED_CODE: &str = "tsl_transport_not_verified";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TslValidationView {
     pub checked_at: String,
@@ -327,6 +390,11 @@ pub struct TslValidationView {
     /// the scheme operator withdrew can still read as granted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_fallback: Option<TslCacheFallbackView>,
+    /// Set when the source this list comes from is configured not to verify its peer certificate.
+    /// Absent (and omitted) on every install that has not opted in, so a stored payload or an older
+    /// client sees exactly the previous shape. See [`TslUnverifiedTransportView`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unverified_transport: Option<TslUnverifiedTransportView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -565,6 +633,11 @@ pub struct TsaTslDiagnosticsView {
     /// See [`TslValidationView::cache_fallback`]. Omitted when the list came live.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_fallback: Option<TslCacheFallbackView>,
+    /// Set when the source this list comes from is configured not to verify its peer certificate.
+    /// Absent (and omitted) on every install that has not opted in, so a stored payload or an older
+    /// client sees exactly the previous shape. See [`TslUnverifiedTransportView`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unverified_transport: Option<TslUnverifiedTransportView>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -787,20 +860,42 @@ pub async fn refresh_trust_tsl(
     // One resolution for both arms: the LOTL bootstrap and the plain import share the anchors the
     // read paths display, so an import can never authenticate against a different set than the
     // catalog then reports.
-    let (tsl_selection, verification) = {
+    let (tsl_selection, verification, tls_intermediate_certs) = {
         let guard = state.settings.read().await;
         (
             guard.signing.runtime_tsl_selection(),
             TslVerification::resolve(&guard.signing, Some(data_dir.as_path())),
+            // Transport trust, from the same single settings read as the anchors — and kept in its
+            // own binding rather than folded into `TslVerification`, which is about how a list is
+            // AUTHENTICATED. Conflating the certificate of the host serving the file with the
+            // certificate that signed the file is the confusion both settings fields are worded to
+            // prevent; it would be an odd place to start making it.
+            guard.signing.tls_intermediate_certs.clone(),
         )
     };
+    let tls_intermediates =
+        TlsIntermediates::parse(&tls_intermediate_certs).map_err(ApiError::Unprocessable)?;
     let use_lotl = request.lotl.unwrap_or(false);
     let attempt = tokio::task::spawn_blocking(move || {
         let now = OffsetDateTime::now_utc();
         if use_lotl {
-            import_tsl_via_lotl(data_dir, tsl_selection, &verification, request, now)
+            import_tsl_via_lotl(
+                data_dir,
+                tsl_selection,
+                &verification,
+                request,
+                now,
+                &tls_intermediates,
+            )
         } else {
-            import_tsl_to_cache(data_dir, tsl_selection, request, now, &verification)
+            import_tsl_to_cache(
+                data_dir,
+                tsl_selection,
+                request,
+                now,
+                &verification,
+                &tls_intermediates,
+            )
         }
     })
     .await
@@ -1006,6 +1101,7 @@ fn import_tsl_to_cache(
     request: TslRefreshRequest,
     now: OffsetDateTime,
     verification: &TslVerification,
+    tls_intermediates: &TlsIntermediates,
 ) -> Result<TslRefreshStatusView, ApiError> {
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| ApiError::Internal(format!("failed to create TSL cache directory: {e}")))?;
@@ -1043,20 +1139,27 @@ fn import_tsl_to_cache(
     } else {
         TslRefreshSourceKind::Url
     };
-    let (display_url, display_path, timeout_seconds, max_bytes) = match selected_source.as_ref() {
-        Some(source) if source_path.is_none() && source_url.is_none() => (
-            source.location.url().map(str::to_owned),
-            source.location.path().map(str::to_owned),
-            source.timeout_seconds,
-            source.max_bytes,
-        ),
-        _ => (
-            source_url,
-            source_path.as_ref().map(|path| path.display().to_string()),
-            DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
-            DEFAULT_TSL_FETCH_MAX_BYTES,
-        ),
-    };
+    // The fifth element is the whole per-source scoping rule in one place: the opt-out applies only
+    // when the bytes are being fetched from the CONFIGURED source. An ad-hoc url the caller passed
+    // to `POST /v1/trust/refresh` takes the `_` arm and is always verified, however the configured
+    // source is set up — otherwise one relaxed source would quietly relax every manual import.
+    let (display_url, display_path, timeout_seconds, max_bytes, tls_skip_verification) =
+        match selected_source.as_ref() {
+            Some(source) if source_path.is_none() && source_url.is_none() => (
+                source.location.url().map(str::to_owned),
+                source.location.path().map(str::to_owned),
+                source.timeout_seconds,
+                source.max_bytes,
+                source.tls_skip_verification,
+            ),
+            _ => (
+                source_url,
+                source_path.as_ref().map(|path| path.display().to_string()),
+                DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
+                DEFAULT_TSL_FETCH_MAX_BYTES,
+                false,
+            ),
+        };
     if display_url.is_none() && display_path.is_none() {
         return Err(ApiError::Unprocessable(
             "TSL import requires an explicit url/path or an enabled signing.tsl_sources entry"
@@ -1076,6 +1179,7 @@ fn import_tsl_to_cache(
             display_url.as_deref().expect("URL source has display_url"),
             timeout_seconds,
             max_bytes,
+            &OutboundTls::for_tsl_source(tls_intermediates.clone(), tls_skip_verification),
         )
     };
 
@@ -1235,6 +1339,7 @@ fn import_tsl_via_lotl(
     verification: &TslVerification,
     request: TslRefreshRequest,
     now: OffsetDateTime,
+    tls_intermediates: &TlsIntermediates,
 ) -> Result<TslRefreshStatusView, ApiError> {
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| ApiError::Internal(format!("failed to create TSL cache directory: {e}")))?;
@@ -1266,16 +1371,29 @@ fn import_tsl_via_lotl(
 
     // Fetch the LOTL then the member TSL, both SSRF-vetted + size-bounded (never the raw
     // `HttpTslSource`, which does no egress vetting).
+    // The LOTL is the root of this whole bootstrap and is NOT a configured source, so it is always
+    // fetched with full verification — there is no setting that relaxes it. The member list is
+    // fetched with the selected source's posture, but only when the member URL actually came from
+    // that source: an explicit `request.url` is somebody typing an address into a box, and inheriting
+    // another source's opt-out for it would apply the relaxation to a host the operator never
+    // configured.
+    let member_skips_verification = request.url.is_none()
+        && selection
+            .selected
+            .as_ref()
+            .is_some_and(|source| source.tls_skip_verification);
     let fetched = fetch_bounded_tsl_url(
         &lotl_url,
         DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
         DEFAULT_TSL_FETCH_MAX_BYTES,
+        &OutboundTls::verified(tls_intermediates.clone()),
     )
     .and_then(|lotl_bytes| {
         fetch_bounded_tsl_url(
             &member_url,
             DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
             DEFAULT_TSL_FETCH_MAX_BYTES,
+            &OutboundTls::for_tsl_source(tls_intermediates.clone(), member_skips_verification),
         )
         .map(|member_bytes| (lotl_bytes, member_bytes))
     });
@@ -1329,7 +1447,13 @@ fn import_tsl_via_lotl(
             };
             persist_trust_store_provenance(&provenance_path, &provenance)?;
 
-            let status = lotl_success_status(&authenticated.list, now, member_url, target_display);
+            let status = lotl_success_status(
+                &authenticated.list,
+                now,
+                member_url,
+                target_display,
+                verification.unverified_transport.clone(),
+            );
             persist_refresh_status(&status_path, &status)?;
             Ok(status)
         }
@@ -1360,6 +1484,7 @@ fn lotl_success_status(
     now: OffsetDateTime,
     member_url: String,
     target_path: String,
+    unverified_transport: Option<TslUnverifiedTransportView>,
 ) -> TslRefreshStatusView {
     let services = list.services().count();
     let ca_qc_services = list.services().filter(|s| s.is_ca_qc()).count();
@@ -1382,6 +1507,9 @@ fn lotl_success_status(
             // permit no broken algorithm at all — there is nothing weak to report here.
             weak_algorithms: Vec::new(),
             cache_fallback: None,
+            // The member list really was fetched, so if its source does not verify its peer this
+            // successful import is exactly a result that depended on an unverified transport.
+            unverified_transport,
         },
         providers: Some(list.providers.len()),
         services: Some(services),
@@ -1461,6 +1589,45 @@ fn trust_store_cache_expired(
     }
 }
 
+/// Render an outbound fetch failure for an operator, expanding the whole `source()` chain and — for
+/// the one fault whose terminal cause is accurate but useless — saying what to do about it.
+///
+/// `invalid peer certificate: UnknownIssuer` is a true statement that sends a non-specialist
+/// nowhere: it does not say the *other* server is at fault, and it does not explain why the same
+/// address opens in a browser on the same machine. Both facts are appended here rather than left for
+/// the operator to infer. See [`crate::outbound_tls::incomplete_chain_guidance`].
+pub(crate) fn describe_fetch_failure(error: reqwest::Error) -> String {
+    let described = chancela_tsl::describe_error_chain(&error);
+    if crate::outbound_tls::is_incomplete_chain_error(&error) {
+        format!(
+            "{described}; {guidance}",
+            guidance = crate::outbound_tls::incomplete_chain_guidance()
+        )
+    } else {
+        described
+    }
+}
+
+/// The same classification as [`describe_fetch_failure`], as a [`TslError`] — so the signing path
+/// carries the distinction all the way to `SigningError::code()` and the client gets a stable code
+/// instead of one more sentence inside `signing_trusted_list_unavailable`.
+///
+/// The two functions exist together deliberately: the refresh/import path reports a rendered string
+/// and the signing path reports a typed error, and if each classified for itself the operator would
+/// eventually read two different diagnoses of one fault. Both delegate to
+/// [`crate::outbound_tls::is_incomplete_chain_error`].
+pub(crate) fn classify_fetch_error(error: reqwest::Error) -> TslError {
+    if crate::outbound_tls::is_incomplete_chain_error(&error) {
+        TslError::TlsChainIncomplete(format!(
+            "failed to fetch Trusted List over the network: {described}; {guidance}",
+            described = chancela_tsl::describe_error_chain(&error),
+            guidance = crate::outbound_tls::incomplete_chain_guidance()
+        ))
+    } else {
+        TslError::Fetch(error)
+    }
+}
+
 fn read_bounded_tsl_file(path: &str, max_bytes: u64) -> Result<Vec<u8>, String> {
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     if bytes.len() as u64 > max_bytes {
@@ -1489,13 +1656,72 @@ impl VettedHttpUrl {
         &self,
         timeout: Duration,
     ) -> Result<reqwest::blocking::Client, reqwest::Error> {
+        self.builder(timeout).build()
+    }
+
+    /// The same bounded, pinned-address, redirect-free client, built for an explicit outbound TLS
+    /// posture.
+    ///
+    /// For the stock posture — no intermediates configured and full verification, which is every
+    /// install that has configured neither — this is [`client`](Self::client) byte for byte: no
+    /// `rustls` configuration is built at all and the ordinary `reqwest` TLS stack (platform
+    /// verifier) is used exactly as before.
+    ///
+    /// Otherwise a preconfigured `rustls` configuration is built. With intermediates, its verifier is
+    /// the ordinary `WebPkiServerVerifier` over the OS trust store given the configured certificates
+    /// as **additional candidate chain links** — not a relaxation. With
+    /// [`OutboundTls::skips_verification`], the peer certificate is not checked at all; that is
+    /// reachable only for a configured TSL source whose operator opted in, and
+    /// `crate::outbound_tls` documents exactly what it does and does not give up.
+    ///
+    /// The SSRF vetting and the pinned resolved addresses are untouched in **every** posture — all
+    /// three clients come from the same [`builder`](Self::builder). Those are a separate protection
+    /// against a separate attack and are never relaxed alongside the certificate check.
+    pub(crate) fn client_with_tls(
+        &self,
+        timeout: Duration,
+        posture: &OutboundTls,
+    ) -> Result<reqwest::blocking::Client, String> {
+        if posture.is_stock() {
+            return self.client(timeout).map_err(|e| e.to_string());
+        }
+        // An unverified posture needs no roots, and `outbound_client_config` drops them; resolving
+        // them anyway keeps one code path and means a machine with no usable trust store fails the
+        // same way it always did rather than silently becoming the case that needs no store.
+        self.client_with_tls_and_roots(timeout, posture, crate::outbound_tls::native_root_store()?)
+    }
+
+    /// [`client_with_tls`](Self::client_with_tls) with the root anchors supplied explicitly.
+    ///
+    /// The roots are a parameter so the tests can prove the security property that matters — a
+    /// supplied intermediate that does **not** chain to a trusted root is still refused — against a
+    /// throwaway PKI, without the test having to install anything in the machine's trust store.
+    /// Production has exactly one caller, and it passes
+    /// [`crate::outbound_tls::native_root_store`]; there is no configuration, environment variable
+    /// or build flag that can substitute a different root set at run time.
+    pub(crate) fn client_with_tls_and_roots(
+        &self,
+        timeout: Duration,
+        posture: &OutboundTls,
+        roots: tokio_rustls::rustls::RootCertStore,
+    ) -> Result<reqwest::blocking::Client, String> {
+        let tls = crate::outbound_tls::outbound_client_config(posture, roots)?;
+        self.builder(timeout)
+            .tls_backend_preconfigured(tls)
+            .build()
+            .map_err(|e| e.to_string())
+    }
+
+    /// The shared builder: bounded timeout, no redirects, and — for a DNS name — the addresses this
+    /// URL was vetted against, so the connection cannot land somewhere the SSRF check never saw.
+    fn builder(&self, timeout: Duration) -> reqwest::blocking::ClientBuilder {
         let mut builder = reqwest::blocking::Client::builder()
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::none());
         if !self.host_is_ip {
             builder = builder.resolve_to_addrs(&self.host, &self.resolved_addrs);
         }
-        builder.build()
+        builder
     }
 }
 
@@ -1725,18 +1951,22 @@ pub(crate) fn fetch_bounded_tsl_url(
     url: &str,
     timeout_seconds: u16,
     max_bytes: u64,
+    posture: &OutboundTls,
 ) -> Result<Vec<u8>, String> {
+    // SSRF vetting first and unconditionally. It is not part of the TLS posture and no setting can
+    // switch it off: a source that skips certificate verification is still forbidden from reaching
+    // a loopback, link-local or private address, and still connects only to the addresses vetted
+    // here. Different attack, different control.
     let vetted = validate_outbound_http_url(url)?;
-    let client = vetted
-        .client(Duration::from_secs(u64::from(timeout_seconds)))
-        .map_err(|e| e.to_string())?;
+    let client =
+        vetted.client_with_tls(Duration::from_secs(u64::from(timeout_seconds)), posture)?;
     let bytes = client
         .get(vetted.as_str())
         .send()
         .and_then(|response| response.error_for_status())
-        .map_err(|e| e.to_string())?
+        .map_err(describe_fetch_failure)?
         .bytes()
-        .map_err(|e| e.to_string())?;
+        .map_err(describe_fetch_failure)?;
     if bytes.len() as u64 > max_bytes {
         return Err(format!(
             "Trusted List response exceeds configured max_bytes ({len} > {max_bytes})",
@@ -1795,6 +2025,7 @@ fn status_for_imported_xml(
                     error: validation_error.clone(),
                     weak_algorithms,
                     cache_fallback: None,
+                    unverified_transport: verification.unverified_transport.clone(),
                 },
                 providers: Some(list.providers.len()),
                 services: Some(services),
@@ -1840,6 +2071,10 @@ fn failed_refresh_status(
             error: Some(error.clone()),
             weak_algorithms: Vec::new(),
             cache_fallback: None,
+            // No list was obtained, so there is no verdict that depended on the transport. The
+            // configured posture still shows on every summary surface, which resolves it from
+            // settings rather than from a past attempt.
+            unverified_transport: None,
         },
         providers: None,
         services: None,
@@ -1970,6 +2205,7 @@ fn summary_view(
             },
             error: validation_error,
             weak_algorithms,
+            unverified_transport: verification.unverified_transport.clone(),
             cache_fallback: verification.cache_fallback.as_ref().map(Into::into),
         },
         providers: loaded.list.providers.len(),
@@ -2210,6 +2446,7 @@ fn tsa_catalog_view(
                 },
                 error: signature_error,
                 weak_algorithms,
+                unverified_transport: verification.unverified_transport.clone(),
                 cache_fallback: verification.cache_fallback.as_ref().map(Into::into),
             },
             records: records.len(),
@@ -3329,6 +3566,7 @@ mod tests {
             error: None,
             weak_algorithms: Vec::new(),
             cache_fallback: None,
+            unverified_transport: None,
         };
         let json = serde_json::to_value(&clean).expect("clean validation view");
         assert!(
@@ -3357,6 +3595,7 @@ mod tests {
                 },
             ],
             cache_fallback: None,
+            unverified_transport: None,
         };
         let json = serde_json::to_value(&weak).expect("weak validation view");
         let rows = json["weak_algorithms"]
@@ -3375,6 +3614,87 @@ mod tests {
         assert_eq!(rows[1]["uri"], "#xades-props");
     }
 
+    /// The unverified-transport marker follows the same wire discipline as its two siblings —
+    /// absent unless it applies, machine code only — and, more importantly, is **resolved from
+    /// settings** so it appears on every trust surface rather than being recorded once at fetch time.
+    ///
+    /// A recorded-at-fetch-time marker would go stale in the dangerous direction: an operator turns
+    /// the switch on, and every answer served from the existing cache until the next refresh would
+    /// still read as verified. Resolving from the current posture cannot do that.
+    #[test]
+    fn the_unverified_transport_marker_tracks_the_selected_source_and_is_otherwise_absent() {
+        // A stock install: every source verifies, so nothing is marked.
+        let verifying = SigningSettings::default();
+        assert!(
+            TslVerification::resolve(&verifying, None)
+                .unverified_transport
+                .is_none(),
+            "an install that never opted out must carry no marker"
+        );
+
+        let mut relaxed = SigningSettings::default();
+        relaxed.tsl_sources[0].url = Some("https://lists.example.pt/tsl.xml".to_owned());
+        relaxed.tsl_sources[0].path = None;
+        relaxed.tsl_sources[0].tls_skip_verification = true;
+        let marker = TslVerification::resolve(&relaxed, None)
+            .unverified_transport
+            .expect("the selected source skips verification, so every surface must say so");
+        assert_eq!(marker.code, TSL_TRANSPORT_NOT_VERIFIED_CODE);
+        assert_eq!(marker.source_id, relaxed.tsl_sources[0].id);
+        assert_eq!(marker.url, "https://lists.example.pt/tsl.xml");
+
+        // Relaxing a source that is NOT the selected one must not mark the selected one's results.
+        // An install with several sources and one relaxed is exactly where a global flag would lie.
+        let mut other_relaxed = SigningSettings::default();
+        other_relaxed.tsl_sources[0].enabled = true;
+        other_relaxed.tsl_sources[1].url = Some("https://other.example.eu/lotl.xml".to_owned());
+        other_relaxed.tsl_sources[1].path = None;
+        other_relaxed.tsl_sources[1].enabled = false;
+        other_relaxed.tsl_sources[1].tls_skip_verification = true;
+        assert!(
+            TslVerification::resolve(&other_relaxed, None)
+                .unverified_transport
+                .is_none(),
+            "a disabled, unselected source's posture must not be attributed to the selected one"
+        );
+    }
+
+    /// Wire discipline for the new marker, alongside the two it sits with.
+    #[test]
+    fn unverified_transport_is_omitted_unless_it_applies_and_is_a_code_when_it_does() {
+        let ordinary = TslValidationView {
+            checked_at: format_time(NOW),
+            signature: TslSignatureStatus::Valid,
+            error: None,
+            weak_algorithms: Vec::new(),
+            cache_fallback: None,
+            unverified_transport: None,
+        };
+        let json = serde_json::to_value(&ordinary).expect("ordinary validation view");
+        assert!(
+            json.get("unverified_transport").is_none(),
+            "an install that verifies its transport must be byte-unchanged: {json}"
+        );
+
+        let marked = TslValidationView {
+            unverified_transport: Some(TslUnverifiedTransportView {
+                code: TSL_TRANSPORT_NOT_VERIFIED_CODE.to_owned(),
+                source_id: "pt-gns".to_owned(),
+                url: "https://lists.example.pt/tsl.xml".to_owned(),
+            }),
+            ..ordinary
+        };
+        let json = serde_json::to_value(&marked).expect("marked validation view");
+        assert_eq!(
+            json["unverified_transport"]["code"],
+            "tsl_transport_not_verified"
+        );
+        assert_eq!(json["unverified_transport"]["source_id"], "pt-gns");
+        // The signature verdict is untouched by the transport: this list authenticated against a
+        // configured anchor and says so, which is exactly the fact the copy must not contradict.
+        assert_eq!(json["signature"], "Valid");
+    }
+
     /// The durable-cache marker follows `weak_algorithms`' wire discipline exactly: absent on the
     /// ordinary path so a stored payload or an older client sees the previous shape, and machine
     /// codes only when present — never a sentence the server chose for a Portuguese operator.
@@ -3386,6 +3706,7 @@ mod tests {
             error: None,
             weak_algorithms: Vec::new(),
             cache_fallback: None,
+            unverified_transport: None,
         };
         let json = serde_json::to_value(&live).expect("live validation view");
         assert!(
@@ -3438,6 +3759,7 @@ mod tests {
             },
             NOW,
             &unanchored(),
+            &TlsIntermediates::none(),
         )
         .expect("import status");
 
@@ -3483,6 +3805,7 @@ mod tests {
             },
             NOW,
             &unanchored(),
+            &TlsIntermediates::none(),
         )
         .expect("failed attempt still persists status");
 
@@ -3507,6 +3830,7 @@ mod tests {
             },
             NOW,
             &unanchored(),
+            &TlsIntermediates::none(),
         )
         .expect("unsafe URL attempt still records status");
 
@@ -3761,6 +4085,7 @@ mod tests {
             },
             NOW,
             &unanchored(),
+            &TlsIntermediates::none(),
         )
         .expect("configured source import");
 

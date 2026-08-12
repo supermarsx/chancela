@@ -8120,14 +8120,32 @@ impl TslSource for RuntimeTslSource {
             let vetted = crate::trust::validate_outbound_http_url(url).map_err(|e| {
                 TslError::Structure(format!("configured TSL source '{}' rejected: {e}", self.id))
             })?;
+            // The operator's outbound TLS posture rides the source alongside the trust anchors, so
+            // the signing-time fetch behaves the same way an operator-triggered refresh does: the
+            // configured intermediates may complete a chain, and THIS source (never any other, and
+            // never the LOTL) may have had verification switched off. Both are transport trust
+            // only — neither can make an unauthentic list validate, because the anchor check below
+            // this layer is mandatory and cannot see either field.
+            let intermediates =
+                crate::outbound_tls::TlsIntermediates::parse(&self.tls_intermediate_certs)
+                    .map_err(TslError::Structure)?;
+            let posture = crate::outbound_tls::OutboundTls::for_tsl_source(
+                intermediates,
+                self.tls_skip_verification,
+            );
             let client = vetted
-                .client(StdDuration::from_secs(u64::from(self.timeout_seconds)))
-                .map_err(TslError::from)?;
+                .client_with_tls(
+                    StdDuration::from_secs(u64::from(self.timeout_seconds)),
+                    &posture,
+                )
+                .map_err(TslError::Structure)?;
             client
                 .get(vetted.as_str())
-                .send()?
-                .error_for_status()?
-                .bytes()?
+                .send()
+                .and_then(|response| response.error_for_status())
+                .map_err(crate::trust::classify_fetch_error)?
+                .bytes()
+                .map_err(crate::trust::classify_fetch_error)?
                 .to_vec()
         };
         if bytes.len() as u64 > self.max_bytes {
@@ -10577,6 +10595,8 @@ mod tests {
                 legacy: false,
                 trust_anchor_certs: Vec::new(),
                 trust_anchor_sha256: Vec::new(),
+                tls_intermediate_certs: Vec::new(),
+                tls_skip_verification: false,
                 legacy_algorithms: Vec::new(),
                 cache_dir: None,
             };
@@ -10604,6 +10624,8 @@ mod tests {
             legacy: false,
             trust_anchor_certs: Vec::new(),
             trust_anchor_sha256: Vec::new(),
+            tls_intermediate_certs: Vec::new(),
+            tls_skip_verification: false,
             legacy_algorithms: Vec::new(),
             cache_dir: None,
         };
@@ -10781,6 +10803,8 @@ mod tests {
             legacy: false,
             trust_anchor_certs,
             trust_anchor_sha256,
+            tls_intermediate_certs: Vec::new(),
+            tls_skip_verification: false,
             legacy_algorithms: Vec::new(),
             cache_dir: None,
         }

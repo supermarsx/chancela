@@ -375,6 +375,10 @@ export const ADMIN_COPY_DESTINATION_PREFIXES: readonly (readonly [
   // The permitted-broken-algorithm control sits in that same pane: an anchor says WHO may have
   // signed the list, this says WITH WHAT, and a search for either has to reach both.
   ['settings.signing.tslLegacy', ['tsl']],
+  // Outbound TLS intermediates share that pane too. An operator arrives here having read
+  // "UnknownIssuer" or "certificado intermédio" in an error, not knowing it is a signing setting at
+  // all, so the search has to carry them to it.
+  ['settings.signing.tlsIntermediates', ['tsl']],
   ['settings.signing.tsaProviders', ['tsa']],
   ['settings.signing.tsaUrl', ['tsa']],
   ['settings.signing.providers', ['trust-services']],

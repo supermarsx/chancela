@@ -318,6 +318,77 @@ both are trusted during the overlap, and the retired one can be removed after th
 is the intended mechanism — there is no certificate-path build to an issuing CA, so the anchor
 must be the actual publishing certificate(s).
 
+### Outbound TLS intermediates (`signing.tls_intermediate_certs`)
+
+**A different kind of trust from the anchors above, and the difference is not a nuance.** A trust
+anchor is the certificate that **signed** a Trusted List. This setting concerns the certificate the
+**web server hosting that file** presents at the TLS handshake. Different certificates, different
+issuers, different property; neither can substitute for the other, and a certificate configured here
+can never make an unauthentic list validate.
+
+A TLS server is required to send every certificate in its chain except the root. Some do not. The
+Portuguese Trusted List endpoint (`https://www.gns.gov.pt/media/TSLPT.xml`) presents its leaf alone
+and omits the intermediate that issued it, so the fetch fails with:
+
+```
+signing_trusted_list_tls_chain_incomplete — invalid peer certificate: UnknownIssuer
+```
+
+**A browser or `curl` will load the same address successfully**, because they chase the missing
+issuer through the certificate's Authority Information Access extension or reuse a cached copy.
+`rustls`, which this product uses, deliberately implements neither and requires the server to send a
+complete chain. The remote server is misconfigured; this setting is the workaround.
+
+Provide the missing intermediate as one or more PEM certificate strings (or raw DER), in the admin UI
+under **Assinaturas → Fontes TSL**, or directly in the settings document. Each entry is validated on
+save as a real X.509 certificate — a stricter check than the anchor fields apply — and rejected with
+`422` and the field path otherwise. Writing it is gated on the same `signing.configure` permission as
+the anchors. It defaults to empty, in which case the outbound client is built exactly as it was
+before the setting existed.
+
+> **This is not a way to skip certificate verification, and no such option exists anywhere in this
+> product.** A configured certificate joins the pool of candidate chain links; it is **never** added
+> to the root store. The chain must still terminate at a root the operating system already trusts,
+> the signatures must still verify, the hostname must still match the certificate, and validity dates
+> still apply. An attacker gains nothing from a configured intermediate: exploiting one requires a
+> leaf genuinely issued under it, which requires that intermediate's private key — and whoever holds
+> that can already mint certificates every browser accepts. Configuring the public certificate of a
+> CA that a public root already vouches for adds no authority the root had not already delegated.
+
+### Skipping TLS verification for one source (`tls_skip_verification`)
+
+The option of last resort, and the one to reach for only after the intermediates above have failed.
+Per source, off by default, gated on `signing.configure`:
+
+```json
+{ "signing": { "tsl_sources": [ { "id": "pt-gns", "url": "https://…", "tls_skip_verification": true } ] } }
+```
+
+**What it costs, accurately.** A Trusted List's authenticity does **not** rest on TLS. It rests on
+the list's own XML-DSig signature, verified against the trust anchors configured above. That check is
+mandatory, has no off switch anywhere in this product, and is unaffected by this setting. An attacker
+who intercepts the fetch and substitutes a **forged** list still fails it, and qualified signing still
+refuses. TLS here is defence in depth on the transport, and this removes that second layer only.
+
+The two residual risks are real and are worth stating plainly rather than leaving to be inferred:
+
+- **Replay.** Someone on the network path can serve a **genuine but older** list. It authenticates
+  perfectly — it is genuine — and a trust service the scheme operator has withdrawn since then still
+  reads as granted on it. The `NextUpdate` staleness check narrows this window; it does not close it.
+- **Denial of service.** They can block or corrupt the response at will.
+
+**Scope.** Exactly the one source. Not the EU LOTL fetch, not an ad-hoc URL passed to
+`POST /v1/trust/refresh`, not another configured source, and not any other outbound client in the
+product — connectors, the registry, the CAE and law corpora and SMTP all keep full verification and
+cannot reach the setting. **SSRF vetting and pinned-address resolution are unaffected**: a relaxed
+source still cannot be pointed at a loopback, link-local, private or metadata address.
+
+Refused on save unless the source is URL-backed with an `https` URL, because on a file-backed or
+`http://` source the flag would be silently inert. And it is **not** a one-time confirmation on a
+settings page: for as long as it is on, every trust surface reports `tsl_transport_not_verified`
+beside the verdict, naming the source and host, so whoever reads a result months later sees how it
+was obtained.
+
 ### The durable Trusted List cache
 
 Every successful Trusted List fetch is stored under `tsl-cache/` in the data directory, and a later

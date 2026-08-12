@@ -1880,6 +1880,42 @@ pub struct SigningSettings {
     /// empty, so an install that never accepted a self-asserted anchor is byte-unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tsl_trust_anchor_self_asserted_sha256: Vec<String>,
+    /// PEM/DER **intermediate CA certificates** this installation may use to complete the TLS
+    /// certificate chain of a server it fetches from over HTTPS.
+    ///
+    /// # This is transport trust, and it is NOT a Trusted List anchor
+    ///
+    /// [`tsl_trust_anchor_certs`](Self::tsl_trust_anchor_certs) pins the certificate that **signed
+    /// the Trusted List** — the XML-DSig signer, the thing that makes the list's contents
+    /// authentic. This field concerns the certificate the **web server hosting that file** presents
+    /// at the TLS handshake. Different certificate, different issuer, different property. An entry
+    /// here can never make an unauthentic list validate, and an anchor there can never repair a
+    /// broken HTTPS connection. They are deliberately separate fields for that reason.
+    ///
+    /// # Why it exists
+    ///
+    /// A TLS server must send every certificate in its chain except the root. Some do not — the
+    /// Portuguese Trusted List endpoint presents its leaf alone and omits the intermediate that
+    /// issued it. Browsers and `curl` paper over this by fetching the missing certificate through
+    /// the leaf's Authority Information Access extension; `rustls`, which this installation uses,
+    /// deliberately does not, and reports `UnknownIssuer`. This field supplies the link the server
+    /// failed to send.
+    ///
+    /// # Why it is not a verification bypass
+    ///
+    /// An entry is added to the pool of candidate chain links, **never to the root store**. The
+    /// chain must still terminate at a root already trusted by the operating system, the signatures
+    /// must still verify, the hostname must still match, and validity dates still apply. Configuring
+    /// a certificate here grants no authority a public root had not already delegated to it — see
+    /// `crate::outbound_tls` for the full argument. There is no setting anywhere in this product that
+    /// skips certificate verification.
+    ///
+    /// Validated on save as a real X.509 certificate (a stricter check than the anchor fields, which
+    /// only ever fingerprint their input). **Defaults to empty**, in which case the outbound client
+    /// is built exactly as it was before this field existed. Omitted from the serialized document
+    /// when empty, so the on-the-wire shape is unchanged for installs that never set one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tls_intermediate_certs: Vec<String>,
     /// Cryptographically **broken** XML-DSig algorithm URIs the operator has deliberately permitted
     /// when verifying the Trusted List's own signature (SIG-11). Each entry is one exact URI drawn
     /// from [`chancela_tsl::KNOWN_LEGACY_ALGORITHMS`] (the SHA-1 digest method and its RSA/ECDSA
@@ -1965,6 +2001,22 @@ pub(crate) struct RuntimeTslSource {
     /// [`SigningSettings::tsl_trust_anchor_sha256`]. See
     /// [`trust_anchor_certs`](Self::trust_anchor_certs).
     pub(crate) trust_anchor_sha256: Vec<String>,
+    /// Operator-supplied outbound **TLS intermediate** certificates, carried verbatim from
+    /// [`SigningSettings::tls_intermediate_certs`]. They travel with the source for the same reason
+    /// the anchors do — so the signing-time fetch behaves the way the operator configured it, not
+    /// the way an environment-only default would — but they are a different kind of trust: these
+    /// complete the HTTPS chain of the host serving the list, the anchors authenticate the list
+    /// itself. Parsed at fetch time; already validated as real certificates on save.
+    pub(crate) tls_intermediate_certs: Vec<String>,
+    /// Whether **this source** was configured to skip TLS certificate verification, carried
+    /// verbatim from [`TslSourceSettings::tls_skip_verification`].
+    ///
+    /// It rides the source rather than the settings document because the whole point is that it is
+    /// per-source: an ad-hoc refresh URL, the EU LOTL fetch and every other configured source are
+    /// unaffected, and none of them can reach this field. Already validated on save to be an https
+    /// URL-backed source, so `true` here always describes a connection that really is made without
+    /// verifying its peer.
+    pub(crate) tls_skip_verification: bool,
     /// Broken XML-DSig algorithm URIs the operator deliberately permitted, carried verbatim from
     /// [`SigningSettings::tsl_legacy_algorithms`]. They travel with the source so the signature
     /// verification that decides whether this list is authentic uses the operator's policy rather
@@ -2072,6 +2124,8 @@ impl SigningSettings {
                     legacy: false,
                     trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
                     trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
+                    tls_intermediate_certs: self.tls_intermediate_certs.clone(),
+                    tls_skip_verification: entry.tls_skip_verification,
                     legacy_algorithms: self.tsl_legacy_algorithms.clone(),
                     cache_dir: None,
                 });
@@ -2095,6 +2149,10 @@ impl SigningSettings {
                 legacy: true,
                 trust_anchor_certs: self.tsl_trust_anchor_certs.clone(),
                 trust_anchor_sha256: self.tsl_trust_anchor_sha256.clone(),
+                tls_intermediate_certs: self.tls_intermediate_certs.clone(),
+                // The legacy single-URL setting has no per-source row to carry the opt-in, so it
+                // always verifies. An operator who needs the switch configures a real source.
+                tls_skip_verification: false,
                 legacy_algorithms: self.tsl_legacy_algorithms.clone(),
                 cache_dir: None,
             });
@@ -2187,6 +2245,9 @@ impl Default for SigningSettings {
             tsl_trust_anchor_sha256: Vec::new(),
             // No anchor, so nothing to annotate.
             tsl_trust_anchor_self_asserted_sha256: Vec::new(),
+            // Empty means "build the outbound client exactly as before": a server that sends its
+            // full chain — every correctly configured one — needs nothing here.
+            tls_intermediate_certs: Vec::new(),
             // Fail-closed: no broken algorithm is permitted by default. An operator must name an
             // exact URI from `chancela_tsl::KNOWN_LEGACY_ALGORITHMS` to enable one.
             tsl_legacy_algorithms: Vec::new(),
@@ -2225,6 +2286,49 @@ pub struct TslSourceSettings {
     pub max_bytes: u64,
     /// Optional refresh policy metadata for schedulers.
     pub refresh: TrustRefreshSettings,
+    /// Skip TLS certificate verification when fetching **this one source** over HTTPS.
+    ///
+    /// # What this does and does not weaken
+    ///
+    /// A Trusted List's authenticity does **not** rest on TLS. It rests on the list's own XML-DSig
+    /// signature, verified against the operator's configured trust anchors. TLS is defence in depth
+    /// on the transport. An attacker who intercepts this fetch and substitutes a forged list still
+    /// has it rejected at the anchor check, and qualified signing still refuses — so this switch
+    /// removes a secondary layer, not the primary control. That is why it can exist at all, and it
+    /// is a categorically different thing from disabling signature verification, which this product
+    /// offers nowhere.
+    ///
+    /// **The two residual risks are real and are not hypothetical**, so name them rather than imply
+    /// there are none:
+    ///
+    /// - **Replay.** An attacker on the network path can serve a *genuine but older* list. It
+    ///   authenticates against the anchors perfectly, because it is genuine. A trust service the
+    ///   scheme operator has withdrawn since then still reads as granted on it. (The `NextUpdate`
+    ///   staleness check narrows this window; it does not close it.)
+    /// - **Denial of service.** An attacker can block or corrupt the response at will.
+    ///
+    /// # Scope
+    ///
+    /// Exactly this source's fetches, and nothing else. It does not affect the EU LOTL fetch, an
+    /// ad-hoc URL passed to `POST /v1/trust/refresh`, any other configured source, or any other
+    /// outbound client in the product — connectors, the registry, the CAE and law corpora and SMTP
+    /// all keep full verification and cannot see this field.
+    ///
+    /// SSRF vetting and pinned-address resolution are **unaffected**: they are unrelated protections
+    /// against a different attack and stay on. Refused on save unless the source is URL-backed with
+    /// an `https` URL — on anything else the flag would be silently inert.
+    ///
+    /// **Defaults to `false`** and is omitted from the serialized document while false, so an
+    /// install that never enables it is byte-unchanged. Enabling it is gated on
+    /// `signing.configure`, and every trust surface then reports
+    /// [`crate::trust::TslUnverifiedTransportView`] beside the verdict — the marker is not a
+    /// one-time confirmation on a settings page.
+    ///
+    /// Prefer [`SigningSettings::tls_intermediate_certs`]: a server that omits an intermediate is
+    /// the common reason to reach for this, and supplying the missing certificate fixes the fetch
+    /// with no loss of transport authentication at all.
+    #[serde(default, skip_serializing_if = "crate::dto::is_false")]
+    pub tls_skip_verification: bool,
 }
 
 impl Default for TslSourceSettings {
@@ -2241,6 +2345,8 @@ impl Default for TslSourceSettings {
             timeout_seconds: DEFAULT_TRUST_TIMEOUT_SECONDS,
             max_bytes: DEFAULT_TSL_MAX_BYTES,
             refresh: TrustRefreshSettings::default(),
+            // Fail-closed: a source verifies its peer unless an operator deliberately says not to.
+            tls_skip_verification: false,
         }
     }
 }
@@ -2338,6 +2444,7 @@ fn default_tsl_sources() -> Vec<TslSourceSettings> {
                 enabled: false,
                 cadence: TrustRefreshCadence::Daily { hour_utc: 3 },
             },
+            tls_skip_verification: false,
         },
         TslSourceSettings {
             id: "eu-lotl".to_owned(),
@@ -2354,6 +2461,7 @@ fn default_tsl_sources() -> Vec<TslSourceSettings> {
                 enabled: false,
                 cadence: TrustRefreshCadence::Daily { hour_utc: 2 },
             },
+            tls_skip_verification: false,
         },
     ]
 }
@@ -2710,6 +2818,7 @@ impl Settings {
             &self.signing.tsl_trust_anchor_sha256,
             &self.signing.tsl_trust_anchor_self_asserted_sha256,
         )?;
+        validate_tls_intermediates(&self.signing.tls_intermediate_certs)?;
         validate_tsl_legacy_algorithms(&self.signing.tsl_legacy_algorithms)?;
         validate_tsa_providers(&self.signing.tsa_providers)?;
         self.registry_auto_update.validate()?;
@@ -2819,6 +2928,48 @@ fn validate_tsl_sources(entries: &[TslSourceSettings]) -> Result<(), ApiError> {
             &entry.scheme,
             64,
         )?;
+        validate_tls_skip_verification(i, entry)?;
+    }
+    Ok(())
+}
+
+/// Refuse `tls_skip_verification` on any source where it would be **silently inert**.
+///
+/// There are exactly two such shapes, and both are configurations an operator would reasonably
+/// believe had taken effect:
+///
+/// - a **file-backed** source. `runtime_tsl_location` prefers a path over a URL, so a source with a
+///   path never opens a socket at all and there is no certificate to skip. An operator who set the
+///   flag here would be told it saved and see no change in behaviour, with nothing to look at.
+/// - an **`http://`** source. There is no TLS on the connection, so nothing is verified either way;
+///   the flag reads as "this is the insecure one" while the *other*, verified `https` source is in
+///   fact the safer of the two.
+///
+/// Rejecting rather than ignoring is the same rule the rest of this module follows: an
+/// unrepresentable configuration errors loudly instead of being quietly dropped. It also keeps the
+/// invariant the trust-surface marker depends on — a source carrying this flag is always a source
+/// that really does open an unverified TLS connection, so the marker never overstates.
+fn validate_tls_skip_verification(i: usize, entry: &TslSourceSettings) -> Result<(), ApiError> {
+    if !entry.tls_skip_verification {
+        return Ok(());
+    }
+    let field = format!("signing.tsl_sources[{i}].tls_skip_verification");
+    if trimmed_setting(entry.path.as_deref()).is_some() {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} cannot be set on a file-backed source: a local path opens no TLS connection, \
+             so the setting would have no effect"
+        )));
+    }
+    let Some(url) = trimmed_setting(entry.url.as_deref()) else {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} requires an https url on the same source"
+        )));
+    };
+    if !url.to_ascii_lowercase().starts_with("https://") {
+        return Err(ApiError::Unprocessable(format!(
+            "{field} requires an https url, got {url:?}: an http url is not verified in the first \
+             place, so the setting would have no effect"
+        )));
     }
     Ok(())
 }
@@ -2871,6 +3022,25 @@ fn validate_tsl_trust_anchors(
             )));
         }
         validate_optional_sha256_hex(&field, fingerprint)?;
+    }
+    Ok(())
+}
+
+/// Validate the operator-supplied outbound **TLS intermediate** certificates.
+///
+/// Deliberately stricter than [`validate_tsl_trust_anchors`] above, and the asymmetry is the point.
+/// An anchor is only ever reduced to a SHA-256 fingerprint, so a well-formed base64 blob that is not
+/// a certificate is inert there — it simply never matches. An intermediate is *used*: it is offered
+/// to certificate-path building, which will ignore anything it cannot parse. Accepting a
+/// non-certificate here would let an operator configure the fix for their broken chain, save it
+/// successfully, see the fetch fail in exactly the same way, and have nothing at all to look at.
+///
+/// Empty is valid and is the default.
+fn validate_tls_intermediates(certs: &[String]) -> Result<(), ApiError> {
+    for (i, pem) in certs.iter().enumerate() {
+        crate::outbound_tls::parse_intermediate_entry(pem).map_err(|e| {
+            ApiError::Unprocessable(format!("signing.tls_intermediate_certs[{i}] {e}"))
+        })?;
     }
     Ok(())
 }
@@ -5614,6 +5784,179 @@ mod tests {
         settings
             .validate()
             .expect("empty anchor configuration is valid (trusts nothing)");
+    }
+
+    /// The per-source opt-out is refused wherever it would be inert, so a saved `true` always
+    /// describes a connection that really is made without verifying its peer. That invariant is what
+    /// lets the trust-surface marker be read literally.
+    #[test]
+    fn tls_skip_verification_defaults_off_and_is_omitted_from_the_wire() {
+        let settings = Settings::default();
+        assert!(
+            settings
+                .signing
+                .tsl_sources
+                .iter()
+                .all(|source| !source.tls_skip_verification),
+            "no shipped source skips verification"
+        );
+        settings.validate().expect("the default document is valid");
+        let json = serde_json::to_value(&settings.signing.tsl_sources[0]).expect("serializes");
+        assert!(
+            json.get("tls_skip_verification").is_none(),
+            "an install that never opted in must be byte-unchanged on the wire: {json}"
+        );
+    }
+
+    #[test]
+    fn tls_skip_verification_is_accepted_on_an_https_source() {
+        let mut settings = Settings::default();
+        settings.signing.tsl_sources[0].url = Some("https://lists.example.pt/tsl.xml".to_owned());
+        settings.signing.tsl_sources[0].path = None;
+        settings.signing.tsl_sources[0].tls_skip_verification = true;
+        settings
+            .validate()
+            .expect("an https URL-backed source may carry the opt-out");
+    }
+
+    #[test]
+    fn tls_skip_verification_is_refused_on_a_file_backed_source() {
+        // `runtime_tsl_location` prefers a path over a URL, so this source would never open a socket
+        // and the flag would be a setting the operator could see but that did nothing.
+        let mut settings = Settings::default();
+        settings.signing.tsl_sources[0].path = Some("/var/lib/chancela/tsl.xml".to_owned());
+        settings.signing.tsl_sources[0].tls_skip_verification = true;
+        match settings
+            .validate()
+            .expect_err("a local file opens no TLS connection")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_sources[0].tls_skip_verification"),
+                    "{message}"
+                );
+                assert!(message.contains("file-backed"), "{message}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tls_skip_verification_is_refused_on_an_http_source() {
+        // Nothing is verified on a cleartext connection either way. Accepting the flag here would
+        // label the plain-HTTP source as "the relaxed one" while the verified https source beside it
+        // is in fact the safer of the two.
+        let mut settings = Settings::default();
+        settings.signing.tsl_sources[0].url = Some("http://lists.example.pt/tsl.xml".to_owned());
+        settings.signing.tsl_sources[0].path = None;
+        settings.signing.tsl_sources[0].tls_skip_verification = true;
+        match settings.validate().expect_err("http has no TLS to skip") {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tsl_sources[0].tls_skip_verification"),
+                    "{message}"
+                );
+                assert!(message.contains("https"), "{message}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// Same structural gate as every other signing field — and worth pinning separately from the
+    /// intermediates, because this is the one an operator would most regret being ungated.
+    #[test]
+    fn skipping_tls_verification_counts_as_a_signing_policy_change() {
+        let previous = SigningSettings::default();
+        let mut next = previous.clone();
+        next.tsl_sources[0].tls_skip_verification = true;
+        assert!(
+            signing_policy_changed(&previous, &next),
+            "turning off transport verification must require signing.configure"
+        );
+    }
+
+    /// The TLS-intermediate field is validated STRICTLY, unlike its trust-anchor neighbour: an
+    /// anchor is only ever fingerprinted (so a non-certificate is inert), while an intermediate is
+    /// handed to certificate-path building, which ignores what it cannot parse. Accepting a
+    /// non-certificate would let an operator configure their fix, save it, and observe nothing
+    /// change.
+    #[test]
+    fn tls_intermediates_default_is_empty_and_valid() {
+        let settings = Settings::default();
+        assert!(
+            settings.signing.tls_intermediate_certs.is_empty(),
+            "no intermediate is supplied by default; a correctly configured server needs none"
+        );
+        settings
+            .validate()
+            .expect("an empty intermediate list is valid");
+    }
+
+    #[test]
+    fn tls_intermediate_that_is_not_a_certificate_is_rejected() {
+        let mut settings = Settings::default();
+        // Exactly the value `tsl_trust_anchor_certs` accepts one test below: valid PEM armour, valid
+        // base64, not a certificate.
+        settings.signing.tls_intermediate_certs = vec![SAMPLE_ANCHOR_PEM.to_owned()];
+        match settings
+            .validate()
+            .expect_err("base64 alone is not a certificate")
+        {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tls_intermediate_certs[0]"),
+                    "{message}"
+                );
+                assert!(message.contains("X.509"), "{message}");
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tls_intermediate_malformed_pem_is_rejected() {
+        let mut settings = Settings::default();
+        settings.signing.tls_intermediate_certs =
+            vec!["-----BEGIN CERTIFICATE-----\nAAAA".to_owned()];
+        match settings.validate().expect_err("malformed PEM should fail") {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tls_intermediate_certs[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn tls_intermediate_blank_entry_is_rejected() {
+        let mut settings = Settings::default();
+        settings.signing.tls_intermediate_certs = vec!["   ".to_owned()];
+        match settings.validate().expect_err("blank entry should fail") {
+            ApiError::Unprocessable(message) => {
+                assert!(
+                    message.contains("signing.tls_intermediate_certs[0]"),
+                    "{message}"
+                );
+            }
+            other => panic!("unexpected error: {other:?}"),
+        }
+    }
+
+    /// Writing the field is gated on `signing.configure`, not `settings.manage`, because
+    /// `signing_policy_changed` compares the whole `SigningSettings` (minus the provider metadata).
+    /// The gate is structural rather than a list of field names, which is what stops a new field
+    /// from being ungated by omission — this asserts the structure actually covers this one.
+    #[test]
+    fn changing_the_tls_intermediates_counts_as_a_signing_policy_change() {
+        let previous = SigningSettings::default();
+        let mut next = previous.clone();
+        next.tls_intermediate_certs = vec!["-----BEGIN CERTIFICATE-----".to_owned()];
+        assert!(
+            signing_policy_changed(&previous, &next),
+            "supplying a TLS intermediate is signing configuration and must require signing.configure"
+        );
     }
 
     #[test]

@@ -270,15 +270,21 @@ pub async fn trust_anchor_suggestions(
 ) -> Result<Json<TrustAnchorSuggestionsView>, ApiError> {
     require_permission(&state, &actor, Permission::SigningConfigure, Scope::Global).await?;
 
-    let (sources, anchor_certs, anchor_fingerprints, annotated) = {
+    let (sources, anchor_certs, anchor_fingerprints, annotated, tls_intermediates) = {
         let guard = state.settings.read().await;
         (
             guard.signing.tsl_sources.clone(),
             guard.signing.tsl_trust_anchor_certs.clone(),
             guard.signing.tsl_trust_anchor_sha256.clone(),
             guard.signing.tsl_trust_anchor_self_asserted_sha256.clone(),
+            // Transport trust, resolved from the same settings read as the anchors so this endpoint
+            // reaches a server exactly the way the refresh and signing paths do. It has nothing to
+            // do with the anchors it is proposing — those are the list's own signer.
+            guard.signing.tls_intermediate_certs.clone(),
         )
     };
+    let tls_intermediates = crate::outbound_tls::TlsIntermediates::parse(&tls_intermediates)
+        .map_err(ApiError::Unprocessable)?;
 
     // Blocking reqwest, exactly as the refresh path does it — never on the async runtime's threads.
     tokio::task::spawn_blocking(move || {
@@ -290,7 +296,17 @@ pub async fn trust_anchor_suggestions(
             // "unanchored": see [`AnchorConfig`].
             &AnchorConfig::resolve(&anchor_certs, &anchor_fingerprints, &annotated),
             &resolve_lotl_url(None),
-            &|url, timeout, max_bytes| fetch_bounded_tsl_url(url, timeout, max_bytes),
+            &|url, timeout, max_bytes, tls_skip_verification| {
+                fetch_bounded_tsl_url(
+                    url,
+                    timeout,
+                    max_bytes,
+                    &crate::outbound_tls::OutboundTls::for_tsl_source(
+                        tls_intermediates.clone(),
+                        tls_skip_verification,
+                    ),
+                )
+            },
             OffsetDateTime::now_utc(),
             query.bootstrap_self_asserted,
         )
@@ -308,7 +324,10 @@ pub async fn trust_anchor_suggestions(
 /// would be a test whose verdict changed with the machine it ran on.
 ///
 /// Production always passes [`fetch_bounded_tsl_url`]; there is no second fetch path.
-type FetchTsl<'a> = &'a dyn Fn(&str, u16, u64) -> Result<Vec<u8>, String>;
+/// The final parameter is `tls_skip_verification`, taken from the configured source being fetched.
+/// It is `false` for everything that is not one — both EU LOTL fetches below pass `false`
+/// literally, because the LOTL is not a configured source and no setting relaxes it.
+type FetchTsl<'a> = &'a dyn Fn(&str, u16, u64, bool) -> Result<Vec<u8>, String>;
 
 /// Build one source's response row with everything but its outcome already filled in.
 ///
@@ -536,6 +555,8 @@ fn suggest(
         &lotl_url,
         DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
         DEFAULT_TSL_FETCH_MAX_BYTES,
+        // The LOTL is not a configured source; it is always verified.
+        false,
     ) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -673,6 +694,8 @@ fn lotl_self_asserted(lotl_url: &str, fetch: FetchTsl<'_>) -> BootstrapOutcome {
         lotl_url,
         DEFAULT_TSL_FETCH_TIMEOUT_SECONDS,
         DEFAULT_TSL_FETCH_MAX_BYTES,
+        // As above: the LOTL is always verified.
+        false,
     ) {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -779,7 +802,12 @@ fn self_asserted(
 ) -> TrustAnchorSourceSuggestionView {
     // The entry's OWN fetch policy — its configured timeout and size bound, not this module's
     // defaults. A source the operator bounded tightly stays bounded tightly here.
-    let bytes = match fetch(url, entry.timeout_seconds, entry.max_bytes) {
+    let bytes = match fetch(
+        url,
+        entry.timeout_seconds,
+        entry.max_bytes,
+        entry.tls_skip_verification,
+    ) {
         Ok(bytes) => bytes,
         Err(e) => {
             return row(
@@ -990,13 +1018,13 @@ mod tests {
 
     /// A fetch that always fails. The default for tests about a source the LOTL does not vouch for:
     /// the point there is the provenance, not the bytes.
-    fn no_network(_: &str, _: u16, _: u64) -> Result<Vec<u8>, String> {
+    fn no_network(_: &str, _: u16, _: u64, _: bool) -> Result<Vec<u8>, String> {
         Err("no network in this test".to_owned())
     }
 
     /// A fetch that serves fixed bytes for every URL.
-    fn serving(bytes: Vec<u8>) -> impl Fn(&str, u16, u64) -> Result<Vec<u8>, String> {
-        move |_, _, _| Ok(bytes.clone())
+    fn serving(bytes: Vec<u8>) -> impl Fn(&str, u16, u64, bool) -> Result<Vec<u8>, String> {
+        move |_, _, _, _| Ok(bytes.clone())
     }
 
     /// A synthesized DER certificate. Never a real one: a real anchor in a fixture is a value
@@ -1445,7 +1473,7 @@ mod tests {
             &[synthetic_cert(66)],
         )]);
         /// One boxed [`FetchTsl`] body, so the three cases can sit in one `Vec`.
-        type BoxedFetch = Box<dyn Fn(&str, u16, u64) -> Result<Vec<u8>, String>>;
+        type BoxedFetch = Box<dyn Fn(&str, u16, u64, bool) -> Result<Vec<u8>, String>>;
         let cases: Vec<(&str, BoxedFetch)> = vec![
             (codes::LOTL_FETCH_FAILED, Box::new(no_network)),
             (codes::LOTL_NOT_AUTHENTICATED, Box::new(serving(forged))),
@@ -1531,7 +1559,7 @@ mod tests {
         // at the same ceilings, to the resolved LOTL URL and nothing a caller supplied.
         use std::cell::RefCell;
         let seen: RefCell<Vec<(String, u16, u64)>> = RefCell::new(Vec::new());
-        let recording = |url: &str, timeout: u16, max_bytes: u64| {
+        let recording = |url: &str, timeout: u16, max_bytes: u64, _: bool| {
             seen.borrow_mut().push((url.to_owned(), timeout, max_bytes));
             Err("recorded".to_owned())
         };
@@ -1968,7 +1996,7 @@ mod tests {
         // to the bootstrap would show up as a candidate rather than as an absent one. It also
         // records, because the right behaviour is not to reach the network at all.
         let fetched: RefCell<usize> = RefCell::new(0);
-        let recording = |_: &str, _: u16, _: u64| {
+        let recording = |_: &str, _: u16, _: u64, _: bool| {
             *fetched.borrow_mut() += 1;
             Ok(list_naming_its_own_signer(&synthetic_cert(11)))
         };

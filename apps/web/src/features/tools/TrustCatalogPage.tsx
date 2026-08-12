@@ -56,6 +56,10 @@ import { useSectionNav } from '../../app/navPath';
 import { useTrustSectionsT } from '../../i18n/trustSectionsFallback';
 import { TslWeakAlgorithmsNotice, WeakAlgorithmStatuslineItem } from './TslWeakAlgorithms';
 import { TslCacheFallbackNotice, TslCacheFallbackStatuslineItem } from './TslCacheFallback';
+import {
+  TslUnverifiedTransportNotice,
+  TslUnverifiedTransportStatuslineItem,
+} from './TslUnverifiedTransport';
 import type {
   TslCatalogSearchParams,
   TslCatalogView,
@@ -829,10 +833,16 @@ function TsaToolingPanel() {
                 that list came off the network or out of the durable cache decides whether a
                 withdrawn TSA could still be showing as granted here. */}
             <TslCacheFallbackStatuslineItem fallback={tsa.data.summary.tsl.cache_fallback} />
+            {/* And whether the list those records came off was fetched from a server this
+                installation authenticated at all. Same argument again, one layer down. */}
+            <TslUnverifiedTransportStatuslineItem
+              transport={tsa.data.summary.tsl.unverified_transport}
+            />
           </div>
 
           <TslWeakAlgorithmsNotice uses={tsa.data.summary.tsl.weak_algorithms} />
           <TslCacheFallbackNotice fallback={tsa.data.summary.tsl.cache_fallback} />
+          <TslUnverifiedTransportNotice transport={tsa.data.summary.tsl.unverified_transport} />
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title={t('trust.tsa.configuration')}>
@@ -1137,6 +1147,13 @@ function TrustStatusPanel() {
             {/* "Valid" and "valid against a list this installation could not re-fetch" are also
                 different facts. This cell appears only when the durable cache answered. */}
             <TslCacheFallbackStatuslineItem fallback={status.data.validation.cache_fallback} />
+            {/* "Valid" and "valid, over a connection whose peer we did not authenticate" are a
+                third pair. Both are true at once — the signature is what makes the list authentic,
+                and it verified — so this cell reports the transport and never contradicts the
+                badge beside it. */}
+            <TslUnverifiedTransportStatuslineItem
+              transport={status.data.validation.unverified_transport}
+            />
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.freshness')}</span>
               <Badge tone={status.data.stale ? 'warn' : 'ok'}>
@@ -1152,6 +1169,7 @@ function TrustStatusPanel() {
 
           <TslWeakAlgorithmsNotice uses={status.data.validation.weak_algorithms} />
           <TslCacheFallbackNotice fallback={status.data.validation.cache_fallback} />
+          <TslUnverifiedTransportNotice transport={status.data.validation.unverified_transport} />
 
           {status.data.last_refresh ? (
             <TrustDetailSection title={t('trust.refresh.lastAttempt')}>
@@ -1208,6 +1226,12 @@ function TrustStatusPanel() {
                   imported under a weak algorithm and a status verified under strong ones is a
                   reachable pair — the setting can be turned off between the two. */}
               <TslWeakAlgorithmsNotice uses={status.data.last_refresh.validation.weak_algorithms} />
+              {/* The import carries its own transport too. A list imported over an unverified
+                  connection and a status resolved after the setting was turned off again is a
+                  reachable pair, and the record of the import should keep saying how it happened. */}
+              <TslUnverifiedTransportNotice
+                transport={status.data.last_refresh.validation.unverified_transport}
+              />
               {status.data.last_refresh.error ? (
                 <p className="muted trust-source-note">{status.data.last_refresh.error}</p>
               ) : status.data.last_refresh.validation.error ? (

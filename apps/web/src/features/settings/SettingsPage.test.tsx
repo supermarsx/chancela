@@ -6662,6 +6662,149 @@ describe('SettingsPage', () => {
     expect(sent.signing.tsl_sources.some((source) => source.id === 'operator-cache')).toBe(true);
   });
 
+  /**
+   * The per-source "do not verify TLS" opt-out.
+   *
+   * Three assertions, and the third is the one that keeps the feature scoped. The switch is per
+   * source by design — a global one would relax the EU LOTL fetch and every other list at the same
+   * time — so a test that only proved one row could be ticked would not distinguish this
+   * implementation from a global flag rendered once per row.
+   */
+  it('turns off TLS verification for one source only, leaving the others verified', async () => {
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    const before = await screen.findAllByLabelText(
+      ptPT['settings.signing.source.tlsSkipVerification.label'],
+    );
+    expect(before.length).toBeGreaterThan(1);
+    // Nothing is relaxed until an operator says so.
+    expect(before.every((box) => !(box as HTMLInputElement).checked)).toBe(true);
+    // And the consequences are not shown until they apply, so an ordinary install reads clean.
+    expect(
+      screen.queryByText(ptPT['settings.signing.source.tlsSkipVerification.effect']),
+    ).toBeNull();
+
+    fireEvent.click(before[0]);
+
+    // Now the accurate consequences appear — including the reassurance that the list still has to
+    // authenticate, which is what stops this reading as "trust is off".
+    expect(
+      screen.getByText(ptPT['settings.signing.source.tlsSkipVerification.effect']),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(ptPT['settings.signing.source.tlsSkipVerification.residual']),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(ptPT['settings.signing.source.tlsSkipVerification.prefer']),
+    ).toBeTruthy();
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tsl_sources[0].tls_skip_verification).toBe(true);
+      },
+      { timeout: 3000 },
+    );
+
+    const sent = JSON.parse(
+      calls.filter((c) => c.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    // Exactly one source relaxed. Every other source — and therefore every other list this
+    // installation fetches — still authenticates its peer.
+    expect(
+      sent.signing.tsl_sources.filter((source) => source.tls_skip_verification === true).length,
+    ).toBe(1);
+    // And it changed nothing about trust: the anchors are what authenticate a list, and turning off
+    // transport verification must not have touched them.
+    expect(sent.signing.tsl_trust_anchor_certs).toEqual([]);
+    expect(sent.signing.tsl_trust_anchor_sha256).toEqual([]);
+  });
+
+  /**
+   * The outbound TLS intermediates. Two things are asserted, and the second is the one that keeps
+   * the feature honest.
+   *
+   * 1. The certificate reaches `signing.tls_intermediate_certs` verbatim, so the server parses and
+   *    refuses it by field path rather than this screen quietly repairing it.
+   * 2. It does NOT land in `signing.tsl_trust_anchor_certs`. Those two fields sit in the same
+   *    sub-tab, one card apart, and the entire risk of the feature is an operator — or a future
+   *    refactor of the shared `TrustAnchorField` setters — treating a transport certificate as a
+   *    Trusted List anchor. An intermediate written into the anchor list would be inert (it can
+   *    never be the list's signer), so nothing would break loudly; it would simply look configured.
+   */
+  it('provisions an outbound TLS intermediate without touching the trust anchors', async () => {
+    const { fn, calls } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Certificados intermédios de TLS (ligações de saída)',
+      }),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar certificado intermédio' }));
+    // Wholly synthetic. No real certificate — and in particular not the real intermediate whose
+    // absence from the Portuguese Trusted List endpoint prompted this feature — is ever committed.
+    const intermediatePem =
+      '-----BEGIN CERTIFICATE-----\nc3ludGhldGljIGludGVybWVkaWF0ZQ==\n-----END CERTIFICATE-----';
+    fireEvent.change(screen.getByLabelText('Certificado intermédio 1'), {
+      target: { value: intermediatePem },
+    });
+
+    await waitFor(() => expect(calls.some((c) => c.method === 'PUT')).toBe(true), {
+      timeout: 3000,
+    });
+    await waitFor(
+      () => {
+        const last = calls.filter((c) => c.method === 'PUT').at(-1);
+        const body = JSON.parse(last!.body as string) as typeof DEFAULT_SETTINGS;
+        expect(body.signing.tls_intermediate_certs).toEqual([intermediatePem]);
+      },
+      { timeout: 3000 },
+    );
+
+    const sent = JSON.parse(
+      calls.filter((c) => c.method === 'PUT').at(-1)!.body as string,
+    ) as typeof DEFAULT_SETTINGS;
+    expect(sent.signing.tls_intermediate_certs).toEqual([intermediatePem]);
+    // Transport trust is not list trust. Supplying a chain link must leave the anchor set empty —
+    // and therefore leave this deployment just as unanchored as it was.
+    expect(sent.signing.tsl_trust_anchor_certs).toEqual([]);
+    expect(sent.signing.tsl_trust_anchor_sha256).toEqual([]);
+  });
+
+  /**
+   * The corollary on screen: supplying an intermediate must NOT clear the "no trust anchor"
+   * warning. The warning is fail-closed and counts anchors; an intermediate authenticates nothing,
+   * so an operator who fixed their HTTPS chain is still unanchored and still has to be told.
+   */
+  it('supplying a TLS intermediate does not clear the unanchored warning', async () => {
+    const { fn } = settingsFetch(settingsWithMultipleTrustSources());
+    vi.stubGlobal('fetch', fn);
+
+    renderWithProviders(<SettingsPage surface="admin" />, ['/admin/signing/tsl']);
+
+    expect(await screen.findByText('Sem âncora de confiança nestas definições')).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Adicionar certificado intermédio' }));
+    fireEvent.change(screen.getByLabelText('Certificado intermédio 1'), {
+      target: {
+        value: '-----BEGIN CERTIFICATE-----\nc3ludGhldGlj\n-----END CERTIFICATE-----',
+      },
+    });
+
+    expect(screen.getByText('Sem âncora de confiança nestas definições')).toBeTruthy();
+  });
+
   it('warns that no trust anchor is configured until a non-blank one is entered', async () => {
     const { fn } = settingsFetch(settingsWithMultipleTrustSources());
     vi.stubGlobal('fetch', fn);

@@ -4637,6 +4637,40 @@ export const ptBR: Catalog = {
   'settings.signing.tslAnchors.certs.remove': 'Remover o certificado da âncora {position}',
   'settings.signing.tslAnchors.certs.placeholder':
     'Cole aqui o certificado, começando com -----BEGIN CERTIFICATE-----',
+
+  // --- Outbound TLS intermediates (transport trust, NOT anchors) ------------------
+  // Same class of confusion the anchor card corrects one level up: this is the
+  // certificate of the SERVER hosting the file, not the certificate that signed the
+  // list. No verification is skipped here.
+  'settings.signing.tlsIntermediates.title':
+    'Certificados intermediários de TLS (conexões de saída)',
+  'settings.signing.tlsIntermediates.hint':
+    'Um servidor HTTPS deve enviar toda a cadeia do seu certificado, exceto a raiz. Alguns enviam somente o certificado final: falta o elo do meio, a cadeia não pode ser montada e a conexão é recusada com o erro UnknownIssuer. Informe aqui o certificado intermediário que está faltando.',
+  'settings.signing.tlsIntermediates.notAnAnchor':
+    'Isto não é uma âncora de confiança. Uma âncora é o certificado com que a Lista de Confiança foi assinada; aqui trata-se da autoridade certificadora por trás do certificado TLS do servidor que hospeda o arquivo. São certificados diferentes, emitidos por entidades diferentes: um certificado informado aqui nunca torna autêntica uma lista que não seja.',
+  'settings.signing.tlsIntermediates.scope':
+    'Nada aqui dispensa a verificação. O certificado informado passa a ser mais um elo possível da cadeia, nunca uma raiz: a cadeia ainda precisa terminar em uma raiz já reconhecida pelo sistema operacional, o nome do servidor ainda precisa corresponder e as datas de validade continuam valendo. Um navegador ou o curl podem abrir o mesmo endereço sem erro, porque buscam sozinhos os certificados que faltam; este cliente não faz isso.',
+  'settings.signing.tlsIntermediates.certs.hint': 'Certificados intermediários, em PEM ou DER.',
+  'settings.signing.tlsIntermediates.certs.add': 'Adicionar certificado intermediário',
+  'settings.signing.tlsIntermediates.certs.none': 'Nenhum certificado intermediário configurado.',
+  'settings.signing.tlsIntermediates.certs.label': 'Certificado intermediário {position}',
+  'settings.signing.tlsIntermediates.certs.remove':
+    'Remover o certificado intermediário {position}',
+  'settings.signing.tlsIntermediates.certs.placeholder':
+    'Cole aqui o certificado intermediário, começando com -----BEGIN CERTIFICATE-----',
+
+  // --- Per-source "do not verify TLS" opt-out --------------------------------------
+  // The copy must be accurate rather than alarming: a list's authenticity does NOT
+  // depend on TLS, it depends on the list's signature against the anchors. Saying
+  // otherwise would be false, and false warnings train people to ignore true ones.
+  'settings.signing.source.tlsSkipVerification.label':
+    'Não verificar o certificado TLS desta fonte',
+  'settings.signing.source.tlsSkipVerification.effect':
+    'A conexão com esta fonte passa a ser feita sem confirmar a identidade do servidor. A autenticidade da lista não depende disso: ela continua sendo verificada pela assinatura da própria lista contra as âncoras configuradas, e uma lista forjada continua sendo recusada.',
+  'settings.signing.source.tlsSkipVerification.residual':
+    'O que fica ao alcance de quem estiver no caminho da conexão é outra coisa: pode entregar uma lista verdadeira porém antiga — que autentica sem problema, por ser verdadeira, e na qual um serviço já revogado ainda aparece como concedido — e pode impedir a obtenção da lista.',
+  'settings.signing.source.tlsSkipVerification.prefer':
+    'Se o problema for uma cadeia de certificados incompleta, informe antes o certificado intermediário que falta: resolve a obtenção sem abrir mão da autenticação do transporte.',
   'settings.signing.tslAnchors.digests.hint':
     'Impressões digitais SHA-256 dos certificados da âncora, em formato hexadecimal (64 caracteres).',
   'settings.signing.tslAnchors.digests.add': 'Adicionar impressão digital de âncora',
@@ -7157,6 +7191,23 @@ export const ptBR: Catalog = {
   'trust.cacheFallback.expiresAt': 'Validade termina',
   'trust.cacheFallback.servedAt': 'Usada em',
   'trust.cacheFallback.reason': 'A tentativa de baixar a lista falhou com:',
+
+  // --- Unverified transport --------------------------------------------------------
+  // Renders beside a `Valid` verdict and does not contradict it: the list authenticated
+  // by its own signature. What is given up is authentication of the server.
+  'trust.unverifiedTransport.label': 'Transporte',
+  'trust.unverifiedTransport.badge': 'Sem autenticação',
+  'trust.unverifiedTransport.title': 'Lista obtida sem autenticar o servidor',
+  'trust.unverifiedTransport.body':
+    'Esta Lista de Confiança é obtida de uma fonte cujo certificado TLS não é verificado, por opção configurada nas definições de assinatura.',
+  'trust.unverifiedTransport.stillAuthenticated':
+    'Isso não põe em dúvida a autenticidade da lista. Ela é autenticada pela sua própria assinatura, conferida com as âncoras de confiança configuradas — verificação que continua obrigatória e que uma lista forjada não passa.',
+  'trust.unverifiedTransport.residualRisk':
+    'O que fica ao alcance de quem estiver no caminho da conexão: entregar uma lista verdadeira porém antiga, na qual um serviço já revogado ainda aparece como concedido, e impedir a obtenção da lista.',
+  'trust.unverifiedTransport.remedy':
+    'Se a causa for uma cadeia de certificados incompleta, informar o certificado intermediário que falta permite voltar a verificar o servidor sem perder nada.',
+  'trust.unverifiedTransport.unknown':
+    'Esta Lista de Confiança é obtida sem que o certificado do servidor seja verificado. A assinatura da lista continua sendo conferida com as âncoras configuradas.',
   'trust.cacheFallback.unknown':
     'Esta verificação usou uma cópia armazenada da Lista de Confiança, por um motivo que esta versão não reconhece.',
   // --- Connector probe: the failure the server cannot phrase for us (codes.rs) ------

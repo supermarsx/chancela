@@ -174,6 +174,9 @@ mod ledger_filter;
 mod ltv;
 mod notifications;
 mod observability;
+/// Operator-suppliable TLS intermediate certificates for outbound HTTPS (see the module docs for
+/// why supplying a chain link is not a verification bypass).
+mod outbound_tls;
 mod pairing;
 mod paper_import;
 mod password_policy;
