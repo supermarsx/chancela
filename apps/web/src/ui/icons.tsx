@@ -436,6 +436,17 @@ export function Info(props: IconProps) {
   );
 }
 
+/** alert / concern — an exclamation mark in a warning triangle. */
+export function Alert(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4.5 21 19.5H3z" />
+      <path d="M12 10v4" />
+      <path d="M12 17h.01" />
+    </Icon>
+  );
+}
+
 /** catalogue / Catálogo — stacked layers. */
 export function Layers(props: IconProps) {
   return (

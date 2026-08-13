@@ -13,49 +13,29 @@
  * So it is deliberately additive to the existing signature badge rather than a replacement for it:
  * the verdict is still whatever the backend said, and this states what it rested on.
  *
- * ## Two pieces, because they answer two different questions at two different distances
+ * ## One of three concerns, sharing one treatment
  *
- * {@link WeakAlgorithmStatuslineItem} is a labelled cell in the status line an operator scans; it
- * answers "is there anything to look at here". {@link TslWeakAlgorithmsNotice} is the banner below
- * it that answers "what exactly", naming each reliance, its algorithm URI verbatim, and — for a
- * reference digest — which of the list's references it was.
+ * This used to own both of its own pieces — a labelled status-line cell and a banner directly
+ * under it. It now contributes a {@link TrustConcern} instead, and `trustConcerns.tsx` renders the
+ * icon in the status line and the entry in the single banner below the lists. Nothing here was
+ * dropped in the move: the label and badge that were the cell's whole content became the entry's
+ * header, and the title and body are the entry's heading and prose.
  *
- * The status-line piece renders its own labelled cell rather than a bare badge, and that is not
- * cosmetic: two badges dropped side by side in one cell are separated only by a CSS `gap`, which
- * inserts no character, so a screen reader and find-in-page both read them fused into one word.
- *
- * Both render **nothing at all** when the list is empty or absent. That is what makes the marker a
+ * It returns **nothing at all** when the list is empty or absent. That is what makes the marker a
  * signal rather than decoration: on an untouched install, where no broken algorithm is permitted,
- * neither appears, so their appearance always means something happened.
+ * no icon and no entry appear, so their appearance always means something happened.
  *
  * ## Copy comes from the catalog, never from the wire
  *
  * The backend emits a stable `code` and a structured position, no prose — see
- * `i18n/tslWeakAlgorithms.ts` for why. A code this build does not recognise still produces a
- * banner, wording only what is certain (a broken algorithm was relied upon) rather than falling
+ * `i18n/tslWeakAlgorithms.ts` for why. A code this build does not recognise still produces an
+ * entry, wording only what is certain (a broken algorithm was relied upon) rather than falling
  * silent, because a newer backend must never be able to turn this warning off.
  */
-import { InlineWarning, Badge } from '../../ui';
-import { useT } from '../../i18n';
+import { useT, type TFunction } from '../../i18n';
 import { legacyAlgorithmLabelKey, weakAlgorithmSentenceKey } from '../../i18n/tslWeakAlgorithms';
 import type { WeakAlgorithmUse } from '../../api/types';
-
-/**
- * A compact marker for a `.trust-statusline`: this verdict relied on a broken algorithm.
- *
- * Renders nothing when it did not — including when the field is absent, which is how the wire
- * spells "nothing weak was permitted".
- */
-export function WeakAlgorithmStatuslineItem({ uses }: { uses?: readonly WeakAlgorithmUse[] }) {
-  const t = useT();
-  if (!uses || uses.length === 0) return null;
-  return (
-    <div className="trust-statusline__item" data-weak-algorithms={uses.length}>
-      <span className="trust-statusline__label">{t('trust.weakAlgorithms.label')}</span>
-      <Badge tone="warn">{t('trust.weakAlgorithms.badge')}</Badge>
-    </div>
-  );
-}
+import type { TrustConcern } from './trustConcerns';
 
 /**
  * One reliance, worded. Kept separate from the list so the `site` discriminant is narrowed in one
@@ -88,27 +68,33 @@ function WeakAlgorithmItem({ use }: { use: WeakAlgorithmUse }) {
 }
 
 /**
- * The full banner: every broken algorithm this verdict rested on.
+ * The concern, or `null` when this verdict rested on nothing broken.
  *
- * `tone="warn"` rather than `"error"` on purpose. Nothing failed — the list validated, and it
- * validated under a rule the operator deliberately configured. Painting it as an error would train
- * operators to ignore it, and would also overstate the case: permitting one algorithm widens
- * exactly one gate and relaxes no other check.
- *
- * No `notice` key, so there is no dismiss control: this is a property of the verdict on screen, not
- * an announcement, and it must come back the next time the same thing happens.
+ * `severity: 'warn'` rather than an error tone on purpose. Nothing failed — the list validated,
+ * and it validated under a rule the operator deliberately configured. Painting it as an error
+ * would train operators to ignore it, and would also overstate the case: permitting one algorithm
+ * widens exactly one gate and relaxes no other check.
  */
-export function TslWeakAlgorithmsNotice({ uses }: { uses?: readonly WeakAlgorithmUse[] }) {
-  const t = useT();
+export function weakAlgorithmsConcern(
+  t: TFunction,
+  uses?: readonly WeakAlgorithmUse[],
+): TrustConcern | null {
   if (!uses || uses.length === 0) return null;
-  return (
-    <InlineWarning tone="warn" title={t('trust.weakAlgorithms.title')}>
-      <p>{t('trust.weakAlgorithms.intro')}</p>
-      <ul className="trust-weak-algorithms" data-weak-algorithms={uses.length}>
-        {uses.map((use, index) => (
-          <WeakAlgorithmItem key={`${use.code}-${use.algorithm}-${index}`} use={use} />
-        ))}
-      </ul>
-    </InlineWarning>
-  );
+  return {
+    slug: 'weak-algorithms',
+    severity: 'warn',
+    label: t('trust.weakAlgorithms.label'),
+    badge: t('trust.weakAlgorithms.badge'),
+    heading: t('trust.weakAlgorithms.title'),
+    body: (
+      <>
+        <p>{t('trust.weakAlgorithms.intro')}</p>
+        <ul className="trust-weak-algorithms" data-weak-algorithms={uses.length}>
+          {uses.map((use, index) => (
+            <WeakAlgorithmItem key={`${use.code}-${use.algorithm}-${index}`} use={use} />
+          ))}
+        </ul>
+      </>
+    ),
+  };
 }

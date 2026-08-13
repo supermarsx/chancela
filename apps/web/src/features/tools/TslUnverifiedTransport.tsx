@@ -7,9 +7,9 @@
  *
  * A settings page is read once, by whoever made the change, possibly months before anyone looks at
  * a trust verdict. The fact that a result was obtained over an unauthenticated transport is a
- * property *of that result*, so it belongs next to it — the same argument that put
- * {@link TslCacheFallbackNotice} and {@link TslWeakAlgorithmsNotice} on these surfaces. It renders
- * for as long as the setting is on, on every screen that reports a Trusted List verdict.
+ * property *of that result*, so it belongs next to it — the same argument that put the cache
+ * fallback and weak-algorithm markers on these surfaces. It renders for as long as the setting is
+ * on, on every screen that reports a Trusted List verdict.
  *
  * # The tone, which is a deliberate decision and not an oversight
  *
@@ -27,53 +27,49 @@
  * and supplying the missing intermediate certificate usually removes the need for the setting at no
  * cost at all.
  */
-import { Badge, InlineWarning } from '../../ui';
-import { useT } from '../../i18n';
 import { unverifiedTransportSentenceKey } from '../../i18n/tslUnverifiedTransport';
+import type { TFunction } from '../../i18n';
 import type { TslUnverifiedTransportView } from '../../api/types';
+import type { TrustConcern } from './trustConcerns';
 
 /**
- * The status-line cell. Absent entirely — not a green "verified" badge — when the transport is
- * authenticated: the ordinary state is the silent one, so the cell's mere presence is the signal.
+ * The concern, or `null` when the transport is authenticated.
+ *
+ * Absent entirely — not a green "verified" entry — in the ordinary case, so its mere presence is
+ * the signal. `severity: 'info'` for the reason argued at the top of this file: the list's own
+ * signature still authenticated it, and a warning tone here would contradict the `Valid` badge it
+ * routinely sits beside. The body leads with the remedy and names the two residual risks rather
+ * than gesturing at them.
  */
-export function TslUnverifiedTransportStatuslineItem({
-  transport,
-}: {
-  transport?: TslUnverifiedTransportView | null;
-}) {
-  const t = useT();
-  if (!transport) return null;
-  return (
-    <div className="trust-statusline__item" data-unverified-transport={transport.code}>
-      <span className="trust-statusline__label">{t('trust.unverifiedTransport.label')}</span>
-      <Badge tone="neutral">{t('trust.unverifiedTransport.badge')}</Badge>
-    </div>
-  );
-}
-
-/** The banner, with the remedy first and the two residual risks named rather than gestured at. */
-export function TslUnverifiedTransportNotice({
-  transport,
-}: {
-  transport?: TslUnverifiedTransportView | null;
-}) {
-  const t = useT();
+export function unverifiedTransportConcern(
+  t: TFunction,
+  transport?: TslUnverifiedTransportView | null,
+): TrustConcern | null {
   if (!transport) return null;
   const sentence = unverifiedTransportSentenceKey(transport.code);
-  return (
-    <InlineWarning tone="info" title={t('trust.unverifiedTransport.title')}>
-      <p>{t(sentence ?? 'trust.unverifiedTransport.unknown')}</p>
-      {/* Stated explicitly, because it is the belief this notice most needs to prevent forming: an
-          operator who reads "not verified" next to a Valid badge will otherwise conclude that the
-          Valid badge cannot be relied upon either. */}
-      <p>{t('trust.unverifiedTransport.stillAuthenticated')}</p>
-      <p>{t('trust.unverifiedTransport.residualRisk')}</p>
-      <p>{t('trust.unverifiedTransport.remedy')}</p>
-      {/* The source id and URL verbatim, in every locale. They are the settings-document values an
-          operator searches for and the host whose certificate goes unchecked; translating or
-          abbreviating either would remove the only thing they are for. */}
-      <p className="mono trust-opaque">{transport.source_id}</p>
-      <p className="mono trust-opaque">{transport.url}</p>
-    </InlineWarning>
-  );
+  return {
+    slug: 'unverified-transport',
+    severity: 'info',
+    label: t('trust.unverifiedTransport.label'),
+    badge: t('trust.unverifiedTransport.badge'),
+    heading: t('trust.unverifiedTransport.title'),
+    body: (
+      <>
+        <p>{t(sentence ?? 'trust.unverifiedTransport.unknown')}</p>
+        {/* Stated explicitly, because it is the belief this entry most needs to prevent forming:
+            an operator who reads "not verified" next to a Valid badge will otherwise conclude that
+            the Valid badge cannot be relied upon either. */}
+        <p>{t('trust.unverifiedTransport.stillAuthenticated')}</p>
+        <p>{t('trust.unverifiedTransport.residualRisk')}</p>
+        <p>{t('trust.unverifiedTransport.remedy')}</p>
+        {/* The source id and URL verbatim, in every locale. They are the settings-document values
+            an operator searches for and the host whose certificate goes unchecked; translating or
+            abbreviating either would remove the only thing they are for. */}
+        <p className="mono trust-opaque" data-unverified-transport={transport.code}>
+          {transport.source_id}
+        </p>
+        <p className="mono trust-opaque">{transport.url}</p>
+      </>
+    ),
+  };
 }

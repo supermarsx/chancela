@@ -54,16 +54,22 @@ import {
 } from '../../ui';
 import { useSectionNav } from '../../app/navPath';
 import { useTrustSectionsT } from '../../i18n/trustSectionsFallback';
-import { TslWeakAlgorithmsNotice, WeakAlgorithmStatuslineItem } from './TslWeakAlgorithms';
-import { TslCacheFallbackNotice, TslCacheFallbackStatuslineItem } from './TslCacheFallback';
+import { weakAlgorithmsConcern } from './TslWeakAlgorithms';
+import { cacheFallbackConcern } from './TslCacheFallback';
+import { unverifiedTransportConcern } from './TslUnverifiedTransport';
 import {
-  TslUnverifiedTransportNotice,
-  TslUnverifiedTransportStatuslineItem,
-} from './TslUnverifiedTransport';
+  TrustConcernMarkers,
+  TrustConcernsBanner,
+  orderTrustConcerns,
+  type TrustConcern,
+} from './trustConcerns';
 import type {
+  TslCacheFallbackView,
   TslCatalogSearchParams,
   TslCatalogView,
   TslProviderView,
+  TslUnverifiedTransportView,
+  WeakAlgorithmUse,
   TslDigitalIdentityView,
   TslServiceHistoryView,
   TslServiceStatusKind,
@@ -266,6 +272,29 @@ function ServiceStatusBadge({ status }: { status: TslServiceStatusKind }) {
 function SignatureBadge({ status }: { status: TslSignatureStatus }) {
   const t = useT();
   return <Badge tone={signatureTone(status)}>{t(signatureLabel(status))}</Badge>;
+}
+
+/**
+ * Everything qualifying one Trusted List verdict, ordered warnings-first for the banner.
+ *
+ * The three fields are named individually rather than taking a whole `TslValidationView`, because
+ * the surfaces do not all carry the same set: the last-import section reports the *import's* own
+ * verdict and has never surfaced a cache marker. Widening it here would be a behaviour change
+ * smuggled in under a layout one, and the compiler would not have said a word.
+ */
+function trustVerdictConcerns(
+  t: TFunction,
+  source: {
+    weak_algorithms?: readonly WeakAlgorithmUse[];
+    cache_fallback?: TslCacheFallbackView | null;
+    unverified_transport?: TslUnverifiedTransportView | null;
+  },
+): readonly TrustConcern[] {
+  return orderTrustConcerns([
+    weakAlgorithmsConcern(t, source.weak_algorithms),
+    cacheFallbackConcern(t, source.cache_fallback),
+    unverifiedTransportConcern(t, source.unverified_transport),
+  ]);
 }
 
 function tsaStatusTone(status: TsaStatusKind): 'ok' | 'warn' | 'error' {
@@ -790,6 +819,8 @@ function TsaToolingPanel() {
     setParam(name, value ? '1' : null);
   }
 
+  const concerns = trustVerdictConcerns(t, tsa.data?.summary.tsl ?? {});
+
   return (
     <Card title={t('trust.tsa.title')}>
       {tsa.isLoading ? (
@@ -826,23 +857,16 @@ function TsaToolingPanel() {
               </span>
             </div>
             {/* The TSA records are drawn from a Trusted List of their own, with its own signature
-                verdict. Whether THAT list leaned on a broken algorithm belongs here, where the
-                records it produced are read. */}
-            <WeakAlgorithmStatuslineItem uses={tsa.data.summary.tsl.weak_algorithms} />
-            {/* Same argument one step further: these records were read off a list, and whether
-                that list came off the network or out of the durable cache decides whether a
-                withdrawn TSA could still be showing as granted here. */}
-            <TslCacheFallbackStatuslineItem fallback={tsa.data.summary.tsl.cache_fallback} />
-            {/* And whether the list those records came off was fetched from a server this
-                installation authenticated at all. Same argument again, one layer down. */}
-            <TslUnverifiedTransportStatuslineItem
-              transport={tsa.data.summary.tsl.unverified_transport}
+                verdict. Whether THAT list leaned on a broken algorithm, came out of the durable
+                cache rather than off the network, or was fetched from a server this installation
+                never authenticated all belong here, where the records they produced are read —
+                as icons, with the detail collected in one banner at the foot of the panel. */}
+            <TrustConcernMarkers
+              concerns={concerns}
+              group="tsa-summary"
+              className="trust-statusline__item trust-statusline__item--concerns"
             />
           </div>
-
-          <TslWeakAlgorithmsNotice uses={tsa.data.summary.tsl.weak_algorithms} />
-          <TslCacheFallbackNotice fallback={tsa.data.summary.tsl.cache_fallback} />
-          <TslUnverifiedTransportNotice transport={tsa.data.summary.tsl.unverified_transport} />
 
           <div className="trust-diagnostics-grid">
             <TrustDetailSection title={t('trust.tsa.configuration')}>
@@ -1091,6 +1115,11 @@ function TsaToolingPanel() {
               {selected ? <TsaRecordDetail record={selected} /> : null}
             </SidePanel>
           </div>
+
+          {/* After the lists, not before them: the detail is what an operator reads once they
+              have followed an icon, and three stacked banners at the top pushed the records
+              this panel exists for off the first screen. */}
+          <TrustConcernsBanner concerns={concerns} group="tsa-summary" />
         </div>
       ) : null}
     </Card>
@@ -1101,6 +1130,16 @@ function TrustStatusPanel() {
   const t = useT();
   const status = useTrustStatus();
   const refresh = useRefreshTrustTsl();
+
+  const concerns = trustVerdictConcerns(t, status.data?.validation ?? {});
+  // The import carries its own verdict, so it carries its own concerns: a list imported under a
+  // weak algorithm or over an unverified connection and a status resolved after the setting was
+  // turned off again is a reachable pair, and the record of the import should keep saying how it
+  // happened. Its own group, so its entry ids never collide with the current status's.
+  const importConcerns = trustVerdictConcerns(t, {
+    weak_algorithms: status.data?.last_refresh?.validation.weak_algorithms,
+    unverified_transport: status.data?.last_refresh?.validation.unverified_transport,
+  });
 
   return (
     <Card title={t('trust.status.title')}>
@@ -1141,18 +1180,17 @@ function TrustStatusPanel() {
               <span className="trust-statusline__label">{t('trust.status.signature')}</span>
               <SignatureBadge status={status.data.validation.signature} />
             </div>
-            {/* "Valid" and "valid because SHA-1 was permitted" are different facts, and the badge
-                above cannot tell them apart. This cell appears only in the second case. */}
-            <WeakAlgorithmStatuslineItem uses={status.data.validation.weak_algorithms} />
-            {/* "Valid" and "valid against a list this installation could not re-fetch" are also
-                different facts. This cell appears only when the durable cache answered. */}
-            <TslCacheFallbackStatuslineItem fallback={status.data.validation.cache_fallback} />
-            {/* "Valid" and "valid, over a connection whose peer we did not authenticate" are a
-                third pair. Both are true at once — the signature is what makes the list authentic,
-                and it verified — so this cell reports the transport and never contradicts the
-                badge beside it. */}
-            <TslUnverifiedTransportStatuslineItem
-              transport={status.data.validation.unverified_transport}
+            {/* "Valid", "valid because SHA-1 was permitted", "valid against a list this
+                installation could not re-fetch" and "valid, over a connection whose peer we did
+                not authenticate" are four different facts, and the badge above tells none of them
+                apart. Each qualification that applies puts an icon here, next to the verdict it
+                qualifies, and spells itself out in the banner the icon links to. None of them
+                contradicts the badge: the signature is what makes a list authentic, and it
+                verified. */}
+            <TrustConcernMarkers
+              concerns={concerns}
+              group="tsl-status"
+              className="trust-statusline__item trust-statusline__item--concerns"
             />
             <div className="trust-statusline__item">
               <span className="trust-statusline__label">{t('trust.status.freshness')}</span>
@@ -1166,10 +1204,6 @@ function TrustStatusPanel() {
               <DateTime className="mono" value={status.data.validation.checked_at} evidentiary />
             </div>
           </div>
-
-          <TslWeakAlgorithmsNotice uses={status.data.validation.weak_algorithms} />
-          <TslCacheFallbackNotice fallback={status.data.validation.cache_fallback} />
-          <TslUnverifiedTransportNotice transport={status.data.validation.unverified_transport} />
 
           {status.data.last_refresh ? (
             <TrustDetailSection title={t('trust.refresh.lastAttempt')}>
@@ -1211,8 +1245,12 @@ function TrustStatusPanel() {
                 </tr>
                 <tr>
                   <th scope="row">{t('trust.refresh.importSignature')}</th>
-                  <td>
+                  {/* The icons sit in the row whose verdict they qualify, not in a row of their
+                      own: "imported, signature Valid" and "imported, signature Valid because
+                      SHA-1 was permitted" are different facts about the same cell. */}
+                  <td className="trust-fact-cell--marked">
                     <SignatureBadge status={status.data.last_refresh.validation.signature} />
+                    <TrustConcernMarkers concerns={importConcerns} group="tsl-import" />
                   </td>
                 </tr>
                 <tr>
@@ -1222,16 +1260,9 @@ function TrustStatusPanel() {
                   </td>
                 </tr>
               </TrustFactTable>
-              {/* The import carries its own verdict, so it carries its own reliance. A list
-                  imported under a weak algorithm and a status verified under strong ones is a
-                  reachable pair — the setting can be turned off between the two. */}
-              <TslWeakAlgorithmsNotice uses={status.data.last_refresh.validation.weak_algorithms} />
-              {/* The import carries its own transport too. A list imported over an unverified
-                  connection and a status resolved after the setting was turned off again is a
-                  reachable pair, and the record of the import should keep saying how it happened. */}
-              <TslUnverifiedTransportNotice
-                transport={status.data.last_refresh.validation.unverified_transport}
-              />
+              {/* This section's own list, so this section's own banner — kept separate from the
+                  one below because it qualifies a different verdict. */}
+              <TrustConcernsBanner concerns={importConcerns} group="tsl-import" />
               {status.data.last_refresh.error ? (
                 <p className="muted trust-source-note">{status.data.last_refresh.error}</p>
               ) : status.data.last_refresh.validation.error ? (
@@ -1304,6 +1335,11 @@ function TrustStatusPanel() {
               </TrustFactTable>
             </TrustDetailSection>
           </div>
+
+          {/* After the lists. This used to be three stacked banners immediately under the status
+              line, which is where an operator's eye goes first and where every fact table this
+              panel exists for got pushed down from. */}
+          <TrustConcernsBanner concerns={concerns} group="tsl-status" />
 
           {status.data.source.note ? (
             <p className="muted trust-source-note">{status.data.source.note}</p>

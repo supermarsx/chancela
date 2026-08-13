@@ -27,6 +27,29 @@ async function themeSource(): Promise<string> {
   return readFileSync('src/theme.css', 'utf8').replace(/\r\n/g, '\n');
 }
 
+/**
+ * The banner entry for one concern, once it has rendered.
+ *
+ * Queried by id rather than by its heading text, because the heading is deliberately also the
+ * marker icon's accessible name and its tooltip bubble — three copies of the same sentence, of
+ * which exactly one is the entry. Structure disambiguates; a text query cannot.
+ */
+async function concernEntry(group: string, slug: string): Promise<HTMLElement> {
+  const id = `trust-concern-${group}-${slug}`;
+  return (await waitFor(() => {
+    const found = document.getElementById(id);
+    expect(found).not.toBeNull();
+    return found;
+  })) as HTMLElement;
+}
+
+/** The status-line icon for one concern, or `null` when the screen raises none for it. */
+function concernMarker(slug: string): HTMLAnchorElement | null {
+  return document.querySelector(
+    `.trust-statusline__item--concerns a[data-trust-concern="${slug}"]`,
+  );
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -639,40 +662,42 @@ describe('Ferramentas — TSL trust catalog', () => {
     vi.stubGlobal('fetch', trustFetch(WEAK_USES));
     renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
-    const banner = (await screen.findByText(ptPT['trust.weakAlgorithms.title'])).closest(
-      '.inline-warning',
-    ) as HTMLElement;
+    const entry = await concernEntry('tsl-status', 'weak-algorithms');
+    const banner = entry.closest('.inline-warning') as HTMLElement;
     // A property of the verdict on screen, not an announcement: it must come back next time.
     expect(banner.hasAttribute('data-notice')).toBe(false);
 
-    const list = banner.querySelector('[data-weak-algorithms]') as HTMLElement;
+    const list = entry.querySelector('[data-weak-algorithms]') as HTMLElement;
     expect(list.dataset.weakAlgorithms).toBe(String(WEAK_USES.length));
     expect(list.querySelectorAll('li')).toHaveLength(WEAK_USES.length);
 
     // The two codes word two different facts; both are present, neither collapsed into the other.
-    expect(banner.textContent).toContain(ptPT['trust.weakAlgorithms.signatureMethod']);
-    expect(banner.textContent).toContain(ptPT['trust.weakAlgorithms.digest']);
-    expect(banner.textContent).not.toContain(ptPT['trust.weakAlgorithms.unknown']);
+    expect(entry.textContent).toContain(ptPT['trust.weakAlgorithms.signatureMethod']);
+    expect(entry.textContent).toContain(ptPT['trust.weakAlgorithms.digest']);
+    expect(entry.textContent).not.toContain(ptPT['trust.weakAlgorithms.unknown']);
 
     // The algorithm URI reaches every locale verbatim — it is what the settings document holds
     // and what a 422 names — so it is asserted as the wire value, never as translated copy.
-    for (const use of WEAK_USES) expect(banner.textContent).toContain(use.algorithm);
+    for (const use of WEAK_USES) expect(entry.textContent).toContain(use.algorithm);
     // …and the `reference` arm's position, which the `signature_method` arm does not have.
-    expect(banner.textContent).toContain('#signed-props-1');
-    expect(banner.textContent).toContain(
+    expect(entry.textContent).toContain('#signed-props-1');
+    expect(entry.textContent).toContain(
       ptPT['trust.weakAlgorithms.reference']
         .replace('{index}', '2')
         .replace('{total}', '2')
         .replace('{uri}', '#signed-props-1'),
     );
 
-    // The scan line an operator reads before the banner also says so, in its own labelled cell —
-    // fused into the signature badge's cell it would read as one word to a screen reader.
-    const cell = document.querySelector(
-      '.trust-statusline__item[data-weak-algorithms]',
-    ) as HTMLElement;
-    expect(cell.textContent).toContain(ptPT['trust.weakAlgorithms.label']);
-    expect(cell.textContent).toContain(ptPT['trust.weakAlgorithms.badge']);
+    // The two strings the status-line cell used to carry did not vanish with the cell: they head
+    // the entry. Losing them was the obvious way for this restructure to quietly cost information.
+    expect(entry.textContent).toContain(ptPT['trust.weakAlgorithms.label']);
+    expect(entry.textContent).toContain(ptPT['trust.weakAlgorithms.badge']);
+
+    // The scan line an operator reads first now carries an icon and nothing else, and that icon
+    // is a real link to this entry, named for it.
+    const marker = concernMarker('weak-algorithms') as HTMLAnchorElement;
+    expect(marker.getAttribute('href')).toBe(`#${entry.id}`);
+    expect(marker.getAttribute('aria-label')).toBe(ptPT['trust.weakAlgorithms.title']);
   });
 
   it('shows no weak-algorithm marker when the verdict stood on strong algorithms alone', async () => {
@@ -691,8 +716,9 @@ describe('Ferramentas — TSL trust catalog', () => {
     vi.stubGlobal('fetch', trustFetch(WEAK_USES));
     renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
 
-    expect(await screen.findByText(ptPT['trust.weakAlgorithms.title'])).toBeTruthy();
-    expect(document.querySelector('.trust-statusline__item[data-weak-algorithms]')).not.toBeNull();
+    const entry = await concernEntry('tsa-summary', 'weak-algorithms');
+    expect(entry.textContent).toContain(ptPT['trust.weakAlgorithms.title']);
+    expect(concernMarker('weak-algorithms')?.getAttribute('href')).toBe(`#${entry.id}`);
   });
 
   it('words a weak-algorithm code this build does not know rather than falling silent', async () => {
@@ -709,13 +735,11 @@ describe('Ferramentas — TSL trust catalog', () => {
     vi.stubGlobal('fetch', trustFetch(future));
     renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
-    const banner = (await screen.findByText(ptPT['trust.weakAlgorithms.title'])).closest(
-      '.inline-warning',
-    ) as HTMLElement;
-    expect(banner.textContent).toContain(ptPT['trust.weakAlgorithms.unknown']);
-    expect(banner.textContent).not.toContain(ptPT['trust.weakAlgorithms.signatureMethod']);
+    const entry = await concernEntry('tsl-status', 'weak-algorithms');
+    expect(entry.textContent).toContain(ptPT['trust.weakAlgorithms.unknown']);
+    expect(entry.textContent).not.toContain(ptPT['trust.weakAlgorithms.signatureMethod']);
     // The URI is still shown verbatim: it is the one thing that identifies what happened.
-    expect(banner.textContent).toContain('http://www.w3.org/2001/04/xmldsig-more#hmac-md5');
+    expect(entry.textContent).toContain('http://www.w3.org/2001/04/xmldsig-more#hmac-md5');
   });
 
   it('keeps trust diagnostics and both catalog explorers in one stacked column at every width', async () => {
@@ -1167,22 +1191,24 @@ describe('Ferramentas — unverified transport marker', () => {
     vi.stubGlobal('fetch', markedFetch());
     renderWithProviders(<TrustCatalogPage />, ['/tools/trust']);
 
-    expect(await screen.findByText(ptPT['trust.unverifiedTransport.title'])).toBeTruthy();
+    const entry = await concernEntry('tsl-status', 'unverified-transport');
+    expect(entry.textContent).toContain(ptPT['trust.unverifiedTransport.title']);
     // The reassurance is not optional garnish: it is what stops an operator concluding that the
     // Valid badge beside it cannot be relied on either.
-    expect(screen.getByText(ptPT['trust.unverifiedTransport.stillAuthenticated'])).toBeTruthy();
+    expect(entry.textContent).toContain(ptPT['trust.unverifiedTransport.stillAuthenticated']);
     // Both risks named, neither overstated.
-    expect(screen.getByText(ptPT['trust.unverifiedTransport.residualRisk'])).toBeTruthy();
-    expect(screen.getByText(ptPT['trust.unverifiedTransport.remedy'])).toBeTruthy();
+    expect(entry.textContent).toContain(ptPT['trust.unverifiedTransport.residualRisk']);
+    expect(entry.textContent).toContain(ptPT['trust.unverifiedTransport.remedy']);
     // The source and host verbatim, so an operator can find the setting that caused this.
-    expect(screen.getByText(TRANSPORT.url)).toBeTruthy();
-    expect(screen.getByText(TRANSPORT.source_id)).toBeTruthy();
+    expect(entry.textContent).toContain(TRANSPORT.url);
+    expect(entry.textContent).toContain(TRANSPORT.source_id);
   });
 
   it('reports it on the TSA screen too, where the records were read off the same list', async () => {
     vi.stubGlobal('fetch', markedFetch());
     renderWithProviders(<TrustCatalogPage />, ['/tools/trust/tsa']);
-    expect(await screen.findByText(ptPT['trust.unverifiedTransport.title'])).toBeTruthy();
+    const entry = await concernEntry('tsa-summary', 'unverified-transport');
+    expect(entry.textContent).toContain(ptPT['trust.unverifiedTransport.title']);
   });
 
   it('says nothing at all when the transport is verified', async () => {

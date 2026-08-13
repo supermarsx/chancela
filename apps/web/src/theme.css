@@ -7279,6 +7279,122 @@ a.btn--primary {
   color: var(--text-muted);
 }
 
+/* Trust concern markers: the compact alert affordance in the status line, and the single banner
+   at the foot of the lists that carries the detail. Three markers used to take three labelled
+   cells plus three stacked banners of prose above the fact tables; this is the whole of what they
+   cost in the status line now. Sized as a round hit target rather than a bare glyph, because it
+   is a link and a 1em SVG is not something a pointer can reliably land on. */
+.trust-concern-markers {
+  display: inline-flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  vertical-align: middle;
+}
+
+/* In the status line the group is a cell of the flex row, sized to its icons rather than sharing
+   the `8rem` basis the labelled cells claim. */
+.trust-statusline__item--concerns {
+  flex: 0 0 auto;
+}
+
+/* In a fact table it is NOT given a display of its own — a `<td>` out of table layout makes the
+   column's geometry a property of whichever row happens to carry a marker, which is the defect
+   `ui/tableActionCellGuards.test.ts` was written to stop. The badge beside it gets its gap here. */
+.trust-fact-cell--marked > .trust-concern-markers {
+  margin-left: 0.5rem;
+}
+
+.trust-concern-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.95rem;
+  line-height: 1;
+  text-decoration: none;
+  color: var(--text-muted);
+}
+
+.trust-concern-marker--warn {
+  border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+
+.trust-concern-marker--info {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  color: var(--accent);
+}
+
+.trust-concerns {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Each entry keeps its severity on a coloured rule of its own, so a mixed banner never reads as
+   one undifferentiated pile — the tone of the box is only the loudest one it holds. */
+.trust-concern {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--border);
+}
+
+.trust-concern:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.trust-concern--warn {
+  border-left-color: var(--warn);
+}
+
+.trust-concern--info {
+  border-left-color: var(--accent);
+}
+
+.trust-concern__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Matches the banner title it replaced. Deliberately its own selector rather than a second one
+   bolted onto `.inline-warning__title`: markup outside the primitive must not spell the
+   primitive's class names (see `ui/bannerMarginGuards.test.ts`). */
+.trust-concern__heading {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin: 0;
+}
+
+/* The entries are one level deeper than the banner body, so the primitive's own zero-specificity
+   margin collapse does not reach their paragraphs. Same two jobs, same split: kill the UA block
+   margins, then space consecutive blocks with the container's gap. */
+.trust-concern__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.trust-concern__body > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
 .trust-tsa {
   display: flex;
   flex-direction: column;
