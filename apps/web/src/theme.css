@@ -11305,22 +11305,39 @@ input[type='radio']:disabled {
   padding-top: 1rem;
   border-top: 1px solid var(--border);
   display: flex;
-  /* Column, not the flex default row: the passkey button and its hint are a stacked pair — the
-     action, then the sentence explaining it. As a row they sat side by side in two columns, the
-     button crushed against wrapping hint text. Centre the cross axis so the button keeps its
-     natural width under the centred hint rather than stretching full-bleed. */
+  /* Column, not the flex default row: these blocks stack an action over whatever accompanies it.
+     Centre the cross axis so the button keeps its natural width rather than stretching full-bleed.
+     The passkey block overrides this to a row — see `.signin__alt--passkey` below. */
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
 }
 
-/* The passkey action is one tidy button, then its hint below. `align-items: center` on the column
-   already sizes it to its content rather than the full card width; `white-space: nowrap` keeps the
-   uppercase label + icon on a single line so it reads as a button, not a wrapped block, and
-   `max-width: 100%` lets it shrink gracefully on a very narrow card instead of overflowing. */
+/* The passkey action is one tidy button. `align-items: center` on the column already sizes it to
+   its content rather than the full card width; `white-space: nowrap` keeps the uppercase label +
+   icon on a single line so it reads as a button, not a wrapped block, and `max-width: 100%` lets
+   it shrink gracefully on a very narrow card instead of overflowing. */
 .signin__alt > .btn {
   white-space: nowrap;
   max-width: 100%;
+}
+
+/* The passkey block LEADS the card — it sits above the password form, not below it, so the hairline
+   it owns has to separate it from what FOLLOWS. Hence the border and spacing flip from top to
+   bottom; leaving the base rule's `border-top` would draw a line immediately under the subtitle and
+   fence the card's own heading off from its contents.
+
+   Row, not the base column: the explanatory sentence that used to stack under the button now lives
+   behind the `FieldHelp` glyph, and a glyph belongs beside its control rather than under it. */
+.signin__alt--passkey {
+  flex-direction: row;
+  justify-content: center;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+  margin-bottom: 1.1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
 }
 
 /* --- Recently used identifiers on THIS device (t33) ------------------------

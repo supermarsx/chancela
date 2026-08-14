@@ -7079,7 +7079,7 @@ export const ptPT: Catalog = {
   'users.passkeys.error.notUserVerified':
     'O aparelho não confirmou que é mesmo quem diz ser. Ative a impressão digital, o rosto ou o PIN e tente de novo — sem essa confirmação a chave de acesso não abre nada.',
   'users.passkeys.error.failed': 'Não foi possível concluir a operação com a chave de acesso.',
-  'signin.passkey.action': 'Entrar com chave de acesso',
+  'signin.passkey.action': 'Usar chave de acesso',
   'signin.passkey.pending': 'A aguardar o aparelho…',
   'signin.passkey.hint': 'Sem escrever nada: confirma no aparelho onde guardou a chave.',
   'signin.passkey.hint.autofill':

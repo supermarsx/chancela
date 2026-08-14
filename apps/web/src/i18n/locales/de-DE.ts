@@ -7133,11 +7133,11 @@ export const deDE: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Das Gerät hat nicht bestätigt, dass Sie es wirklich sind. Aktivieren Sie Fingerabdruck, Gesicht oder PIN und versuchen Sie es erneut — ohne diese Bestätigung öffnet ein Passkey nichts.',
   'users.passkeys.error.failed': 'Der Vorgang mit dem Passkey konnte nicht abgeschlossen werden.',
-  'signin.passkey.action': 'Mit Passkey anmelden',
+  'signin.passkey.action': 'Passkey verwenden',
   'signin.passkey.pending': 'Warten auf das Gerät…',
   'signin.passkey.hint': 'Nichts zu tippen: Bestätigen Sie auf dem Gerät mit dem Passkey.',
   'signin.passkey.hint.autofill':
-    'Sie können den Passkey auch über das Feld für den Benutzernamen oben auswählen.',
+    'Sie können den Passkey auch über das Feld für den Benutzernamen auswählen.',
   'signin.passkey.error.rpIdMismatch':
     'Die für Passkeys konfigurierte Domäne passt nicht zu der Adresse, über die Sie hereingekommen sind. Informieren Sie eine Administratorin oder einen Administrator und melden Sie sich mit dem Passwort an.',
   'signin.passkey.error.unsupported':

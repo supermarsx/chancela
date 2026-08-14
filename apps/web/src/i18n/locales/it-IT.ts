@@ -7108,11 +7108,11 @@ export const itIT: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Il dispositivo non ha confermato che sei davvero tu. Attiva impronta, volto o PIN e riprova: senza quella conferma una passkey non apre nulla.',
   'users.passkeys.error.failed': 'Non è stato possibile completare l’operazione con la passkey.',
-  'signin.passkey.action': 'Entra con una passkey',
+  'signin.passkey.action': 'Usa una passkey',
   'signin.passkey.pending': 'In attesa del dispositivo…',
   'signin.passkey.hint': 'Niente da digitare: conferma sul dispositivo che custodisce la chiave.',
   'signin.passkey.hint.autofill':
-    'Puoi anche scegliere la passkey toccando il campo del nome utente qui sopra.',
+    'Puoi anche scegliere la passkey toccando il campo del nome utente.',
   'signin.passkey.error.rpIdMismatch':
     'Il dominio configurato per le passkey non corrisponde all’indirizzo da cui sei entrato. Avvisa un amministratore ed entra con la password.',
   'signin.passkey.error.unsupported':

@@ -16,6 +16,7 @@ vi.mock('../../desktop/tauri', () => tauriMock);
 import { renderWithProviders } from '../../test/utils';
 import { ptPT } from '../../i18n/locales/pt-PT';
 import { PasskeySignIn } from './PasskeySignIn';
+import { SignIn } from './SignIn';
 import { toBase64Url } from './webauthn';
 
 /** A user-verified assertion — flags byte 0x05 is UP | UV. `prfFirst` models a PRF output. */
@@ -140,7 +141,11 @@ describe('PasskeySignIn', () => {
 
     await waitFor(() => expect(get).toHaveBeenCalled());
     expect((get.mock.calls[0][0] as { mediation?: string }).mediation).toBe('conditional');
-    await screen.findByText(ptPT['signin.passkey.hint.autofill']);
+    // The sentence now rides in the help tooltip rather than a paragraph under the button, so it is
+    // read off the bubble — asserting it is still reachable, not merely absent from the layout.
+    await waitFor(() =>
+      expect(screen.getByRole('tooltip').textContent).toBe(ptPT['signin.passkey.hint.autofill']),
+    );
   });
 
   it('keeps the modal button when conditional mediation is unavailable, and says so', async () => {
@@ -151,8 +156,36 @@ describe('PasskeySignIn', () => {
 
     const button = await screen.findByRole('button', { name: ptPT['signin.passkey.action'] });
     expect(button).toBeTruthy();
-    await screen.findByText(ptPT['signin.passkey.hint']);
+    expect(screen.getByRole('tooltip').textContent).toBe(ptPT['signin.passkey.hint']);
     expect(get).not.toHaveBeenCalled();
+  });
+
+  it('carries the explanation in a help tooltip, not a permanent paragraph under the button', () => {
+    // The inline `.field__hint` sentence is gone from the layout; the copy is NOT — it is behind the
+    // help glyph, whose accessible name stays generic while the sentence rides on the description.
+    // A grep for the string alone cannot tell those two states apart, so assert on both.
+    harness({ conditional: false });
+    const { container } = renderWithProviders(<PasskeySignIn onSignedIn={vi.fn()} />);
+
+    expect(container.querySelector('.field__hint')).toBeNull();
+    const help = screen.getByRole('button', { name: 'Ajuda' });
+    const bubble = screen.getByRole('tooltip');
+    expect(help.getAttribute('aria-describedby')).toBe(bubble.id);
+    expect(bubble.textContent).toBe(ptPT['signin.passkey.hint']);
+  });
+
+  it('is offered BEFORE the password form in the DOM, not merely above it on screen', async () => {
+    // Tab order follows the DOM. Reaching this layout with CSS `order` or `row-reverse` would hand
+    // a keyboard user a sequence different from the one a sighted user reads, so the property is
+    // asserted on document position — what assistive technology actually walks — and not on styles.
+    harness({ conditional: false });
+    renderWithProviders(<SignIn />);
+
+    const passkey = await screen.findByRole('button', { name: ptPT['signin.passkey.action'] });
+    const password = await screen.findByLabelText(ptPT['signin.password.label']);
+    expect(
+      passkey.compareDocumentPosition(password) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('stays silent about an unconfigured instance rather than reporting its configuration', async () => {
@@ -163,7 +196,7 @@ describe('PasskeySignIn', () => {
 
     await screen.findByRole('button', { name: ptPT['signin.passkey.action'] });
     await waitFor(() => expect(screen.queryByText(/rp_id|passkeys_/u)).toBeNull());
-    expect(screen.queryByText(ptPT['signin.passkey.hint.autofill'])).toBeNull();
+    expect(screen.getByRole('tooltip').textContent).toBe(ptPT['signin.passkey.hint']);
   });
 
   it('completes a sign-in from the modal button and reports the user', async () => {

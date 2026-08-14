@@ -7069,11 +7069,11 @@ export const ptBR: Catalog = {
   'users.passkeys.error.notUserVerified':
     'O aparelho não confirmou que é você mesmo. Ative a digital, o rosto ou o PIN e tente de novo — sem essa confirmação a chave de acesso não abre nada.',
   'users.passkeys.error.failed': 'Não foi possível concluir a operação com a chave de acesso.',
-  'signin.passkey.action': 'Entrar com chave de acesso',
+  'signin.passkey.action': 'Usar chave de acesso',
   'signin.passkey.pending': 'Aguardando o aparelho…',
   'signin.passkey.hint': 'Sem digitar nada: confirme no aparelho onde guardou a chave.',
   'signin.passkey.hint.autofill':
-    'Você também pode escolher a chave de acesso tocando no campo do nome de acesso acima.',
+    'Você também pode escolher a chave de acesso tocando no campo do nome de acesso.',
   'signin.passkey.error.rpIdMismatch':
     'O domínio configurado para as chaves de acesso não bate com o endereço por onde você entrou. Avise um administrador e entre com a senha.',
   'signin.passkey.error.unsupported':

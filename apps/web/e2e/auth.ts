@@ -93,9 +93,13 @@ async function pickOperator(page: Page): Promise<void> {
   const password = page.getByLabel('Palavra-passe', { exact: true });
   await expect(password).toBeVisible();
   await password.fill(OPERATOR_PASSWORD);
-  // `exact` because the sign-in surface now also offers "Entrar com chave de acesso", and
-  // `getByRole`'s `name` is a substring match by default: the password submit is the button
-  // whose accessible name is exactly "Entrar", never merely one that starts with it.
+  // `exact` because `getByRole`'s `name` is a SUBSTRING match by default: the password submit is
+  // the button whose accessible name is exactly "Entrar", never merely one that contains it. The
+  // collision that forced this was the passkey affordance's old label, "Entrar com chave de
+  // acesso"; it now reads "Usar chave de acesso" and no longer contains "Entrar" — but the two
+  // labels must stay non-overlapping in BOTH directions for that to hold, and "Entrar" is also a
+  // prefix of the bootstrap screen's "Entrar no Chancela". So `exact` stays: it is what makes this
+  // selector independent of the passkey label rather than merely lucky about it.
   await page.getByRole('button', { name: 'Entrar', exact: true }).click();
   await expect(page.getByTestId('tab-bar')).toBeVisible();
 }

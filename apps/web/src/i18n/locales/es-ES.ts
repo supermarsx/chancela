@@ -7100,11 +7100,11 @@ export const esES: Catalog = {
   'users.passkeys.error.notUserVerified':
     'El dispositivo no ha confirmado que eres tú. Activa la huella, la cara o el PIN e inténtalo de nuevo: sin esa confirmación una clave de acceso no abre nada.',
   'users.passkeys.error.failed': 'No se ha podido completar la operación con la clave de acceso.',
-  'signin.passkey.action': 'Entrar con clave de acceso',
+  'signin.passkey.action': 'Usar clave de acceso',
   'signin.passkey.pending': 'Esperando al dispositivo…',
   'signin.passkey.hint': 'Sin escribir nada: confirma en el dispositivo donde guardaste la llave.',
   'signin.passkey.hint.autofill':
-    'También puedes elegir la clave de acceso tocando el campo del nombre de usuario de arriba.',
+    'También puedes elegir la clave de acceso tocando el campo del nombre de usuario.',
   'signin.passkey.error.rpIdMismatch':
     'El dominio configurado para las claves de acceso no coincide con la dirección por la que has entrado. Avisa a un administrador y entra con la contraseña.',
   'signin.passkey.error.unsupported':

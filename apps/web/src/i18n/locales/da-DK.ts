@@ -7045,11 +7045,11 @@ export const daDK: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Enheden bekræftede ikke, at det virkelig er dig. Slå fingeraftryk, ansigt eller pinkode til, og prøv igen — uden den bekræftelse åbner en adgangsnøgle ingenting.',
   'users.passkeys.error.failed': 'Handlingen med adgangsnøglen kunne ikke fuldføres.',
-  'signin.passkey.action': 'Log ind med adgangsnøgle',
+  'signin.passkey.action': 'Brug adgangsnøgle',
   'signin.passkey.pending': 'Venter på enheden…',
   'signin.passkey.hint': 'Intet at taste: bekræft på den enhed, der har nøglen.',
   'signin.passkey.hint.autofill':
-    'Du kan også vælge adgangsnøglen ved at trykke på brugernavnsfeltet ovenfor.',
+    'Du kan også vælge adgangsnøglen ved at trykke på brugernavnsfeltet.',
   'signin.passkey.error.rpIdMismatch':
     'Det domæne, der er konfigureret til adgangsnøgler, passer ikke til den adresse, du kom ind ad. Sig det til en administrator, og log ind med adgangskoden.',
   'signin.passkey.error.unsupported':

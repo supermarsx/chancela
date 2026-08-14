@@ -6975,11 +6975,10 @@ export const enGB: Catalog = {
   'users.passkeys.error.notUserVerified':
     'The device did not confirm it is really you. Turn on fingerprint, face or PIN and try again — without that confirmation a passkey opens nothing.',
   'users.passkeys.error.failed': 'The passkey operation could not be completed.',
-  'signin.passkey.action': 'Sign in with a passkey',
+  'signin.passkey.action': 'Use a passkey',
   'signin.passkey.pending': 'Waiting for the device…',
   'signin.passkey.hint': 'Nothing to type: confirm on the device holding the passkey.',
-  'signin.passkey.hint.autofill':
-    'You can also pick the passkey by tapping the username field above.',
+  'signin.passkey.hint.autofill': 'You can also pick the passkey by tapping the username field.',
   'signin.passkey.error.rpIdMismatch':
     'The domain configured for passkeys does not match the address you came in on. Tell an administrator and sign in with your password.',
   'signin.passkey.error.unsupported':

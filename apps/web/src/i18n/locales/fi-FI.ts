@@ -7057,11 +7057,11 @@ export const fiFI: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Laite ei vahvistanut, että kyseessä olet todella sinä. Ota käyttöön sormenjälki, kasvot tai PIN-koodi ja yritä uudelleen — ilman sitä vahvistusta pääsyavain ei avaa mitään.',
   'users.passkeys.error.failed': 'Pääsyavaimeen liittyvää toimintoa ei voitu viedä loppuun.',
-  'signin.passkey.action': 'Kirjaudu pääsyavaimella',
+  'signin.passkey.action': 'Käytä pääsyavainta',
   'signin.passkey.pending': 'Odotetaan laitetta…',
   'signin.passkey.hint': 'Mitään ei tarvitse kirjoittaa: vahvista laitteella, jolla avain on.',
   'signin.passkey.hint.autofill':
-    'Voit valita pääsyavaimen myös koskettamalla yllä olevaa käyttäjätunnuskenttää.',
+    'Voit valita pääsyavaimen myös koskettamalla käyttäjätunnuskenttää.',
   'signin.passkey.error.rpIdMismatch':
     'Pääsyavaimille määritetty verkkotunnus ei vastaa osoitetta, jonka kautta tulit. Kerro ylläpitäjälle ja kirjaudu salasanalla.',
   'signin.passkey.error.unsupported':

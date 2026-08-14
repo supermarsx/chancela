@@ -7115,11 +7115,11 @@ export const nlNL: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Het apparaat heeft niet bevestigd dat u het echt bent. Zet vingerafdruk, gezicht of pincode aan en probeer het opnieuw — zonder die bevestiging opent een toegangssleutel niets.',
   'users.passkeys.error.failed': 'De bewerking met de toegangssleutel kon niet worden voltooid.',
-  'signin.passkey.action': 'Aanmelden met een toegangssleutel',
+  'signin.passkey.action': 'Toegangssleutel gebruiken',
   'signin.passkey.pending': 'Wachten op het apparaat…',
   'signin.passkey.hint': 'Niets te typen: bevestig op het apparaat waarop de sleutel staat.',
   'signin.passkey.hint.autofill':
-    'U kunt de toegangssleutel ook kiezen door hierboven op het veld voor de gebruikersnaam te tikken.',
+    'U kunt de toegangssleutel ook kiezen door op het veld voor de gebruikersnaam te tikken.',
   'signin.passkey.error.rpIdMismatch':
     'Het domein dat voor toegangssleutels is ingesteld komt niet overeen met het adres waarlangs u binnenkwam. Waarschuw een beheerder en meld u aan met uw wachtwoord.',
   'signin.passkey.error.unsupported':

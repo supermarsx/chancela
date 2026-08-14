@@ -7054,11 +7054,11 @@ export const svFI: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Enheten bekräftade inte att det verkligen är du. Aktivera fingeravtryck, ansikte eller pinkod och försök igen — utan den bekräftelsen öppnar en nyckel ingenting.',
   'users.passkeys.error.failed': 'Åtgärden med nyckeln kunde inte slutföras.',
-  'signin.passkey.action': 'Logga in med nyckel',
+  'signin.passkey.action': 'Använd nyckel',
   'signin.passkey.pending': 'Väntar på enheten…',
   'signin.passkey.hint': 'Ingenting att skriva: bekräfta på enheten som har nyckeln.',
   'signin.passkey.hint.autofill':
-    'Du kan även välja nyckeln genom att trycka på fältet för användarnamn ovan.',
+    'Du kan även välja nyckeln genom att trycka på fältet för användarnamn.',
   'signin.passkey.error.rpIdMismatch':
     'Domänen som konfigurerats för nycklar motsvarar inte adressen du kom in på. Meddela en administratör och logga in med lösenordet.',
   'signin.passkey.error.unsupported': 'Enheten kan inte besvara begäran. Logga in med lösenordet.',

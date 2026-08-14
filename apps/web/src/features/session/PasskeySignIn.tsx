@@ -41,7 +41,7 @@ import { setSessionToken } from '../../api/session';
 import type { SessionResult } from '../../api/types';
 import { useT } from '../../i18n';
 import type { MessageKey } from '../../i18n/types';
-import { Button, Icon, useToast } from '../../ui';
+import { Button, FieldHelp, Icon, useToast } from '../../ui';
 import {
   conditionalMediationAvailable,
   describeCeremonyFailure,
@@ -185,8 +185,12 @@ export function PasskeySignIn({ onSignedIn, disabled }: PasskeySignInProps) {
     }
   }
 
+  // The explanation rides behind the help glyph rather than under the button. It is the same two
+  // sentences as before — which one shows still reports honestly whether conditional mediation was
+  // armed — but a permanent paragraph under the first control on the card crowded the screen the
+  // operator is trying to get past, and neither sentence is needed WHILE acting on the button.
   return (
-    <div className="signin__alt">
+    <div className="signin__alt signin__alt--passkey">
       <Button
         type="button"
         variant="secondary"
@@ -196,9 +200,10 @@ export function PasskeySignIn({ onSignedIn, disabled }: PasskeySignInProps) {
       >
         {pending ? t('signin.passkey.pending') : t('signin.passkey.action')}
       </Button>
-      <p className="field__hint">
-        {available ? t('signin.passkey.hint.autofill') : t('signin.passkey.hint')}
-      </p>
+      <FieldHelp
+        text={available ? t('signin.passkey.hint.autofill') : t('signin.passkey.hint')}
+        placement="bottom"
+      />
     </div>
   );
 }

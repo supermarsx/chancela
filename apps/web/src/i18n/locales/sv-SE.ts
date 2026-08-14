@@ -7051,11 +7051,11 @@ export const svSE: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Enheten bekräftade inte att det verkligen är du. Slå på fingeravtryck, ansikte eller pinkod och försök igen — utan den bekräftelsen öppnar en nyckel ingenting.',
   'users.passkeys.error.failed': 'Åtgärden med nyckeln kunde inte slutföras.',
-  'signin.passkey.action': 'Logga in med nyckel',
+  'signin.passkey.action': 'Använd nyckel',
   'signin.passkey.pending': 'Väntar på enheten…',
   'signin.passkey.hint': 'Inget att skriva: bekräfta på enheten som har nyckeln.',
   'signin.passkey.hint.autofill':
-    'Du kan också välja nyckeln genom att trycka på användarnamnsfältet ovan.',
+    'Du kan också välja nyckeln genom att trycka på användarnamnsfältet.',
   'signin.passkey.error.rpIdMismatch':
     'Domänen som konfigurerats för nycklar stämmer inte med adressen du kom in på. Säg till en administratör och logga in med lösenordet.',
   'signin.passkey.error.unsupported': 'Enheten kan inte besvara begäran. Logga in med lösenordet.',

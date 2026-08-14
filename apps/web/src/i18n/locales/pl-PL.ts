@@ -7070,11 +7070,11 @@ export const plPL: Catalog = {
   'users.passkeys.error.notUserVerified':
     'Urządzenie nie potwierdziło, że to naprawdę ty. Włącz odcisk palca, twarz albo kod PIN i spróbuj ponownie — bez tego potwierdzenia klucz dostępu niczego nie otwiera.',
   'users.passkeys.error.failed': 'Nie udało się dokończyć działania z kluczem dostępu.',
-  'signin.passkey.action': 'Zaloguj się kluczem dostępu',
+  'signin.passkey.action': 'Użyj klucza dostępu',
   'signin.passkey.pending': 'Czekanie na urządzenie…',
   'signin.passkey.hint': 'Nic nie trzeba wpisywać: potwierdź na urządzeniu z kluczem.',
   'signin.passkey.hint.autofill':
-    'Klucz dostępu możesz też wybrać, dotykając powyższego pola nazwy użytkownika.',
+    'Klucz dostępu możesz też wybrać, dotykając pola nazwy użytkownika.',
   'signin.passkey.error.rpIdMismatch':
     'Domena skonfigurowana dla kluczy dostępu nie zgadza się z adresem, pod którym wszedłeś. Powiadom administratora i zaloguj się hasłem.',
   'signin.passkey.error.unsupported':

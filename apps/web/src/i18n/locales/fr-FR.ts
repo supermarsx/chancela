@@ -7129,11 +7129,11 @@ export const frFR: Catalog = {
   'users.passkeys.error.notUserVerified':
     'L’appareil n’a pas confirmé que c’est bien vous. Activez l’empreinte, le visage ou le code, puis réessayez : sans cette confirmation, une clé d’accès n’ouvre rien.',
   'users.passkeys.error.failed': 'L’opération avec la clé d’accès n’a pas pu aboutir.',
-  'signin.passkey.action': 'Se connecter avec une clé d’accès',
+  'signin.passkey.action': 'Utiliser une clé d’accès',
   'signin.passkey.pending': 'En attente de l’appareil…',
   'signin.passkey.hint': 'Rien à saisir : confirmez sur l’appareil qui détient la clé.',
   'signin.passkey.hint.autofill':
-    'Vous pouvez aussi choisir la clé d’accès en touchant le champ du nom d’utilisateur ci-dessus.',
+    'Vous pouvez aussi choisir la clé d’accès en touchant le champ du nom d’utilisateur.',
   'signin.passkey.error.rpIdMismatch':
     'Le domaine configuré pour les clés d’accès ne correspond pas à l’adresse par laquelle vous êtes entré. Prévenez un administrateur et connectez-vous avec votre mot de passe.',
   'signin.passkey.error.unsupported':

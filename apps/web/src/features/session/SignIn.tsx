@@ -288,6 +288,27 @@ export function SignIn() {
           />
         ) : (
           <>
+            {/* Passkey sign-in, FIRST — before the password form, in the DOM and not merely
+                visually, so the tab order a keyboard user walks is the order a sighted user reads.
+                Offered on browser capability alone and never on account state: an endpoint
+                answering "does this username hold a passkey?" would rebuild the enumeration oracle
+                the typed identifier and the dummy verifier exist to prevent. The component renders
+                nothing where passkeys cannot work — the desktop shell, or a browser without
+                WebAuthn — rather than showing a control that throws. */}
+            <PasskeySignIn
+              disabled={busy}
+              onSignedIn={(user) => {
+                // Same rule as the password path: only a COMPLETED sign-in is remembered, so the
+                // recents list never becomes an "is this a real username" oracle.
+                if (remember) {
+                  setRecents(
+                    rememberAccount({ username: user.username, displayName: user.display_name }),
+                  );
+                }
+                toast.success(t('toast.signin.success'));
+              }}
+            />
+
             {challengeNotice ? (
               // Why the operator is back at the password form: a spent challenge (attempt cap) or an
               // expired one. Honest, never a raw 401.
@@ -354,25 +375,6 @@ export function SignIn() {
                 </div>
               )}
             </form>
-
-            {/* Passkey sign-in. Offered on browser capability alone and never on account state:
-                an endpoint answering "does this username hold a passkey?" would rebuild the
-                enumeration oracle the typed identifier and the dummy verifier exist to prevent.
-                The component renders nothing where passkeys cannot work — the desktop shell, or a
-                browser without WebAuthn — rather than showing a control that throws. */}
-            <PasskeySignIn
-              disabled={busy}
-              onSignedIn={(user) => {
-                // Same rule as the password path: only a COMPLETED sign-in is remembered, so the
-                // recents list never becomes an "is this a real username" oracle.
-                if (remember) {
-                  setRecents(
-                    rememberAccount({ username: user.username, displayName: user.display_name }),
-                  );
-                }
-                toast.success(t('toast.signin.success'));
-              }}
-            />
 
             {recents.length > 0 ? (
               // Device-local shortcuts, NOT the instance roster: only accounts that have
