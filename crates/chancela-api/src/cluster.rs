@@ -366,13 +366,13 @@ impl AppState {
         let (loaded, durable_max, signed, pending) = match gathered {
             Ok(Ok(v)) => v,
             Ok(Err(e)) => {
-                *self.degraded.write().await = true;
+                self.enter_promotion_handoff_degraded().await;
                 return Err(ApiError::Internal(format!(
                     "promotion handoff durable read failed: {e}"
                 )));
             }
             Err(_) => {
-                *self.degraded.write().await = true;
+                self.enter_promotion_handoff_degraded().await;
                 return Err(ApiError::Internal(
                     "promotion handoff durable-read task panicked".to_owned(),
                 ));
@@ -380,7 +380,7 @@ impl AppState {
         };
         // §4.2 step d: a broken durable chain must NOT be extended — go read-only and alarm.
         if let Err(e) = &loaded.chain_status {
-            *self.degraded.write().await = true;
+            self.enter_promotion_handoff_degraded().await;
             return Err(ApiError::Internal(format!(
                 "promotion handoff: durable ledger failed re-verification ({e}); entering DEGRADED \
                  read-only mode"
@@ -388,7 +388,7 @@ impl AppState {
         }
         let durable_len = loaded.ledger.len();
         if let Err(msg) = validate_handoff_ledger_len(durable_len, durable_max) {
-            *self.degraded.write().await = true;
+            self.enter_promotion_handoff_degraded().await;
             return Err(ApiError::Internal(format!(
                 "promotion handoff refused mismatched durable ledger state: {msg}"
             )));
@@ -402,9 +402,34 @@ impl AppState {
         *self.ledger.write().await = loaded.ledger;
         *self.signed_documents.write().await = signed;
         *self.pending_signatures.write().await = pending;
-        // The chain re-verified: lift any degraded gate this node was holding.
-        *self.degraded.write().await = false;
+        // The sealed-act fixity verdict travels with the acts it is about. Without this the gate
+        // below would be recomputed from a verdict about the acts this node held BEFORE the swap —
+        // a promotion that adopted altered sealed acts would come up leader, writable, and green.
+        *self.act_fixity.write().await = loaded.act_fixity;
+        // The durable chain re-verified and this node has adopted it, so the one cause it was
+        // holding the gate for is resolved.
+        *self.degraded_promotion_handoff.write().await = false;
+        // …but "the durable chain re-verified" is not the whole question, and the gate is no longer
+        // lifted by assertion. `refresh_degraded` re-derives it from the state just swapped in: the
+        // chain, the fixity verdict above, and any sticky cause this handoff did not repair (a read
+        // model that would not load at boot is not fixed by winning an election).
+        {
+            let ledger = self.ledger.read().await;
+            crate::refresh_degraded(self, &ledger).await;
+        }
         Ok(())
+    }
+
+    /// Enter degraded read-only mode because a promotion handoff could not read or could not
+    /// re-verify the durable state it was about to adopt (§4.2 step d).
+    ///
+    /// Raises the sticky cause as well as the gate itself. The gate alone is not enough: it is
+    /// recomputed from the live chain and the sealed-act fixity, and this node's in-memory chain is
+    /// precisely not the durable one that failed — so a plain `GET /v1/ledger/integrity` would find
+    /// everything it can measure healthy and lift the gate over the failure.
+    async fn enter_promotion_handoff_degraded(&self) {
+        *self.degraded_promotion_handoff.write().await = true;
+        *self.degraded.write().await = true;
     }
 }
 

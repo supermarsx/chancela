@@ -980,21 +980,35 @@ pub struct AppState {
     /// report, and the recovery/reset/export/quarantine-import endpoints open so the operator can see
     /// and repair. `Default` is healthy (`false`); pure in-memory state never enters degraded.
     pub degraded: Arc<RwLock<bool>>,
-    /// Degradation raised by something [`refresh_degraded`] **cannot see**: an authoritative
-    /// read-model (DPIA records, breach playbooks, transfer controls, backup-recovery receipts) that
-    /// failed to load at boot and left its map empty.
+    /// Degradation raised by an authoritative read model (DPIA records, breach playbooks, transfer
+    /// controls, backup-recovery receipts) that failed to load at boot and left its map empty.
     ///
-    /// [`degraded`](AppState::degraded) is one bool with several possible causes, and
-    /// [`refresh_degraded`] recomputes it from the two it can measure — the chain and the sealed-act
-    /// fixity. Without this, a recomputation on a healthy chain would *clear* a gate raised by a
-    /// corrupt sidecar and let the instance write again over a read model it knows is missing rows.
-    /// So the recomputation ORs this in: the two integrity halves are two-way, this one is sticky.
+    /// One of the two **sticky** contributors to [`degraded`](AppState::degraded). That flag is a
+    /// single bool with several possible causes, and [`refresh_degraded`] recomputes it from the two
+    /// it can measure — the live chain and the sealed-act fixity. Those two are two-way by design,
+    /// so that a repair lifts the gate. This one cannot be: a verifying chain is no evidence
+    /// whatsoever about a read model that is quietly missing rows, so a recomputation that cleared
+    /// it would hand back write access over exactly that state in answer to an unrelated question.
     ///
-    /// Cleared only where the cause is actually resolved — a whole-store restore reloads all four
-    /// authoritative inputs and fails loudly if any of them still will not load
-    /// ([`AppState::reload_domain_memory_with_settings_gate_held`]) — and otherwise by a restart,
-    /// which is the only other thing that re-attempts those loads. `Default` is `false`.
+    /// Cleared where the cause is actually resolved: a whole-store restore reloads all four inputs
+    /// and fails loudly if any still will not load
+    /// ([`AppState::reload_domain_memory_with_settings_gate_held`]). Otherwise a restart, the only
+    /// other thing that re-attempts those loads. `Default` is `false`.
     pub degraded_read_model: Arc<RwLock<bool>>,
+    /// Degradation raised by a leader-promotion handoff that could not read, or could not
+    /// re-verify, the durable ledger it was about to adopt ([`AppState::cluster_promotion_handoff`],
+    /// §4.2 step d).
+    ///
+    /// The second sticky contributor, and sticky for the sharper version of the same reason: the
+    /// in-memory chain this node is serving from is precisely NOT the durable chain the promotion
+    /// refused to adopt, so it verifying proves nothing about the state that failed. Kept separate
+    /// from [`degraded_read_model`](AppState::degraded_read_model) because the two have different
+    /// resolvers, and a shared flag would let either one's repair clear the other's alarm.
+    ///
+    /// Cleared by a handoff that completes — which has re-verified the durable ledger and swapped
+    /// it in — so a retried promotion recovers in place rather than needing a restart. `Default` is
+    /// `false`.
+    pub degraded_promotion_handoff: Arc<RwLock<bool>>,
     /// The boot-time **sealed-act fixity** report: every sealed act row re-hashed and held to the
     /// digest its seal froze, plus each book's WFL-12 ata sequencing.
     ///
@@ -4208,15 +4222,18 @@ async fn degraded_refusal_body(state: &AppState) -> serde_json::Value {
             "integrity": "act_fixity_broken",
         });
     }
-    if *state.degraded_read_model.read().await {
+    // One arm for both sticky causes: they differ in what an operator must repair, and the boot log
+    // already names which one it was — a second near-identical refusal would add a code without
+    // adding an instruction.
+    if *state.degraded_read_model.read().await || *state.degraded_promotion_handoff.read().await {
         return serde_json::json!({
-            "error": "sistema em modo só-leitura: um modelo de leitura autoritativo não pôde ser \
-                      carregado no arranque e está incompleto. A cadeia de integridade e os atos \
-                      selados verificam, pelo que a re-ancoragem não repara este estado. Restaure a \
-                      partir de uma cópia de segurança, ou corrija a origem dos dados e reinicie a \
-                      instância.",
+            "error": "sistema em modo só-leitura: estado autoritativo que não pôde ser carregado \
+                      ou verificado a partir do armazenamento durável. A cadeia de integridade em \
+                      memória e os atos selados verificam, pelo que a re-ancoragem não repara este \
+                      estado. Consulte o registo de arranque para a origem em falha, corrija-a e \
+                      reinicie a instância, ou restaure a partir de uma cópia de segurança.",
             "read_only": true,
-            "integrity": "read_model_incomplete",
+            "integrity": "durable_state_unverified",
         });
     }
     serde_json::json!({
@@ -4242,10 +4259,14 @@ pub(crate) async fn refresh_degraded(state: &AppState, ledger: &Ledger) {
     // `reload_domain_memory_with_settings_gate_held` refreshes it alongside the acts themselves.
     let healthy = ledger.integrity_report().healthy && state.act_fixity.read().await.healthy;
     // `degraded` is one bool with more causes than this function can measure. OR in the sticky
-    // read-model signal so a healthy chain over healthy acts never *clears* a gate raised by an
-    // authoritative sidecar that failed to load — see [`AppState::degraded_read_model`].
-    let read_model_degraded = *state.degraded_read_model.read().await;
-    *state.degraded.write().await = !healthy || read_model_degraded;
+    // durable-state signal so a healthy in-memory chain over healthy acts never *clears* a gate
+    // raised by an authoritative read model that would not load, or by a promotion handoff that
+    // could not verify the durable ledger — see [`AppState::degraded_read_model`] and
+    // [`AppState::degraded_promotion_handoff`], which are kept apart so neither repair clears the
+    // other's alarm.
+    let durable_state_degraded =
+        *state.degraded_read_model.read().await || *state.degraded_promotion_handoff.read().await;
+    *state.degraded.write().await = !healthy || durable_state_degraded;
 }
 
 /// Re-verify every in-memory sealed act against the digest its seal froze, store the report on
