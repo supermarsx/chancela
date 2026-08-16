@@ -151,6 +151,20 @@ if (argv.includes("--self-test")) {
     exit(1);
   }
 
+  // `stripAnsi` has exactly one caller — `run`, which the self-test never reaches — so without this
+  // case, replacing its body with `return text;` leaves the self-test printing OK. The regression
+  // it would miss is LOUD (every name mismatches at once, as it did in CI), not a silent green, so
+  // this is one case and not a suite: it costs a confusing red rather than false confidence.
+  const coloured = parseNextestList(
+    stripAnsi("pkg::bin:\n    \u001b[32malpha::one\u001b[0m"),
+  );
+  if (coloured.length !== 1 || coloured[0] !== "alpha::one") {
+    console.error(
+      `self-test FAILED: a colourised name did not parse to a bare one: ${JSON.stringify(coloured)}`,
+    );
+    exit(1);
+  }
+
   const clean = compare(cargo, listed);
   if (clean.missing.length !== 0 || clean.extra.length !== 0) {
     console.error(

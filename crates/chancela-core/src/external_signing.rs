@@ -864,9 +864,18 @@ mod tests {
         let json = serde_json::to_string(&envelope)
             .unwrap()
             .to_ascii_lowercase();
-        assert!(!json.contains("legal"));
-        assert!(!json.contains("qualified"));
-        assert!(!json.contains("qes"));
-        assert!(!json.contains("eidas"));
+        assert!(!json.contains("legal"), "{json}");
+        assert!(!json.contains("qualified"), "{json}");
+        assert!(!json.contains("eidas"), "{json}");
+        // `qes` is three characters, all of them legal inside an opaque identifier — a raw substring
+        // search over the whole body is a collision waiting for a serialised value that happens to
+        // contain them in order. Tokenising first asserts exactly what this test means (no field or
+        // value NAMES the qualified-signature claim) with no chance of a false red.
+        assert!(
+            !json
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|token| token == "qes"),
+            "{json}"
+        );
     }
 }
