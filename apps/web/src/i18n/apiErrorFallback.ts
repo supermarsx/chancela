@@ -345,7 +345,6 @@ export const apiErrorPtPT = {
   'apiError.pkcs12_password_incorrect': 'A palavra-passe do ficheiro PKCS#12 está incorreta.',
   'apiError.pkcs12_material_invalid':
     'O ficheiro PKCS#12 não contém material de assinatura utilizável.',
-  'apiError.pkcs12_signing_failed': 'A assinatura com o ficheiro PKCS#12 local falhou.',
   'apiError.visible_seal_failed': 'Não foi possível preparar o selo visível do documento.',
   'apiError.seal_image_invalid': 'A imagem do selo não está em base64 válido.',
   'apiError.cc_card_absent':
@@ -736,7 +735,6 @@ export const apiErrorEnglish = {
   'apiError.scap_verification_failed': 'Verifying the professional attributes (SCAP) failed.',
   'apiError.pkcs12_password_incorrect': 'The PKCS#12 file password is incorrect.',
   'apiError.pkcs12_material_invalid': 'The PKCS#12 file contains no usable signing material.',
-  'apiError.pkcs12_signing_failed': 'Signing with the local PKCS#12 file failed.',
   'apiError.visible_seal_failed': 'The document’s visible seal could not be prepared.',
   'apiError.seal_image_invalid': 'The seal image is not valid base64.',
   'apiError.cc_card_absent':

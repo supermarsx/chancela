@@ -302,10 +302,23 @@ impl TslDiskCache {
 
     /// Persist `bytes` as the cached copy for `key`.
     ///
-    /// The XML is written first and the metadata second, so a crash between the two leaves an entry
-    /// whose metadata is missing — which loads as [`TslCacheLoad::Missing`], not as a usable entry
-    /// with the wrong provenance. Re-storing byte-identical content is skipped, because the common
-    /// case is one successful fetch per signature and rewriting ~700 KB each time is pure cost.
+    /// The XML is written first and the metadata second, and a crash between the two never yields an
+    /// entry with the wrong provenance — but by two different routes, depending on whether this key
+    /// had a cached entry already:
+    ///
+    /// - **First store.** There is no metadata yet, so the interrupted entry has XML and no
+    ///   metadata, and loads as [`TslCacheLoad::Missing`].
+    /// - **Refresh.** The *previous* metadata survives, still carrying the previous digest, while
+    ///   the XML on disk is already the new bytes. [`Self::load`] digests what it reads and compares,
+    ///   so the mismatch is caught and the entry is refused with
+    ///   [`TslCacheRefusal::DigestMismatch`] — it is never served under the old fetch time or the
+    ///   old source id.
+    ///
+    /// Both are fail-closed. What the ordering buys is that neither outcome is a *usable* entry
+    /// describing bytes it does not contain; recovering the entry is a re-fetch either way.
+    ///
+    /// Re-storing byte-identical content is skipped, because the common case is one successful fetch
+    /// per signature and rewriting ~700 KB each time is pure cost.
     pub fn store(
         &self,
         key: &str,

@@ -346,14 +346,20 @@ save as a real X.509 certificate — a stricter check than the anchor fields app
 the anchors. It defaults to empty, in which case the outbound client is built exactly as it was
 before the setting existed.
 
-> **This is not a way to skip certificate verification, and no such option exists anywhere in this
-> product.** A configured certificate joins the pool of candidate chain links; it is **never** added
-> to the root store. The chain must still terminate at a root the operating system already trusts,
-> the signatures must still verify, the hostname must still match the certificate, and validity dates
-> still apply. An attacker gains nothing from a configured intermediate: exploiting one requires a
-> leaf genuinely issued under it, which requires that intermediate's private key — and whoever holds
-> that can already mint certificates every browser accepts. Configuring the public certificate of a
-> CA that a public root already vouches for adds no authority the root had not already delegated.
+> **Supplying an intermediate is not a way to skip certificate verification.** A configured
+> certificate joins the pool of candidate chain links; it is **never** added to the root store. The
+> chain must still terminate at a root the operating system already trusts, the signatures must still
+> verify, the hostname must still match the certificate, and validity dates still apply. An attacker
+> gains nothing from a configured intermediate: exploiting one requires a leaf genuinely issued under
+> it, which requires that intermediate's private key — and whoever holds that can already mint
+> certificates every browser accepts. Configuring the public certificate of a CA that a public root
+> already vouches for adds no authority the root had not already delegated.
+>
+> Skipping verification **is** on offer, deliberately, as a *separate* setting: the per-source
+> `tls_skip_verification` flag documented in the next section. It is off by default, covers exactly
+> one Trusted List source, is gated on `signing.configure`, and announces itself on every trust
+> surface for as long as it is on. Prefer this setting; reach for that one only after this one has
+> failed.
 
 ### Skipping TLS verification for one source (`tls_skip_verification`)
 

@@ -115,8 +115,20 @@ COPY . .
 #             RUN, so the four Rust stages ran strictly one after another. One
 #             build uses 4.3 of 26 available vCPUs; the same four images took
 #             1187s back-to-back and 693s concurrently — 1.71x, for no change to
-#             any shipped binary. The price is one registry copy (~920 MB) per
-#             concurrent build, which is disk, not time.
+#             any shipped binary.
+#
+#             THAT MEASUREMENT IS A WARM, MANY-CORE BUILDER, and the price is
+#             stated for one: there, each concurrent build gets its own already-
+#             populated registry copy (~920 MB), so the cost is disk, not time.
+#             Neither half holds on GitHub Actions. `cache-from: type=gha`
+#             restores LAYERS; it does not carry `RUN --mount=type=cache`
+#             contents, so the registry mount is EMPTY every time this RUN
+#             executes on CI and each concurrent build refetches from crates.io
+#             — network and time, not disk. And `ubuntu-latest` is 4 vCPUs, not
+#             26, so there is no idle headroom for a second build to use.
+#             sharing=private is kept regardless: a peer measured the CI delta
+#             as zero either way, and it is what makes the `.cargo-ok` race
+#             impossible. The 1.71x is a local-builder win, not a CI one.
 #   target    sharing=shared, keyed per package+feature set via
 #             CARGO_TARGET_CACHE_ID. Concurrent use is already safe (see the
 #             in-mount .cargo-lock above); the id split is about churn — a

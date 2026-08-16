@@ -210,17 +210,22 @@ async fn a_broken_chain_keeps_the_chain_refusal_it_always_had() {
     assert_eq!(refusal["integrity"], "broken", "{refusal}");
 }
 
-#[tokio::test]
-async fn a_read_model_that_failed_to_load_survives_a_healthy_recomputation() {
-    // The other half of making the gate two-way. `degraded` is one bool with several causes, and
-    // only two of them (the chain, the acts) are measurable at runtime. An authoritative read model
-    // that failed to load at boot is not, so a healthy recomputation must not clear it — otherwise
-    // asking the integrity endpoint a question would hand back write access over a read model the
-    // instance knows is missing rows.
+/// The other half of making the gate two-way, run once per sticky cause.
+///
+/// `degraded` is one bool, and only two of its causes (the chain, the sealed acts) are measurable
+/// at runtime. Making those two lift the gate is only safe if the causes that are NOT measurable
+/// survive the recomputation — otherwise asking the integrity endpoint a question hands back write
+/// access over state the instance already knows it could not load or verify.
+///
+/// Each cause is a separate flag with a separate resolver, and this covers both: a shared flag
+/// would let one repair clear the other's alarm, which is the same laundering one level down.
+async fn a_sticky_cause_survives_a_healthy_recomputation(
+    raise: fn(&AppState) -> &tokio::sync::RwLock<bool>,
+) {
     let tmp = TempDir::new();
     let state = AppState::with_data_dir(tmp.0.clone());
     let owner = bootstrap_owner(&state).await;
-    *state.degraded_read_model.write().await = true;
+    *raise(&state).write().await = true;
     *state.degraded.write().await = true;
 
     let (status, integrity) = send(&state, get_req("/v1/ledger/integrity", &owner)).await;
@@ -238,7 +243,20 @@ async fn a_read_model_that_failed_to_load_survives_a_healthy_recomputation() {
     let (status, refusal) = send(&state, create_entity(&owner)).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{refusal}");
     assert_eq!(
-        refusal["integrity"], "read_model_incomplete",
+        refusal["integrity"], "durable_state_unverified",
         "and the refusal must not blame the chain either: {refusal}"
     );
+}
+
+#[tokio::test]
+async fn a_read_model_that_failed_to_load_survives_a_healthy_recomputation() {
+    a_sticky_cause_survives_a_healthy_recomputation(|state| &state.degraded_read_model).await;
+}
+
+#[tokio::test]
+async fn a_promotion_handoff_that_could_not_verify_survives_a_healthy_recomputation() {
+    // Sharper than the read-model case: the chain this node serves from is precisely NOT the durable
+    // chain the promotion refused to adopt, so "the chain verifies" is not evidence about it at all.
+    a_sticky_cause_survives_a_healthy_recomputation(|state| &state.degraded_promotion_handoff)
+        .await;
 }
