@@ -9019,8 +9019,15 @@ pub(crate) async fn configured_tsl_source(
     }))
 }
 
+/// Map a qualified-timestamp acquisition failure to a client-actionable `422`.
+///
+/// The prose is path-specific; the **code is intrinsic**. Without it the whole error fell to the
+/// `422` tier default (`http.unprocessable`), and the client — having no code to resolve — rendered
+/// this Portuguese headline with the raw English `SigningError` `Display` interpolated inside it.
 fn map_timestamp_error(e: chancela_signing::SigningError) -> ApiError {
+    let code = e.code();
     ApiError::Unprocessable(format!("falha ao obter carimbo temporal qualificado: {e}"))
+        .with_code(code)
 }
 
 struct LocalDssAttachEvidence {
@@ -9079,8 +9086,13 @@ fn decode_der_base64_list(field: &str, values: Vec<String>) -> Result<Vec<Vec<u8
         .collect()
 }
 
+/// Map a local DSS/VRI attachment failure to a client-actionable `422`.
+///
+/// The prose is path-specific; the **code is intrinsic**. See [`map_timestamp_error`] — this mapper
+/// had the same defect, and `every_mapper_keeps_the_code_off_the_status_tier` now holds both.
 pub(crate) fn map_dss_attach_error(e: chancela_signing::SigningError) -> ApiError {
-    ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}"))
+    let code = e.code();
+    ApiError::Unprocessable(format!("falha ao anexar DSS/VRI local: {e}")).with_code(code)
 }
 
 fn map_archive_timestamp_append_error(e: chancela_pades::PadesError) -> ApiError {
@@ -11102,13 +11114,168 @@ mod tests {
         assert_ne!(stale, untrusted_service);
     }
 
+    /// **Every** `SigningError` → `ApiError` mapper in this crate, by name.
+    ///
+    /// This used to be three names written into one test, and the omission was not theoretical:
+    /// `map_timestamp_error` and `map_dss_attach_error` were both left on the `422` tier default —
+    /// the exact regression that test's own comment named — and `map_termo_pkcs12_error` collapsed
+    /// all three trust states onto one invented code, for as long as the gate looked at three of
+    /// ten. `mapper_table_names_every_signing_error_mapper_in_the_crate` reads the crate source and
+    /// fails if this table stops being the whole set, so the next mapper is caught by construction
+    /// rather than by someone remembering to widen a list.
+    type SigningErrorMapper = fn(chancela_signing::SigningError) -> ApiError;
+
+    const SIGNING_ERROR_MAPPERS: &[(&str, SigningErrorMapper)] = &[
+        ("map_cc_signing_error", map_cc_signing_error),
+        ("map_remote_error", map_remote_error),
+        ("map_signing_error", map_signing_error),
+        ("map_timestamp_error", map_timestamp_error),
+        ("map_dss_attach_error", map_dss_attach_error),
+        (
+            "map_local_pkcs12_signing_error",
+            map_local_pkcs12_signing_error,
+        ),
+        ("map_ltv_execution_error", map_ltv_execution_error),
+        (
+            "asic_signing::map_signing_error",
+            crate::asic_signing::map_signing_error,
+        ),
+        (
+            "xades_signature::map_signing_error",
+            crate::xades_signature::map_signing_error,
+        ),
+        (
+            "termo::map_termo_pkcs12_error",
+            crate::termo::map_termo_pkcs12_error,
+        ),
+    ];
+
+    /// One instance of every `SigningError` cause, held to the closed code vocabulary by
+    /// `the_mapper_inventory_covers_every_signing_error_code` — so a variant added upstream cannot
+    /// slip past the mapper gates below just because nobody extended this list.
+    fn every_signing_error() -> Vec<chancela_signing::SigningError> {
+        use chancela_signing::{
+            SignatureFormat, SigningError as S, SigningFamily, SoftCertificateError,
+            TrustAnchorSource, UnsupportedSignatureProfile,
+        };
+        vec![
+            S::NotImplemented("phase-2 seam"),
+            S::UntrustedService {
+                status: TrustedListStatus::Withdrawn,
+            },
+            S::TrustAnchorNotConfigured {
+                checked: TrustAnchorSource::Environment,
+            },
+            S::TrustedListNotAnchored {
+                configured_in: TrustAnchorSource::ApplicationSettings,
+                anchor_count: 1,
+            },
+            S::MissingIssuerCertificate,
+            S::Provider("the card was removed".to_owned()),
+            S::SoftCertificate(SoftCertificateError::WrongPassword),
+            S::SoftCertificate(SoftCertificateError::EmptyCertificateChain),
+            S::Cades("CMS assembly failed".to_owned()),
+            S::Pades("PDF byte range is malformed".to_owned()),
+            S::Asic("container has no mimetype member".to_owned()),
+            S::Xades("XMLDSig reference did not digest".to_owned()),
+            S::UnsupportedProfile(UnsupportedSignatureProfile::new(
+                SignatureFormat::XAdES,
+                "XAdES",
+                "not implemented",
+            )),
+            S::Timestamp("the TSA returned status 5".to_owned()),
+            S::TrustedList("the trusted list could not be fetched".to_owned()),
+            S::TrustedListTlsChainIncomplete("the host sent an incomplete chain".to_owned()),
+            S::UnsupportedFormat(SignatureFormat::XAdES),
+            S::FormatInputMismatch {
+                format: SignatureFormat::PAdES,
+            },
+            S::FamilyMismatch {
+                requested: SigningFamily::CartaoDeCidadao,
+                provided: SigningFamily::ChaveMovelDigital,
+            },
+            S::SlotOutOfRange { slot: 4, len: 2 },
+            S::SlotAlreadySigned(1),
+            S::SlotOrder {
+                expected: 0,
+                got: 1,
+            },
+            S::WrongSigningPath {
+                family: SigningFamily::Manual,
+            },
+        ]
+    }
+
+    #[test]
+    fn the_mapper_inventory_covers_every_signing_error_code() {
+        let produced: std::collections::BTreeSet<&str> =
+            every_signing_error().iter().map(|e| e.code()).collect();
+        let expected: std::collections::BTreeSet<&str> = chancela_signing::ALL_SIGNING_ERROR_CODES
+            .iter()
+            .copied()
+            .collect();
+        assert_eq!(
+            produced, expected,
+            "the mapper gates below would silently skip a cause this inventory does not carry"
+        );
+    }
+
+    /// **The C3/C4 gate.** No mapper may hand the client a *status-tier* code for a signing failure.
+    ///
+    /// A code is how the client picks a translated sentence. A mapper that builds its `ApiError`
+    /// without `.with_code` leaves it on the tier default (`http.unprocessable`), the client has
+    /// nothing to resolve, and it renders the mapper's Portuguese headline with the raw **English**
+    /// `SigningError` `Display` interpolated inside it — which is what `map_timestamp_error` and
+    /// `map_dss_attach_error` did, on every arm, for every cause.
+    ///
+    /// Three rules, and the third is the one that keeps this honest rather than absolute:
+    ///
+    /// 1. `http.upstream` is forbidden outright. It is the original defect — the `_ => Upstream(…)`
+    ///    catch-all that made "the list could not be fetched", "the TSA refused" and "this profile
+    ///    is not built" one opaque gateway error — and nothing may reintroduce it.
+    /// 2. At any `4xx`, no `http.` code at all. A client-actionable refusal always has a cause worth
+    ///    naming, and the intrinsic `SigningError::code()` always exists to name it.
+    /// 3. At `5xx`, `http.internal` is the *only* permitted tier code, because
+    ///    [`ApiError::with_code`] deliberately refuses to refine `Internal` — its message is scrubbed
+    ///    off the wire and a finer code would re-open exactly that channel. This is an allowance the
+    ///    type enforces, not a mapper's choice.
+    #[test]
+    fn no_signing_mapper_leaves_a_cause_on_a_status_tier_code() {
+        for (mapper_name, mapper) in SIGNING_ERROR_MAPPERS {
+            for error in every_signing_error() {
+                let intrinsic = error.code();
+                let mapped = mapper(error);
+                let code = mapped.code();
+                let status = mapped.into_response().status();
+                assert_ne!(
+                    code, "http.upstream",
+                    "{mapper_name} reported {intrinsic} as an opaque gateway error"
+                );
+                if status.is_client_error() {
+                    assert!(
+                        !code.starts_with("http."),
+                        "{mapper_name} left {intrinsic} on the {status} tier default ({code}), so \
+                         the client renders the raw English detail inside Portuguese prose"
+                    );
+                } else {
+                    assert!(
+                        !code.starts_with("http.") || code == "http.internal",
+                        "{mapper_name} reported {intrinsic} as {status} with the tier code {code}"
+                    );
+                }
+            }
+        }
+    }
+
     /// t58 §4 item 10 — the three signals must survive the *mapping* too, in every mapper.
     ///
     /// `trust_anchor_failure_states_are_distinct` proves the signals are distinct where they are
-    /// raised. That is only half the guarantee: three duplicated mappers stand between the raise
+    /// raised. That is only half the guarantee: ten duplicated mappers stand between the raise
     /// site and the client, and a client reads the `code`, not the enum. A mapper that folded two
     /// of them onto one code — or left them on the `422` tier default — would restore the exact
-    /// misdirection the split removed, and no test on the raise side would notice.
+    /// misdirection the split removed, and no test on the raise side would notice. `termo`'s mapper
+    /// did fold all three, onto a code invented at the call site, for as long as this loop named
+    /// three mappers by hand.
     #[test]
     fn every_mapper_keeps_the_three_trust_states_on_three_codes() {
         use chancela_signing::{SigningError, TrustAnchorSource};
@@ -11133,14 +11300,7 @@ mod tests {
             "signer_service_not_active",
         ];
 
-        for (mapper_name, mapper) in [
-            (
-                "map_cc_signing_error",
-                map_cc_signing_error as fn(SigningError) -> ApiError,
-            ),
-            ("map_remote_error", map_remote_error),
-            ("map_signing_error", map_signing_error),
-        ] {
+        for (mapper_name, mapper) in SIGNING_ERROR_MAPPERS {
             let codes: Vec<&str> = cases().into_iter().map(|e| mapper(e).code()).collect();
             assert_eq!(codes, expected, "{mapper_name} collapsed a trust state");
             // Every one is client-actionable: a local anchor fault reported as a `502` would send
@@ -11155,6 +11315,106 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The half that makes the two gates above durable: the table must be the **whole** set.
+    ///
+    /// A hand-written list of mappers fails the way the old three-name list failed — silently, by
+    /// staying correct about what it names while a new mapper is written somewhere else. So the
+    /// crate's own source is the authority: every `fn map_…(…: SigningError) -> ApiError`
+    /// declaration in `src/` must appear in [`SIGNING_ERROR_MAPPERS`], and the scan must find at
+    /// least as many as the table holds (a recognizer used as a filter would otherwise pass by
+    /// matching nothing).
+    #[test]
+    fn mapper_table_names_every_signing_error_mapper_in_the_crate() {
+        /// `SigningError` as a whole type name, not as the tail of `ExternalSigningError`.
+        fn names_signing_error_type(line: &str) -> bool {
+            line.match_indices("SigningError").any(|(idx, _)| {
+                match line[..idx].chars().next_back() {
+                    Some(previous) => !(previous.is_alphanumeric() || previous == '_'),
+                    None => true,
+                }
+            })
+        }
+
+        fn collect_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+            for entry in std::fs::read_dir(dir).expect("the crate's src/ is readable") {
+                let path = entry.expect("a readable directory entry").path();
+                if path.is_dir() {
+                    collect_rs_files(&path, out);
+                } else if path.extension().is_some_and(|ext| ext == "rs") {
+                    out.push(path);
+                }
+            }
+        }
+
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut files = Vec::new();
+        collect_rs_files(&src, &mut files);
+        assert!(
+            files.len() > 10,
+            "the source scan found only {} files under {}",
+            files.len(),
+            src.display()
+        );
+
+        let mut found: Vec<String> = Vec::new();
+        for file in &files {
+            let module = file
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .expect("a module file name")
+                .to_owned();
+            let source = std::fs::read_to_string(file).expect("a readable source file");
+            for line in source.lines() {
+                let trimmed = line.trim_start();
+                // A declaration, not a mention: `map_cc_signing_error as fn(SigningError) -> …`
+                // inside this module does not start with `fn`.
+                let declaration = trimmed
+                    .strip_prefix("pub(crate) fn ")
+                    .or_else(|| trimmed.strip_prefix("pub fn "))
+                    .or_else(|| trimmed.strip_prefix("fn "));
+                let Some(declaration) = declaration else {
+                    continue;
+                };
+                if !declaration.starts_with("map_")
+                    || !trimmed.contains("-> ApiError")
+                    || !names_signing_error_type(trimmed)
+                {
+                    continue;
+                }
+                let name = declaration
+                    .split('(')
+                    .next()
+                    .expect("a declaration has a name before its parameter list");
+                // The table qualifies the three that live outside this module, because two of them
+                // are called `map_signing_error` and a bare name could not tell them apart.
+                found.push(if module == "signature" {
+                    name.to_owned()
+                } else {
+                    format!("{module}::{name}")
+                });
+            }
+        }
+        found.sort();
+
+        let mut tabled: Vec<String> = SIGNING_ERROR_MAPPERS
+            .iter()
+            .map(|(name, _)| (*name).to_owned())
+            .collect();
+        tabled.sort();
+
+        assert_eq!(
+            found, tabled,
+            "a SigningError mapper exists that SIGNING_ERROR_MAPPERS does not hold, so the two \
+             gates above do not cover it"
+        );
+        assert!(
+            found.len() >= 10,
+            "the mapper scan matched only {} declarations, so it is filtering rather than \
+             enumerating",
+            found.len()
+        );
     }
 
     /// The appended source citation (t58 §2.2), and the two things it must not do.

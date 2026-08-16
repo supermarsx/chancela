@@ -1907,8 +1907,12 @@ pub struct SigningSettings {
     /// chain must still terminate at a root already trusted by the operating system, the signatures
     /// must still verify, the hostname must still match, and validity dates still apply. Configuring
     /// a certificate here grants no authority a public root had not already delegated to it — see
-    /// `crate::outbound_tls` for the full argument. There is no setting anywhere in this product that
-    /// skips certificate verification.
+    /// `crate::outbound_tls` for the full argument.
+    ///
+    /// A verification bypass does exist, deliberately, as a **separate** setting: the per-source
+    /// `TslSourceSettings::tls_skip_verification` flag, which defaults to `false`, covers exactly
+    /// one Trusted List source and is reported on every trust surface while it is on. This field is
+    /// the one to prefer; that one is the last resort.
     ///
     /// Validated on save as a real X.509 certificate (a stricter check than the anchor fields, which
     /// only ever fingerprint their input). **Defaults to empty**, in which case the outbound client
@@ -2018,11 +2022,26 @@ pub(crate) struct RuntimeTslSource {
     /// verifying its peer.
     pub(crate) tls_skip_verification: bool,
     /// Broken XML-DSig algorithm URIs the operator deliberately permitted, carried verbatim from
-    /// [`SigningSettings::tsl_legacy_algorithms`]. They travel with the source so the signature
-    /// verification that decides whether this list is authentic uses the operator's policy rather
-    /// than an implicit one. Folded into a [`chancela_tsl::TslAlgorithmPolicy`] by
-    /// [`legacy_algorithm_policy`], which drops any entry outside the known set — save-time
-    /// validation already refused those, and the fallback is to refuse, never to permit.
+    /// [`SigningSettings::tsl_legacy_algorithms`].
+    ///
+    /// # This field is currently **unread**, and that is not an oversight to fix casually
+    ///
+    /// It is populated by [`SigningSettings::runtime_tsl_selection`] and nothing reads it back. The
+    /// only place the operator's list actually reaches a
+    /// [`chancela_tsl::TslAlgorithmPolicy`] is [`crate::trust`], which folds it with
+    /// [`legacy_algorithm_policy`] off [`SigningSettings`] directly — so it governs the **trust
+    /// display**, and never the signing path.
+    ///
+    /// The consequence is worth stating rather than leaving to be discovered: enabling a SHA-1 URI
+    /// turns the trust surface green while every *signature* still refuses, because the signing-time
+    /// verifier is left on the default policy that permits no broken algorithm. That divergence is
+    /// wrong as a user experience and is being sequenced separately — but wiring this field up is
+    /// not a docs-level change. It would activate SHA-1-signed Trusted Lists on the signing path,
+    /// including a list served from the durable cache up to seven days stale, so it needs the
+    /// staleness and reporting story decided with it.
+    ///
+    /// Until then: read this field as configuration carried for a consumer that does not exist yet,
+    /// not as the policy any signature is verified under.
     pub(crate) legacy_algorithms: Vec<String>,
     /// Directory backing the **durable Trusted List cache** for this source, when the instance has
     /// on-disk persistence. `None` means no durable cache: the list is fetched live or the

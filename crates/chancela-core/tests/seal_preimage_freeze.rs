@@ -40,8 +40,8 @@ use chancela_core::act::{ManualSignatureOriginalReference, SealMetadata};
 use chancela_core::{
     Act, ActFixity, ActId, ActState, AgendaItem, Book, BookId, BookKind, ConveningWaiver, Entity,
     EntityFamily, EntityId, EntityKind, MeetingChannel, Nipc, NoConveningBasis, NumberingScheme,
-    SupersededSigningSnapshot, TermoDeAbertura, open_and_seal_book, rule_pack_for, seal_act,
-    sealed_act_digest, verify_act_fixity,
+    SealAnchors, SupersededSigningSnapshot, TermoDeAbertura, open_and_seal_book, rule_pack_for,
+    seal_act, sealed_act_digest, verify_act_fixity,
 };
 use chancela_ledger::Ledger;
 use time::OffsetDateTime;
@@ -60,6 +60,21 @@ const CLEAN_ACT_SEAL_DIGEST: &str =
 /// This is the constant that must never move. See the module docs.
 const LEGACY_CLEAN_ACT_SEAL_DIGEST: &str =
     "1e3e76e7aa223644de478433edad311821d38c27b47de524793f06a7994ee2ae";
+
+/// The digest a **minimal** act seals to: one carrying, at their absent value, every preimage
+/// field the rule packs permit a sealed act to omit.
+///
+/// The third constant, and the one guarding a class the other two cannot see. Both of them
+/// populate `meeting_time` and `agenda`, so between them they pin only how those fields look when
+/// PRESENT. Those fields are **unconditional** — absent still emits `"meeting_time":null` and
+/// `"agenda":[]` — and giving one of them a `skip_serializing_if` would delete its key from the
+/// preimage of every act already sealed without a value for it. The packs make those omissions
+/// `warning`, not `Error`, so such acts seal today and rows like them are in the field.
+///
+/// This constant is what makes that a red test instead of a silent break. See the rule at the head
+/// of `ActPayload` in `seal.rs`. **It must never move.**
+const MINIMAL_ACT_SEAL_DIGEST: &str =
+    "1ef8fbde1f5e838dc6c54fba8657d6af43967ea26a7e4a5bb47d67e024fe755d";
 
 fn fixed(byte: u8) -> Uuid {
     Uuid::from_bytes([byte; 16])
@@ -122,6 +137,22 @@ fn clean_act() -> Act {
     act
 }
 
+/// [`clean_act`] with every field the rule packs let a sealed act omit set back to absent.
+///
+/// `meeting_date`, `place` and `attendance_reference` stay populated: `civil_baseline` makes their
+/// absence a blocking `Error` under every pack, so no act missing them can ever be sealed and there
+/// is no row of that shape to protect. What is left is exactly the advisory set.
+fn minimal_act() -> Act {
+    let mut act = clean_act();
+    act.meeting_time = None;
+    act.agenda = Vec::new();
+    act.referenced_documents = Vec::new();
+    act.deliberation_items = Vec::new();
+    act.members_present = None;
+    act.members_represented = None;
+    act
+}
+
 fn advance_to_signing(act: &mut Act) {
     for state in [
         ActState::Review,
@@ -144,6 +175,15 @@ fn manual_reference() -> ManualSignatureOriginalReference {
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// Decode a 64-character lowercase-hex constant back into the 32 bytes a ledger event holds.
+fn unhex32(s: &str) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).expect("lowercase hex");
+    }
+    out
 }
 
 /// Seal `act` into a fresh deterministic book and return its frozen payload digest, hex-encoded.
@@ -234,8 +274,57 @@ fn an_act_sealed_before_the_number_was_bound_is_still_reproducible() {
     );
 
     // And the fixity verdict agrees: verified, not "unverifiable", and certainly not altered.
-    act.payload_digest = Some(recomputed);
-    assert_eq!(verify_act_fixity(&act), ActFixity::Verified);
+    //
+    // The anchor is the STORED CONSTANT, standing in for the `act.sealed` event a pre-C7 install
+    // carries — not a digest round-tripped out of the row being checked. That distinction is the
+    // whole of C1: fixity is now decided against the chain, and this test would be worthless if it
+    // handed the check the act's own answer. `LEGACY_CLEAN_ACT_SEAL_DIGEST` is what such an
+    // install's ledger event literally holds, so the assertion is the field compatibility claim.
+    let ledger_anchor = unhex32(LEGACY_CLEAN_ACT_SEAL_DIGEST);
+    let anchors = SealAnchors::from_iter([(1u64, ledger_anchor)]);
+    act.payload_digest = Some(ledger_anchor);
+    assert_eq!(verify_act_fixity(&act, &anchors), ActFixity::Verified);
+
+    // …and the row's own digest field, being no longer the anchor, cannot certify anything on its
+    // own: rewriting it to match edited content is the C1 attack, and it is now a finding.
+    let mut forged = act.clone();
+    forged.deliberations = "Rejeitadas as contas do exercício.".to_owned();
+    forged.payload_digest = sealed_act_digest(&forged);
+    assert!(
+        verify_act_fixity(&forged, &anchors).is_broken(),
+        "a row edited together with its own frozen digest must not verify against the ledger"
+    );
+}
+
+#[test]
+fn an_act_sealed_with_every_optional_field_absent_seals_to_its_frozen_golden_digest() {
+    // The class `123ad32d` left unguarded, pinned end to end through the public seal.
+    //
+    // A field of this preimage that always serializes is not free: it is bytes in the digest of
+    // every act ALREADY sealed. Removing one — which is what adding `skip_serializing_if` to
+    // `meeting_time` or `agenda` does for acts that carry neither — is the same break in reverse,
+    // and until this constant existed nothing anywhere would have caught it. Both other constants
+    // populate those fields.
+    let mut act = minimal_act();
+    advance_to_signing(&mut act);
+    assert_eq!(
+        seal_and_return_digest(&mut act),
+        MINIMAL_ACT_SEAL_DIGEST,
+        "the seal preimage moved for an act carrying these fields at their absent value — every \
+         act already sealed without them now reads as tampered"
+    );
+    assert_eq!(act.state, ActState::Sealed);
+
+    // The premise: an act this sparse really is sealable, so rows of this shape really do exist.
+    // (`seal_and_return_digest` acknowledges warnings; had any of these omissions been a blocking
+    // Error the seal above would have refused and this fixture would be protecting nothing.)
+    assert!(act.meeting_time.is_none());
+    assert!(act.agenda.is_empty());
+    assert!(act.members_present.is_none());
+
+    // …and it is a DIFFERENT digest from the populated act's, which is the whole point: those
+    // fields carry weight in the preimage, so their absent form needs its own pin.
+    assert_ne!(MINIMAL_ACT_SEAL_DIGEST, CLEAN_ACT_SEAL_DIGEST);
 }
 
 #[test]

@@ -980,6 +980,21 @@ pub struct AppState {
     /// report, and the recovery/reset/export/quarantine-import endpoints open so the operator can see
     /// and repair. `Default` is healthy (`false`); pure in-memory state never enters degraded.
     pub degraded: Arc<RwLock<bool>>,
+    /// Degradation raised by something [`refresh_degraded`] **cannot see**: an authoritative
+    /// read-model (DPIA records, breach playbooks, transfer controls, backup-recovery receipts) that
+    /// failed to load at boot and left its map empty.
+    ///
+    /// [`degraded`](AppState::degraded) is one bool with several possible causes, and
+    /// [`refresh_degraded`] recomputes it from the two it can measure — the chain and the sealed-act
+    /// fixity. Without this, a recomputation on a healthy chain would *clear* a gate raised by a
+    /// corrupt sidecar and let the instance write again over a read model it knows is missing rows.
+    /// So the recomputation ORs this in: the two integrity halves are two-way, this one is sticky.
+    ///
+    /// Cleared only where the cause is actually resolved — a whole-store restore reloads all four
+    /// authoritative inputs and fails loudly if any of them still will not load
+    /// ([`AppState::reload_domain_memory_with_settings_gate_held`]) — and otherwise by a restart,
+    /// which is the only other thing that re-attempts those loads. `Default` is `false`.
+    pub degraded_read_model: Arc<RwLock<bool>>,
     /// The boot-time **sealed-act fixity** report: every sealed act row re-hashed and held to the
     /// digest its seal froze, plus each book's WFL-12 ata sequencing.
     ///
@@ -1598,6 +1613,7 @@ impl AppState {
                                 );
                                 state.dpia_records = Arc::new(RwLock::new(HashMap::new()));
                                 state.degraded = Arc::new(RwLock::new(true));
+                                state.degraded_read_model = Arc::new(RwLock::new(true));
                             }
                         }
                     }
@@ -1617,6 +1633,7 @@ impl AppState {
                                 );
                                 state.breach_playbooks = Arc::new(RwLock::new(HashMap::new()));
                                 state.degraded = Arc::new(RwLock::new(true));
+                                state.degraded_read_model = Arc::new(RwLock::new(true));
                             }
                         }
                     }
@@ -1637,6 +1654,7 @@ impl AppState {
                                 );
                                 state.transfer_controls = Arc::new(RwLock::new(HashMap::new()));
                                 state.degraded = Arc::new(RwLock::new(true));
+                                state.degraded_read_model = Arc::new(RwLock::new(true));
                             }
                         }
                     }
@@ -1662,6 +1680,7 @@ impl AppState {
                                 state.backup_recovery_drill_receipts =
                                     Arc::new(RwLock::new(Vec::new()));
                                 state.degraded = Arc::new(RwLock::new(true));
+                                state.degraded_read_model = Arc::new(RwLock::new(true));
                             }
                         }
                     }
@@ -2069,6 +2088,9 @@ impl AppState {
         // and one that repairs them must be allowed to lift it.
         *self.act_fixity.write().await = loaded.act_fixity;
         {
+            // Recomputed here and AGAIN at the end of this method. This early pass is the
+            // fail-closed one: everything below can fail and return, and a restore that brought
+            // back altered acts must already be holding the gate down when it does.
             let ledger = self.ledger.read().await;
             refresh_degraded(self, &ledger).await;
         }
@@ -2159,6 +2181,11 @@ impl AppState {
             *self.breach_playbooks.write().await = breach_playbooks;
             *self.transfer_controls.write().await = transfer_controls;
             *self.backup_recovery_drill_receipts.write().await = receipts;
+            // All four authoritative inputs just reloaded (the `?` above makes a still-failing load
+            // fatal to the restore), so the one degradation cause the integrity recomputation cannot
+            // measure is resolved. Cleared here rather than in `refresh_degraded`, which must never
+            // clear what it did not verify.
+            *self.degraded_read_model.write().await = false;
             *self.retention_policies.write().await =
                 privacy::load_retention_policies(&dir.join(privacy::RETENTION_POLICIES_FILE))
                     .unwrap_or_default();
@@ -2204,6 +2231,16 @@ impl AppState {
             *self.cae.write().await = chancela_cae::load_catalog(Some(&dir));
             *self.law_store.write().await = law::load_law_store(&dir.join(law::LAWS_DIR));
             self.zk_repositories.write().await.reload()?;
+        }
+        // The final recompute, now that every input is in: the early pass above ran while
+        // `degraded_read_model` could still be holding the gate down for a sidecar the reload has
+        // since repaired. A restore that fixed everything must be able to lift the gate, and only a
+        // pass placed after the last of those loads can tell. The repeated `integrity_report()` is
+        // deliberate — restore is a rare recovery path, and an instance left read-only after a
+        // successful restore costs more than one extra O(n) verification.
+        {
+            let ledger = self.ledger.read().await;
+            refresh_degraded(self, &ledger).await;
         }
         // Restore already tombstones the durable derived projection in its commit transaction.
         // Completion only clears the local projection and releases/rebuilds the fence; a second
@@ -4135,6 +4172,12 @@ fn degraded_gate_exempt(method: &axum::http::Method, path: &str) -> bool {
 /// Middleware enforcing the degraded read-only gate. When [`AppState::degraded`] is set, an ordinary
 /// mutation (not [`degraded_gate_exempt`]) is refused with a **loud** honest-PT `503` naming the
 /// read-only mode; reads and the recovery/reset endpoints pass through unchanged.
+///
+/// The refusal names the cause it actually has. It used to be one fixed string about the integrity
+/// *chain* telling the operator to re-anchor — which on a sealed-act fixity failure was wrong twice
+/// over: the chain verifies fine (that is the entire point of the fixity pass), and re-anchoring
+/// therefore returns `409 "a cadeia já verifica"`. The single remedy the refusal named could not run
+/// in the one situation it created. See [`degraded_refusal_body`].
 async fn degraded_gate(
     State(state): State<AppState>,
     request: axum::http::Request<axum::body::Body>,
@@ -4142,16 +4185,47 @@ async fn degraded_gate(
 ) -> Response {
     if !degraded_gate_exempt(request.method(), request.uri().path()) && *state.degraded.read().await
     {
-        let body = serde_json::json!({
-            "error": "sistema em modo só-leitura: a cadeia de integridade está quebrada. \
-                      Restaure a partir de uma cópia de segurança, faça a re-ancoragem, ou uma \
-                      reposição de fábrica antes de continuar a escrever.",
-            "read_only": true,
-            "integrity": "broken",
-        });
+        let body = degraded_refusal_body(&state).await;
         return (StatusCode::SERVICE_UNAVAILABLE, Json(body)).into_response();
     }
     next.run(request).await
+}
+
+/// The body of the degraded gate's `503`, resolved against the cause actually holding the gate down.
+///
+/// Reads only the two stored signals — no `integrity_report()` — so a refused mutation stays cheap.
+/// The chain arm is the fallback and keeps its exact wording and `"integrity": "broken"`: it is what
+/// a broken chain has always said, and re-anchoring genuinely is its remedy.
+async fn degraded_refusal_body(state: &AppState) -> serde_json::Value {
+    if !state.act_fixity.read().await.healthy {
+        return serde_json::json!({
+            "error": "sistema em modo só-leitura: um ato selado já não corresponde ao resumo \
+                      criptográfico que o seu selo fixou. A cadeia de integridade verifica, pelo \
+                      que a re-ancoragem não repara este estado e será recusada. Consulte \
+                      GET /v1/ledger/integrity (campo act_fixity) para os atos afetados e restaure \
+                      a partir de uma cópia de segurança anterior à alteração.",
+            "read_only": true,
+            "integrity": "act_fixity_broken",
+        });
+    }
+    if *state.degraded_read_model.read().await {
+        return serde_json::json!({
+            "error": "sistema em modo só-leitura: um modelo de leitura autoritativo não pôde ser \
+                      carregado no arranque e está incompleto. A cadeia de integridade e os atos \
+                      selados verificam, pelo que a re-ancoragem não repara este estado. Restaure a \
+                      partir de uma cópia de segurança, ou corrija a origem dos dados e reinicie a \
+                      instância.",
+            "read_only": true,
+            "integrity": "read_model_incomplete",
+        });
+    }
+    serde_json::json!({
+        "error": "sistema em modo só-leitura: a cadeia de integridade está quebrada. \
+                  Restaure a partir de uma cópia de segurança, faça a re-ancoragem, ou uma \
+                  reposição de fábrica antes de continuar a escrever.",
+        "read_only": true,
+        "integrity": "broken",
+    })
 }
 
 /// Recompute the degraded (read-only) signal from a ledger's live integrity report and store it on
@@ -4167,7 +4241,11 @@ pub(crate) async fn refresh_degraded(state: &AppState, ledger: &Ledger) {
     // and reaching for `state.acts` under it would invert the lock order the mutation paths take.
     // `reload_domain_memory_with_settings_gate_held` refreshes it alongside the acts themselves.
     let healthy = ledger.integrity_report().healthy && state.act_fixity.read().await.healthy;
-    *state.degraded.write().await = !healthy;
+    // `degraded` is one bool with more causes than this function can measure. OR in the sticky
+    // read-model signal so a healthy chain over healthy acts never *clears* a gate raised by an
+    // authoritative sidecar that failed to load — see [`AppState::degraded_read_model`].
+    let read_model_degraded = *state.degraded_read_model.read().await;
+    *state.degraded.write().await = !healthy || read_model_degraded;
 }
 
 /// Re-verify every in-memory sealed act against the digest its seal froze, store the report on
@@ -4176,15 +4254,32 @@ pub(crate) async fn refresh_degraded(state: &AppState, ledger: &Ledger) {
 /// The live counterpart to the boot-time pass: `GET /v1/ledger/integrity` serves this so an
 /// operator asking "is the record intact?" gets an answer about the *acts*, not only the chain.
 pub(crate) async fn refresh_act_fixity(state: &AppState) -> chancela_core::ActFixityReport {
-    let report = {
-        let acts = state.acts.read().await;
-        let books = state.books.read().await;
-        chancela_core::ActFixityReport::build(acts.values(), books.values())
-    };
+    // Lock order: **books, then acts, then ledger** — the canonical `entities → books → acts →
+    // ledger`, and the order every mutation handler takes (`acts.rs` advance-to-Signing, reopen and
+    // seal all take `books.write()` before `acts.write()`).
+    //
+    // Taking `acts` before `books` here was an AB–BA against all of them: this pass holds `acts` for
+    // a full O(n) verification and waits on `books`, while a concurrent seal holds `books` and waits
+    // on `acts`. Neither ever returns — and because `tokio`'s `RwLock` is write-preferring, the
+    // queued writer then blocks every later reader too, so the whole instance wedges rather than
+    // just the two tasks, with no timeout, no panic and no log line.
+    let books = state.books.read().await;
+    let acts = state.acts.read().await;
+    // The anchors are read from the live ledger, so an act edited in memory is held to the digest
+    // its `act.sealed` event froze rather than to the digest sitting beside it. The guard is kept
+    // past the aggregates so the fixity verdict and the chain verdict below describe one ledger.
+    let ledger = state.ledger.read().await;
+    let anchors = chancela_core::SealAnchors::from_ledger(&ledger);
+    let report = chancela_core::ActFixityReport::build(acts.values(), books.values(), &anchors);
+    // Released before `refresh_degraded` runs its O(n) chain verification under the ledger guard:
+    // nothing below reads them, and holding them there would stall every writer for that pass.
+    drop(acts);
+    drop(books);
     *state.act_fixity.write().await = report.clone();
-    if !report.healthy {
-        *state.degraded.write().await = true;
-    }
+    // Fold the verdict into the gate. Two-way by design: this raises the gate on an altered act,
+    // and lowers it again once the acts verify and the chain does too. A one-way raise left an
+    // out-of-band repair read-only until the process was restarted.
+    refresh_degraded(state, &ledger).await;
     report
 }
 
@@ -5582,9 +5677,10 @@ mod tests {
         assert!(!rendered.contains("super-secret-hidden"));
         assert!(!rendered.contains("access-token-hidden"));
         assert!(!rendered.contains("encosto-qtsp"));
-        assert!(!rendered.contains("1234"));
-        assert!(!rendered.contains("9876"));
-        assert!(!rendered.contains("5555"));
+        // The seeded values are asserted absent WHOLE, just above. Their four-digit tails are not
+        // asserted separately: matched against an entire JSON body they add no coverage the whole
+        // value does not already give, and four digits can arrive from a length, a timestamp or an
+        // identifier — a false red about a leak that never happened.
         for field in fields {
             assert_eq!(field["configured"], true);
             assert_eq!(field["plaintext_redacted"], true);
@@ -14191,7 +14287,10 @@ mod tests {
         assert_eq!(provider["production_blocked"], true, "{body}");
 
         let rendered = body.to_string();
-        for forbidden in ["client-id-hidden-abcd", "abcd", "last4", "ciphertext"] {
+        // The seeded client id is forbidden WHOLE. Its four-character tail is not listed beside it:
+        // `abcd` are four hex digits matched against an entire settings body, so it can only ever
+        // fire on a digest that happens to contain them — a leak report about no leak.
+        for forbidden in ["client-id-hidden-abcd", "last4", "ciphertext"] {
             assert!(
                 !rendered.contains(forbidden),
                 "settings metadata leaked {forbidden}: {rendered}"
@@ -22577,14 +22676,30 @@ mod tests {
             "the throttled refusal distinguishes a real account from an unknown one"
         );
         assert_eq!(unknown_headers, real_headers);
-        // Strictly stronger than the substring check this replaces, and only expressible because
-        // the clock is pinned: with `now` fixed the rendered wait is exactly the armed hour, so the
-        // refusal can be pinned whole. A substring would pass against a body that had grown a
-        // per-account field beside it.
+        // What the refusal must BE, without pinning what it says. The byte-equality above is the
+        // security property and is prose-independent; these two pin the rest of it in terms that a
+        // copy edit cannot move:
+        //
+        //   * the machine-readable code — the refusal is the throttle's, not some other 429; and
+        //   * the rendered wait, which is what proves the pinned clock is still being read. The
+        //     deadline is an hour ahead of the wall clock, so an unwired seam renders `7200` and
+        //     fails here loudly rather than quietly going back to racing the second boundary.
+        //
+        // Asserting the whole pt-PT sentence would do the same job while coupling a security test to
+        // translated copy, so that a wording change reddens it. The number is the only part of that
+        // sentence this test is entitled to care about.
+        let refusal: serde_json::Value =
+            serde_json::from_slice(&real_bytes).expect("the throttled refusal must be JSON");
+        assert_eq!(refusal["code"], "signin_throttled.no_wait", "{refusal}");
+        let message = refusal["error"].as_str().expect("refusal message");
+        let numbers: Vec<&str> = message
+            .split(|c: char| !c.is_ascii_digit())
+            .filter(|part| !part.is_empty())
+            .collect();
         assert_eq!(
-            String::from_utf8_lossy(&real_bytes),
-            r#"{"error":"demasiadas tentativas — tente novamente em 3600 s","code":"signin_throttled.no_wait"}"#,
-            "expected the throttle refusal"
+            numbers,
+            ["3600"],
+            "the refusal must render exactly the pinned hour and nothing else numeric: {message}"
         );
     }
 
@@ -27747,7 +27862,21 @@ mod tests {
         assert_eq!(status, StatusCode::OK, "reads open while degraded");
         let (status, report) = send(state.clone(), get("/v1/ledger/integrity")).await;
         assert_eq!(status, StatusCode::OK);
-        assert_eq!(report["degraded"], true);
+        // This endpoint RECOMPUTES the gate — chain plus sealed-act fixity — rather than echoing
+        // the stored flag, and the recomputation is two-way so that an out-of-band repair is not a
+        // read-only instance until the next restart. Here the flag was forced by hand with nothing
+        // actually broken behind it, so the honest answer is that the record verifies and the gate
+        // comes back up. Asserted rather than worked around: it is the behaviour, and a future
+        // one-way regression must redden something.
+        assert_eq!(
+            report["healthy"], true,
+            "the chain was never broken: {report}"
+        );
+        assert_eq!(report["act_fixity"]["healthy"], true, "{report}");
+        assert_eq!(report["degraded"], false, "{report}");
+        assert!(!*state.degraded.read().await);
+        // Re-arm it: everything below is about what the gate lets through while it is DOWN.
+        *state.degraded.write().await = true;
 
         // The recovery/reset plane stays reachable (NOT 503): each reaches its handler and returns a
         // handler-level status, never the gate's 503.

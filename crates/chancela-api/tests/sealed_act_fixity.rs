@@ -257,6 +257,116 @@ async fn an_altered_sealed_ata_is_detected_while_the_chain_still_verifies() {
 }
 
 #[tokio::test]
+async fn altering_a_sealed_ata_and_its_own_frozen_digest_together_is_detected() {
+    // **The C1 attack, through the real router.**
+    //
+    // The test above edits the deliberations and nothing else. It passed against a check that
+    // compared the act to `Act::payload_digest` — a field of the very same row, unconditionally
+    // present and unconditionally writable beside the content it was meant to bind. Extend the edit
+    // to rewrite that field too and the row is internally consistent: every fixity surface returned
+    // `Verified`, the degraded gate stayed open, and a generated certidão would have recited the
+    // attacker's digest as its own proof of fixity.
+    //
+    // The authoritative bytes were always present — the `act.sealed` event, inside a chain
+    // `Ledger::verify()` protects, named by `Act::seal_event_seq`. They simply had no reader.
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.0.clone());
+    let owner = bootstrap_owner(&state).await;
+    let act = seed_one_sealed_ata(&state).await;
+
+    let forged_digest = {
+        let mut acts = state.acts.write().await;
+        let stored = acts.get_mut(&act.id).expect("the sealed act");
+        stored.deliberations = "Rejeitadas as contas do exercício.".to_owned();
+        // The extra clause of the one `UPDATE`.
+        stored.payload_digest = chancela_core::sealed_act_digest(stored);
+        assert_ne!(
+            stored.payload_digest, act.payload_digest,
+            "the attack rewrote the row's frozen digest"
+        );
+        stored.payload_digest.expect("the forged digest")
+    };
+
+    let (status, integrity) = send(&state, get_req("/v1/ledger/integrity", &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{integrity}");
+
+    // The chain still verifies — nothing was done to it, and nothing needed to be.
+    assert_eq!(integrity["healthy"], true, "{integrity}");
+    let (status, verify) = send(&state, get_req("/v1/ledger/verify", &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{verify}");
+    assert_eq!(verify["valid"], true, "{verify}");
+
+    // …and the fixity verdict, now anchored to the ledger rather than to the row, does not.
+    let fixity = &integrity["act_fixity"];
+    assert_eq!(fixity["healthy"], false, "{integrity}");
+    assert_eq!(fixity["broken"], 1, "{integrity}");
+    assert_eq!(fixity["verified"], 0, "{integrity}");
+    assert_eq!(fixity["unverifiable"], 0, "{integrity}");
+    let findings = fixity["findings"].as_array().expect("findings");
+    assert_eq!(findings.len(), 1, "{integrity}");
+    assert_eq!(findings[0]["act_id"], act.id.to_string(), "{integrity}");
+    assert_eq!(
+        findings[0]["fixity"]["verdict"], "ledger_anchor_mismatch",
+        "{integrity}"
+    );
+    assert_eq!(
+        findings[0]["fixity"]["ledger"],
+        Value::String(hex(&act
+            .payload_digest
+            .expect("the original frozen digest"))),
+        "the finding must name the digest the LEDGER froze: {integrity}"
+    );
+    assert_eq!(
+        findings[0]["fixity"]["row"],
+        Value::String(hex(&forged_digest)),
+        "…and the digest the row now claims: {integrity}"
+    );
+    assert_eq!(
+        findings[0]["fixity"]["recomputed"], findings[0]["fixity"]["row"],
+        "content and row digest moved together: {integrity}"
+    );
+
+    // Detection is the degraded gate, same as any other alteration.
+    assert_eq!(integrity["degraded"], true, "{integrity}");
+    assert!(*state.degraded.read().await, "the gate must be down");
+}
+
+#[tokio::test]
+async fn deleting_a_sealed_atas_frozen_digest_is_broken_not_merely_counted() {
+    // C2 on the live surface. `payload_digest: null` used to downgrade the verdict to
+    // `Unverifiable`, whose arm incremented a counter and left `healthy == true` — so deleting the
+    // one field that could convict an edited ata was strictly better for an attacker than leaving
+    // it in place. The leniency it borrowed belongs to `seal_metadata` (genuinely optional,
+    // genuinely absent on old rows) and never applied to this field.
+    let tmp = TempDir::new();
+    let state = AppState::with_data_dir(tmp.0.clone());
+    let owner = bootstrap_owner(&state).await;
+    let act = seed_one_sealed_ata(&state).await;
+
+    {
+        let mut acts = state.acts.write().await;
+        let stored = acts.get_mut(&act.id).expect("the sealed act");
+        stored.deliberations = "Rejeitadas as contas do exercício.".to_owned();
+        stored.payload_digest = None;
+    }
+
+    let (status, integrity) = send(&state, get_req("/v1/ledger/integrity", &owner)).await;
+    assert_eq!(status, StatusCode::OK, "{integrity}");
+    let fixity = &integrity["act_fixity"];
+    assert_eq!(fixity["healthy"], false, "{integrity}");
+    assert_eq!(fixity["broken"], 1, "{integrity}");
+    assert_eq!(
+        fixity["unverifiable"], 0,
+        "a missing frozen digest is an alteration, not an unanswerable question: {integrity}"
+    );
+    assert_eq!(
+        fixity["findings"][0]["fixity"]["verdict"], "missing_payload_digest",
+        "{integrity}"
+    );
+    assert_eq!(integrity["degraded"], true, "{integrity}");
+}
+
+#[tokio::test]
 async fn detecting_an_altered_sealed_ata_forces_read_only_mode() {
     // Detection must fail LOUD and read-only: no auto-repair, no silent log line. The degraded
     // gate is the same one a broken chain trips, so ordinary mutations get the honest-PT 503.

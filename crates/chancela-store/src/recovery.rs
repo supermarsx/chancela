@@ -2042,6 +2042,10 @@ impl Store {
                 }
             }
         }
+        // Retained past the chain check: these are the events every sealed act in the bundle is
+        // anchored to below, and they are usable as an anchor only because the chain over them
+        // verified first.
+        let mut bundle_events = Vec::new();
         if verdict_break.is_none() {
             let events = parse_events_jsonl(members.get("events.jsonl").map_or(&[][..], |v| v))?;
             event_count = Some(events.len());
@@ -2049,6 +2053,7 @@ impl Store {
             if let Err(b) = Ledger::verify_bundle_chain(&events, &chain) {
                 verdict_break = Some(b);
             }
+            bundle_events = events;
         }
         // Fixity of the acts themselves. Everything above verifies the bundle's *packaging* (the
         // manifest digest, each member's digest, the chain over the events) — all of which a
@@ -2074,20 +2079,30 @@ impl Store {
                 }
             }
             if verdict_break.is_none() {
-                let fixity = chancela_core::ActFixityReport::build(acts.iter(), []);
-                if !fixity.healthy {
-                    let first = fixity
-                        .findings
-                        .iter()
-                        .find(|f| f.fixity.is_broken())
+                let anchors = chancela_core::SealAnchors::from_events(&bundle_events);
+                let fixity = chancela_core::ActFixityReport::build(acts.iter(), [], &anchors);
+                // `fully_verified`, not `healthy`: an act whose fixity question could not be
+                // ANSWERED must not import as `Verified` either. Deleting one JSON key from a
+                // bundled act used to turn a mismatch into an unverifiable, and unverifiable rows
+                // only incremented a counter — so a stripped member, its sha256 and the manifest
+                // digest all recomputed, arrived stamped `Verified`. An installed base of
+                // pre-metadata rows is a reason not to brick a running instance; it is not a reason
+                // to accept foreign content nothing can vouch for.
+                if !fixity.fully_verified() {
+                    // An affirmative alteration is named as one; an unanswerable row is named as
+                    // that instead, so the quarantine record does not accuse where it can only
+                    // report an absence.
+                    let broken = fixity.findings.iter().find(|f| f.fixity.is_broken());
+                    let headline = if broken.is_some() {
+                        "a sealed act no longer matches the digest its seal froze"
+                    } else {
+                        "a sealed act could not be verified against the digest its seal froze"
+                    };
+                    let first = broken
+                        .or_else(|| fixity.findings.first())
                         .map(|f| format!("act {} ({:?})", f.act_id, f.fixity))
                         .unwrap_or_else(|| "an act".to_owned());
-                    verdict_break = Some(tamper_break(
-                        &book_id,
-                        &format!(
-                            "a sealed act no longer matches the digest its seal froze: {first}"
-                        ),
-                    ));
+                    verdict_break = Some(tamper_break(&book_id, &format!("{headline}: {first}")));
                 }
             }
         }

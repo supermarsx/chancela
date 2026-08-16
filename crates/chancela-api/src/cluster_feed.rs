@@ -565,6 +565,13 @@ impl AppState {
     }
 
     /// Publish a full durable reload as one ordered state swap.
+    ///
+    /// Includes the sealed-act fixity report, for the same reason the whole-store restore does
+    /// ([`AppState::reload_domain_memory_with_settings_gate_held`]): the caller recomputes the
+    /// degraded gate from the **stored** `act_fixity`, so a swap that replaces the acts and leaves
+    /// the verdict about them behind makes fail-loud fail silently on a follower — it would compute
+    /// `healthy == false` over the reloaded rows, drop it on the floor, keep its boot-time verdict,
+    /// and serve writes and a green integrity page over altered content.
     #[cfg(feature = "postgres")]
     async fn cluster_swap_loaded_state(
         &self,
@@ -595,6 +602,8 @@ impl AppState {
         let mut registry_extracts = self.registry_extracts.write().await;
         let mut signed_documents = self.signed_documents.write().await;
         let mut ledger = self.ledger.write().await;
+        // Last in the ordered acquisition, matching `refresh_degraded`'s ledger → act_fixity order.
+        let mut act_fixity = self.act_fixity.write().await;
 
         *company_groups = loaded.company_groups;
         *group_template_libraries = loaded.group_template_libraries;
@@ -606,6 +615,8 @@ impl AppState {
         *registry_extracts = loaded.registry_extracts;
         *signed_documents = signed_documents_snapshot;
         *ledger = loaded.ledger;
+        // Swapped with the acts it is about, and before the caller's `refresh_degraded`.
+        *act_fixity = loaded.act_fixity;
         Ok(())
     }
 
@@ -1052,6 +1063,104 @@ mod tests {
                 "expected a fail-closed TLS error for sslmode={insecure}, got: {msg}"
             );
         }
+    }
+
+    /// A durable snapshot carrying the fixity verdict under test and empty aggregates otherwise —
+    /// the swap's aggregate and search-fence behaviour is covered above.
+    #[cfg(feature = "postgres")]
+    fn loaded_with_fixity(
+        act_fixity: chancela_core::ActFixityReport,
+    ) -> chancela_store::LoadedState {
+        let ledger = Ledger::new();
+        chancela_store::LoadedState {
+            company_groups: HashMap::new(),
+            group_template_libraries: HashMap::new(),
+            group_template_library_revisions: HashMap::new(),
+            entities: HashMap::new(),
+            books: HashMap::new(),
+            acts: HashMap::new(),
+            registry_extracts: HashMap::new(),
+            follow_ups: HashMap::new(),
+            chain_status: ledger.verify(),
+            integrity: ledger.integrity_report(),
+            ledger,
+            act_fixity,
+        }
+    }
+
+    /// An affirmatively-broken verdict, built without naming a variant of the fixity enum: this is a
+    /// test of the follower's PLUMBING, and it must not go red when the detection it carries changes.
+    #[cfg(feature = "postgres")]
+    fn broken_fixity() -> chancela_core::ActFixityReport {
+        chancela_core::ActFixityReport {
+            healthy: false,
+            sealed_checked: 1,
+            broken: 1,
+            ..chancela_core::ActFixityReport::default()
+        }
+    }
+
+    /// A follower's full reload must carry the fixity verdict, not just the acts it is about.
+    ///
+    /// `cluster_full_reload` recomputes the degraded gate through `refresh_degraded`, which by
+    /// design reads the **stored** `state.act_fixity`. So a swap that replaced the acts and dropped
+    /// the loaded verdict made fail-loud fail silently on exactly the node it matters most on: the
+    /// follower computed `healthy == false` over the reloaded rows during `Store::load`, threw it
+    /// away, kept its boot-time healthy verdict, and went on serving writes and a green integrity
+    /// page over altered content.
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    async fn a_full_reload_carries_the_fixity_verdict_into_the_degraded_gate() {
+        let state = crate::AppState::default();
+        assert!(state.act_fixity.read().await.healthy, "boots healthy");
+        assert!(!*state.degraded.read().await);
+
+        state
+            .cluster_swap_loaded_state(loaded_with_fixity(broken_fixity()), HashMap::new())
+            .await
+            .expect("the swap publishes the snapshot");
+
+        assert!(
+            !state.act_fixity.read().await.healthy,
+            "the loaded verdict must reach the state the gate reads, not the floor"
+        );
+        // …and the recomputation the caller performs right after the swap then sees it.
+        {
+            let ledger = state.ledger.read().await;
+            crate::refresh_degraded(&state, &ledger).await;
+        }
+        assert!(
+            *state.degraded.read().await,
+            "a follower that reloaded altered sealed acts must go read-only"
+        );
+    }
+
+    /// The other direction, which the same discarded field broke: a follower that booted degraded
+    /// stayed read-only forever, because the reload never delivered the repaired verdict either.
+    #[cfg(feature = "postgres")]
+    #[tokio::test]
+    async fn a_repaired_follower_recovers_on_its_next_full_reload() {
+        let state = crate::AppState::default();
+        *state.act_fixity.write().await = broken_fixity();
+        *state.degraded.write().await = true;
+
+        state
+            .cluster_swap_loaded_state(
+                loaded_with_fixity(chancela_core::ActFixityReport::default()),
+                HashMap::new(),
+            )
+            .await
+            .expect("the swap publishes the snapshot");
+
+        assert!(state.act_fixity.read().await.healthy);
+        {
+            let ledger = state.ledger.read().await;
+            crate::refresh_degraded(&state, &ledger).await;
+        }
+        assert!(
+            !*state.degraded.read().await,
+            "repaired durable data must lift the gate on the next reload, not on the next restart"
+        );
     }
 
     // ── Live-Postgres change-feed tests (§2.2/§2.3) ───────────────────────────────────────────────

@@ -10,9 +10,11 @@
 //! The ledger preimage/chain layout is owned by `chancela-ledger`; this module only feeds
 //! it canonical payload bytes and reads back the assigned sequence and digest.
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 
-use chancela_ledger::Ledger;
+use chancela_ledger::{Event, Ledger};
 
 use crate::act::{
     Act, ActBody, ActState, AgendaItem, Attachment, Attendee, Convening, ConveningWaiver,
@@ -141,9 +143,27 @@ struct ActPayload<'a> {
     attachments: &'a [Attachment],
     signatories: &'a [SignatorySlot],
     retifies: Option<String>,
-    // R8: the new mandatory-content fields are appended (append-only, after the pre-existing
-    // fields) so a new seal binds them into its digest. Already-sealed acts are never
-    // recomputed, so their frozen digests are unaffected by this growth.
+    // ─── THE RULE FOR ADDING A FIELD BELOW THIS LINE ────────────────────────────────────────
+    //
+    // Any field added to this preimage MUST carry `#[serde(skip_serializing_if = …)]` and emit
+    // NOTHING at its empty value. A field that always serializes changes the preimage of acts
+    // that are ALREADY SEALED, and every one of them then re-hashes to something other than the
+    // digest its `act.sealed` event froze — a whole install of genuine, untampered atas reported
+    // as altered, and the instance in degraded read-only on the next boot.
+    //
+    // This comment used to say the opposite: that "already-sealed acts are never recomputed, so
+    // their frozen digests are unaffected by this growth". That was true when nothing re-derived
+    // a sealed act's digest. `123ad32d` made every load recompute every sealed act, which repealed
+    // it. The old wording survived the change and was a written licence to brick an install.
+    //
+    // The seven fields immediately below (`meeting_time` … `members_represented`) are the
+    // exception, and they are an exception only because they predate the first commit of this
+    // repository — `ActPayload` has carried them, unskipped, since `ee1bf191`, so no build that
+    // has ever existed sealed an act without them. They are unconditional bytes now and must stay
+    // unconditional: adding `skip_serializing_if` to one of them would break exactly the same set
+    // of acts, in the opposite direction. `a_minimal_act_seals_to_its_frozen_golden_digest` and
+    // `the_preimage_of_a_minimal_act_is_byte_for_byte_frozen` pin them at their ABSENT values,
+    // which is the form no other fixture covers and the form such a "fix" would move.
     meeting_time: Option<time::Time>,
     mesa: &'a Mesa,
     agenda: &'a [AgendaItem],
@@ -277,6 +297,86 @@ pub fn sealed_act_digest(act: &Act) -> Option<[u8; 32]> {
     Some(chancela_ledger::digest(&payload))
 }
 
+/// The `kind` of the ledger event a seal appends, and therefore the only kind that can anchor a
+/// sealed act. See [`seal_act_with_evidence`].
+const SEAL_EVENT_KIND: &str = "act.sealed";
+
+/// The frozen seal digests, read out of the ledger and keyed by the sequence each seal event
+/// occupies — **the authority a stored act's fixity is measured against**.
+///
+/// This type exists because the anchor used to be [`Act::payload_digest`]: a field of the very row
+/// whose content it was supposed to bind, carrying neither `serde(default)` nor
+/// `skip_serializing_if`, unconditionally writable beside the deliberations it covered. One
+/// `UPDATE acts SET json = …` that also rewrote that field satisfied every fixity surface in the
+/// product, because nothing ever consulted the chain. The authoritative bytes were always there —
+/// the `act.sealed` event, inside a chain [`Ledger::verify`] protects, named by
+/// [`Act::seal_event_seq`] — and simply had no reader.
+///
+/// Only `act.sealed` events are indexed. A [`Act::seal_event_seq`] pointing at any other kind of
+/// event therefore resolves to nothing and the act is reported broken, which is the correct reading:
+/// the seal it claims does not exist.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SealAnchors {
+    by_seq: HashMap<u64, [u8; 32]>,
+}
+
+impl SealAnchors {
+    /// Index every `act.sealed` event in `ledger`.
+    ///
+    /// One pass over the events; the map it retains holds one entry per *sealed act*, not per
+    /// event. See [`SealAnchors::from_events`] for the cost note.
+    #[must_use]
+    pub fn from_ledger(ledger: &Ledger) -> Self {
+        Self::from_events(ledger.events())
+    }
+
+    /// Index every `act.sealed` event in an arbitrary event sequence — the bundle importer's entry
+    /// point, which holds the events it just chain-verified rather than a whole [`Ledger`].
+    ///
+    /// Cost: O(events) time to scan, O(sealed acts) memory to retain. The scan is strictly
+    /// dominated by the `Ledger::verify()` already performed over the same events (which hashes
+    /// every one of them); this only reads two fields per event.
+    #[must_use]
+    pub fn from_events<'a>(events: impl IntoIterator<Item = &'a Event>) -> Self {
+        events
+            .into_iter()
+            .filter(|event| event.kind == SEAL_EVENT_KIND)
+            .map(|event| (event.seq, event.payload_digest))
+            .collect()
+    }
+
+    /// The digest the seal event at `seq` froze, or `None` when no `act.sealed` event sits there.
+    #[must_use]
+    pub fn digest_at(&self, seq: u64) -> Option<[u8; 32]> {
+        self.by_seq.get(&seq).copied()
+    }
+
+    /// How many seal events are indexed.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.by_seq.len()
+    }
+
+    /// Whether the ledger held no seal event at all.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.by_seq.is_empty()
+    }
+}
+
+/// Build anchors from raw `(seq, digest)` pairs.
+///
+/// The production constructors are [`SealAnchors::from_ledger`] / [`SealAnchors::from_events`];
+/// this is for callers that already hold the mapping (and for pinning historical fixtures whose
+/// ledger is a stored constant rather than a live chain).
+impl FromIterator<(u64, [u8; 32])> for SealAnchors {
+    fn from_iter<T: IntoIterator<Item = (u64, [u8; 32])>>(iter: T) -> Self {
+        SealAnchors {
+            by_seq: iter.into_iter().collect(),
+        }
+    }
+}
+
 /// The verdict of re-verifying one stored act against the digest its seal froze.
 ///
 /// Serialized in the store's load report and on `GET /v1/ledger/integrity`, so the variant names
@@ -288,13 +388,47 @@ pub enum ActFixity {
     Unsealed,
     /// Sealed, and the stored content still hashes to the digest the ledger recorded.
     Verified,
-    /// **Sealed and altered.** The stored content does not hash to the frozen digest.
+    /// **Sealed and altered.** The stored content does not hash to the digest the *ledger* froze.
     Mismatch {
-        /// The digest frozen at sealing, lowercase hex.
+        /// The digest the `act.sealed` event froze, lowercase hex.
         expected: String,
         /// What the stored content hashes to now, lowercase hex.
         actual: String,
     },
+    /// **Sealed, and the row's own frozen digest disagrees with the ledger's.**
+    ///
+    /// The verdict of the attack the row-anchored check could not see: edit the act's substance
+    /// *and* rewrite `payload_digest` beside it. Both sides are reported because which one moved is
+    /// the operator's first question — `recomputed == row` means the row was rewritten as a unit
+    /// (content and digest together), while `recomputed == ledger` means only the digest field was
+    /// corrupted and the substance is intact.
+    LedgerAnchorMismatch {
+        /// The digest the `act.sealed` event froze — the authority, lowercase hex.
+        ledger: String,
+        /// The digest the stored row carries beside its content, lowercase hex.
+        row: String,
+        /// What the stored content hashes to now, when the preimage can be rebuilt at all.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        recomputed: Option<String>,
+    },
+    /// **Sealed, and the seal it names is not in the chain.**
+    ///
+    /// [`Act::seal_event_seq`] points at no `act.sealed` event: either at nothing, at an event of
+    /// another kind, or (when the field is absent) at no position at all. Every sealed row ever
+    /// written carries one — [`Act::mark_sealed`](crate::Act) sets it in the same statement as the
+    /// digest — so its absence or dangling is tampering, not history.
+    SealEventMissing {
+        /// The sequence the row claims its seal event occupies, when it claims one.
+        seal_event_seq: Option<u64>,
+    },
+    /// **Sealed with no frozen digest at all.**
+    ///
+    /// `payload_digest` carries neither `serde(default)` nor `skip_serializing_if` and is present
+    /// in every sealed row ever written, so a sealed act without one cannot be a historical row —
+    /// it can only be a row a key was deleted from. Reported as broken rather than unverifiable
+    /// precisely because that inference is available here and is not available for
+    /// `seal_metadata`, which genuinely is optional and genuinely is absent on old rows.
+    MissingPayloadDigest,
     /// Sealed, and the ata number bound into the seal is not the number the act now carries —
     /// a renumbering (WFL-12), which used to be invisible because the number was bound by nothing.
     AtaNumberMismatch {
@@ -305,9 +439,15 @@ pub enum ActFixity {
     },
     /// Sealed, but the preimage cannot be rebuilt, so fixity is *unknown* rather than good.
     ///
-    /// Reported, never treated as verified. The two causes are a row sealed before
-    /// [`Act::seal_metadata`] existed, and a row whose metadata has since been removed — which are
-    /// indistinguishable from the stored bytes alone.
+    /// Reported, never treated as verified. The remaining cause is [`Act::seal_metadata`], which is
+    /// `#[serde(default, skip_serializing_if = "Option::is_none")]`: a row sealed before that field
+    /// existed and a row whose metadata has since been removed are genuinely indistinguishable from
+    /// the stored bytes alone. That reasoning is *specific to this field* — it does not extend to
+    /// `payload_digest`, which is why a missing digest is [`ActFixity::MissingPayloadDigest`].
+    ///
+    /// Unknown is not good: it does not gate a running instance (an installed base of pre-metadata
+    /// rows must not brick on upgrade), but it does refuse an **import** — see
+    /// [`ActFixityReport::fully_verified`].
     Unverifiable {
         /// Stable machine-readable cause.
         reason: &'static str,
@@ -328,27 +468,51 @@ impl ActFixity {
     pub fn is_broken(&self) -> bool {
         matches!(
             self,
-            ActFixity::Mismatch { .. } | ActFixity::AtaNumberMismatch { .. }
+            ActFixity::Mismatch { .. }
+                | ActFixity::AtaNumberMismatch { .. }
+                | ActFixity::LedgerAnchorMismatch { .. }
+                | ActFixity::SealEventMissing { .. }
+                | ActFixity::MissingPayloadDigest
         )
     }
 }
 
-/// Re-verify one stored act against the digest its seal froze (and the ata number it bound).
+/// Re-verify one stored act **against the ledger** — the digest the `act.sealed` event at
+/// [`Act::seal_event_seq`] froze, and the ata number the seal bound.
 ///
-/// This is the read-path fixity check that had no caller anywhere in the product: the ledger
-/// proved its own chain, and nothing ever asked whether the act rows still matched it.
+/// The anchor is `anchors`, never [`Act::payload_digest`]. That distinction is the whole check:
+/// the row's own digest field is written by whoever writes the row, so comparing a row against it
+/// answers only "is this row self-consistent?", which one extended `UPDATE` makes true. The
+/// ledger's copy sits inside a chain [`Ledger::verify`] protects, so moving it means breaking the
+/// chain. The row's digest is still *read* — and a disagreement with the ledger's is its own
+/// finding, because which side moved is what an operator needs to know.
+///
+/// Build `anchors` once per pass with [`SealAnchors::from_ledger`]; lookups are O(1).
 #[must_use]
-pub fn verify_act_fixity(act: &Act) -> ActFixity {
-    let Some(expected) = act.payload_digest else {
+pub fn verify_act_fixity(act: &Act, anchors: &SealAnchors) -> ActFixity {
+    let Some(row_digest) = act.payload_digest else {
         return if matches!(act.state, ActState::Sealed | ActState::Archived) {
-            // Sealed with no frozen digest at all: the seal recorded nothing to hold it to.
-            ActFixity::Unverifiable {
-                reason: "sealed_act_has_no_payload_digest",
-            }
+            // Sealed with no frozen digest at all. `payload_digest` is unconditional in the durable
+            // shape, so this is a deleted key, not a historical row.
+            ActFixity::MissingPayloadDigest
         } else {
             ActFixity::Unsealed
         };
     };
+    // The anchor, from the chain. An act naming a seal event that is not there — or that is not an
+    // `act.sealed` event — is broken: it asserts a seal the ledger does not record.
+    let Some(anchor) = act.seal_event_seq.and_then(|seq| anchors.digest_at(seq)) else {
+        return ActFixity::SealEventMissing {
+            seal_event_seq: act.seal_event_seq,
+        };
+    };
+    if anchor != row_digest {
+        return ActFixity::LedgerAnchorMismatch {
+            ledger: hex32(&anchor),
+            row: hex32(&row_digest),
+            recomputed: sealed_act_digest(act).as_ref().map(hex32),
+        };
+    }
     let Some(metadata) = act.seal_metadata.as_ref() else {
         return ActFixity::Unverifiable {
             reason: "sealed_act_has_no_seal_metadata",
@@ -365,9 +529,9 @@ pub fn verify_act_fixity(act: &Act) -> ActFixity {
         };
     }
     match sealed_act_digest(act) {
-        Some(actual) if actual == expected => ActFixity::Verified,
+        Some(actual) if actual == anchor => ActFixity::Verified,
         Some(actual) => ActFixity::Mismatch {
-            expected: hex32(&expected),
+            expected: hex32(&anchor),
             actual: hex32(&actual),
         },
         None => ActFixity::Unverifiable {
@@ -459,16 +623,22 @@ impl ActFixityReport {
     /// Both are borrowed iterators so the store can pass its loaded maps' values directly. Pass an
     /// empty `books` when only per-act fixity is wanted (a bundle importer, say, which holds one
     /// book's acts but not the live corpus).
+    ///
+    /// `anchors` is the ledger the acts are held to — [`SealAnchors::from_ledger`] for a live
+    /// corpus, [`SealAnchors::from_events`] for a bundle's own chain-verified events. It is a
+    /// required argument rather than an option: a fixity pass with no ledger to compare against is
+    /// the defect this signature exists to make unrepresentable.
     pub fn build<'a>(
         acts: impl IntoIterator<Item = &'a Act> + Clone,
         books: impl IntoIterator<Item = &'a Book>,
+        anchors: &SealAnchors,
     ) -> Self {
         let mut report = ActFixityReport {
             healthy: true,
             ..ActFixityReport::default()
         };
         for act in acts.clone() {
-            let fixity = verify_act_fixity(act);
+            let fixity = verify_act_fixity(act, anchors);
             if fixity == ActFixity::Unsealed {
                 continue;
             }
@@ -512,6 +682,19 @@ impl ActFixityReport {
             .ata_sequence
             .sort_by(|a, b| a.book_id.cmp(&b.book_id));
         report
+    }
+
+    /// Whether **every** sealed act got an affirmative answer: healthy *and* nothing unanswerable.
+    ///
+    /// A stricter bar than [`ActFixityReport::healthy`], and deliberately so. `healthy` governs
+    /// whether a *running instance* keeps serving, where an unverifiable row is an ambiguity an
+    /// operator has to be told about but not something to brick an existing install over. Accepting
+    /// foreign content is the opposite situation: nothing is owed to a bundle, an unanswered
+    /// question about it is a reason to refuse it, and `verified` is a claim an importer must not
+    /// make about acts it could not check. Use this to gate an import.
+    #[must_use]
+    pub fn fully_verified(&self) -> bool {
+        self.healthy && self.unverifiable == 0
     }
 
     /// A one-line operator-facing summary for the boot log / CLI.
@@ -1766,6 +1949,11 @@ mod tests {
     /// may cease to be reproducible.
     const CLEAN_ACT_PREIMAGE: &str = r#"{"act_id":"33333333-3333-3333-3333-333333333333","book_id":"22222222-2222-2222-2222-222222222222","title":"Ata da AG anual","channel":"Physical","meeting_date":[2026,89],"place":"Sede social","attendance_reference":"Lista de presenças","deliberations":"Aprovadas as contas do exercício.","telematic_evidence":null,"attachments":[],"signatories":[],"retifies":null,"meeting_time":[10,0,0,0],"mesa":{"presidente":"Ana Presidente","secretarios":["Rui Secretário"]},"agenda":[{"number":1,"text":"Aprovação das contas"}],"referenced_documents":[],"deliberation_items":[],"members_present":null,"members_represented":null}"#;
 
+    /// The anchors a live ledger yields — what every production caller passes.
+    fn anchors_of(ledger: &Ledger) -> SealAnchors {
+        SealAnchors::from_ledger(ledger)
+    }
+
     /// The act used to pin [`CLEAN_ACT_PREIMAGE`]: `ready_act` with the two random identifiers
     /// nailed down, and nothing else.
     fn preimage_fixture_act() -> Act {
@@ -1791,6 +1979,102 @@ mod tests {
         assert_eq!(
             actual, CLEAN_ACT_PREIMAGE,
             "the seal preimage moved — every already-frozen act digest is now irreproducible"
+        );
+    }
+
+    /// A **sealable** act carrying every reachably-absent preimage field at its empty value.
+    ///
+    /// The set is drawn from the rule packs, not from taste. `meeting_date`, `place` and
+    /// `attendance_reference` stay populated because `civil_baseline` — which every pack builds on
+    /// — makes their absence a blocking `Error`; `mesa.presidente`/`mesa.secretarios` stay
+    /// populated because CSC v2 does the same. No pack can seal an act without those, so no such
+    /// row exists and there is nothing there to protect.
+    ///
+    /// What remains is exactly the six the packs treat as advisory, so an act shaped like this
+    /// **is sealable today** — proved by
+    /// `a_minimal_act_can_actually_be_sealed_so_rows_shaped_like_it_exist`.
+    fn minimal_preimage_fixture_act() -> Act {
+        let mut act = preimage_fixture_act();
+        act.meeting_time = None;
+        act.agenda = Vec::new();
+        act.referenced_documents = Vec::new();
+        act.deliberation_items = Vec::new();
+        act.members_present = None;
+        act.members_represented = None;
+        act
+    }
+
+    #[test]
+    fn the_preimage_of_a_minimal_act_is_byte_for_byte_frozen() {
+        // The gap the R8 comment left open, from the direction nobody was looking.
+        //
+        // `CLEAN_ACT_PREIMAGE` above populates `meeting_time` and `agenda`, so it pins how those
+        // fields look when PRESENT and says nothing about how they look when absent. They are
+        // unconditional — absent still emits `"meeting_time":null`, `"agenda":[]` — and the
+        // obvious "fix" for the R8 concern is to add `skip_serializing_if` to them. That would
+        // silently delete those keys from the preimage of every act sealed without them, which the
+        // packs permit (they are `warning`, not `Error`), and every one of those acts would
+        // re-hash to something other than the digest its seal froze.
+        //
+        // So the absent form is pinned here, byte for byte. If this fails because a key
+        // DISAPPEARED, that is the break: restore the field's unconditional serialization.
+        const MINIMAL_ACT_PREIMAGE: &str = r#"{"act_id":"33333333-3333-3333-3333-333333333333","book_id":"22222222-2222-2222-2222-222222222222","title":"Ata da AG anual","channel":"Physical","meeting_date":[2026,89],"place":"Sede social","attendance_reference":"Lista de presenças","deliberations":"Aprovadas as contas do exercício.","telematic_evidence":null,"attachments":[],"signatories":[],"retifies":null,"meeting_time":null,"mesa":{"presidente":"Ana Presidente","secretarios":["Rui Secretário"]},"agenda":[],"referenced_documents":[],"deliberation_items":[],"members_present":null,"members_represented":null}"#;
+
+        let act = minimal_preimage_fixture_act();
+        let actual = serde_json::to_string(&ActPayload::of(&act)).unwrap();
+        assert_eq!(
+            actual, MINIMAL_ACT_PREIMAGE,
+            "the seal preimage moved for an act carrying these fields at their absent value — \
+             every act already sealed without them is now irreproducible"
+        );
+
+        // Said as a property rather than as bytes, so a failure names the field. Each of these
+        // MUST emit its key even though it holds nothing.
+        for key in [
+            "\"meeting_time\":null",
+            "\"agenda\":[]",
+            "\"referenced_documents\":[]",
+            "\"deliberation_items\":[]",
+            "\"members_present\":null",
+            "\"members_represented\":null",
+        ] {
+            assert!(
+                actual.contains(key),
+                "{key} vanished from the preimage: adding `skip_serializing_if` to an \
+                 unconditional field breaks every act already sealed without a value for it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_minimal_act_can_actually_be_sealed_so_rows_shaped_like_it_exist() {
+        // The premise of the test above, proved rather than assumed. If the rule pack refused this
+        // act, no such row could exist and the absent form would need no protection. It does not
+        // refuse: every one of those omissions is advisory, so acknowledging warnings seals it.
+        let e = entity();
+        let mut ledger = Ledger::default();
+        let mut book = Book::new(e.id, BookKind::AssembleiaGeral);
+        open_and_seal_book(&mut book, &e, abertura(&e), "sec@encosto", &mut ledger).unwrap();
+        let mut act = minimal_preimage_fixture_act();
+        act.book_id = book.id;
+
+        seal_act(
+            &mut book,
+            &mut act,
+            &e,
+            &CscArt63RulePack,
+            "sec@encosto",
+            true, // the omissions are warnings; none of them bars the seal
+            Some(manual_reference()),
+            &mut ledger,
+        )
+        .expect("an act with every advisory field absent must still seal");
+
+        assert_eq!(act.state, ActState::Sealed);
+        assert_eq!(
+            verify_act_fixity(&act, &anchors_of(&ledger)),
+            ActFixity::Verified,
+            "and it must re-verify against the ledger like any other sealed act"
         );
     }
 
@@ -1958,8 +2242,170 @@ mod tests {
                 recomputed, event.payload_digest,
                 "{label}: recomputed digest must equal the one the LEDGER recorded"
             );
-            assert_eq!(verify_act_fixity(&act), ActFixity::Verified);
+            assert_eq!(
+                verify_act_fixity(&act, &anchors_of(&ledger)),
+                ActFixity::Verified
+            );
         }
+    }
+
+    #[test]
+    fn the_anchor_is_the_ledger_event_and_not_the_row_beside_the_content() {
+        // **The C1 attack.** The declared threat was `UPDATE acts SET json = <edited
+        // deliberations>`. Extend that one statement to also write the recomputed `payload_digest`
+        // — the field sits in the same JSON blob, is unconditionally present and unconditionally
+        // writable — and a row-anchored check finds the row perfectly self-consistent and returns
+        // `Verified`. Nothing about the edit is hidden from the ledger; the ledger was simply never
+        // asked.
+        let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
+            original_reference: manual_reference(),
+        });
+        let anchors = anchors_of(&ledger);
+
+        let mut forged = act.clone();
+        forged.deliberations = "Rejeitadas as contas do exercício.".to_owned();
+        forged.payload_digest = sealed_act_digest(&forged);
+
+        // The row is now internally consistent: its stored digest IS the digest of its content.
+        assert_eq!(
+            sealed_act_digest(&forged),
+            forged.payload_digest,
+            "the attack's premise: the edited row hashes to the digest it now carries"
+        );
+        // …and the chain is untouched and still verifies, as it must be for this to be the attack.
+        assert!(ledger.verify().is_ok());
+        assert!(ledger.integrity_report().healthy);
+
+        let fixity = verify_act_fixity(&forged, &anchors);
+        assert!(
+            fixity.is_broken(),
+            "an edited act whose digest was rewritten to match must be DETECTED, got {fixity:?}"
+        );
+        let ActFixity::LedgerAnchorMismatch {
+            ledger: anchored,
+            row,
+            recomputed,
+        } = &fixity
+        else {
+            panic!("expected the row to be reported as disagreeing with the chain, got {fixity:?}");
+        };
+        assert_eq!(
+            anchored,
+            &hex32(&act.payload_digest.expect("the original frozen digest")),
+            "the ledger side must be the digest the seal event froze"
+        );
+        assert_eq!(row, &hex32(&forged.payload_digest.unwrap()));
+        assert_ne!(anchored, row);
+        assert_eq!(
+            recomputed.as_ref(),
+            Some(row),
+            "content and row digest moved together — the tell that the row was rewritten as a unit"
+        );
+
+        let report = ActFixityReport::build([&forged], [], &anchors);
+        assert!(!report.healthy, "{report:?}");
+        assert_eq!(report.broken, 1);
+        assert_eq!(report.verified, 0);
+        assert_eq!(report.unverifiable, 0);
+    }
+
+    #[test]
+    fn an_act_naming_a_seal_event_that_is_not_in_the_chain_is_broken() {
+        // The other half of anchoring to the chain: pointing at a seal that does not exist is not
+        // an ambiguity to be counted, it is an act asserting a seal the ledger never recorded.
+        let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
+            original_reference: manual_reference(),
+        });
+        let anchors = anchors_of(&ledger);
+        assert_eq!(anchors.len(), 1, "one seal event in this fixture");
+
+        for (label, seq) in [
+            ("a sequence past the end", Some(9_999)),
+            ("none at all", None),
+        ] {
+            let mut dangling = act.clone();
+            dangling.seal_event_seq = seq;
+            let fixity = verify_act_fixity(&dangling, &anchors);
+            assert_eq!(
+                fixity,
+                ActFixity::SealEventMissing {
+                    seal_event_seq: seq
+                },
+                "{label}"
+            );
+            assert!(fixity.is_broken(), "{label}");
+        }
+
+        // A sequence that exists but is not a seal event is equally no anchor: the book genesis
+        // sits at seq 1 in this fixture and carries the termo's digest, not any act's.
+        let mut mispointed = act.clone();
+        mispointed.seal_event_seq = Some(
+            ledger
+                .events()
+                .iter()
+                .find(|e| e.kind == "book.opened")
+                .expect("the genesis event")
+                .seq,
+        );
+        assert!(verify_act_fixity(&mispointed, &anchors).is_broken());
+    }
+
+    #[test]
+    fn a_sealed_act_with_no_payload_digest_is_broken_not_merely_unverifiable() {
+        // **The C2 attack.** Deleting the `payload_digest` key used to downgrade a mismatch into an
+        // `Unverifiable`, which incremented a counter and left `healthy == true`. The rationale for
+        // that leniency — "a historical row is indistinguishable from a stripped one" — is a fact
+        // about `seal_metadata`, which is `#[serde(default, skip_serializing_if)]`. `payload_digest`
+        // is neither: it is in every sealed row ever written, so its absence has exactly one
+        // explanation.
+        let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
+            original_reference: manual_reference(),
+        });
+        let anchors = anchors_of(&ledger);
+
+        let mut stripped = act.clone();
+        stripped.deliberations = "Rejeitadas as contas do exercício.".to_owned();
+        stripped.payload_digest = None;
+
+        let fixity = verify_act_fixity(&stripped, &anchors);
+        assert_eq!(fixity, ActFixity::MissingPayloadDigest);
+        assert!(fixity.is_broken());
+        assert!(!fixity.is_verified());
+
+        let report = ActFixityReport::build([&stripped], [], &anchors);
+        assert!(!report.healthy, "{report:?}");
+        assert!(!report.fully_verified());
+        assert_eq!(report.broken, 1);
+        assert_eq!(report.unverifiable, 0);
+    }
+
+    #[test]
+    fn an_unverifiable_row_keeps_an_instance_running_but_never_clears_an_import() {
+        // The two bars, stated against one another. `healthy` is what a running instance is allowed
+        // to serve under — an installed base of pre-metadata rows must not brick on upgrade.
+        // `fully_verified` is what accepting foreign content requires, because nothing is owed to a
+        // bundle and an unanswered question about one is a reason to refuse it.
+        let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
+            original_reference: manual_reference(),
+        });
+        let anchors = anchors_of(&ledger);
+        let mut stripped = act.clone();
+        stripped.seal_metadata = None;
+
+        let report = ActFixityReport::build([&stripped], [], &anchors);
+        assert!(
+            report.healthy,
+            "a running instance keeps serving: {report:?}"
+        );
+        assert!(
+            !report.fully_verified(),
+            "but an import must not call this verified: {report:?}"
+        );
+        assert_eq!(report.unverifiable, 1);
+
+        // And a corpus with nothing to answer for clears both.
+        let clean = ActFixityReport::build([&act], [], &anchors);
+        assert!(clean.healthy && clean.fully_verified(), "{clean:?}");
     }
 
     #[test]
@@ -1970,7 +2416,8 @@ mod tests {
         let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
             original_reference: manual_reference(),
         });
-        assert_eq!(verify_act_fixity(&act), ActFixity::Verified);
+        let anchors = anchors_of(&ledger);
+        assert_eq!(verify_act_fixity(&act, &anchors), ActFixity::Verified);
 
         let mut tampered = act.clone();
         tampered.deliberations = "Rejeitadas as contas do exercício.".to_owned();
@@ -1979,7 +2426,7 @@ mod tests {
         assert!(ledger.verify().is_ok());
         assert!(ledger.integrity_report().healthy);
 
-        let fixity = verify_act_fixity(&tampered);
+        let fixity = verify_act_fixity(&tampered, &anchors);
         assert!(
             fixity.is_broken(),
             "an edited sealed ata must be detected, got {fixity:?}"
@@ -1990,7 +2437,7 @@ mod tests {
         assert_ne!(expected, actual);
         assert_eq!(expected, &hex32(&act.payload_digest.unwrap()));
 
-        let report = ActFixityReport::build([&tampered], []);
+        let report = ActFixityReport::build([&tampered], [], &anchors);
         assert!(!report.healthy);
         assert_eq!(report.broken, 1);
         assert_eq!(report.verified, 0);
@@ -2003,9 +2450,10 @@ mod tests {
         // Field-by-field, not one representative edit: a preimage field that `ActPayload` reads
         // but the recomputation somehow did not would leave a silent hole exactly where the edit
         // is most attractive.
-        let (_book, act, _ledger, _) = sealed(SealEvidence::Manual {
+        let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
             original_reference: manual_reference(),
         });
+        let anchors = anchors_of(&ledger);
         type Mutation = (&'static str, Box<dyn Fn(&mut Act)>);
         let mutations: Vec<Mutation> = vec![
             (
@@ -2065,8 +2513,16 @@ mod tests {
             let mut tampered = act.clone();
             mutate(&mut tampered);
             assert!(
-                verify_act_fixity(&tampered).is_broken(),
+                verify_act_fixity(&tampered, &anchors).is_broken(),
                 "editing `{field}` on a sealed act must be detected"
+            );
+            // …and detected just the same when the edit also rewrites the row's own frozen digest,
+            // which is what makes the ledger the anchor rather than the row.
+            let mut forged = tampered.clone();
+            forged.payload_digest = sealed_act_digest(&forged);
+            assert!(
+                verify_act_fixity(&forged, &anchors).is_broken(),
+                "editing `{field}` and rewriting `payload_digest` to match must be detected"
             );
         }
     }
@@ -2075,7 +2531,7 @@ mod tests {
     fn substituting_the_signature_evidence_is_detected() {
         // The seal metadata is inside the preimage, so swapping which signed PDF a seal claims to
         // rest on is an alteration too — not merely editing the ata's prose.
-        let (_book, act, _ledger, _) = sealed(SealEvidence::Digital {
+        let (_book, act, ledger, _) = sealed(SealEvidence::Digital {
             signing_snapshot_digest: "11".repeat(32),
             signed_pdf_digest: "22".repeat(32),
             signature_validation_report_digest: "33".repeat(32),
@@ -2086,7 +2542,7 @@ mod tests {
             .as_mut()
             .expect("metadata")
             .signed_pdf_digest = Some("ff".repeat(32));
-        assert!(verify_act_fixity(&tampered).is_broken());
+        assert!(verify_act_fixity(&tampered, &anchors_of(&ledger)).is_broken());
     }
 
     #[test]
@@ -2094,9 +2550,10 @@ mod tests {
         // C7: the ata number used to be bound by nothing — it lived only in the ledger
         // justification string, which is not hashed. Now it is in the seal metadata, and so in the
         // preimage, so a renumbering is a named finding rather than an invisible edit.
-        let (_book, act, _ledger, outcome) = sealed(SealEvidence::Manual {
+        let (_book, act, ledger, outcome) = sealed(SealEvidence::Manual {
             original_reference: manual_reference(),
         });
+        let anchors = anchors_of(&ledger);
         assert_eq!(
             act.seal_metadata.as_ref().unwrap().ata_number,
             Some(outcome.ata_number),
@@ -2106,7 +2563,7 @@ mod tests {
         let mut renumbered = act.clone();
         renumbered.ata_number = Some(99);
         assert_eq!(
-            verify_act_fixity(&renumbered),
+            verify_act_fixity(&renumbered, &anchors),
             ActFixity::AtaNumberMismatch {
                 sealed: outcome.ata_number,
                 stored: Some(99),
@@ -2121,7 +2578,7 @@ mod tests {
             .expect("metadata")
             .ata_number = Some(99);
         assert!(matches!(
-            verify_act_fixity(&renumbered_both),
+            verify_act_fixity(&renumbered_both, &anchors),
             ActFixity::Mismatch { .. }
         ));
     }
@@ -2170,7 +2627,8 @@ mod tests {
         assert_eq!(act_ids.len(), 2);
 
         // And it gates the aggregate report, so the instance goes read-only over it.
-        let report = ActFixityReport::build([&first, &collided], [&book]);
+        let anchors = anchors_of(&ledger);
+        let report = ActFixityReport::build([&first, &collided], [&book], &anchors);
         assert!(!report.healthy);
         assert_eq!(report.ata_sequence.len(), 1);
 
@@ -2194,7 +2652,7 @@ mod tests {
         let issues = rebuilt_counter.check_ata_sequence([&first, &second]);
         assert_eq!(issues.len(), 2, "{issues:?}");
         assert!(issues.iter().all(|i| !i.is_uniqueness_violation()));
-        let report = ActFixityReport::build([&first, &second], [&rebuilt_counter]);
+        let report = ActFixityReport::build([&first, &second], [&rebuilt_counter], &anchors);
         assert!(report.healthy, "must not force read-only: {report:?}");
         assert_eq!(report.ata_sequence.len(), 2, "but it is still surfaced");
 
@@ -2265,22 +2723,35 @@ mod tests {
             "a pre-C7 seal must emit no bytes for the number: {payload}"
         );
 
-        // And the whole point: such a row re-verifies clean against its own frozen digest.
-        act.payload_digest = Some(chancela_ledger::digest(payload.as_bytes()));
-        assert_eq!(verify_act_fixity(&act), ActFixity::Verified);
-        assert!(ActFixityReport::build([&act], []).healthy);
+        // And the whole point: such a row re-verifies clean against THE LEDGER'S copy of that
+        // digest. The anchor is built from the stored preimage above, standing in for the
+        // `act.sealed` event a pre-C7 install carries — a legacy row must keep verifying now that
+        // the row's own digest field is no longer what it is measured against.
+        let frozen = chancela_ledger::digest(payload.as_bytes());
+        act.payload_digest = Some(frozen);
+        act.seal_event_seq = Some(2);
+        let anchors = SealAnchors::from_iter([(2u64, frozen)]);
+        assert_eq!(verify_act_fixity(&act, &anchors), ActFixity::Verified);
+        assert!(ActFixityReport::build([&act], [], &anchors).fully_verified());
     }
 
     #[test]
     fn a_sealed_act_with_no_metadata_is_unverifiable_not_verified() {
         // Unknown must never launder into good. Stripping the metadata makes the preimage
         // unrebuildable; that is reported as its own verdict, and it is not `Verified`.
-        let (_book, act, _ledger, _) = sealed(SealEvidence::Manual {
+        //
+        // This leniency is retained ONLY for `seal_metadata`, and only because the field is
+        // genuinely `#[serde(default, skip_serializing_if)]`: a row sealed before it existed and a
+        // row it was deleted from really are indistinguishable. The same reasoning was once applied
+        // to `payload_digest` and did not hold there —
+        // `a_sealed_act_with_no_payload_digest_is_broken_not_merely_unverifiable` pins that split.
+        let (_book, act, ledger, _) = sealed(SealEvidence::Manual {
             original_reference: manual_reference(),
         });
+        let anchors = anchors_of(&ledger);
         let mut stripped = act.clone();
         stripped.seal_metadata = None;
-        let fixity = verify_act_fixity(&stripped);
+        let fixity = verify_act_fixity(&stripped, &anchors);
         assert_eq!(
             fixity,
             ActFixity::Unverifiable {
@@ -2290,18 +2761,22 @@ mod tests {
         assert!(!fixity.is_verified());
         assert!(!fixity.is_broken());
 
-        let report = ActFixityReport::build([&stripped], []);
+        let report = ActFixityReport::build([&stripped], [], &anchors);
         assert_eq!(report.unverifiable, 1);
         assert_eq!(report.verified, 0);
         assert_eq!(report.findings.len(), 1);
+        // Unknown does not gate a running instance, and does not clear an import either.
+        assert!(report.healthy);
+        assert!(!report.fully_verified());
     }
 
     #[test]
     fn an_unsealed_act_is_not_counted_as_a_sealed_one() {
         let book = Book::new(EntityId::new(), BookKind::AssembleiaGeral);
         let act = ready_act(&book);
-        assert_eq!(verify_act_fixity(&act), ActFixity::Unsealed);
-        let report = ActFixityReport::build([&act], [&book]);
+        let anchors = SealAnchors::default();
+        assert_eq!(verify_act_fixity(&act, &anchors), ActFixity::Unsealed);
+        let report = ActFixityReport::build([&act], [&book], &anchors);
         assert!(report.healthy);
         assert_eq!(report.sealed_checked, 0);
         assert!(report.findings.is_empty());
@@ -2311,7 +2786,7 @@ mod tests {
     fn a_sealed_act_survives_a_json_round_trip_through_the_store_shape() {
         // The load path re-verifies acts deserialized from the `acts.json` column, so the check is
         // only worth anything if the durable shape round-trips into the same preimage.
-        let (_book, act, _ledger, outcome) = sealed(SealEvidence::Digital {
+        let (_book, act, ledger, outcome) = sealed(SealEvidence::Digital {
             signing_snapshot_digest: "11".repeat(32),
             signed_pdf_digest: "22".repeat(32),
             signature_validation_report_digest: "33".repeat(32),
@@ -2320,7 +2795,10 @@ mod tests {
         let reloaded: Act = serde_json::from_str(&stored).unwrap();
         assert_eq!(reloaded, act);
         assert_eq!(sealed_act_digest(&reloaded), Some(outcome.payload_digest));
-        assert_eq!(verify_act_fixity(&reloaded), ActFixity::Verified);
+        assert_eq!(
+            verify_act_fixity(&reloaded, &anchors_of(&ledger)),
+            ActFixity::Verified
+        );
     }
 
     #[test]

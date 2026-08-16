@@ -3009,7 +3009,12 @@ impl Store {
         // hold it to the digest its seal froze. The chain proves that *some* payload with digest D
         // was sealed at that position; without this nothing ever checked that the ata still in the
         // `acts` table is that payload.
-        let act_fixity = ActFixityReport::build(acts.values(), books.values());
+        //
+        // The digests come from `ledger` — the events just replayed and verified above — not from
+        // the act rows themselves. An `UPDATE acts SET json = …` reaches `payload_digest` as easily
+        // as it reaches the deliberations beside it; it cannot reach the chain without breaking it.
+        let anchors = chancela_core::SealAnchors::from_ledger(&ledger);
+        let act_fixity = ActFixityReport::build(acts.values(), books.values(), &anchors);
         Ok(LoadedState {
             company_groups,
             group_template_libraries,

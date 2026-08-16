@@ -384,7 +384,10 @@ fn decode_member(base64: &str, label: &str) -> Result<Vec<u8>, ApiError> {
 /// Map an ASiC-path signing failure. The prose is path-specific; the code is
 /// [`SigningError::code()`], and the residual arm delegates to the single `From<SigningError>`
 /// conversion rather than flattening into a scrubbed `500` that says nothing at all.
-fn map_signing_error(err: SigningError) -> ApiError {
+///
+/// `pub(crate)` only so the crate-wide mapper gate in [`crate::signature`] can hold it — no
+/// non-test caller outside this module exists.
+pub(crate) fn map_signing_error(err: SigningError) -> ApiError {
     let code = err.code();
     match &err {
         SigningError::SoftCertificate(e) => ApiError::Unprocessable(format!(

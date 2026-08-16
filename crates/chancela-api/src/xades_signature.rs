@@ -515,7 +515,10 @@ fn xmldsig_algorithm_label(alg: SignatureAlgorithm) -> &'static str {
 /// Map a signing failure to an HTTP error, keeping the wrong-passphrase case a clean 422 and never
 /// echoing any secret. The prose is path-specific; the code is [`SigningError::code()`], and the
 /// residual arm delegates to the single `From<SigningError>` conversion.
-fn map_signing_error(err: SigningError) -> ApiError {
+///
+/// `pub(crate)` only so the crate-wide mapper gate in [`crate::signature`] can hold it — no
+/// non-test caller outside this module exists.
+pub(crate) fn map_signing_error(err: SigningError) -> ApiError {
     let code = err.code();
     match &err {
         SigningError::SoftCertificate(e) => ApiError::Unprocessable(format!(

@@ -101,9 +101,9 @@ pub use rules::{
     FundacaoRulePack, LegalBasis, LegalBasisVerification, RulePack, Severity, statute_findings,
 };
 pub use seal::{
-    ActFixity, ActFixityFinding, ActFixityReport, BookAtaSequenceFinding, SealEvidence,
-    SealOutcome, open_and_seal_book, seal_act, seal_act_with_evidence, sealed_act_digest,
-    verify_act_fixity,
+    ActFixity, ActFixityFinding, ActFixityReport, BookAtaSequenceFinding, SealAnchors,
+    SealEvidence, SealOutcome, open_and_seal_book, seal_act, seal_act_with_evidence,
+    sealed_act_digest, verify_act_fixity,
 };
 pub use tenant::{DEFAULT_TENANT_ID, Tenant, TenantId, default_tenant_id};
 pub use termo::{

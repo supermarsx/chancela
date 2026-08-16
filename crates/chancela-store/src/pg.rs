@@ -627,11 +627,14 @@ impl PostgresBackend {
 
         let (ledger, chain_status) = Ledger::try_from_events(events);
         let integrity = ledger.integrity_report();
-        // Same fixity pass as the SQLite path: the chain verifying says nothing about whether the
-        // `acts` rows still hash to the digests it recorded.
+        // Same fixity pass as the SQLite path, anchored the same way: the digests come from the
+        // replayed `ledger`, never from the act rows being checked. The chain verifying says
+        // nothing about whether the `acts` rows still hash to the digests it recorded.
+        let anchors = chancela_core::SealAnchors::from_ledger(&ledger);
         let act_fixity = chancela_core::ActFixityReport::build(
             aggregates.acts.values(),
             aggregates.books.values(),
+            &anchors,
         );
         Ok(LoadedState {
             company_groups: aggregates.company_groups,

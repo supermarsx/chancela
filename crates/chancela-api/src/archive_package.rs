@@ -2961,8 +2961,14 @@ mod tests {
     use super::*;
     use axum::extract::{Path, State};
     use chancela_authz::{OWNER_ROLE_ID, RoleAssignment, Scope};
-    use chancela_core::{ActState, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc};
+    use chancela_core::act::ManualSignatureOriginalReference;
+    use chancela_core::rules::CscArt63RulePack;
+    use chancela_core::{
+        ActState, AgendaItem, Book, BookKind, Entity, EntityKind, MeetingChannel, Nipc,
+        NumberingScheme, TermoDeAbertura, open_and_seal_book, seal_act,
+    };
     use std::path::PathBuf;
+    use time::macros::{date, time};
 
     use crate::actor::CurrentActor;
     use crate::users::{SecretSource, User, UserId};
@@ -3010,11 +3016,78 @@ mod tests {
             "Lisboa",
             EntityKind::SociedadeAnonima,
         );
+        // The act is sealed through the REAL seal path rather than by assigning `ActState::Sealed`.
+        // A hand-set state produced a row with no `payload_digest` and no `seal_event_seq` — a
+        // shape no seal can emit — and the disposal gate re-verifies sealed acts against the
+        // ledger, so the fixture has to be an act the ledger actually recorded. The ledger guard is
+        // taken here because `open_and_seal_book`/`seal_act` are what append its first events.
+        let mut ledger = state.ledger.write().await;
+        ledger.append(
+            "owner",
+            &format!("entity:{}", entity.id),
+            "entity.created",
+            None,
+            b"entity",
+        );
         let mut book = Book::new(entity.id, BookKind::AssembleiaGeral);
-        book.state = BookState::Closed;
+        open_and_seal_book(
+            &mut book,
+            &entity,
+            TermoDeAbertura {
+                entity_name: entity.name.clone(),
+                entity_nipc: entity.nipc.to_string(),
+                entity_seat: entity.seat.clone(),
+                purpose: "livro de atas da assembleia geral".into(),
+                numbering_scheme: NumberingScheme::Sequential,
+                opening_date: date!(2026 - 01 - 15),
+                required_signatories: vec!["Administrador".into()],
+                required_signatory_records: Vec::new(),
+                ..TermoDeAbertura::default()
+            },
+            "owner",
+            &mut ledger,
+        )
+        .expect("book opens");
+
         let mut act = Act::draft(book.id, "Ata de teste", MeetingChannel::Physical);
-        act.state = ActState::Sealed;
-        act.ata_number = Some(1);
+        act.meeting_date = Some(date!(2026 - 03 - 30));
+        act.meeting_time = Some(time!(10:00));
+        act.place = Some("Sede social".into());
+        act.mesa.presidente = Some("Ana Presidente".into());
+        act.mesa.secretarios = vec!["Rui Secretário".into()];
+        act.agenda = vec![AgendaItem {
+            number: 1,
+            text: "Aprovação das contas".into(),
+        }];
+        act.attendance_reference = Some("Lista de presenças".into());
+        act.deliberations = "Aprovadas as contas do exercício.".into();
+        for next in [
+            ActState::Review,
+            ActState::Convened,
+            ActState::Deliberated,
+            ActState::TextApproved,
+            ActState::Signing,
+        ] {
+            act.advance_to(next).expect("advances");
+        }
+        seal_act(
+            &mut book,
+            &mut act,
+            &entity,
+            &CscArt63RulePack,
+            "owner",
+            true,
+            Some(ManualSignatureOriginalReference {
+                storage_reference: "Arquivo A / Pasta 2026 / Ata 1".to_owned(),
+                custodian: None,
+                note: None,
+            }),
+            &mut ledger,
+        )
+        .expect("act seals");
+        assert_eq!(act.state, ActState::Sealed);
+        assert_eq!(act.ata_number, Some(1));
+        book.state = BookState::Closed;
 
         let pdf_bytes = b"%PDF-1.7\n% archive disposal test\n".to_vec();
         let document = StoredDocument {
@@ -3071,23 +3144,16 @@ mod tests {
         }
 
         {
-            let mut ledger = state.ledger.write().await;
-            ledger.append(
-                "owner",
-                &format!("entity:{}", entity.id),
-                "entity.created",
-                None,
-                b"entity",
-            );
             let book_scope = format!("entity:{}/book:{}", entity.id, book.id);
-            ledger.append("owner", &book_scope, "book.opened", None, b"opened");
             ledger.append("owner", &book_scope, "book.closed", None, b"closed");
             let entity_for_store = entity.clone();
             let book_for_store = book.clone();
             let act_for_store = act.clone();
             let document_for_store = document.clone();
+            // Four events now: `entity.created`, `book.opened` (the termo genesis),
+            // `act.sealed` — the one the fixity check anchors the act to — and `book.closed`.
             state
-                .persist_write_through(&mut ledger, 3, move |tx| {
+                .persist_write_through(&mut ledger, 4, move |tx| {
                     tx.upsert_entity(&entity_for_store)?;
                     tx.upsert_book(&book_for_store)?;
                     tx.upsert_act(&act_for_store)?;
@@ -3097,6 +3163,7 @@ mod tests {
                 .await
                 .expect("persist archive fixture");
         }
+        drop(ledger);
 
         ArchiveFixture {
             state,

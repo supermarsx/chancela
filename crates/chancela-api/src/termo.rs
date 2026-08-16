@@ -597,29 +597,38 @@ fn termo_signer_subject_dn(der: &[u8]) -> Option<String> {
 /// carries none).
 ///
 /// Each arm carries its own Tier-2 code (t58): a wrong passphrase is the operator's to fix in
-/// seconds, bad signing material means the file itself is unusable, and the catch-all establishes
+/// seconds, bad signing material means the file itself is unusable, and the residual arm establishes
 /// neither. Without the codes all three render from the same generic `422` tier and the operator
 /// cannot tell "retype the password" from "this certificate cannot sign".
 ///
-/// The catch-all names no cause on purpose. It is reached only through
+/// **The code is [`chancela_signing::SigningError::code`], never a string written here**, exactly as
+/// in the near-identical `signature::map_local_pkcs12_signing_error`. The residual arm used
+/// to invent `pkcs12_signing_failed`, which is not in
+/// [`chancela_signing::ALL_SIGNING_ERROR_CODES`] — so the same `SigningError::Pades(_)` reported
+/// `signing_pades_failed` from the signature routes and `pkcs12_signing_failed` from this one, and
+/// the client gate that reads the closed list out of the Rust source could not see the second code
+/// at all. Reading the intrinsic code is what keeps both properties without a second list to keep in
+/// step.
+///
+/// The residual arm still names no cause in its *prose*, on purpose. It is reached only through
 /// [`chancela_signing::pipeline::sign_pdf_pades_with_appearance`] over a local
 /// [`Pkcs12SigningSource`], which consults no Trusted List — so the trust-anchor family
 /// (`UntrustedService`, `TrustAnchorNotConfigured`, `TrustedListNotAnchored`) cannot arrive here and
 /// be mis-reported as a local file fault. Any future path that *can* raise those must split them out
-/// rather than widen this arm.
-fn map_termo_pkcs12_error(e: chancela_signing::SigningError) -> ApiError {
+/// rather than widen this arm; their three codes now survive it either way.
+pub(crate) fn map_termo_pkcs12_error(e: chancela_signing::SigningError) -> ApiError {
     use chancela_signing::SigningError as S;
+    let code = e.code();
     match e {
         S::SoftCertificate(chancela_signing::SoftCertificateError::WrongPassword) => {
-            ApiError::Unprocessable("PKCS#12 password is incorrect".to_owned())
-                .with_code("pkcs12_password_incorrect")
+            ApiError::Unprocessable("PKCS#12 password is incorrect".to_owned()).with_code(code)
         }
         S::SoftCertificate(error) => {
             ApiError::Unprocessable(format!("invalid PKCS#12 signing material: {error}"))
-                .with_code("pkcs12_material_invalid")
+                .with_code(code)
         }
         other => ApiError::Unprocessable(format!("local PKCS#12 signing failed: {other}"))
-            .with_code("pkcs12_signing_failed"),
+            .with_code(code),
     }
 }
 
