@@ -2657,6 +2657,16 @@ fn follow_up_reminder(
     today: Date,
     due_soon_days: u16,
 ) -> DashboardReminder {
+    /// An operator-entered string, or `None` when nothing usable was recorded.
+    ///
+    /// Blank is absent: whitespace-only text carries no more information than an absent field, so
+    /// it must never out-rank a populated fallback. Twin of `trimmed_non_empty` in
+    /// `chancela-action-center`, which carries the same reminder derivation for the search index —
+    /// the two copies held the identical `.or()`-before-trim defect and were fixed together.
+    fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+        value.map(str::trim).filter(|value| !value.is_empty())
+    }
+
     let due_date_text = format_date(due_date);
     let status = reminder_status(today, due_date, due_soon_days).to_owned();
     let severity = match status.as_str() {
@@ -2665,17 +2675,13 @@ fn follow_up_reminder(
         _ => "Advisory",
     }
     .to_owned();
-    let detail = follow_up
-        .detail
-        .as_deref()
-        .map(str::trim)
-        .filter(|detail| !detail.is_empty());
-    let assignee_display = follow_up
-        .assignee_display
-        .as_deref()
-        .or(follow_up.assignee.as_deref())
-        .map(str::trim)
-        .filter(|assignee| !assignee.is_empty())
+    let detail = trimmed_non_empty(follow_up.detail.as_deref());
+    // Trim and discard the blank BEFORE falling back, not after. `.or(assignee)` ahead of the
+    // trim treated a display label of "   " as present, short-circuited the fallback, and rendered
+    // this reminder with an empty assignee for a follow-up that has one — a false statement about
+    // who owns the task, on the surface an operator actually reads.
+    let assignee_display = trimmed_non_empty(follow_up.assignee_display.as_deref())
+        .or_else(|| trimmed_non_empty(follow_up.assignee.as_deref()))
         .unwrap_or("");
     let body_key = if detail.is_some() {
         "notifications.reminder.followUp.body"
@@ -5580,6 +5586,78 @@ mod tests {
                 .all(|reminder| reminder.source_rule != "act-convening-notice"),
             "sufficient dispatch evidence should suppress the reminder: {reminders:?}"
         );
+    }
+
+    /// A blank display label must not blank out the assignee on `GET /v1/dashboard`.
+    ///
+    /// `follow_up_reminder` used to run `.or(assignee)` before the trim, so a whitespace-only
+    /// `assignee_display` counted as present, short-circuited the fallback, and rendered an empty
+    /// assignee for a follow-up that has a recorded one. Blank is absent — the sibling `detail`
+    /// two lines away already said so, as does `privacy_receipt_sort_key`. The shared
+    /// `chancela-action-center` copy of this derivation carried the byte-identical defect.
+    #[test]
+    fn a_blank_assignee_display_falls_back_to_the_recorded_assignee_id() {
+        let entity = entity_of(EntityKind::SociedadeAnonima);
+        let book = Book::new(entity.id, BookKind::AssembleiaGeral);
+        let act = Act::draft(
+            book.id,
+            "Ata de aprovação de contas",
+            MeetingChannel::Physical,
+        );
+        let act_id = act.id;
+
+        // (assignee, assignee_display, expected assignee_display param)
+        let cases: [(Option<&str>, Option<&str>, &str); 5] = [
+            (Some("ana"), Some("Ana Silva"), "Ana Silva"),
+            (Some("ana"), None, "ana"),
+            (Some("ana"), Some("   "), "ana"),
+            (Some("   "), Some("   "), ""),
+            (None, Some("   "), ""),
+        ];
+
+        for (assignee, assignee_display, expected) in cases {
+            let follow_up = StoredFollowUp {
+                id: "follow-up-blank-display".to_owned(),
+                act_id,
+                agenda_number: None,
+                deliberation_index: None,
+                title: "Enviar certidão ao contabilista".to_owned(),
+                detail: None,
+                due_date: Some(date!(2026 - 07 - 01)),
+                assignee: assignee.map(str::to_owned),
+                assignee_display: assignee_display.map(str::to_owned),
+                status: StoredFollowUpStatus::Open,
+                created_at: OffsetDateTime::UNIX_EPOCH,
+                created_by: "operator".to_owned(),
+                completed_at: None,
+                completed_by: None,
+            };
+
+            let reminders = dashboard_reminders_with_follow_ups(
+                &HashMap::from([(entity.id, entity.clone())]),
+                &HashMap::from([(book.id, book.clone())]),
+                &HashMap::from([(act.id, act.clone())]),
+                &HashMap::from([(follow_up.id.clone(), follow_up)]),
+                &HashMap::new(),
+                date!(2026 - 07 - 09),
+                &WorkflowReminderSettings::default(),
+            );
+
+            let reminder = reminders
+                .iter()
+                .find(|reminder| reminder.source_rule == "act-follow-up")
+                .expect("the follow-up reminder");
+            assert_eq!(
+                reminder.params.get("assignee_display").map(String::as_str),
+                Some(expected),
+                "assignee {assignee:?} display {assignee_display:?}"
+            );
+            // The stable id is reported verbatim alongside it and is never substituted for.
+            assert_eq!(
+                reminder.params.get("assignee").map(String::as_str),
+                Some(assignee.unwrap_or_default())
+            );
+        }
     }
 
     #[test]
