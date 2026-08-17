@@ -36,7 +36,7 @@ all-transports = ["s3", "sftp", "smb", "ftps"]
 
 [dependencies]
 async-trait = "0.1.89"
-aws-sdk-s3 = { version = "=1.138.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"], optional = true }
+aws-sdk-s3 = { version = "=1.141.0", default-features = false, features = ["default-https-client", "http-1x", "rt-tokio"], optional = true }
 # `s3` only: the checksum headers the multipart upload sends are base64.
 base64 = { version = "0.22.1", optional = true }
 bytes.workspace = true
