@@ -56,7 +56,39 @@ pub struct WorkerConfig {
     pub retry_max_ms: u64,
 }
 
+/// The retry bounds [`DurableQueue::recover`] needs, without handing it the whole
+/// [`WorkerConfig`].
+///
+/// `recover` used to requeue every interrupted job with no `not_before` and no ceiling, because a
+/// `DurableQueue` has no configuration of its own. That is the mechanism that turned any post-claim
+/// failure into a *tight* restart loop: the process died, `recover` made the same job immediately
+/// claimable again, and the restarted worker picked it first. Bounding the requeue here bounds
+/// every such failure at once — including the ones no in-process handler can catch, such as the
+/// OOM kill under the compose `memory:` limit.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RecoveryPolicy {
+    pub max_attempts: u32,
+    pub retry_initial_ms: u64,
+    pub retry_max_ms: u64,
+}
+
+/// Exponential backoff for `attempt`, shared by every retry decision in this crate so a resolution
+/// retry and an upload retry cannot drift apart.
+fn backoff_millis(attempt: u32, initial_ms: u64, max_ms: u64) -> u64 {
+    let shift = attempt.saturating_sub(1).min(20);
+    initial_ms.saturating_mul(1_u64 << shift).min(max_ms)
+}
+
 impl WorkerConfig {
+    #[must_use]
+    pub fn recovery_policy(&self) -> RecoveryPolicy {
+        RecoveryPolicy {
+            max_attempts: self.max_job_attempts,
+            retry_initial_ms: self.retry_initial_ms,
+            retry_max_ms: self.retry_max_ms,
+        }
+    }
+
     pub fn validate(&self) -> Result<(), WorkerError> {
         if self.source_root.as_os_str().is_empty() {
             return Err(WorkerError::configuration("source_root is empty"));
@@ -665,7 +697,15 @@ impl DurableQueue {
         Ok(events)
     }
 
-    async fn attempt_count(&self, job_id: &str) -> Result<u32, WorkerError> {
+    /// How many times this job has actually been attempted, counted from its durable `Running`
+    /// events rather than from a stored counter.
+    ///
+    /// Public because it is the only honest answer to "has this job burned its attempts?" — an
+    /// operator surface needs it, and so does any test asserting that a retry loop terminates. It
+    /// is derived, which means **it only advances once a `Running` event has been written**: a
+    /// caller that decides whether to retry must do so after that write, never before, or it will
+    /// compare a permanently frozen `1` against the ceiling and never reach it.
+    pub async fn attempt_count(&self, job_id: &str) -> Result<u32, WorkerError> {
         Ok(self
             .events(job_id)
             .await?
@@ -803,7 +843,20 @@ impl DurableQueue {
         Ok(())
     }
 
-    pub async fn recover(&self) -> Result<usize, WorkerError> {
+    /// Reconcile jobs left in `running` by a worker that stopped mid-flight.
+    ///
+    /// The requeue is **bounded**, which is the whole point of taking a [`RecoveryPolicy`]. Any
+    /// failure after `claim_next` — a `?` on the queue's own storage, a panic, an OOM kill, a
+    /// `SIGKILL` — leaves the job here with nothing recorded about why. Requeueing it with no delay
+    /// and no ceiling, as this did before, means the restarted worker claims that same job first
+    /// (`claim_next` sorts by id and skips only jobs with a future `not_before`) and dies the same
+    /// way: a restart loop that head-of-line blocks every other backup and sync behind it.
+    ///
+    /// So a recovered job comes back with the same exponential backoff a retry gets, and once it
+    /// has burned `max_attempts` it dead-letters instead. `Transient` is the honest class for that
+    /// dead-letter: the worker never survived long enough to learn the real reason, and claiming
+    /// `Permanent` would tell an operator the retry they can still stage would be pointless.
+    pub async fn recover(&self, policy: RecoveryPolicy) -> Result<usize, WorkerError> {
         let mut entries = tokio::fs::read_dir(self.root.join("running"))
             .await
             .map_err(|error| WorkerError::io("read running queue", &error))?;
@@ -817,7 +870,8 @@ impl DurableQueue {
                 continue;
             }
             let job: Job = Self::read_json(&entry.path(), "job").await?;
-            let (state, destination, error_class, detail) =
+            let attempts = self.attempt_count(&job.id).await?;
+            let (state, destination, error_class, not_before, detail) =
                 if tokio::fs::try_exists(self.receipt_path(&job.id))
                     .await
                     .map_err(|error| WorkerError::io("inspect recovered receipt", &error))?
@@ -826,21 +880,40 @@ impl DurableQueue {
                         JobState::Succeeded,
                         "completed",
                         None,
-                        "completed job reconciled from its durable receipt",
+                        None,
+                        "completed job reconciled from its durable receipt".to_owned(),
                     )
                 } else if self.is_cancelled(&job.id).await? {
                     (
                         JobState::Cancelled,
                         "cancelled",
                         Some(ErrorClass::Cancelled),
-                        "cancelled job recovered after worker restart",
+                        None,
+                        "cancelled job recovered after worker restart".to_owned(),
+                    )
+                } else if attempts >= policy.max_attempts {
+                    (
+                        JobState::Failed,
+                        "failed",
+                        Some(ErrorClass::Transient),
+                        None,
+                        format!(
+                            "the worker did not survive any of this job's {attempts} attempts and \
+                             recorded no reason for any of them; it exceeded max_job_attempts and \
+                             will not be requeued automatically"
+                        ),
                     )
                 } else {
                     (
                         JobState::Recovered,
                         "pending",
                         None,
-                        "unfinished job requeued after worker restart",
+                        Some(unix_millis().saturating_add(backoff_millis(
+                            attempts.max(1),
+                            policy.retry_initial_ms,
+                            policy.retry_max_ms,
+                        ))),
+                        "unfinished job requeued after worker restart".to_owned(),
                     )
                 };
             self.transition(&job.id, "running", destination).await?;
@@ -848,12 +921,12 @@ impl DurableQueue {
                 schema_version: SCHEMA_VERSION,
                 job_id: job.id.clone(),
                 state,
-                attempt: self.attempt_count(&job.id).await?,
+                attempt: attempts,
                 target_id: None,
                 occurred_unix_millis: unix_millis(),
-                not_before_unix_millis: None,
+                not_before_unix_millis: not_before,
                 error_class,
-                detail: detail.to_owned(),
+                detail,
             })
             .await?;
             recovered += 1;
@@ -943,6 +1016,18 @@ impl TargetResolution {
             error_class: ErrorClass::Configuration,
             detail: detail.to_owned(),
         }
+    }
+
+    /// Whether this job should be attempted again rather than dead-lettered.
+    ///
+    /// Deliberately [`ErrorClass::is_retryable`] and nothing else. Resolution has no retry policy
+    /// of its own: "the allowlist forbids this host", "this build has no SFTP client" and "no
+    /// target is configured for this purpose" are decided from local state and will decide the
+    /// same way forever, so they dead-letter on the first attempt; "the resolver did not answer"
+    /// and "the allowlist document could not be read" are `Transient` at their source and get the
+    /// same bounded, backed-off retries an upload failure gets.
+    fn is_retryable(&self) -> bool {
+        self.error_class.is_retryable()
     }
 }
 
@@ -1066,29 +1151,63 @@ impl Worker {
         }
     }
 
+    /// The target this attempt is *aimed* at, known before any resolution work happens.
+    ///
+    /// An API-created job carries its target snapshot; a legacy CLI job is aimed at whatever the
+    /// worker configuration names for its purpose. Either way the `Running` event can say which
+    /// target the attempt was for without first proving that target usable.
+    fn intended_target_id(&self, job: &Job) -> Option<String> {
+        job.target
+            .as_ref()
+            .map(|target| target.id().to_owned())
+            .or_else(|| {
+                self.config
+                    .targets
+                    .target_for(job.purpose)
+                    .map(|target| target.id().to_owned())
+            })
+    }
+
+    /// Run one claimed job to a terminal state, a scheduled retry, or a requeue.
+    ///
+    /// ## Which failures may leave here as `Err`, and why
+    ///
+    /// An `Err` out of this function reaches `run_until`, which propagates it, and `main` then
+    /// exits — with the job still sitting in `running`. Every failure that belongs to *this job*
+    /// therefore leaves as `Ok`: an unusable target, an unreadable source, and any upload error all
+    /// route to [`Self::finish_failed`], [`Self::finish_cancelled`] or [`Self::schedule_retry`].
+    ///
+    /// The `?`s that remain are all failures of the queue's own durable storage — `attempt_count`,
+    /// `record_event`, `is_cancelled`, `receipt`, `transition`. They deliberately stay `?`, because
+    /// there is no honest handler for them: recording a failure is the same I/O that just failed,
+    /// so `finish_failed` would either fail identically or, worse, half-succeed and leave the job
+    /// in a state no reader can interpret. The `receipt` write in particular must never become a
+    /// `finish_failed`: the bytes are already at the target by then, and a `Failed` event over a
+    /// completed upload is a false record in the one place an operator trusts.
+    ///
+    /// What makes that safe is not this function but [`DurableQueue::recover`]. Exiting used to
+    /// mean the same job was instantly claimable again and killed the restarted process the same
+    /// way, forever, blocking everything behind it. Recovery is now bounded — a backoff and an
+    /// attempt ceiling — so a storage fault costs the job a few restarts and then a dead-letter,
+    /// and the rest of the queue drains. That covers the failures no in-process handler could ever
+    /// catch either: a panic, a `SIGKILL`, or the OOM kill under the compose `memory:` limit.
     async fn process_claimed(&self, job: Job) -> Result<(), WorkerError> {
         let attempt = self.queue.attempt_count(&job.id).await?.saturating_add(1);
-        let (target_id, connector) = match self.resolve_connector(&job).await {
-            Ok(resolved) => resolved,
-            Err(failure) => {
-                self.finish_failed(
-                    &job,
-                    attempt,
-                    failure.target_id.as_deref(),
-                    failure.error_class,
-                    &failure.detail,
-                )
-                .await?;
-                return Ok(());
-            }
-        };
+        let intended = self.intended_target_id(&job);
+        // The `Running` event is written *before* target resolution, and the order is not
+        // cosmetic. `attempt_count` is derived by counting these events, so a resolution failure
+        // handled ahead of this write would leave the counter frozen at zero: every attempt would
+        // compute `attempt = 1`, and the `attempt < max_job_attempts` test below would be
+        // permanently true — an unbounded retry loop, which is the very failure the resolution arm
+        // exists to prevent. Writing it here also puts the cancellation check ahead of the
+        // resolution work, so a job an operator has already cancelled no longer pays for it.
         self.queue
             .record_event(JobEvent {
                 schema_version: SCHEMA_VERSION,
                 job_id: job.id.clone(),
                 state: JobState::Running,
                 attempt,
-                target_id: Some(target_id.clone()),
+                target_id: intended.clone(),
                 occurred_unix_millis: unix_millis(),
                 not_before_unix_millis: None,
                 error_class: None,
@@ -1096,9 +1215,36 @@ impl Worker {
             })
             .await?;
         if self.queue.is_cancelled(&job.id).await? {
-            self.finish_cancelled(&job, attempt, &target_id).await?;
+            self.finish_cancelled(&job, attempt, intended.as_deref())
+                .await?;
             return Ok(());
         }
+        let (target_id, connector) = match self.resolve_connector(&job).await {
+            Ok(resolved) => resolved,
+            Err(failure) => {
+                let target_id = failure.target_id.as_deref().or(intended.as_deref());
+                if failure.is_retryable() && attempt < self.config.max_job_attempts {
+                    self.schedule_retry(
+                        &job,
+                        attempt,
+                        target_id,
+                        failure.error_class,
+                        &failure.detail,
+                    )
+                    .await?;
+                } else {
+                    self.finish_failed(
+                        &job,
+                        attempt,
+                        target_id,
+                        failure.error_class,
+                        &failure.detail,
+                    )
+                    .await?;
+                }
+                return Ok(());
+            }
+        };
         let source = match secure_source(&self.source_root, &job.source_relative).await {
             Ok(source) => source,
             Err(_) => {
@@ -1170,31 +1316,12 @@ impl Worker {
                     .await?;
             }
             Err(error) if error.class == ErrorClass::Cancelled => {
-                self.finish_cancelled(&job, attempt, &target_id).await?;
+                self.finish_cancelled(&job, attempt, Some(&target_id))
+                    .await?;
             }
             Err(error) if error.is_retryable() && attempt < self.config.max_job_attempts => {
-                let shift = attempt.saturating_sub(1).min(20);
-                let delay = self
-                    .config
-                    .retry_initial_ms
-                    .saturating_mul(1_u64 << shift)
-                    .min(self.config.retry_max_ms);
-                let not_before = unix_millis().saturating_add(delay);
-                self.queue
-                    .record_event(JobEvent {
-                        schema_version: SCHEMA_VERSION,
-                        job_id: job.id.clone(),
-                        state: JobState::RetryScheduled,
-                        attempt,
-                        target_id: Some(target_id.clone()),
-                        occurred_unix_millis: unix_millis(),
-                        not_before_unix_millis: Some(not_before),
-                        error_class: Some(error.class),
-                        detail: error.message,
-                    })
+                self.schedule_retry(&job, attempt, Some(&target_id), error.class, &error.message)
                     .await?;
-                // Make the job claimable only after its not-before event is durable.
-                self.queue.transition(&job.id, "running", "pending").await?;
             }
             Err(error) => {
                 self.finish_failed(&job, attempt, Some(&target_id), error.class, &error.message)
@@ -1204,11 +1331,47 @@ impl Worker {
         Ok(())
     }
 
+    /// Put a job back in the queue behind an exponential delay.
+    ///
+    /// Shared by the resolution arm and the upload arm so the two cannot define "retry" — the
+    /// backoff, the recorded state, or the ordering of the transition against the event — any
+    /// differently. Callers own the `attempt < max_job_attempts` test, because only they know
+    /// whether the failure they hold is retryable at all.
+    async fn schedule_retry(
+        &self,
+        job: &Job,
+        attempt: u32,
+        target_id: Option<&str>,
+        error_class: ErrorClass,
+        detail: &str,
+    ) -> Result<(), WorkerError> {
+        let not_before = unix_millis().saturating_add(backoff_millis(
+            attempt,
+            self.config.retry_initial_ms,
+            self.config.retry_max_ms,
+        ));
+        self.queue
+            .record_event(JobEvent {
+                schema_version: SCHEMA_VERSION,
+                job_id: job.id.clone(),
+                state: JobState::RetryScheduled,
+                attempt,
+                target_id: target_id.map(ToOwned::to_owned),
+                occurred_unix_millis: unix_millis(),
+                not_before_unix_millis: Some(not_before),
+                error_class: Some(error_class),
+                detail: detail.to_owned(),
+            })
+            .await?;
+        // Make the job claimable only after its not-before event is durable.
+        self.queue.transition(&job.id, "running", "pending").await
+    }
+
     async fn finish_cancelled(
         &self,
         job: &Job,
         attempt: u32,
-        target_id: &str,
+        target_id: Option<&str>,
     ) -> Result<(), WorkerError> {
         self.queue
             .transition(&job.id, "running", "cancelled")
@@ -1219,7 +1382,7 @@ impl Worker {
                 job_id: job.id.clone(),
                 state: JobState::Cancelled,
                 attempt,
-                target_id: Some(target_id.to_owned()),
+                target_id: target_id.map(ToOwned::to_owned),
                 occurred_unix_millis: unix_millis(),
                 not_before_unix_millis: None,
                 error_class: Some(ErrorClass::Cancelled),
@@ -1266,7 +1429,7 @@ impl Worker {
         self: Arc<Self>,
         shutdown: CancellationToken,
     ) -> Result<(), WorkerError> {
-        self.queue.recover().await?;
+        self.queue.recover(self.config.recovery_policy()).await?;
         let mut heartbeat = tokio::time::interval(Duration::from_secs(10));
         heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         while !shutdown.is_cancelled() {
@@ -1475,7 +1638,17 @@ mod tests {
         assert_eq!(staged.job.tenant_id.as_deref(), Some("tenant-a"));
         assert_eq!(staged.job.target.as_ref(), Some(&target));
         assert!(queue.claim_next().await.expect("inspect queue").is_none());
-        assert_eq!(queue.recover().await.expect("recover queue"), 0);
+        assert_eq!(
+            queue
+                .recover(RecoveryPolicy {
+                    max_attempts: 4,
+                    retry_initial_ms: 1_000,
+                    retry_max_ms: 60_000,
+                })
+                .await
+                .expect("recover queue"),
+            0
+        );
         assert!(
             queue
                 .list_snapshots(500)

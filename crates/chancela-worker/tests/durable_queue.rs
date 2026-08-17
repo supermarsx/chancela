@@ -5,7 +5,14 @@ use chancela_connectors::{
     ErrorClass, InMemorySecretProvider, JobPurpose, LocalTarget, PurposeTargets, TargetConfig,
     WebDavAuth, WebDavTarget, WorkerTargets,
 };
-use chancela_worker::{DurableQueue, JobState, Worker, WorkerConfig, WorkerError};
+use chancela_worker::{DurableQueue, JobState, RecoveryPolicy, Worker, WorkerConfig, WorkerError};
+
+fn unix_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock before the unix epoch")
+        .as_millis() as u64
+}
 
 fn isolated_root(label: &str) -> PathBuf {
     std::env::temp_dir().join(format!("chancela-worker-{label}-{}", uuid::Uuid::new_v4()))
@@ -449,17 +456,43 @@ async fn recovers_interrupted_jobs_and_terminally_fails_missing_sources() {
     tokio::fs::rename(pending, running)
         .await
         .expect("simulate interrupted claim");
-    assert_eq!(worker.queue().recover().await.expect("recover queue"), 1);
+    // A deliberately longer delay than the fixture's 10ms: the point being proved is that the
+    // recovered job is *not* instantly claimable, and 10ms can elapse in the file reads below.
+    let recovery = RecoveryPolicy {
+        retry_initial_ms: 1_000,
+        retry_max_ms: 1_000,
+        ..config.recovery_policy()
+    };
     assert_eq!(
         worker
             .queue()
-            .snapshot(&interrupted.job.id)
+            .recover(recovery)
             .await
-            .expect("recovered snapshot")
-            .latest_event
-            .state,
-        JobState::Recovered
+            .expect("recover queue"),
+        1
     );
+    let recovered = worker
+        .queue()
+        .snapshot(&interrupted.job.id)
+        .await
+        .expect("recovered snapshot");
+    assert_eq!(recovered.latest_event.state, JobState::Recovered);
+    // A requeue behind a delay, not an instant one: an immediately claimable recovered job is what
+    // let a post-claim failure become a tight restart loop that blocked everything behind it.
+    let not_before = recovered
+        .latest_event
+        .not_before_unix_millis
+        .expect("a recovered job must not be instantly claimable again");
+    assert!(
+        !worker
+            .run_once()
+            .await
+            .expect("poll before the recovery delay"),
+        "the recovered job must not be claimable until its not-before passes"
+    );
+    while unix_millis() <= not_before {
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
     assert!(worker.run_once().await.expect("run recovered job"));
 
     write_source(&config, "removed.bin", b"disappearing source").await;
@@ -647,6 +680,19 @@ async fn an_unresolvable_target_fails_the_job_and_leaves_the_queue_draining() {
     assert_eq!(
         failed.latest_event.target_id.as_deref(),
         Some("narrowed-out")
+    );
+    // Dead-lettered on the first attempt, without burning the other two. A target the effective
+    // allowlist forbids is decided from local state: retrying it would only delay the same answer
+    // three times over while the operator waits to be told what is wrong.
+    assert_eq!(failed.latest_event.attempt, 1);
+    assert_eq!(
+        worker
+            .queue()
+            .attempt_count(&blocked.job.id)
+            .await
+            .expect("attempt count"),
+        1,
+        "a permanent resolution failure must not consume the attempt budget"
     );
     assert!(
         failed

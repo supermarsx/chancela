@@ -286,13 +286,23 @@ impl NetworkPolicy {
             )));
         }
 
+        // Classified `Transient`, not `Configuration`, and the distinction is load-bearing: every
+        // check above this line is decidable locally and forever (the entry is in the allowlist or
+        // it is not), whereas this one is a question we asked the network and got no answer to.
+        // A caller that dead-letters `Configuration` — the worker does — would turn a thirty-second
+        // resolver outage into a queue of permanently failed backups, each recoverable only by an
+        // authenticated retry. `getaddrinfo` does not reliably distinguish NXDOMAIN from SERVFAIL
+        // across platforms, so a genuinely misspelt host is retried too; that costs a bounded
+        // number of backed-off attempts before it dead-letters with this same reason, which is the
+        // cheaper of the two mistakes. The SSRF boundary is untouched: a host that is not
+        // allowlisted never reaches this call, and the address checks below stay permanent.
         let addresses = tokio::net::lookup_host((normalized.as_str(), port))
             .await
-            .map_err(|_| ConnectorError::configuration(format!("{label} host did not resolve")))?
+            .map_err(|_| ConnectorError::transient(format!("{label} host did not resolve")))?
             .map(|address| address.ip())
             .collect::<std::collections::BTreeSet<_>>();
         if addresses.is_empty() {
-            return Err(ConnectorError::configuration(format!(
+            return Err(ConnectorError::transient(format!(
                 "{label} host did not resolve"
             )));
         }
@@ -359,12 +369,18 @@ fn resolve_effective(
 /// Read the runtime allowlist document. A missing file simply means "not configured"; a present
 /// but unreadable or malformed one is an error, because silently continuing on the deployment
 /// ceiling alone would widen the boundary an administrator believed they had narrowed.
+///
+/// The two error kinds are classified apart on the same rule as [`NetworkPolicy::validate_host`]:
+/// an I/O failure on a document that exists is `Transient` — the API rewrites this file whenever an
+/// administrator saves the egress setting, so a read that loses that race says nothing about the
+/// configuration — while content that is too large or malformed is a `Configuration` fault that no
+/// amount of retrying will change. Both still refuse the operation; only the retryability differs.
 pub fn load_runtime_allowlist(path: &Path) -> Result<Option<RuntimeAllowlist>, ConnectorError> {
     let metadata = match std::fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(_) => {
-            return Err(ConnectorError::configuration(
+            return Err(ConnectorError::transient(
                 "connector allowlist document is unreadable",
             ));
         }
@@ -375,7 +391,7 @@ pub fn load_runtime_allowlist(path: &Path) -> Result<Option<RuntimeAllowlist>, C
         ));
     }
     let bytes = std::fs::read(path)
-        .map_err(|_| ConnectorError::configuration("connector allowlist document is unreadable"))?;
+        .map_err(|_| ConnectorError::transient("connector allowlist document is unreadable"))?;
     let document: RuntimeAllowlist = serde_json::from_slice(&bytes)
         .map_err(|_| ConnectorError::configuration("connector allowlist document is malformed"))?;
     Ok(Some(document))
@@ -580,6 +596,7 @@ fn is_public_v6(address: Ipv6Addr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ErrorClass;
 
     #[test]
     fn cidr_matching_is_exact_for_both_address_families() {
@@ -627,6 +644,63 @@ mod tests {
             .validate_host("localhost", 443, "test")
             .await
             .unwrap();
+    }
+
+    /// Where the boundary draws the line between "wrong" and "not right now".
+    ///
+    /// Both refusals below deny the operation, and a reader scanning for a security regression
+    /// would see no difference. The difference is entirely in the class, and it decides whether the
+    /// worker dead-letters a backup or retries it: a host the allowlist does not name is decided
+    /// from local state and will decide the same way forever, whereas a host that did not resolve
+    /// is a question the network declined to answer. Getting these the same way round — as they
+    /// were, both `Configuration` — is what let one resolver outage permanently fail a whole queue.
+    #[tokio::test]
+    async fn a_forbidden_host_is_permanent_but_an_unanswered_resolver_is_transient() {
+        let policy = NetworkPolicy::parse("allowed.example.invalid,198.51.100.0/24").unwrap();
+
+        let forbidden = policy
+            .validate_host("elsewhere.example.invalid", 443, "test")
+            .await
+            .expect_err("an unlisted host must be refused");
+        assert_eq!(forbidden.class, ErrorClass::Configuration);
+        assert!(
+            !forbidden.is_retryable(),
+            "retrying an allowlist decision only delays the same answer"
+        );
+
+        // `.invalid` is reserved by RFC 2606 and never resolves, so this reaches the resolver and
+        // comes back with nothing — the shape of a DNS outage, allowlist satisfied.
+        let unresolved = policy
+            .validate_host("allowed.example.invalid", 443, "test")
+            .await
+            .expect_err("a host that does not resolve must be refused");
+        assert_eq!(unresolved.class, ErrorClass::Transient);
+        assert!(unresolved.is_retryable());
+    }
+
+    /// The same rule applied to the runtime document: unreadable is a fact about this instant,
+    /// malformed is a fact about the content. Both fail closed; only one is worth trying again.
+    #[test]
+    fn an_unreadable_runtime_document_is_transient_and_a_malformed_one_is_not() {
+        let directory =
+            std::env::temp_dir().join(format!("chancela-allowlist-io-{}", uuid::Uuid::new_v4()));
+        // A directory standing where the document belongs: it exists, so this is not the
+        // "not configured" case, and reading it fails.
+        std::fs::create_dir_all(&directory).expect("create the occupied document path");
+        let unreadable =
+            load_runtime_allowlist(&directory).expect_err("a directory is not a document");
+        assert_eq!(unreadable.class, ErrorClass::Transient);
+        std::fs::remove_dir_all(&directory).expect("remove the occupied document path");
+
+        let malformed = directory.with_extension("json");
+        std::fs::write(&malformed, b"{ not json").expect("write a malformed document");
+        let refused = load_runtime_allowlist(&malformed).expect_err("malformed JSON is refused");
+        assert_eq!(refused.class, ErrorClass::Configuration);
+        assert!(
+            !refused.is_retryable(),
+            "a document that will not parse will not parse on the next attempt either"
+        );
+        std::fs::remove_file(&malformed).expect("remove the malformed document");
     }
 
     /// The precedence rule, stated as a test: the environment ceiling can only be narrowed.

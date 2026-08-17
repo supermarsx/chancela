@@ -123,8 +123,9 @@ async fn run(cli: Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
         Command::Once { config, data_dir } => {
             let config = load_config(&config).await?;
+            let recovery = config.recovery_policy();
             let worker = Worker::with_environment_secrets(config, data_dir).await?;
-            worker.queue().recover().await?;
+            worker.queue().recover(recovery).await?;
             let processed = worker.run_once().await?;
             println!("{}", serde_json::json!({ "processed": processed }));
         }

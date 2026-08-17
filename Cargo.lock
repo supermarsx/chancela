@@ -1416,6 +1416,7 @@ dependencies = [
 name = "chancela-worker"
 version = "26.1.0"
 dependencies = [
+ "axum",
  "bytes",
  "chancela-connectors",
  "clap",
