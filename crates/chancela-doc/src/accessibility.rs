@@ -442,9 +442,30 @@ pub struct NonTextContentReport {
     pub decorative_artifact_count: usize,
     /// Count of writer-owned rule artifacts this writer emits as known decorative content.
     pub known_decorative_block_count: usize,
-    /// Known writer-owned decorative rule targets were emitted as PDF artifacts by this writer.
-    pub writer_owned_decorative_artifacts_accounted_for: bool,
-    /// Known decorative artifact targets absent from the supplied decorative entries.
+    /// The writer's own decorative target list is internally consistent.
+    ///
+    /// **This is not a check that the writer emitted anything.** It cannot be: this module derives
+    /// everything from the [`DocumentModel`] and never sees the produced bytes. Whether an artifact
+    /// scope actually reached the content stream is decided by
+    /// [`crate::selfcheck::verify_marked_content_scopes`], which parses the stream and fails the
+    /// write — that is the real guarantee, and it is the one to go and read.
+    ///
+    /// The field is retained, and named for what it does, because it was previously called
+    /// `writer_owned_decorative_artifacts_accounted_for`; under that name both a reviewer and I
+    /// read it as a writer check, and it gated the caller check below into unreachability for the
+    /// entire history of the repository.
+    ///
+    /// ⚠️ **The JSON key still carries the old name**, deliberately. `to_json`'s `"version"` is
+    /// read back by `chancela-api` as `pdf_accessibility.report_version`, and `chancela-mcp`
+    /// counts version-12 reports — a bump makes `v12_report_count` zero and raises the
+    /// `pdf_accessibility_v12_report_missing` checkpoint blocker. Renaming the key without a bump
+    /// would be a silent wire change; renaming it with one is a CI-marker decision that does not
+    /// belong to this repair. The emitted value is unchanged either way.
+    pub writer_target_list_self_consistent: bool,
+    /// Known decorative artifact targets the caller's [`AltTextModel`] did not list.
+    ///
+    /// Non-empty means the caller claimed to have accounted for every non-text item and missed
+    /// one, which is the only way this report can catch a dishonest or stale alt-text model.
     pub missing_decorative_artifacts: Vec<String>,
     /// Alternate text entries with blank target or text.
     pub invalid_text_alternative_count: usize,
@@ -556,7 +577,7 @@ impl AccessibilityReport {
 \"marked_content\":{{\"structure_element_count\":{marked_structure_count},\"marked_leaf_element_count\":{marked_leaf_count},\"table_cell_marked_leaf_count\":{marked_table_cell_count},\"artifact_scope_count\":{marked_artifact_scope_count},\"semantic_leaves_have_marked_content\":{semantic_leaves_marked},\"parent_tree_maps_page_mcids\":{parent_tree_maps_mcids},\"artifacts_are_marked_without_mcid\":{artifacts_without_mcid},\"complete_for_local_profile\":{marked_complete}}},\
 \"artifact_marking\":{{\"layout_artifacts_marked\":{artifact_layout_marked},\"known_layout_artifact_count\":{artifact_count},\"known_layout_artifact_targets\":[{artifact_targets}],\"artifact_scope_operator\":{artifact_scope_operator},\"artifacts_use_mcid\":{artifacts_use_mcid},\"path_painting_scoped_as_artifact\":{path_painting_scoped},\"header_rule_artifact_count\":{header_artifacts},\"horizontal_rule_artifact_count\":{rule_artifacts},\"vote_table_rule_artifact_count\":{vote_rule_artifacts},\"signature_line_artifact_count\":{signature_artifacts},\"page_furniture_artifact_count\":{furniture_artifacts}}}\
 }},\
-\"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"writer_owned_decorative_artifacts_accounted_for\":{writer_decorative_accounted},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
+\"non_text_content\":{{\"model_supplied\":{non_text_model_supplied},\"all_non_text_content_accounted_for\":{non_text_all_accounted},\"text_alternative_count\":{text_alt_count},\"decorative_artifact_count\":{decorative_count},\"known_decorative_block_count\":{known_decorative_count},\"writer_owned_decorative_artifacts_accounted_for\":{writer_list_self_consistent},\"missing_decorative_artifacts\":[{missing_decorative}],\"invalid_text_alternative_count\":{invalid_text_alts},\"invalid_decorative_artifact_count\":{invalid_decorative},\"complete\":{non_text_complete}}},\
 \"alt_text_model_present\":{alt_text},\
 \"pdf_ua_blockers\":[{blockers}]\
 }}",
@@ -663,9 +684,7 @@ impl AccessibilityReport {
             text_alt_count = self.non_text_content.text_alternative_count,
             decorative_count = self.non_text_content.decorative_artifact_count,
             known_decorative_count = self.non_text_content.known_decorative_block_count,
-            writer_decorative_accounted = self
-                .non_text_content
-                .writer_owned_decorative_artifacts_accounted_for,
+            writer_list_self_consistent = self.non_text_content.writer_target_list_self_consistent,
             missing_decorative =
                 json_string_array(&self.non_text_content.missing_decorative_artifacts),
             invalid_text_alts = self.non_text_content.invalid_text_alternative_count,
@@ -1301,24 +1320,28 @@ fn non_text_content(
 ) -> NonTextContentReport {
     let known_decorative_targets = artifact_marking.known_layout_artifact_targets.clone();
     let known_decorative_block_count = known_decorative_targets.len();
-    let writer_owned_decorative_artifacts_accounted_for = artifact_marking.layout_artifacts_marked
+    // Both operands are the length of the same vector, so this is `true` whenever the writer marks
+    // its layout artifacts at all. That is the honest reading of the field and the reason it no
+    // longer gates anything: see `NonTextContentReport::writer_target_list_self_consistent`.
+    let writer_target_list_self_consistent = artifact_marking.layout_artifacts_marked
         && artifact_marking.known_layout_artifact_count == known_decorative_block_count;
+
     let Some(model) = model else {
+        // No model means the caller asserted nothing, so there is no assertion to contradict.
+        // Writer-owned decoration is handled by the writer — `selfcheck` proves the artifact
+        // scopes reached the content stream — so a document with no alt-text model is complete on
+        // this axis and still claims PDF/UA. Unchanged behaviour, and the common case.
         return NonTextContentReport {
             model_supplied: false,
             all_non_text_content_accounted_for: false,
             text_alternative_count: 0,
             decorative_artifact_count: 0,
             known_decorative_block_count,
-            writer_owned_decorative_artifacts_accounted_for,
-            missing_decorative_artifacts: if writer_owned_decorative_artifacts_accounted_for {
-                Vec::new()
-            } else {
-                known_decorative_targets
-            },
+            writer_target_list_self_consistent,
+            missing_decorative_artifacts: Vec::new(),
             invalid_text_alternative_count: 0,
             invalid_decorative_artifact_count: 0,
-            complete: writer_owned_decorative_artifacts_accounted_for,
+            complete: true,
         };
     };
 
@@ -1337,19 +1360,21 @@ fn non_text_content(
         .iter()
         .map(|artifact| artifact.target.trim())
         .collect::<BTreeSet<_>>();
-    let missing_decorative_artifacts = if writer_owned_decorative_artifacts_accounted_for {
-        Vec::new()
-    } else {
-        known_decorative_targets
-            .into_iter()
-            .filter(|target| !decorative_targets.contains(target.as_str()))
-            .collect::<Vec<_>>()
-    };
+    // Ungated. This comparison was previously behind `if writer_owned_..._accounted_for { vec![] }
+    // else { … }` — i.e. behind the tautology above — so the `else` never ran and the list was
+    // unconditionally empty, for the entire history of the repository. A caller could set
+    // `all_non_text_content_accounted_for: true`, list nothing, and still be told the accounting
+    // was complete.
+    let missing_decorative_artifacts = known_decorative_targets
+        .into_iter()
+        .filter(|target| !decorative_targets.contains(target.as_str()))
+        .collect::<Vec<_>>();
+    // `writer_target_list_self_consistent` is deliberately absent: a term that is always `true`
+    // adds nothing to a conjunction except the appearance of rigour.
     let complete = model.all_non_text_content_accounted_for
         && invalid_text_alternative_count == 0
         && invalid_decorative_artifact_count == 0
-        && missing_decorative_artifacts.is_empty()
-        && writer_owned_decorative_artifacts_accounted_for;
+        && missing_decorative_artifacts.is_empty();
 
     NonTextContentReport {
         model_supplied: true,
@@ -1357,7 +1382,7 @@ fn non_text_content(
         text_alternative_count: model.text_alternatives.len(),
         decorative_artifact_count: model.decorative_artifacts.len(),
         known_decorative_block_count,
-        writer_owned_decorative_artifacts_accounted_for,
+        writer_target_list_self_consistent,
         missing_decorative_artifacts,
         invalid_text_alternative_count,
         invalid_decorative_artifact_count,

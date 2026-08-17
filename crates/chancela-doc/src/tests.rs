@@ -1243,11 +1243,7 @@ fn accessibility_default_fixture_reports_no_alt_text_model() {
     assert!(!report.artifact_marking.artifacts_use_mcid);
     assert!(report.artifact_marking.path_painting_scoped_as_artifact);
     assert_eq!(report.non_text_content.known_decorative_block_count, 6);
-    assert!(
-        report
-            .non_text_content
-            .writer_owned_decorative_artifacts_accounted_for
-    );
+    assert!(report.non_text_content.writer_target_list_self_consistent);
     assert!(
         report
             .non_text_content
@@ -1690,11 +1686,7 @@ fn accessibility_non_text_accounting_covers_current_block_variants() {
 
     assert_eq!(report.artifact_marking.known_layout_artifact_count, 5);
     assert_eq!(report.non_text_content.known_decorative_block_count, 5);
-    assert!(
-        report
-            .non_text_content
-            .writer_owned_decorative_artifacts_accounted_for
-    );
+    assert!(report.non_text_content.writer_target_list_self_consistent);
     assert!(report.non_text_content.complete);
     assert!(
         !report
@@ -1730,16 +1722,15 @@ fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
     assert_eq!(report.non_text_content.text_alternative_count, 1);
     assert_eq!(report.non_text_content.decorative_artifact_count, 2);
     assert_eq!(report.non_text_content.known_decorative_block_count, 2);
-    assert!(
-        report
-            .non_text_content
-            .writer_owned_decorative_artifacts_accounted_for
-    );
-    assert!(
-        report
-            .non_text_content
-            .missing_decorative_artifacts
-            .is_empty()
+    assert!(report.non_text_content.writer_target_list_self_consistent);
+    // The caller declared `block:0:rule`, but index 0 is the PageBreak and the Rule is index 1 —
+    // and they never declared the header rule at all. Both known targets are therefore missing,
+    // which is exactly what this test is named for. Until the gate on this comparison was removed
+    // the list was unconditionally empty and this assertion read `.is_empty()`: a test asserting
+    // the collapse of the behaviour its own name describes.
+    assert_eq!(
+        report.non_text_content.missing_decorative_artifacts,
+        vec!["layout:header-rule".to_string(), "block:1:rule".to_string()]
     );
     assert_eq!(report.non_text_content.invalid_text_alternative_count, 1);
     assert_eq!(report.non_text_content.invalid_decorative_artifact_count, 1);
@@ -1749,6 +1740,61 @@ fn accessibility_non_text_accounting_reports_missing_and_invalid_entries() {
         vec![pdfa::PdfUaBlocker::NonTextContentNotAccountedFor]
     );
     assert!(!report.pdf_ua_claimed);
+}
+
+#[test]
+fn accessibility_non_text_accounting_accepts_a_caller_who_declared_everything() {
+    // The other polarity. `..._reports_missing_and_invalid_entries` only ever proved the list can
+    // be non-empty once the gate was removed; on its own that is satisfied by a check that always
+    // reports everything as missing. This proves the list goes back to empty for a caller who got
+    // it right, so the two together pin a comparison rather than a constant.
+    let mut doc = DocumentModel::new("Decorativos", "Encosto Estratégico Lda", "Teste");
+    doc.blocks = vec![Block::PageBreak, Block::Rule];
+
+    let complete_model = pdfa::AltTextModel {
+        all_non_text_content_accounted_for: true,
+        text_alternatives: vec![],
+        decorative_artifacts: vec![
+            pdfa::DecorativeArtifact::header_rule(),
+            // Index 1 — the Rule. Index 0 is the PageBreak, which is not decorative content.
+            pdfa::DecorativeArtifact::block_rule(1),
+        ],
+    };
+    let report = pdfa::accessibility_report(
+        pdfa::AccessibilityInput::new(&doc).with_alt_text_model(&complete_model),
+    );
+
+    assert_eq!(report.non_text_content.known_decorative_block_count, 2);
+    assert_eq!(
+        report.non_text_content.missing_decorative_artifacts,
+        Vec::<String>::new()
+    );
+    assert!(report.non_text_content.complete);
+    assert!(report.alt_text_model_present);
+    assert!(report.pdf_ua_blockers.is_empty());
+    assert!(report.pdf_ua_claimed);
+
+    // And one target short is caught — the same model minus the header rule.
+    let short_model = pdfa::AltTextModel {
+        all_non_text_content_accounted_for: true,
+        text_alternatives: vec![],
+        decorative_artifacts: vec![pdfa::DecorativeArtifact::block_rule(1)],
+    };
+    let short = pdfa::accessibility_report(
+        pdfa::AccessibilityInput::new(&doc).with_alt_text_model(&short_model),
+    );
+    assert_eq!(
+        short.non_text_content.missing_decorative_artifacts,
+        vec!["layout:header-rule".to_string()]
+    );
+    assert!(!short.non_text_content.complete);
+    assert_eq!(
+        short.pdf_ua_blockers,
+        vec![pdfa::PdfUaBlocker::NonTextContentNotAccountedFor]
+    );
+    // The point of the whole repair: a caller who claims complete coverage and is not complete no
+    // longer earns a PDF/UA-1 claim on their own say-so.
+    assert!(!short.pdf_ua_claimed);
 }
 
 #[test]
