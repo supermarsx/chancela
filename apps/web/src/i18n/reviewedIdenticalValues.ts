@@ -307,6 +307,7 @@ export const REVIEWED_IDENTICAL_VALUES = {
     'A resposta do CSC não corresponde ao formato de protocolo esperado.',
     'A resposta não mostra credenciais, códigos ou ativações.',
     'A sessão de assinatura expirou. Recomece para receber um novo código.',
+    'A validação técnica do ASiC foi bem-sucedida localmente. A confiança no signatário, a qualificação, a revogação e os efeitos jurídicos não foram avaliados.',
     'Aberto até',
     'Aberto desde',
     'Aberto em {date}',

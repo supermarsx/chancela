@@ -171,6 +171,74 @@ describe('ASiC inspection findings cover every code the server can emit', () => 
     }
   });
 
+  it('keeps the negative conjunction under a negation, which a positive one would weaken', () => {
+    // In the Romance locales, a list governed by a preceding negation must be joined with the
+    // NEGATIVE conjunction — pt `nem`, es `ni`, fr `ni`, it `né`. The positive one (`ou`, `o`,
+    // `ou`, `o`) reads as "an alternative that might hold" rather than "additionally excluded", so
+    // a one-word edit turns a disclaimer into a possible claim. That is the worst failure this
+    // vocabulary has, in its most compact form.
+    //
+    // Neither the acronym check below nor the placeholder check above can see it: the sentence
+    // stays perfectly well-formed either way.
+    // NB: JavaScript's `\b` is ASCII-only, so `/\bné\b/` can NEVER match — `é` is a non-word
+    // character to the engine, and the boundary after it does not fire. A whitespace-delimited
+    // pattern is required for any accent-final word, and using one everywhere keeps the table
+    // uniform rather than leaving a trap for the next accented conjunction added here.
+    const surroundedBy = (word: string) => new RegExp(`(^|\\s)${word}(\\s|$)`);
+    const NEGATIVE_CONJUNCTION: Record<string, RegExp> = {
+      'pt-PT': surroundedBy('nem'),
+      'pt-BR': surroundedBy('nem'),
+      'es-ES': surroundedBy('ni'),
+      'fr-FR': surroundedBy('ni'),
+      'it-IT': surroundedBy('né'),
+    };
+    // Only `xades_not_supported` is listed. Its negation ("does not establish") precedes the whole
+    // list in every one of these locales, so the rule applies uniformly.
+    //
+    // `asic_valid_local_technical` is deliberately ABSENT: after the pt-PT agreement fix its list
+    // is the SUBJECT and the negation follows it, where `e`/`y`/`et`/`e` is correct. Asserting
+    // `nem` everywhere would pin a grammar error into the guard.
+    const key = ASIC_FINDING_KEYS.xades_not_supported;
+    for (const [locale, negative] of Object.entries(NEGATIVE_CONJUNCTION)) {
+      const value = ALL_CATALOGS[locale][key];
+      expect(value, `${locale} lost the negative conjunction ${negative}`).toMatch(negative);
+    }
+    // And the positive conjunction must not appear inside that negated list.
+    const POSITIVE_UNDER_NEGATION: Record<string, RegExp> = {
+      'pt-PT': surroundedBy('ou'),
+      'pt-BR': surroundedBy('ou'),
+      'es-ES': surroundedBy('o'),
+      'it-IT': surroundedBy('o'),
+    };
+    for (const [locale, positive] of Object.entries(POSITIVE_UNDER_NEGATION)) {
+      expect(
+        ALL_CATALOGS[locale][key],
+        `${locale} uses a positive conjunction under a negation, which weakens the disclaimer`,
+      ).not.toMatch(positive);
+    }
+  });
+
+  it('carries a negation marker in the scope notice of every Romance locale', () => {
+    // The scope notice is the broadest non-claim in the set. Locales legitimately reach it by
+    // different routes — pt-PT fronts "Não … nem …", pt-BR uses "Nada do seguinte é …" — so this
+    // asserts that SOME negation survives rather than pinning one construction and forcing a
+    // translator into a worse sentence.
+    const NEGATION: Record<string, RegExp> = {
+      'pt-PT': /\b(não|nem|nada)\b/i,
+      'pt-BR': /\b(não|nem|nada)\b/i,
+      'es-ES': /\b(no|ni|nada)\b/i,
+      'fr-FR': /\b(ne|n’|ni|rien|aucun)\b/i,
+      'it-IT': /\b(non|né|nulla)\b/i,
+    };
+    const key = ASIC_FINDING_KEYS.technical_scope_only;
+    for (const [locale, negation] of Object.entries(NEGATION)) {
+      expect(
+        ALL_CATALOGS[locale][key],
+        `${locale} scope notice has no negation left — it now reads as a claim`,
+      ).toMatch(negation);
+    }
+  });
+
   it('never states the technical scope as a claim the product does make', () => {
     // These sentences exist to say what was NOT assessed. A translation that loses the negation
     // turns a disclaimer into a qualified-signature claim, which is the one failure here that is

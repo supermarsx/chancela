@@ -7244,7 +7244,7 @@ export const ptPT: Catalog = {
   'asicInspector.finding.technical_scope_only':
     'Apenas inspeção técnica local de assinatura ASiC. Não se efetua nem se reivindica nada do seguinte: chamadas a prestadores em direto, validação do caminho de confiança, obtenção em direto de TSL/TSA/OCSP/CRL, validação de revogação, aprovação de prestador, decisão de estado qualificado, conclusão sobre efeitos jurídicos ao abrigo do eIDAS, decisão de conformidade ASiC/XAdES de produção, alegação B-LT/B-LTA/LTV, assinatura, alterações de armazenamento ou alterações de arquivo.',
   'asicInspector.finding.asic_valid_local_technical':
-    'A validação técnica do ASiC foi bem-sucedida localmente. Não foram avaliados a confiança no signatário, a qualificação, a revogação nem os efeitos jurídicos.',
+    'A validação técnica do ASiC foi bem-sucedida localmente. A confiança no signatário, a qualificação, a revogação e os efeitos jurídicos não foram avaliados.',
   'asicInspector.finding.asic_invalid_local_technical':
     'A validação técnica local do ASiC falhou. Motivos comunicados pelo validador: {reasons}',
   'asicInspector.finding.asic_validation_not_performed':
