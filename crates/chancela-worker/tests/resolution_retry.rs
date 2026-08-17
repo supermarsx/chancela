@@ -2,9 +2,9 @@
 //!
 //! Its own test binary because it is the only worker test that depends on process-global state:
 //! the connector allowlist is read from `CHANCELA_CONNECTOR_ALLOWED_HOSTS` and
-//! `CHANCELA_DATA_DIR`, and `NetworkPolicy` caches the resolution in a static. The tests here
-//! share one data directory and take [`SERIAL`] so only one of them owns the runtime allowlist
-//! document at a time.
+//! `CHANCELA_DATA_DIR`, and `NetworkPolicy` caches the resolution in a static. Each test owns a
+//! private data directory inside its own fixture root — see [`AllowlistDocument`] for why a shared
+//! one is not merely untidy but actively wrong under the runner CI uses.
 //!
 //! ## Why the allowlist document, and not DNS
 //!
@@ -17,7 +17,7 @@
 //! covered by `durable_queue.rs`, where a host the allowlist forbids still dead-letters at once.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Once};
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::Router;
@@ -29,9 +29,13 @@ use chancela_connectors::{
 };
 use chancela_worker::{JobSnapshot, JobState, Worker, WorkerConfig};
 
-/// The tests below mutate one shared data directory and one process-global policy cache.
+/// Guards the window in which one test owns this process's `CHANCELA_DATA_DIR`.
+///
+/// Deliberately *not* the isolation mechanism — see [`AllowlistDocument`]. Under `cargo nextest`,
+/// which is what CI runs, each test is its own process and this lock is uncontended, so the tests
+/// really do run in parallel. It only serialises them under `cargo test`, where they share a
+/// process and therefore share one environment.
 static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-static ENVIRONMENT: Once = Once::new();
 
 const TOKEN_REF: &str = "CHANCELA_CONNECTOR_SECRET_WEBDAV_TOKEN";
 
@@ -39,50 +43,59 @@ const TOKEN_REF: &str = "CHANCELA_CONNECTOR_SECRET_WEBDAV_TOKEN";
 /// claimable on the very next poll, short enough that exhausting three attempts stays quick.
 const RETRY_MS: u64 = 250;
 
-fn shared_data_dir() -> PathBuf {
-    std::env::temp_dir().join("chancela-worker-resolution-retry-data")
+/// One test's private runtime-allowlist document.
+///
+/// The path lives inside that test's own fixture root, and this is load-bearing rather than tidy.
+/// These two tests want *opposite* states of this document at the same moment: one needs it broken
+/// throughout, the other repairs it halfway through to prove the job then succeeds. A fixed shared
+/// path made them silently correct under `cargo test`, which runs them as threads in one process
+/// under [`SERIAL`], and silently wrong under `cargo nextest`, which runs each in its own process
+/// **concurrently** — the repair from one landed in the middle of the other, the transient failure
+/// never happened, and the assertion that the retry counter advances failed. Isolating by directory
+/// fixes it for both runners, and for any future runner, because the tests no longer share a fact.
+///
+/// `CHANCELA_DATA_DIR` itself cannot be isolated: `NetworkPolicy::effective` reads it from the
+/// environment and a process has exactly one environment. That is the whole job of [`SERIAL`].
+struct AllowlistDocument {
+    path: PathBuf,
 }
 
-/// Pin the deployment ceiling to the loopback address the stub server binds, and point the runtime
-/// allowlist at a directory these tests own.
-///
-/// `127.0.0.1/32` is accepted by the *ceiling* parser and refused by the administrative one, which
-/// is the correct asymmetry: a deployment may aim a connector at its own host, an administrator
-/// saving a setting in the UI may not.
-fn configure_environment() {
-    ENVIRONMENT.call_once(|| {
-        let data_dir = shared_data_dir();
-        std::fs::create_dir_all(&data_dir).expect("create shared data directory");
-        // SAFETY: the only writes to these variables in this binary, behind a `Once`, before any
-        // test has spawned a task that reads them.
+impl AllowlistDocument {
+    /// Point this process at `data_dir` and pin the deployment ceiling to loopback.
+    ///
+    /// `127.0.0.1/32` is accepted by the *ceiling* parser and refused by the administrative one,
+    /// which is the correct asymmetry: a deployment may aim a connector at its own host, an
+    /// administrator saving a setting in the UI may not.
+    fn install(data_dir: &Path) -> Self {
+        std::fs::create_dir_all(data_dir).expect("create the test's data directory");
+        // SAFETY: the caller holds `SERIAL` for the whole test, so no other thread in this process
+        // is reading or writing these variables while they are being set.
         unsafe {
             std::env::set_var(ALLOWED_HOSTS_ENV, "127.0.0.1/32");
-            std::env::set_var(DATA_DIR_ENV, &data_dir);
+            std::env::set_var(DATA_DIR_ENV, data_dir);
         }
-    });
-}
+        Self {
+            path: data_dir.join(RUNTIME_ALLOWLIST_FILE),
+        }
+    }
 
-fn runtime_allowlist_path() -> PathBuf {
-    shared_data_dir().join(RUNTIME_ALLOWLIST_FILE)
-}
+    /// Make the document unreadable without making it absent.
+    ///
+    /// A directory where a file belongs: `metadata` succeeds, so this is not the "not configured"
+    /// case, and `read` then fails — `load_runtime_allowlist`'s I/O arm, classified `Transient`
+    /// because a document that exists but could not be read says nothing about what it contains.
+    /// Absent, by contrast, means "no runtime narrowing" and resolves cleanly against the ceiling.
+    fn break_document(&self) {
+        self.repair();
+        std::fs::create_dir_all(&self.path).expect("occupy the allowlist document path");
+    }
 
-/// Make the runtime allowlist document unreadable without making it absent.
-///
-/// A directory where a file belongs: `metadata` succeeds, so this is not the "not configured" case,
-/// and `read` then fails — `load_runtime_allowlist`'s I/O arm, classified `Transient` because a
-/// document that exists but could not be read says nothing about what it contains. Absent, by
-/// contrast, means "no runtime narrowing" and resolves cleanly against the ceiling.
-fn break_runtime_allowlist() {
-    repair_runtime_allowlist();
-    std::fs::create_dir_all(runtime_allowlist_path()).expect("occupy the allowlist document path");
-}
-
-fn repair_runtime_allowlist() {
-    let path = runtime_allowlist_path();
-    if path.is_dir() {
-        std::fs::remove_dir_all(&path).expect("free the allowlist document path");
-    } else if path.exists() {
-        std::fs::remove_file(&path).expect("remove the allowlist document");
+    fn repair(&self) {
+        if self.path.is_dir() {
+            std::fs::remove_dir_all(&self.path).expect("free the allowlist document path");
+        } else if self.path.exists() {
+            std::fs::remove_file(&self.path).expect("remove the allowlist document");
+        }
     }
 }
 
@@ -111,13 +124,19 @@ async fn spawn_webdav_stub() -> (String, tokio::task::JoinHandle<()>) {
     (format!("http://{address}"), server)
 }
 
-async fn fixture(label: &str, max_job_attempts: u32) -> (PathBuf, WorkerConfig, Worker) {
+/// Build one test's whole world under a root nothing else can name: its source tree, its queue,
+/// and — the part that matters for isolation — its own `CHANCELA_DATA_DIR`.
+async fn fixture(
+    label: &str,
+    max_job_attempts: u32,
+) -> (PathBuf, WorkerConfig, Worker, AllowlistDocument) {
     let root =
         std::env::temp_dir().join(format!("chancela-worker-{label}-{}", uuid::Uuid::new_v4()));
     let source_root = root.join("source");
     tokio::fs::create_dir_all(&source_root)
         .await
         .expect("create source root");
+    let allowlist = AllowlistDocument::install(&root.join("data"));
     // Both purpose targets are local, so building the worker never consults the network policy;
     // only the job-carried WebDAV target does, which is what puts the failure after the claim.
     let config = WorkerConfig {
@@ -149,7 +168,7 @@ async fn fixture(label: &str, max_job_attempts: u32) -> (PathBuf, WorkerConfig, 
     let worker = Worker::new(config.clone(), root.join("queue"), secrets)
         .await
         .expect("create worker");
-    (root, config, worker)
+    (root, config, worker, allowlist)
 }
 
 async fn stage_webdav_job(worker: &Worker, config: &WorkerConfig, base_url: &str) -> String {
@@ -255,11 +274,9 @@ async fn remove_fixture(root: &Path) {
 #[tokio::test]
 async fn a_transient_resolution_failure_retries_and_the_job_succeeds_on_a_later_attempt() {
     let _serial = SERIAL.lock().await;
-    configure_environment();
-    break_runtime_allowlist();
-
     let (base_url, server) = spawn_webdav_stub().await;
-    let (root, config, worker) = fixture("resolution-blip", 3).await;
+    let (root, config, worker, allowlist) = fixture("resolution-blip", 3).await;
+    allowlist.break_document();
     let blipped = stage_webdav_job(&worker, &config, &base_url).await;
     let behind = enqueue_local_job(&worker, &config, "behind").await;
 
@@ -302,8 +319,9 @@ async fn a_transient_resolution_failure_retries_and_the_job_succeeds_on_a_later_
         b"queued behind the blip"
     );
 
-    // The blip passes.
-    repair_runtime_allowlist();
+    // The blip passes. Only this test's document is repaired: the sibling test needs its own
+    // broken throughout, and under nextest it is running in another process right now.
+    allowlist.repair();
     wait_until_claimable(&retrying).await;
     drain(&worker).await;
 
@@ -330,7 +348,6 @@ async fn a_transient_resolution_failure_retries_and_the_job_succeeds_on_a_later_
 
     server.abort();
     remove_fixture(&root).await;
-    repair_runtime_allowlist();
 }
 
 /// The trap the retry arm had to be built around.
@@ -346,11 +363,11 @@ async fn a_transient_resolution_failure_retries_and_the_job_succeeds_on_a_later_
 #[tokio::test]
 async fn a_transient_failure_repeated_past_the_cap_dead_letters_with_the_counter_advanced() {
     let _serial = SERIAL.lock().await;
-    configure_environment();
-    break_runtime_allowlist();
-
     let (base_url, server) = spawn_webdav_stub().await;
-    let (root, config, worker) = fixture("resolution-exhausted", 3).await;
+    let (root, config, worker, allowlist) = fixture("resolution-exhausted", 3).await;
+    // Broken for the whole test, and privately so — the sibling test repairs *its* document
+    // partway through, which under nextest happens in a concurrent process.
+    allowlist.break_document();
     let blipped = stage_webdav_job(&worker, &config, &base_url).await;
     let behind = enqueue_local_job(&worker, &config, "behind").await;
 
@@ -402,5 +419,4 @@ async fn a_transient_failure_repeated_past_the_cap_dead_letters_with_the_counter
 
     server.abort();
     remove_fixture(&root).await;
-    repair_runtime_allowlist();
 }
