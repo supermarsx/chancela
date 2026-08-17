@@ -2461,6 +2461,15 @@ fn privacy_review_reminder_from_summary(
     })
 }
 
+/// An operator-entered string, or `None` when nothing usable was recorded.
+///
+/// Blank is absent. A field holding only whitespace carries no more information than an absent
+/// one, and every site in this crate that reads operator text says so: it must never out-rank a
+/// populated fallback, and it must never render as a value the operator can read as a fact.
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
 fn follow_up_reminder(
     entity: &Entity,
     book: &Book,
@@ -2478,17 +2487,12 @@ fn follow_up_reminder(
         _ => "Advisory",
     }
     .to_owned();
-    let detail = follow_up
-        .detail
-        .as_deref()
-        .map(str::trim)
-        .filter(|detail| !detail.is_empty());
-    let assignee_display = follow_up
-        .assignee_display
-        .as_deref()
-        .or(follow_up.assignee.as_deref())
-        .map(str::trim)
-        .filter(|assignee| !assignee.is_empty())
+    let detail = trimmed_non_empty(follow_up.detail.as_deref());
+    // Trim and discard the blank BEFORE falling back, not after: a display label of "   " is an
+    // absent label, and an operator shown an empty assignee where one is recorded is being shown
+    // something false. This is the order `detail` above and `privacy_receipt_sort_key` already use.
+    let assignee_display = trimmed_non_empty(follow_up.assignee_display.as_deref())
+        .or_else(|| trimmed_non_empty(follow_up.assignee.as_deref()))
         .unwrap_or("");
     let body_key = if detail.is_some() {
         "notifications.reminder.followUp.body"

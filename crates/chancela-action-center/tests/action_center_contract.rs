@@ -1750,21 +1750,23 @@ fn a_follow_up_with_detail_uses_the_detailed_body_key() {
 
 #[test]
 fn an_assignee_display_falls_back_to_the_assignee_id_then_to_empty() {
-    let cases: [(Option<&str>, Option<&str>, &str); 3] = [
+    // Blank is absent, and the three sites that read operator text now agree on it:
+    // `follow_up_reminder`'s display label and its `detail` both go through
+    // `trimmed_non_empty`, and `privacy_receipt_sort_key` trims before falling back to
+    // `recorded_at`. The third row is the one that used to be wrong: a whitespace-only display
+    // label short-circuited the fallback and rendered an empty assignee for a follow-up that
+    // has one, which is a false statement about who owns the task.
+    let cases: [(Option<&str>, Option<&str>, &str); 6] = [
         (
             Some("amelia.marques"),
             Some("Amelia Marques"),
             "Amelia Marques",
         ),
         (Some("amelia.marques"), None, "amelia.marques"),
+        (Some("amelia.marques"), Some("   "), "amelia.marques"),
+        (Some("   "), Some("   "), ""),
+        (None, Some("   "), ""),
         (None, None, ""),
-        // DELIBERATELY NOT ASSERTED: assignee = Some("amelia.marques"), display = Some("   ").
-        // `follow_up_reminder` runs `.or(assignee)` *before* `.map(str::trim).filter(..)`
-        // (lib.rs, `let assignee_display = ...`), so a whitespace-only display label short-circuits
-        // the fallback and the param comes back empty even though an assignee is recorded. Two
-        // lines above, `detail` trims first, and `privacy_receipt_sort_key` trims before falling
-        // back to `recorded_at` — so the three sites disagree about whether blank means absent.
-        // Reported for a ruling rather than pinned; pinning it would cement the odd one out.
     ];
     for (assignee, display, expected) in cases {
         let mut world = World::default();
