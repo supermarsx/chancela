@@ -52,7 +52,7 @@ import {
  * presenting as localized copy, and `lang="en"` stops a screen reader reading it with Portuguese
  * phonetics. When the catalog lands, these rows switch over with no change here.
  */
-function FindingEvidence({
+export function FindingEvidence({
   finding,
   t,
 }: {

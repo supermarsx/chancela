@@ -4,11 +4,16 @@
  * the reason a check failed is the payload, so nothing may be dropped for tightness.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { PdfSignatureValidationResponse } from '../../api/types';
-import { PdfValidationResultTable } from './PdfValidationResultTable';
+import { FindingEvidence, PdfValidationResultTable } from './PdfValidationResultTable';
 import { PdfSignatureValidatorPanel } from './PdfSignatureValidatorPanel';
 import { renderWithProviders } from '../../test/utils';
+import type { TFunction } from '../../i18n';
+import { ptPT } from '../../i18n/locales/pt-PT';
+import type { PdfSignatureValidationFinding } from '../../api/types';
+import { PDF_FINDING_KEYS } from '../../i18n/pdfValidationDiagnostics';
+import { resolveServerFinding } from '../../i18n/serverFindingText';
 
 afterEach(() => {
   cleanup();
@@ -384,5 +389,94 @@ describe('PDF validator table styling', () => {
     expect(block).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(block).not.toMatch(/\brgba?\(/);
     expect(block).not.toMatch(/\bhsla?\(/);
+  });
+});
+
+/** A `t` that only knows the badge label, which is all the untranslated arm needs. */
+const findingT = ((key: string) => (ptPT as Record<string, string>)[key] ?? key) as TFunction;
+
+function englishFinding(
+  over: Partial<PdfSignatureValidationFinding>,
+): PdfSignatureValidationFinding {
+  return { severity: 'error', code: 'not_pdf', message: 'server English', ...over };
+}
+
+describe('while the PDF vocabulary is untranslated', () => {
+  it('marks the sentence lang="en" so a screen reader does not read it as Portuguese', () => {
+    const { container } = render(<FindingEvidence finding={englishFinding({})} t={findingT} />);
+    const marked = container.querySelector('[lang="en"]');
+    expect(marked).not.toBeNull();
+    expect(marked?.textContent).toBe('server English');
+  });
+
+  it('labels it as English rather than passing it off as localized copy', () => {
+    const { container } = render(<FindingEvidence finding={englishFinding({})} t={findingT} />);
+    expect(container.textContent).toContain(ptPT['asicInspector.untranslatedBadge']);
+  });
+
+  it('marks every code the map does not claim, not just the one sampled above', () => {
+    for (const code of ['technical_scope_only', 'unsigned_pdf', 'invalid_byte_range']) {
+      const { container } = render(
+        <FindingEvidence
+          finding={englishFinding({ code, message: `English for ${code}` })}
+          t={findingT}
+        />,
+      );
+      expect(container.querySelector('[lang="en"]')?.textContent, code).toBe(`English for ${code}`);
+      cleanup();
+    }
+  });
+
+  it('has no mapped code yet, which is what makes the above the live path', () => {
+    // A guard on the premise of this file: when the catalog lands, these tests must be revisited
+    // rather than silently starting to cover a path that no longer exists.
+    expect(Object.keys(PDF_FINDING_KEYS)).toEqual([]);
+  });
+});
+
+describe('the framed arm, which the PAdES error text will use', () => {
+  /**
+   * **This arm has no live path in this panel yet** and is therefore NOT covered in the DOM here.
+   * Framing requires a mapped code, and `PDF_FINDING_KEYS` is empty by design.
+   *
+   * What is covered: the resolver produces the right split for a `params.error` payload, driven
+   * through the shared helper with a stub key map. The DOM half of the same three-arm switch is
+   * exercised in `AsicSignatureInspectorPanel.test.tsx`, which renders a real framed finding and
+   * asserts exactly one `lang="en"` span containing only the verbatim text.
+   *
+   * The `PDF_FINDING_KEYS` emptiness assertion above is the tripwire: the day the catalog lands it
+   * fails, and whoever lands it has to come back here and render this arm for real.
+   */
+  const STUB = 'A validação PAdES não chegou a uma conclusão: {error}';
+  const stubT = ((_key: string, params?: Record<string, string>) =>
+    STUB.replace(/\{(\w+)\}/g, (whole, name: string) =>
+      params && name in params ? String(params[name]) : whole,
+    )) as TFunction;
+
+  it('splits a params.error payload so only the error can be marked', () => {
+    const error = 'PdfParse(unexpected token at offset 91821)';
+    const resolved = resolveServerFinding(
+      {
+        code: 'pdf_signature_parse_indeterminate',
+        message: `summary: ${error}`,
+        params: { error },
+      },
+      stubT,
+      {
+        keys: { pdf_signature_parse_indeterminate: 'pdfValidator.finding.stub' as never },
+        placeholder: 'error',
+        verbatimOf: (f) => (f as { params?: Record<string, string> }).params?.error,
+      },
+    );
+
+    expect(resolved.kind).toBe('framed');
+    if (resolved.kind !== 'framed') return;
+    expect(resolved.verbatim).toBe(error);
+    expect(resolved.before + resolved.verbatim + resolved.after).toBe(
+      STUB.replace('{error}', error),
+    );
+    // The frame is real prose, so marking the verbatim span is a substring marking rather than the
+    // whole sentence wearing `lang="en"`.
+    expect(resolved.before.trim().length).toBeGreaterThan(0);
   });
 });
