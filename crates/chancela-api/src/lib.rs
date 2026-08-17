@@ -271,6 +271,14 @@ use tokio::sync::{Mutex, RwLock};
 use tower_http::services::{ServeDir, ServeFile};
 
 pub use actor::{CurrentActor, CurrentAttestor};
+/// The closed finding-code vocabularies the web i18n guards read.
+///
+/// Exported because they are a real contract, not because Rust happens to need them here: their
+/// only consumers are `asicInspectionDiagnostics.test.ts` and `pdfValidationDiagnostics.test.ts`,
+/// which read the lists out of the Rust source to prove every emittable code has a translation.
+/// Left inside a private module they are unreachable, so `-D warnings` fails the build on
+/// `dead_code` — which is how CI would have caught this if I had not.
+pub use asic_signature_validation::ASIC_INSPECTION_FINDING_CODES;
 pub use attestation::{AttestationKeyBlob, VerifierSeed};
 pub use authz::{
     Authorizer, authorizer, require_permission, require_permission_with, scope_of_act,
@@ -288,6 +296,8 @@ pub use delegations::{DelegationId, StoredDelegation};
 pub use error::ApiError;
 pub use law::{LawEntry, LawEntryView, LawStore, StoredLawInfo};
 pub use paper_import::PaperBookOcrCommandConfig;
+/// See [`ASIC_INSPECTION_FINDING_CODES`] for why this is exported.
+pub use pdf_signature_validation::PDF_VALIDATION_FINDING_CODES;
 pub use platform_logs::{PlatformLogEntry, PlatformLogRing, PlatformLogsResponse};
 pub use roles::{
     count_owner_admins, effective_permissions_for, effective_permissions_for_actor,
