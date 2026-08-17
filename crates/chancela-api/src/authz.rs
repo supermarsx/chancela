@@ -1529,9 +1529,25 @@ mod tests {
         let sources = crate_sources();
 
         // ── The scan must be real before anything is concluded from it ───────────────────────────
-        assert!(
-            sources.len() >= 90,
-            "the src/ scan found only {} files — it has degraded and is proving nothing",
+        //
+        // EXACT, not a floor. This scan is what binds the route-classification triple over every
+        // route in `ROUTE_CLASSIFICATION`, and a directory walk is structurally blind to a file
+        // that has left the directory: move a handler into a sibling crate and the walk simply
+        // returns fewer files, its call sites vanish from `found`, and the two-way comparison
+        // still balances because they are absent from both sides.
+        //
+        // A floor cannot catch that. With `>= 90` against 102 files, twelve modules could be
+        // extracted and this test would keep passing while proving nothing about them — and the
+        // ten lib-free leaf modules a crate split would move first are exactly ten files. So the
+        // count is pinned: adding or removing a module is a deliberate act and must edit this
+        // number, which is the moment to ask whether the routes it carried are still bound.
+        const EXPECTED_SRC_FILES: usize = 102;
+        assert_eq!(
+            sources.len(),
+            EXPECTED_SRC_FILES,
+            "the src/ scan found {} files, expected {EXPECTED_SRC_FILES}. If you added or removed a \
+             module, update EXPECTED_SRC_FILES — and if you MOVED one out of this crate, check that \
+             the routes it carried are still classified, because this scan can no longer see them",
             sources.len()
         );
         let production_bytes: usize = sources.values().map(|s| s.production.len()).sum();

@@ -2937,9 +2937,20 @@ mod tests {
             }
         }
         out.sort();
-        assert!(
-            out.len() >= 50,
-            "the src/ walk found only {} file(s) — it is not seeing the crate",
+        // EXACT, not a floor — see the matching pin in `authz.rs`. This walk backs the
+        // `ROUTE_GUARD` half of the route-classification triple, and a directory walk cannot see a
+        // file that has left the directory: extract a handler module into a sibling crate and its
+        // `require_confirmation` call sites silently stop being checked. `>= 50` against 101 files
+        // left fifty-one modules' worth of room for that to happen quietly.
+        //
+        // 101, not 102: `confirmation.rs` itself is skipped above.
+        const EXPECTED_WALKED_FILES: usize = 101;
+        assert_eq!(
+            out.len(),
+            EXPECTED_WALKED_FILES,
+            "the src/ walk found {} file(s), expected {EXPECTED_WALKED_FILES}. If you added or \
+             removed a module, update EXPECTED_WALKED_FILES — and if you MOVED one out of this \
+             crate, confirm its confirmation gating is still enforced somewhere this walk reaches",
             out.len()
         );
         out
