@@ -83,6 +83,17 @@ pub const PDF_FINDING_PARSE_INDETERMINATE: &str = "pdf_signature_parse_indetermi
 pub const PDF_FINDING_VALIDATION_INDETERMINATE: &str = "pdf_signature_validation_indeterminate";
 
 /// Every finding code this module can emit, as a closed list the web guard reads.
+// DO NOT DELETE because the compiler calls it unused — it has no Rust caller BY DESIGN.
+//
+// Its consumer is `apps/web/src/i18n/pdfValidationDiagnostics.test.ts`, which reads this file's
+// SOURCE TEXT and fails when a listed code is neither translated nor listed as pending. That is a
+// real dependency the compiler cannot see, so `dead_code` fires and `-D warnings` (CI's lint job)
+// turns it into a failed build. Removing the list to satisfy the lint would silently un-guard the
+// vocabulary — and this one is entirely untranslated today, so the guard is all there is.
+//
+// Allowed rather than made `pub mod`/`pub use`: widening a private module's visibility to quiet a
+// lint would make it part of the crate's public surface as a side effect.
+#[allow(dead_code)]
 pub const PDF_VALIDATION_FINDING_CODES: &[&str] = &[
     PDF_FINDING_TECHNICAL_SCOPE_ONLY,
     PDF_FINDING_NOT_PDF,

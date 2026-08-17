@@ -72,6 +72,17 @@ pub const ASIC_FINDING_VALIDATION_NOT_PERFORMED: &str = "asic_validation_not_per
 pub const ASIC_FINDING_XADES_NOT_SUPPORTED: &str = "xades_not_supported";
 
 /// Every finding code this module can emit, as a closed list the web guard reads.
+// DO NOT DELETE because the compiler calls it unused — it has no Rust caller BY DESIGN.
+//
+// Its consumer is `apps/web/src/i18n/asicInspectionDiagnostics.test.ts`, which reads this file's
+// SOURCE TEXT and fails when a listed code has no catalog entry. That is a real dependency the
+// compiler cannot see, so `dead_code` fires and `-D warnings` (CI's lint job) turns it into a
+// failed build. Removing the list to satisfy the lint would silently un-guard the whole
+// vocabulary: English would start reaching pt-PT operators again with nothing red.
+//
+// Allowed rather than made `pub mod`/`pub use`: widening a private module's visibility to quiet a
+// lint would make it part of the crate's public surface as a side effect.
+#[allow(dead_code)]
 pub const ASIC_INSPECTION_FINDING_CODES: &[&str] = &[
     ASIC_FINDING_TECHNICAL_SCOPE_ONLY,
     ASIC_FINDING_VALID_LOCAL_TECHNICAL,
