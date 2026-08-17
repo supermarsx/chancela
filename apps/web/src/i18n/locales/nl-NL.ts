@@ -7275,4 +7275,17 @@ export const nlNL: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'In het Engels',
   'operations.connectors.probe.untranslatedHint':
     'Deze zin kwam van de server en er is in deze versie geen vertaling voor. Hij wordt precies zo getoond als de server hem schreef, in het Engels.',
+  'asicInspector.finding.technical_scope_only':
+    'Alleen lokale technische inspectie van de ASiC-handtekening. Niets van het volgende wordt uitgevoerd of geclaimd: live aanroepen naar een dienstverlener, validatie van het vertrouwenspad, live ophalen van TSL/TSA/OCSP/CRL, intrekkingscontrole, goedkeuring van de dienstverlener, een beslissing over de gekwalificeerde status, een conclusie over rechtsgevolgen op grond van eIDAS, een beslissing over ASiC/XAdES-conformiteit in productie, een B-LT/B-LTA/LTV-claim, ondertekenen, wijzigingen in de opslag of wijzigingen in het archief.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'De technische ASiC-validatie is lokaal geslaagd. Vertrouwen in de ondertekenaar, kwalificatie, intrekking en rechtsgevolgen zijn niet beoordeeld.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'De lokale technische ASiC-validatie is mislukt. Door de validator gemelde redenen: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'De technische ASiC-validatie is niet uitgevoerd. Door de validator gemelde redenen: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'ASiC-XAdES is gedetecteerd. De lokale technische validatie stelt geen vertrouwen in de ondertekenaar, goedkeuring van de dienstverlener, kwalificatie, intrekkingsstatus, rechtsgevolgen of ASiC/XAdES-conformiteit in productie vast.',
+  'asicInspector.untranslatedBadge': 'In het Engels',
+  'asicInspector.untranslatedHint':
+    'Deze zin kwam van de server en er is in deze versie geen vertaling voor. Hij wordt precies zo getoond als de server hem schreef, in het Engels.',
 };

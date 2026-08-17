@@ -47,6 +47,39 @@ qualified-status decision, eIDAS legal-effect conclusion, production ASiC/XAdES 
 decision, B-LT/B-LTA/LTV claim, signing, storage mutation, or archive mutation is performed or \
 claimed.";
 
+/// Stable finding codes emitted by the ASiC inspection endpoint.
+///
+/// # Why these are constants and why the list below is closed
+///
+/// The `message` beside each code is English, written here, and the web client renders it to
+/// operators in every locale. `noLiteralUiCopy` and `catalogLeakGate` inspect the web app and are
+/// blind by construction to a sentence that arrives over the wire, so nothing on the client side
+/// can notice a code added here without a translation.
+///
+/// [`ALL_ASIC_INSPECTION_FINDING_CODES`] is what closes that gap: `asicInspectionDiagnostics.test.ts`
+/// reads this list out of this file and fails when a code in it has no catalog key. Adding a
+/// finding therefore means adding a constant, listing it, and translating it — in that order.
+///
+/// This mirrors `provider_probe_codes.rs`, deliberately: same problem, same shape.
+///
+/// Note that the blocker findings appended by `append_blocker_findings` do NOT use these codes —
+/// they carry `AsicDiagnosticBlockerId::as_str()` from `chancela-signing`, a separate vocabulary
+/// that is not yet translated and falls through the client's marked-English path.
+pub const ASIC_FINDING_TECHNICAL_SCOPE_ONLY: &str = "technical_scope_only";
+pub const ASIC_FINDING_VALID_LOCAL_TECHNICAL: &str = "asic_valid_local_technical";
+pub const ASIC_FINDING_INVALID_LOCAL_TECHNICAL: &str = "asic_invalid_local_technical";
+pub const ASIC_FINDING_VALIDATION_NOT_PERFORMED: &str = "asic_validation_not_performed";
+pub const ASIC_FINDING_XADES_NOT_SUPPORTED: &str = "xades_not_supported";
+
+/// Every finding code this module can emit, as a closed list the web guard reads.
+pub const ASIC_INSPECTION_FINDING_CODES: &[&str] = &[
+    ASIC_FINDING_TECHNICAL_SCOPE_ONLY,
+    ASIC_FINDING_VALID_LOCAL_TECHNICAL,
+    ASIC_FINDING_INVALID_LOCAL_TECHNICAL,
+    ASIC_FINDING_VALIDATION_NOT_PERFORMED,
+    ASIC_FINDING_XADES_NOT_SUPPORTED,
+];
+
 /// JSON envelope accepted by `POST /v1/signature/asic/inspect`.
 #[derive(Debug, Deserialize)]
 struct AsicSignatureInspectionRequest {
@@ -403,27 +436,27 @@ fn inspect_asic_signature_candidate(
         xades_validation_performed && technical_validation.cryptographically_valid,
     );
     let mut findings = vec![AsicInspectionFinding::info(
-        "technical_scope_only",
+        ASIC_FINDING_TECHNICAL_SCOPE_ONLY,
         LEGAL_NOTICE,
     )];
 
     let status = if technical_validation.validation_performed {
         if technical_validation.cryptographically_valid {
             findings.push(AsicInspectionFinding::info(
-                "asic_valid_local_technical",
+                ASIC_FINDING_VALID_LOCAL_TECHNICAL,
                 "ASiC technical validation succeeded locally; signer trust, qualification, revocation, and legal effect were not assessed.",
             ));
             AsicInspectionStatus::Valid
         } else {
             findings.push(AsicInspectionFinding::error(
-                "asic_invalid_local_technical",
+                ASIC_FINDING_INVALID_LOCAL_TECHNICAL,
                 technical_failure_summary(&technical_validation),
             ));
             AsicInspectionStatus::Invalid
         }
     } else {
         findings.push(AsicInspectionFinding::error(
-            "asic_validation_not_performed",
+            ASIC_FINDING_VALIDATION_NOT_PERFORMED,
             technical_failure_summary(&technical_validation),
         ));
         AsicInspectionStatus::Invalid
@@ -850,7 +883,7 @@ fn append_blocker_findings(report: &AsicProfileReport, findings: &mut Vec<AsicIn
         .any(|blocker| blocker.id == AsicDiagnosticBlockerId::XadesNotSupported)
     {
         findings.push(AsicInspectionFinding::warning(
-            "xades_not_supported",
+            ASIC_FINDING_XADES_NOT_SUPPORTED,
             "ASiC-XAdES was detected. Local technical validation does not establish signer trust, provider approval, qualification, revocation status, legal effect, or production ASiC/XAdES conformance.",
         ));
     }

@@ -7209,4 +7209,17 @@ export const svFI: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'På engelska',
   'operations.connectors.probe.untranslatedHint':
     'Den här meningen kom från servern och det finns ingen översättning i den här versionen. Den visas exakt som servern skrev den, på engelska.',
+  'asicInspector.finding.technical_scope_only':
+    'Endast lokal teknisk inspektion av ASiC-signaturen. Inget av följande utförs eller hävdas: liveanrop till en leverantör, validering av förtroendekedjan, livehämtning av TSL/TSA/OCSP/CRL, spärrkontroll, leverantörsgodkännande, beslut om kvalificerad status, slutsats om rättsverkan enligt eIDAS, beslut om ASiC/XAdES-överensstämmelse i produktion, B-LT/B-LTA/LTV-påstående, signering, ändringar i lagringen eller ändringar i arkivet.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'Den tekniska ASiC-valideringen lyckades lokalt. Förtroende för undertecknaren, kvalificering, spärrstatus och rättsverkan bedömdes inte.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'Den lokala tekniska ASiC-valideringen misslyckades. Skäl som rapporterats av valideraren: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'Den tekniska ASiC-valideringen utfördes inte. Skäl som rapporterats av valideraren: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'ASiC-XAdES upptäcktes. Den lokala tekniska valideringen fastställer varken förtroende för undertecknaren, leverantörsgodkännande, kvalificering, spärrstatus, rättsverkan eller ASiC/XAdES-överensstämmelse i produktion.',
+  'asicInspector.untranslatedBadge': 'På engelska',
+  'asicInspector.untranslatedHint':
+    'Den här meningen kom från servern och det finns ingen översättning i den här versionen. Den visas exakt som servern skrev den, på engelska.',
 };

@@ -7213,4 +7213,17 @@ export const fiFI: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'Englanniksi',
   'operations.connectors.probe.untranslatedHint':
     'Tämä lause tuli palvelimelta, eikä tässä versiossa ole sille käännöstä. Se näytetään täsmälleen siinä muodossa kuin palvelin sen kirjoitti, englanniksi.',
+  'asicInspector.finding.technical_scope_only':
+    'Vain paikallinen tekninen ASiC-allekirjoituksen tarkastus. Mitään seuraavista ei suoriteta eikä väitetä: reaaliaikaiset kutsut palveluntarjoajalle, luottamuspolun validointi, TSL/TSA/OCSP/CRL-tietojen reaaliaikainen haku, sulkulistatarkistus, palveluntarjoajan hyväksyntä, päätös hyväksytystä statuksesta, eIDAS-asetuksen mukainen johtopäätös oikeusvaikutuksista, tuotantokäytön ASiC/XAdES-vaatimustenmukaisuuspäätös, B-LT/B-LTA/LTV-väite, allekirjoittaminen, tallennustilan muutokset tai arkiston muutokset.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'Tekninen ASiC-validointi onnistui paikallisesti. Allekirjoittajan luotettavuutta, hyväksyntää, sulkutilaa ja oikeusvaikutuksia ei arvioitu.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'Paikallinen tekninen ASiC-validointi epäonnistui. Validoijan ilmoittamat syyt: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'Teknistä ASiC-validointia ei suoritettu. Validoijan ilmoittamat syyt: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'ASiC-XAdES havaittiin. Paikallinen tekninen validointi ei osoita allekirjoittajan luotettavuutta, palveluntarjoajan hyväksyntää, hyväksyntästatusta, sulkutilaa, oikeusvaikutuksia eikä tuotantokäytön ASiC/XAdES-vaatimustenmukaisuutta.',
+  'asicInspector.untranslatedBadge': 'Englanniksi',
+  'asicInspector.untranslatedHint':
+    'Tämä lause tuli palvelimelta, eikä tässä versiossa ole sille käännöstä. Se näytetään täsmälleen siinä muodossa kuin palvelin sen kirjoitti, englanniksi.',
 };

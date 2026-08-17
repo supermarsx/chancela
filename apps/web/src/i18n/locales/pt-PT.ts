@@ -7241,4 +7241,17 @@ export const ptPT: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'Em inglês',
   'operations.connectors.probe.untranslatedHint':
     'Esta frase veio do servidor sem tradução disponível nesta versão. É mostrada exatamente como o servidor a escreveu, em inglês.',
+  'asicInspector.finding.technical_scope_only':
+    'Apenas inspeção técnica local de assinatura ASiC. Não se efetua nem se reivindica nada do seguinte: chamadas a prestadores em direto, validação do caminho de confiança, obtenção em direto de TSL/TSA/OCSP/CRL, validação de revogação, aprovação de prestador, decisão de estado qualificado, conclusão sobre efeitos jurídicos ao abrigo do eIDAS, decisão de conformidade ASiC/XAdES de produção, alegação B-LT/B-LTA/LTV, assinatura, alterações de armazenamento ou alterações de arquivo.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'A validação técnica do ASiC foi bem-sucedida localmente. Não foram avaliados a confiança no signatário, a qualificação, a revogação nem os efeitos jurídicos.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'A validação técnica local do ASiC falhou. Motivos comunicados pelo validador: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'A validação técnica do ASiC não foi efetuada. Motivos comunicados pelo validador: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'Foi detetado ASiC-XAdES. A validação técnica local não estabelece a confiança no signatário, a aprovação do prestador, a qualificação, o estado de revogação, os efeitos jurídicos nem a conformidade ASiC/XAdES de produção.',
+  'asicInspector.untranslatedBadge': 'Em inglês',
+  'asicInspector.untranslatedHint':
+    'Esta frase veio do servidor sem tradução disponível nesta versão. É mostrada exatamente como o servidor a escreveu, em inglês.',
 };

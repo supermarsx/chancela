@@ -7286,4 +7286,17 @@ export const frFR: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'En anglais',
   'operations.connectors.probe.untranslatedHint':
     'Cette phrase provient du serveur et aucune traduction n’est disponible dans cette version. Elle est affichée exactement telle que le serveur l’a écrite, en anglais.',
+  'asicInspector.finding.technical_scope_only':
+    'Inspection technique locale de signature ASiC uniquement. Rien de ce qui suit n’est effectué ni revendiqué : appels en direct à un prestataire, validation du chemin de confiance, récupération en direct de TSL/TSA/OCSP/CRL, validation de révocation, approbation de prestataire, décision de statut qualifié, conclusion sur les effets juridiques au titre du règlement eIDAS, décision de conformité ASiC/XAdES de production, revendication B-LT/B-LTA/LTV, signature, modifications du stockage ou modifications de l’archive.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'La validation technique ASiC a réussi localement. La confiance dans le signataire, la qualification, la révocation et les effets juridiques n’ont pas été évalués.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'La validation technique locale ASiC a échoué. Motifs signalés par le validateur : {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'La validation technique ASiC n’a pas été effectuée. Motifs signalés par le validateur : {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'ASiC-XAdES a été détecté. La validation technique locale n’établit ni la confiance dans le signataire, ni l’approbation du prestataire, ni la qualification, ni l’état de révocation, ni les effets juridiques, ni la conformité ASiC/XAdES de production.',
+  'asicInspector.untranslatedBadge': 'En anglais',
+  'asicInspector.untranslatedHint':
+    'Cette phrase provient du serveur et aucune traduction n’est disponible dans cette version. Elle est affichée exactement telle que le serveur l’a écrite, en anglais.',
 };

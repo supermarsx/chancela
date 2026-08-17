@@ -7200,4 +7200,17 @@ export const daDK: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'På engelsk',
   'operations.connectors.probe.untranslatedHint':
     'Denne sætning kom fra serveren, og der findes ingen oversættelse i denne version. Den vises nøjagtigt, som serveren skrev den, på engelsk.',
+  'asicInspector.finding.technical_scope_only':
+    'Kun lokal teknisk inspektion af ASiC-signaturen. Intet af følgende udføres eller hævdes: live-kald til en udbyder, validering af tillidsstien, live-hentning af TSL/TSA/OCSP/CRL, spærrekontrol, udbydergodkendelse, afgørelse om kvalificeret status, konklusion om retsvirkning efter eIDAS, afgørelse om ASiC/XAdES-overensstemmelse i produktion, B-LT/B-LTA/LTV-påstand, signering, ændringer i lagringen eller ændringer i arkivet.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'Den tekniske ASiC-validering lykkedes lokalt. Tillid til underskriveren, kvalifikation, spærring og retsvirkning blev ikke vurderet.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'Den lokale tekniske ASiC-validering mislykkedes. Årsager rapporteret af validatoren: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'Den tekniske ASiC-validering blev ikke udført. Årsager rapporteret af validatoren: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'ASiC-XAdES blev registreret. Den lokale tekniske validering fastslår hverken tillid til underskriveren, udbydergodkendelse, kvalifikation, spærrestatus, retsvirkning eller ASiC/XAdES-overensstemmelse i produktion.',
+  'asicInspector.untranslatedBadge': 'På engelsk',
+  'asicInspector.untranslatedHint':
+    'Denne sætning kom fra serveren, og der findes ingen oversættelse i denne version. Den vises nøjagtigt, som serveren skrev den, på engelsk.',
 };

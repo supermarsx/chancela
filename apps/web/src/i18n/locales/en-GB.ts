@@ -7133,4 +7133,17 @@ export const enGB: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'In English',
   'operations.connectors.probe.untranslatedHint':
     'This sentence arrived from the server with no translation available in this version. It is shown exactly as the server wrote it, in English.',
+  'asicInspector.finding.technical_scope_only':
+    'Local technical ASiC signature inspection only. None of the following is performed or claimed: live provider calls, trust-path validation, live TSL/TSA/OCSP/CRL fetching, revocation validation, provider approval, a qualified-status decision, an eIDAS legal-effect conclusion, a production ASiC/XAdES conformance decision, a B-LT/B-LTA/LTV claim, signing, storage changes, or archive changes.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'ASiC technical validation succeeded locally. Signer trust, qualification, revocation and legal effect were not assessed.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'ASiC technical validation failed locally. Reasons reported by the validator: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'ASiC technical validation was not performed. Reasons reported by the validator: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'ASiC-XAdES was detected. Local technical validation does not establish signer trust, provider approval, qualification, revocation status, legal effect, or production ASiC/XAdES conformance.',
+  'asicInspector.untranslatedBadge': 'In English',
+  'asicInspector.untranslatedHint':
+    'This sentence arrived from the server with no translation available in this version. It is shown exactly as the server wrote it, in English.',
 };

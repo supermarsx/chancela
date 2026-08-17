@@ -7224,4 +7224,17 @@ export const plPL: Catalog = {
   'operations.connectors.probe.untranslatedBadge': 'Po angielsku',
   'operations.connectors.probe.untranslatedHint':
     'To zdanie przyszło z serwera i w tej wersji nie ma dla niego tłumaczenia. Jest pokazane dokładnie tak, jak napisał je serwer, po angielsku.',
+  'asicInspector.finding.technical_scope_only':
+    'Wyłącznie lokalna techniczna inspekcja podpisu ASiC. Żadna z poniższych czynności nie jest wykonywana ani deklarowana: wywołania dostawcy na żywo, walidacja ścieżki zaufania, pobieranie na żywo TSL/TSA/OCSP/CRL, sprawdzanie unieważnienia, zatwierdzenie dostawcy, rozstrzygnięcie o statusie kwalifikowanym, wniosek o skutkach prawnych na gruncie eIDAS, rozstrzygnięcie o zgodności ASiC/XAdES w środowisku produkcyjnym, deklaracja B-LT/B-LTA/LTV, podpisywanie, zmiany w magazynie ani zmiany w archiwum.',
+  'asicInspector.finding.asic_valid_local_technical':
+    'Techniczna walidacja ASiC powiodła się lokalnie. Zaufanie do podpisującego, kwalifikacja, unieważnienie i skutki prawne nie zostały ocenione.',
+  'asicInspector.finding.asic_invalid_local_technical':
+    'Lokalna techniczna walidacja ASiC nie powiodła się. Powody zgłoszone przez walidator: {reasons}',
+  'asicInspector.finding.asic_validation_not_performed':
+    'Techniczna walidacja ASiC nie została wykonana. Powody zgłoszone przez walidator: {reasons}',
+  'asicInspector.finding.xades_not_supported':
+    'Wykryto ASiC-XAdES. Lokalna techniczna walidacja nie ustala zaufania do podpisującego, zatwierdzenia dostawcy, kwalifikacji, statusu unieważnienia, skutków prawnych ani zgodności ASiC/XAdES w środowisku produkcyjnym.',
+  'asicInspector.untranslatedBadge': 'Po angielsku',
+  'asicInspector.untranslatedHint':
+    'To zdanie przyszło z serwera i w tej wersji nie ma dla niego tłumaczenia. Jest pokazane dokładnie tak, jak napisał je serwer, po angielsku.',
 };

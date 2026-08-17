@@ -10,6 +10,7 @@ import type {
 } from '../../api/types';
 import { useInspectAsicSignature } from '../../api/hooks';
 import { t as translateNow, useT, type TFunction } from '../../i18n';
+import { resolveAsicFinding } from '../../i18n/asicInspectionDiagnostics';
 import {
   Badge,
   Button,
@@ -20,6 +21,7 @@ import {
   Field,
   Icon,
   InlineWarning,
+  TooltipText,
 } from '../../ui';
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
@@ -169,6 +171,35 @@ function BlockerList({
   );
 }
 
+/**
+ * One finding's sentence, in the operator's language when the server named it with a known code.
+ *
+ * When it did not — a code this build does not know, from a newer server — the raw English is shown
+ * with a visible `In English` badge and `lang="en"` (so a screen reader pronounces it as English
+ * rather than mangling it in the page language). That marking is the point: a silent fallback would
+ * pass the server's English off as localized copy and make the next backend-added code invisible
+ * instead of loud. Same arrangement as `ProbeDetailText` in the provider-credentials settings.
+ *
+ * The profile blockers rendered by `BlockerList` above still fall through this path, because their
+ * `AsicDiagnosticBlockerId` vocabulary is not translated yet — so they are *marked* as English
+ * rather than quietly passing for pt-PT.
+ */
+function FindingText({ finding }: { finding: AsicInspectionFinding }) {
+  const t = useT();
+  const resolved = resolveAsicFinding(finding, t);
+  if (!resolved.untranslated) return <p>{resolved.text}</p>;
+  return (
+    <p>
+      <span lang="en">{resolved.text}</span>{' '}
+      <Badge tone="neutral">
+        <TooltipText label={t('asicInspector.untranslatedHint')} onlyWhenClipped={false}>
+          {t('asicInspector.untranslatedBadge')}
+        </TooltipText>
+      </Badge>
+    </p>
+  );
+}
+
 function FindingsList({ findings }: { findings: AsicInspectionFinding[] }) {
   if (!findings.length)
     return (
@@ -183,7 +214,7 @@ function FindingsList({ findings }: { findings: AsicInspectionFinding[] }) {
           <Badge tone={findingTone(finding.severity)}>{finding.severity}</Badge>
           <div>
             <code className="mono">{finding.code}</code>
-            <p>{finding.message}</p>
+            <FindingText finding={finding} />
           </div>
         </li>
       ))}
