@@ -1365,20 +1365,27 @@ fn non_text_content(
     }
 }
 
+/// Every writer-owned decorative target this document produces.
+///
+/// Named through the [`DecorativeArtifact`] constructors rather than through the `*_target`
+/// helpers directly. Those constructors are the surface a caller uses to build an [`AltTextModel`],
+/// so routing this side through them keeps one definition of what each piece is called: before,
+/// `page_furniture_header()` and this function each spelled `"header"` independently, and only a
+/// reader comparing the two would have noticed them disagree.
 fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
-    let mut targets = vec![header_rule_target()];
+    let mut targets = vec![DecorativeArtifact::header_rule().target];
     // One target per enabled piece, not per page: the furniture is a single decorative definition
     // that the writer repeats, and enumerating it per page would make this accounting depend on a
     // page count the report cannot see without laying the document out.
     let furniture = &doc.document_layout.furniture;
     if furniture.header_draws() {
-        targets.push(furniture_target("header"));
+        targets.push(DecorativeArtifact::page_furniture_header().target);
     }
     if furniture.footer_draws() {
-        targets.push(furniture_target("footer"));
+        targets.push(DecorativeArtifact::page_furniture_footer().target);
     }
     if furniture.side_text_draws() {
-        targets.push(furniture_target("side-text"));
+        targets.push(DecorativeArtifact::page_furniture_side_text().target);
     }
     for (index, block) in doc.blocks.iter().enumerate() {
         match block {
@@ -1388,15 +1395,15 @@ fn known_decorative_targets(doc: &DocumentModel) -> Vec<String> {
             | Block::Paragraph { .. }
             | Block::KeyValue { .. }
             | Block::PageBreak => {}
-            Block::Rule => targets.push(block_rule_target(index)),
+            Block::Rule => targets.push(DecorativeArtifact::block_rule(index).target),
             Block::VoteTable { .. } => {
-                targets.push(vote_table_rule_target(index, "header"));
-                targets.push(vote_table_rule_target(index, "footer"));
+                targets.push(DecorativeArtifact::vote_table_header_rule(index).target);
+                targets.push(DecorativeArtifact::vote_table_footer_rule(index).target);
             }
             Block::SignatureBlock { slots } => {
-                targets.extend(
-                    (0..slots.len()).map(|slot_index| signature_line_target(index, slot_index)),
-                );
+                targets.extend((0..slots.len()).map(|slot_index| {
+                    DecorativeArtifact::signature_line(index, slot_index).target
+                }));
             }
         }
     }

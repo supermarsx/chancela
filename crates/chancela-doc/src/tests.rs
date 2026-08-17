@@ -2826,6 +2826,75 @@ fn page_furniture_is_emitted_as_artifacts_carrying_no_mcid() {
 }
 
 #[test]
+fn page_furniture_constructors_name_the_targets_the_report_enumerates() {
+    // `DecorativeArtifact::page_furniture_*` is the surface a caller uses to declare the running
+    // header, running footer and marginal side text decorative in an `AltTextModel`. It is only
+    // worth anything if it names the SAME targets the writer enumerates for itself: a constructor
+    // saying `layout:page-furniture:head` would satisfy every other test while never matching, and
+    // the caller would be declaring a piece that does not exist.
+    //
+    // Both sides are therefore pinned against LITERALS rather than against each other. They share
+    // `furniture_target` today, so asserting one against the other would hold no matter what either
+    // said; only a literal notices the day the shared helper's format changes.
+    const EXPECTED: [&str; 3] = [
+        "layout:page-furniture:header",
+        "layout:page-furniture:footer",
+        "layout:page-furniture:side-text",
+    ];
+
+    let furniture = [
+        pdfa::DecorativeArtifact::page_furniture_header(),
+        pdfa::DecorativeArtifact::page_furniture_footer(),
+        pdfa::DecorativeArtifact::page_furniture_side_text(),
+    ];
+    assert_eq!(
+        furniture
+            .iter()
+            .map(|artifact| artifact.target.as_str())
+            .collect::<Vec<_>>(),
+        EXPECTED,
+        "the caller-facing constructors renamed a furniture piece"
+    );
+
+    let doc = furnished(8);
+    let report = pdfa::accessibility_report(&doc);
+    let targets = &report.artifact_marking.known_layout_artifact_targets;
+
+    // The same three, in order, and no fourth: a piece added to the writer without a constructor
+    // would leave a caller unable to name it, which is how these three came to be unused at all.
+    let furniture_targets = targets
+        .iter()
+        .filter(|target| target.starts_with("layout:page-furniture:"))
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        furniture_targets, EXPECTED,
+        "the report enumerates a different set of furniture pieces than the constructors name"
+    );
+    assert_eq!(
+        report.artifact_marking.page_furniture_artifact_count,
+        EXPECTED.len(),
+        "all three furniture pieces draw in this document"
+    );
+
+    // A document that draws no furniture enumerates none of them — the count is per enabled piece,
+    // not a constant.
+    let bare = dense_body(4);
+    let bare_report = pdfa::accessibility_report(&bare);
+    assert_eq!(
+        bare_report.artifact_marking.page_furniture_artifact_count,
+        0
+    );
+    assert!(
+        !bare_report
+            .artifact_marking
+            .known_layout_artifact_targets
+            .iter()
+            .any(|target| target.starts_with("layout:page-furniture:"))
+    );
+}
+
+#[test]
 fn marginal_side_text_is_rotated_by_the_text_matrix_only() {
     // Rotation lives in the text matrix, not a page `/Rotate` and not a form XObject, so the
     // glyphs stay in the page's own space and nothing downstream has to know the text is turned.
