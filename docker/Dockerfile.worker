@@ -5,7 +5,7 @@
 # credential values. Runtime configuration is mounted by Compose.
 
 ########################  Stage 1: Rust build  ########################
-FROM rust:1.97.0-slim-trixie@sha256:466074ef42a9485c726d71017fa629f1954cd5e09b473dcd00467ddc6afdc753 AS rust-build
+FROM rust:1.97.1-slim-trixie@sha256:8e8cf8f7fd54a2d23d5a743b3a03f56e26b6c774276c33fa0595111704ebb15c AS rust-build
 WORKDIR /build
 
 # aws-lc (used by the maintained S3 SDK TLS stack) needs a native C/CMake
