@@ -11657,7 +11657,24 @@ export interface ConfirmationActionPolicyView {
   consequence: ConfirmationConsequence;
   /** The byte-exact phrase to transcribe. Present iff the level is the phrase one. */
   phrase?: string;
-  /** `false` while no route reaches this action yet — do not offer to configure it. */
+  /**
+   * Whether a handler really calls the server's `require_confirmation` for this action —
+   * `HANDLER_WIRED` in `crates/chancela-api/src/confirmation.rs`, held to a scan of that crate's
+   * `src/` in both directions.
+   *
+   * **This changed meaning in t97 and the old description survived here.** It used to read "a
+   * route in `ROUTE_GUARD` declares this action", which is a requirement rather than an
+   * observation: 58 declarations reported as wired against 10 real call sites. An admin screen
+   * must not offer to configure an action the server will not act on, so this is the field that
+   * decides which rows are configurable.
+   *
+   * **Not a safe input for clamping a dialog's strictness.** `false` means "no
+   * `require_confirmation` call site", NOT "the server enforces nothing": `ledger.reanchor`,
+   * `ledger.restore`, `book.start_over`, `data.key_rotation` and `privacy.erasure_execute` each
+   * enforce the step-up half through a hard-coded `require_step_up`, and would `403` a dialog
+   * that stopped collecting a proof. What `false` does tell you at a phrase floor is that the
+   * declared phrase is never asked for.
+   */
   wired: boolean;
 }
 
