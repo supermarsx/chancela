@@ -448,6 +448,11 @@ export const ADMIN_COPY_EXCLUDED_PREFIXES: readonly (readonly [
   string,
   AdminCopyExclusionReason,
 ])[] = [
+  // The ASiC signature inspector's finding copy. A validator panel under Ferramentas, not an
+  // administration destination — the same call as `tools` below, which it would match if its keys
+  // were namespaced under it. Includes `untranslatedBadge`/`untranslatedHint`, the marking shown
+  // when the server sends a finding code this build has no translation for.
+  ['asicInspector', 'not-a-destination'],
   // Configurações sections that are not part of the Administração surface.
   ['settings.about', 'settings-section'],
   ['settings.appearance', 'settings-section'],
