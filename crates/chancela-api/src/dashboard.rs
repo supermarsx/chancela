@@ -2648,6 +2648,16 @@ fn privacy_review_reminder_from_summary(
     })
 }
 
+/// An operator-entered string, or `None` when nothing usable was recorded.
+///
+/// Blank is absent: whitespace-only text carries no more information than an absent field, so it
+/// must never out-rank a populated fallback. Twin of `trimmed_non_empty` in
+/// `chancela-action-center`, which carries this same reminder derivation for the search index —
+/// the two copies held the identical `.or()`-before-trim defect and were fixed together.
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
 fn follow_up_reminder(
     entity: &Entity,
     book: &Book,
@@ -2657,16 +2667,6 @@ fn follow_up_reminder(
     today: Date,
     due_soon_days: u16,
 ) -> DashboardReminder {
-    /// An operator-entered string, or `None` when nothing usable was recorded.
-    ///
-    /// Blank is absent: whitespace-only text carries no more information than an absent field, so
-    /// it must never out-rank a populated fallback. Twin of `trimmed_non_empty` in
-    /// `chancela-action-center`, which carries the same reminder derivation for the search index —
-    /// the two copies held the identical `.or()`-before-trim defect and were fixed together.
-    fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
-        value.map(str::trim).filter(|value| !value.is_empty())
-    }
-
     let due_date_text = format_date(due_date);
     let status = reminder_status(today, due_date, due_soon_days).to_owned();
     let severity = match status.as_str() {
