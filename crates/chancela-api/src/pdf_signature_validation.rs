@@ -5,6 +5,8 @@
 //! DSS/DocTimeStamp evidence. It does not call AMA, fetch live revocation data, build trust paths, or
 //! claim legal/qualified-signature validity.
 
+use std::collections::BTreeMap;
+
 use axum::Json;
 use axum::body::{Body, Bytes};
 use axum::extract::State;
@@ -50,6 +52,53 @@ per-link revocation). No AMA integration, qualified-status decision, or legal-va
 performed or claimed; qualified issuance remains external.";
 const NOT_PERFORMED: &str = "not_performed";
 const TECHNICAL_ONLY: &str = "technical_evidence_only";
+
+/// Stable finding codes emitted by the PDF/PAdES validation endpoint.
+///
+/// Same contract as `asic_signature_validation.rs`: the `message` beside each code is English
+/// written here and rendered to operators in every locale, and the client-side i18n gates are
+/// blind by construction to a sentence that arrives over the wire. `pdfValidationDiagnostics.test.ts`
+/// reads [`PDF_VALIDATION_FINDING_CODES`] out of this file and fails when a listed code has no
+/// catalog entry, so adding a finding means adding a constant, listing it, and translating it.
+///
+/// The last five are the `classify_pades_error` codes. Their sentence is `"<our summary>: <err>"`,
+/// where `<err>` is `chancela_pades::PadesError`'s own `Display` — the first half is translatable,
+/// the second is not, and they are handed over separately in
+/// [`PdfSignatureValidationFinding::params`] under the key `error`.
+pub const PDF_FINDING_TECHNICAL_SCOPE_ONLY: &str = "technical_scope_only";
+pub const PDF_FINDING_NOT_PDF: &str = "not_pdf";
+pub const PDF_FINDING_MISSING_EOF: &str = "pdf_missing_eof";
+pub const PDF_FINDING_MISSING_STARTXREF: &str = "pdf_missing_startxref";
+pub const PDF_FINDING_UNSIGNED_PDF: &str = "unsigned_pdf";
+pub const PDF_FINDING_PADES_CADES_VALIDATION_SUCCEEDED: &str =
+    "pades_cades_cryptographic_validation_succeeded";
+pub const PDF_FINDING_RENDERED_DOCUMENT_NOT_COVERED: &str = "rendered_document_not_covered";
+pub const PDF_FINDING_EMBEDDED_DSS_REVOCATION_EVIDENCE: &str = "embedded_dss_revocation_evidence";
+pub const PDF_FINDING_DOCUMENT_TIMESTAMP_EVIDENCE: &str = "document_timestamp_evidence";
+pub const PDF_FINDING_INVALID_BYTE_RANGE: &str = "invalid_byte_range";
+pub const PDF_FINDING_INVALID_EMBEDDED_SIGNATURE: &str = "invalid_embedded_signature";
+pub const PDF_FINDING_MARKERS_WITHOUT_PARSEABLE_SIGNATURE: &str =
+    "signature_markers_without_parseable_signature";
+pub const PDF_FINDING_PARSE_INDETERMINATE: &str = "pdf_signature_parse_indeterminate";
+pub const PDF_FINDING_VALIDATION_INDETERMINATE: &str = "pdf_signature_validation_indeterminate";
+
+/// Every finding code this module can emit, as a closed list the web guard reads.
+pub const PDF_VALIDATION_FINDING_CODES: &[&str] = &[
+    PDF_FINDING_TECHNICAL_SCOPE_ONLY,
+    PDF_FINDING_NOT_PDF,
+    PDF_FINDING_MISSING_EOF,
+    PDF_FINDING_MISSING_STARTXREF,
+    PDF_FINDING_UNSIGNED_PDF,
+    PDF_FINDING_PADES_CADES_VALIDATION_SUCCEEDED,
+    PDF_FINDING_RENDERED_DOCUMENT_NOT_COVERED,
+    PDF_FINDING_EMBEDDED_DSS_REVOCATION_EVIDENCE,
+    PDF_FINDING_DOCUMENT_TIMESTAMP_EVIDENCE,
+    PDF_FINDING_INVALID_BYTE_RANGE,
+    PDF_FINDING_INVALID_EMBEDDED_SIGNATURE,
+    PDF_FINDING_MARKERS_WITHOUT_PARSEABLE_SIGNATURE,
+    PDF_FINDING_PARSE_INDETERMINATE,
+    PDF_FINDING_VALIDATION_INDETERMINATE,
+];
 const LOCAL_TECHNICAL_EVIDENCE_ONLY: &str = "local_technical_evidence_only";
 const RENEWAL_PLAN_NOTICE: &str =
     "Local embedded evidence planning only; not a B-LT/B-LTA or legal LTV claim.";
@@ -351,7 +400,18 @@ pub struct LiveSignerTrustReport {
 pub struct PdfSignatureValidationFinding {
     pub severity: &'static str,
     pub code: &'static str,
+    /// The English sentence. Stays on the wire and in any stored report, so a client that does not
+    /// know [`code`](Self::code) still has something to render and the audit trail is unchanged.
     pub message: String,
+    /// Values interpolated into [`message`](Self::message), so a translated sentence can place
+    /// them itself.
+    ///
+    /// Only `error` is ever set today, and it carries a [`chancela_pades::PadesError`] rendered by
+    /// `Display` — the validator's own words, which are **not ours to paraphrase**. A localized
+    /// client frames it and marks it as English; it must reach the operator verbatim in every
+    /// locale. Omitted from the wire when empty, matching `ProviderProbeCheck::detail_params`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub params: BTreeMap<&'static str, String>,
 }
 
 impl PdfSignatureValidationFinding {
@@ -360,6 +420,7 @@ impl PdfSignatureValidationFinding {
             severity: "error",
             code,
             message: message.into(),
+            params: BTreeMap::new(),
         }
     }
 
@@ -368,6 +429,7 @@ impl PdfSignatureValidationFinding {
             severity: "warning",
             code,
             message: message.into(),
+            params: BTreeMap::new(),
         }
     }
 
@@ -376,7 +438,15 @@ impl PdfSignatureValidationFinding {
             severity: "info",
             code,
             message: message.into(),
+            params: BTreeMap::new(),
         }
+    }
+
+    /// Attach the interpolated values of this finding's sentence.
+    #[must_use]
+    fn with_params<const N: usize>(mut self, params: [(&'static str, String); N]) -> Self {
+        self.params = params.into_iter().collect();
+        self
     }
 }
 
@@ -731,13 +801,13 @@ fn validate_pdf_signature_candidate(
     let structure = recognize_pdf(&bytes);
     let signal = signed_pdf_signal(&bytes);
     let mut findings = vec![PdfSignatureValidationFinding::info(
-        "technical_scope_only",
+        PDF_FINDING_TECHNICAL_SCOPE_ONLY,
         LEGAL_NOTICE,
     )];
 
     let (status, signature) = if !structure.is_pdf {
         findings.push(PdfSignatureValidationFinding::error(
-            "not_pdf",
+            PDF_FINDING_NOT_PDF,
             "candidate bytes do not contain a PDF header in the first 1024 bytes",
         ));
         (
@@ -747,18 +817,18 @@ fn validate_pdf_signature_candidate(
     } else if !signal.signed_pdf_signal {
         if !structure.has_eof_marker {
             findings.push(PdfSignatureValidationFinding::warning(
-                "pdf_missing_eof",
+                PDF_FINDING_MISSING_EOF,
                 "candidate has a PDF header but no %%EOF marker",
             ));
         }
         if !structure.has_startxref {
             findings.push(PdfSignatureValidationFinding::warning(
-                "pdf_missing_startxref",
+                PDF_FINDING_MISSING_STARTXREF,
                 "candidate has no startxref marker; it may not be a complete classic PDF",
             ));
         }
         findings.push(PdfSignatureValidationFinding::info(
-            "unsigned_pdf",
+            PDF_FINDING_UNSIGNED_PDF,
             "no PDF signature dictionary or ByteRange markers were found",
         ));
         (
@@ -813,12 +883,12 @@ fn validate_signed_pdf_evidence(
             };
             if rendered_document_covered {
                 findings.push(PdfSignatureValidationFinding::info(
-                    "pades_cades_cryptographic_validation_succeeded",
+                    PDF_FINDING_PADES_CADES_VALIDATION_SUCCEEDED,
                     "PAdES/CAdES cryptographic validation succeeded locally and the signature coverage binds the rendered document; signer trust, qualification, and legal effect were not assessed",
                 ));
             } else {
                 findings.push(PdfSignatureValidationFinding::error(
-                    "rendered_document_not_covered",
+                    PDF_FINDING_RENDERED_DOCUMENT_NOT_COVERED,
                     "PAdES/CAdES cryptographic validation succeeded locally, but the signature coverage does not bind the rendered document",
                 ));
             }
@@ -826,13 +896,13 @@ fn validate_signed_pdf_evidence(
             let doc_timestamp = doc_timestamp_report(&report.doc_timestamps);
             if dss.revocation_evidence_present {
                 findings.push(PdfSignatureValidationFinding::info(
-                    "embedded_dss_revocation_evidence",
+                    PDF_FINDING_EMBEDDED_DSS_REVOCATION_EVIDENCE,
                     "embedded DSS OCSP/CRL bytes were found and counted, but revocation freshness/trust was not validated",
                 ));
             }
             if doc_timestamp.present {
                 findings.push(PdfSignatureValidationFinding::info(
-                    "document_timestamp_evidence",
+                    PDF_FINDING_DOCUMENT_TIMESTAMP_EVIDENCE,
                     "embedded DocTimeStamp imprint evidence was inspected locally; TSA trust/path validation was not performed",
                 ));
             }
@@ -865,18 +935,18 @@ fn validate_signed_pdf_evidence(
         }
         Err(err) => {
             let (status, code, message) = classify_pades_error(&err);
-            match status {
-                PdfValidationStatus::Invalid => findings.push(
-                    PdfSignatureValidationFinding::error(code, format!("{message}: {err}")),
-                ),
-                PdfValidationStatus::Indeterminate => findings.push(
-                    PdfSignatureValidationFinding::warning(code, format!("{message}: {err}")),
-                ),
-                _ => findings.push(PdfSignatureValidationFinding::warning(
-                    code,
-                    format!("{message}: {err}"),
-                )),
-            }
+            // `message` is ours and is translatable; `err` is the PAdES layer's own account of the
+            // failure and is not. They are joined for the wire sentence exactly as before, and
+            // handed over separately in `params` so a localized client can translate the first and
+            // pass the second through verbatim, marked as English.
+            let params = [("error", err.to_string())];
+            let finding = match status {
+                PdfValidationStatus::Invalid => {
+                    PdfSignatureValidationFinding::error(code, format!("{message}: {err}"))
+                }
+                _ => PdfSignatureValidationFinding::warning(code, format!("{message}: {err}")),
+            };
+            findings.push(finding.with_params(params));
             (
                 status,
                 PdfSignatureTechnicalReport {
@@ -914,29 +984,29 @@ fn classify_pades_error(
     match err {
         PadesError::InvalidByteRange => (
             PdfValidationStatus::Invalid,
-            "invalid_byte_range",
+            PDF_FINDING_INVALID_BYTE_RANGE,
             "signature ByteRange is malformed or outside the file",
         ),
         PadesError::InvalidContents | PadesError::Cades(_) => (
             PdfValidationStatus::Invalid,
-            "invalid_embedded_signature",
+            PDF_FINDING_INVALID_EMBEDDED_SIGNATURE,
             "embedded signature bytes did not validate against the PDF ByteRange digest",
         ),
         PadesError::NoSignature => (
             PdfValidationStatus::Indeterminate,
-            "signature_markers_without_parseable_signature",
+            PDF_FINDING_MARKERS_WITHOUT_PARSEABLE_SIGNATURE,
             "signature-like markers were present but no parseable /Sig dictionary was found",
         ),
         PadesError::PdfParse(_)
         | PadesError::MalformedStructure(_)
         | PadesError::MissingStartxref => (
             PdfValidationStatus::Indeterminate,
-            "pdf_signature_parse_indeterminate",
+            PDF_FINDING_PARSE_INDETERMINATE,
             "PDF parsing could not establish whether the signature is valid",
         ),
         _ => (
             PdfValidationStatus::Indeterminate,
-            "pdf_signature_validation_indeterminate",
+            PDF_FINDING_VALIDATION_INDETERMINATE,
             "PAdES validation did not reach a conclusion",
         ),
     }

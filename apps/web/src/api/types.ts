@@ -1992,6 +1992,13 @@ export interface PdfSignatureValidationFinding {
   severity: 'error' | 'warning' | 'info' | string;
   code: string;
   message: string;
+  /**
+   * Values interpolated into `message`, so a translated sentence can place them itself.
+   *
+   * Only `error` is set today, carrying the PAdES layer's own failure text. It is not ours to
+   * paraphrase, so a localized client frames it and marks it `lang="en"`. Omitted when empty.
+   */
+  params?: Record<string, string>;
 }
 
 export interface PdfSignatureValidationResponse {

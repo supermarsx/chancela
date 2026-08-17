@@ -31,15 +31,56 @@ import type { ReactNode } from 'react';
 import type {
   DocTimeStampValidationReport,
   LocalTechnicalRenewalPlanReport,
+  PdfSignatureValidationFinding,
   PdfSignatureValidationResponse,
 } from '../../api/types';
 import { useT, type TFunction } from '../../i18n';
+import { resolvePdfFinding } from '../../i18n/pdfValidationDiagnostics';
 import { Digest, Icon, Table } from '../../ui';
 import {
   formatPdfValidatorBytes,
   pdfValidationEvidenceTone,
   pdfValidatorBoolText,
 } from './PdfSignatureValidatorPanel';
+
+/**
+ * One finding's sentence, marked when it is the server's English rather than the catalog's.
+ *
+ * The PDF vocabulary is not translated yet — `PDF_FINDING_KEYS` is deliberately empty while the
+ * copy goes through review — so today every finding takes the `untranslated` arm. That is the
+ * point: the English is the same English as before, but now it is *labelled* as English instead of
+ * presenting as localized copy, and `lang="en"` stops a screen reader reading it with Portuguese
+ * phonetics. When the catalog lands, these rows switch over with no change here.
+ */
+function FindingEvidence({
+  finding,
+  t,
+}: {
+  finding: PdfSignatureValidationFinding;
+  t: TFunction;
+}): ReactNode {
+  const resolved = resolvePdfFinding(finding, t);
+  switch (resolved.kind) {
+    case 'translated':
+      return resolved.text;
+    case 'framed':
+      // Only the PAdES layer's own failure text is foreign; the frame around it is not.
+      return (
+        <>
+          {resolved.before}
+          <span lang="en">{resolved.verbatim}</span>
+          {resolved.after}
+        </>
+      );
+    case 'untranslated':
+      return (
+        <>
+          <span lang="en">{resolved.text}</span>{' '}
+          <span className="muted">({t('asicInspector.untranslatedBadge')})</span>
+        </>
+      );
+  }
+}
 
 export type ValidationVerdict = 'pass' | 'fail' | 'inconclusive' | 'info';
 
@@ -880,7 +921,7 @@ export function buildValidationGroups(
               : finding.severity === 'warning'
                 ? ('inconclusive' as const)
                 : ('info' as const),
-          evidence: finding.message,
+          evidence: <FindingEvidence finding={finding} t={t} />,
           note: finding.severity,
         }))
       : [

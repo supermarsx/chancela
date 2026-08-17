@@ -47,6 +47,7 @@
  */
 import type { AsicInspectionFinding } from '../api/types';
 import type { MessageKey, TParams } from './types';
+import { type ResolvedServerFinding, resolveServerFinding } from './serverFindingText';
 
 /** The catalog-key prefix every finding sentence lives under. */
 const PREFIX = 'asicInspector.finding.';
@@ -99,23 +100,7 @@ export function asicFindingKey(code: string | undefined): MessageKey | undefined
  * entirely Portuguese. Only rendering it with a real value shows the English. For anything
  * user-visible, the template is not the artefact.
  */
-export type ResolvedAsicFinding =
-  /** Fully translated; nothing foreign inside. */
-  | { kind: 'translated'; text: string }
-  /** A translated frame around verbatim foreign text; `verbatim` must be marked `lang="en"`. */
-  | { kind: 'framed'; before: string; verbatim: string; after: string }
-  /** The server's raw English, for a code this build does not know. Mark it AND badge it. */
-  | { kind: 'untranslated'; text: string };
-
-/**
- * Sentinel used to locate the placeholder inside the *translated* string.
- *
- * Splitting the rendered frame is what lets `before`/`after` be correct in a locale that does not
- * put `{reasons}` last. Assuming the placeholder is sentence-final would break the first locale
- * that fronts it, and it would break invisibly — the same way the defect this replaces did.
- * U+0000 cannot occur in catalog copy.
- */
-const PLACEHOLDER_SENTINEL = '\u0000';
+export type ResolvedAsicFinding = ResolvedServerFinding;
 
 /**
  * Resolve one finding into the operator's language.
@@ -132,24 +117,11 @@ export function resolveAsicFinding(
   finding: Pick<AsicInspectionFinding, 'code' | 'message'>,
   t: (key: MessageKey, params?: TParams) => string,
 ): ResolvedAsicFinding {
-  const key = asicFindingKey(finding.code);
-  if (!key) return { kind: 'untranslated', text: finding.message };
-  if (!VERBATIM_REASON_CODES.has(finding.code)) return { kind: 'translated', text: t(key) };
-
-  const verbatim = finding.message?.trim();
-  if (!verbatim) return { kind: 'untranslated', text: finding.message };
-
-  const framed = t(key, { reasons: PLACEHOLDER_SENTINEL });
-  const at = framed.indexOf(PLACEHOLDER_SENTINEL);
-  // A catalog entry that lost its placeholder is a translation bug the guard test catches at CI
-  // time. At runtime, degrade to the frame alone rather than dropping the validator's reasons or
-  // throwing — but do NOT claim it is framed, because there is nowhere to mark the English.
-  if (at < 0) return { kind: 'untranslated', text: finding.message };
-
-  return {
-    kind: 'framed',
-    before: framed.slice(0, at),
-    verbatim,
-    after: framed.slice(at + PLACEHOLDER_SENTINEL.length),
-  };
+  return resolveServerFinding(finding, t, {
+    keys: ASIC_FINDING_KEYS,
+    // For this vocabulary the whole `message` IS the validator's reason text, so the verbatim
+    // payload is the message itself. `PdfSignatureValidationFinding` differs — there only a
+    // `params.error` tail is verbatim — which is why the resolver takes a callback.
+    verbatimOf: (f) => (VERBATIM_REASON_CODES.has(f.code) ? f.message : undefined),
+  });
 }
