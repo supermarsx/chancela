@@ -1,22 +1,204 @@
 {
-  "_comment": [
-    "Ratchet baseline for the Rust coverage gate. Written ONLY by",
-    "`node scripts/rust-coverage-gate.mjs --report <json> --update-baseline` running on Linux;",
-    "the script refuses to write it from any other platform, because the gate is pinned to Linux/CI",
-    "and the workspace has 25 cfg(windows)/cfg(unix) sites that make the platforms non-comparable.",
-    "",
-    "`crates` is EMPTY on purpose. The only figures measured so far came from a Windows host",
-    "(2026-07-21, HEAD ea75441, .orchestration/logs/t75-coverage.md) and baking those into a Linux",
-    "gate is exactly what the standing ruling forbids. Until the coverage job runs once on",
-    "ubuntu-latest and records real numbers here, every non-hard-90 crate reports as 'no baseline'",
-    "and is not gated. The four hard-90% crates are rule-driven and need no baseline.",
-    "",
-    "The `Record ratchet baseline` step in ci.yml now produces this file on every main-branch push",
-    "whose coverage gate is already green, and uploads it as the `rust-coverage-baseline` artifact.",
-    "Landing that artifact here is what finally arms the ratchet for the 29 unbaselined crates.",
-    "It is intentionally a review step: nothing in CI pushes to main."
-  ],
-  "measuredOn": null,
-  "measuredAt": null,
-  "crates": {}
+  "measuredOn": "linux",
+  "measuredAt": "2026-08-16T19:53:42.146Z",
+  "crates": {
+    "chancela-action-center": {
+      "lines": 34.49,
+      "regions": 33.62,
+      "functions": 45.74,
+      "lineCount": 2873
+    },
+    "chancela-api": {
+      "lines": 89.14,
+      "regions": 89.36,
+      "functions": 85.5,
+      "lineCount": 143455
+    },
+    "chancela-apikey": {
+      "lines": 98.03,
+      "regions": 97.93,
+      "functions": 95.4,
+      "lineCount": 814
+    },
+    "chancela-archive": {
+      "lines": 86.8,
+      "regions": 93.69,
+      "functions": 86.47,
+      "lineCount": 1788
+    },
+    "chancela-authz": {
+      "lines": 98.47,
+      "regions": 98.4,
+      "functions": 94.98,
+      "lineCount": 3258
+    },
+    "chancela-cades": {
+      "lines": 95.21,
+      "regions": 92.85,
+      "functions": 90.57,
+      "lineCount": 606
+    },
+    "chancela-cae": {
+      "lines": 84.59,
+      "regions": 83.86,
+      "functions": 81.51,
+      "lineCount": 2037
+    },
+    "chancela-cli": {
+      "lines": 78.89,
+      "regions": 77.94,
+      "functions": 82.14,
+      "lineCount": 611
+    },
+    "chancela-cmd": {
+      "lines": 92.7,
+      "regions": 93.88,
+      "functions": 88.41,
+      "lineCount": 1809
+    },
+    "chancela-connectors": {
+      "lines": 81.57,
+      "regions": 80.74,
+      "functions": 65.06,
+      "lineCount": 2507
+    },
+    "chancela-core": {
+      "lines": 96.57,
+      "regions": 96.57,
+      "functions": 93.13,
+      "lineCount": 8885
+    },
+    "chancela-csc": {
+      "lines": 75.33,
+      "regions": 74.88,
+      "functions": 74.68,
+      "lineCount": 681
+    },
+    "chancela-doc": {
+      "lines": 90.29,
+      "regions": 91.43,
+      "functions": 81.3,
+      "lineCount": 7134
+    },
+    "chancela-law": {
+      "lines": 76.28,
+      "regions": 79.6,
+      "functions": 76.32,
+      "lineCount": 274
+    },
+    "chancela-ledger": {
+      "lines": 92.74,
+      "regions": 96.93,
+      "functions": 98.27,
+      "lineCount": 1764
+    },
+    "chancela-mcp": {
+      "lines": 95.5,
+      "regions": 94.6,
+      "functions": 89.57,
+      "lineCount": 9437
+    },
+    "chancela-pades": {
+      "lines": 90.91,
+      "regions": 92.15,
+      "functions": 84.63,
+      "lineCount": 5436
+    },
+    "chancela-registry": {
+      "lines": 87.62,
+      "regions": 87.27,
+      "functions": 91.27,
+      "lineCount": 2634
+    },
+    "chancela-runtime-config": {
+      "lines": 66.7,
+      "regions": 74.82,
+      "functions": 70.8,
+      "lineCount": 985
+    },
+    "chancela-scap": {
+      "lines": 89.91,
+      "regions": 90.8,
+      "functions": 81.63,
+      "lineCount": 753
+    },
+    "chancela-search": {
+      "lines": 92.57,
+      "regions": 92.69,
+      "functions": 89.43,
+      "lineCount": 1144
+    },
+    "chancela-search-projection": {
+      "lines": 47.35,
+      "regions": 45.56,
+      "functions": 28.8,
+      "lineCount": 1491
+    },
+    "chancela-search-projector": {
+      "lines": 62.51,
+      "regions": 66.33,
+      "functions": 59.02,
+      "lineCount": 2662
+    },
+    "chancela-server": {
+      "lines": 0,
+      "regions": 0,
+      "functions": 0,
+      "lineCount": 184
+    },
+    "chancela-signing": {
+      "lines": 81.92,
+      "regions": 83.44,
+      "functions": 69.74,
+      "lineCount": 7358
+    },
+    "chancela-smartcard": {
+      "lines": 68.93,
+      "regions": 146.41,
+      "functions": 110.34,
+      "lineCount": 589
+    },
+    "chancela-store": {
+      "lines": 91.22,
+      "regions": 86.94,
+      "functions": 86.15,
+      "lineCount": 8407
+    },
+    "chancela-templates": {
+      "lines": 94.61,
+      "regions": 94.88,
+      "functions": 89.18,
+      "lineCount": 5193
+    },
+    "chancela-tsa": {
+      "lines": 77.51,
+      "regions": 72.9,
+      "functions": 63.74,
+      "lineCount": 618
+    },
+    "chancela-tsl": {
+      "lines": 91.96,
+      "regions": 93.19,
+      "functions": 89.25,
+      "lineCount": 6092
+    },
+    "chancela-worker": {
+      "lines": 72.2,
+      "regions": 65.8,
+      "functions": 57.14,
+      "lineCount": 1439
+    },
+    "chancela-xades": {
+      "lines": 90.51,
+      "regions": 90.26,
+      "functions": 74.04,
+      "lineCount": 1886
+    },
+    "chancela-zk": {
+      "lines": 87.54,
+      "regions": 85.57,
+      "functions": 90.63,
+      "lineCount": 345
+    }
+  }
 }
