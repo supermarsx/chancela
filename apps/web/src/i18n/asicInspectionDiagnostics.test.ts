@@ -19,6 +19,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ASIC_FINDING_KEYS,
+  BLOCKER_PENDING_TRANSLATION,
   VERBATIM_REASON_CODES,
   asicFindingKey,
   resolveAsicFinding,
@@ -278,6 +279,79 @@ describe('ASiC inspection findings cover every code the server can emit', () => 
         expect(scope, `${locale} scope notice dropped ${token}`).toContain(token);
       }
     }
+  });
+});
+
+/**
+ * The blocker identifiers, read out of `chancela-signing`'s own closed list.
+ *
+ * A different crate and a different declaration shape from the finding codes — enum variants and
+ * an `ALL` array rather than `pub const` strings — so this needs its own extraction rather than a
+ * parameterised reuse of the one above.
+ */
+async function emittedBlockerIds(): Promise<{ variants: Set<string>; listed: Set<string> }> {
+  const nodeFs = 'node:fs';
+  const { readFileSync } = (await import(nodeFs)) as {
+    readFileSync(path: string, encoding: 'utf8'): string;
+  };
+  const source = readFileSync('../../crates/chancela-signing/src/asic.rs', 'utf8');
+
+  // `AsicDiagnosticBlockerId::Variant => "snake_case",` — possibly wrapped onto three lines by
+  // rustfmt, which is why this is not anchored to one line.
+  const variants = new Map<string, string>();
+  for (const match of source.matchAll(
+    /AsicDiagnosticBlockerId::([A-Za-z0-9]+) =>\s*\{?\s*"([a-z0-9_]+)"/g,
+  )) {
+    variants.set(match[1], match[2]);
+  }
+
+  const listBody = /pub const ALL: \[Self; \d+\] = \[([\s\S]*?)\];/.exec(source)?.[1] ?? '';
+  const listed = new Set<string>();
+  for (const match of listBody.matchAll(/Self::([A-Za-z0-9]+),/g)) {
+    const value = variants.get(match[1]);
+    if (value) listed.add(value);
+  }
+
+  return { variants: new Set(variants.values()), listed };
+}
+
+describe('ASiC profile blockers reach the operator accounted for', () => {
+  it('extracts a non-vacuous blocker list from the Rust source', async () => {
+    const { variants, listed } = await emittedBlockerIds();
+    expect(variants.size, 'the as_str scan matched nothing').toBeGreaterThan(0);
+    expect(listed.size, 'the ALL scan matched nothing').toBeGreaterThan(0);
+    expect(listed.size).toBeGreaterThanOrEqual(25);
+  });
+
+  it('lists every variant (none declared but left out of ALL)', async () => {
+    const { variants, listed } = await emittedBlockerIds();
+    expect([...variants].filter((id) => !listed.has(id)).sort()).toEqual([]);
+  });
+
+  it('accounts for every blocker as translated or knowingly pending', async () => {
+    const { listed } = await emittedBlockerIds();
+    const unaccounted = [...listed].filter(
+      (id) => ASIC_FINDING_KEYS[id] === undefined && !BLOCKER_PENDING_TRANSLATION.has(id),
+    );
+    expect(
+      unaccounted.sort(),
+      'a blocker the backend can emit is neither translated nor listed as pending',
+    ).toEqual([]);
+  });
+
+  it('has no stale pending entry beyond what the backend emits', async () => {
+    const { listed } = await emittedBlockerIds();
+    const stale = [...BLOCKER_PENDING_TRANSLATION].filter((id) => !listed.has(id));
+    expect(stale.sort(), 'the pending set claims blockers the server no longer emits').toEqual([]);
+  });
+
+  it('does not list a blocker as pending when it is already translated', () => {
+    // `xades_not_supported` is both a dedicated finding code and a blocker id. One translation
+    // serves both; listing it as pending as well would claim it renders as English when it does
+    // not, and would make the pending count a lie.
+    const both = [...BLOCKER_PENDING_TRANSLATION].filter((id) => ASIC_FINDING_KEYS[id]);
+    expect(both.sort()).toEqual([]);
+    expect(ASIC_FINDING_KEYS.xades_not_supported).toBeDefined();
   });
 });
 

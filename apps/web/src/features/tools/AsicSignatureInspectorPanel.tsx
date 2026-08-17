@@ -163,7 +163,16 @@ function BlockerList({
                 ? (blocker.member_path ?? 'container')
                 : blocker.source_path}
             </code>
-            <p>{blocker.message}</p>
+            {/* Same vocabulary, same treatment: these messages come from `chancela-signing` in
+                English and none of them is translated yet, so they route through the identical
+                resolver as the findings and come out marked rather than passing for pt-PT. */}
+            <FindingText
+              finding={{
+                severity: 'warning',
+                code: 'id' in blocker ? blocker.id : blocker.code,
+                message: blocker.message,
+              }}
+            />
           </div>
         </li>
       ))}

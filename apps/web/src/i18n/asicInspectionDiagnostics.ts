@@ -39,11 +39,12 @@
  * a support thread or greps a stored report for — the same rule the DPIA `no_claims` flags and the
  * `CHANCELA_*` variable names already follow.
  *
- * Also untranslated, and deliberately out of scope for this file: the profile **blocker** findings
- * that `append_blocker_findings` appends. Those carry `AsicDiagnosticBlockerId::as_str()` from
- * `chancela-signing` — a separate 25-identifier vocabulary with its own English messages. They fall
- * through {@link resolveAsicFinding}'s unknown-code path and render as marked English rather than
- * silently passing for localized copy.
+ * Also untranslated, but no longer *unaccounted*: the profile **blocker** findings that
+ * `append_blocker_findings` appends, carrying `AsicDiagnosticBlockerId::as_str()` from
+ * `chancela-signing`. Those 25 identifiers are enumerated in {@link BLOCKER_PENDING_TRANSLATION}
+ * and render as marked English through {@link resolveAsicFinding}'s unknown-code path. Listing
+ * them is what lets the guard demand `mapped ∪ pending == what Rust emits`, so a 26th blocker
+ * fails loudly instead of quietly joining the untranslated pile.
  */
 import type { AsicInspectionFinding } from '../api/types';
 import type { MessageKey, TParams } from './types';
@@ -75,6 +76,47 @@ export const ASIC_FINDING_KEYS: Record<string, MessageKey> = {
 export const VERBATIM_REASON_CODES: ReadonlySet<string> = new Set([
   'asic_invalid_local_technical',
   'asic_validation_not_performed',
+]);
+
+/**
+ * The 25 `AsicDiagnosticBlockerId` identifiers, knowingly untranslated for now.
+ *
+ * `append_blocker_findings` pushes these into the same `findings` array as the codes above, each
+ * carrying `chancela-signing`'s own English message, so they arrive through the identical render
+ * path. They are enumerated here rather than left implicit for the reason the PDF vocabulary has a
+ * `PENDING_TRANSLATION` set: the guard can then require
+ * `mapped ∪ pending == what Rust emits`, so a **new** blocker still fails loudly while the
+ * deliberately-untranslated set stays visible and countable.
+ *
+ * `xades_not_supported` is deliberately **absent**: it is already in {@link ASIC_FINDING_KEYS},
+ * because the API emits a dedicated finding for it *and* it exists as a blocker id. Same code,
+ * same meaning, one translation.
+ */
+export const BLOCKER_PENDING_TRANSLATION: ReadonlySet<string> = new Set([
+  'duplicate_member',
+  'encrypted_member',
+  'member_uncompressed_size_exceeded',
+  'total_uncompressed_size_exceeded',
+  'unsupported_meta_inf_member',
+  'asic_s_requires_single_payload',
+  'asic_s_manifest_unsupported',
+  'asic_s_missing_cades_signature',
+  'asic_s_unsupported_cades_signature_path',
+  'asic_e_requires_payload',
+  'asic_e_missing_manifest',
+  'asic_e_unsupported_manifest_path',
+  'asic_e_multiple_manifests',
+  'asic_e_missing_cades_signature',
+  'asic_e_multiple_cades_signatures',
+  'empty_signature_member',
+  'empty_manifest_member',
+  'asic_e_manifest_parse_failed',
+  'asic_e_manifest_references_missing_signature',
+  'asic_e_manifest_duplicate_signature_reference',
+  'asic_e_unreferenced_signature',
+  'asic_e_manifest_references_missing_payload',
+  'asic_e_manifest_unreferenced_payload',
+  'asic_e_manifest_digest_mismatch',
 ]);
 
 /** The catalog key for a finding code, or `undefined` for a code this build does not know. */

@@ -322,6 +322,45 @@ impl AsicDiagnosticBlockerId {
             }
         }
     }
+
+    /// Every blocker identifier, as a closed list.
+    ///
+    /// The API turns these into `AsicInspectionFinding` codes in `append_blocker_findings`, each
+    /// carrying an English `message` that the web inspector renders to operators in every locale.
+    /// `asicInspectionDiagnostics.test.ts` reads this list out of this file's source text and
+    /// fails when an identifier is neither translated nor listed as knowingly pending — the only
+    /// gate that can see the defect, since the client-side i18n gates are blind by construction to
+    /// a sentence that arrives over the wire.
+    ///
+    /// The enum is `#[non_exhaustive]`, so this list and `as_str` must be extended together; the
+    /// exhaustive `match` in `as_str` is what makes the compiler enforce that half.
+    pub const ALL: [Self; 25] = [
+        Self::DuplicateMember,
+        Self::EncryptedMember,
+        Self::MemberUncompressedSizeExceeded,
+        Self::TotalUncompressedSizeExceeded,
+        Self::XadesNotSupported,
+        Self::UnsupportedMetaInfMember,
+        Self::AsicSRequiresSinglePayload,
+        Self::AsicSManifestUnsupported,
+        Self::AsicSMissingCadesSignature,
+        Self::AsicSUnsupportedCadesSignaturePath,
+        Self::AsicERequiresPayload,
+        Self::AsicEMissingManifest,
+        Self::AsicEUnsupportedManifestPath,
+        Self::AsicEMultipleManifests,
+        Self::AsicEMissingCadesSignature,
+        Self::AsicEMultipleCadesSignatures,
+        Self::EmptySignatureMember,
+        Self::EmptyManifestMember,
+        Self::AsicEManifestParseFailed,
+        Self::AsicEManifestReferencesMissingSignature,
+        Self::AsicEManifestDuplicateSignatureReference,
+        Self::AsicEUnreferencedSignature,
+        Self::AsicEManifestReferencesMissingPayload,
+        Self::AsicEManifestUnreferencedPayload,
+        Self::AsicEManifestDigestMismatch,
+    ];
 }
 
 /// One structured reason the bounded ASiC/CAdES implementation cannot handle a container shape.
@@ -2755,4 +2794,37 @@ fn zip_err(context: &str, error: zip::result::ZipError) -> SigningError {
 
 fn asic_err(message: impl Into<String>) -> SigningError {
     SigningError::Asic(message.into())
+}
+
+#[cfg(test)]
+mod blocker_id_vocabulary {
+    use super::AsicDiagnosticBlockerId;
+
+    /// `ALL` is what the web i18n guard reads to know the vocabulary. If it drifts from the enum,
+    /// the guard silently stops covering whatever fell out — so pin both directions here, where
+    /// the compiler and the enum are in the same place.
+    #[test]
+    fn all_lists_every_variant_exactly_once() {
+        let ids: Vec<&str> = AsicDiagnosticBlockerId::ALL
+            .iter()
+            .map(|id| id.as_str())
+            .collect();
+
+        // Non-vacuity, and a floor just under the current count so a half-broken edit is caught.
+        assert!(ids.len() >= 25, "ALL shrank to {}", ids.len());
+
+        let mut unique = ids.clone();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), ids.len(), "ALL repeats an identifier");
+
+        // Identifiers are the client's map keys and an operator's grep string: snake_case only.
+        for id in &ids {
+            assert!(
+                id.chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+                "{id} is not snake_case"
+            );
+        }
+    }
 }

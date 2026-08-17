@@ -90,6 +90,39 @@ describe('a finding whose code this build does NOT know', () => {
   });
 });
 
+describe('a profile blocker, which is a different vocabulary reaching the same list', () => {
+  // `append_blocker_findings` pushes `AsicDiagnosticBlockerId::as_str()` as the code, and none of
+  // those 25 identifiers is translated yet. They must be MARKED English, never pass for pt-PT.
+  it.each([
+    'asic_e_manifest_digest_mismatch',
+    'duplicate_member',
+    'total_uncompressed_size_exceeded',
+  ])('marks %s as English', (code) => {
+    render(
+      <Wrapper>
+        <FindingsList findings={[finding({ code, message: `English for ${code}` })]} />
+      </Wrapper>,
+    );
+    const marked = sentence('untranslated').querySelector('[lang="en"]');
+    expect(marked?.textContent).toBe(`English for ${code}`);
+    expect(screen.getByText(ptPT['asicInspector.untranslatedBadge'])).toBeTruthy();
+  });
+
+  it('translates xades_not_supported, which is a blocker id AND a finding code', () => {
+    // The one overlap. It has a dedicated finding code that is already translated, so it must NOT
+    // take the marked-English path just because it is also a blocker identifier.
+    render(
+      <Wrapper>
+        <FindingsList findings={[finding({ code: 'xades_not_supported' })]} />
+      </Wrapper>,
+    );
+    expect(sentence('translated').textContent).toBe(
+      ptPT['asicInspector.finding.xades_not_supported'],
+    );
+    expect(screen.queryByText(ptPT['asicInspector.untranslatedBadge'])).toBeNull();
+  });
+});
+
 describe('a finding framed around the validator its own words', () => {
   const reasons =
     'META-INF/signature001.p7s: signed digest does not match packaged payload; ' +
