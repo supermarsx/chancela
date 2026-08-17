@@ -200,21 +200,53 @@ describe('resolveAsicFinding', () => {
       { code: 'xades_not_supported', message: 'server English' },
       t,
     );
-    expect(resolved.untranslated).toBe(false);
-    expect(resolved.text).toBe(enUS[`${PREFIX}xades_not_supported`]);
-    expect(resolved.text).not.toContain('server English');
+    expect(resolved).toEqual({
+      kind: 'translated',
+      text: enUS[`${PREFIX}xades_not_supported`],
+    });
   });
 
-  it('frames a validator reason string verbatim rather than paraphrasing it', () => {
+  it('splits the frame so the validator reasons can be marked as English', () => {
     const reasons = 'META-INF/signature.p7s: digest mismatch; container: unreferenced payload';
     const resolved = resolveAsicFinding(
       { code: 'asic_invalid_local_technical', message: reasons },
       t,
     );
-    expect(resolved.untranslated).toBe(false);
-    // The validator's own words survive intact, member paths and all.
-    expect(resolved.text).toContain(reasons);
-    expect(resolved.text).not.toBe(reasons);
+    expect(resolved.kind).toBe('framed');
+    if (resolved.kind !== 'framed') return;
+    // The validator's own words survive intact, member paths and all, and arrive as their OWN
+    // field so the caller can wrap them in lang="en" rather than burying them in a translated
+    // sentence.
+    expect(resolved.verbatim).toBe(reasons);
+    expect(resolved.before).not.toContain(reasons);
+    expect(resolved.after).not.toContain(reasons);
+    // Reassembling must reproduce the whole sentence — a split that dropped text would be a
+    // silent truncation of a failure report.
+    expect(resolved.before + resolved.verbatim + resolved.after).toBe(
+      enUS[`${PREFIX}asic_invalid_local_technical`].replace('{reasons}', reasons),
+    );
+    // The frame is real prose, not an empty shell.
+    expect(resolved.before.trim().length).toBeGreaterThan(0);
+  });
+
+  it('places the split correctly in every locale, wherever that locale puts the placeholder', () => {
+    // `before`/`after` come from splitting the RENDERED string, so a locale that fronts
+    // `{reasons}` is handled too. Assuming it is sentence-final would break invisibly.
+    const reasons = 'boom';
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      const localeT = ((key: string, params?: Record<string, string | number>) =>
+        catalog[key].replace(/\{(\w+)\}/g, (whole, name: string) =>
+          params && name in params ? String(params[name]) : whole,
+        )) as never;
+      for (const code of VERBATIM_REASON_CODES) {
+        const resolved = resolveAsicFinding({ code, message: reasons }, localeT);
+        expect(resolved.kind, `${locale} · ${code}`).toBe('framed');
+        if (resolved.kind !== 'framed') continue;
+        expect(resolved.before + resolved.verbatim + resolved.after, `${locale} · ${code}`).toBe(
+          catalog[ASIC_FINDING_KEYS[code]].replace('{reasons}', reasons),
+        );
+      }
+    }
   });
 
   it('falls back to the server English, MARKED, for a code this build does not know', () => {
@@ -223,13 +255,12 @@ describe('resolveAsicFinding', () => {
       t,
     );
     // Never blank, never a crash — and never silently passed off as localized copy.
-    expect(resolved).toEqual({ text: 'A sentence from a newer server.', untranslated: true });
+    expect(resolved).toEqual({ kind: 'untranslated', text: 'A sentence from a newer server.' });
   });
 
   it('falls back rather than framing nothing when a framed code carries an empty message', () => {
     const resolved = resolveAsicFinding({ code: 'asic_invalid_local_technical', message: '  ' }, t);
-    expect(resolved.untranslated).toBe(true);
-    expect(resolved.text).toBe('  ');
+    expect(resolved).toEqual({ kind: 'untranslated', text: '  ' });
   });
 
   it('marks a profile blocker id, which is a vocabulary this map does not cover', () => {
@@ -239,6 +270,6 @@ describe('resolveAsicFinding', () => {
       { code: 'asic_e_manifest_digest_mismatch', message: 'English blocker text.' },
       t,
     );
-    expect(resolved.untranslated).toBe(true);
+    expect(resolved.kind).toBe('untranslated');
   });
 });

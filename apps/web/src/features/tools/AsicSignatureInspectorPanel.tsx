@@ -187,20 +187,44 @@ function BlockerList({
 function FindingText({ finding }: { finding: AsicInspectionFinding }) {
   const t = useT();
   const resolved = resolveAsicFinding(finding, t);
-  if (!resolved.untranslated) return <p>{resolved.text}</p>;
-  return (
-    <p>
-      <span lang="en">{resolved.text}</span>{' '}
-      <Badge tone="neutral">
-        <TooltipText label={t('asicInspector.untranslatedHint')} onlyWhenClipped={false}>
-          {t('asicInspector.untranslatedBadge')}
-        </TooltipText>
-      </Badge>
-    </p>
-  );
+  switch (resolved.kind) {
+    case 'translated':
+      return <p data-finding-text="translated">{resolved.text}</p>;
+    case 'framed':
+      // The frame is the operator's language; only the validator's own reason text is English, so
+      // only that span carries `lang="en"`. Marking the whole paragraph would misreport the frame;
+      // marking nothing — which is what the first version did — launders the English into a
+      // sentence that presents as fully translated.
+      return (
+        <p data-finding-text="framed">
+          {resolved.before}
+          <span lang="en">{resolved.verbatim}</span>
+          {resolved.after}
+        </p>
+      );
+    case 'untranslated':
+      return (
+        <p data-finding-text="untranslated">
+          <span lang="en">{resolved.text}</span>{' '}
+          <Badge tone="neutral">
+            <TooltipText label={t('asicInspector.untranslatedHint')} onlyWhenClipped={false}>
+              {t('asicInspector.untranslatedBadge')}
+            </TooltipText>
+          </Badge>
+        </p>
+      );
+  }
 }
 
-function FindingsList({ findings }: { findings: AsicInspectionFinding[] }) {
+/**
+ * Exported for `AsicSignatureInspectorPanel.test.tsx`.
+ *
+ * The badge and the `lang="en"` marking are the safety mechanism for every code this build does
+ * not know — which today is the whole 25-identifier blocker vocabulary — and nothing rendered them
+ * in a test. Reaching the full panel would need the upload flow and an API mock; the list is the
+ * unit that carries the behaviour.
+ */
+export function FindingsList({ findings }: { findings: AsicInspectionFinding[] }) {
   if (!findings.length)
     return (
       <p className="muted">

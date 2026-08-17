@@ -81,39 +81,75 @@ export function asicFindingKey(code: string | undefined): MessageKey | undefined
   return code ? ASIC_FINDING_KEYS[code] : undefined;
 }
 
-/** What to render for one finding, and whether it is the operator's language. */
-export interface ResolvedAsicFinding {
-  /** The sentence to show. */
-  text: string;
-  /**
-   * `true` when `text` is the server's raw English because the code was unknown. The caller MUST
-   * surface this — a fallback that looks identical to a translation would pass English off as
-   * localized copy, and would make the next backend-added code invisible instead of loud.
-   */
-  untranslated: boolean;
-}
+/**
+ * What to render for one finding.
+ *
+ * # Why three arms and not `{ text, untranslated }`
+ *
+ * A boolean cannot mark a *substring*, and the framed case is exactly a substring problem: a
+ * Portuguese sentence with an English clause inside it. The first version of this file returned
+ * `{ text: t(key, { reasons }), untranslated: false }` for those, which is honest about the frame
+ * and silently wrong about the clause — the English lost its `lang="en"`, so a screen reader read
+ * English technical prose with Portuguese phonetics and nothing flagged it visually.
+ *
+ * That is **worse than the raw-English status quo** in one specific way: raw English is visibly
+ * foreign, whereas a frame launders it into a sentence that presents as fully translated.
+ *
+ * It was invisible in review because the template — `'…pelo validador: {reasons}'` — reads as
+ * entirely Portuguese. Only rendering it with a real value shows the English. For anything
+ * user-visible, the template is not the artefact.
+ */
+export type ResolvedAsicFinding =
+  /** Fully translated; nothing foreign inside. */
+  | { kind: 'translated'; text: string }
+  /** A translated frame around verbatim foreign text; `verbatim` must be marked `lang="en"`. */
+  | { kind: 'framed'; before: string; verbatim: string; after: string }
+  /** The server's raw English, for a code this build does not know. Mark it AND badge it. */
+  | { kind: 'untranslated'; text: string };
+
+/**
+ * Sentinel used to locate the placeholder inside the *translated* string.
+ *
+ * Splitting the rendered frame is what lets `before`/`after` be correct in a locale that does not
+ * put `{reasons}` last. Assuming the placeholder is sentence-final would break the first locale
+ * that fronts it, and it would break invisibly — the same way the defect this replaces did.
+ * U+0000 cannot occur in catalog copy.
+ */
+const PLACEHOLDER_SENTINEL = '\u0000';
 
 /**
  * Resolve one finding into the operator's language.
  *
  * Never blank, never a crash, and never a silent lie: an unknown code yields the server's own
- * English with `untranslated: true`, so the UI can mark it as such (and tag it `lang="en"`, which
- * is also what makes a screen reader pronounce it correctly).
+ * English as `kind: 'untranslated'`, so the UI marks it (and tags it `lang="en"`, which is also
+ * what makes a screen reader pronounce it correctly).
  *
- * A framed code with an empty `message` falls back to the raw message path rather than rendering a
- * frame around nothing — "reasons reported by the validator:" followed by silence reads as a
- * missing UI, and would hide that the server sent us nothing to show.
+ * A framed code with an empty `message` degrades to the untranslated arm rather than rendering a
+ * frame around nothing — "Motivos comunicados pelo validador:" followed by silence reads as a
+ * broken UI and would hide that the server sent us nothing to show.
  */
 export function resolveAsicFinding(
   finding: Pick<AsicInspectionFinding, 'code' | 'message'>,
   t: (key: MessageKey, params?: TParams) => string,
 ): ResolvedAsicFinding {
   const key = asicFindingKey(finding.code);
-  if (!key) return { text: finding.message, untranslated: true };
-  if (VERBATIM_REASON_CODES.has(finding.code)) {
-    const reasons = finding.message?.trim();
-    if (!reasons) return { text: finding.message, untranslated: true };
-    return { text: t(key, { reasons }), untranslated: false };
-  }
-  return { text: t(key), untranslated: false };
+  if (!key) return { kind: 'untranslated', text: finding.message };
+  if (!VERBATIM_REASON_CODES.has(finding.code)) return { kind: 'translated', text: t(key) };
+
+  const verbatim = finding.message?.trim();
+  if (!verbatim) return { kind: 'untranslated', text: finding.message };
+
+  const framed = t(key, { reasons: PLACEHOLDER_SENTINEL });
+  const at = framed.indexOf(PLACEHOLDER_SENTINEL);
+  // A catalog entry that lost its placeholder is a translation bug the guard test catches at CI
+  // time. At runtime, degrade to the frame alone rather than dropping the validator's reasons or
+  // throwing — but do NOT claim it is framed, because there is nowhere to mark the English.
+  if (at < 0) return { kind: 'untranslated', text: finding.message };
+
+  return {
+    kind: 'framed',
+    before: framed.slice(0, at),
+    verbatim,
+    after: framed.slice(at + PLACEHOLDER_SENTINEL.length),
+  };
 }
