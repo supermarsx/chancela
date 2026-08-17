@@ -2260,6 +2260,54 @@ fn partial_absent_owner_evidence_names_the_recipients_still_missing() {
 }
 
 #[test]
+fn recorded_evidence_matches_despite_operator_whitespace() {
+    // Operator-recorded evidence is free text a human pasted. A recipient who *was* served must
+    // not read as never served because the paste carried a space — that is a false negative on an
+    // evidentiary surface, and one the operator cannot clear by recording the evidence again.
+    let reminders = condominium_dispatch_world(
+        ABSENT_OWNER_TEMPLATE,
+        two_absent_owners,
+        &["  Amelia Marques  ", "Bruno Dias\t"],
+    );
+    assert!(
+        by_rule(&reminders, "absent-owner-dispatch-evidence").is_empty(),
+        "surrounding whitespace must not keep a served recipient in the missing list"
+    );
+}
+
+#[test]
+fn operator_whitespace_still_leaves_genuinely_missing_recipients_missing() {
+    // The trim must not become a wildcard: only the recipient actually recorded clears.
+    let reminders = condominium_dispatch_world(
+        ABSENT_OWNER_TEMPLATE,
+        two_absent_owners,
+        &[" Amelia Marques "],
+    );
+    let reminder = only(&reminders, "absent-owner-dispatch-evidence");
+    assert_eq!(
+        reminder_param(reminder, "dispatch_evidence_status"),
+        "operator_evidence_partial"
+    );
+    assert_eq!(
+        reminder_param(reminder, "recorded_recipients"),
+        "Amelia Marques"
+    );
+    assert_eq!(reminder_param(reminder, "missing_recipients"), "Bruno Dias");
+}
+
+#[test]
+fn an_unrelated_recorded_name_never_counts_as_coverage() {
+    let reminders =
+        condominium_dispatch_world(ABSENT_OWNER_TEMPLATE, two_absent_owners, &["Carla Nunes"]);
+    let reminder = only(&reminders, "absent-owner-dispatch-evidence");
+    assert_eq!(
+        reminder_param(reminder, "dispatch_evidence_status"),
+        "required_pending"
+    );
+    assert_eq!(reminder_param(reminder, "recorded_recipient_count"), "0");
+}
+
+#[test]
 fn full_absent_owner_coverage_closes_the_reminder() {
     let reminders = condominium_dispatch_world(
         ABSENT_OWNER_TEMPLATE,

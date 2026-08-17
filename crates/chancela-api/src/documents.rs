@@ -5751,25 +5751,31 @@ pub(crate) fn dispatch_evidence_status_for_template(
     recorded_recipients: &[String],
 ) -> Option<DispatchEvidenceStatusView> {
     let profile = generated_dispatch_evidence_profile_for_template(template_id)?;
-    let required_set: BTreeSet<&str> = required_recipients
+    // Both sides are matched on their trimmed form. Operator-recorded evidence is free text a
+    // human pasted, so a recipient served with a trailing space used to miss the required name by
+    // one character and stay listed as never served — a false negative on an evidentiary surface,
+    // and one the operator had no way to clear. Blank required names are dropped here rather than
+    // filtered later, so they cannot sit in `missing` forever and make coverage unreachable.
+    let required: Vec<&str> = required_recipients
         .iter()
-        .map(String::as_str)
-        .filter(|name| !name.trim().is_empty())
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
         .collect();
+    let required_set: BTreeSet<&str> = required.iter().copied().collect();
     let recorded_set: BTreeSet<&str> = recorded_recipients
         .iter()
-        .map(String::as_str)
+        .map(|name| name.trim())
         .filter(|name| required_set.contains(name))
         .collect();
-    let recorded = required_recipients
+    let recorded = required
         .iter()
-        .filter(|name| recorded_set.contains(name.as_str()))
-        .cloned()
+        .filter(|name| recorded_set.contains(*name))
+        .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
-    let missing = required_recipients
+    let missing = required
         .iter()
-        .filter(|name| !recorded_set.contains(name.as_str()))
-        .cloned()
+        .filter(|name| !recorded_set.contains(*name))
+        .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     let evidence_attached = !recorded.is_empty();
     let all_required_recipients_covered = !required_set.is_empty() && missing.is_empty();
@@ -5785,7 +5791,7 @@ pub(crate) fn dispatch_evidence_status_for_template(
         evidence_attached,
         dispatch_completed: false,
         completion_basis: "none",
-        required_recipients: required_recipients.to_vec(),
+        required_recipients: required.iter().map(|name| (*name).to_owned()).collect(),
         recorded_recipients: recorded,
         missing_recipients: missing,
         note: if all_required_recipients_covered {
@@ -14856,6 +14862,57 @@ mod tests {
         state.acts.write().await.insert(act.id, act.clone());
         state.documents.write().await.insert(act.id, ata.clone());
         (actor, entity, book, act, ata, notice)
+    }
+
+    /// Operator-recorded evidence must match on the trimmed name, on the surface an operator reads.
+    ///
+    /// Recorded recipients are free text a human pasted. Matching them against the required set by
+    /// exact string equality meant a recipient who *was* served stayed listed as never served
+    /// because the paste carried a trailing space — a false negative on an evidentiary surface,
+    /// and one no amount of re-recording could clear. The `chancela-action-center` copy of this
+    /// function carried the byte-identical defect and was fixed in the same commit.
+    #[test]
+    fn dispatch_evidence_matches_recipients_despite_operator_whitespace() {
+        let required = ["Amelia Marques".to_owned(), "Bruno Dias".to_owned()];
+
+        let covered = dispatch_evidence_status_for_template(
+            CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+            &required,
+            &["  Amelia Marques  ".to_owned(), "Bruno Dias\t".to_owned()],
+        )
+        .expect("the absent-owner template has a dispatch profile");
+        assert_eq!(covered.status, "operator_evidence_covered");
+        assert!(covered.missing_recipients.is_empty());
+        assert_eq!(
+            covered.recorded_recipients,
+            vec!["Amelia Marques", "Bruno Dias"]
+        );
+        // Trimming decides matching only; it never turns operator metadata into a dispatch claim.
+        assert!(!covered.dispatch_completed);
+        assert_eq!(covered.completion_basis, "none");
+
+        // The trim is not a wildcard: an unrecorded recipient stays missing.
+        let partial = dispatch_evidence_status_for_template(
+            CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+            &required,
+            &[" Amelia Marques ".to_owned()],
+        )
+        .expect("profile");
+        assert_eq!(partial.status, "operator_evidence_partial");
+        assert_eq!(partial.recorded_recipients, vec!["Amelia Marques"]);
+        assert_eq!(partial.missing_recipients, vec!["Bruno Dias"]);
+
+        // A blank required name is dropped rather than left permanently missing, which used to
+        // make `operator_evidence_covered` unreachable for the whole document.
+        let with_blank = dispatch_evidence_status_for_template(
+            CONDOMINIUM_ABSENT_OWNER_COMMUNICATION_TEMPLATE_ID,
+            &["Amelia Marques".to_owned(), "   ".to_owned()],
+            &["Amelia Marques".to_owned()],
+        )
+        .expect("profile");
+        assert_eq!(with_blank.status, "operator_evidence_covered");
+        assert_eq!(with_blank.required_recipients, vec!["Amelia Marques"]);
+        assert!(with_blank.missing_recipients.is_empty());
     }
 
     fn absent_owner_dispatch_request(

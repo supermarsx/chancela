@@ -93,25 +93,31 @@ pub(crate) fn dispatch_evidence_status_for_template(
     recorded_recipients: &[String],
 ) -> Option<DispatchEvidenceStatusView> {
     let profile = generated_dispatch_evidence_profile_for_template(template_id)?;
-    let required_set: BTreeSet<&str> = required_recipients
+    // Both sides are matched on their trimmed form. Operator-recorded evidence is free text a
+    // human pasted, so a recipient served with a trailing space used to miss the required name by
+    // one character and stay listed as never served — a false negative on an evidentiary surface,
+    // and one the operator had no way to clear. Blank required names are dropped here rather than
+    // filtered later, so they cannot sit in `missing` forever and make coverage unreachable.
+    let required: Vec<&str> = required_recipients
         .iter()
-        .map(String::as_str)
-        .filter(|name| !name.trim().is_empty())
+        .map(|name| name.trim())
+        .filter(|name| !name.is_empty())
         .collect();
+    let required_set: BTreeSet<&str> = required.iter().copied().collect();
     let recorded_set: BTreeSet<&str> = recorded_recipients
         .iter()
-        .map(String::as_str)
+        .map(|name| name.trim())
         .filter(|name| required_set.contains(name))
         .collect();
-    let recorded = required_recipients
+    let recorded = required
         .iter()
-        .filter(|name| recorded_set.contains(name.as_str()))
-        .cloned()
+        .filter(|name| recorded_set.contains(*name))
+        .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
-    let missing = required_recipients
+    let missing = required
         .iter()
-        .filter(|name| !recorded_set.contains(name.as_str()))
-        .cloned()
+        .filter(|name| !recorded_set.contains(*name))
+        .map(|name| (*name).to_owned())
         .collect::<Vec<_>>();
     let evidence_attached = !recorded.is_empty();
     let all_required_recipients_covered = !required_set.is_empty() && missing.is_empty();
@@ -127,7 +133,7 @@ pub(crate) fn dispatch_evidence_status_for_template(
         evidence_attached,
         dispatch_completed: false,
         completion_basis: "none",
-        required_recipients: required_recipients.to_vec(),
+        required_recipients: required.iter().map(|name| (*name).to_owned()).collect(),
         recorded_recipients: recorded,
         missing_recipients: missing,
         note: if all_required_recipients_covered {
