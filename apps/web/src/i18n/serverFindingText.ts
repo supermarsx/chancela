@@ -83,11 +83,23 @@ export function resolveServerFinding<T extends ServerFindingInput>(
   if (!verbatim) return { kind: 'untranslated', text: finding.message };
 
   const framed = t(key, { [placeholder]: PLACEHOLDER_SENTINEL });
-  const at = framed.indexOf(PLACEHOLDER_SENTINEL);
-  // A catalog entry that lost its placeholder is a translation bug the guard tests catch at CI
-  // time. At runtime, degrade to marked English rather than dropping the payload or throwing —
-  // and do NOT claim it is framed, because there would be nowhere to mark the foreign text.
-  if (at < 0) return { kind: 'untranslated', text: finding.message };
+  // Exactly one occurrence, or this degrades. Both failures are translation bugs the guard tests
+  // catch at CI time; at runtime they must not corrupt the page.
+  //
+  //  - **zero** — the catalog entry lost its placeholder. There is nowhere to put the payload, and
+  //    nowhere to mark it, so claiming `framed` would be a lie.
+  //  - **more than one** — a translator restated the value (`'Motivos: {reasons} (ver {reasons})'`).
+  //    A naive `indexOf` + `slice` split would put the literal U+0000 of the *second* occurrence
+  //    into `after` and render a control character into the DOM, while silently dropping that
+  //    second copy of the payload. Losing a substring quietly is exactly what this codebase
+  //    refuses to do; degrade loudly-but-safely to marked English instead.
+  //
+  // Not hypothetical across 14 locales: restating a value parenthetically is ordinary, and a
+  // `documents.rs` frame naming a digest or a member path twice is likelier still.
+  const first = framed.indexOf(PLACEHOLDER_SENTINEL);
+  const last = framed.lastIndexOf(PLACEHOLDER_SENTINEL);
+  if (first < 0 || first !== last) return { kind: 'untranslated', text: finding.message };
+  const at = first;
 
   return {
     kind: 'framed',

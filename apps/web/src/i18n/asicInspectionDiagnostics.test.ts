@@ -159,6 +159,32 @@ describe('ASiC inspection findings cover every code the server can emit', () => 
     }
   });
 
+  it('uses the placeholder exactly once, never twice', () => {
+    // A translator restating the value — 'Motivos: {reasons} (ver {reasons})' — is an ordinary
+    // thing to write and it breaks the split: the resolver would put the second sentinel's literal
+    // U+0000 into `after` and silently drop that copy of the payload. The resolver degrades to
+    // marked English rather than corrupting the page, but the catalog entry is still wrong and
+    // this is where it should be caught.
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      for (const [code, key] of Object.entries(ASIC_FINDING_KEYS)) {
+        const occurrences = catalog[key].split('{reasons}').length - 1;
+        expect(occurrences, `${locale} · ${code} repeats {reasons}`).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('carries no U+0000 anywhere in any catalog, which the sentinel split assumes', () => {
+    // `serverFindingText` splits the rendered frame on U+0000 precisely because catalog copy
+    // cannot contain one. That was an assumption; this makes it a checked fact, across the whole
+    // catalog rather than only these keys — a NUL anywhere would be a corruption worth failing on.
+    for (const [locale, catalog] of Object.entries(ALL_CATALOGS)) {
+      const offenders = Object.entries(catalog)
+        .filter(([, value]) => value.includes('\u0000'))
+        .map(([key]) => key);
+      expect(offenders.sort(), `${locale} has catalog values containing U+0000`).toEqual([]);
+    }
+  });
+
   it('gives exactly the framed codes a {reasons} placeholder, and the others none', () => {
     // The two halves of the design have to agree: a code framed in code but with no placeholder in
     // copy would silently drop the validator's reasons, and a placeholder on an unframed code would
@@ -324,6 +350,28 @@ describe('resolveAsicFinding', () => {
     );
     // Never blank, never a crash — and never silently passed off as localized copy.
     expect(resolved).toEqual({ kind: 'untranslated', text: 'A sentence from a newer server.' });
+  });
+
+  it('degrades to marked English when the frame repeats the placeholder', () => {
+    // Two sentinels: `indexOf` + `slice` would leave the SECOND one — a literal U+0000 — in
+    // `after`, rendering a control character into the page, and would silently drop that copy of
+    // the payload. Neither is acceptable, so the resolver refuses to call it framed.
+    const repeated = ((_key: string, params?: Record<string, string>) =>
+      `Motivos: ${params?.reasons} (ver ${params?.reasons})`) as never;
+    const resolved = resolveAsicFinding(
+      { code: 'asic_invalid_local_technical', message: 'digest mismatch' },
+      repeated,
+    );
+    expect(resolved).toEqual({ kind: 'untranslated', text: 'digest mismatch' });
+  });
+
+  it('degrades to marked English when the frame lost its placeholder entirely', () => {
+    const dropped = (() => 'A frame with nowhere to put the reasons.') as never;
+    const resolved = resolveAsicFinding(
+      { code: 'asic_invalid_local_technical', message: 'digest mismatch' },
+      dropped,
+    );
+    expect(resolved).toEqual({ kind: 'untranslated', text: 'digest mismatch' });
   });
 
   it('falls back rather than framing nothing when a framed code carries an empty message', () => {
