@@ -46,7 +46,7 @@ jobs:
     outputs:
       release: ${{ steps.gate.outputs.release }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # The commit message is read out of git rather than interpolated from the
       # event payload: `${{ github.event.head_commit.message }}` inside a run
@@ -109,7 +109,7 @@ jobs:
       tag: ${{ steps.bump.outputs.tag }}
       dry_run: ${{ steps.mode.outputs.dry_run }}
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The next version is derived from the tag list, so every tag has to
           # be present. A shallow clone would silently look like "no releases
