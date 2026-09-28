@@ -24,6 +24,6 @@
     "test:smoke:ci": "powershell -NoProfile -ExecutionPolicy Bypass -File ../../scripts/e2e-desktop.ps1 -KillOwnedProcesses"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2.11.4"
+    "@tauri-apps/cli": "^2.11.5"
   }
 }
