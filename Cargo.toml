@@ -136,7 +136,7 @@ minijinja = "2.21.0"
 # (`crates/chancela-templates/golden/md-block-v1/`) fails CI first if anyone bumps it silently.
 # `default-features = false` drops the crate's HTML writer entirely — there is no HTML on this
 # path and the dependency is configured so one cannot be produced. MIT.
-pulldown-cmark = { version = "=0.13.4", default-features = false }
+pulldown-cmark = { version = "=0.13.5", default-features = false }
 # clap (t72): the argument parser for the `chancela` host-level ops CLI (`chancela-cli`). Derive
 # feature only — the whole Docker-style command tree (nested subcommands, consistent flags, --help)
 # is declared with `#[derive(Parser/Subcommand/Args)]`. No other crate uses it. MIT/Apache-2.0.
@@ -209,7 +209,7 @@ zip = "8.6"
 # password-hash 0.5 + blake2 — NEITHER touches the der/spki/cms/x509-cert 0.7 family, and its
 # rand_core resolves to the same 0.6.x generation as p256 0.13 / rsa 0.9 above. argon2id (not
 # i/d) is the standard side-channel-and-GPU-balanced default; default params. See t29.md §3.
-argon2 = "0.5"
+argon2 = "0.6"
 # chacha20poly1305 (XChaCha20-Poly1305): the AEAD that encrypts the 32-byte P-256 secret scalar
 # at rest in users.json. Chosen over AES-GCM — pure-Rust, no AES-NI-detection surface, and its
 # 24-byte random nonce removes any nonce-counter to manage across restarts. Pulls aead 0.5 +
